@@ -1,0 +1,32 @@
+{
+  "name": "@laql/r2",
+  "version": "0.0.1",
+  "description": "LaQL Cloudflare R2 object store adapter",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/earonesty/laql.git",
+    "directory": "packages/r2"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@laql/core": "workspace:*"
+  }
+}

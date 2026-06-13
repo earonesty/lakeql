@@ -1,0 +1,36 @@
+{
+  "name": "laql",
+  "version": "0.0.1",
+  "description": "LaQL: lightweight TypeScript query engine for Iceberg + Parquet on object storage",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/earonesty/laql.git",
+    "directory": "packages/laql"
+  },
+  "homepage": "https://laql.dev",
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@laql/core": "workspace:*",
+    "@laql/http": "workspace:*",
+    "@laql/iceberg": "workspace:*",
+    "@laql/parquet": "workspace:*"
+  }
+}

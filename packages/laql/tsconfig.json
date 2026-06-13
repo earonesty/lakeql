@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "references": [
+    { "path": "../core" },
+    { "path": "../http" },
+    { "path": "../iceberg" },
+    { "path": "../parquet" }
+  ],
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
+}

@@ -1,0 +1,35 @@
+{
+  "name": "@laql/cli",
+  "version": "0.0.1",
+  "description": "LaQL command line: query, explain, inspect, write, compact",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "laql": "./dist/bin.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/earonesty/laql.git",
+    "directory": "packages/cli"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@laql/core": "workspace:*"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/parquet" },
+    { "path": "packages/iceberg" },
+    { "path": "packages/http" },
+    { "path": "packages/r2" },
+    { "path": "packages/s3" },
+    { "path": "packages/geo" },
+    { "path": "packages/sql" },
+    { "path": "packages/cli" },
+    { "path": "packages/laql" }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "name": "laql-monorepo",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.30.3",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -b && tsc -p fixtures",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc -b --noEmit",
+    "fixtures": "pnpm --filter @laql/fixtures generate",
+    "check": "pnpm lint && pnpm build && pnpm coverage"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.0",
+    "@types/node": "^25.9.3",
+    "@vitest/coverage-v8": "^4.1.8",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}
