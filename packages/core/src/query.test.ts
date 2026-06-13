@@ -37,6 +37,7 @@ class FakeScanner implements ScanAdapter {
 async function makeLake(config: {
   rowsByPath: Record<string, Row[]>;
   budget?: ConstructorParameters<typeof Lake>[0]["budget"];
+  policy?: ConstructorParameters<typeof Lake>[0]["policy"];
   now?: () => number;
 }) {
   const store = memoryStore();
@@ -48,6 +49,7 @@ async function makeLake(config: {
     store,
     scanner,
     budget: config.budget,
+    policy: config.policy,
     now: config.now,
     queryId: () => "q_test",
   });
@@ -366,6 +368,47 @@ describe("Lake query runtime", () => {
     await expect(lake.path("table").where(gt("missing", 1)).toArray()).rejects.toMatchObject({
       code: "LAQL_UNKNOWN_COLUMN",
     });
+  });
+
+  it("applies caller query policy for columns, limits, row filters, and context", async () => {
+    const { lake, scanner } = await makeLake({
+      rowsByPath: {
+        table: [
+          { id: 1, tenant: "a", visible: true, secret: "no" },
+          { id: 2, tenant: "b", visible: true, secret: "no" },
+          { id: 3, tenant: "a", visible: false, secret: "no" },
+        ],
+      },
+      policy: {
+        allowedColumns: ["id", "tenant", "visible"],
+        maxLimit: 1,
+        context: { tenant: "a" },
+        rowFilter: (context) => and(eq("tenant", String(context.tenant)), eq("visible", true)),
+      },
+    });
+
+    await expect(lake.path("table").toArray()).resolves.toEqual([
+      { id: 1, tenant: "a", visible: true },
+    ]);
+    expect(scanner.requestedColumns[0]).toEqual(["id", "tenant", "visible"]);
+
+    expect(() => lake.path("table").select(["secret"]).toArray()).toThrowError(LaQLError);
+    expect(() => lake.path("table").select(["secret"]).toArray()).toThrow(/disallowed/u);
+    expect(() => lake.path("table").where(eq("secret", "x")).toArray()).toThrow(/disallowed/u);
+    expect(() =>
+      lake
+        .path("table")
+        .orderBy([{ column: "secret" }])
+        .toArray(),
+    ).toThrow(/disallowed/u);
+  });
+
+  it("validates malformed query policy", async () => {
+    const rowsByPath = { table: [{ id: 1 }] };
+    const emptyColumns = await makeLake({ rowsByPath, policy: { allowedColumns: [] } });
+    expect(() => emptyColumns.lake.path("table").toArray()).toThrow(/allowedColumns/u);
+    const badLimit = await makeLake({ rowsByPath, policy: { maxLimit: -1 } });
+    expect(() => badLimit.lake.path("table").toArray()).toThrow(/maxLimit/u);
   });
 
   it("enforces every observable phase 1 budget", async () => {

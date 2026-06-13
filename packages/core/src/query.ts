@@ -21,10 +21,23 @@ export interface QueryBudget {
   maxElapsedMs?: number;
 }
 
+export type QueryPolicyContext = Record<string, unknown>;
+
+export interface QueryPolicy {
+  /** Restrict visible and predicate columns. When no select is supplied, this becomes the projection. */
+  allowedColumns?: string[];
+  /** Hard cap on rows returned by a query, applied even when the caller omits limit. */
+  maxLimit?: number;
+  /** Additional caller-owned predicate applied to every query. */
+  rowFilter?: Expr | ((context: QueryPolicyContext) => Expr | undefined);
+  context?: QueryPolicyContext;
+}
+
 export interface LakeConfig {
   store: ObjectStore;
   scanner: ScanAdapter;
   budget?: QueryBudget;
+  policy?: QueryPolicy;
   now?: () => number;
   queryId?: () => string;
 }
@@ -156,6 +169,7 @@ export class Lake {
   readonly store: ObjectStore;
   private readonly scanner: ScanAdapter;
   private readonly budget: QueryBudget;
+  private readonly policy: QueryPolicy;
   private readonly now: () => number;
   private readonly queryId: () => string;
 
@@ -163,6 +177,7 @@ export class Lake {
     this.store = config.store;
     this.scanner = config.scanner;
     this.budget = config.budget ?? {};
+    this.policy = config.policy ?? {};
     this.now = config.now ?? (() => performance.now());
     this.queryId = config.queryId ?? (() => `q_${Math.random().toString(36).slice(2)}`);
   }
@@ -181,7 +196,7 @@ export class Lake {
 
   createResult(init: PathQueryInit): QueryResult {
     return new QueryResult({
-      ...init,
+      ...applyQueryPolicy(init, this.policy),
       lake: this,
       budget: this.budget,
       now: this.now,
@@ -1045,6 +1060,77 @@ function validateQueryInit(init: PathQueryInit): void {
     throw new LaQLError("LAQL_TYPE_ERROR", "batchSize must be a positive integer");
   }
   if (init.orderBy !== undefined) normalizeOrderBy(init.orderBy);
+}
+
+function applyQueryPolicy(init: PathQueryInit, policy: QueryPolicy): PathQueryInit {
+  const allowedColumns =
+    policy.allowedColumns === undefined
+      ? undefined
+      : normalizeAllowedColumns(policy.allowedColumns);
+  const rowFilter =
+    typeof policy.rowFilter === "function"
+      ? policy.rowFilter(policy.context ?? {})
+      : policy.rowFilter;
+  const effectiveWhere = combineWhere(init.where, rowFilter);
+  validatePolicyColumns(init, effectiveWhere, allowedColumns);
+  const out: PathQueryInit = {
+    ...init,
+  };
+  const effectiveLimit = policyLimit(init.limit, policy.maxLimit);
+  if (effectiveWhere !== undefined) out.where = effectiveWhere;
+  else delete out.where;
+  if (effectiveLimit !== undefined) out.limit = effectiveLimit;
+  else delete out.limit;
+  if (allowedColumns !== undefined && init.select === undefined) out.select = allowedColumns;
+  return out;
+}
+
+function normalizeAllowedColumns(columns: string[]): string[] {
+  if (!Array.isArray(columns) || columns.length === 0) {
+    throw new LaQLError("LAQL_TYPE_ERROR", "policy allowedColumns must be non-empty strings");
+  }
+  const unique = new Set<string>();
+  for (const column of columns) {
+    if (typeof column !== "string" || column.length === 0) {
+      throw new LaQLError("LAQL_TYPE_ERROR", "policy allowedColumns must be non-empty strings");
+    }
+    unique.add(column);
+  }
+  return [...unique].sort();
+}
+
+function combineWhere(queryWhere: Expr | undefined, rowFilter: Expr | undefined): Expr | undefined {
+  if (queryWhere === undefined) return rowFilter;
+  if (rowFilter === undefined) return queryWhere;
+  return { kind: "logical", op: "and", operands: [rowFilter, queryWhere] };
+}
+
+function policyLimit(limit: number | undefined, maxLimit: number | undefined): number | undefined {
+  if (maxLimit === undefined) return limit;
+  if (!Number.isInteger(maxLimit) || maxLimit < 0) {
+    throw new LaQLError("LAQL_TYPE_ERROR", "policy maxLimit must be a non-negative integer");
+  }
+  return limit === undefined ? maxLimit : Math.min(limit, maxLimit);
+}
+
+function validatePolicyColumns(
+  init: PathQueryInit,
+  effectiveWhere: Expr | undefined,
+  allowedColumns: string[] | undefined,
+): void {
+  if (allowedColumns === undefined) return;
+  const allowed = new Set(allowedColumns);
+  const requested = new Set<string>();
+  for (const column of init.select ?? []) requested.add(column);
+  for (const term of init.orderBy ?? []) requested.add(term.column);
+  collectExprColumns(effectiveWhere, requested);
+  for (const column of requested) {
+    if (!allowed.has(column)) {
+      throw new LaQLError("LAQL_VALIDATION_ERROR", "Query references a disallowed column", {
+        column,
+      });
+    }
+  }
 }
 
 async function expandPaths(store: ObjectStore, pattern: string): Promise<ObjectInfo[]> {
