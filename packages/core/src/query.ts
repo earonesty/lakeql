@@ -2,6 +2,7 @@ import { LaQLError } from "./errors.js";
 import { encodeJsonLine, jsonSafeValue, matches } from "./evaluator.js";
 import type { Expr } from "./expr.js";
 import { col, eq, gt, gte, isIn, isNotNull, isNull, lt, lte, ne, notIn } from "./expr.js";
+import { createTaskManifest, type TaskManifest } from "./manifest.js";
 import type { ObjectInfo, ObjectStore } from "./store.js";
 import type { QueryStats, Row } from "./types.js";
 
@@ -171,6 +172,10 @@ export class QueryBuilder {
     return this.run().planTasks();
   }
 
+  taskManifest(jobId?: string): Promise<TaskManifest> {
+    return this.run().taskManifest(jobId);
+  }
+
   run(): QueryResult {
     return this.lake.createResult(this.init);
   }
@@ -301,6 +306,10 @@ export class QueryResult {
   async planTasks(): Promise<TaskInput[]> {
     const { planned: objects } = await this.planObjects();
     return this.tasksFromObjects(objects);
+  }
+
+  async taskManifest(jobId = this.config.queryId): Promise<TaskManifest> {
+    return createTaskManifest({ jobId, tasks: await this.planTasks() });
   }
 
   async explain(): Promise<ExplainResult> {

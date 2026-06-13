@@ -13,6 +13,8 @@ export interface Bookmark {
     fileIndex: number;
     rowGroup: number;
     rowOffset: number;
+    taskId?: string;
+    outputManifestCursor?: number;
   };
   operatorState?: {
     limitEmitted?: number;
