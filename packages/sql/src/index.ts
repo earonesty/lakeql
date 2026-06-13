@@ -427,6 +427,7 @@ function aggregateOp(op: string): AggregateOp {
     case "min":
     case "max":
     case "count_distinct":
+    case "approx_count_distinct":
     case "first":
     case "last":
     case "any":

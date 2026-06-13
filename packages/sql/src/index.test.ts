@@ -60,7 +60,8 @@ describe("parseSql", () => {
     expect(
       parseSql(`
         from events
-        select event, count() as n, count_distinct(user_id) as users
+        select event, count() as n, count_distinct(user_id) as users,
+          approx_count_distinct(session_id) as sessions
         where date = '2026-06-10'
         group by event
         having n > 100
@@ -72,6 +73,7 @@ describe("parseSql", () => {
       aggregates: {
         n: { op: "count" },
         users: { op: "count_distinct", column: "user_id" },
+        sessions: { op: "approx_count_distinct", column: "session_id" },
       },
       groupBy: ["event"],
       having: { kind: "compare", op: "gt" },
@@ -190,6 +192,7 @@ describe("parseSql", () => {
       parseSql(`
         from t
         select min(a) as min_a, max(a) as max_a, avg(a) as avg_a, sum(a) as sum_a,
+          approx_count_distinct(a) as approx_a,
           first(a) as first_a, last(a) as last_a, any(a) as any_a
       `).aggregates,
     ).toMatchObject({
@@ -197,6 +200,7 @@ describe("parseSql", () => {
       max_a: { op: "max" },
       avg_a: { op: "avg" },
       sum_a: { op: "sum" },
+      approx_a: { op: "approx_count_distinct" },
       first_a: { op: "first" },
       last_a: { op: "last" },
       any_a: { op: "any" },

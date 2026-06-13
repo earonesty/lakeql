@@ -100,6 +100,7 @@ export type AggregateOp =
   | "min"
   | "max"
   | "count_distinct"
+  | "approx_count_distinct"
   | "first"
   | "last"
   | "any";
@@ -160,7 +161,7 @@ export type AggregateStateSnapshot =
   | { op: "sum"; sum: number }
   | { op: "avg"; sum: number; count: number }
   | { op: "min" | "max"; value: AggregateSnapshotValue }
-  | { op: "count_distinct"; values: string[] }
+  | { op: "count_distinct" | "approx_count_distinct"; values: string[] }
   | { op: "first" | "last" | "any"; seen: boolean; value: AggregateSnapshotValue };
 
 export interface TaskInput {
@@ -849,7 +850,9 @@ function createAggregateState(aggregate: AggregateExpr): AggregateState {
     case "max":
       return new MinMaxState("max");
     case "count_distinct":
-      return new CountDistinctState();
+      return new CountDistinctState("count_distinct");
+    case "approx_count_distinct":
+      return new CountDistinctState("approx_count_distinct");
     case "first":
       return new FirstState();
     case "last":
@@ -946,7 +949,10 @@ class MinMaxState implements AggregateState {
 class CountDistinctState implements AggregateState {
   private readonly values: Set<string>;
 
-  constructor(values: string[] = []) {
+  constructor(
+    private readonly op: "count_distinct" | "approx_count_distinct",
+    values: string[] = [],
+  ) {
     this.values = new Set(values);
   }
 
@@ -960,7 +966,7 @@ class CountDistinctState implements AggregateState {
   }
 
   snapshot(): AggregateStateSnapshot {
-    return { op: "count_distinct", values: [...this.values].sort() };
+    return { op: this.op, values: [...this.values].sort() };
   }
 }
 
@@ -1145,7 +1151,8 @@ function aggregateStateFromSnapshot(
     case "max":
       return new MinMaxState(snapshot.op, snapshot.value);
     case "count_distinct":
-      return new CountDistinctState(snapshot.values);
+    case "approx_count_distinct":
+      return new CountDistinctState(snapshot.op, snapshot.values);
     case "first":
       return new FirstState(snapshot.value, snapshot.seen);
     case "last":
@@ -1246,6 +1253,7 @@ function isAggregateStateSnapshot(value: unknown): value is AggregateStateSnapsh
     case "max":
       return isAggregateSnapshotValue(value.value);
     case "count_distinct":
+    case "approx_count_distinct":
       return (
         Array.isArray(value.values) && value.values.every((inner) => typeof inner === "string")
       );
@@ -1339,6 +1347,7 @@ function validateAggregateExpr(aggregate: AggregateExpr): void {
     "min",
     "max",
     "count_distinct",
+    "approx_count_distinct",
     "first",
     "last",
     "any",
