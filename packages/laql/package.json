@@ -10,6 +10,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./cloudflare": {
+      "types": "./dist/cloudflare.d.ts",
+      "default": "./dist/cloudflare.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "default": "./dist/node.js"
     }
   },
   "files": [
@@ -31,6 +39,8 @@
     "@laql/core": "workspace:*",
     "@laql/http": "workspace:*",
     "@laql/iceberg": "workspace:*",
-    "@laql/parquet": "workspace:*"
+    "@laql/parquet": "workspace:*",
+    "@laql/r2": "workspace:*",
+    "@laql/s3": "workspace:*"
   }
 }

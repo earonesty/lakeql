@@ -8,7 +8,9 @@
     { "path": "../core" },
     { "path": "../http" },
     { "path": "../iceberg" },
-    { "path": "../parquet" }
+    { "path": "../parquet" },
+    { "path": "../r2" },
+    { "path": "../s3" }
   ],
   "include": ["src"],
   "exclude": ["src/**/*.test.ts"]

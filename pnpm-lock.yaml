@@ -74,6 +74,12 @@ importers:
       '@laql/parquet':
         specifier: workspace:*
         version: link:../parquet
+      '@laql/r2':
+        specifier: workspace:*
+        version: link:../r2
+      '@laql/s3':
+        specifier: workspace:*
+        version: link:../s3
 
   packages/parquet:
     dependencies:
