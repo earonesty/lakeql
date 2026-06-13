@@ -23,6 +23,19 @@ export interface LoadIcebergTableFromObjectStoreOptions {
   tableLocation: string;
 }
 
+export interface IcebergRestCatalogOptions {
+  url: string;
+  namespace: string | string[];
+  table: string;
+  prefix?: string;
+  token?: string;
+  fetch?: typeof fetch;
+}
+
+export interface LoadIcebergTableFromRestOptions extends IcebergRestCatalogOptions {
+  store: ObjectStore;
+}
+
 export interface PlanIcebergFilesOptions {
   snapshotId?: number;
   asOfTimestampMs?: number;
@@ -475,6 +488,131 @@ export class ObjectStoreIcebergCommitCatalog implements IcebergCommitCatalog {
   }
 }
 
+export class IcebergRestCatalog implements IcebergCommitCatalog {
+  private readonly url: string;
+  private readonly namespace: string[];
+  private readonly table: string;
+  private readonly prefix: string[];
+  private readonly token: string | undefined;
+  private readonly fetchFn: typeof fetch;
+
+  constructor(options: IcebergRestCatalogOptions) {
+    this.url = options.url;
+    this.namespace = namespaceParts(options.namespace);
+    this.table = requiredNonEmptyString(options.table, "table");
+    this.prefix = catalogPrefixParts(options.prefix);
+    this.token = options.token;
+    this.fetchFn = options.fetch ?? fetch;
+  }
+
+  async loadTable(store: ObjectStore): Promise<IcebergTable> {
+    const response = await this.requestJson(this.tableUrl(), { method: "GET" });
+    if (!isRecord(response) || typeof response["metadata-location"] !== "string") {
+      throw new LaQLError("LAQL_CATALOG_ERROR", "Invalid Iceberg REST load table response", {
+        url: this.tableUrl(),
+      });
+    }
+    return new IcebergTable(
+      store,
+      response["metadata-location"],
+      validateMetadata(response.metadata),
+    );
+  }
+
+  async commitAppend(input: IcebergCommitInput): Promise<boolean> {
+    await input.store.put(
+      input.manifestPath,
+      new TextEncoder().encode(`${stableStringify(input.manifest)}\n`),
+      { contentType: "application/json" },
+    );
+    await input.store.put(
+      input.nextMetadataPath,
+      new TextEncoder().encode(`${JSON.stringify(input.metadata, null, 2)}\n`),
+      { contentType: "application/json" },
+    );
+
+    const response = await this.fetchFn(this.tableUrl(), {
+      method: "POST",
+      headers: this.headers(true),
+      body: JSON.stringify({
+        identifier: { namespace: this.namespace, name: this.table },
+        requirements: [
+          {
+            type: "assert-ref-snapshot-id",
+            ref: "main",
+            "snapshot-id": input.expectedSnapshotId,
+          },
+        ],
+        updates: [
+          {
+            action: "add-snapshot",
+            snapshot: restAppendSnapshot(input),
+          },
+          {
+            action: "set-snapshot-ref",
+            "ref-name": "main",
+            type: "branch",
+            "snapshot-id": input.nextSnapshotId,
+          },
+        ],
+      }),
+    });
+    if (response.status === 409) return false;
+    if (!response.ok) {
+      throw new LaQLError("LAQL_CATALOG_ERROR", "Iceberg REST table commit failed", {
+        url: this.tableUrl(),
+        status: response.status,
+        statusText: response.statusText,
+      });
+    }
+    return true;
+  }
+
+  private async requestJson(url: string, init: RequestInit): Promise<unknown> {
+    const response = await this.fetchFn(url, {
+      ...init,
+      headers: this.headers(init.body !== undefined),
+    });
+    if (!response.ok) {
+      throw new LaQLError("LAQL_CATALOG_ERROR", "Iceberg REST catalog request failed", {
+        url,
+        status: response.status,
+        statusText: response.statusText,
+      });
+    }
+    try {
+      return await response.json();
+    } catch (cause) {
+      throw new LaQLError("LAQL_CATALOG_ERROR", "Iceberg REST catalog response is not JSON", {
+        url,
+        cause,
+      });
+    }
+  }
+
+  private headers(hasBody: boolean): Headers {
+    const headers = new Headers({ accept: "application/json" });
+    if (hasBody) headers.set("content-type", "application/json");
+    if (this.token !== undefined) headers.set("authorization", `Bearer ${this.token}`);
+    return headers;
+  }
+
+  private tableUrl(): string {
+    return restCatalogUrl(this.url, [
+      "v1",
+      ...this.prefix,
+      "namespaces",
+      this.namespace.join("\u001f"),
+      "tables",
+      this.table,
+    ]);
+  }
+}
+
+export function icebergRestCatalog(options: IcebergRestCatalogOptions): IcebergRestCatalog {
+  return new IcebergRestCatalog(options);
+}
+
 export async function loadIcebergTable(options: LoadIcebergTableOptions): Promise<IcebergTable> {
   const bytes = await options.store.get(options.metadataPath);
   if (!bytes) {
@@ -514,6 +652,12 @@ export async function loadIcebergTableFromObjectStore(
       ? await latestMetadataPathFromList(options.store, metadataPrefix)
       : `${metadataPrefix}v${hintedVersion}.metadata.json`;
   return await loadIcebergTable({ store: options.store, metadataPath });
+}
+
+export async function loadIcebergTableFromRest(
+  options: LoadIcebergTableFromRestOptions,
+): Promise<IcebergTable> {
+  return await icebergRestCatalog(options).loadTable(options.store);
 }
 
 export function applyIcebergDeletes(options: ApplyIcebergDeletesOptions): Row[] {
@@ -685,6 +829,60 @@ async function latestMetadataPathFromList(
 
 function trimTrailingSlash(value: string): string {
   return value.endsWith("/") ? value.slice(0, -1) : value;
+}
+
+function restCatalogUrl(baseUrl: string, segments: string[]): string {
+  const url = new URL(baseUrl);
+  const basePath = url.pathname.replace(/\/+$/u, "");
+  const encodedSegments = segments.map((segment) => encodeURIComponent(segment));
+  url.pathname = [basePath, ...encodedSegments].filter((segment) => segment.length > 0).join("/");
+  return url.toString();
+}
+
+function namespaceParts(namespace: string | string[]): string[] {
+  const parts = Array.isArray(namespace) ? namespace : namespace.split(".");
+  const out = parts.map((part) => requiredNonEmptyString(part, "namespace"));
+  if (out.length === 0) {
+    throw new LaQLError("LAQL_VALIDATION_ERROR", "Iceberg REST namespace is required");
+  }
+  return out;
+}
+
+function catalogPrefixParts(prefix: string | undefined): string[] {
+  if (prefix === undefined || prefix.trim() === "") return [];
+  return prefix
+    .split("/")
+    .filter((part) => part.length > 0)
+    .map((part) => requiredNonEmptyString(part, "prefix"));
+}
+
+function requiredNonEmptyString(value: string, field: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    throw new LaQLError("LAQL_VALIDATION_ERROR", `Iceberg REST ${field} is required`);
+  }
+  return trimmed;
+}
+
+function restAppendSnapshot(input: IcebergCommitInput): Record<string, unknown> {
+  const snapshot = input.metadata.snapshots.at(-1);
+  if (snapshot === undefined) {
+    throw new LaQLError("LAQL_CATALOG_ERROR", "Iceberg append metadata is missing next snapshot");
+  }
+  return {
+    "snapshot-id": snapshot["snapshot-id"],
+    "parent-snapshot-id": input.expectedSnapshotId,
+    "timestamp-ms": snapshot["timestamp-ms"],
+    "schema-id": snapshot["schema-id"],
+    "manifest-list": input.manifestPath,
+    summary: {
+      operation: "append",
+      "added-data-files": String(input.manifest.files.length),
+      "added-records": String(
+        input.manifest.files.reduce((sum, file) => sum + file.recordCount, 0),
+      ),
+    },
+  };
 }
 
 function equalityKey(row: Row, columns: string[]): string {

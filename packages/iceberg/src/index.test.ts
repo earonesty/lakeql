@@ -20,8 +20,10 @@ import { readIcebergParquetDeletes, readParquetObjects } from "../../parquet/src
 import type { IcebergCommitCatalog, IcebergCommitInput } from "./index.js";
 import {
   applyIcebergDeletes,
+  icebergRestCatalog,
   loadIcebergTable,
   loadIcebergTableFromObjectStore,
+  loadIcebergTableFromRest,
   scanPlannedIcebergRows,
 } from "./index.js";
 
@@ -43,6 +45,38 @@ beforeAll(async () => {
 });
 
 describe("loadIcebergTable", () => {
+  it("loads a table through the Iceberg REST catalog API", async () => {
+    const restStore = memoryStore();
+    const metadata = JSON.parse(readFileSync(fixturePath(ICEBERG.metadataFile), "utf8")) as unknown;
+    const calls: RestFetchCall[] = [];
+    const fakeFetch = restFetch(calls, () =>
+      jsonResponse({
+        "metadata-location": ICEBERG.metadataFile,
+        metadata,
+      }),
+    );
+
+    const table = await loadIcebergTableFromRest({
+      store: restStore,
+      url: "https://catalog.example/warehouse",
+      prefix: "prod",
+      namespace: ["accounting", "tax"],
+      table: "places",
+      token: "token_123",
+      fetch: fakeFetch,
+    });
+
+    expect(table.metadataPath).toBe(ICEBERG.metadataFile);
+    expect(table.planFiles({ ref: "main" }).snapshotId).toBe(2);
+    expect(calls).toMatchObject([
+      {
+        url: "https://catalog.example/warehouse/v1/prod/namespaces/accounting%1Ftax/tables/places",
+        method: "GET",
+      },
+    ]);
+    expect(calls[0]?.headers.get("authorization")).toBe("Bearer token_123");
+  });
+
   it("loads the current metadata file from an object-store table location", async () => {
     const catalogStore = memoryStore();
     await catalogStore.put(ICEBERG.metadataFile, readFileSync(fixturePath(ICEBERG.metadataFile)));
@@ -566,6 +600,80 @@ describe("loadIcebergTable", () => {
     });
   });
 
+  it("appends files through the Iceberg REST catalog API", async () => {
+    const appendStore = memoryStore();
+    await appendStore.put(ICEBERG.metadataFile, readFileSync(fixturePath(ICEBERG.metadataFile)));
+    const table = await loadIcebergTable({
+      store: appendStore,
+      metadataPath: ICEBERG.metadataFile,
+    });
+    const calls: RestFetchCall[] = [];
+    const catalog = icebergRestCatalog({
+      url: "https://catalog.example",
+      namespace: "prod.analytics",
+      table: "places",
+      fetch: restFetch(calls, () =>
+        jsonResponse({
+          "metadata-location": "iceberg/warehouse/places/metadata/v3.metadata.json",
+          metadata: {},
+        }),
+      ),
+    });
+
+    const result = await table.appendFiles({
+      catalog,
+      jobId: "job_rest_append",
+      nowMs: 1_767_571_200_000,
+      files: [
+        {
+          path: "appends/date=2026-01-05/country=US/part-000.parquet",
+          partition: { country: "US", date: "2026-01-05" },
+          recordCount: 2,
+          fileSizeInBytes: 789,
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      snapshotId: 3,
+      metadataPath: "iceberg/warehouse/places/metadata/v3.metadata.json",
+      manifestPath: "iceberg/warehouse/places/metadata/job_rest_append-3.manifest.json",
+    });
+    await expect(appendStore.head(result.manifestPath)).resolves.toMatchObject({
+      contentType: "application/json",
+    });
+    await expect(appendStore.head(result.metadataPath)).resolves.toMatchObject({
+      contentType: "application/json",
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe(
+      "https://catalog.example/v1/namespaces/prod%1Fanalytics/tables/places",
+    );
+    expect(calls[0]?.method).toBe("POST");
+    expect(calls[0]?.body).toMatchObject({
+      identifier: { namespace: ["prod", "analytics"], name: "places" },
+      requirements: [{ type: "assert-ref-snapshot-id", ref: "main", "snapshot-id": 2 }],
+      updates: [
+        {
+          action: "add-snapshot",
+          snapshot: {
+            "snapshot-id": 3,
+            "parent-snapshot-id": 2,
+            "timestamp-ms": 1_767_571_200_000,
+            "manifest-list": "iceberg/warehouse/places/metadata/job_rest_append-3.manifest.json",
+            summary: { operation: "append", "added-data-files": "1", "added-records": "2" },
+          },
+        },
+        {
+          action: "set-snapshot-ref",
+          "ref-name": "main",
+          type: "branch",
+          "snapshot-id": 3,
+        },
+      ],
+    });
+  });
+
   it("rejects output manifest append entries without Iceberg metadata", async () => {
     const appendStore = memoryStore();
     await appendStore.put(ICEBERG.metadataFile, readFileSync(fixturePath(ICEBERG.metadataFile)));
@@ -685,6 +793,47 @@ describe("loadIcebergTable", () => {
     ).resolves.toBeNull();
   });
 
+  it("turns REST catalog commit conflicts into Iceberg commit conflicts", async () => {
+    const conflictStore = memoryStore();
+    await conflictStore.put(ICEBERG.metadataFile, readFileSync(fixturePath(ICEBERG.metadataFile)));
+    const table = await loadIcebergTable({
+      store: conflictStore,
+      metadataPath: ICEBERG.metadataFile,
+    });
+    const catalog = icebergRestCatalog({
+      url: "https://catalog.example",
+      namespace: "prod",
+      table: "places",
+      fetch: async () => jsonResponse({ error: { message: "conflict" } }, 409),
+    });
+
+    await expect(
+      table.appendFiles({
+        catalog,
+        files: [
+          {
+            path: "appends/rest-conflict.parquet",
+            partition: {},
+            recordCount: 1,
+            fileSizeInBytes: 10,
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: "LAQL_ICEBERG_COMMIT_CONFLICT" });
+  });
+
+  it("rejects malformed Iceberg REST load responses", async () => {
+    await expect(
+      loadIcebergTableFromRest({
+        store,
+        url: "https://catalog.example",
+        namespace: "prod",
+        table: "places",
+        fetch: async () => jsonResponse({ metadata: {} }),
+      }),
+    ).rejects.toMatchObject({ code: "LAQL_CATALOG_ERROR" });
+  });
+
   it("fails loudly for missing or malformed metadata", async () => {
     await expect(loadIcebergTable({ store, metadataPath: "missing.json" })).rejects.toMatchObject({
       code: "LAQL_OBJECT_NOT_FOUND",
@@ -761,3 +910,32 @@ describe("loadIcebergTable", () => {
     expect(() => badSchema.planFiles()).toThrow(/Unknown Iceberg schema/u);
   });
 });
+
+interface RestFetchCall {
+  url: string;
+  method: string;
+  headers: Headers;
+  body?: unknown;
+}
+
+function restFetch(
+  calls: RestFetchCall[],
+  handler: (input: RequestInfo | URL, init?: RequestInit) => Response,
+): typeof fetch {
+  return async (input, init) => {
+    calls.push({
+      url: String(input),
+      method: init?.method ?? "GET",
+      headers: new Headers(init?.headers),
+      ...(typeof init?.body === "string" ? { body: JSON.parse(init.body) as unknown } : {}),
+    });
+    return handler(input, init);
+  };
+}
+
+function jsonResponse(value: unknown, status = 200): Response {
+  return new Response(JSON.stringify(value), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}

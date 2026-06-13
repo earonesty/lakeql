@@ -33,6 +33,21 @@ const table = await loadIcebergTableFromObjectStore({
 });
 ```
 
+REST catalogs can load the current table metadata by identifier:
+
+```ts
+import { loadIcebergTableFromRest } from "@laql/iceberg";
+
+const table = await loadIcebergTableFromRest({
+  store,
+  url: "https://catalog.example",
+  prefix: "warehouse",
+  namespace: ["prod", "analytics"],
+  table: "places",
+  token: process.env.ICEBERG_CATALOG_TOKEN,
+});
+```
+
 Use `projectRow()` to map decoded physical rows into the selected Iceberg schema.
 For renamed fields, `sourceId` maps old physical column names to the current field
 name:
