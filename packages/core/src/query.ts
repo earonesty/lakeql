@@ -157,6 +157,24 @@ export interface TopKResult {
   operatorSpill?: SpillRef;
 }
 
+export interface SortOptions {
+  operatorState?: Uint8Array | SortOperatorState | { spillRef: string };
+  spill?: SpillAdapter;
+  spillId?: string;
+}
+
+export interface SortResult {
+  rows: Row[];
+  operatorState: Uint8Array;
+  operatorSpill?: SpillRef;
+}
+
+export interface SortOperatorState {
+  version: 1;
+  orderBy: OrderByTerm[];
+  runs: Record<string, OperatorSnapshotValue>[][];
+}
+
 export interface TopKOperatorState {
   version: 1;
   orderBy: OrderByTerm[];
@@ -383,6 +401,10 @@ export class QueryBuilder {
     return this.run().topKWithState(options);
   }
 
+  sortWithState(options: SortOptions = {}): Promise<SortResult> {
+    return this.run().sortWithState(options);
+  }
+
   first(): Promise<Row | undefined> {
     return this.run().first();
   }
@@ -551,6 +573,36 @@ export class QueryResult {
     if (options.spill !== undefined) {
       result.operatorSpill = await options.spill.write(
         options.spillId ?? `topk-${this.stats.queryId}`,
+        operatorState,
+      );
+    }
+    return result;
+  }
+
+  async sortWithState(options: SortOptions = {}): Promise<SortResult> {
+    const config = this.config;
+    if (config.orderBy === undefined) {
+      throw new LaQLError("LAQL_TYPE_ERROR", "sortWithState requires orderBy");
+    }
+    const orderBy = normalizeOrderBy(config.orderBy);
+    const runs = await sortRunsFromState(orderBy, options);
+    const startedAt = config.now();
+    await this.collectSortRuns(runs, orderBy, startedAt);
+    const matched = mergeSortRuns(runs, orderBy);
+    const start = config.offset ?? 0;
+    const end = config.limit === undefined ? matched.length : start + config.limit;
+    const rows = matched.slice(start, end).map((row) => project(row, config.select));
+    for (const _row of rows) {
+      this.stats.rowsReturned += 1;
+      enforceBudget(config.budget, this.stats, config.now, startedAt);
+    }
+    this.stats.elapsedMs = config.now() - startedAt;
+    const state = sortOperatorState(orderBy, runs);
+    const operatorState = serializeSortOperatorState(state);
+    const result: SortResult = { rows, operatorState };
+    if (options.spill !== undefined) {
+      result.operatorSpill = await options.spill.write(
+        options.spillId ?? `sort-${this.stats.queryId}`,
         operatorState,
       );
     }
@@ -756,6 +808,55 @@ export class QueryResult {
         }
       }
     }
+    stats.elapsedMs = config.now() - startedAt;
+  }
+
+  private async collectSortRuns(
+    runs: Row[][],
+    orderBy: OrderByTerm[],
+    startedAt: number,
+  ): Promise<void> {
+    const config = this.config;
+    const { stats } = this;
+    const { planned: paths, skipped: skippedFiles } = await this.planObjects();
+    stats.filesSkipped = skippedFiles;
+    const columns = projectedReadColumns(config.select, config.where, orderBy);
+    const runCapacity = config.budget.maxBufferedRows ?? Number.POSITIVE_INFINITY;
+    const currentRun: Row[] = [];
+    for (const object of paths) {
+      stats.filesPlanned += 1;
+      stats.filesRead += 1;
+      stats.bytesRequested += object.size;
+      enforceBudget(config.budget, stats, config.now, startedAt);
+      const scanOptions: ScanOptions = {
+        batchSize: config.batchSize ?? 4096,
+        stats,
+        budget: config.budget,
+        now: config.now,
+        startedAt,
+      };
+      const partitionValues = config.hive ? parseHivePartitions(object.path) : {};
+      const physicalColumns = columns?.filter((column) => !(column in partitionValues));
+      if (physicalColumns !== undefined && physicalColumns.length > 0) {
+        scanOptions.columns = physicalColumns;
+      }
+      if (config.where !== undefined) scanOptions.where = config.where;
+      for await (const rawBatch of config.scanner.scan(object.path, scanOptions)) {
+        for (const rawRow of rawBatch) {
+          const row = config.hive ? { ...partitionValues, ...rawRow } : rawRow;
+          stats.rowsDecoded += 1;
+          enforceBudget(config.budget, stats, config.now, startedAt);
+          if (!matches(config.where, row)) continue;
+          stats.rowsMatched += 1;
+          validateSortRow(row, orderBy);
+          currentRun.push(row);
+          enforceBufferedRowsBudget(config.budget, currentRun.length);
+          enforceOperatorMemoryBudget(config.budget, estimateOperatorMemoryBytes(currentRun));
+          if (currentRun.length >= runCapacity) flushSortRun(runs, currentRun, orderBy);
+        }
+      }
+    }
+    flushSortRun(runs, currentRun, orderBy);
     stats.elapsedMs = config.now() - startedAt;
   }
 
@@ -1173,11 +1274,22 @@ export function serializeTopKOperatorState(state: TopKOperatorState): Uint8Array
   return new TextEncoder().encode(stableStringify(state));
 }
 
+export function serializeSortOperatorState(state: SortOperatorState): Uint8Array {
+  return new TextEncoder().encode(stableStringify(state));
+}
+
 export function deserializeTopKOperatorState(
   bytes: Uint8Array | TopKOperatorState,
 ): TopKOperatorState {
   if (!(bytes instanceof Uint8Array)) return validateTopKOperatorState(bytes);
   return validateTopKOperatorState(JSON.parse(new TextDecoder().decode(bytes)));
+}
+
+export function deserializeSortOperatorState(
+  bytes: Uint8Array | SortOperatorState,
+): SortOperatorState {
+  if (!(bytes instanceof Uint8Array)) return validateSortOperatorState(bytes);
+  return validateSortOperatorState(JSON.parse(new TextDecoder().decode(bytes)));
 }
 
 async function topKRowsFromState(
@@ -1214,6 +1326,27 @@ async function topKRowsFromState(
   return snapshot.rows.map((row) => ({ ...row }));
 }
 
+async function sortRunsFromState(orderBy: OrderByTerm[], options: SortOptions): Promise<Row[][]> {
+  const state =
+    isSpilledOperatorState(options.operatorState) && options.spill !== undefined
+      ? await options.spill.read(options.operatorState.spillRef)
+      : options.operatorState;
+  if (isSpilledOperatorState(state)) {
+    throw new LaQLError("LAQL_BOOKMARK_INVALID", "Sort spill state requires a spill adapter", {
+      spillRef: state.spillRef,
+    });
+  }
+  if (state === undefined) return [];
+  const snapshot = deserializeSortOperatorState(state);
+  if (stableStringify(snapshot.orderBy) !== stableStringify(orderBy)) {
+    throw new LaQLError("LAQL_BOOKMARK_STALE", "Sort operator state does not match request", {
+      stateOrderBy: snapshot.orderBy,
+      orderBy,
+    });
+  }
+  return snapshot.runs.map((run) => run.map((row) => ({ ...row })));
+}
+
 function topKOperatorState(
   orderBy: OrderByTerm[],
   offset: number,
@@ -1229,6 +1362,14 @@ function topKOperatorState(
   };
 }
 
+function sortOperatorState(orderBy: OrderByTerm[], runs: Row[][]): SortOperatorState {
+  return {
+    version: 1,
+    orderBy: normalizeOrderBy(orderBy),
+    runs: runs.map((run) => run.map(snapshotRecord)),
+  };
+}
+
 function validateTopKOperatorState(value: unknown): TopKOperatorState {
   if (!isTopKOperatorState(value)) {
     throw new LaQLError("LAQL_BOOKMARK_INVALID", "Top-k operator state is invalid");
@@ -1239,6 +1380,17 @@ function validateTopKOperatorState(value: unknown): TopKOperatorState {
     offset: value.offset,
     limit: value.limit,
     rows: value.rows.map((row) => ({ ...row })),
+  };
+}
+
+function validateSortOperatorState(value: unknown): SortOperatorState {
+  if (!isSortOperatorState(value)) {
+    throw new LaQLError("LAQL_BOOKMARK_INVALID", "Sort operator state is invalid");
+  }
+  return {
+    version: 1,
+    orderBy: normalizeOrderBy(value.orderBy),
+    runs: value.runs.map((run) => run.map((row) => ({ ...row }))),
   };
 }
 
@@ -1375,6 +1527,17 @@ function isTopKOperatorState(value: unknown): value is TopKOperatorState {
     Array.isArray(value.rows) &&
     value.rows.length <= value.offset + value.limit &&
     value.rows.every(isTopKSnapshotRow)
+  );
+}
+
+function isSortOperatorState(value: unknown): value is SortOperatorState {
+  return (
+    isRecord(value) &&
+    value.version === 1 &&
+    Array.isArray(value.orderBy) &&
+    value.orderBy.every(isOrderByTerm) &&
+    Array.isArray(value.runs) &&
+    value.runs.every((run) => Array.isArray(run) && run.every((row) => isTopKSnapshotRow(row)))
   );
 }
 
@@ -1960,6 +2123,34 @@ function addOrderedMatch(
   }
   const worst = matched[worstIndex];
   if (worst !== undefined && compareRows(row, worst, orderBy) < 0) matched[worstIndex] = row;
+}
+
+function flushSortRun(runs: Row[][], currentRun: Row[], orderBy: OrderByTerm[]): void {
+  if (currentRun.length === 0) return;
+  currentRun.sort((left, right) => compareRows(left, right, orderBy));
+  runs.push(currentRun.splice(0, currentRun.length));
+}
+
+function mergeSortRuns(runs: Row[][], orderBy: OrderByTerm[]): Row[] {
+  const cursors = runs.map(() => 0);
+  const out: Row[] = [];
+  while (true) {
+    let bestRun = -1;
+    let bestRow: Row | undefined;
+    for (let runIndex = 0; runIndex < runs.length; runIndex += 1) {
+      const run = runs[runIndex];
+      const cursor = cursors[runIndex] ?? 0;
+      const row = run?.[cursor];
+      if (row === undefined) continue;
+      if (bestRow === undefined || compareRows(row, bestRow, orderBy) < 0) {
+        bestRow = row;
+        bestRun = runIndex;
+      }
+    }
+    if (bestRow === undefined) return out;
+    out.push(bestRow);
+    cursors[bestRun] = (cursors[bestRun] ?? 0) + 1;
+  }
 }
 
 function validateSortRow(row: Row, orderBy: OrderByTerm[]): void {

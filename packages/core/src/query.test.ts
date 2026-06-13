@@ -6,6 +6,7 @@ import { memoryStore } from "./memory-store.js";
 import {
   type AggregateSpec,
   deserializeAggregateOperatorState,
+  deserializeSortOperatorState,
   deserializeTopKOperatorState,
   Lake,
   parseHivePartitions,
@@ -13,6 +14,7 @@ import {
   type ScanAdapter,
   type ScanOptions,
   serializeAggregateOperatorState,
+  serializeSortOperatorState,
   serializeTopKOperatorState,
 } from "./query.js";
 import { memorySpillAdapter } from "./runtime.js";
@@ -851,6 +853,86 @@ describe("Lake query runtime", () => {
         .limit(1)
         .topKWithState(),
     ).rejects.toMatchObject({ code: "LAQL_TYPE_ERROR" });
+  });
+
+  it("serializes and resumes full sort operator state", async () => {
+    const first = await makeLake({
+      rowsByPath: { table: [{ id: 5 }, { id: 1 }, { id: 4 }] },
+      budget: { maxBufferedRows: 6 },
+    });
+    const partial = await first.lake
+      .path("table")
+      .orderBy([{ column: "id" }])
+      .sortWithState();
+    expect(partial.rows).toEqual([{ id: 1 }, { id: 4 }, { id: 5 }]);
+
+    const snapshot = deserializeSortOperatorState(partial.operatorState);
+    expect(deserializeSortOperatorState(serializeSortOperatorState(snapshot))).toEqual(snapshot);
+    expect(snapshot.runs.map((run) => run.map((row) => row.id))).toEqual([[1, 4, 5]]);
+    const spill = memorySpillAdapter();
+    const spilled = await first.lake
+      .path("table")
+      .orderBy([{ column: "id" }])
+      .sortWithState({ spill, spillId: "sort-state" });
+    expect(spilled.operatorSpill).toEqual({
+      id: "sort-state",
+      byteSize: spilled.operatorState.byteLength,
+    });
+    await expect(spill.read("sort-state")).resolves.toEqual(spilled.operatorState);
+
+    const second = await makeLake({
+      rowsByPath: { table: [{ id: 2 }, { id: 3 }, { id: 0 }] },
+      budget: { maxBufferedRows: 6 },
+    });
+    await expect(
+      second.lake
+        .path("table")
+        .orderBy([{ column: "id" }])
+        .sortWithState({ operatorState: partial.operatorState }),
+    ).resolves.toMatchObject({
+      rows: [{ id: 0 }, { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }],
+    });
+    const chunked = await (
+      await makeLake({
+        rowsByPath: { table: [{ id: 5 }, { id: 1 }, { id: 4 }, { id: 2 }, { id: 3 }] },
+        budget: { maxBufferedRows: 2 },
+      })
+    ).lake
+      .path("table")
+      .orderBy([{ column: "id" }])
+      .sortWithState();
+    expect(chunked.rows).toEqual([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }]);
+    expect(
+      deserializeSortOperatorState(chunked.operatorState).runs.map((run) => run.length),
+    ).toEqual([2, 2, 1]);
+    await expect(
+      second.lake
+        .path("table")
+        .orderBy([{ column: "id" }])
+        .offset(2)
+        .limit(2)
+        .sortWithState({ operatorState: { spillRef: "sort-state" }, spill }),
+    ).resolves.toMatchObject({
+      rows: [{ id: 2 }, { id: 3 }],
+    });
+    await expect(
+      second.lake
+        .path("table")
+        .orderBy([{ column: "id" }])
+        .sortWithState({ operatorState: { spillRef: "sort-state" } }),
+    ).rejects.toMatchObject({ code: "LAQL_BOOKMARK_INVALID" });
+    await expect(
+      second.lake
+        .path("table")
+        .orderBy([{ column: "id", direction: "desc" }])
+        .sortWithState({ operatorState: partial.operatorState }),
+    ).rejects.toMatchObject({ code: "LAQL_BOOKMARK_STALE" });
+    await expect(
+      second.lake
+        .path("table")
+        .orderBy([{ column: "id" }])
+        .sortWithState({ operatorState: new TextEncoder().encode("{}") }),
+    ).rejects.toMatchObject({ code: "LAQL_BOOKMARK_INVALID" });
   });
 
   it("rejects stale or invalid slice bookmarks", async () => {
