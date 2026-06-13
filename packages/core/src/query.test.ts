@@ -244,6 +244,11 @@ describe("Lake query runtime", () => {
       filesPlanned: 2,
       filesSkipped: 1,
       projectedColumns: ["amount", "country", "id"],
+      predicatePlan: {
+        partition: [{ kind: "compare", op: "eq" }],
+        rowGroupStats: [{ kind: "compare", op: "gt" }],
+        residual: [],
+      },
     });
     expect(explain.text).toContain("files skipped: 1");
   });

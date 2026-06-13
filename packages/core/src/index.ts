@@ -4,6 +4,7 @@ export * from "./expr.js";
 export * from "./join.js";
 export * from "./manifest.js";
 export * from "./memory-store.js";
+export * from "./predicate-plan.js";
 export * from "./query.js";
 export * from "./runtime.js";
 export * from "./sidecar-index.js";

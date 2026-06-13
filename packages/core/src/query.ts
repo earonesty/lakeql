@@ -9,6 +9,7 @@ import {
   stableStringify,
   type TaskManifest,
 } from "./manifest.js";
+import { classifyPredicate, type PredicatePlan } from "./predicate-plan.js";
 import type { ObjectInfo, ObjectStore } from "./store.js";
 import type { Bookmark, BookmarkQuery, QueryStats, Row, SliceResult } from "./types.js";
 
@@ -196,6 +197,7 @@ export interface ExplainJson {
   filesPlanned: number;
   filesSkipped: number;
   projectedColumns: string[];
+  predicatePlan: PredicatePlan;
   tasks: TaskInput[];
 }
 
@@ -746,6 +748,10 @@ export class QueryResult {
       filesPlanned: tasks.length,
       filesSkipped: skipped,
       projectedColumns,
+      predicatePlan: classifyPredicate(this.config.where, {
+        partitionColumns: partitionColumnsFromTasks(tasks),
+        rowGroupStatsColumns: projectedColumns,
+      }),
       tasks,
     };
     return {
@@ -1758,6 +1764,14 @@ async function expandPaths(store: ObjectStore, pattern: string): Promise<ObjectI
   }
   paths.sort((a, b) => a.path.localeCompare(b.path));
   return paths;
+}
+
+function partitionColumnsFromTasks(tasks: TaskInput[]): string[] {
+  const columns = new Set<string>();
+  for (const task of tasks) {
+    for (const column of Object.keys(task.partitionValues)) columns.add(column);
+  }
+  return [...columns].sort();
 }
 
 function hasGlob(pattern: string): boolean {
