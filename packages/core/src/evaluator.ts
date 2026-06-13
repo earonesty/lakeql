@@ -234,6 +234,12 @@ function callFunction(name: string, args: EvalValue[]): EvalValue {
       return leastGreatest(fn, args, "least");
     case "greatest":
       return leastGreatest(fn, args, "greatest");
+    case "st_point":
+      return stPoint(args);
+    case "st_x":
+      return pointCoordinate(fn, args, 0);
+    case "st_y":
+      return pointCoordinate(fn, args, 1);
     case "st_bbox":
       return stBBox(args);
     case "st_intersects":
@@ -242,6 +248,20 @@ function callFunction(name: string, args: EvalValue[]): EvalValue {
       return spatialPredicate(fn, args, bboxContains);
     case "st_within":
       return spatialPredicate(fn, args, (left, right) => bboxContains(right, left));
+    case "st_disjoint":
+      return spatialPredicate(fn, args, (left, right) => !bboxIntersects(left, right));
+    case "st_distance":
+      return spatialMeasurement(fn, args, bboxDistance);
+    case "st_area":
+      return geometryMeasurement(fn, args, geometryArea);
+    case "st_length":
+      return geometryMeasurement(fn, args, geometryLength);
+    case "st_centroid":
+      return geometryTransform(fn, args, geometryCentroid);
+    case "st_envelope":
+      return geometryTransform(fn, args, (geometry) =>
+        JSON.stringify(envelopeFromGeometry(geometry, fn)),
+      );
     case "h3_in":
       return h3In(args);
     case "h3_within":
@@ -304,19 +324,26 @@ function replace(args: EvalValue[]): EvalValue {
   return value.replaceAll(search, replacement);
 }
 
+function stPoint(args: EvalValue[]): EvalValue {
+  requireArgCount("st_point", args, 2);
+  const [lon, lat] = args;
+  if (!finiteNumber(lon) || !finiteNumber(lat)) {
+    throw new LaQLError("LAQL_TYPE_ERROR", "st_point() expects finite lon/lat numbers");
+  }
+  return JSON.stringify({ type: "Point", coordinates: [lon, lat] });
+}
+
+function pointCoordinate(name: string, args: EvalValue[], index: 0 | 1): EvalValue {
+  requireArgCount(name, args, 1);
+  const value = args[0] ?? null;
+  if (value === null) return null;
+  return pointFromGeometry(parseGeometry(value, name), name)[index];
+}
+
 function stBBox(args: EvalValue[]): EvalValue {
   requireArgCount("st_bbox", args, 4);
   const [minx, miny, maxx, maxy] = args;
-  if (
-    typeof minx !== "number" ||
-    typeof miny !== "number" ||
-    typeof maxx !== "number" ||
-    typeof maxy !== "number" ||
-    !Number.isFinite(minx) ||
-    !Number.isFinite(miny) ||
-    !Number.isFinite(maxx) ||
-    !Number.isFinite(maxy)
-  ) {
+  if (!finiteNumber(minx) || !finiteNumber(miny) || !finiteNumber(maxx) || !finiteNumber(maxy)) {
     throw new LaQLError("LAQL_TYPE_ERROR", "st_bbox() expects finite number bounds");
   }
   if (minx > maxx || miny > maxy) {
@@ -335,6 +362,40 @@ function spatialPredicate(
   const right = args[1] ?? null;
   if (left === null || right === null) return null;
   return predicate(envelope(left, name), envelope(right, name));
+}
+
+function spatialMeasurement(
+  name: string,
+  args: EvalValue[],
+  measure: (left: BBox, right: BBox) => number,
+): EvalValue {
+  requireArgCount(name, args, 2);
+  const left = args[0] ?? null;
+  const right = args[1] ?? null;
+  if (left === null || right === null) return null;
+  return measure(envelope(left, name), envelope(right, name));
+}
+
+function geometryMeasurement(
+  name: string,
+  args: EvalValue[],
+  measure: (geometry: Record<string, unknown>, name: string) => number,
+): EvalValue {
+  requireArgCount(name, args, 1);
+  const value = args[0] ?? null;
+  if (value === null) return null;
+  return measure(parseGeometry(value, name), name);
+}
+
+function geometryTransform(
+  name: string,
+  args: EvalValue[],
+  transform: (geometry: Record<string, unknown>) => string,
+): EvalValue {
+  requireArgCount(name, args, 1);
+  const value = args[0] ?? null;
+  if (value === null) return null;
+  return transform(parseGeometry(value, name));
 }
 
 function h3In(args: EvalValue[]): EvalValue {
@@ -373,6 +434,10 @@ function h3Prefix(cell: string, k: number): string {
 }
 
 function envelope(value: EvalValue, name: string): BBox {
+  return envelopeFromGeometry(parseGeometry(value, name), name);
+}
+
+function parseGeometry(value: EvalValue, name: string): Record<string, unknown> {
   if (typeof value !== "string") throwType(name, "GeoJSON or BBox JSON string", value);
   let parsed: unknown;
   try {
@@ -385,47 +450,43 @@ function envelope(value: EvalValue, name: string): BBox {
   if (!isRecord(parsed) || typeof parsed.type !== "string") {
     throw new LaQLError("LAQL_TYPE_ERROR", `${name}() expects GeoJSON or BBox JSON`);
   }
+  return parsed;
+}
+
+function envelopeFromGeometry(parsed: Record<string, unknown>, name: string): BBox {
   if (parsed.type === "BBox") return bboxFromRecord(parsed, name);
   if (parsed.type === "Point") return pointEnvelope(parsed, name);
+  if (parsed.type === "LineString") return lineStringEnvelope(parsed, name);
   if (parsed.type === "Polygon") return polygonEnvelope(parsed, name);
-  throw new LaQLError("LAQL_TYPE_ERROR", `${name}() supports Point, Polygon, or BBox geometry`);
+  throw new LaQLError(
+    "LAQL_TYPE_ERROR",
+    `${name}() supports Point, LineString, Polygon, or BBox geometry`,
+  );
 }
 
 function bboxFromRecord(record: Record<string, unknown>, name: string): BBox {
   const { minx, miny, maxx, maxy } = record;
-  if (
-    typeof minx !== "number" ||
-    typeof miny !== "number" ||
-    typeof maxx !== "number" ||
-    typeof maxy !== "number" ||
-    !Number.isFinite(minx) ||
-    !Number.isFinite(miny) ||
-    !Number.isFinite(maxx) ||
-    !Number.isFinite(maxy)
-  ) {
+  if (!finiteNumber(minx) || !finiteNumber(miny) || !finiteNumber(maxx) || !finiteNumber(maxy)) {
     throw new LaQLError("LAQL_TYPE_ERROR", `${name}() BBox values must be finite numbers`);
   }
   return { minx, miny, maxx, maxy };
 }
 
 function pointEnvelope(record: Record<string, unknown>, name: string): BBox {
-  const point = record.coordinates;
-  if (!isPosition(point)) {
-    throw new LaQLError("LAQL_TYPE_ERROR", `${name}() Point coordinates are invalid`);
-  }
-  const [x, y] = point;
+  const [x, y] = pointFromGeometry(record, name);
   return { minx: x, miny: y, maxx: x, maxy: y };
 }
 
+function lineStringEnvelope(record: Record<string, unknown>, name: string): BBox {
+  return pointsEnvelope(lineStringPoints(record, name));
+}
+
 function polygonEnvelope(record: Record<string, unknown>, name: string): BBox {
-  const rings = record.coordinates;
-  if (!Array.isArray(rings)) {
-    throw new LaQLError("LAQL_TYPE_ERROR", `${name}() Polygon coordinates are invalid`);
-  }
-  const points = rings.flat();
-  if (points.length === 0 || !points.every(isPosition)) {
-    throw new LaQLError("LAQL_TYPE_ERROR", `${name}() Polygon coordinates are invalid`);
-  }
+  const points = polygonPoints(record, name);
+  return pointsEnvelope(points);
+}
+
+function pointsEnvelope(points: [number, number][]): BBox {
   let minx = Number.POSITIVE_INFINITY;
   let miny = Number.POSITIVE_INFINITY;
   let maxx = Number.NEGATIVE_INFINITY;
@@ -457,6 +518,104 @@ function bboxContains(left: BBox, right: BBox): boolean {
   );
 }
 
+function bboxDistance(left: BBox, right: BBox): number {
+  const dx =
+    left.maxx < right.minx
+      ? right.minx - left.maxx
+      : right.maxx < left.minx
+        ? left.minx - right.maxx
+        : 0;
+  const dy =
+    left.maxy < right.miny
+      ? right.miny - left.maxy
+      : right.maxy < left.miny
+        ? left.miny - right.maxy
+        : 0;
+  return Math.hypot(dx, dy);
+}
+
+function geometryArea(geometry: Record<string, unknown>, name: string): number {
+  if (geometry.type === "BBox") {
+    const box = bboxFromRecord(geometry, name);
+    return (box.maxx - box.minx) * (box.maxy - box.miny);
+  }
+  if (geometry.type === "Polygon") return Math.abs(ringArea(polygonPoints(geometry, name)));
+  if (geometry.type === "Point" || geometry.type === "LineString") return 0;
+  throw new LaQLError("LAQL_TYPE_ERROR", `${name}() unsupported geometry type`, {
+    type: geometry.type,
+  });
+}
+
+function geometryLength(geometry: Record<string, unknown>, name: string): number {
+  if (geometry.type === "BBox") {
+    const box = bboxFromRecord(geometry, name);
+    return 2 * (box.maxx - box.minx + (box.maxy - box.miny));
+  }
+  if (geometry.type === "LineString") return pathLength(lineStringPoints(geometry, name));
+  if (geometry.type === "Polygon") return pathLength(polygonPoints(geometry, name));
+  if (geometry.type === "Point") return 0;
+  throw new LaQLError("LAQL_TYPE_ERROR", `${name}() unsupported geometry type`, {
+    type: geometry.type,
+  });
+}
+
+function geometryCentroid(geometry: Record<string, unknown>): string {
+  const box = envelopeFromGeometry(geometry, "st_centroid");
+  return JSON.stringify({
+    type: "Point",
+    coordinates: [(box.minx + box.maxx) / 2, (box.miny + box.maxy) / 2],
+  });
+}
+
+function pointFromGeometry(record: Record<string, unknown>, name: string): [number, number] {
+  if (record.type !== "Point" || !isPosition(record.coordinates)) {
+    throw new LaQLError("LAQL_TYPE_ERROR", `${name}() Point coordinates are invalid`);
+  }
+  return record.coordinates;
+}
+
+function lineStringPoints(record: Record<string, unknown>, name: string): [number, number][] {
+  const points = record.coordinates;
+  if (!Array.isArray(points) || points.length === 0 || !points.every(isPosition)) {
+    throw new LaQLError("LAQL_TYPE_ERROR", `${name}() LineString coordinates are invalid`);
+  }
+  return points;
+}
+
+function polygonPoints(record: Record<string, unknown>, name: string): [number, number][] {
+  const rings = record.coordinates;
+  if (!Array.isArray(rings)) {
+    throw new LaQLError("LAQL_TYPE_ERROR", `${name}() Polygon coordinates are invalid`);
+  }
+  const points = rings.flat();
+  if (points.length === 0 || !points.every(isPosition)) {
+    throw new LaQLError("LAQL_TYPE_ERROR", `${name}() Polygon coordinates are invalid`);
+  }
+  return points;
+}
+
+function ringArea(points: [number, number][]): number {
+  let area = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const current = points[index];
+    const next = points[(index + 1) % points.length];
+    if (current === undefined || next === undefined) continue;
+    area += current[0] * next[1] - next[0] * current[1];
+  }
+  return area / 2;
+}
+
+function pathLength(points: [number, number][]): number {
+  let length = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = points[index - 1];
+    const current = points[index];
+    if (previous === undefined || current === undefined) continue;
+    length += Math.hypot(current[0] - previous[0], current[1] - previous[1]);
+  }
+  return length;
+}
+
 function isPosition(value: unknown): value is [number, number] {
   return (
     Array.isArray(value) &&
@@ -466,6 +625,10 @@ function isPosition(value: unknown): value is [number, number] {
     Number.isFinite(value[0]) &&
     Number.isFinite(value[1])
   );
+}
+
+function finiteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

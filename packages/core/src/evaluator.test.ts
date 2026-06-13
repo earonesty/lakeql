@@ -97,13 +97,41 @@ describe("evaluate", () => {
 
   it("supports spatial and h3 scalar predicates", () => {
     const bbox = fn("st_bbox", -118.5, 34, -118, 34.3);
+    const line = JSON.stringify({
+      type: "LineString",
+      coordinates: [
+        [0, 0],
+        [3, 4],
+      ],
+    });
     expect(evaluate(bbox, row)).toBe(
       '{"type":"BBox","minx":-118.5,"miny":34,"maxx":-118,"maxy":34.3}',
     );
+    expect(evaluate(fn("st_point", -118.24, 34.05), row)).toBe(row.geom);
+    expect(evaluate(fn("st_x", col("geom")), row)).toBe(-118.24);
+    expect(evaluate(fn("st_y", col("geom")), row)).toBe(34.05);
     expect(evaluate(fn("st_intersects", col("geom"), bbox), row)).toBe(true);
+    expect(evaluate(fn("st_disjoint", col("geom"), fn("st_bbox", 0, 0, 1, 1)), row)).toBe(true);
     expect(evaluate(fn("st_contains", col("polygon"), col("geom")), row)).toBe(true);
     expect(evaluate(fn("st_within", col("geom"), col("polygon")), row)).toBe(true);
     expect(evaluate(fn("st_intersects", col("geom"), fn("st_bbox", 0, 0, 1, 1)), row)).toBe(false);
+    expect(
+      evaluate(fn("st_distance", fn("st_bbox", 0, 0, 1, 1), fn("st_bbox", 4, 5, 6, 7)), row),
+    ).toBe(5);
+    expect(
+      evaluate(fn("st_distance", fn("st_bbox", 4, 5, 6, 7), fn("st_bbox", 0, 0, 1, 1)), row),
+    ).toBe(5);
+    expect(evaluate(fn("st_area", col("polygon")), row)).toBe(4);
+    expect(evaluate(fn("st_area", bbox), row)).toBeCloseTo(0.15);
+    expect(evaluate(fn("st_area", col("geom")), row)).toBe(0);
+    expect(evaluate(fn("st_length", line), row)).toBe(5);
+    expect(evaluate(fn("st_length", bbox), row)).toBeCloseTo(1.6);
+    expect(evaluate(fn("st_length", col("polygon")), row)).toBe(8);
+    expect(evaluate(fn("st_length", col("geom")), row)).toBe(0);
+    expect(evaluate(fn("st_centroid", col("polygon")), row)).toBe(
+      '{"type":"Point","coordinates":[-118,34]}',
+    );
+    expect(evaluate(fn("st_envelope", line), row)).toBe('{"minx":0,"miny":0,"maxx":3,"maxy":4}');
     expect(evaluate(fn("h3_in", col("h3_8"), JSON.stringify(["8829a1d757fffff"])), row)).toBe(true);
     expect(evaluate(fn("h3_in", col("h3_8"), JSON.stringify(["8829a1d753fffff"])), row)).toBe(
       false,
@@ -122,6 +150,7 @@ describe("evaluate", () => {
     expect(evaluate(fn("round", lit(null)), row)).toBeNull();
     expect(evaluate(fn("least", 1, lit(null)), row)).toBeNull();
     expect(evaluate(fn("st_intersects", lit(null), col("geom")), row)).toBeNull();
+    expect(evaluate(fn("st_length", lit(null)), row)).toBeNull();
     expect(evaluate(fn("h3_in", lit(null), JSON.stringify(["8829a1d757fffff"])), row)).toBeNull();
     expect(evaluate(fn("h3_within", lit(null), "8829a1d757fffff", 1), row)).toBeNull();
   });
@@ -144,6 +173,11 @@ describe("evaluate", () => {
     expect(() => evaluate(fn("least"), row)).toThrowError(LaQLError);
     expect(() => evaluate(fn("st_bbox", -118, 34, -119, 35), row)).toThrowError(LaQLError);
     expect(() => evaluate(fn("st_bbox", "x", 34, -118, 35), row)).toThrowError(LaQLError);
+    expect(() => evaluate(fn("st_point", "x", 34), row)).toThrowError(LaQLError);
+    expect(() => evaluate(fn("st_x", col("polygon")), row)).toThrowError(LaQLError);
+    expect(() =>
+      evaluate(fn("st_envelope", '{"type":"MultiPoint","coordinates":[]}'), row),
+    ).toThrowError(LaQLError);
     expect(() => evaluate(fn("st_intersects", "not-json", col("geom")), row)).toThrowError(
       LaQLError,
     );
@@ -157,6 +191,18 @@ describe("evaluate", () => {
     expect(() =>
       evaluate(fn("st_intersects", '{"type":"Polygon","coordinates":[]}', col("geom")), row),
     ).toThrowError(LaQLError);
+    expect(() =>
+      evaluate(fn("st_length", '{"type":"LineString","coordinates":[]}'), row),
+    ).toThrowError(LaQLError);
+    expect(() =>
+      evaluate(fn("st_area", '{"type":"MultiPoint","coordinates":[]}'), row),
+    ).toThrowError(LaQLError);
+    expect(() =>
+      evaluate(fn("st_length", '{"type":"MultiPoint","coordinates":[]}'), row),
+    ).toThrowError(LaQLError);
+    expect(() => evaluate(fn("st_area", '{"type":"Polygon","coordinates":{}}'), row)).toThrowError(
+      LaQLError,
+    );
     expect(() => evaluate(fn("h3_in", col("h3_8"), "{}"), row)).toThrowError(LaQLError);
     expect(() => evaluate(fn("h3_in", 1, "[]"), row)).toThrowError(LaQLError);
     expect(() => evaluate(fn("h3_within", 1, "8829a1d757fffff", 1), row)).toThrowError(LaQLError);
