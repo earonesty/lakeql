@@ -1,5 +1,6 @@
 import { LaQLError } from "./errors.js";
 import type { TaskInput } from "./query.js";
+import type { ObjectStore } from "./store.js";
 import type { Bookmark, BookmarkQuery } from "./types.js";
 
 export interface TaskManifestTask {
@@ -143,6 +144,41 @@ export async function createOutputManifestFromCheckpoints(input: {
     planFingerprint: input.planFingerprint,
     entries,
   });
+}
+
+export async function writeOutputManifest(
+  store: ObjectStore,
+  path: string,
+  manifest: OutputManifest,
+): Promise<{ path: string; byteSize: number; etag?: string }> {
+  const bytes = new TextEncoder().encode(`${stableStringify(manifest)}\n`);
+  await store.put(path, bytes, { contentType: "application/json" });
+  const head = await store.head(path);
+  const result: { path: string; byteSize: number; etag?: string } = {
+    path,
+    byteSize: head?.size ?? bytes.byteLength,
+  };
+  if (head?.etag !== undefined) result.etag = head.etag;
+  return result;
+}
+
+export async function readOutputManifest(
+  store: ObjectStore,
+  path: string,
+): Promise<OutputManifest> {
+  const bytes = await store.get(path);
+  if (!bytes) {
+    throw new LaQLError("LAQL_OBJECT_NOT_FOUND", `No output manifest at ${path}`, { path });
+  }
+  try {
+    return parseOutputManifest(JSON.parse(new TextDecoder().decode(bytes)));
+  } catch (cause) {
+    if (cause instanceof LaQLError) throw cause;
+    throw new LaQLError("LAQL_VALIDATION_ERROR", "Output manifest is invalid JSON", {
+      path,
+      cause,
+    });
+  }
 }
 
 export function createBookmark(init: BookmarkInit): Bookmark {
@@ -335,6 +371,77 @@ function normalizeOutputEntry(entry: OutputManifestEntry): OutputManifestEntry {
   return normalized;
 }
 
+function parseOutputManifest(value: unknown): OutputManifest {
+  if (
+    !isRecord(value) ||
+    value.version !== 1 ||
+    typeof value.jobId !== "string" ||
+    value.jobId.length === 0 ||
+    typeof value.planFingerprint !== "string" ||
+    value.planFingerprint.length === 0 ||
+    !Array.isArray(value.entries)
+  ) {
+    throw new LaQLError("LAQL_VALIDATION_ERROR", "Output manifest has invalid required fields");
+  }
+  return createOutputManifest({
+    jobId: value.jobId,
+    planFingerprint: value.planFingerprint,
+    entries: value.entries.map(parseOutputEntry),
+  });
+}
+
+function parseOutputEntry(value: unknown): OutputManifestEntry {
+  if (
+    !isRecord(value) ||
+    typeof value.taskId !== "string" ||
+    value.taskId.length === 0 ||
+    typeof value.outputPath !== "string" ||
+    value.outputPath.length === 0 ||
+    !isStringRecord(value.partitionValues) ||
+    !isNonNegativeInteger(value.rowCount) ||
+    !isNonNegativeInteger(value.byteSize)
+  ) {
+    throw new LaQLError("LAQL_VALIDATION_ERROR", "Output manifest entry is invalid");
+  }
+  const entry: OutputManifestEntry = {
+    taskId: value.taskId,
+    outputPath: value.outputPath,
+    partitionValues: value.partitionValues,
+    rowCount: value.rowCount,
+    byteSize: value.byteSize,
+  };
+  if (value.contentHash !== undefined) {
+    if (typeof value.contentHash !== "string" || value.contentHash.length === 0) {
+      throw new LaQLError("LAQL_VALIDATION_ERROR", "Output manifest content hash is invalid");
+    }
+    entry.contentHash = value.contentHash;
+  }
+  if (value.etag !== undefined) {
+    if (typeof value.etag !== "string" || value.etag.length === 0) {
+      throw new LaQLError("LAQL_VALIDATION_ERROR", "Output manifest etag is invalid");
+    }
+    entry.etag = value.etag;
+  }
+  if (value.iceberg !== undefined) entry.iceberg = parseOutputIcebergMetadata(value.iceberg);
+  return entry;
+}
+
+function parseOutputIcebergMetadata(value: unknown): NonNullable<OutputManifestEntry["iceberg"]> {
+  if (
+    !isRecord(value) ||
+    !isNonNegativeInteger(value.recordCount) ||
+    !isNonNegativeInteger(value.fileSizeInBytes) ||
+    !isStringRecord(value.partitionValues)
+  ) {
+    throw new LaQLError("LAQL_VALIDATION_ERROR", "Output manifest Iceberg metadata is invalid");
+  }
+  return {
+    recordCount: value.recordCount,
+    fileSizeInBytes: value.fileSizeInBytes,
+    partitionValues: value.partitionValues,
+  };
+}
+
 function snapshotFromTasks(tasks: TaskInput[]): string {
   return fingerprint(
     tasks.map((task) => ({
@@ -412,6 +519,10 @@ function sortRecord(record: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const key of Object.keys(record).sort()) out[key] = record[key] ?? "";
   return out;
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return isRecord(value) && Object.values(value).every((inner) => typeof inner === "string");
 }
 
 function fnv1a64(input: string): bigint {

@@ -10,10 +10,12 @@ import {
   createTaskManifest,
   fingerprint,
   memoryCheckpointAdapter,
+  readOutputManifest,
   signPaginationToken,
   stableStringify,
   transitionTaskCheckpoint,
   verifyPaginationToken,
+  writeOutputManifest,
 } from "./manifest.js";
 import { memoryStore } from "./memory-store.js";
 import { Lake, type ScanAdapter, type ScanOptions } from "./query.js";
@@ -152,6 +154,83 @@ describe("task and output manifests", () => {
       }),
     ).toBe('{"array":["1","2026-01-01T00:00:00.000Z"],"bytes":"AQID","notFinite":"NaN"}');
     expect(fingerprint(taskManifest)).toBe(fingerprint(JSON.parse(stableStringify(taskManifest))));
+  });
+
+  it("persists and reads normalized output manifests through ObjectStore", async () => {
+    const store = memoryStore();
+    const manifest = createOutputManifest({
+      jobId: "job_persist",
+      planFingerprint: "fp_persist",
+      entries: [
+        {
+          taskId: "job_persist-task-000001-b",
+          outputPath: "out/b.parquet",
+          partitionValues: { date: "2026-01-02", country: "CA" },
+          rowCount: 2,
+          byteSize: 20,
+          contentHash: "sha256:b",
+        },
+        {
+          taskId: "job_persist-task-000000-a",
+          outputPath: "out/a.parquet",
+          partitionValues: { country: "US", date: "2026-01-01" },
+          rowCount: 1,
+          byteSize: 10,
+          etag: "etag-a",
+          iceberg: {
+            recordCount: 1,
+            fileSizeInBytes: 10,
+            partitionValues: { date: "2026-01-01", country: "US" },
+          },
+        },
+      ],
+    });
+
+    const written = await writeOutputManifest(store, "manifests/out.json", manifest);
+    expect(written).toMatchObject({ path: "manifests/out.json", byteSize: expect.any(Number) });
+    await expect(store.head("manifests/out.json")).resolves.toMatchObject({
+      contentType: "application/json",
+    });
+    await expect(readOutputManifest(store, "manifests/out.json")).resolves.toEqual(manifest);
+    await expect(
+      store
+        .get("manifests/out.json")
+        .then((bytes) => new TextDecoder().decode(bytes ?? new Uint8Array())),
+    ).resolves.toBe(`${stableStringify(manifest)}\n`);
+  });
+
+  it("rejects missing or malformed persisted output manifests", async () => {
+    const store = memoryStore();
+    await expect(readOutputManifest(store, "missing.json")).rejects.toMatchObject({
+      code: "LAQL_OBJECT_NOT_FOUND",
+    });
+
+    await store.put("bad-json.json", new TextEncoder().encode("{"));
+    await expect(readOutputManifest(store, "bad-json.json")).rejects.toMatchObject({
+      code: "LAQL_VALIDATION_ERROR",
+    });
+
+    await store.put("bad-shape.json", new TextEncoder().encode('{"version":1,"entries":[{}]}'));
+    await expect(readOutputManifest(store, "bad-shape.json")).rejects.toMatchObject({
+      code: "LAQL_VALIDATION_ERROR",
+    });
+
+    await store.put(
+      "bad-entry.json",
+      new TextEncoder().encode(
+        JSON.stringify({
+          version: 1,
+          jobId: "job",
+          planFingerprint: "fp",
+          entries: [
+            { taskId: "task", outputPath: "out", partitionValues: {}, rowCount: -1, byteSize: 1 },
+          ],
+        }),
+      ),
+    );
+    await expect(readOutputManifest(store, "bad-entry.json")).rejects.toMatchObject({
+      code: "LAQL_VALIDATION_ERROR",
+    });
   });
 });
 
