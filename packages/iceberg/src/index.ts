@@ -99,6 +99,8 @@ export interface IcebergPlan {
   manifestsSkipped: number;
   filesPlanned: number;
   filesSkipped: number;
+  deleteFilesPlanned: number;
+  deleteFilesIgnored: number;
   files: PlannedIcebergFile[];
 }
 
@@ -217,6 +219,8 @@ export class IcebergTable {
     const files: PlannedIcebergFile[] = [];
     let manifestsSkipped = 0;
     let filesSkipped = 0;
+    let deleteFilesPlanned = 0;
+    let deleteFilesIgnored = 0;
 
     for (const manifest of snapshot.manifests) {
       const manifestMayMatch = manifest.files.some((file) =>
@@ -260,6 +264,12 @@ export class IcebergTable {
           supportedDeleteFiles.length > 0
         ) {
           planned.deleteFiles = supportedDeleteFiles;
+          deleteFilesPlanned += supportedDeleteFiles.length;
+        }
+        if (readMode === "ignore-unsupported-deletes") {
+          deleteFilesIgnored += unsupportedDeleteFiles.length;
+        } else if (readMode === "ignore-deletes") {
+          deleteFilesIgnored += (file.deleteFiles ?? []).length;
         }
         files.push(planned);
       }
@@ -273,6 +283,8 @@ export class IcebergTable {
       manifestsSkipped,
       filesPlanned: files.length,
       filesSkipped,
+      deleteFilesPlanned,
+      deleteFilesIgnored,
       files,
     };
   }

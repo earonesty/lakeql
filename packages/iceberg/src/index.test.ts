@@ -40,6 +40,8 @@ describe("loadIcebergTable", () => {
       manifestsSkipped: 0,
       filesPlanned: 2,
       filesSkipped: 1,
+      deleteFilesPlanned: 0,
+      deleteFilesIgnored: 0,
     });
     expect(plan.files.map((file) => file.path)).toEqual([HIVE.files[0], HIVE.files[2]]);
     expect(plan.files.map((file) => file.sequenceNumber)).toEqual([1, 3]);
@@ -52,6 +54,10 @@ describe("loadIcebergTable", () => {
       path: HIVE.files[1],
       deleteFiles: [{ content: "equality-delete", path: "deletes/country-ca.eq.parquet" }],
     });
+    expect(strictDeletedPartitionPlan).toMatchObject({
+      deleteFilesPlanned: 1,
+      deleteFilesIgnored: 0,
+    });
 
     const deletedPartitionPlan = table.planFiles({
       where: eq("country", "CA"),
@@ -61,10 +67,19 @@ describe("loadIcebergTable", () => {
       path: HIVE.files[1],
       deleteFiles: [{ content: "equality-delete", path: "deletes/country-ca.eq.parquet" }],
     });
-    expect(
-      table.planFiles({ where: eq("country", "CA"), readMode: "ignore-deletes" }).files[0]
-        ?.deleteFiles,
-    ).toBeUndefined();
+    expect(deletedPartitionPlan).toMatchObject({
+      deleteFilesPlanned: 1,
+      deleteFilesIgnored: 0,
+    });
+    const ignoredDeletePlan = table.planFiles({
+      where: eq("country", "CA"),
+      readMode: "ignore-deletes",
+    });
+    expect(ignoredDeletePlan.files[0]?.deleteFiles).toBeUndefined();
+    expect(ignoredDeletePlan).toMatchObject({
+      deleteFilesPlanned: 0,
+      deleteFilesIgnored: 1,
+    });
   });
 
   it("selects snapshots by id, ref, and timestamp", async () => {
@@ -184,6 +199,10 @@ describe("loadIcebergTable", () => {
     expect(
       table.planFiles({ readMode: "ignore-unsupported-deletes" }).files[0]?.deleteFiles,
     ).toBeUndefined();
+    expect(table.planFiles({ readMode: "ignore-unsupported-deletes" })).toMatchObject({
+      deleteFilesPlanned: 0,
+      deleteFilesIgnored: 1,
+    });
   });
 
   it("applies decoded position, equality, and deletion-vector deletes to data file rows", () => {
