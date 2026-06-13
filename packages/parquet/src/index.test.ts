@@ -29,6 +29,7 @@ import {
   GROUPBY,
   H3,
   HIVE,
+  ICEBERG,
   SALES,
   STATS,
   TYPES,
@@ -41,6 +42,7 @@ import {
   createParquetLake,
   type ParquetMetadata,
   partitionedParquetOutputEntries,
+  readIcebergParquetDeletes,
   readParquetMetadata,
   readParquetObjects,
   rowGroupMayMatch,
@@ -91,6 +93,14 @@ beforeAll(async () => {
   await store.put(`data/${GROUPBY.file}`, readFileSync(fixturePath(GROUPBY.file)));
   await store.put(`data/${GEO.file}`, readFileSync(fixturePath(GEO.file)));
   await store.put(`data/${H3.file}`, readFileSync(fixturePath(H3.file)));
+  await store.put(
+    `data/${ICEBERG.equalityDeleteFile}`,
+    readFileSync(fixturePath(ICEBERG.equalityDeleteFile)),
+  );
+  await store.put(
+    `data/${ICEBERG.positionDeleteFile}`,
+    readFileSync(fixturePath(ICEBERG.positionDeleteFile)),
+  );
   for (const file of HIVE.files) {
     await store.put(`data/${file}`, readFileSync(fixturePath(file)));
   }
@@ -223,6 +233,60 @@ describe("writeParquet", () => {
 
     const actual = await outStore.get("out/write-golden.parquet");
     expect(actual).toEqual(new Uint8Array(readFileSync(fixturePath(WRITE.file))));
+  });
+});
+
+describe("readIcebergParquetDeletes", () => {
+  it("decodes Iceberg equality and position delete Parquet files", async () => {
+    await expect(
+      readIcebergParquetDeletes(store, {
+        content: "equality-delete",
+        path: `data/${ICEBERG.equalityDeleteFile}`,
+      }),
+    ).resolves.toEqual({
+      equalityDeletes: [{ columns: ["country"], row: { country: "CA" } }],
+    });
+
+    await expect(
+      readIcebergParquetDeletes(store, {
+        content: "position-delete",
+        path: `data/${ICEBERG.positionDeleteFile}`,
+      }),
+    ).resolves.toEqual({
+      positionDeletes: [{ path: HIVE.files[0], position: 1 }],
+    });
+  });
+
+  it("validates malformed Iceberg delete files with typed errors", async () => {
+    const outStore = memoryStore();
+    await writeParquet(outStore, "deletes/bad-position.parquet", {
+      columnData: [
+        { name: "file_path", data: [""], type: "STRING" },
+        { name: "pos", data: [-1], type: "INT32" },
+      ],
+    });
+    await writeParquet(outStore, "deletes/bad-equality.parquet", {
+      columnData: [{ name: "_metadata", data: ["ignored"], type: "STRING" }],
+    });
+
+    await expect(
+      readIcebergParquetDeletes(outStore, {
+        content: "position-delete",
+        path: "deletes/bad-position.parquet",
+      }),
+    ).rejects.toMatchObject({ code: "LAQL_VALIDATION_ERROR" });
+    await expect(
+      readIcebergParquetDeletes(outStore, {
+        content: "equality-delete",
+        path: "deletes/bad-equality.parquet",
+      }),
+    ).rejects.toMatchObject({ code: "LAQL_VALIDATION_ERROR" });
+    await expect(
+      readIcebergParquetDeletes(outStore, {
+        content: "deletion-vector",
+        path: "deletes/vector.dv",
+      }),
+    ).rejects.toMatchObject({ code: "LAQL_UNSUPPORTED_DELETE_FILES" });
   });
 });
 

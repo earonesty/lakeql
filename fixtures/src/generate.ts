@@ -402,6 +402,25 @@ function generateIceberg() {
   writeFileSync(fixturePath(ICEBERG.metadataFile), `${JSON.stringify(metadata, null, 2)}\n`);
 }
 
+function generateIcebergDeletes() {
+  const equalityPath = fixturePath(ICEBERG.equalityDeleteFile);
+  mkdirSync(dirname(equalityPath), { recursive: true });
+  parquetWriteFile({
+    filename: equalityPath,
+    columnData: [{ name: "country", data: ["CA"], type: "STRING" }],
+  });
+
+  const positionPath = fixturePath(ICEBERG.positionDeleteFile);
+  mkdirSync(dirname(positionPath), { recursive: true });
+  parquetWriteFile({
+    filename: positionPath,
+    columnData: [
+      { name: "file_path", data: [HIVE.files[0]], type: "STRING" },
+      { name: "pos", data: [1n], type: "INT64" },
+    ],
+  });
+}
+
 generateSales();
 generateTypes();
 generateWide();
@@ -412,6 +431,7 @@ generateH3();
 generateWriteGolden();
 generateManifestGoldens();
 generateHive();
+generateIcebergDeletes();
 generateIceberg();
 console.log(`fixtures written to ${fixtureDataDir}`);
 

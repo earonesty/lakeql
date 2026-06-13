@@ -75,6 +75,8 @@ export const HIVE = {
 
 export const ICEBERG = {
   metadataFile: "iceberg/warehouse/places/metadata/v2.metadata.json",
+  equalityDeleteFile: "deletes/country-ca.eq.parquet",
+  positionDeleteFile: "deletes/us-second.pos.parquet",
   snapshots: [1, 2],
 } as const;
 

@@ -24,6 +24,21 @@ export interface ReadParquetOptions {
   rowEnd?: number;
 }
 
+export type IcebergParquetDeleteFileContent =
+  | "position-delete"
+  | "equality-delete"
+  | "deletion-vector";
+
+export interface IcebergParquetDeleteFile {
+  content: IcebergParquetDeleteFileContent;
+  path: string;
+}
+
+export interface DecodedIcebergParquetDeletes {
+  positionDeletes?: { path: string; position: number }[];
+  equalityDeletes?: { columns: string[]; row: Row }[];
+}
+
 export interface WriteParquetOptions extends Omit<ParquetWriteOptions, "writer" | "columnData"> {
   columnData: ColumnSource[];
   contentType?: string;
@@ -135,6 +150,28 @@ export async function readParquetObjects(
 export async function readParquetMetadata(store: ObjectStore, path: string) {
   const file = await asyncBufferFromStore(store, path);
   return parquetMetadataAsync(file);
+}
+
+export async function readIcebergParquetDeletes(
+  store: ObjectStore,
+  deleteFile: IcebergParquetDeleteFile,
+): Promise<DecodedIcebergParquetDeletes> {
+  switch (deleteFile.content) {
+    case "position-delete":
+      return {
+        positionDeletes: decodePositionDeleteRows(await readParquetObjects(store, deleteFile.path)),
+      };
+    case "equality-delete":
+      return {
+        equalityDeletes: decodeEqualityDeleteRows(await readParquetObjects(store, deleteFile.path)),
+      };
+    case "deletion-vector":
+      throw new LaQLError(
+        "LAQL_UNSUPPORTED_DELETE_FILES",
+        "Iceberg deletion vectors are not Parquet delete files",
+        { path: deleteFile.path, content: deleteFile.content },
+      );
+  }
 }
 
 export async function writeParquet(
@@ -762,6 +799,73 @@ function validateWriteMode(writeMode: WriteParquetOptions["writeMode"]): void {
   if (writeMode !== undefined && writeMode !== "overwrite" && writeMode !== "create") {
     throw new LaQLError("LAQL_TYPE_ERROR", "writeMode must be overwrite or create", { writeMode });
   }
+}
+
+function decodePositionDeleteRows(
+  rows: Record<string, unknown>[],
+): { path: string; position: number }[] {
+  return rows.map((row, rowIndex) => {
+    const path = row.file_path;
+    const position = row.pos;
+    if (typeof path !== "string" || path.length === 0) {
+      throw new LaQLError("LAQL_VALIDATION_ERROR", "Iceberg position delete file_path is invalid", {
+        rowIndex,
+        path,
+      });
+    }
+    const numericPosition =
+      typeof position === "bigint"
+        ? Number(position)
+        : typeof position === "number"
+          ? position
+          : Number.NaN;
+    if (
+      !Number.isSafeInteger(numericPosition) ||
+      numericPosition < 0 ||
+      (typeof position === "bigint" && BigInt(numericPosition) !== position)
+    ) {
+      throw new LaQLError("LAQL_VALIDATION_ERROR", "Iceberg position delete pos is invalid", {
+        rowIndex,
+        position,
+      });
+    }
+    return { path, position: numericPosition };
+  });
+}
+
+function decodeEqualityDeleteRows(
+  rows: Record<string, unknown>[],
+): { columns: string[]; row: Row }[] {
+  return rows.map((row, rowIndex) => {
+    const equalityRow: Row = {};
+    for (const [column, value] of Object.entries(row)) {
+      if (column.startsWith("_")) continue;
+      if (!isIcebergEqualityValue(value)) {
+        throw new LaQLError("LAQL_VALIDATION_ERROR", "Iceberg equality delete value is invalid", {
+          rowIndex,
+          column,
+        });
+      }
+      equalityRow[column] = value;
+    }
+    const columns = Object.keys(equalityRow).sort();
+    if (columns.length === 0) {
+      throw new LaQLError("LAQL_VALIDATION_ERROR", "Iceberg equality delete requires columns", {
+        rowIndex,
+      });
+    }
+    return { columns, row: equalityRow };
+  });
+}
+
+function isIcebergEqualityValue(value: unknown): value is Row[string] {
+  return (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "bigint"
+  );
 }
 
 type StatsValue = string | number | bigint | boolean;
