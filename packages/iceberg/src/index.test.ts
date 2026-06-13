@@ -650,7 +650,7 @@ describe("loadIcebergTable", () => {
       table: "places",
       fetch: restFetch(calls, () =>
         jsonResponse({
-          "metadata-location": "iceberg/warehouse/places/metadata/v3.metadata.json",
+          "metadata-location": "catalog/committed/v3.metadata.json",
           metadata: {},
         }),
       ),
@@ -672,13 +672,15 @@ describe("loadIcebergTable", () => {
 
     expect(result).toMatchObject({
       snapshotId: 3,
-      metadataPath: "iceberg/warehouse/places/metadata/v3.metadata.json",
+      metadataPath: "catalog/committed/v3.metadata.json",
       manifestPath: "iceberg/warehouse/places/metadata/job_rest_append-3.manifest.json",
     });
     await expect(appendStore.head(result.manifestPath)).resolves.toMatchObject({
       contentType: "application/json",
     });
-    await expect(appendStore.head(result.metadataPath)).resolves.toMatchObject({
+    await expect(
+      appendStore.head("iceberg/warehouse/places/metadata/v3.metadata.json"),
+    ).resolves.toMatchObject({
       contentType: "application/json",
     });
     expect(calls).toHaveLength(1);
@@ -708,6 +710,35 @@ describe("loadIcebergTable", () => {
         },
       ],
     });
+  });
+
+  it("falls back to the proposed metadata path when REST commit returns no body", async () => {
+    const appendStore = memoryStore();
+    await appendStore.put(ICEBERG.metadataFile, readFileSync(fixturePath(ICEBERG.metadataFile)));
+    const table = await loadIcebergTable({
+      store: appendStore,
+      metadataPath: ICEBERG.metadataFile,
+    });
+    const catalog = icebergRestCatalog({
+      url: "https://catalog.example",
+      namespace: "prod",
+      table: "places",
+      fetch: async () => new Response(null, { status: 204 }),
+    });
+
+    const result = await table.appendFiles({
+      catalog,
+      files: [
+        {
+          path: "appends/rest-no-body.parquet",
+          partition: {},
+          recordCount: 1,
+          fileSizeInBytes: 10,
+        },
+      ],
+    });
+
+    expect(result.metadataPath).toBe("iceberg/warehouse/places/metadata/v3.metadata.json");
   });
 
   it("rejects output manifest append entries without Iceberg metadata", async () => {

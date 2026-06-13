@@ -72,7 +72,12 @@ export interface IcebergAppendOutputManifestOptions
 }
 
 export interface IcebergCommitCatalog {
-  commitAppend(input: IcebergCommitInput): Promise<boolean>;
+  commitAppend(input: IcebergCommitInput): Promise<boolean | IcebergCommitResult>;
+}
+
+export interface IcebergCommitResult {
+  committed: boolean;
+  metadataPath?: string;
 }
 
 export interface IcebergCommitInput {
@@ -383,7 +388,7 @@ export class IcebergTable {
 
     const nextMetadataPath = nextMetadataPathFor(this.metadataPath, nextSnapshotId);
     const catalog = options.catalog ?? new ObjectStoreIcebergCommitCatalog();
-    const committed = await catalog.commitAppend({
+    const commit = await catalog.commitAppend({
       store: this.store,
       currentMetadataPath: this.metadataPath,
       nextMetadataPath,
@@ -393,6 +398,7 @@ export class IcebergTable {
       manifest,
       metadata,
     });
+    const committed = typeof commit === "boolean" ? commit : commit.committed;
     if (!committed) {
       throw new LaQLError("LAQL_ICEBERG_COMMIT_CONFLICT", "Iceberg append commit conflict", {
         metadataPath: this.metadataPath,
@@ -400,11 +406,13 @@ export class IcebergTable {
         nextSnapshotId,
       });
     }
+    const committedMetadataPath =
+      typeof commit === "boolean" ? nextMetadataPath : (commit.metadataPath ?? nextMetadataPath);
 
     return {
       snapshotId: nextSnapshotId,
       previousSnapshotId: currentSnapshot["snapshot-id"],
-      metadataPath: nextMetadataPath,
+      metadataPath: committedMetadataPath,
       manifestPath,
       files: manifest.files.map((file) => ({
         path: file.path,
@@ -468,7 +476,7 @@ export class IcebergTable {
 }
 
 export class ObjectStoreIcebergCommitCatalog implements IcebergCommitCatalog {
-  async commitAppend(input: IcebergCommitInput): Promise<boolean> {
+  async commitAppend(input: IcebergCommitInput): Promise<IcebergCommitResult> {
     await input.store.put(
       input.manifestPath,
       new TextEncoder().encode(`${stableStringify(input.manifest)}\n`),
@@ -484,7 +492,7 @@ export class ObjectStoreIcebergCommitCatalog implements IcebergCommitCatalog {
       new TextEncoder().encode(`${input.nextSnapshotId}\n`),
       { contentType: "text/plain" },
     );
-    return true;
+    return { committed: true, metadataPath: input.nextMetadataPath };
   }
 }
 
@@ -519,7 +527,7 @@ export class IcebergRestCatalog implements IcebergCommitCatalog {
     );
   }
 
-  async commitAppend(input: IcebergCommitInput): Promise<boolean> {
+  async commitAppend(input: IcebergCommitInput): Promise<IcebergCommitResult> {
     await input.store.put(
       input.manifestPath,
       new TextEncoder().encode(`${stableStringify(input.manifest)}\n`),
@@ -557,7 +565,7 @@ export class IcebergRestCatalog implements IcebergCommitCatalog {
         ],
       }),
     });
-    if (response.status === 409) return false;
+    if (response.status === 409) return { committed: false };
     if (!response.ok) {
       throw new LaQLError("LAQL_CATALOG_ERROR", "Iceberg REST table commit failed", {
         url: this.tableUrl(),
@@ -565,7 +573,11 @@ export class IcebergRestCatalog implements IcebergCommitCatalog {
         statusText: response.statusText,
       });
     }
-    return true;
+    const metadataPath = await commitResponseMetadataPath(response);
+    return {
+      committed: true,
+      ...(metadataPath !== undefined ? { metadataPath } : {}),
+    };
   }
 
   private async requestJson(url: string, init: RequestInit): Promise<unknown> {
@@ -903,6 +915,19 @@ function requiredNonEmptyString(value: string, field: string): string {
     throw new LaQLError("LAQL_VALIDATION_ERROR", `Iceberg REST ${field} is required`);
   }
   return trimmed;
+}
+
+async function commitResponseMetadataPath(response: Response): Promise<string | undefined> {
+  if (response.status === 204) return undefined;
+  try {
+    const body = (await response.json()) as unknown;
+    if (isRecord(body) && typeof body["metadata-location"] === "string") {
+      return body["metadata-location"];
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
 }
 
 function restAppendSnapshot(input: IcebergCommitInput): Record<string, unknown> {

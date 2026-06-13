@@ -39,6 +39,10 @@ await table.appendFiles({
 });
 ```
 
+When a catalog returns a committed `metadataPath`, `appendFiles()` reports that
+catalog path in its result; otherwise it reports the deterministic next metadata
+path LaQL wrote.
+
 Output manifests produced by write tasks can be committed directly when their entries include Iceberg metadata:
 
 ```ts
