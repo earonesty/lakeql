@@ -561,6 +561,27 @@ describe("Lake query runtime", () => {
     ).toMatchObject({ projectedColumns: ["score"] });
   });
 
+  it("enforces buffered-row budgets for ordered queries", async () => {
+    const rowsByPath = { table: [{ id: 3 }, { id: 1 }, { id: 2 }] };
+
+    await expect(
+      (await makeLake({ rowsByPath, budget: { maxBufferedRows: 2 } })).lake
+        .path("table")
+        .orderBy([{ column: "id" }])
+        .toArray(),
+    ).rejects.toMatchObject({
+      code: "LAQL_BUDGET_EXCEEDED",
+      details: { metric: "buffered rows", limit: 2, actual: 3 },
+    });
+
+    await expect(
+      (await makeLake({ rowsByPath, budget: { maxBufferedRows: 3 } })).lake
+        .path("table")
+        .orderBy([{ column: "id" }])
+        .toArray(),
+    ).resolves.toEqual([{ id: 1 }, { id: 2 }, { id: 3 }]);
+  });
+
   it("parses JSON orderBy and rejects invalid order terms", async () => {
     expect(
       parseJsonQuery({

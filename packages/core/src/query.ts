@@ -19,6 +19,8 @@ export interface QueryBudget {
   maxOutputRows?: number;
   maxRangeRequests?: number;
   maxElapsedMs?: number;
+  /** Maximum rows an operator may buffer in memory for orderBy/top-k work. */
+  maxBufferedRows?: number;
 }
 
 export type QueryPolicyContext = Record<string, unknown>;
@@ -535,6 +537,7 @@ export class QueryResult {
           stats.rowsMatched += 1;
           validateSortRow(row, config.orderBy ?? []);
           matched.push(row);
+          enforceBufferedRowsBudget(config.budget, matched.length);
         }
       }
     }
@@ -1395,6 +1398,12 @@ function enforceBudget(
   }
   if (budget.maxElapsedMs !== undefined && elapsedMs > budget.maxElapsedMs) {
     throwBudget("elapsed milliseconds", budget.maxElapsedMs, elapsedMs);
+  }
+}
+
+function enforceBufferedRowsBudget(budget: QueryBudget, bufferedRows: number): void {
+  if (budget.maxBufferedRows !== undefined && bufferedRows > budget.maxBufferedRows) {
+    throwBudget("buffered rows", budget.maxBufferedRows, bufferedRows);
   }
 }
 
