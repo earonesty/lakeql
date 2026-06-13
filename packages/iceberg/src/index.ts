@@ -1,4 +1,12 @@
-import { type Expr, LaQLError, matches, type ObjectStore, stableStringify } from "@laql/core";
+import {
+  type Expr,
+  jsonSafeValue,
+  LaQLError,
+  matches,
+  type ObjectStore,
+  type Row,
+  stableStringify,
+} from "@laql/core";
 
 export const PACKAGE = "@laql/iceberg" as const;
 
@@ -86,6 +94,24 @@ export interface IcebergPlan {
   filesPlanned: number;
   filesSkipped: number;
   files: PlannedIcebergFile[];
+}
+
+export interface IcebergPositionDelete {
+  path: string;
+  position: number;
+}
+
+export interface IcebergEqualityDelete {
+  columns: string[];
+  row: Row;
+}
+
+export interface ApplyIcebergDeletesOptions {
+  dataFilePath: string;
+  rows: Row[];
+  rowOffset?: number;
+  positionDeletes?: IcebergPositionDelete[];
+  equalityDeletes?: IcebergEqualityDelete[];
 }
 
 export interface MetadataFile {
@@ -364,10 +390,65 @@ export async function loadIcebergTable(options: LoadIcebergTableOptions): Promis
   }
 }
 
+export function applyIcebergDeletes(options: ApplyIcebergDeletesOptions): Row[] {
+  const rowOffset = options.rowOffset ?? 0;
+  const positionDeletes = new Set<number>();
+  for (const deletion of options.positionDeletes ?? []) {
+    if (deletion.path !== options.dataFilePath) continue;
+    if (!Number.isInteger(deletion.position) || deletion.position < 0) {
+      throw new LaQLError("LAQL_VALIDATION_ERROR", "Iceberg position delete must be non-negative", {
+        path: deletion.path,
+        position: deletion.position,
+      });
+    }
+    positionDeletes.add(deletion.position);
+  }
+
+  const equalityDeleteKeys = new Map<string, Set<string>>();
+  for (const deletion of options.equalityDeletes ?? []) {
+    if (deletion.columns.length === 0) {
+      throw new LaQLError("LAQL_VALIDATION_ERROR", "Iceberg equality delete requires columns");
+    }
+    const columnsKey = stableStringify(deletion.columns);
+    let keys = equalityDeleteKeys.get(columnsKey);
+    if (!keys) {
+      keys = new Set<string>();
+      equalityDeleteKeys.set(columnsKey, keys);
+    }
+    keys.add(equalityKey(deletion.row, deletion.columns));
+  }
+
+  return options.rows.filter((row, index) => {
+    if (positionDeletes.has(rowOffset + index)) return false;
+    for (const [columnsKey, keys] of equalityDeleteKeys) {
+      const columns = JSON.parse(columnsKey) as string[];
+      if (keys.has(equalityKey(row, columns))) return false;
+    }
+    return true;
+  });
+}
+
 function nextMetadataPathFor(metadataPath: string, snapshotId: number): string {
   const slash = metadataPath.lastIndexOf("/");
   const prefix = slash === -1 ? "" : `${metadataPath.slice(0, slash + 1)}`;
   return `${prefix}v${snapshotId}.metadata.json`;
+}
+
+function equalityKey(row: Row, columns: string[]): string {
+  return stableStringify(
+    columns.map((column) => {
+      if (!(column in row)) {
+        throw new LaQLError(
+          "LAQL_UNKNOWN_COLUMN",
+          `Unknown Iceberg equality delete column ${column}`,
+          {
+            column,
+          },
+        );
+      }
+      return jsonSafeValue(row[column]);
+    }),
+  );
 }
 
 function appendManifestPath(

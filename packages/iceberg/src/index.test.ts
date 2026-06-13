@@ -15,7 +15,7 @@ import {
 import { fixturePath, HIVE, ICEBERG } from "@laql/fixtures";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { IcebergCommitCatalog, IcebergCommitInput } from "./index.js";
-import { loadIcebergTable } from "./index.js";
+import { applyIcebergDeletes, loadIcebergTable } from "./index.js";
 
 const store = memoryStore();
 
@@ -183,6 +183,57 @@ describe("loadIcebergTable", () => {
     expect(
       table.planFiles({ readMode: "ignore-unsupported-deletes" }).files[0]?.deleteFiles,
     ).toBeUndefined();
+  });
+
+  it("applies decoded position and equality deletes to data file rows", () => {
+    const rows = [
+      { id: 1, country: "US", amount: 10 },
+      { id: 2, country: "CA", amount: 20 },
+      { id: 3, country: "US", amount: 30 },
+      { id: 4, country: "MX", amount: 40 },
+    ];
+
+    expect(
+      applyIcebergDeletes({
+        dataFilePath: "data/a.parquet",
+        rows,
+        rowOffset: 10,
+        positionDeletes: [
+          { path: "data/a.parquet", position: 11 },
+          { path: "data/b.parquet", position: 12 },
+        ],
+        equalityDeletes: [
+          { columns: ["country"], row: { country: "MX" } },
+          { columns: ["country", "amount"], row: { country: "US", amount: 30 } },
+        ],
+      }),
+    ).toEqual([{ id: 1, country: "US", amount: 10 }]);
+  });
+
+  it("validates decoded delete inputs before applying them", () => {
+    expect(() =>
+      applyIcebergDeletes({
+        dataFilePath: "data/a.parquet",
+        rows: [{ id: 1 }],
+        positionDeletes: [{ path: "data/a.parquet", position: -1 }],
+      }),
+    ).toThrowError(LaQLError);
+
+    expect(() =>
+      applyIcebergDeletes({
+        dataFilePath: "data/a.parquet",
+        rows: [{ id: 1 }],
+        equalityDeletes: [{ columns: [], row: {} }],
+      }),
+    ).toThrow(/requires columns/u);
+
+    expect(() =>
+      applyIcebergDeletes({
+        dataFilePath: "data/a.parquet",
+        rows: [{ id: 1 }],
+        equalityDeletes: [{ columns: ["missing"], row: { missing: 1 } }],
+      }),
+    ).toThrow(/Unknown Iceberg equality delete column/u);
   });
 
   it("appends files by writing a new snapshot and metadata file", async () => {
