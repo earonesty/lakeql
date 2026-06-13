@@ -55,6 +55,25 @@ const { entries } = await writePartitionedParquetTask(store, "out/sales", {
 });
 ```
 
+For CTAS-style flows, `createParquetTableAs` consumes a query result, writes the
+rows through the checkpointed task path, and returns an output manifest:
+
+```ts
+import { createParquetTableAs } from "@laql/parquet";
+
+const created = await createParquetTableAs(store, "out/west_sales", {
+  query: lake.path("sales.parquet").where(eq("region", "west")),
+  checkpoints,
+  jobId: "job_2026_01_01",
+  planFingerprint: "fp_job_2026_01_01",
+  idempotencyKey: "attempt_001",
+  partitionBy: ["region"],
+  writeMode: "create",
+});
+
+await table.appendOutputManifest({ manifest: created.manifest });
+```
+
 Set `iceberg: true` when the manifest should carry data-file metadata for a later Iceberg append commit.
 
 `writeMode: "create"` fails if an output object already exists; omit it or use `"overwrite"` when replacing existing output is intentional.
