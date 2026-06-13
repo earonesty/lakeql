@@ -186,12 +186,13 @@ describe("loadIcebergTable", () => {
     ).toBeUndefined();
   });
 
-  it("applies decoded position and equality deletes to data file rows", () => {
+  it("applies decoded position, equality, and deletion-vector deletes to data file rows", () => {
     const rows = [
       { id: 1, country: "US", amount: 10 },
       { id: 2, country: "CA", amount: 20 },
       { id: 3, country: "US", amount: 30 },
       { id: 4, country: "MX", amount: 40 },
+      { id: 5, country: "US", amount: 50 },
     ];
 
     expect(
@@ -207,6 +208,10 @@ describe("loadIcebergTable", () => {
           { columns: ["country"], row: { country: "MX" } },
           { columns: ["country", "amount"], row: { country: "US", amount: 30 } },
         ],
+        deletionVectors: [
+          { path: "data/a.parquet", positions: [14] },
+          { path: "data/b.parquet", positions: [10] },
+        ],
       }),
     ).toEqual([{ id: 1, country: "US", amount: 10 }]);
   });
@@ -219,6 +224,14 @@ describe("loadIcebergTable", () => {
         positionDeletes: [{ path: "data/a.parquet", position: -1 }],
       }),
     ).toThrowError(LaQLError);
+
+    expect(() =>
+      applyIcebergDeletes({
+        dataFilePath: "data/a.parquet",
+        rows: [{ id: 1 }],
+        deletionVectors: [{ path: "data/a.parquet", positions: [1.5] }],
+      }),
+    ).toThrow(/delete position/u);
 
     expect(() =>
       applyIcebergDeletes({

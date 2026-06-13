@@ -112,12 +112,18 @@ export interface IcebergEqualityDelete {
   row: Row;
 }
 
+export interface IcebergDeletionVector {
+  path: string;
+  positions: number[];
+}
+
 export interface ApplyIcebergDeletesOptions {
   dataFilePath: string;
   rows: Row[];
   rowOffset?: number;
   positionDeletes?: IcebergPositionDelete[];
   equalityDeletes?: IcebergEqualityDelete[];
+  deletionVectors?: IcebergDeletionVector[];
 }
 
 export interface MetadataFile {
@@ -430,13 +436,13 @@ export function applyIcebergDeletes(options: ApplyIcebergDeletesOptions): Row[] 
   const positionDeletes = new Set<number>();
   for (const deletion of options.positionDeletes ?? []) {
     if (deletion.path !== options.dataFilePath) continue;
-    if (!Number.isInteger(deletion.position) || deletion.position < 0) {
-      throw new LaQLError("LAQL_VALIDATION_ERROR", "Iceberg position delete must be non-negative", {
-        path: deletion.path,
-        position: deletion.position,
-      });
+    positionDeletes.add(validateDeletePosition(deletion.position, deletion.path));
+  }
+  for (const deletionVector of options.deletionVectors ?? []) {
+    if (deletionVector.path !== options.dataFilePath) continue;
+    for (const position of deletionVector.positions) {
+      positionDeletes.add(validateDeletePosition(position, deletionVector.path));
     }
-    positionDeletes.add(deletion.position);
   }
 
   const equalityDeleteKeys = new Map<string, Set<string>>();
@@ -461,6 +467,16 @@ export function applyIcebergDeletes(options: ApplyIcebergDeletesOptions): Row[] 
     }
     return true;
   });
+}
+
+function validateDeletePosition(position: number, path: string): number {
+  if (!Number.isInteger(position) || position < 0) {
+    throw new LaQLError("LAQL_VALIDATION_ERROR", "Iceberg delete position must be non-negative", {
+      path,
+      position,
+    });
+  }
+  return position;
 }
 
 function nextMetadataPathFor(metadataPath: string, snapshotId: number): string {
