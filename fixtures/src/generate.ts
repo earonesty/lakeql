@@ -6,6 +6,7 @@ import { parquetWriteFile } from "hyparquet-writer";
 import {
   fixtureDataDir,
   fixturePath,
+  GROUPBY,
   HIVE,
   ICEBERG,
   SALES,
@@ -106,6 +107,23 @@ function generateStats() {
       { name: "id", data: id, type: "INT32" },
       { name: "metric", data: metric, type: "INT32" },
       { name: "label", data: label, type: "STRING" },
+    ],
+  });
+}
+
+function generateGroupby() {
+  parquetWriteFile({
+    filename: fixturePath(GROUPBY.file),
+    rowGroupSize: [4],
+    columnData: [
+      {
+        name: "region",
+        data: ["west", "west", "east", "east", "north", "north", "south", "south"],
+        type: "STRING",
+      },
+      { name: "amount", data: [10, 20, 7, 13, 5, 15, 2, 8], type: "INT32" },
+      { name: "id", data: [1, 2, 3, 4, 5, 6, 7, 8], type: "INT32" },
+      { name: "label", data: ["w1", "w2", "e1", "e2", "n1", "n2", "s1", "s2"], type: "STRING" },
     ],
   });
 }
@@ -243,6 +261,7 @@ generateSales();
 generateTypes();
 generateWide();
 generateStats();
+generateGroupby();
 generateWriteGolden();
 generateHive();
 generateIceberg();

@@ -31,6 +31,12 @@ export const STATS = {
   rowGroupSize: 10,
 } as const;
 
+export const GROUPBY = {
+  file: "groupby.parquet",
+  rows: 8,
+  groups: 4,
+} as const;
+
 export const WRITE = {
   file: "write-golden/plain.parquet",
   rows: 3,

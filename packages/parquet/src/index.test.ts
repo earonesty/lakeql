@@ -22,7 +22,7 @@ import {
   notIn,
   or,
 } from "@laql/core";
-import { fixturePath, HIVE, SALES, STATS, TYPES, WIDE, WRITE } from "@laql/fixtures";
+import { fixturePath, GROUPBY, HIVE, SALES, STATS, TYPES, WIDE, WRITE } from "@laql/fixtures";
 import type { RowGroup } from "hyparquet";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
@@ -76,6 +76,7 @@ beforeAll(async () => {
   await store.put(`data/${TYPES.file}`, readFileSync(fixturePath(TYPES.file)));
   await store.put(`data/${WIDE.file}`, readFileSync(fixturePath(WIDE.file)));
   await store.put(`data/${STATS.file}`, readFileSync(fixturePath(STATS.file)));
+  await store.put(`data/${GROUPBY.file}`, readFileSync(fixturePath(GROUPBY.file)));
   for (const file of HIVE.files) {
     await store.put(`data/${file}`, readFileSync(fixturePath(file)));
   }
@@ -544,6 +545,42 @@ describe("createParquetLake", () => {
     await expect(lake.path(`data/${SALES.file}`).toArray()).rejects.toMatchObject({
       code: "LAQL_BUDGET_EXCEEDED",
     });
+  });
+
+  it("aggregates the groupby fixture and enforces maxGroups", async () => {
+    const lake = createParquetLake({ store });
+    await expect(
+      lake
+        .path(`data/${GROUPBY.file}`)
+        .groupBy(["region"])
+        .aggregate(
+          {
+            rows: { op: "count" },
+            total: { op: "sum", column: "amount" },
+            average: { op: "avg", column: "amount" },
+            firstLabel: { op: "first", column: "label" },
+            lastLabel: { op: "last", column: "label" },
+          },
+          { maxGroups: GROUPBY.groups },
+        ),
+    ).resolves.toEqual([
+      { region: "west", rows: 2, total: 30, average: 15, firstLabel: "w1", lastLabel: "w2" },
+      { region: "east", rows: 2, total: 20, average: 10, firstLabel: "e1", lastLabel: "e2" },
+      { region: "north", rows: 2, total: 20, average: 10, firstLabel: "n1", lastLabel: "n2" },
+      { region: "south", rows: 2, total: 10, average: 5, firstLabel: "s1", lastLabel: "s2" },
+    ]);
+
+    await expect(
+      lake
+        .path(`data/${GROUPBY.file}`)
+        .groupBy(["region"])
+        .aggregate(
+          {
+            rows: { op: "count" },
+          },
+          { maxGroups: GROUPBY.groups - 1 },
+        ),
+    ).rejects.toMatchObject({ code: "LAQL_GROUP_LIMIT_EXCEEDED" });
   });
 
   it("prunes Parquet row groups using min/max statistics", async () => {
