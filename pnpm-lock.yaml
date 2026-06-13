@@ -55,6 +55,10 @@ importers:
       '@laql/core':
         specifier: workspace:*
         version: link:../core
+    devDependencies:
+      '@laql/fixtures':
+        specifier: workspace:*
+        version: link:../../fixtures
 
   packages/laql:
     dependencies:

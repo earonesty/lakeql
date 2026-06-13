@@ -39,3 +39,8 @@ export const HIVE = {
   ],
   rowsPerFile: 4,
 } as const;
+
+export const ICEBERG = {
+  metadataFile: "iceberg/warehouse/places/metadata/v2.metadata.json",
+  snapshots: [1, 2],
+} as const;

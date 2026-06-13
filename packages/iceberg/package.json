@@ -28,5 +28,8 @@
   },
   "dependencies": {
     "@laql/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@laql/fixtures": "workspace:*"
   }
 }

@@ -1,9 +1,9 @@
 // Deterministic fixture generation: same input, same bytes, no clock, no RNG.
 // Run via `pnpm fixtures` (root) or `pnpm generate` (this package).
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parquetWriteFile } from "hyparquet-writer";
-import { fixtureDataDir, fixturePath, HIVE, SALES, STATS, TYPES, WIDE } from "./index.ts";
+import { fixtureDataDir, fixturePath, HIVE, ICEBERG, SALES, STATS, TYPES, WIDE } from "./index.ts";
 
 mkdirSync(fixtureDataDir, { recursive: true });
 
@@ -123,9 +123,102 @@ function generateHive() {
   }
 }
 
+function generateIceberg() {
+  mkdirSync(dirname(fixturePath(ICEBERG.metadataFile)), { recursive: true });
+  const metadata = {
+    "format-version": 2,
+    "table-uuid": "00000000-0000-4000-8000-000000000001",
+    location: "fixtures/data/iceberg/warehouse/places",
+    "current-snapshot-id": 2,
+    refs: {
+      main: { type: "branch", "snapshot-id": 2 },
+      previous: { type: "tag", "snapshot-id": 1 },
+    },
+    schemas: [
+      {
+        "schema-id": 1,
+        fields: [
+          { id: 1, name: "id", type: "int", required: true },
+          { id: 2, name: "amount", type: "int", required: false },
+          { id: 3, name: "country", type: "string", required: false },
+        ],
+      },
+      {
+        "schema-id": 2,
+        fields: [
+          { id: 1, name: "id", type: "int", required: true },
+          { id: 2, name: "amount", type: "int", required: false },
+          { id: 4, name: "nation", sourceId: 3, type: "string", required: false },
+        ],
+      },
+    ],
+    snapshots: [
+      {
+        "snapshot-id": 1,
+        "timestamp-ms": 1_767_225_600_000,
+        "schema-id": 1,
+        manifests: [
+          {
+            path: "manifest-1.json",
+            files: [
+              {
+                path: HIVE.files[0],
+                sequenceNumber: 1,
+                partition: { country: "US", date: "2026-01-01" },
+                recordCount: HIVE.rowsPerFile,
+              },
+              {
+                path: HIVE.files[1],
+                sequenceNumber: 2,
+                partition: { country: "CA", date: "2026-01-02" },
+                recordCount: HIVE.rowsPerFile,
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "snapshot-id": 2,
+        "timestamp-ms": 1_767_312_000_000,
+        "schema-id": 2,
+        manifests: [
+          {
+            path: "manifest-2.json",
+            files: [
+              {
+                path: HIVE.files[0],
+                sequenceNumber: 1,
+                partition: { country: "US", date: "2026-01-01" },
+                recordCount: HIVE.rowsPerFile,
+              },
+              {
+                path: HIVE.files[1],
+                sequenceNumber: 2,
+                partition: { country: "CA", date: "2026-01-02" },
+                recordCount: HIVE.rowsPerFile,
+                deleteFiles: [
+                  { content: "equality-delete", path: "deletes/country-ca.eq.parquet" },
+                ],
+              },
+              {
+                path: HIVE.files[2],
+                sequenceNumber: 3,
+                partition: { country: "US", date: "2026-01-02" },
+                recordCount: HIVE.rowsPerFile,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+  writeFileSync(fixturePath(ICEBERG.metadataFile), `${JSON.stringify(metadata, null, 2)}\n`);
+}
+
 generateSales();
 generateTypes();
 generateWide();
 generateStats();
 generateHive();
+generateIceberg();
 console.log(`fixtures written to ${fixtureDataDir}`);
