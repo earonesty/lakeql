@@ -80,6 +80,7 @@ export const ICEBERG = {
     "iceberg/warehouse/places/metadata/manifest-1.json",
     "iceberg/warehouse/places/metadata/manifest-2.json",
   ],
+  plannedFilesGolden: "iceberg/warehouse/places/plans/current-us.golden.json",
   equalityDeleteFile: "deletes/country-ca.eq.parquet",
   positionDeleteFile: "deletes/us-second.pos.parquet",
   snapshots: [1, 2],

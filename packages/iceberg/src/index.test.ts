@@ -13,6 +13,7 @@ import {
   memoryStore,
   not,
   type Row,
+  stableStringify,
 } from "@laql/core";
 import { fixturePath, HIVE, ICEBERG } from "@laql/fixtures";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -219,6 +220,12 @@ describe("loadIcebergTable", () => {
       deleteFilesPlanned: 1,
     });
     expect(plan.files.map((file) => file.path)).toEqual([HIVE.files[0], HIVE.files[2]]);
+    expect(
+      stableStringify({
+        snapshotId: plan.snapshotId,
+        files: plan.files,
+      }),
+    ).toBe(readFileSync(fixturePath(ICEBERG.plannedFilesGolden), "utf8").trim());
   });
 
   it("selects snapshots by id, ref, and timestamp", async () => {

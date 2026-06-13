@@ -411,6 +411,27 @@ function generateIceberg() {
     fixturePath(ICEBERG.manifestRefMetadataFile),
     `${JSON.stringify(manifestRefMetadata, null, 2)}\n`,
   );
+  writeJsonFixture(ICEBERG.plannedFilesGolden, {
+    snapshotId: 2,
+    files: manifest2.files
+      .filter((file) => file.partition.country === "US")
+      .map((file) => ({
+        path: file.path,
+        sequenceNumber: file.sequenceNumber,
+        partition: file.partition,
+        recordCount: file.recordCount,
+        projectedFieldIds: [1, 3],
+        snapshotId: 2,
+        ...(file.deleteFiles !== undefined
+          ? {
+              deleteFiles: file.deleteFiles.map((deleteFile) => ({
+                content: deleteFile.content,
+                path: deleteFile.path,
+              })),
+            }
+          : {}),
+      })),
+  });
 }
 
 function generateIcebergDeletes() {
