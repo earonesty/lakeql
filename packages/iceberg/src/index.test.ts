@@ -12,11 +12,12 @@ import {
   lit,
   memoryStore,
   not,
+  type Row,
 } from "@laql/core";
 import { fixturePath, HIVE, ICEBERG } from "@laql/fixtures";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { IcebergCommitCatalog, IcebergCommitInput } from "./index.js";
-import { applyIcebergDeletes, loadIcebergTable } from "./index.js";
+import { applyIcebergDeletes, loadIcebergTable, scanPlannedIcebergRows } from "./index.js";
 
 const store = memoryStore();
 
@@ -267,6 +268,63 @@ describe("loadIcebergTable", () => {
         equalityDeletes: [{ columns: ["missing"], row: { missing: 1 } }],
       }),
     ).toThrow(/Unknown Iceberg equality delete column/u);
+  });
+
+  it("scans planned data files through decoded delete readers", async () => {
+    async function* dataBatches() {
+      yield [
+        { id: 1, country: "US", amount: 10 },
+        { id: 2, country: "CA", amount: 20 },
+      ];
+      yield [
+        { id: 3, country: "US", amount: 30 },
+        { id: 4, country: "MX", amount: 40 },
+        { id: 5, country: "US", amount: 50 },
+      ];
+    }
+    const deleteReads: string[] = [];
+    const batches: Row[][] = [];
+
+    for await (const batch of scanPlannedIcebergRows({
+      plan: [
+        {
+          path: "data/a.parquet",
+          sequenceNumber: 1,
+          partition: {},
+          recordCount: 5,
+          projectedFieldIds: [1, 2, 3],
+          snapshotId: 1,
+          deleteFiles: [
+            { content: "position-delete", path: "deletes/a.pos.parquet" },
+            { content: "equality-delete", path: "deletes/a.eq.parquet" },
+            { content: "deletion-vector", path: "deletes/a.dv" },
+          ],
+        },
+      ],
+      readDataFile: async () => dataBatches(),
+      readDeleteFile: async (deleteFile, dataFile) => {
+        deleteReads.push(`${dataFile.path}:${deleteFile.path}`);
+        if (deleteFile.content === "position-delete") {
+          return { positionDeletes: [{ path: dataFile.path, position: 1 }] };
+        }
+        if (deleteFile.content === "deletion-vector") {
+          return { deletionVectors: [{ path: dataFile.path, positions: [4] }] };
+        }
+        return { equalityDeletes: [{ columns: ["country"], row: { country: "MX" } }] };
+      },
+    })) {
+      batches.push(batch);
+    }
+
+    expect(deleteReads).toEqual([
+      "data/a.parquet:deletes/a.pos.parquet",
+      "data/a.parquet:deletes/a.eq.parquet",
+      "data/a.parquet:deletes/a.dv",
+    ]);
+    expect(batches).toEqual([
+      [{ id: 1, country: "US", amount: 10 }],
+      [{ id: 3, country: "US", amount: 30 }],
+    ]);
   });
 
   it("appends files by writing a new snapshot and metadata file", async () => {

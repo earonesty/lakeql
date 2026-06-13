@@ -4,7 +4,7 @@ Iceberg support plans deterministic data files from metadata JSON fixtures and a
 
 ```ts
 import { eq, memoryStore } from "@laql/core";
-import { loadIcebergTable } from "@laql/iceberg";
+import { loadIcebergTable, scanPlannedIcebergRows } from "@laql/iceberg";
 
 const table = await loadIcebergTable({
   store,
@@ -23,7 +23,19 @@ Strict mode includes known Iceberg delete files in the plan and throws `LAQL_UNS
 
 `planFiles()` reports `deleteFilesPlanned` and `deleteFilesIgnored` so callers can audit delete handling without walking every planned file.
 
-When a reader has decoded delete files, `applyIcebergDeletes` filters data-file rows with Iceberg position deletes, equality deletes, and deletion vectors:
+When a reader has decoded delete files, `scanPlannedIcebergRows` applies them while streaming planned data-file batches:
+
+```ts
+for await (const rows of scanPlannedIcebergRows({
+  plan,
+  readDataFile: async (file) => readParquetBatches(file.path),
+  readDeleteFile: async (deleteFile, dataFile) => decodeDeleteFile(deleteFile, dataFile),
+})) {
+  // rows are visible after position, equality, and deletion-vector deletes.
+}
+```
+
+`applyIcebergDeletes` is also available when a caller already has decoded delete rows and wants to filter one data-file batch directly:
 
 ```ts
 const visibleRows = applyIcebergDeletes({

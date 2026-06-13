@@ -128,6 +128,21 @@ export interface ApplyIcebergDeletesOptions {
   deletionVectors?: IcebergDeletionVector[];
 }
 
+export interface DecodedIcebergDeletes {
+  positionDeletes?: IcebergPositionDelete[];
+  equalityDeletes?: IcebergEqualityDelete[];
+  deletionVectors?: IcebergDeletionVector[];
+}
+
+export interface ScanPlannedIcebergRowsOptions {
+  plan: IcebergPlan | PlannedIcebergFile[];
+  readDataFile(file: PlannedIcebergFile): Promise<Row[] | AsyncIterable<Row[]>>;
+  readDeleteFile(
+    deleteFile: IcebergDeleteFile,
+    dataFile: PlannedIcebergFile,
+  ): Promise<DecodedIcebergDeletes>;
+}
+
 export interface MetadataFile {
   "format-version": number;
   "table-uuid": string;
@@ -479,6 +494,78 @@ export function applyIcebergDeletes(options: ApplyIcebergDeletesOptions): Row[] 
     }
     return true;
   });
+}
+
+export async function* scanPlannedIcebergRows(
+  options: ScanPlannedIcebergRowsOptions,
+): AsyncIterable<Row[]> {
+  const files = Array.isArray(options.plan) ? options.plan : options.plan.files;
+  for (const file of files) {
+    const deletes = await decodedDeletesForFile(file, options);
+    const data = await options.readDataFile(file);
+    let rowOffset = 0;
+    for await (const rows of rowBatches(data)) {
+      const visibleRows = hasDeletes(deletes)
+        ? applyIcebergDeletes({
+            dataFilePath: file.path,
+            rows,
+            rowOffset,
+            ...deletes,
+          })
+        : rows;
+      rowOffset += rows.length;
+      if (visibleRows.length > 0) yield visibleRows;
+    }
+  }
+}
+
+async function decodedDeletesForFile(
+  file: PlannedIcebergFile,
+  options: ScanPlannedIcebergRowsOptions,
+): Promise<DecodedIcebergDeletes> {
+  const out: DecodedIcebergDeletes = {};
+  for (const deleteFile of file.deleteFiles ?? []) {
+    const decoded = await options.readDeleteFile(deleteFile, file);
+    pushDeletes(out, decoded);
+  }
+  return out;
+}
+
+function pushDeletes(target: DecodedIcebergDeletes, source: DecodedIcebergDeletes): void {
+  if (source.positionDeletes !== undefined) {
+    target.positionDeletes = [...(target.positionDeletes ?? []), ...source.positionDeletes];
+  }
+  if (source.equalityDeletes !== undefined) {
+    target.equalityDeletes = [...(target.equalityDeletes ?? []), ...source.equalityDeletes];
+  }
+  if (source.deletionVectors !== undefined) {
+    target.deletionVectors = [...(target.deletionVectors ?? []), ...source.deletionVectors];
+  }
+}
+
+function hasDeletes(deletes: DecodedIcebergDeletes): boolean {
+  return (
+    (deletes.positionDeletes?.length ?? 0) > 0 ||
+    (deletes.equalityDeletes?.length ?? 0) > 0 ||
+    (deletes.deletionVectors?.length ?? 0) > 0
+  );
+}
+
+async function* rowBatches(rows: Row[] | AsyncIterable<Row[]>): AsyncIterable<Row[]> {
+  if (isAsyncIterable(rows)) {
+    yield* rows;
+  } else {
+    yield rows;
+  }
+}
+
+function isAsyncIterable(value: unknown): value is AsyncIterable<Row[]> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Symbol.asyncIterator in value &&
+    typeof (value as { [Symbol.asyncIterator]?: unknown })[Symbol.asyncIterator] === "function"
+  );
 }
 
 function validateDeletePosition(position: number, path: string): number {
