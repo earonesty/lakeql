@@ -34,6 +34,8 @@ Each written file and output-manifest entry includes a deterministic `sha256:` c
 hash computed from the exact Parquet bytes written to the object store.
 When write tasks persist their `OutputManifestEntry` values in a checkpoint adapter,
 `createOutputManifestFromCheckpoints` fans them into one sorted manifest for commit.
+Use `writeOutputManifest` and `readOutputManifest` from `@laql/core` to persist the
+final manifest as deterministic JSON in an `ObjectStore`.
 
 Use `writePartitionedParquetTask` when the write should advance the task checkpoint
 state machine and record all output entries. Replaying a completed task with the same
