@@ -1,4 +1,4 @@
-import { type Expr, LaQLError, matches, type ObjectStore } from "@laql/core";
+import { type Expr, LaQLError, matches, type ObjectStore, stableStringify } from "@laql/core";
 
 export const PACKAGE = "@laql/iceberg" as const;
 
@@ -16,6 +16,43 @@ export interface PlanIcebergFilesOptions {
   where?: Expr;
   select?: string[];
   readMode?: IcebergReadMode;
+}
+
+export interface IcebergAppendFile {
+  path: string;
+  partition?: Record<string, string>;
+  recordCount: number;
+  fileSizeInBytes: number;
+}
+
+export interface IcebergAppendOptions {
+  files: IcebergAppendFile[];
+  jobId?: string;
+  nowMs?: number;
+  catalog?: IcebergCommitCatalog;
+}
+
+export interface IcebergCommitCatalog {
+  commitAppend(input: IcebergCommitInput): Promise<boolean>;
+}
+
+export interface IcebergCommitInput {
+  store: ObjectStore;
+  currentMetadataPath: string;
+  nextMetadataPath: string;
+  expectedSnapshotId: number;
+  nextSnapshotId: number;
+  manifestPath: string;
+  manifest: Manifest;
+  metadata: MetadataFile;
+}
+
+export interface IcebergAppendResult {
+  snapshotId: number;
+  previousSnapshotId: number;
+  metadataPath: string;
+  manifestPath: string;
+  files: PlannedIcebergFile[];
 }
 
 export interface IcebergField {
@@ -45,7 +82,7 @@ export interface IcebergPlan {
   files: PlannedIcebergFile[];
 }
 
-interface MetadataFile {
+export interface MetadataFile {
   "format-version": number;
   "table-uuid": string;
   location: string;
@@ -58,31 +95,34 @@ interface MetadataFile {
   snapshots: Snapshot[];
 }
 
-interface Snapshot {
+export interface Snapshot {
   "snapshot-id": number;
   "timestamp-ms": number;
   "schema-id": number;
   manifests: Manifest[];
 }
 
-interface Manifest {
+export interface Manifest {
   path: string;
   files: ManifestFile[];
 }
 
-interface ManifestFile {
+export interface ManifestFile {
   path: string;
   sequenceNumber: number;
   partition?: Record<string, string>;
   recordCount: number;
+  fileSizeInBytes?: number;
   deleteFiles?: { content: string; path: string }[];
 }
 
 export class IcebergTable {
+  private readonly store: ObjectStore;
   readonly metadataPath: string;
   readonly metadata: MetadataFile;
 
-  constructor(metadataPath: string, metadata: MetadataFile) {
+  constructor(store: ObjectStore, metadataPath: string, metadata: MetadataFile) {
+    this.store = store;
     this.metadataPath = metadataPath;
     this.metadata = metadata;
   }
@@ -174,6 +214,75 @@ export class IcebergTable {
     };
   }
 
+  async appendFiles(options: IcebergAppendOptions): Promise<IcebergAppendResult> {
+    if (options.files.length === 0) {
+      throw new LaQLError("LAQL_VALIDATION_ERROR", "Iceberg append requires at least one file");
+    }
+    const currentSnapshot = this.snapshot();
+    const nextSnapshotId =
+      Math.max(...this.metadata.snapshots.map((snapshot) => snapshot["snapshot-id"])) + 1;
+    const nextSequenceNumber = maxSequenceNumber(this.metadata) + 1;
+    const manifestPath = appendManifestPath(this.metadataPath, options.jobId, nextSnapshotId);
+    const manifest: Manifest = {
+      path: manifestPath,
+      files: options.files.map((file, index) => ({
+        path: file.path,
+        sequenceNumber: nextSequenceNumber + index,
+        partition: sortStringRecord(file.partition ?? {}),
+        recordCount: file.recordCount,
+        fileSizeInBytes: file.fileSizeInBytes,
+      })),
+    };
+    const nextSnapshot: Snapshot = {
+      "snapshot-id": nextSnapshotId,
+      "timestamp-ms": options.nowMs ?? Date.now(),
+      "schema-id": currentSnapshot["schema-id"],
+      manifests: [...currentSnapshot.manifests.map(cloneManifest), manifest],
+    };
+    const metadata = cloneMetadata(this.metadata);
+    metadata["current-snapshot-id"] = nextSnapshotId;
+    metadata.snapshots.push(nextSnapshot);
+    metadata.refs = {
+      ...(metadata.refs ?? {}),
+      main: { type: "branch", "snapshot-id": nextSnapshotId },
+    };
+
+    const nextMetadataPath = nextMetadataPathFor(this.metadataPath, nextSnapshotId);
+    const catalog = options.catalog ?? new ObjectStoreIcebergCommitCatalog();
+    const committed = await catalog.commitAppend({
+      store: this.store,
+      currentMetadataPath: this.metadataPath,
+      nextMetadataPath,
+      expectedSnapshotId: currentSnapshot["snapshot-id"],
+      nextSnapshotId,
+      manifestPath,
+      manifest,
+      metadata,
+    });
+    if (!committed) {
+      throw new LaQLError("LAQL_ICEBERG_COMMIT_CONFLICT", "Iceberg append commit conflict", {
+        metadataPath: this.metadataPath,
+        expectedSnapshotId: currentSnapshot["snapshot-id"],
+        nextSnapshotId,
+      });
+    }
+
+    return {
+      snapshotId: nextSnapshotId,
+      previousSnapshotId: currentSnapshot["snapshot-id"],
+      metadataPath: nextMetadataPath,
+      manifestPath,
+      files: manifest.files.map((file) => ({
+        path: file.path,
+        sequenceNumber: file.sequenceNumber,
+        partition: file.partition ?? {},
+        recordCount: file.recordCount,
+        projectedFieldIds: [],
+        snapshotId: nextSnapshotId,
+      })),
+    };
+  }
+
   private snapshotById(snapshotId: number): Snapshot {
     const snapshot = this.metadata.snapshots.find(
       (candidate) => candidate["snapshot-id"] === snapshotId,
@@ -187,6 +296,22 @@ export class IcebergTable {
   }
 }
 
+export class ObjectStoreIcebergCommitCatalog implements IcebergCommitCatalog {
+  async commitAppend(input: IcebergCommitInput): Promise<boolean> {
+    await input.store.put(
+      input.manifestPath,
+      new TextEncoder().encode(`${stableStringify(input.manifest)}\n`),
+      { contentType: "application/json" },
+    );
+    await input.store.put(
+      input.nextMetadataPath,
+      new TextEncoder().encode(`${JSON.stringify(input.metadata, null, 2)}\n`),
+      { contentType: "application/json" },
+    );
+    return true;
+  }
+}
+
 export async function loadIcebergTable(options: LoadIcebergTableOptions): Promise<IcebergTable> {
   const bytes = await options.store.get(options.metadataPath);
   if (!bytes) {
@@ -196,7 +321,11 @@ export async function loadIcebergTable(options: LoadIcebergTableOptions): Promis
   }
   const text = new TextDecoder().decode(bytes);
   try {
-    return new IcebergTable(options.metadataPath, validateMetadata(JSON.parse(text)));
+    return new IcebergTable(
+      options.store,
+      options.metadataPath,
+      validateMetadata(JSON.parse(text)),
+    );
   } catch (cause) {
     if (cause instanceof LaQLError) throw cause;
     throw new LaQLError(
@@ -208,6 +337,88 @@ export async function loadIcebergTable(options: LoadIcebergTableOptions): Promis
       },
     );
   }
+}
+
+function nextMetadataPathFor(metadataPath: string, snapshotId: number): string {
+  const slash = metadataPath.lastIndexOf("/");
+  const prefix = slash === -1 ? "" : `${metadataPath.slice(0, slash + 1)}`;
+  return `${prefix}v${snapshotId}.metadata.json`;
+}
+
+function appendManifestPath(
+  metadataPath: string,
+  jobId: string | undefined,
+  snapshotId: number,
+): string {
+  const slash = metadataPath.lastIndexOf("/");
+  const prefix = slash === -1 ? "" : `${metadataPath.slice(0, slash + 1)}`;
+  return `${prefix}${jobId ?? "append"}-${snapshotId}.manifest.json`;
+}
+
+function maxSequenceNumber(metadata: MetadataFile): number {
+  let max = 0;
+  for (const snapshot of metadata.snapshots) {
+    for (const manifest of snapshot.manifests) {
+      for (const file of manifest.files) max = Math.max(max, file.sequenceNumber);
+    }
+  }
+  return max;
+}
+
+function cloneMetadata(metadata: MetadataFile): MetadataFile {
+  const cloned: MetadataFile = {
+    "format-version": metadata["format-version"],
+    "table-uuid": metadata["table-uuid"],
+    location: metadata.location,
+    "current-snapshot-id": metadata["current-snapshot-id"],
+    schemas: metadata.schemas.map((schema) => ({
+      "schema-id": schema["schema-id"],
+      fields: schema.fields.map((field) => ({ ...field })),
+    })),
+    snapshots: metadata.snapshots.map((snapshot) => ({
+      "snapshot-id": snapshot["snapshot-id"],
+      "timestamp-ms": snapshot["timestamp-ms"],
+      "schema-id": snapshot["schema-id"],
+      manifests: snapshot.manifests.map(cloneManifest),
+    })),
+  };
+  if (metadata.refs) cloned.refs = cloneRefs(metadata.refs);
+  return cloned;
+}
+
+function cloneRefs(
+  refs: Record<string, { type: "branch" | "tag"; "snapshot-id": number }>,
+): Record<string, { type: "branch" | "tag"; "snapshot-id": number }> {
+  const out: Record<string, { type: "branch" | "tag"; "snapshot-id": number }> = {};
+  for (const [name, ref] of Object.entries(refs)) {
+    out[name] = { type: ref.type, "snapshot-id": ref["snapshot-id"] };
+  }
+  return out;
+}
+
+function cloneManifest(manifest: Manifest): Manifest {
+  return {
+    path: manifest.path,
+    files: manifest.files.map((file) => {
+      const cloned: ManifestFile = {
+        path: file.path,
+        sequenceNumber: file.sequenceNumber,
+        partition: sortStringRecord(file.partition ?? {}),
+        recordCount: file.recordCount,
+      };
+      if (file.fileSizeInBytes !== undefined) cloned.fileSizeInBytes = file.fileSizeInBytes;
+      if (file.deleteFiles !== undefined) {
+        cloned.deleteFiles = file.deleteFiles.map((deleteFile) => ({ ...deleteFile }));
+      }
+      return cloned;
+    }),
+  };
+}
+
+function sortStringRecord(record: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of Object.keys(record).sort()) out[key] = record[key] ?? "";
+  return out;
 }
 
 function validateMetadata(value: unknown): MetadataFile {
