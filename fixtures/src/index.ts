@@ -1,9 +1,14 @@
 import { fileURLToPath } from "node:url";
 
 export const fixtureDataDir = fileURLToPath(new URL("../data/", import.meta.url));
+export const fixtureExternalDir = fileURLToPath(new URL("../external/", import.meta.url));
 
 export function fixturePath(name: string): string {
   return fileURLToPath(new URL(`../data/${name}`, import.meta.url));
+}
+
+export function externalFixturePath(name: string): string {
+  return fileURLToPath(new URL(`../external/${name}`, import.meta.url));
 }
 
 /** Shapes the generator guarantees; tests assert against these. */
@@ -71,4 +76,9 @@ export const HIVE = {
 export const ICEBERG = {
   metadataFile: "iceberg/warehouse/places/metadata/v2.metadata.json",
   snapshots: [1, 2],
+} as const;
+
+export const EXTERNAL_CONFORMANCE = {
+  parquetTestingDir: "parquet-testing",
+  icebergReferenceDir: "iceberg-reference",
 } as const;

@@ -10,6 +10,7 @@
     "build": "tsc -b && tsc -p fixtures",
     "test": "vitest run",
     "test:workerd": "vitest run -c vitest.workerd.config.ts",
+    "test:conformance": "LAQL_CONFORMANCE=1 vitest run -c vitest.conformance.config.ts",
     "coverage": "vitest run --coverage",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
