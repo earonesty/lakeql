@@ -3,6 +3,7 @@ import {
   and,
   between,
   col,
+  createOutputManifest,
   eq,
   fn,
   gt,
@@ -25,6 +26,7 @@ import type { RowGroup } from "hyparquet";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   createParquetLake,
+  partitionedParquetOutputEntries,
   readParquetMetadata,
   readParquetObjects,
   rowGroupMayMatch,
@@ -255,6 +257,47 @@ describe("writePartitionedParquet", () => {
     ]);
     expect(result.files.map((file) => file.rowCount)).toEqual([2, 1]);
     expect(result.files.every((file) => file.byteSize <= maxBytesPerFile)).toBe(true);
+  });
+
+  it("converts written files into output manifest entries", async () => {
+    const outStore = memoryStore();
+    const result = await writePartitionedParquet(outStore, "out/manifest", {
+      rows: [
+        { date: "2026-01-01", country: "US", id: 1 },
+        { date: "2026-01-02", country: "CA", id: 2 },
+      ],
+      partitionBy: ["date", "country"],
+      maxRowsPerFile: 1,
+      jobId: "manifest",
+    });
+
+    const entries = partitionedParquetOutputEntries(result, {
+      taskId: (_file, index) => `task-${index}`,
+    });
+    const manifest = createOutputManifest({
+      jobId: "job_manifest",
+      planFingerprint: "fp_manifest",
+      entries,
+    });
+
+    expect(manifest.entries).toEqual([
+      {
+        taskId: "task-0",
+        outputPath: "out/manifest/date=2026-01-01/country=US/part-manifest-00000.parquet",
+        partitionValues: { country: "US", date: "2026-01-01" },
+        rowCount: 1,
+        byteSize: result.files[0]?.byteSize,
+        etag: result.files[0]?.etag,
+      },
+      {
+        taskId: "task-1",
+        outputPath: "out/manifest/date=2026-01-02/country=CA/part-manifest-00001.parquet",
+        partitionValues: { country: "CA", date: "2026-01-02" },
+        rowCount: 1,
+        byteSize: result.files[1]?.byteSize,
+        etag: result.files[1]?.etag,
+      },
+    ]);
   });
 
   it("infers row column types and honors explicit type overrides", async () => {

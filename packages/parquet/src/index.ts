@@ -4,6 +4,7 @@ import {
   type LakeConfig,
   LaQLError,
   type ObjectStore,
+  type OutputManifestEntry,
   type Row,
   type ScanAdapter,
   type ScanOptions,
@@ -45,6 +46,10 @@ export interface WritePartitionedParquetFile {
 
 export interface WritePartitionedParquetResult {
   files: WritePartitionedParquetFile[];
+}
+
+export interface PartitionedParquetOutputEntryOptions {
+  taskId: string | ((file: WritePartitionedParquetFile, index: number) => string);
 }
 
 export interface ParquetLakeConfig extends Omit<LakeConfig, "scanner"> {
@@ -176,6 +181,23 @@ export async function writePartitionedParquet(
   }
 
   return { files };
+}
+
+export function partitionedParquetOutputEntries(
+  result: WritePartitionedParquetResult,
+  options: PartitionedParquetOutputEntryOptions,
+): OutputManifestEntry[] {
+  return result.files.map((file, index) => {
+    const entry: OutputManifestEntry = {
+      taskId: typeof options.taskId === "function" ? options.taskId(file, index) : options.taskId,
+      outputPath: file.path,
+      partitionValues: sortStringRecord(file.partitionValues),
+      rowCount: file.rowCount,
+      byteSize: file.byteSize,
+    };
+    if (file.etag !== undefined) entry.etag = file.etag;
+    return entry;
+  });
 }
 
 export class ParquetScanAdapter implements ScanAdapter {
@@ -317,6 +339,12 @@ function partitionOutputPath(
   const safeJobId = jobId ?? "data";
   segments.push(`part-${safeJobId}-${String(ordinal).padStart(5, "0")}.parquet`);
   return segments.join("/");
+}
+
+function sortStringRecord(record: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of Object.keys(record).sort()) out[key] = record[key] ?? "";
+  return out;
 }
 
 function splitRowsForFileSize(
