@@ -1,3 +1,4 @@
+import { LaQLError } from "./errors.js";
 import type { Bookmark } from "./types.js";
 
 export interface CacheEntry<T> {
@@ -104,6 +105,91 @@ export interface CheckpointStore {
   delete(jobId: string): Promise<void>;
 }
 
+export interface SpillRef {
+  id: string;
+  byteSize: number;
+}
+
+export interface SpillUsage {
+  entries: number;
+  byteSize: number;
+}
+
+export interface SpillAdapter {
+  write(id: string, data: Uint8Array): Promise<SpillRef>;
+  read(ref: SpillRef | string): Promise<Uint8Array>;
+  delete(ref: SpillRef | string): Promise<void>;
+  usage(): Promise<SpillUsage>;
+}
+
+export interface MemorySpillAdapterOptions {
+  maxBytes?: number;
+}
+
+export class MemorySpillAdapter implements SpillAdapter {
+  private readonly entries = new Map<string, Uint8Array>();
+  private readonly maxBytes: number | undefined;
+
+  constructor(options: MemorySpillAdapterOptions = {}) {
+    this.maxBytes = options.maxBytes;
+  }
+
+  async write(id: string, data: Uint8Array): Promise<SpillRef> {
+    if (!id) {
+      throw new LaQLError("LAQL_TYPE_ERROR", "spill id must be non-empty");
+    }
+    const nextBytes =
+      this.currentBytes() - (this.entries.get(id)?.byteLength ?? 0) + data.byteLength;
+    if (this.maxBytes !== undefined && nextBytes > this.maxBytes) {
+      throw new LaQLError(
+        "LAQL_BUDGET_EXCEEDED",
+        `Query exceeded spill bytes budget (${nextBytes} > ${this.maxBytes}). Add a partition filter, date filter, h3 filter, or limit.`,
+        { metric: "spill bytes", limit: this.maxBytes, actual: nextBytes },
+      );
+    }
+    const copy = copyBytes(data);
+    this.entries.set(id, copy);
+    return { id, byteSize: copy.byteLength };
+  }
+
+  async read(ref: SpillRef | string): Promise<Uint8Array> {
+    const id = spillId(ref);
+    const data = this.entries.get(id);
+    if (!data) {
+      throw new LaQLError("LAQL_OBJECT_NOT_FOUND", `No spill entry ${id}`, { id });
+    }
+    return copyBytes(data);
+  }
+
+  async delete(ref: SpillRef | string): Promise<void> {
+    this.entries.delete(spillId(ref));
+  }
+
+  async usage(): Promise<SpillUsage> {
+    return { entries: this.entries.size, byteSize: this.currentBytes() };
+  }
+
+  private currentBytes(): number {
+    let total = 0;
+    for (const data of this.entries.values()) total += data.byteLength;
+    return total;
+  }
+}
+
+export function memorySpillAdapter(options: MemorySpillAdapterOptions = {}): SpillAdapter {
+  return new MemorySpillAdapter(options);
+}
+
+function spillId(ref: SpillRef | string): string {
+  return typeof ref === "string" ? ref : ref.id;
+}
+
+function copyBytes(data: Uint8Array): Uint8Array {
+  const copy = new Uint8Array(data.byteLength);
+  copy.set(data);
+  return copy;
+}
+
 export interface QueueAdapter<T> {
   send(message: T, options?: { delayMs?: number }): Promise<void>;
 }
@@ -134,6 +220,7 @@ export interface LogHook {
 
 export interface RuntimeSubstrate {
   checkpointStore?: CheckpointStore;
+  spill?: SpillAdapter;
   queue?: QueueAdapter<Bookmark>;
   lock?: LockAdapter;
   clock?: Clock;

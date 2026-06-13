@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { cacheApiCache, memoryCache, type RuntimeSubstrate } from "./runtime.js";
+import {
+  cacheApiCache,
+  memoryCache,
+  memorySpillAdapter,
+  type RuntimeSubstrate,
+} from "./runtime.js";
 
 class FakeCache implements Cache {
   private readonly entries = new Map<string, Response>();
@@ -75,11 +80,48 @@ describe("runtime substrate helpers", () => {
     await expect(cache.get("delete-me")).resolves.toBeUndefined();
   });
 
+  it("spills bytes defensively and tracks memory usage", async () => {
+    const spill = memorySpillAdapter();
+    const source = new Uint8Array([1, 2, 3]);
+    const ref = await spill.write("operator-1", source);
+    source[0] = 9;
+
+    expect(ref).toEqual({ id: "operator-1", byteSize: 3 });
+    await expect(spill.read(ref)).resolves.toEqual(new Uint8Array([1, 2, 3]));
+    const read = await spill.read("operator-1");
+    read[1] = 9;
+    await expect(spill.read("operator-1")).resolves.toEqual(new Uint8Array([1, 2, 3]));
+    await expect(spill.usage()).resolves.toEqual({ entries: 1, byteSize: 3 });
+
+    await spill.write("operator-1", new Uint8Array([4]));
+    await expect(spill.usage()).resolves.toEqual({ entries: 1, byteSize: 1 });
+    await spill.delete(ref);
+    await expect(spill.usage()).resolves.toEqual({ entries: 0, byteSize: 0 });
+    await expect(spill.read(ref)).rejects.toMatchObject({ code: "LAQL_OBJECT_NOT_FOUND" });
+  });
+
+  it("enforces spill byte budgets with typed failures", async () => {
+    const spill = memorySpillAdapter({ maxBytes: 4 });
+    await spill.write("a", new Uint8Array([1, 2]));
+    await spill.write("b", new Uint8Array([3, 4]));
+
+    await expect(spill.write("c", new Uint8Array([5]))).rejects.toMatchObject({
+      code: "LAQL_BUDGET_EXCEEDED",
+      details: { metric: "spill bytes", limit: 4, actual: 5 },
+    });
+    await expect(spill.write("", new Uint8Array([1]))).rejects.toMatchObject({
+      code: "LAQL_TYPE_ERROR",
+    });
+    await spill.write("b", new Uint8Array([3]));
+    await expect(spill.usage()).resolves.toEqual({ entries: 2, byteSize: 3 });
+  });
+
   it("accepts caller-supplied substrate interfaces", async () => {
     const substrate: RuntimeSubstrate = {
       clock: { now: () => 1 },
       ids: { id: (prefix = "id") => `${prefix}-1` },
       lock: { withLock: async (_key, fn) => fn() },
+      spill: memorySpillAdapter(),
       metrics: { count() {}, timing() {} },
       log: { debug() {}, info() {}, warn() {}, error() {} },
     };
