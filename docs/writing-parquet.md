@@ -35,6 +35,26 @@ hash computed from the exact Parquet bytes written to the object store.
 When write tasks persist their `OutputManifestEntry` values in a checkpoint adapter,
 `createOutputManifestFromCheckpoints` fans them into one sorted manifest for commit.
 
+Use `writePartitionedParquetTask` when the write should advance the task checkpoint
+state machine and record all output entries. Replaying a completed task with the same
+idempotency key returns the checkpointed outputs without rewriting files:
+
+```ts
+import { memoryCheckpointAdapter } from "@laql/core";
+import { writePartitionedParquetTask } from "@laql/parquet";
+
+const checkpoints = memoryCheckpointAdapter();
+const { entries } = await writePartitionedParquetTask(store, "out/sales", {
+  checkpoints,
+  rows,
+  partitionBy: ["region"],
+  jobId: "job_2026_01_01",
+  taskId: "task_000",
+  idempotencyKey: "attempt_001",
+  writeMode: "create",
+});
+```
+
 Set `iceberg: true` when the manifest should carry data-file metadata for a later Iceberg append commit.
 
 `writeMode: "create"` fails if an output object already exists; omit it or use `"overwrite"` when replacing existing output is intentional.
