@@ -24,6 +24,7 @@ export interface LakeConfig {
 
 export interface ScanOptions {
   columns?: string[];
+  where?: Expr;
   batchSize: number;
   stats: QueryStats;
   budget: QueryBudget;
@@ -248,8 +249,12 @@ export class QueryResult {
         now: config.now,
         startedAt,
       };
-      if (columns !== undefined) scanOptions.columns = columns;
       const partitionValues = config.hive ? parseHivePartitions(object.path) : {};
+      const physicalColumns = columns?.filter((column) => !(column in partitionValues));
+      if (physicalColumns !== undefined && physicalColumns.length > 0) {
+        scanOptions.columns = physicalColumns;
+      }
+      if (config.where !== undefined) scanOptions.where = config.where;
       for await (const rawBatch of config.scanner.scan(object.path, scanOptions)) {
         const out: Row[] = [];
         for (const rawRow of rawBatch) {

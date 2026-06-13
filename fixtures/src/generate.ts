@@ -1,8 +1,9 @@
 // Deterministic fixture generation: same input, same bytes, no clock, no RNG.
 // Run via `pnpm fixtures` (root) or `pnpm generate` (this package).
 import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { parquetWriteFile } from "hyparquet-writer";
-import { fixtureDataDir, fixturePath, SALES, TYPES, WIDE } from "./index.ts";
+import { fixtureDataDir, fixturePath, HIVE, SALES, STATS, TYPES, WIDE } from "./index.ts";
 
 mkdirSync(fixtureDataDir, { recursive: true });
 
@@ -74,7 +75,57 @@ function generateWide() {
   });
 }
 
+function generateStats() {
+  const id: number[] = [];
+  const metric: number[] = [];
+  const label: string[] = [];
+
+  for (let group = 0; group < 3; group++) {
+    for (let offset = 0; offset < STATS.rowGroupSize; offset++) {
+      const value = group * 100 + offset;
+      id.push(group * STATS.rowGroupSize + offset);
+      metric.push(value);
+      label.push(`g${group}`);
+    }
+  }
+
+  parquetWriteFile({
+    filename: fixturePath(STATS.file),
+    rowGroupSize: [STATS.rowGroupSize],
+    columnData: [
+      { name: "id", data: id, type: "INT32" },
+      { name: "metric", data: metric, type: "INT32" },
+      { name: "label", data: label, type: "STRING" },
+    ],
+  });
+}
+
+function generateHive() {
+  for (const file of HIVE.files) {
+    const path = fixturePath(file);
+    mkdirSync(dirname(path), { recursive: true });
+    const country = file.includes("country=CA") ? "CA" : "US";
+    const date = file.includes("date=2026-01-01") ? "2026-01-01" : "2026-01-02";
+    const base = country === "CA" ? 100 : date.endsWith("01") ? 0 : 200;
+    const id: number[] = [];
+    const amount: number[] = [];
+    for (let i = 0; i < HIVE.rowsPerFile; i++) {
+      id.push(base + i);
+      amount.push(base + i * 10);
+    }
+    parquetWriteFile({
+      filename: path,
+      columnData: [
+        { name: "id", data: id, type: "INT32" },
+        { name: "amount", data: amount, type: "INT32" },
+      ],
+    });
+  }
+}
+
 generateSales();
 generateTypes();
 generateWide();
+generateStats();
+generateHive();
 console.log(`fixtures written to ${fixtureDataDir}`);

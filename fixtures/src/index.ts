@@ -24,3 +24,18 @@ export const WIDE = {
   rows: 24,
   columns: 32,
 } as const;
+
+export const STATS = {
+  file: "stats.parquet",
+  rows: 30,
+  rowGroupSize: 10,
+} as const;
+
+export const HIVE = {
+  files: [
+    "hive/date=2026-01-01/country=US/part-000.parquet",
+    "hive/date=2026-01-02/country=CA/part-000.parquet",
+    "hive/date=2026-01-02/country=US/part-000.parquet",
+  ],
+  rowsPerFile: 4,
+} as const;

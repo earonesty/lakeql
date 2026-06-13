@@ -184,8 +184,8 @@ describe("Lake query runtime", () => {
 
     expect(await query.toArray()).toEqual([{ id: 3 }]);
     expect(scanner.requestedColumns).toEqual([
-      ["amount", "country", "id"],
-      ["amount", "country", "id"],
+      ["amount", "id"],
+      ["amount", "id"],
     ]);
 
     const result = query.run();
