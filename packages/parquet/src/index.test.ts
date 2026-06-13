@@ -179,6 +179,36 @@ describe("writeParquet", () => {
     ).rejects.toMatchObject({ code: "LAQL_PARQUET_WRITE_ERROR" });
   });
 
+  it("enforces create-only output mode for direct writes", async () => {
+    const outStore = memoryStore();
+    await writeParquet(outStore, "out/create.parquet", {
+      writeMode: "create",
+      columnData: [{ name: "id", data: [1], type: "INT32" }],
+    });
+
+    await expect(
+      writeParquet(outStore, "out/create.parquet", {
+        writeMode: "create",
+        columnData: [{ name: "id", data: [2], type: "INT32" }],
+      }),
+    ).rejects.toMatchObject({ code: "LAQL_VALIDATION_ERROR" });
+
+    await writeParquet(outStore, "out/create.parquet", {
+      writeMode: "overwrite",
+      columnData: [{ name: "id", data: [3], type: "INT32" }],
+    });
+    await expect(readParquetObjects(outStore, "out/create.parquet")).resolves.toEqual([{ id: 3 }]);
+  });
+
+  it("validates direct write mode", async () => {
+    await expect(
+      writeParquet(memoryStore(), "out/bad-mode.parquet", {
+        writeMode: "append" as never,
+        columnData: [{ name: "id", data: [1], type: "INT32" }],
+      }),
+    ).rejects.toMatchObject({ code: "LAQL_TYPE_ERROR" });
+  });
+
   it("matches the fixed write-golden fixture bytes", async () => {
     const outStore = memoryStore();
     await writeParquet(outStore, "out/write-golden.parquet", {
@@ -256,6 +286,30 @@ describe("writePartitionedParquet", () => {
     ]);
     await expect(readParquetObjects(outStore, result.files[1]?.path ?? "")).resolves.toEqual([
       { active: true, id: 3 },
+    ]);
+  });
+
+  it("enforces create-only output mode for partitioned writes", async () => {
+    const outStore = memoryStore();
+    const options = {
+      rows: [{ id: 1 }, { id: 2 }],
+      maxRowsPerFile: 1,
+      jobId: "retry",
+      writeMode: "create" as const,
+    };
+    const first = await writePartitionedParquet(outStore, "out/retry", options);
+
+    await expect(writePartitionedParquet(outStore, "out/retry", options)).rejects.toMatchObject({
+      code: "LAQL_VALIDATION_ERROR",
+    });
+
+    await writePartitionedParquet(outStore, "out/retry", {
+      ...options,
+      rows: [{ id: 3 }],
+      writeMode: "overwrite",
+    });
+    await expect(readParquetObjects(outStore, first.files[0]?.path ?? "")).resolves.toEqual([
+      { id: 3 },
     ]);
   });
 

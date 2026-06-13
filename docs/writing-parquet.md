@@ -12,6 +12,7 @@ const result = await writePartitionedParquet(store, "out/sales", {
   partitionBy: ["region"],
   maxRowsPerFile: 1000,
   jobId: "job_2026_01_01",
+  writeMode: "create",
 });
 ```
 
@@ -25,3 +26,5 @@ const entries = partitionedParquetOutputEntries(result, {
 ```
 
 Set `iceberg: true` when the manifest should carry data-file metadata for a later Iceberg append commit.
+
+`writeMode: "create"` fails if an output object already exists; omit it or use `"overwrite"` when replacing existing output is intentional.

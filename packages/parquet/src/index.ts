@@ -27,6 +27,7 @@ export interface ReadParquetOptions {
 export interface WriteParquetOptions extends Omit<ParquetWriteOptions, "writer" | "columnData"> {
   columnData: ColumnSource[];
   contentType?: string;
+  writeMode?: "overwrite" | "create";
 }
 
 export interface WriteParquetRowsOptions
@@ -140,9 +141,17 @@ export async function writeParquet(
   options: WriteParquetOptions,
 ): Promise<{ path: string; byteSize: number; etag?: string }> {
   try {
-    const { contentType, ...writeOptions } = options;
-    return await putParquetBytes(store, path, encodeParquetBytes(writeOptions), contentType);
+    const { contentType, writeMode, ...writeOptions } = options;
+    validateWriteMode(writeMode);
+    return await putParquetBytes(
+      store,
+      path,
+      encodeParquetBytes(writeOptions),
+      contentType,
+      writeMode,
+    );
   } catch (cause) {
+    if (cause instanceof LaQLError) throw cause;
     throw new LaQLError("LAQL_PARQUET_WRITE_ERROR", `Failed to write ${path}`, { path, cause });
   }
 }
@@ -157,6 +166,7 @@ export async function writePartitionedParquet(
 
   const normalizedPrefix = prefix.replace(/\/+$/u, "");
   const partitionBy = options.partitionBy ?? [];
+  validateWriteMode(options.writeMode);
   validateInsertRows(options.rows, options.validation);
   const {
     rows: _rows,
@@ -167,6 +177,7 @@ export async function writePartitionedParquet(
     columnTypes,
     validation: _validation,
     contentType,
+    writeMode,
     ...writeOptions
   } = options;
   const partitions = partitionRows(options.rows, partitionBy);
@@ -191,7 +202,13 @@ export async function writePartitionedParquet(
           jobId,
           ordinal,
         );
-        const written = await writeEncodedParquet(store, path, encodedChunk.bytes, contentType);
+        const written = await writeEncodedParquet(
+          store,
+          path,
+          encodedChunk.bytes,
+          contentType,
+          writeMode,
+        );
         const result: WritePartitionedParquetFile = {
           path: written.path,
           byteSize: written.byteSize,
@@ -688,10 +705,12 @@ async function writeEncodedParquet(
   path: string,
   bytes: Uint8Array,
   contentType: string | undefined,
+  writeMode: WriteParquetOptions["writeMode"],
 ): Promise<{ path: string; byteSize: number; etag?: string }> {
   try {
-    return await putParquetBytes(store, path, bytes, contentType);
+    return await putParquetBytes(store, path, bytes, contentType, writeMode);
   } catch (cause) {
+    if (cause instanceof LaQLError) throw cause;
     throw new LaQLError("LAQL_PARQUET_WRITE_ERROR", `Failed to write ${path}`, { path, cause });
   }
 }
@@ -701,7 +720,11 @@ async function putParquetBytes(
   path: string,
   bytes: Uint8Array,
   contentType: string | undefined,
+  writeMode: WriteParquetOptions["writeMode"] = "overwrite",
 ): Promise<{ path: string; byteSize: number; etag?: string }> {
+  if (writeMode === "create" && (await store.head(path)) !== null) {
+    throw new LaQLError("LAQL_VALIDATION_ERROR", "Parquet output already exists", { path });
+  }
   await store.put(path, bytes, {
     contentType: contentType ?? "application/vnd.apache.parquet",
   });
@@ -712,6 +735,12 @@ async function putParquetBytes(
   };
   if (head?.etag !== undefined) result.etag = head.etag;
   return result;
+}
+
+function validateWriteMode(writeMode: WriteParquetOptions["writeMode"]): void {
+  if (writeMode !== undefined && writeMode !== "overwrite" && writeMode !== "create") {
+    throw new LaQLError("LAQL_TYPE_ERROR", "writeMode must be overwrite or create", { writeMode });
+  }
 }
 
 type StatsValue = string | number | bigint | boolean;
