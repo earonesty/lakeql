@@ -3,7 +3,17 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parquetWriteFile } from "hyparquet-writer";
-import { fixtureDataDir, fixturePath, HIVE, ICEBERG, SALES, STATS, TYPES, WIDE } from "./index.ts";
+import {
+  fixtureDataDir,
+  fixturePath,
+  HIVE,
+  ICEBERG,
+  SALES,
+  STATS,
+  TYPES,
+  WIDE,
+  WRITE,
+} from "./index.ts";
 
 mkdirSync(fixtureDataDir, { recursive: true });
 
@@ -96,6 +106,20 @@ function generateStats() {
       { name: "id", data: id, type: "INT32" },
       { name: "metric", data: metric, type: "INT32" },
       { name: "label", data: label, type: "STRING" },
+    ],
+  });
+}
+
+function generateWriteGolden() {
+  const path = fixturePath(WRITE.file);
+  mkdirSync(dirname(path), { recursive: true });
+  parquetWriteFile({
+    filename: path,
+    rowGroupSize: [2],
+    columnData: [
+      { name: "id", data: [1, 2, 3], type: "INT32" },
+      { name: "name", data: ["a", "b", "c"], type: "STRING" },
+      { name: "score", data: [1.5, 2.5, 3.5], type: "DOUBLE" },
     ],
   });
 }
@@ -219,6 +243,7 @@ generateSales();
 generateTypes();
 generateWide();
 generateStats();
+generateWriteGolden();
 generateHive();
 generateIceberg();
 console.log(`fixtures written to ${fixtureDataDir}`);

@@ -21,7 +21,7 @@ import {
   notIn,
   or,
 } from "@laql/core";
-import { fixturePath, HIVE, SALES, STATS, TYPES, WIDE } from "@laql/fixtures";
+import { fixturePath, HIVE, SALES, STATS, TYPES, WIDE, WRITE } from "@laql/fixtures";
 import type { RowGroup } from "hyparquet";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
@@ -161,6 +161,21 @@ describe("writeParquet", () => {
         ],
       }),
     ).rejects.toMatchObject({ code: "LAQL_PARQUET_WRITE_ERROR" });
+  });
+
+  it("matches the fixed write-golden fixture bytes", async () => {
+    const outStore = memoryStore();
+    await writeParquet(outStore, "out/write-golden.parquet", {
+      rowGroupSize: [2],
+      columnData: [
+        { name: "id", data: [1, 2, 3], type: "INT32" },
+        { name: "name", data: ["a", "b", "c"], type: "STRING" },
+        { name: "score", data: [1.5, 2.5, 3.5], type: "DOUBLE" },
+      ],
+    });
+
+    const actual = await outStore.get("out/write-golden.parquet");
+    expect(actual).toEqual(new Uint8Array(readFileSync(fixturePath(WRITE.file))));
   });
 });
 

@@ -31,6 +31,11 @@ export const STATS = {
   rowGroupSize: 10,
 } as const;
 
+export const WRITE = {
+  file: "write-golden/plain.parquet",
+  rows: 3,
+} as const;
+
 export const HIVE = {
   files: [
     "hive/date=2026-01-01/country=US/part-000.parquet",
