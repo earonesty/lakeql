@@ -93,6 +93,13 @@ export interface ResumableBatchOptions {
   bookmark?: Bookmark;
 }
 
+export interface CsvStreamOptions {
+  /** Emit the header row. Defaults to true. */
+  header?: boolean;
+  /** Column order for CSV output. Defaults to select columns or first-row keys. */
+  columns?: string[];
+}
+
 export type AggregateOp =
   | "count"
   | "sum"
@@ -370,6 +377,10 @@ export class QueryBuilder {
 
   streamJson(): ReadableStream<Uint8Array> {
     return this.run().streamJson();
+  }
+
+  streamCsv(options: CsvStreamOptions = {}): ReadableStream<Uint8Array> {
+    return this.run().streamCsv(options);
   }
 
   resumableBatches(options: ResumableBatchOptions): AsyncIterable<SliceResult> {
@@ -808,6 +819,60 @@ export class QueryResult {
       },
     });
   }
+
+  streamCsv(options: CsvStreamOptions = {}): ReadableStream<Uint8Array> {
+    const iterator = this.rows()[Symbol.asyncIterator]();
+    const header = options.header ?? true;
+    let columns = options.columns ?? this.config.select;
+    let initialized = false;
+    return new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        if (initialized) {
+          const next = await iterator.next();
+          if (next.done) {
+            controller.close();
+            return;
+          }
+          controller.enqueue(textEncoder.encode(csvRow(next.value, columns ?? [])));
+          return;
+        }
+
+        initialized = true;
+        const next = await iterator.next();
+        if (next.done) {
+          if (header && columns !== undefined) {
+            controller.enqueue(textEncoder.encode(csvHeader(columns)));
+          }
+          controller.close();
+          return;
+        }
+        columns = columns ?? Object.keys(next.value);
+        const out = `${header ? csvHeader(columns) : ""}${csvRow(next.value, columns)}`;
+        controller.enqueue(textEncoder.encode(out));
+      },
+      async cancel() {
+        await iterator.return?.();
+      },
+    });
+  }
+}
+
+function csvHeader(columns: string[]): string {
+  return `${columns.map(csvCell).join(",")}\n`;
+}
+
+function csvRow(row: Row, columns: string[]): string {
+  return `${columns.map((column) => csvCell(row[column])).join(",")}\n`;
+}
+
+function csvCell(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  const safe = jsonSafeValue(value);
+  const text =
+    typeof safe === "string" || typeof safe === "number" || typeof safe === "boolean"
+      ? String(safe)
+      : JSON.stringify(safe);
+  return /[",\n\r]/u.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
 interface AggregateState {

@@ -1,13 +1,19 @@
 # Recipe: CSV Export
 
-The current CLI exports JSON and NDJSON. For CSV, stream rows and format at the application boundary:
+Run from the repository root:
 
-```ts
-const headers = ["store_id", "amount"];
-console.log(headers.join(","));
-for await (const row of lake.path("sales.parquet").select(headers).rows()) {
-  console.log(headers.map((header) => JSON.stringify(row[header] ?? "")).join(","));
-}
+```sh
+pnpm build
+node packages/cli/dist/bin.js query \
+  --path fixtures/data/sales.parquet \
+  --sql "select store_id, amount where region = 'west' order by amount asc limit 2" \
+  --format csv
 ```
 
-This keeps CSV escaping policy under caller control.
+Expected fixture output:
+
+```csv
+store_id,amount
+store-000,0
+store-000,36.28
+```

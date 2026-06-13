@@ -47,6 +47,21 @@ describe("runCli", () => {
     expect(JSON.parse(result.stdout)).toEqual([{ region: "east" }]);
   });
 
+  it("queries a local Parquet path as CSV", async () => {
+    const result = await runCli([
+      "query",
+      "--path",
+      fixturePath(SALES.file),
+      "--sql",
+      "select store_id, amount where region = 'west' order by amount asc limit 2",
+      "--format",
+      "csv",
+    ]);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    expect(result.stdout).toBe("store_id,amount\nstore-000,0\nstore-000,36.28\n");
+  });
+
   it("explains, inspects, and reads schema for a local Parquet path", async () => {
     const explain = await runCli([
       "explain",
@@ -155,7 +170,7 @@ describe("runCli", () => {
       stderr: expect.stringContaining("ENOENT"),
     });
     await expect(
-      runCli(["query", "--path", fixturePath(SALES.file), "--format", "csv"]),
+      runCli(["query", "--path", fixturePath(SALES.file), "--format", "xml"]),
     ).resolves.toMatchObject({
       exitCode: 1,
       stderr: expect.stringContaining("--format"),

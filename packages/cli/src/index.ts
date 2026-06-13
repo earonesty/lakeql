@@ -30,7 +30,7 @@ interface ParsedArgs {
   path?: string;
   output?: string;
   sql?: string;
-  format?: "json" | "ndjson";
+  format?: "csv" | "json" | "ndjson";
   partitionBy?: string[];
   maxRowsPerFile?: number;
   help: boolean;
@@ -72,7 +72,7 @@ export function usage(): string {
     "",
     "commands:",
     "  compact --path <file.parquet> --output <prefix> [--max-rows-per-file n]",
-    "  query   --path <file.parquet> --sql <query> [--format json|ndjson]",
+    "  query   --path <file.parquet> --sql <query> [--format csv|json|ndjson]",
     "  explain --path <file.parquet> --sql <query>",
     "  inspect --path <file.parquet>",
     "  write   --path <file.parquet> --sql <query> --output <prefix> [--partition-by a,b] [--max-rows-per-file n]",
@@ -93,6 +93,7 @@ async function query(args: ParsedArgs): Promise<string> {
   const builder = lake.path(ast.source);
   const result = builderFromAst(builder, ast);
   if (args.format === "json") return `${JSON.stringify(await result.toArray())}\n`;
+  if (args.format === "csv") return new Response(result.streamCsv()).text();
   let out = "";
   for await (const row of result.rows()) out += `${JSON.stringify(row)}\n`;
   return out;
@@ -225,9 +226,9 @@ function parseArgs(argv: string[]): ParsedArgs {
   return args;
 }
 
-function parseFormat(value: string): "json" | "ndjson" {
-  if (value === "json" || value === "ndjson") return value;
-  throw new LaQLError("LAQL_PARSE_ERROR", "--format must be json or ndjson");
+function parseFormat(value: string): "csv" | "json" | "ndjson" {
+  if (value === "csv" || value === "json" || value === "ndjson") return value;
+  throw new LaQLError("LAQL_PARSE_ERROR", "--format must be csv, json, or ndjson");
 }
 
 function requireValue(args: string[], index: number, flag: string): string {

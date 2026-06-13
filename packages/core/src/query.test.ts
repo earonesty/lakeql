@@ -95,17 +95,22 @@ describe("Lake query runtime", () => {
     expect(scanner.requestedColumns[0]).toEqual(["id", "region"]);
   });
 
-  it("supports first, count, batches, NDJSON, and JSON streams", async () => {
+  it("supports first, count, batches, NDJSON, JSON, and CSV streams", async () => {
     const { lake } = await makeLake({
       rowsByPath: {
         "data/types.parquet": [
-          { id: 1, big: 12n },
-          { id: 2, big: 9007199254740993n },
+          { id: 1, big: 12n, label: 'a,"b"', maybe: null },
+          { id: 2, big: 9007199254740993n, label: "line\nbreak", maybe: true },
         ],
       },
     });
 
-    expect(await lake.path("data/types.parquet").first()).toEqual({ id: 1, big: 12n });
+    expect(await lake.path("data/types.parquet").first()).toEqual({
+      id: 1,
+      big: 12n,
+      label: 'a,"b"',
+      maybe: null,
+    });
     expect(await lake.path("data/types.parquet").count()).toBe(2);
     expect(await lake.path("missing*.parquet").first()).toBeUndefined();
 
@@ -117,14 +122,42 @@ describe("Lake query runtime", () => {
 
     await expect(
       new Response(lake.path("data/types.parquet").limit(2).streamNdjson()).text(),
-    ).resolves.toBe('{"id":1,"big":12}\n{"id":2,"big":"9007199254740993"}\n');
+    ).resolves.toBe(
+      '{"id":1,"big":12,"label":"a,\\"b\\"","maybe":null}\n{"id":2,"big":"9007199254740993","label":"line\\nbreak","maybe":true}\n',
+    );
 
     await expect(
       new Response(lake.path("data/types.parquet").limit(1).streamJson()).text(),
-    ).resolves.toBe('[{"id":1,"big":12}]');
+    ).resolves.toBe('[{"id":1,"big":12,"label":"a,\\"b\\"","maybe":null}]');
+
+    await expect(
+      new Response(
+        lake
+          .path("data/types.parquet")
+          .select(["id", "big", "label", "maybe"])
+          .limit(2)
+          .streamCsv(),
+      ).text(),
+    ).resolves.toBe('id,big,label,maybe\n1,12,"a,""b""",\n2,9007199254740993,"line\nbreak",true\n');
+
+    await expect(
+      new Response(
+        lake
+          .path("data/types.parquet")
+          .limit(1)
+          .streamCsv({ header: false, columns: ["label", "id"] }),
+      ).text(),
+    ).resolves.toBe('"a,""b""",1\n');
+
+    await expect(
+      new Response(
+        lake.path("data/types.parquet").select(["id"]).where(eq("id", 99)).streamCsv(),
+      ).text(),
+    ).resolves.toBe("id\n");
 
     await lake.path("data/types.parquet").streamNdjson().cancel();
     await lake.path("data/types.parquet").streamJson().cancel();
+    await lake.path("data/types.parquet").streamCsv().cancel();
   });
 
   it("parses JSON query v1 operators", async () => {

@@ -17,4 +17,4 @@ const rows = await lake
   .toArray();
 ```
 
-The query API supports `rows()`, `batches()`, `toArray()`, `first()`, `count()`, `streamJson()`, `streamNdjson()`, `explain()`, and sliced `run({ slice })`.
+The query API supports `rows()`, `batches()`, `toArray()`, `first()`, `count()`, `streamJson()`, `streamNdjson()`, `streamCsv()`, `explain()`, and sliced `run({ slice })`.
