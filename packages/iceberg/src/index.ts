@@ -515,7 +515,7 @@ export class IcebergRestCatalog implements IcebergCommitCatalog {
     return new IcebergTable(
       store,
       response["metadata-location"],
-      validateMetadata(response.metadata),
+      await hydrateMetadataManifests(store, validateMetadata(response.metadata)),
     );
   }
 
@@ -625,7 +625,7 @@ export async function loadIcebergTable(options: LoadIcebergTableOptions): Promis
     return new IcebergTable(
       options.store,
       options.metadataPath,
-      validateMetadata(JSON.parse(text)),
+      await hydrateMetadataManifests(options.store, validateMetadata(JSON.parse(text))),
     );
   } catch (cause) {
     if (cause instanceof LaQLError) throw cause;
@@ -790,6 +790,47 @@ function metadataVersionHintPath(metadataPath: string): string {
   const slash = metadataPath.lastIndexOf("/");
   const prefix = slash === -1 ? "" : `${metadataPath.slice(0, slash + 1)}`;
   return `${prefix}version-hint.text`;
+}
+
+async function hydrateMetadataManifests(
+  store: ObjectStore,
+  metadata: MetadataFile,
+): Promise<MetadataFile> {
+  const hydrated = cloneMetadata(metadata);
+  for (const snapshot of hydrated.snapshots) {
+    snapshot.manifests = await Promise.all(
+      snapshot.manifests.map(async (manifest) => {
+        if (Array.isArray(manifest.files)) return manifest;
+        return await readManifest(store, manifest.path);
+      }),
+    );
+  }
+  return hydrated;
+}
+
+async function readManifest(store: ObjectStore, path: string): Promise<Manifest> {
+  const bytes = await store.get(path);
+  if (!bytes) {
+    throw new LaQLError("LAQL_OBJECT_NOT_FOUND", `No Iceberg manifest at ${path}`, { path });
+  }
+  try {
+    return validateManifest(JSON.parse(new TextDecoder().decode(bytes)), path);
+  } catch (cause) {
+    if (cause instanceof LaQLError) throw cause;
+    throw new LaQLError("LAQL_CATALOG_ERROR", `Invalid Iceberg manifest at ${path}`, {
+      path,
+      cause,
+    });
+  }
+}
+
+function validateManifest(value: unknown, path: string): Manifest {
+  if (!isRecord(value) || typeof value.path !== "string" || !Array.isArray(value.files)) {
+    throw new LaQLError("LAQL_CATALOG_ERROR", "Iceberg manifest has invalid required fields", {
+      path,
+    });
+  }
+  return value as unknown as Manifest;
 }
 
 async function readVersionHint(store: ObjectStore, path: string): Promise<number | undefined> {
@@ -959,7 +1000,7 @@ function cloneMetadata(metadata: MetadataFile): MetadataFile {
       "snapshot-id": snapshot["snapshot-id"],
       "timestamp-ms": snapshot["timestamp-ms"],
       "schema-id": snapshot["schema-id"],
-      manifests: snapshot.manifests.map(cloneManifest),
+      manifests: snapshot.manifests.map(cloneManifestOrReference),
     })),
   };
   if (metadata.refs) cloned.refs = cloneRefs(metadata.refs);
@@ -993,6 +1034,13 @@ function cloneManifest(manifest: Manifest): Manifest {
       return cloned;
     }),
   };
+}
+
+function cloneManifestOrReference(manifest: Manifest): Manifest {
+  if (!Array.isArray((manifest as { files?: unknown }).files)) {
+    return { path: manifest.path } as Manifest;
+  }
+  return cloneManifest(manifest);
 }
 
 function sortStringRecord(record: Record<string, string>): Record<string, string> {

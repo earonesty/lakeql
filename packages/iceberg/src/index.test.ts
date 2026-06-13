@@ -32,6 +32,13 @@ const store = memoryStore();
 beforeAll(async () => {
   await store.put(ICEBERG.metadataFile, readFileSync(fixturePath(ICEBERG.metadataFile)));
   await store.put(
+    ICEBERG.manifestRefMetadataFile,
+    readFileSync(fixturePath(ICEBERG.manifestRefMetadataFile)),
+  );
+  for (const manifestFile of ICEBERG.manifestFiles) {
+    await store.put(manifestFile, readFileSync(fixturePath(manifestFile)));
+  }
+  await store.put(
     ICEBERG.equalityDeleteFile,
     readFileSync(fixturePath(ICEBERG.equalityDeleteFile)),
   );
@@ -190,6 +197,28 @@ describe("loadIcebergTable", () => {
       deleteFilesPlanned: 0,
       deleteFilesIgnored: 1,
     });
+  });
+
+  it("hydrates Iceberg manifests referenced from metadata", async () => {
+    const table = await loadIcebergTable({
+      store,
+      metadataPath: ICEBERG.manifestRefMetadataFile,
+    });
+
+    const plan = table.planFiles({
+      where: eq("country", "US"),
+      select: ["id", "nation"],
+      readMode: "ignore-unsupported-deletes",
+    });
+
+    expect(plan).toMatchObject({
+      snapshotId: 2,
+      manifestsRead: 1,
+      filesPlanned: 2,
+      filesSkipped: 1,
+      deleteFilesPlanned: 1,
+    });
+    expect(plan.files.map((file) => file.path)).toEqual([HIVE.files[0], HIVE.files[2]]);
   });
 
   it("selects snapshots by id, ref, and timestamp", async () => {
@@ -832,6 +861,34 @@ describe("loadIcebergTable", () => {
         fetch: async () => jsonResponse({ metadata: {} }),
       }),
     ).rejects.toMatchObject({ code: "LAQL_CATALOG_ERROR" });
+
+    await expect(
+      loadIcebergTableFromRest({
+        store,
+        url: "https://catalog.example",
+        namespace: "prod",
+        table: "places",
+        fetch: async () => new Response("nope", { status: 200 }),
+      }),
+    ).rejects.toMatchObject({ code: "LAQL_CATALOG_ERROR" });
+
+    await expect(
+      loadIcebergTableFromRest({
+        store,
+        url: "https://catalog.example",
+        namespace: "prod",
+        table: "places",
+        fetch: async () => jsonResponse({ error: { message: "boom" } }, 500),
+      }),
+    ).rejects.toMatchObject({ code: "LAQL_CATALOG_ERROR" });
+
+    expect(() =>
+      icebergRestCatalog({
+        url: "https://catalog.example",
+        namespace: "",
+        table: "places",
+      }),
+    ).toThrow(/namespace/u);
   });
 
   it("fails loudly for missing or malformed metadata", async () => {
@@ -881,6 +938,61 @@ describe("loadIcebergTable", () => {
     await expect(
       loadIcebergTableFromObjectStore({ store: memoryStore(), tableLocation: "tables/missing" }),
     ).rejects.toMatchObject({ code: "LAQL_OBJECT_NOT_FOUND" });
+
+    const missingManifestStore = memoryStore();
+    await missingManifestStore.put(
+      "metadata.json",
+      new TextEncoder().encode(
+        JSON.stringify({
+          "format-version": 2,
+          "table-uuid": "table",
+          location: "memory",
+          "current-snapshot-id": 1,
+          schemas: [
+            { "schema-id": 1, fields: [{ id: 1, name: "id", type: "int", required: true }] },
+          ],
+          snapshots: [
+            {
+              "snapshot-id": 1,
+              "timestamp-ms": 1,
+              "schema-id": 1,
+              manifests: [{ path: "missing.manifest.json" }],
+            },
+          ],
+        }),
+      ),
+    );
+    await expect(
+      loadIcebergTable({ store: missingManifestStore, metadataPath: "metadata.json" }),
+    ).rejects.toMatchObject({ code: "LAQL_OBJECT_NOT_FOUND" });
+
+    const malformedManifestStore = memoryStore();
+    await malformedManifestStore.put(
+      "metadata.json",
+      new TextEncoder().encode(
+        JSON.stringify({
+          "format-version": 2,
+          "table-uuid": "table",
+          location: "memory",
+          "current-snapshot-id": 1,
+          schemas: [
+            { "schema-id": 1, fields: [{ id: 1, name: "id", type: "int", required: true }] },
+          ],
+          snapshots: [
+            {
+              "snapshot-id": 1,
+              "timestamp-ms": 1,
+              "schema-id": 1,
+              manifests: [{ path: "bad.manifest.json" }],
+            },
+          ],
+        }),
+      ),
+    );
+    await malformedManifestStore.put("bad.manifest.json", new TextEncoder().encode("{}"));
+    await expect(
+      loadIcebergTable({ store: malformedManifestStore, metadataPath: "metadata.json" }),
+    ).rejects.toMatchObject({ code: "LAQL_CATALOG_ERROR" });
   });
 
   it("validates append inputs and snapshot schemas", async () => {

@@ -69,7 +69,7 @@
       "schema-id": 1,
       "manifests": [
         {
-          "path": "manifest-1.json",
+          "path": "iceberg/warehouse/places/metadata/manifest-1.json",
           "files": [
             {
               "path": "hive/date=2026-01-01/country=US/part-000.parquet",
@@ -99,7 +99,7 @@
       "schema-id": 2,
       "manifests": [
         {
-          "path": "manifest-2.json",
+          "path": "iceberg/warehouse/places/metadata/manifest-2.json",
           "files": [
             {
               "path": "hive/date=2026-01-01/country=US/part-000.parquet",

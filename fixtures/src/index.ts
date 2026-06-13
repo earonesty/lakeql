@@ -75,6 +75,11 @@ export const HIVE = {
 
 export const ICEBERG = {
   metadataFile: "iceberg/warehouse/places/metadata/v2.metadata.json",
+  manifestRefMetadataFile: "iceberg/warehouse/places/metadata/v2.manifest-ref.metadata.json",
+  manifestFiles: [
+    "iceberg/warehouse/places/metadata/manifest-1.json",
+    "iceberg/warehouse/places/metadata/manifest-2.json",
+  ],
   equalityDeleteFile: "deletes/country-ca.eq.parquet",
   positionDeleteFile: "deletes/us-second.pos.parquet",
   snapshots: [1, 2],

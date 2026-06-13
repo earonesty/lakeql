@@ -312,6 +312,48 @@ function generateHive() {
 
 function generateIceberg() {
   mkdirSync(dirname(fixturePath(ICEBERG.metadataFile)), { recursive: true });
+  const manifest1 = {
+    path: ICEBERG.manifestFiles[0],
+    files: [
+      {
+        path: HIVE.files[0],
+        sequenceNumber: 1,
+        partition: { country: "US", date: "2026-01-01" },
+        recordCount: HIVE.rowsPerFile,
+      },
+      {
+        path: HIVE.files[1],
+        sequenceNumber: 2,
+        partition: { country: "CA", date: "2026-01-02" },
+        recordCount: HIVE.rowsPerFile,
+      },
+    ],
+  };
+  const manifest2 = {
+    path: ICEBERG.manifestFiles[1],
+    files: [
+      {
+        path: HIVE.files[0],
+        sequenceNumber: 1,
+        partition: { country: "US", date: "2026-01-01" },
+        recordCount: HIVE.rowsPerFile,
+        deleteFiles: [{ content: "position-delete", path: ICEBERG.positionDeleteFile }],
+      },
+      {
+        path: HIVE.files[1],
+        sequenceNumber: 2,
+        partition: { country: "CA", date: "2026-01-02" },
+        recordCount: HIVE.rowsPerFile,
+        deleteFiles: [{ content: "equality-delete", path: "deletes/country-ca.eq.parquet" }],
+      },
+      {
+        path: HIVE.files[2],
+        sequenceNumber: 3,
+        partition: { country: "US", date: "2026-01-02" },
+        recordCount: HIVE.rowsPerFile,
+      },
+    ],
+  };
   const metadata = {
     "format-version": 2,
     "table-uuid": "00000000-0000-4000-8000-000000000001",
@@ -344,63 +386,31 @@ function generateIceberg() {
         "snapshot-id": 1,
         "timestamp-ms": 1_767_225_600_000,
         "schema-id": 1,
-        manifests: [
-          {
-            path: "manifest-1.json",
-            files: [
-              {
-                path: HIVE.files[0],
-                sequenceNumber: 1,
-                partition: { country: "US", date: "2026-01-01" },
-                recordCount: HIVE.rowsPerFile,
-              },
-              {
-                path: HIVE.files[1],
-                sequenceNumber: 2,
-                partition: { country: "CA", date: "2026-01-02" },
-                recordCount: HIVE.rowsPerFile,
-              },
-            ],
-          },
-        ],
+        manifests: [manifest1],
       },
       {
         "snapshot-id": 2,
         "timestamp-ms": 1_767_312_000_000,
         "schema-id": 2,
-        manifests: [
-          {
-            path: "manifest-2.json",
-            files: [
-              {
-                path: HIVE.files[0],
-                sequenceNumber: 1,
-                partition: { country: "US", date: "2026-01-01" },
-                recordCount: HIVE.rowsPerFile,
-                deleteFiles: [{ content: "position-delete", path: ICEBERG.positionDeleteFile }],
-              },
-              {
-                path: HIVE.files[1],
-                sequenceNumber: 2,
-                partition: { country: "CA", date: "2026-01-02" },
-                recordCount: HIVE.rowsPerFile,
-                deleteFiles: [
-                  { content: "equality-delete", path: "deletes/country-ca.eq.parquet" },
-                ],
-              },
-              {
-                path: HIVE.files[2],
-                sequenceNumber: 3,
-                partition: { country: "US", date: "2026-01-02" },
-                recordCount: HIVE.rowsPerFile,
-              },
-            ],
-          },
-        ],
+        manifests: [manifest2],
       },
     ],
   };
   writeFileSync(fixturePath(ICEBERG.metadataFile), `${JSON.stringify(metadata, null, 2)}\n`);
+  for (const manifest of [manifest1, manifest2]) {
+    writeFileSync(fixturePath(manifest.path), `${JSON.stringify(manifest, null, 2)}\n`);
+  }
+  const manifestRefMetadata = {
+    ...metadata,
+    snapshots: metadata.snapshots.map((snapshot) => ({
+      ...snapshot,
+      manifests: snapshot.manifests.map((manifest) => ({ path: manifest.path })),
+    })),
+  };
+  writeFileSync(
+    fixturePath(ICEBERG.manifestRefMetadataFile),
+    `${JSON.stringify(manifestRefMetadata, null, 2)}\n`,
+  );
 }
 
 function generateIcebergDeletes() {
