@@ -100,6 +100,30 @@ describe("runCli", () => {
     ]);
   });
 
+  it("compacts a local Parquet file into rewritten output files", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "laql-cli-compact-"));
+    const output = join(dir, "sales");
+    const result = await runCli([
+      "compact",
+      "--path",
+      fixturePath(SALES.file),
+      "--output",
+      output,
+      "--max-rows-per-file",
+      "75",
+    ]);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    const body = JSON.parse(result.stdout) as { files: { path: string; rowCount: number }[] };
+    expect(body.files.map((file) => file.rowCount)).toEqual([75, 25]);
+
+    const store = memoryStore();
+    for (const file of body.files) await store.put(file.path, await readFile(file.path));
+    await expect(createParquetLake({ store }).path(`${output}/*.parquet`).count()).resolves.toBe(
+      SALES.rows,
+    );
+  });
+
   it("returns typed failures for unsupported commands and bad arguments", async () => {
     await expect(runCli([])).resolves.toMatchObject({
       exitCode: 0,
@@ -109,7 +133,7 @@ describe("runCli", () => {
       exitCode: 0,
       stdout: expect.stringContaining("usage:"),
     });
-    await expect(runCli(["compact"])).resolves.toMatchObject({ exitCode: 2 });
+    await expect(runCli(["nope"])).resolves.toMatchObject({ exitCode: 2 });
     await expect(
       runCli(["write", "--path", fixturePath(SALES.file), "--sql", "select id"]),
     ).resolves.toMatchObject({

@@ -1,6 +1,12 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { LaQLError, type MemoryObjectStore, memoryStore, type QueryBuilder } from "@laql/core";
+import {
+  LaQLError,
+  type MemoryObjectStore,
+  memoryStore,
+  type QueryBuilder,
+  type Row,
+} from "@laql/core";
 import {
   createParquetLake,
   readParquetMetadata,
@@ -35,6 +41,8 @@ export async function runCli(argv: string[]): Promise<CliResult> {
     const args = parseArgs(argv);
     if (args.help || !args.command) return ok(`${usage()}\n`);
     switch (args.command) {
+      case "compact":
+        return ok(await compact(args));
       case "query":
         return ok(await query(args));
       case "explain":
@@ -56,20 +64,24 @@ export async function runCli(argv: string[]): Promise<CliResult> {
 }
 
 export function usage(): string {
-  return [
+  const reserved = COMMANDS.filter(
+    (command) => !["compact", "query", "explain", "inspect", "write", "schema"].includes(command),
+  );
+  const lines = [
     "usage: laql <command> [options]",
     "",
     "commands:",
+    "  compact --path <file.parquet> --output <prefix> [--max-rows-per-file n]",
     "  query   --path <file.parquet> --sql <query> [--format json|ndjson]",
     "  explain --path <file.parquet> --sql <query>",
     "  inspect --path <file.parquet>",
     "  write   --path <file.parquet> --sql <query> --output <prefix> [--partition-by a,b] [--max-rows-per-file n]",
     "  schema  --path <file.parquet>",
-    "",
-    `other commands reserved by the build plan: ${COMMANDS.filter(
-      (command) => !["query", "explain", "inspect", "write", "schema"].includes(command),
-    ).join(", ")}`,
-  ].join("\n");
+  ];
+  if (reserved.length > 0) {
+    lines.push("", `other commands reserved by the build plan: ${reserved.join(", ")}`);
+  }
+  return lines.join("\n");
 }
 
 async function query(args: ParsedArgs): Promise<string> {
@@ -92,6 +104,15 @@ async function explain(args: ParsedArgs): Promise<string> {
   const { store, key } = await localStore(path);
   const lake = createParquetLake({ store });
   return `${(await builderFromAst(lake.path(key), parseCliSql(sql, key)).explain()).text}\n`;
+}
+
+async function compact(args: ParsedArgs): Promise<string> {
+  const inputPath = requireOption(args.path, "--path");
+  const outputPrefix = requireOption(args.output, "--output");
+  const { store, key } = await localStore(inputPath);
+  const lake = createParquetLake({ store });
+  const rows = await lake.path(key).toArray();
+  return writeRows(outputPrefix, rows, args);
 }
 
 async function schema(args: ParsedArgs): Promise<string> {
@@ -124,6 +145,10 @@ async function write(args: ParsedArgs): Promise<string> {
   const ast = parseCliSql(sql, key);
   const lake = createParquetLake({ store });
   const rows = await builderFromAst(lake.path(ast.source), ast).toArray();
+  return writeRows(outputPrefix, rows, args);
+}
+
+async function writeRows(outputPrefix: string, rows: Row[], args: ParsedArgs): Promise<string> {
   const outStore = memoryStore();
   const writeOptions: WriteParquetRowsOptions = {
     rows,
