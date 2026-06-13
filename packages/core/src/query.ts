@@ -109,7 +109,36 @@ export type AggregateSpec = Record<string, AggregateExpr>;
 
 export interface AggregateOptions {
   maxGroups?: number;
+  operatorState?: Uint8Array | AggregateOperatorState;
 }
+
+export interface AggregateResult {
+  rows: Row[];
+  operatorState: Uint8Array;
+}
+
+export type AggregateSnapshotValue = string | number | boolean | null;
+
+export interface AggregateOperatorState {
+  version: 1;
+  groupColumns: string[];
+  spec: AggregateSpec;
+  groups: AggregateGroupSnapshot[];
+}
+
+export interface AggregateGroupSnapshot {
+  key: string;
+  keys: Record<string, AggregateSnapshotValue>;
+  states: Record<string, AggregateStateSnapshot>;
+}
+
+export type AggregateStateSnapshot =
+  | { op: "count"; count: number }
+  | { op: "sum"; sum: number }
+  | { op: "avg"; sum: number; count: number }
+  | { op: "min" | "max"; value: AggregateSnapshotValue }
+  | { op: "count_distinct"; values: string[] }
+  | { op: "first" | "last" | "any"; seen: boolean; value: AggregateSnapshotValue };
 
 export interface TaskInput {
   path: string;
@@ -310,6 +339,13 @@ export class AggregationBuilder {
   aggregate(spec: AggregateSpec, options: AggregateOptions = {}): Promise<Row[]> {
     return this.result.aggregate(this.columns, spec, options);
   }
+
+  aggregateWithState(
+    spec: AggregateSpec,
+    options: AggregateOptions = {},
+  ): Promise<AggregateResult> {
+    return this.result.aggregateWithState(this.columns, spec, options);
+  }
 }
 
 interface QueryResultConfig extends PathQueryInit {
@@ -480,8 +516,16 @@ export class QueryResult {
     spec: AggregateSpec,
     options: AggregateOptions = {},
   ): Promise<Row[]> {
+    return (await this.aggregateWithState(groupColumns, spec, options)).rows;
+  }
+
+  async aggregateWithState(
+    groupColumns: string[],
+    spec: AggregateSpec,
+    options: AggregateOptions = {},
+  ): Promise<AggregateResult> {
     validateAggregateRequest(groupColumns, spec, options);
-    const groups = new Map<string, AggregateGroup>();
+    const groups = aggregateGroupsFromState(groupColumns, spec, options.operatorState);
     for await (const row of this.rows()) {
       const keyValues = groupColumns.map((column) => valueForColumn(row, column));
       const key = stableStringify(keyValues);
@@ -499,7 +543,11 @@ export class QueryResult {
       }
       group.add(row);
     }
-    return [...groups.values()].map((group) => group.finish());
+    const state = aggregateOperatorState(groupColumns, spec, groups);
+    return {
+      rows: [...groups.values()].map((group) => group.finish()),
+      operatorState: serializeAggregateOperatorState(state),
+    };
   }
 
   private async *orderedBatches(): AsyncIterable<Row[]> {
@@ -658,6 +706,7 @@ export class QueryResult {
 interface AggregateState {
   add(value: unknown): void;
   finish(): unknown;
+  snapshot(): AggregateStateSnapshot;
 }
 
 class AggregateGroup {
@@ -679,6 +728,12 @@ class AggregateGroup {
     const out: Row = { ...this.keys };
     for (const [alias, state] of Object.entries(this.states)) out[alias] = state.finish();
     return out;
+  }
+
+  snapshot(key: string): AggregateGroupSnapshot {
+    const states: Record<string, AggregateStateSnapshot> = {};
+    for (const [alias, state] of Object.entries(this.states)) states[alias] = state.snapshot();
+    return { key, keys: snapshotRecord(this.keys), states };
   }
 }
 
@@ -727,7 +782,7 @@ function createAggregateState(aggregate: AggregateExpr): AggregateState {
 }
 
 class CountState implements AggregateState {
-  private count = 0;
+  constructor(private count = 0) {}
 
   add(_value: unknown): void {
     this.count += 1;
@@ -736,10 +791,14 @@ class CountState implements AggregateState {
   finish(): number {
     return this.count;
   }
+
+  snapshot(): AggregateStateSnapshot {
+    return { op: "count", count: this.count };
+  }
 }
 
 class SumState implements AggregateState {
-  private sum = 0;
+  constructor(private sum = 0) {}
 
   add(value: unknown): void {
     if (value === null || value === undefined) return;
@@ -750,11 +809,17 @@ class SumState implements AggregateState {
   finish(): number {
     return this.sum;
   }
+
+  snapshot(): AggregateStateSnapshot {
+    return { op: "sum", sum: this.sum };
+  }
 }
 
 class AvgState implements AggregateState {
-  private sum = 0;
-  private count = 0;
+  constructor(
+    private sum = 0,
+    private count = 0,
+  ) {}
 
   add(value: unknown): void {
     if (value === null || value === undefined) return;
@@ -766,12 +831,17 @@ class AvgState implements AggregateState {
   finish(): number | null {
     return this.count === 0 ? null : this.sum / this.count;
   }
+
+  snapshot(): AggregateStateSnapshot {
+    return { op: "avg", sum: this.sum, count: this.count };
+  }
 }
 
 class MinMaxState implements AggregateState {
-  private value: string | number | boolean | null = null;
-
-  constructor(private readonly op: "min" | "max") {}
+  constructor(
+    private readonly op: "min" | "max",
+    private value: string | number | boolean | null = null,
+  ) {}
 
   add(value: unknown): void {
     if (value === null || value === undefined) return;
@@ -789,10 +859,18 @@ class MinMaxState implements AggregateState {
   finish(): string | number | boolean | null {
     return this.value;
   }
+
+  snapshot(): AggregateStateSnapshot {
+    return { op: this.op, value: this.value };
+  }
 }
 
 class CountDistinctState implements AggregateState {
-  private readonly values = new Set<string>();
+  private readonly values: Set<string>;
+
+  constructor(values: string[] = []) {
+    this.values = new Set(values);
+  }
 
   add(value: unknown): void {
     if (value === null || value === undefined) return;
@@ -802,11 +880,17 @@ class CountDistinctState implements AggregateState {
   finish(): number {
     return this.values.size;
   }
+
+  snapshot(): AggregateStateSnapshot {
+    return { op: "count_distinct", values: [...this.values].sort() };
+  }
 }
 
 class FirstState implements AggregateState {
-  private value: unknown;
-  private seen = false;
+  constructor(
+    protected value: unknown = undefined,
+    protected seen = false,
+  ) {}
 
   add(value: unknown): void {
     if (this.seen) return;
@@ -817,11 +901,17 @@ class FirstState implements AggregateState {
   finish(): unknown {
     return this.seen ? this.value : null;
   }
+
+  snapshot(): AggregateStateSnapshot {
+    return { op: "first", seen: this.seen, value: snapshotValue(this.seen ? this.value : null) };
+  }
 }
 
 class LastState implements AggregateState {
-  private value: unknown;
-  private seen = false;
+  constructor(
+    private value: unknown = undefined,
+    private seen = false,
+  ) {}
 
   add(value: unknown): void {
     this.value = value;
@@ -831,9 +921,201 @@ class LastState implements AggregateState {
   finish(): unknown {
     return this.seen ? this.value : null;
   }
+
+  snapshot(): AggregateStateSnapshot {
+    return { op: "last", seen: this.seen, value: snapshotValue(this.seen ? this.value : null) };
+  }
 }
 
-class AnyState extends FirstState {}
+class AnyState extends FirstState {
+  override snapshot(): AggregateStateSnapshot {
+    return { op: "any", seen: this.seen, value: snapshotValue(this.seen ? this.value : null) };
+  }
+}
+
+export function serializeAggregateOperatorState(state: AggregateOperatorState): Uint8Array {
+  return new TextEncoder().encode(stableStringify(state));
+}
+
+export function deserializeAggregateOperatorState(
+  bytes: Uint8Array | AggregateOperatorState,
+): AggregateOperatorState {
+  if (!(bytes instanceof Uint8Array)) return validateAggregateOperatorState(bytes);
+  return validateAggregateOperatorState(JSON.parse(new TextDecoder().decode(bytes)));
+}
+
+function aggregateGroupsFromState(
+  groupColumns: string[],
+  spec: AggregateSpec,
+  state: Uint8Array | AggregateOperatorState | undefined,
+): Map<string, AggregateGroup> {
+  if (state === undefined) return new Map();
+  const snapshot = deserializeAggregateOperatorState(state);
+  if (
+    stableStringify(snapshot.groupColumns) !== stableStringify(groupColumns) ||
+    stableStringify(snapshot.spec) !== stableStringify(spec)
+  ) {
+    throw new LaQLError("LAQL_BOOKMARK_STALE", "Aggregate operator state does not match request", {
+      stateGroupColumns: snapshot.groupColumns,
+      groupColumns,
+    });
+  }
+  const groups = new Map<string, AggregateGroup>();
+  for (const group of snapshot.groups)
+    groups.set(group.key, aggregateGroupFromSnapshot(spec, group));
+  return groups;
+}
+
+function aggregateGroupFromSnapshot(
+  spec: AggregateSpec,
+  snapshot: AggregateGroupSnapshot,
+): AggregateGroup {
+  const states: Record<string, AggregateState> = {};
+  for (const [alias, aggregate] of Object.entries(spec)) {
+    const state = snapshot.states[alias];
+    if (state === undefined) {
+      throw new LaQLError("LAQL_BOOKMARK_INVALID", `Missing aggregate state ${alias}`);
+    }
+    states[alias] = aggregateStateFromSnapshot(aggregate, state);
+    stateSpecs.set(states[alias], aggregate);
+  }
+  return new AggregateGroup(snapshot.keys, states);
+}
+
+function aggregateStateFromSnapshot(
+  aggregate: AggregateExpr,
+  snapshot: AggregateStateSnapshot,
+): AggregateState {
+  if (snapshot.op !== aggregate.op) {
+    throw new LaQLError("LAQL_BOOKMARK_INVALID", "Aggregate state operation mismatch", {
+      expected: aggregate.op,
+      actual: snapshot.op,
+    });
+  }
+  switch (snapshot.op) {
+    case "count":
+      return new CountState(snapshot.count);
+    case "sum":
+      return new SumState(snapshot.sum);
+    case "avg":
+      return new AvgState(snapshot.sum, snapshot.count);
+    case "min":
+    case "max":
+      return new MinMaxState(snapshot.op, snapshot.value);
+    case "count_distinct":
+      return new CountDistinctState(snapshot.values);
+    case "first":
+      return new FirstState(snapshot.value, snapshot.seen);
+    case "last":
+      return new LastState(snapshot.value, snapshot.seen);
+    case "any":
+      return new AnyState(snapshot.value, snapshot.seen);
+  }
+}
+
+function aggregateOperatorState(
+  groupColumns: string[],
+  spec: AggregateSpec,
+  groups: Map<string, AggregateGroup>,
+): AggregateOperatorState {
+  return {
+    version: 1,
+    groupColumns: [...groupColumns],
+    spec,
+    groups: [...groups.entries()]
+      .map(([key, group]) => group.snapshot(key))
+      .sort((left, right) => left.key.localeCompare(right.key)),
+  };
+}
+
+function validateAggregateOperatorState(value: unknown): AggregateOperatorState {
+  if (!isAggregateOperatorState(value)) {
+    throw new LaQLError("LAQL_BOOKMARK_INVALID", "Aggregate operator state is invalid");
+  }
+  return value;
+}
+
+function isAggregateOperatorState(value: unknown): value is AggregateOperatorState {
+  return (
+    isRecord(value) &&
+    value.version === 1 &&
+    Array.isArray(value.groupColumns) &&
+    value.groupColumns.every((column) => typeof column === "string") &&
+    isRecord(value.spec) &&
+    Object.values(value.spec).every(isAggregateExpr) &&
+    Array.isArray(value.groups) &&
+    value.groups.every(isAggregateGroupSnapshot)
+  );
+}
+
+function isAggregateGroupSnapshot(value: unknown): value is AggregateGroupSnapshot {
+  return (
+    isRecord(value) &&
+    typeof value.key === "string" &&
+    isRecord(value.keys) &&
+    Object.values(value.keys).every(isAggregateSnapshotValue) &&
+    isRecord(value.states) &&
+    Object.values(value.states).every(isAggregateStateSnapshot)
+  );
+}
+
+function isAggregateStateSnapshot(value: unknown): value is AggregateStateSnapshot {
+  if (!isRecord(value) || typeof value.op !== "string") return false;
+  switch (value.op) {
+    case "count":
+      return typeof value.count === "number";
+    case "sum":
+      return typeof value.sum === "number";
+    case "avg":
+      return typeof value.sum === "number" && typeof value.count === "number";
+    case "min":
+    case "max":
+      return isAggregateSnapshotValue(value.value);
+    case "count_distinct":
+      return (
+        Array.isArray(value.values) && value.values.every((inner) => typeof inner === "string")
+      );
+    case "first":
+    case "last":
+    case "any":
+      return typeof value.seen === "boolean" && isAggregateSnapshotValue(value.value);
+    default:
+      return false;
+  }
+}
+
+function isAggregateSnapshotValue(value: unknown): value is AggregateSnapshotValue {
+  return (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  );
+}
+
+function isAggregateExpr(value: unknown): value is AggregateExpr {
+  return isRecord(value) && typeof value.op === "string";
+}
+
+function snapshotRecord(record: Record<string, unknown>): Record<string, AggregateSnapshotValue> {
+  const out: Record<string, AggregateSnapshotValue> = {};
+  for (const [key, value] of Object.entries(record)) out[key] = snapshotValue(value);
+  return out;
+}
+
+function snapshotValue(value: unknown): AggregateSnapshotValue {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+  throw new LaQLError("LAQL_TYPE_ERROR", "Aggregate operator state values must be JSON scalars", {
+    value,
+  });
+}
 
 function aggregateValue(row: Row, alias: string, aggregate: AggregateExpr | undefined): unknown {
   if (!aggregate) throw new LaQLError("LAQL_VALIDATION_ERROR", `Missing aggregate ${alias}`);

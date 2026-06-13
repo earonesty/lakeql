@@ -4,11 +4,14 @@ import { and, between, col, eq, fn, gt, isIn, isNull, like, lit, not, or } from 
 import { createBookmark } from "./manifest.js";
 import { memoryStore } from "./memory-store.js";
 import {
+  type AggregateSpec,
+  deserializeAggregateOperatorState,
   Lake,
   parseHivePartitions,
   parseJsonQuery,
   type ScanAdapter,
   type ScanOptions,
+  serializeAggregateOperatorState,
 } from "./query.js";
 import type { Row } from "./types.js";
 
@@ -719,6 +722,121 @@ describe("Lake query runtime", () => {
         .groupBy(["region"])
         .aggregate({ rows: { op: "count" } }, { maxGroups: 1 }),
     ).rejects.toMatchObject({ code: "LAQL_GROUP_LIMIT_EXCEEDED" });
+  });
+
+  it("serializes and resumes aggregate operator state", async () => {
+    const first = await makeLake({
+      rowsByPath: {
+        table: [
+          { region: "west", amount: 10, id: 1, label: "a" },
+          { region: "west", amount: 20, id: 2, label: "b" },
+        ],
+      },
+    });
+    const spec = {
+      rows: { op: "count" },
+      total: { op: "sum", column: "amount" },
+      average: { op: "avg", column: "amount" },
+      minId: { op: "min", column: "id" },
+      maxId: { op: "max", column: "id" },
+      distinctIds: { op: "count_distinct", column: "id" },
+      firstLabel: { op: "first", column: "label" },
+      lastLabel: { op: "last", column: "label" },
+      anyLabel: { op: "any", column: "label" },
+    } satisfies AggregateSpec;
+
+    const partial = await first.lake.path("table").groupBy(["region"]).aggregateWithState(spec);
+    const snapshot = deserializeAggregateOperatorState(partial.operatorState);
+    expect(deserializeAggregateOperatorState(serializeAggregateOperatorState(snapshot))).toEqual(
+      snapshot,
+    );
+
+    const second = await makeLake({
+      rowsByPath: {
+        table: [
+          { region: "east", amount: 7, id: 2, label: "c" },
+          { region: "west", amount: 5, id: 1, label: "d" },
+        ],
+      },
+    });
+    await expect(
+      second.lake
+        .path("table")
+        .groupBy(["region"])
+        .aggregateWithState(spec, { operatorState: partial.operatorState }),
+    ).resolves.toMatchObject({
+      rows: [
+        {
+          region: "west",
+          rows: 3,
+          total: 35,
+          average: 35 / 3,
+          minId: 1,
+          maxId: 2,
+          distinctIds: 2,
+          firstLabel: "a",
+          lastLabel: "d",
+          anyLabel: "a",
+        },
+        {
+          region: "east",
+          rows: 1,
+          total: 7,
+          average: 7,
+          minId: 2,
+          maxId: 2,
+          distinctIds: 1,
+          firstLabel: "c",
+          lastLabel: "c",
+          anyLabel: "c",
+        },
+      ],
+    });
+
+    await expect(
+      second.lake
+        .path("table")
+        .groupBy(["tenant"])
+        .aggregateWithState(spec, { operatorState: partial.operatorState }),
+    ).rejects.toMatchObject({ code: "LAQL_BOOKMARK_STALE" });
+    await expect(
+      second.lake
+        .path("table")
+        .groupBy(["region"])
+        .aggregateWithState(spec, { operatorState: new TextEncoder().encode("{}") }),
+    ).rejects.toMatchObject({ code: "LAQL_BOOKMARK_INVALID" });
+
+    const missingState = deserializeAggregateOperatorState(partial.operatorState);
+    delete missingState.groups[0]?.states.rows;
+    await expect(
+      second.lake
+        .path("table")
+        .groupBy(["region"])
+        .aggregateWithState(spec, { operatorState: missingState }),
+    ).rejects.toMatchObject({ code: "LAQL_BOOKMARK_INVALID" });
+
+    const mismatchedState = deserializeAggregateOperatorState(partial.operatorState);
+    const rowsState = mismatchedState.groups[0]?.states.rows;
+    if (rowsState) rowsState.op = "sum";
+    await expect(
+      second.lake
+        .path("table")
+        .groupBy(["region"])
+        .aggregateWithState(spec, { operatorState: mismatchedState }),
+    ).rejects.toMatchObject({ code: "LAQL_BOOKMARK_INVALID" });
+
+    expect(() =>
+      deserializeAggregateOperatorState({ version: 1, groupColumns: [], spec: {}, groups: [{}] }),
+    ).toThrow(/invalid/u);
+    const objectValue = await makeLake({
+      rowsByPath: { table: [{ region: "west", payload: { nested: true } }] },
+    });
+    await expect(
+      objectValue.lake
+        .path("table")
+        .groupBy(["region"])
+        .aggregateWithState({ firstPayload: { op: "first", column: "payload" } }),
+    ).rejects.toMatchObject({ code: "LAQL_TYPE_ERROR" });
   });
 
   it("validates aggregate requests and value types", async () => {
