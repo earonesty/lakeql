@@ -99,6 +99,47 @@ describe("parseSql", () => {
     });
   });
 
+  it("compiles additional VISION geospatial and H3 SQL examples", () => {
+    expect(
+      parseSql(`
+        from parcels
+        select parcel_id, owner
+        where st_intersects(geom, st_bbox(-118.9, 34.1, -118.6, 34.3))
+      `),
+    ).toMatchObject({
+      source: "parcels",
+      select: ["parcel_id", "owner"],
+      where: {
+        kind: "call",
+        fn: "st_intersects",
+        args: [
+          { kind: "column", name: "geom" },
+          { kind: "call", fn: "st_bbox" },
+        ],
+      },
+    });
+
+    expect(
+      parseSql(`
+        from places
+        select id, name
+        where h3_within(h3_8, h3_cell(34.0522, -118.2437, 8), 2)
+      `),
+    ).toMatchObject({
+      source: "places",
+      select: ["id", "name"],
+      where: {
+        kind: "call",
+        fn: "h3_within",
+        args: [
+          { kind: "column", name: "h3_8" },
+          { kind: "call", fn: "h3_cell" },
+          { kind: "literal", value: 2 },
+        ],
+      },
+    });
+  });
+
   it("round-trips parsed ASTs through SQL text", () => {
     const queries = [
       `
@@ -135,6 +176,16 @@ describe("parseSql", () => {
         group by event
         having n > 100
         order by n desc
+      `,
+      `
+        from parcels
+        select parcel_id, owner
+        where st_intersects(geom, st_bbox(-118.9, 34.1, -118.6, 34.3))
+      `,
+      `
+        from places
+        select id, name
+        where h3_within(h3_8, h3_cell(34.0522, -118.2437, 8), 2)
       `,
     ];
 
