@@ -494,6 +494,46 @@ export class QueryResult {
     }
   }
 
+  private async *matchedRows(startedAt: number): AsyncIterable<Row> {
+    const config = this.config;
+    const { stats } = this;
+    const { planned: paths, skipped: skippedFiles } = await this.planObjects();
+    stats.filesSkipped = skippedFiles;
+    const columns = projectedReadColumns(undefined, config.where);
+    for (const object of paths) {
+      stats.filesPlanned += 1;
+      stats.filesRead += 1;
+      stats.bytesRequested += object.size;
+      enforceBudget(config.budget, stats, config.now, startedAt);
+      const scanOptions: ScanOptions = {
+        batchSize: config.batchSize ?? 4096,
+        stats,
+        budget: config.budget,
+        now: config.now,
+        startedAt,
+      };
+      const partitionValues = config.hive ? parseHivePartitions(object.path) : {};
+      const physicalColumns = columns?.filter((column) => !(column in partitionValues));
+      if (physicalColumns !== undefined && physicalColumns.length > 0) {
+        scanOptions.columns = physicalColumns;
+      }
+      if (config.where !== undefined) scanOptions.where = config.where;
+      for await (const rawBatch of config.scanner.scan(object.path, scanOptions)) {
+        for (const rawRow of rawBatch) {
+          const row = config.hive ? { ...partitionValues, ...rawRow } : rawRow;
+          stats.rowsDecoded += 1;
+          enforceBudget(config.budget, stats, config.now, startedAt);
+          if (!matches(config.where, row)) continue;
+          stats.rowsMatched += 1;
+          yield row;
+        }
+        stats.elapsedMs = config.now() - startedAt;
+      }
+    }
+    stats.elapsedMs = config.now() - startedAt;
+    config.metrics?.timing("laql.query.elapsed", stats.elapsedMs, { queryId: stats.queryId });
+  }
+
   async *batches(): AsyncIterable<Row[]> {
     if (this.config.orderBy !== undefined) {
       yield* this.orderedBatches();
@@ -721,7 +761,8 @@ export class QueryResult {
   ): Promise<AggregateResult> {
     validateAggregateRequest(groupColumns, spec, options);
     const groups = await aggregateGroupsFromState(groupColumns, spec, options);
-    for await (const row of this.rows()) {
+    const startedAt = this.config.now();
+    for await (const row of this.matchedRows(startedAt)) {
       const keyValues = groupColumns.map((column) => valueForColumn(row, column));
       const key = stableStringify(keyValues);
       let group = groups.get(key);
@@ -742,10 +783,15 @@ export class QueryResult {
         estimateAggregateOperatorMemoryBytes(groupColumns, spec, groups),
       );
     }
+    const rows = [...groups.values()].map((group) => group.finish());
+    for (const _row of rows) {
+      this.stats.rowsReturned += 1;
+      enforceBudget(this.config.budget, this.stats, this.config.now, startedAt);
+    }
     const state = aggregateOperatorState(groupColumns, spec, groups);
     const operatorState = serializeAggregateOperatorState(state);
     const result: AggregateResult = {
-      rows: [...groups.values()].map((group) => group.finish()),
+      rows,
       operatorState,
     };
     if (options.spill !== undefined) {

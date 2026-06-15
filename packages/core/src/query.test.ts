@@ -1087,6 +1087,33 @@ describe("Lake query runtime", () => {
       code: "LAQL_BUDGET_EXCEEDED",
       details: { metric: "operator memory bytes", limit: 1 },
     });
+
+    await expect(
+      (
+        await makeLake({
+          rowsByPath: { table: [{ region: "west" }, { region: "west" }] },
+          budget: { maxOutputRows: 1 },
+        })
+      ).lake
+        .path("table")
+        .groupBy(["region"])
+        .aggregate({ rows: { op: "count" } }),
+    ).resolves.toEqual([{ region: "west", rows: 2 }]);
+
+    await expect(
+      (
+        await makeLake({
+          rowsByPath: { table: [{ region: "west" }, { region: "east" }] },
+          budget: { maxOutputRows: 1 },
+        })
+      ).lake
+        .path("table")
+        .groupBy(["region"])
+        .aggregate({ rows: { op: "count" } }),
+    ).rejects.toMatchObject({
+      code: "LAQL_BUDGET_EXCEEDED",
+      details: { metric: "output rows", limit: 1, actual: 2 },
+    });
   });
 
   it("serializes and resumes aggregate operator state", async () => {
