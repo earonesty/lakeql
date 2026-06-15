@@ -1,6 +1,6 @@
-import { eq, memoryStore } from "@laql/core";
+import { eq, lt, memoryCache, memoryStore } from "@laql/core";
 import { describe, expect, it } from "vitest";
-import { createParquetLake, writeParquet } from "./index.js";
+import { createParquetLake, type ParquetMetadata, writeParquet } from "./index.js";
 
 describe("parquet workerd runtime", () => {
   it("writes and scans Parquet through the real adapter in the Workers runtime", async () => {
@@ -16,7 +16,12 @@ describe("parquet workerd runtime", () => {
       ],
     });
 
-    const lake = createParquetLake({ store, queryId: () => "q_parquet_workerd" });
+    const metadataCache = memoryCache<ParquetMetadata>();
+    const lake = createParquetLake({
+      store,
+      metadataCache,
+      queryId: () => "q_parquet_workerd",
+    });
     const result = lake
       .path("events.parquet")
       .select(["id", "amount"])
@@ -36,5 +41,12 @@ describe("parquet workerd runtime", () => {
       rowsReturned: 2,
     });
     expect(result.stats.rangeRequests).toBeGreaterThan(0);
+    expect(result.stats.cacheMisses).toBe(1);
+
+    const cached = lake.path("events.parquet").where(lt("amount", 0)).run();
+    await expect(cached.count()).resolves.toBe(0);
+    expect(cached.stats.cacheHits).toBe(1);
+    expect(cached.stats.cacheMisses).toBe(0);
+    expect(cached.stats.rangeRequests).toBe(0);
   });
 });
