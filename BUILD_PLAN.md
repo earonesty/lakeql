@@ -244,6 +244,10 @@ Q4  phase 5 closure: task manifests, bookmarks, queue-safe retry
     - complete deterministic task and output manifest formats
     - complete bookmark validation/signing/resume flows for reads and write tasks
     - complete retry-state machine coverage across every transition
+    - landed: deterministic task/output manifest goldens; signed read/write bookmarks;
+      slice/resume run-to-completion invariants; checkpoint replay idempotence across
+      every queue-visible task transition
+    - remaining: none known after audit; advance to Q5 unless a final Q4 proof gap is found
     - exit: sliced/resumed execution is byte-identical to unsliced execution, and every
       replayed task transition produces one logical completion
 
