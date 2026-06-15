@@ -506,6 +506,21 @@ function generateIceberg() {
           : {}),
       })),
   });
+  writeJsonFixture(ICEBERG.plannedTasksGolden, {
+    snapshotId: 2,
+    tasks: [
+      {
+        path: HIVE.files[0],
+        partition: { country: "US", date: "2026-01-01" },
+        rowGroupRanges: [],
+      },
+      {
+        path: HIVE.files[2],
+        partition: { country: "US", date: "2026-01-02" },
+        rowGroupRanges: [{ start: 0, end: 1 }],
+      },
+    ],
+  });
 }
 
 function generateIcebergDeletes() {

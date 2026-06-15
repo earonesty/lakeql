@@ -1,0 +1,1 @@
+{"snapshotId":2,"tasks":[{"partition":{"country":"US","date":"2026-01-01"},"path":"hive/date=2026-01-01/country=US/part-000.parquet","rowGroupRanges":[]},{"partition":{"country":"US","date":"2026-01-02"},"path":"hive/date=2026-01-02/country=US/part-000.parquet","rowGroupRanges":[{"end":1,"start":0}]}]}

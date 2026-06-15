@@ -5,6 +5,7 @@ import {
   createOutputManifest,
   eq,
   fn,
+  gt,
   isIn,
   isNull,
   LaQLError,
@@ -17,7 +18,11 @@ import {
 } from "@laql/core";
 import { fixturePath, HIVE, ICEBERG } from "@laql/fixtures";
 import { beforeAll, describe, expect, it } from "vitest";
-import { readIcebergParquetDeletes, readParquetObjects } from "../../parquet/src/index.js";
+import {
+  ParquetScanAdapter,
+  readIcebergParquetDeletes,
+  readParquetObjects,
+} from "../../parquet/src/index.js";
 import type { IcebergCommitCatalog, IcebergCommitInput } from "./index.js";
 import {
   applyIcebergDeletes,
@@ -317,6 +322,34 @@ describe("loadIcebergTable", () => {
       filesSkipped: 1,
     });
     expect(plan.files.map((file) => file.path)).toEqual([HIVE.files[0], HIVE.files[2]]);
+  });
+
+  it("locks Iceberg planned files with Parquet row-group task ranges", async () => {
+    const table = await loadIcebergTable({
+      store,
+      metadataPath: ICEBERG.multiManifestMetadataFile,
+    });
+    const plan = table.planFiles({
+      where: eq("country", "US"),
+      readMode: "ignore-unsupported-deletes",
+    });
+    const scanner = new ParquetScanAdapter(store);
+    const tasks = await Promise.all(
+      plan.files.map(async (file) => ({
+        path: file.path,
+        partition: file.partition,
+        rowGroupRanges: (
+          await scanner.planTask(file.path, {
+            where: gt("amount", 100),
+            partitionValues: file.partition,
+          })
+        ).rowGroupRanges,
+      })),
+    );
+
+    expect(stableStringify({ snapshotId: plan.snapshotId, tasks })).toBe(
+      readFileSync(fixturePath(ICEBERG.plannedTasksGolden), "utf8").trim(),
+    );
   });
 
   it("selects snapshots by id, ref, and timestamp", async () => {
