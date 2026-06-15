@@ -14,6 +14,20 @@ describe("usage", () => {
       expect(text).toContain(cmd);
     }
   });
+
+  it("matches the CLI help snapshot", () => {
+    expect(usage()).toMatchInlineSnapshot(`
+      "usage: laql <command> [options]
+
+      commands:
+        compact --path <file.parquet> --output <prefix> [--max-rows-per-file n]
+        query   --path <file.parquet> --sql <query> [--format csv|json|ndjson]
+        explain --path <file.parquet> --sql <query>
+        inspect --path <file.parquet>
+        write   --path <file.parquet> --sql <query> --output <prefix> [--partition-by a,b] [--max-rows-per-file n] [--manifest <path>] [--job-id id]
+        schema  --path <file.parquet>"
+    `);
+  });
 });
 
 describe("runCli", () => {
@@ -99,6 +113,63 @@ describe("runCli", () => {
       rows: SALES.rows,
       columns: expect.arrayContaining([expect.objectContaining({ name: "amount" })]),
     });
+  });
+
+  it("matches CLI explain, inspect, and schema snapshots", async () => {
+    const explain = await runCli([
+      "explain",
+      "--path",
+      fixturePath(SALES.file),
+      "--sql",
+      "select store_id where amount > 900 limit 1",
+    ]);
+    const inspect = JSON.parse(
+      (await runCli(["inspect", "--path", fixturePath(SALES.file)])).stdout,
+    ) as Record<string, unknown>;
+    const schema = JSON.parse(
+      (await runCli(["schema", "--path", fixturePath(SALES.file)])).stdout,
+    ) as Record<string, unknown>;
+    inspect.path = "<fixture:sales.parquet>";
+    schema.path = "<fixture:sales.parquet>";
+
+    expect(explain.stdout).toMatchInlineSnapshot(`
+      "files planned: 1
+      files skipped: 0
+      projected columns: amount, store_id
+      "
+    `);
+    expect(inspect).toMatchInlineSnapshot(`
+      {
+        "columns": 4,
+        "path": "<fixture:sales.parquet>",
+        "rowGroups": 3,
+        "rows": 100,
+      }
+    `);
+    expect(schema).toMatchInlineSnapshot(`
+      {
+        "columns": [
+          {
+            "name": "store_id",
+            "type": "BYTE_ARRAY",
+          },
+          {
+            "name": "date",
+            "type": "BYTE_ARRAY",
+          },
+          {
+            "name": "amount",
+            "type": "DOUBLE",
+          },
+          {
+            "name": "region",
+            "type": "BYTE_ARRAY",
+          },
+        ],
+        "path": "<fixture:sales.parquet>",
+        "rows": 100,
+      }
+    `);
   });
 
   it("writes query results to local Parquet files", async () => {
