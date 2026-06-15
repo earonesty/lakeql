@@ -441,6 +441,30 @@ function generateIceberg() {
     fixturePath(ICEBERG.manifestRefMetadataFile),
     `${JSON.stringify(manifestRefMetadata, null, 2)}\n`,
   );
+  const multiManifestMetadata = {
+    ...metadata,
+    snapshots: metadata.snapshots.map((snapshot) =>
+      snapshot["snapshot-id"] === 2
+        ? {
+            ...snapshot,
+            manifests: [
+              {
+                path: "iceberg/warehouse/places/metadata/manifest-2-us.json",
+                files: manifest2.files.filter((file) => file.partition.country === "US"),
+              },
+              {
+                path: "iceberg/warehouse/places/metadata/manifest-2-ca.json",
+                files: manifest2.files.filter((file) => file.partition.country === "CA"),
+              },
+            ],
+          }
+        : snapshot,
+    ),
+  };
+  writeFileSync(
+    fixturePath(ICEBERG.multiManifestMetadataFile),
+    `${JSON.stringify(multiManifestMetadata, null, 2)}\n`,
+  );
   writeJsonFixture(ICEBERG.plannedFilesGolden, {
     snapshotId: 2,
     files: manifest2.files

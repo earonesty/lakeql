@@ -36,6 +36,10 @@ beforeAll(async () => {
     ICEBERG.manifestRefMetadataFile,
     readFileSync(fixturePath(ICEBERG.manifestRefMetadataFile)),
   );
+  await store.put(
+    ICEBERG.multiManifestMetadataFile,
+    readFileSync(fixturePath(ICEBERG.multiManifestMetadataFile)),
+  );
   for (const manifestFile of ICEBERG.manifestFiles) {
     await store.put(manifestFile, readFileSync(fixturePath(manifestFile)));
   }
@@ -226,6 +230,26 @@ describe("loadIcebergTable", () => {
         files: plan.files,
       }),
     ).toBe(readFileSync(fixturePath(ICEBERG.plannedFilesGolden), "utf8").trim());
+  });
+
+  it("counts manifest pruning against generated Iceberg metadata fixtures", async () => {
+    const table = await loadIcebergTable({
+      store,
+      metadataPath: ICEBERG.multiManifestMetadataFile,
+    });
+
+    const plan = table.planFiles({
+      where: eq("country", "US"),
+      readMode: "ignore-unsupported-deletes",
+    });
+
+    expect(plan).toMatchObject({
+      manifestsRead: 1,
+      manifestsSkipped: 1,
+      filesPlanned: 2,
+      filesSkipped: 1,
+    });
+    expect(plan.files.map((file) => file.path)).toEqual([HIVE.files[0], HIVE.files[2]]);
   });
 
   it("selects snapshots by id, ref, and timestamp", async () => {
