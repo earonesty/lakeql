@@ -1,0 +1,103 @@
+{
+  "format-version": 2,
+  "table-uuid": "00000000-0000-4000-8000-000000000001",
+  "location": "fixtures/data/iceberg/warehouse/places",
+  "current-snapshot-id": 2,
+  "refs": {
+    "main": {
+      "type": "branch",
+      "snapshot-id": 2
+    },
+    "previous": {
+      "type": "tag",
+      "snapshot-id": 1
+    }
+  },
+  "schemas": [
+    {
+      "schema-id": 1,
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "type": "int",
+          "required": true
+        },
+        {
+          "id": 2,
+          "name": "amount",
+          "type": "int",
+          "required": false
+        },
+        {
+          "id": 3,
+          "name": "country",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "schema-id": 2,
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "type": "int",
+          "required": true
+        },
+        {
+          "id": 2,
+          "name": "amount",
+          "type": "int",
+          "required": false
+        },
+        {
+          "id": 4,
+          "name": "nation",
+          "sourceId": 3,
+          "type": "string",
+          "required": false
+        }
+      ]
+    }
+  ],
+  "snapshots": [
+    {
+      "snapshot-id": 1,
+      "timestamp-ms": 1767225600000,
+      "schema-id": 1,
+      "manifests": [
+        {
+          "path": "iceberg/warehouse/places/metadata/manifest-1.json",
+          "files": [
+            {
+              "path": "hive/date=2026-01-01/country=US/part-000.parquet",
+              "sequenceNumber": 1,
+              "partition": {
+                "country": "US",
+                "date": "2026-01-01"
+              },
+              "recordCount": 4
+            },
+            {
+              "path": "hive/date=2026-01-02/country=CA/part-000.parquet",
+              "sequenceNumber": 2,
+              "partition": {
+                "country": "CA",
+                "date": "2026-01-02"
+              },
+              "recordCount": 4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "snapshot-id": 2,
+      "timestamp-ms": 1767312000000,
+      "schema-id": 2,
+      "manifest-list": "iceberg/warehouse/places/metadata/snap-2.manifest-list.json"
+    }
+  ]
+}

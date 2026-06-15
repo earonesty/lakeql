@@ -441,6 +441,26 @@ function generateIceberg() {
     fixturePath(ICEBERG.manifestRefMetadataFile),
     `${JSON.stringify(manifestRefMetadata, null, 2)}\n`,
   );
+  writeFileSync(
+    fixturePath(ICEBERG.manifestListFile),
+    `${JSON.stringify({ manifests: [manifest2] }, null, 2)}\n`,
+  );
+  const manifestListMetadata = {
+    ...metadata,
+    snapshots: metadata.snapshots.map((snapshot) =>
+      snapshot["snapshot-id"] === 2
+        ? {
+            ...snapshot,
+            "manifest-list": ICEBERG.manifestListFile,
+            manifests: undefined,
+          }
+        : snapshot,
+    ),
+  };
+  writeFileSync(
+    fixturePath(ICEBERG.manifestListMetadataFile),
+    `${JSON.stringify(manifestListMetadata, null, 2)}\n`,
+  );
   const multiManifestMetadata = {
     ...metadata,
     snapshots: metadata.snapshots.map((snapshot) =>

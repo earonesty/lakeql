@@ -37,6 +37,11 @@ beforeAll(async () => {
     readFileSync(fixturePath(ICEBERG.manifestRefMetadataFile)),
   );
   await store.put(
+    ICEBERG.manifestListMetadataFile,
+    readFileSync(fixturePath(ICEBERG.manifestListMetadataFile)),
+  );
+  await store.put(ICEBERG.manifestListFile, readFileSync(fixturePath(ICEBERG.manifestListFile)));
+  await store.put(
     ICEBERG.multiManifestMetadataFile,
     readFileSync(fixturePath(ICEBERG.multiManifestMetadataFile)),
   );
@@ -230,6 +235,68 @@ describe("loadIcebergTable", () => {
         files: plan.files,
       }),
     ).toBe(readFileSync(fixturePath(ICEBERG.plannedFilesGolden), "utf8").trim());
+  });
+
+  it("hydrates Iceberg manifest lists referenced from snapshots", async () => {
+    const table = await loadIcebergTable({
+      store,
+      metadataPath: ICEBERG.manifestListMetadataFile,
+    });
+
+    const plan = table.planFiles({
+      where: eq("country", "US"),
+      select: ["id", "nation"],
+      readMode: "ignore-unsupported-deletes",
+    });
+
+    expect(plan).toMatchObject({
+      snapshotId: 2,
+      manifestsRead: 1,
+      filesPlanned: 2,
+      filesSkipped: 1,
+      deleteFilesPlanned: 1,
+    });
+    expect(plan.files.map((file) => file.path)).toEqual([HIVE.files[0], HIVE.files[2]]);
+
+    const arrayListStore = memoryStore();
+    await arrayListStore.put(
+      "metadata.json",
+      new TextEncoder().encode(
+        JSON.stringify({
+          "format-version": 2,
+          "table-uuid": "table",
+          location: "memory",
+          "current-snapshot-id": 1,
+          schemas: [
+            { "schema-id": 1, fields: [{ id: 1, name: "id", type: "int", required: true }] },
+          ],
+          snapshots: [
+            {
+              "snapshot-id": 1,
+              "timestamp-ms": 1,
+              "schema-id": 1,
+              "manifest-list": "manifest-list.json",
+            },
+          ],
+        }),
+      ),
+    );
+    await arrayListStore.put(
+      "manifest-list.json",
+      new TextEncoder().encode(
+        JSON.stringify([
+          {
+            path: "manifest.json",
+            files: [{ path: "data/a.parquet", sequenceNumber: 1, recordCount: 1 }],
+          },
+        ]),
+      ),
+    );
+    const arrayListTable = await loadIcebergTable({
+      store: arrayListStore,
+      metadataPath: "metadata.json",
+    });
+    expect(arrayListTable.planFiles().files.map((file) => file.path)).toEqual(["data/a.parquet"]);
   });
 
   it("counts manifest pruning against generated Iceberg metadata fixtures", async () => {
@@ -1054,6 +1121,69 @@ describe("loadIcebergTable", () => {
     await malformedManifestStore.put("bad.manifest.json", new TextEncoder().encode("{}"));
     await expect(
       loadIcebergTable({ store: malformedManifestStore, metadataPath: "metadata.json" }),
+    ).rejects.toMatchObject({ code: "LAQL_CATALOG_ERROR" });
+
+    const missingManifestListStore = memoryStore();
+    await missingManifestListStore.put(
+      "metadata.json",
+      new TextEncoder().encode(
+        JSON.stringify({
+          "format-version": 2,
+          "table-uuid": "table",
+          location: "memory",
+          "current-snapshot-id": 1,
+          schemas: [
+            { "schema-id": 1, fields: [{ id: 1, name: "id", type: "int", required: true }] },
+          ],
+          snapshots: [
+            {
+              "snapshot-id": 1,
+              "timestamp-ms": 1,
+              "schema-id": 1,
+              "manifest-list": "missing.manifest-list.json",
+            },
+          ],
+        }),
+      ),
+    );
+    await expect(
+      loadIcebergTable({ store: missingManifestListStore, metadataPath: "metadata.json" }),
+    ).rejects.toMatchObject({ code: "LAQL_OBJECT_NOT_FOUND" });
+
+    const malformedManifestListStore = memoryStore();
+    await malformedManifestListStore.put(
+      "metadata.json",
+      new TextEncoder().encode(
+        JSON.stringify({
+          "format-version": 2,
+          "table-uuid": "table",
+          location: "memory",
+          "current-snapshot-id": 1,
+          schemas: [
+            { "schema-id": 1, fields: [{ id: 1, name: "id", type: "int", required: true }] },
+          ],
+          snapshots: [
+            {
+              "snapshot-id": 1,
+              "timestamp-ms": 1,
+              "schema-id": 1,
+              "manifest-list": "bad.manifest-list.json",
+            },
+          ],
+        }),
+      ),
+    );
+    await malformedManifestListStore.put("bad.manifest-list.json", new TextEncoder().encode("{}"));
+    await expect(
+      loadIcebergTable({ store: malformedManifestListStore, metadataPath: "metadata.json" }),
+    ).rejects.toMatchObject({ code: "LAQL_CATALOG_ERROR" });
+
+    await malformedManifestListStore.put(
+      "bad.manifest-list.json",
+      new TextEncoder().encode(JSON.stringify({ manifests: [{}] })),
+    );
+    await expect(
+      loadIcebergTable({ store: malformedManifestListStore, metadataPath: "metadata.json" }),
     ).rejects.toMatchObject({ code: "LAQL_CATALOG_ERROR" });
   });
 

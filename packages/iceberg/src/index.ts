@@ -190,7 +190,8 @@ export interface Snapshot {
   "snapshot-id": number;
   "timestamp-ms": number;
   "schema-id": number;
-  manifests: Manifest[];
+  "manifest-list"?: string;
+  manifests?: Manifest[];
 }
 
 export interface Manifest {
@@ -286,7 +287,8 @@ export class IcebergTable {
     let deleteFilesPlanned = 0;
     let deleteFilesIgnored = 0;
 
-    for (const manifest of snapshot.manifests) {
+    const manifests = snapshotManifests(snapshot);
+    for (const manifest of manifests) {
       const manifestMayMatch = manifest.files.some((file) =>
         partitionMayMatch(options.where, file.partition ?? {}),
       );
@@ -343,7 +345,7 @@ export class IcebergTable {
     return {
       snapshotId: snapshot["snapshot-id"],
       schemaId: snapshot["schema-id"],
-      manifestsRead: snapshot.manifests.length - manifestsSkipped,
+      manifestsRead: manifests.length - manifestsSkipped,
       manifestsSkipped,
       filesPlanned: files.length,
       filesSkipped,
@@ -376,7 +378,7 @@ export class IcebergTable {
       "snapshot-id": nextSnapshotId,
       "timestamp-ms": options.nowMs ?? Date.now(),
       "schema-id": currentSnapshot["schema-id"],
-      manifests: [...currentSnapshot.manifests.map(cloneManifest), manifest],
+      manifests: [...snapshotManifests(currentSnapshot).map(cloneManifest), manifest],
     };
     const metadata = cloneMetadata(this.metadata);
     metadata["current-snapshot-id"] = nextSnapshotId;
@@ -810,14 +812,35 @@ async function hydrateMetadataManifests(
 ): Promise<MetadataFile> {
   const hydrated = cloneMetadata(metadata);
   for (const snapshot of hydrated.snapshots) {
+    const manifestReferences =
+      snapshot.manifests ??
+      (snapshot["manifest-list"] !== undefined
+        ? await readManifestList(store, snapshot["manifest-list"])
+        : []);
     snapshot.manifests = await Promise.all(
-      snapshot.manifests.map(async (manifest) => {
+      manifestReferences.map(async (manifest) => {
         if (Array.isArray(manifest.files)) return manifest;
         return await readManifest(store, manifest.path);
       }),
     );
   }
   return hydrated;
+}
+
+async function readManifestList(store: ObjectStore, path: string): Promise<Manifest[]> {
+  const bytes = await store.get(path);
+  if (!bytes) {
+    throw new LaQLError("LAQL_OBJECT_NOT_FOUND", `No Iceberg manifest list at ${path}`, { path });
+  }
+  try {
+    return validateManifestList(JSON.parse(new TextDecoder().decode(bytes)), path);
+  } catch (cause) {
+    if (cause instanceof LaQLError) throw cause;
+    throw new LaQLError("LAQL_CATALOG_ERROR", `Invalid Iceberg manifest list at ${path}`, {
+      path,
+      cause,
+    });
+  }
 }
 
 async function readManifest(store: ObjectStore, path: string): Promise<Manifest> {
@@ -836,6 +859,20 @@ async function readManifest(store: ObjectStore, path: string): Promise<Manifest>
   }
 }
 
+function validateManifestList(value: unknown, path: string): Manifest[] {
+  const manifests = Array.isArray(value)
+    ? value
+    : isRecord(value) && Array.isArray(value.manifests)
+      ? value.manifests
+      : undefined;
+  if (manifests === undefined) {
+    throw new LaQLError("LAQL_CATALOG_ERROR", "Iceberg manifest list has invalid required fields", {
+      path,
+    });
+  }
+  return manifests.map((manifest) => validateManifestReference(manifest, path));
+}
+
 function validateManifest(value: unknown, path: string): Manifest {
   if (!isRecord(value) || typeof value.path !== "string" || !Array.isArray(value.files)) {
     throw new LaQLError("LAQL_CATALOG_ERROR", "Iceberg manifest has invalid required fields", {
@@ -843,6 +880,14 @@ function validateManifest(value: unknown, path: string): Manifest {
     });
   }
   return value as unknown as Manifest;
+}
+
+function validateManifestReference(value: unknown, path: string): Manifest {
+  if (!isRecord(value) || typeof value.path !== "string") {
+    throw new LaQLError("LAQL_CATALOG_ERROR", "Iceberg manifest list entry is invalid", { path });
+  }
+  if (Array.isArray(value.files)) return value as unknown as Manifest;
+  return { path: value.path } as Manifest;
 }
 
 async function readVersionHint(store: ObjectStore, path: string): Promise<number | undefined> {
@@ -981,7 +1026,7 @@ function appendManifestPath(
 function maxSequenceNumber(metadata: MetadataFile): number {
   let max = 0;
   for (const snapshot of metadata.snapshots) {
-    for (const manifest of snapshot.manifests) {
+    for (const manifest of snapshotManifests(snapshot)) {
       for (const file of manifest.files) max = Math.max(max, file.sequenceNumber);
     }
   }
@@ -1021,12 +1066,19 @@ function cloneMetadata(metadata: MetadataFile): MetadataFile {
       "schema-id": schema["schema-id"],
       fields: schema.fields.map((field) => ({ ...field })),
     })),
-    snapshots: metadata.snapshots.map((snapshot) => ({
-      "snapshot-id": snapshot["snapshot-id"],
-      "timestamp-ms": snapshot["timestamp-ms"],
-      "schema-id": snapshot["schema-id"],
-      manifests: snapshot.manifests.map(cloneManifestOrReference),
-    })),
+    snapshots: metadata.snapshots.map((snapshot) => {
+      const cloned: Snapshot = {
+        "snapshot-id": snapshot["snapshot-id"],
+        "timestamp-ms": snapshot["timestamp-ms"],
+        "schema-id": snapshot["schema-id"],
+      };
+      if (snapshot["manifest-list"] !== undefined)
+        cloned["manifest-list"] = snapshot["manifest-list"];
+      if (snapshot.manifests !== undefined) {
+        cloned.manifests = snapshot.manifests.map(cloneManifestOrReference);
+      }
+      return cloned;
+    }),
   };
   if (metadata.refs) cloned.refs = cloneRefs(metadata.refs);
   return cloned;
@@ -1066,6 +1118,10 @@ function cloneManifestOrReference(manifest: Manifest): Manifest {
     return { path: manifest.path } as Manifest;
   }
   return cloneManifest(manifest);
+}
+
+function snapshotManifests(snapshot: Snapshot): Manifest[] {
+  return snapshot.manifests ?? [];
 }
 
 function sortStringRecord(record: Record<string, string>): Record<string, string> {

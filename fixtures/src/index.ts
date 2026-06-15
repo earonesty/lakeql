@@ -77,6 +77,8 @@ export const HIVE = {
 export const ICEBERG = {
   metadataFile: "iceberg/warehouse/places/metadata/v2.metadata.json",
   manifestRefMetadataFile: "iceberg/warehouse/places/metadata/v2.manifest-ref.metadata.json",
+  manifestListMetadataFile: "iceberg/warehouse/places/metadata/v2.manifest-list.metadata.json",
+  manifestListFile: "iceberg/warehouse/places/metadata/snap-2.manifest-list.json",
   multiManifestMetadataFile: "iceberg/warehouse/places/metadata/v2.multi-manifest.metadata.json",
   manifestFiles: [
     "iceberg/warehouse/places/metadata/manifest-1.json",
