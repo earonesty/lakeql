@@ -280,7 +280,8 @@ Q6  phase 7 closure: writes
 Q7  phase 8 closure: additive tracks
     - finish geo/H3 pushdown, SQL examples and round-trips, sidecar indexes, CLI snapshots,
       joins, and runnable docs/recipes
-    - landed: VISION read, geospatial bbox, and nested H3 SQL examples parse and round-trip
+    - landed: VISION read, geospatial bbox, and nested H3 SQL examples parse and round-trip;
+      CLI help/explain/inspect/schema outputs have inline snapshots
     - remaining: audit geo/H3 pushdown fixture coverage, sidecar planner integration, CLI
       snapshots, join coverage, and runnable docs/recipes
     - exit: every VISION SQL example parses/runs where applicable, CLI snapshots are stable,
