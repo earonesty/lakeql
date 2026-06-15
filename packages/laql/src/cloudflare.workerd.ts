@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { Bookmark, RuntimeSubstrate } from "./cloudflare.js";
 
 class FakeR2Object {
   readonly size: number;
@@ -90,6 +91,30 @@ describe("laql/cloudflare", () => {
     const cloudflare = await import("./cloudflare.js");
     const bucket = new FakeR2Bucket();
     const store = cloudflare.r2Store(bucket);
+    const checkpoints = new Map<string, Bookmark>();
+    const queued: Bookmark[] = [];
+    const counts: string[] = [];
+    const timings: string[] = [];
+    const substrate: RuntimeSubstrate = {
+      checkpointStore: {
+        get: async (jobId) => checkpoints.get(jobId),
+        put: async (jobId, bookmark) => {
+          checkpoints.set(jobId, bookmark);
+        },
+        delete: async (jobId) => {
+          checkpoints.delete(jobId);
+        },
+      },
+      queue: {
+        send: async (bookmark) => {
+          queued.push(bookmark);
+        },
+      },
+      metrics: {
+        count: (name) => counts.push(name),
+        timing: (name) => timings.push(name),
+      },
+    };
     await cloudflare.writeParquet(store, "events.parquet", {
       rowGroupSize: [2],
       columnData: [
@@ -102,6 +127,7 @@ describe("laql/cloudflare", () => {
       store,
       budget: { maxOutputRows: 2, maxRangeRequests: 16 },
       queryId: () => "q_r2_workerd",
+      substrate,
     });
     const result = lake
       .path("events.parquet")
@@ -116,5 +142,22 @@ describe("laql/cloudflare", () => {
       rowsReturned: 2,
     });
     expect(result.stats.rangeRequests).toBeGreaterThan(0);
+    expect(counts).toEqual(["laql.query.created"]);
+    expect(timings).toEqual(["laql.query.elapsed"]);
+
+    const slice = await lake
+      .path("events.parquet")
+      .select(["id"])
+      .where(cloudflare.eq("region", "west"))
+      .run()
+      .slice({ maxRows: 1 });
+    expect(slice.rows).toEqual([{ id: 1 }]);
+    expect(slice.bookmark).toBeDefined();
+    if (slice.bookmark === undefined) throw new Error("expected slice bookmark");
+    await substrate.queue?.send(slice.bookmark);
+    await substrate.checkpointStore?.put("worker-job", slice.bookmark);
+
+    expect(queued).toHaveLength(1);
+    await expect(substrate.checkpointStore?.get("worker-job")).resolves.toEqual(slice.bookmark);
   });
 });
