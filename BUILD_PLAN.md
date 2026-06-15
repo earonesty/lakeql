@@ -232,6 +232,11 @@ Q3  phase 4 closure: runtime drivers and Worker ergonomics
     - audit HTTP/R2/S3 stores, Range and etag behavior, cache adapters, policy, budgets,
       substrate hooks, and umbrella runtime subpaths
     - expand workerd fixture lane where needed
+    - landed: paginated R2/S3 listings; R2-backed Worker NDJSON streaming under budget;
+      core query clock/id/metrics substrate hooks; Worker queue/checkpoint substrate
+      bookmark handoff coverage
+    - remaining: prove the etag-pinned plain Parquet consistency story and close any
+      footer/metadata cache coverage gaps across Node and workerd
     - exit: Node and workerd fixture lanes pass with caller-provided queue/checkpoint
       substrate and budget/policy coverage
 
