@@ -45,11 +45,13 @@ export const GROUPBY = {
 export const GEO = {
   file: "geo.parquet",
   rows: 3,
+  rowGroupSize: 1,
 } as const;
 
 export const H3 = {
   file: "h3.parquet",
   rows: 4,
+  rowGroupSize: 1,
 } as const;
 
 export const WRITE = {

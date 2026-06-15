@@ -63,28 +63,36 @@ function rowGroupWithStats(
   minValue?: string | number,
   maxValue?: string | number,
 ): RowGroup {
-  const statistics: NonNullable<
-    NonNullable<NonNullable<RowGroup["columns"][number]["meta_data"]>["statistics"]>
-  > = {};
-  if (minValue !== undefined) statistics.min_value = minValue;
-  if (maxValue !== undefined) statistics.max_value = maxValue;
-  return {
-    columns: [
-      {
-        file_offset: 0n,
-        meta_data: {
-          type: typeof minValue === "string" ? "BYTE_ARRAY" : "INT32",
-          encodings: [],
-          path_in_schema: [column],
-          codec: "SNAPPY",
-          num_values: 1n,
-          total_uncompressed_size: 0n,
-          total_compressed_size: 0n,
-          data_page_offset: 0n,
-          statistics,
-        },
+  return rowGroupWithStatsEntries([[column, minValue, maxValue]]);
+}
+
+function rowGroupWithStatsEntries(
+  entries: [column: string, minValue?: string | number, maxValue?: string | number][],
+): RowGroup {
+  const columns: RowGroup["columns"] = [];
+  for (const [column, minValue, maxValue] of entries) {
+    const statistics: NonNullable<
+      NonNullable<NonNullable<RowGroup["columns"][number]["meta_data"]>["statistics"]>
+    > = {};
+    if (minValue !== undefined) statistics.min_value = minValue;
+    if (maxValue !== undefined) statistics.max_value = maxValue;
+    columns.push({
+      file_offset: 0n,
+      meta_data: {
+        type: typeof minValue === "string" ? "BYTE_ARRAY" : "INT32",
+        encodings: [],
+        path_in_schema: [column],
+        codec: "SNAPPY",
+        num_values: 1n,
+        total_uncompressed_size: 0n,
+        total_compressed_size: 0n,
+        data_page_offset: 0n,
+        statistics,
       },
-    ],
+    });
+  }
+  return {
+    columns,
     total_byte_size: 0n,
     num_rows: 1n,
   };
@@ -1045,40 +1053,47 @@ describe("createParquetLake", () => {
 
   it("queries geo and h3 fixtures with function predicates", async () => {
     const lake = createParquetLake({ store });
-    await expect(
-      lake
-        .path(`data/${GEO.file}`)
-        .select(["id", "name"])
-        .where(
-          fn(
-            "st_intersects",
-            col("geom"),
-            fn("st_bbox", lit(-118.5), lit(34), lit(-118), lit(34.3)),
-          ),
-        )
-        .toArray(),
-    ).resolves.toEqual([
+
+    const geoResult = lake
+      .path(`data/${GEO.file}`)
+      .select(["id", "name"])
+      .where(
+        fn("st_intersects", col("geom"), fn("st_bbox", lit(-118.5), lit(34), lit(-118), lit(34.3))),
+      )
+      .run();
+    await expect(geoResult.toArray()).resolves.toEqual([
       { id: 1, name: "downtown" },
       { id: 2, name: "valley" },
     ]);
+    expect(geoResult.stats.rowGroupsRead).toBe(2);
+    expect(geoResult.stats.rowGroupsSkipped).toBe(1);
 
-    await expect(
-      lake
-        .path(`data/${H3.file}`)
-        .select(["id"])
-        .where(
-          fn("h3_in", col("h3_8"), lit(JSON.stringify(["8829a1d757fffff", "8829a1d74bfffff"]))),
-        )
-        .toArray(),
-    ).resolves.toEqual([{ id: 1 }, { id: 3 }]);
+    const h3InResult = lake
+      .path(`data/${H3.file}`)
+      .select(["id"])
+      .where(fn("h3_in", col("h3_8"), lit(JSON.stringify(["8829a1d757fffff", "8829a1d74bfffff"]))))
+      .run();
+    await expect(h3InResult.toArray()).resolves.toEqual([{ id: 1 }, { id: 3 }]);
+    expect(h3InResult.stats.rowGroupsRead).toBe(2);
+    expect(h3InResult.stats.rowGroupsSkipped).toBe(2);
 
-    await expect(
-      lake
-        .path(`data/${H3.file}`)
-        .select(["id"])
-        .where(fn("h3_within", col("h3_8"), lit("8829a1d757fffff"), lit(1)))
-        .toArray(),
-    ).resolves.toEqual([{ id: 1 }, { id: 2 }]);
+    const exactH3Result = lake
+      .path(`data/${H3.file}`)
+      .select(["id"])
+      .where(fn("h3_within", col("h3_8"), lit("8829a1d757fffff"), lit(0)))
+      .run();
+    await expect(exactH3Result.toArray()).resolves.toEqual([{ id: 1 }]);
+    expect(exactH3Result.stats.rowGroupsRead).toBe(1);
+    expect(exactH3Result.stats.rowGroupsSkipped).toBe(3);
+
+    const radiusH3Result = lake
+      .path(`data/${H3.file}`)
+      .select(["id"])
+      .where(fn("h3_within", col("h3_8"), lit("8829a1d757fffff"), lit(1)))
+      .run();
+    await expect(radiusH3Result.toArray()).resolves.toEqual([{ id: 1 }, { id: 2 }]);
+    expect(radiusH3Result.stats.rowGroupsRead).toBe(4);
+    expect(radiusH3Result.stats.rowGroupsSkipped).toBe(0);
   });
 
   it("prunes Parquet row groups using min/max statistics", async () => {
@@ -1326,6 +1341,75 @@ describe("rowGroupMayMatch", () => {
     expect(rowGroupMayMatch(rowGroupWithStats("metric", 1, 9), between("missing", 1, 2))).toBe(
       true,
     );
+  });
+
+  it("prunes bbox and h3 function predicates with row-group stats", () => {
+    const bboxGroup = rowGroupWithStatsEntries([
+      ["minx", -118.45, -118.45],
+      ["miny", 34.18, 34.18],
+      ["maxx", -118.45, -118.45],
+      ["maxy", 34.18, 34.18],
+    ]);
+    const prefixedBBoxGroup = rowGroupWithStatsEntries([
+      ["geom_minx", -117.16, -117.16],
+      ["geom_miny", 32.72, 32.72],
+      ["geom_maxx", -117.16, -117.16],
+      ["geom_maxy", 32.72, 32.72],
+    ]);
+    expect(
+      rowGroupMayMatch(
+        bboxGroup,
+        fn("st_intersects", col("geom"), fn("st_bbox", lit(-118.5), lit(34), lit(-118), lit(34.3))),
+      ),
+    ).toBe(true);
+    expect(
+      rowGroupMayMatch(
+        bboxGroup,
+        fn("st_intersects", col("geom"), lit(JSON.stringify([-119, 35, -118.8, 36]))),
+      ),
+    ).toBe(false);
+    expect(
+      rowGroupMayMatch(
+        prefixedBBoxGroup,
+        fn("st_intersects", col("geom"), fn("st_bbox", lit(-119), lit(35), lit(-118.8), lit(36))),
+      ),
+    ).toBe(false);
+
+    const h3Group = rowGroupWithStats("h3_8", "8829a1d757fffff", "8829a1d757fffff");
+    expect(
+      rowGroupMayMatch(h3Group, fn("h3_in", col("h3_8"), lit(JSON.stringify(["8829a1d757fffff"])))),
+    ).toBe(true);
+    expect(
+      rowGroupMayMatch(h3Group, fn("h3_in", col("h3_8"), lit(JSON.stringify(["8829a1d74bfffff"])))),
+    ).toBe(false);
+    expect(
+      rowGroupMayMatch(h3Group, fn("h3_within", col("h3_8"), lit("8829a1d757fffff"), lit(0))),
+    ).toBe(true);
+    expect(
+      rowGroupMayMatch(h3Group, fn("h3_within", col("h3_8"), lit("8829a1d74bfffff"), lit(0))),
+    ).toBe(false);
+  });
+
+  it("keeps unsupported function pushdown shapes conservative", () => {
+    const group = rowGroupWithStats("h3_8", "8829a1d757fffff", "8829a1d757fffff");
+    expect(rowGroupMayMatch(group, fn("h3_in", col("h3_8"), lit("not-json")))).toBe(true);
+    expect(rowGroupMayMatch(group, fn("h3_in", col("h3_8"), lit(JSON.stringify([1]))))).toBe(true);
+    expect(rowGroupMayMatch(group, fn("h3_in", lit("h3_8"), lit(JSON.stringify(["x"]))))).toBe(
+      true,
+    );
+    expect(rowGroupMayMatch(group, fn("h3_within", col("h3_8"), lit("x"), lit(1)))).toBe(true);
+    expect(rowGroupMayMatch(group, fn("h3_within", col("h3_8"), col("origin"), lit(0)))).toBe(true);
+    expect(rowGroupMayMatch(group, fn("h3_within", col("h3_8"), lit("x"), col("radius")))).toBe(
+      true,
+    );
+    expect(
+      rowGroupMayMatch(
+        group,
+        fn("st_intersects", col("geom"), fn("st_bbox", lit(-118), lit(35), lit(-119), lit(36))),
+      ),
+    ).toBe(true);
+    expect(rowGroupMayMatch(group, fn("st_intersects", lit("geom"), lit("[0,0,1,1]")))).toBe(true);
+    expect(rowGroupMayMatch(group, fn("st_intersects", col("geom"), lit("not-json")))).toBe(true);
   });
 });
 

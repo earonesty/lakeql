@@ -1064,8 +1064,9 @@ export function rowGroupMayMatch(rowGroup: RowGroup, expr: Expr | undefined): bo
     case "column":
     case "null-check":
     case "like":
-    case "call":
       return true;
+    case "call":
+      return callMayMatch(rowGroup, expr);
     case "not":
       return true;
     case "logical":
@@ -1144,6 +1145,145 @@ function betweenMayMatch(rowGroup: RowGroup, expr: Extract<Expr, { kind: "betwee
   return (
     compareValues(stats.max, expr.low.value) >= 0 && compareValues(stats.min, expr.high.value) <= 0
   );
+}
+
+function callMayMatch(rowGroup: RowGroup, expr: Extract<Expr, { kind: "call" }>): boolean {
+  if (expr.fn === "st_intersects") return stIntersectsMayMatch(rowGroup, expr);
+  if (expr.fn === "h3_in") return h3InMayMatch(rowGroup, expr);
+  if (expr.fn === "h3_within") return h3WithinMayMatch(rowGroup, expr);
+  return true;
+}
+
+function stIntersectsMayMatch(rowGroup: RowGroup, expr: Extract<Expr, { kind: "call" }>): boolean {
+  const [target, query] = expr.args;
+  if (target?.kind !== "column") return true;
+  const queryBBox = bboxLiteral(query);
+  if (!queryBBox) return true;
+  const groupBBox = rowGroupBBox(rowGroup, target.name);
+  if (!groupBBox) return true;
+  return (
+    groupBBox.maxx >= queryBBox.minx &&
+    groupBBox.minx <= queryBBox.maxx &&
+    groupBBox.maxy >= queryBBox.miny &&
+    groupBBox.miny <= queryBBox.maxy
+  );
+}
+
+function h3InMayMatch(rowGroup: RowGroup, expr: Extract<Expr, { kind: "call" }>): boolean {
+  const [target, values] = expr.args;
+  if (target?.kind !== "column") return true;
+  const cells = h3CellList(values);
+  if (!cells) return true;
+  const stats = columnStats(rowGroup, target.name);
+  if (!stats || typeof stats.min !== "string" || typeof stats.max !== "string") return true;
+  return cells.some((cell) => cell >= stats.min && cell <= stats.max);
+}
+
+function h3WithinMayMatch(rowGroup: RowGroup, expr: Extract<Expr, { kind: "call" }>): boolean {
+  const [target, origin, radius] = expr.args;
+  if (
+    target?.kind !== "column" ||
+    origin?.kind !== "literal" ||
+    typeof origin.value !== "string" ||
+    radius?.kind !== "literal" ||
+    radius.value !== 0
+  ) {
+    return true;
+  }
+  return h3InMayMatch(rowGroup, {
+    kind: "call",
+    fn: "h3_in",
+    args: [target, { kind: "literal", value: JSON.stringify([origin.value]) }],
+  });
+}
+
+function bboxLiteral(
+  expr: Expr | undefined,
+): { minx: number; miny: number; maxx: number; maxy: number } | undefined {
+  if (expr?.kind === "call" && expr.fn === "st_bbox" && expr.args.length === 4) {
+    const values = expr.args.map((arg) => (arg.kind === "literal" ? arg.value : undefined));
+    const bbox = numberTuple4(values);
+    if (bbox) {
+      const [minx, miny, maxx, maxy] = bbox;
+      if (minx <= maxx && miny <= maxy) return { minx, miny, maxx, maxy };
+    }
+  }
+  if (expr?.kind === "literal" && typeof expr.value === "string") {
+    try {
+      const parsed = JSON.parse(expr.value) as unknown;
+      const bbox = numberTuple4(parsed);
+      if (bbox) {
+        const [minx, miny, maxx, maxy] = bbox;
+        if (minx <= maxx && miny <= maxy) return { minx, miny, maxx, maxy };
+      }
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+function numberTuple4(value: unknown): [number, number, number, number] | undefined {
+  if (!Array.isArray(value) || value.length !== 4) {
+    return undefined;
+  }
+  const [first, second, third, fourth] = value;
+  if (
+    typeof first !== "number" ||
+    typeof second !== "number" ||
+    typeof third !== "number" ||
+    typeof fourth !== "number"
+  ) {
+    return undefined;
+  }
+  return [first, second, third, fourth];
+}
+
+function h3CellList(expr: Expr | undefined): string[] | undefined {
+  if (expr?.kind !== "literal" || typeof expr.value !== "string") return undefined;
+  try {
+    const parsed = JSON.parse(expr.value) as unknown;
+    if (Array.isArray(parsed) && parsed.every((value) => typeof value === "string")) {
+      return parsed;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+function rowGroupBBox(
+  rowGroup: RowGroup,
+  geometryColumn: string,
+): { minx: number; miny: number; maxx: number; maxy: number } | undefined {
+  const candidates = [
+    {
+      minx: `${geometryColumn}_minx`,
+      miny: `${geometryColumn}_miny`,
+      maxx: `${geometryColumn}_maxx`,
+      maxy: `${geometryColumn}_maxy`,
+    },
+    { minx: "minx", miny: "miny", maxx: "maxx", maxy: "maxy" },
+  ];
+  for (const columns of candidates) {
+    const minx = numericColumnStats(rowGroup, columns.minx)?.min;
+    const miny = numericColumnStats(rowGroup, columns.miny)?.min;
+    const maxx = numericColumnStats(rowGroup, columns.maxx)?.max;
+    const maxy = numericColumnStats(rowGroup, columns.maxy)?.max;
+    if (minx !== undefined && miny !== undefined && maxx !== undefined && maxy !== undefined) {
+      return { minx, miny, maxx, maxy };
+    }
+  }
+  return undefined;
+}
+
+function numericColumnStats(
+  rowGroup: RowGroup,
+  column: string,
+): { min: number; max: number } | undefined {
+  const stats = columnStats(rowGroup, column);
+  if (!stats || !isNumberLike(stats.min) || !isNumberLike(stats.max)) return undefined;
+  return { min: Number(stats.min), max: Number(stats.max) };
 }
 
 function columnLiteralPair(

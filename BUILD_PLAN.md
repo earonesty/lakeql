@@ -292,11 +292,11 @@ Q7  phase 8 closure: additive tracks
       joins, and runnable docs/recipes
     - landed: VISION read, geospatial bbox, and nested H3 SQL examples parse and round-trip;
       CLI help/explain/inspect/schema outputs have inline snapshots; sidecar indexes prune
-      object planning before scan/explain
+      object planning before scan/explain; geo/H3 fixture row-group pushdown is proven
+      for bbox, h3_in, and exact-radius h3_within predicates
     - remaining order:
-      1. audit geo/H3 pushdown fixture coverage
-      2. audit join coverage
-      3. make docs/recipes runnable against fixtures
+      1. audit join coverage
+      2. make docs/recipes runnable against fixtures
     - exit: every VISION SQL example parses/runs where applicable, CLI snapshots are stable,
       index planning is covered, and docs recipes run against fixtures
 

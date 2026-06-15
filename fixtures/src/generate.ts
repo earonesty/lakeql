@@ -134,6 +134,7 @@ function generateGroupby() {
 function generateGeo() {
   parquetWriteFile({
     filename: fixturePath(GEO.file),
+    rowGroupSize: [GEO.rowGroupSize],
     columnData: [
       { name: "id", data: [1, 2, 3], type: "INT32" },
       { name: "name", data: ["downtown", "valley", "harbor"], type: "STRING" },
@@ -157,6 +158,7 @@ function generateGeo() {
 function generateH3() {
   parquetWriteFile({
     filename: fixturePath(H3.file),
+    rowGroupSize: [H3.rowGroupSize],
     columnData: [
       { name: "id", data: [1, 2, 3, 4], type: "INT32" },
       {
