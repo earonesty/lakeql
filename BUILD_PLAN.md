@@ -267,6 +267,12 @@ Q6  phase 7 closure: writes
     - finish Parquet write options, deterministic output planning, partition policies,
       output-manifest fan-in, Iceberg append commit behavior, validation, and CTAS chain
     - add fake REST conflict/retry coverage and real-catalog conformance lane shape
+    - landed: direct and partitioned Parquet write round-trips/goldens; deterministic
+      task/idempotency output paths; output-manifest fan-in; CTAS through checkpoints;
+      Iceberg append and REST conflict coverage; partitioned write tasks resume from
+      running, output-written, manifest-recorded, and complete checkpoints
+    - remaining: audit append read-back/time-travel coverage and retry one-logical-file-set
+      proof before advancing
     - exit: append to fixture warehouse, read back through time travel, survive mid-write
       resume, and prove retries create one logical output manifest entry/file set
 
