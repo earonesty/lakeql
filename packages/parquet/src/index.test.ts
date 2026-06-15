@@ -991,6 +991,27 @@ describe("createParquetLake", () => {
     expect(second.stats.rowGroupsSkipped).toBe(3);
   });
 
+  it("invalidates cached Parquet footer metadata when object etag changes", async () => {
+    const metadataCache = memoryCache<ParquetMetadata>();
+    const etagStore = memoryStore();
+    const path = `data/${STATS.file}`;
+    const bytes = readFileSync(fixturePath(STATS.file));
+    await etagStore.put(path, bytes);
+    const lake = createParquetLake({ store: etagStore, metadataCache });
+
+    const first = lake.path(path).where(lt("metric", 0)).run();
+    await expect(first.count()).resolves.toBe(0);
+    expect(first.stats.cacheMisses).toBe(1);
+    expect(first.stats.cacheHits).toBe(0);
+
+    await etagStore.put(path, bytes);
+    const second = lake.path(path).where(lt("metric", 0)).run();
+    await expect(second.count()).resolves.toBe(0);
+    expect(second.stats.cacheMisses).toBe(1);
+    expect(second.stats.cacheHits).toBe(0);
+    expect(second.stats.rangeRequests).toBeGreaterThan(0);
+  });
+
   it("prunes row groups for supported min/max predicate shapes", async () => {
     const lake = createParquetLake({ store });
 
