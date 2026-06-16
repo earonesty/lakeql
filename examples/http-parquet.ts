@@ -1,4 +1,4 @@
-import { createLake, httpStore } from "../packages/laql/src/node.js";
+import { createLake, httpStore } from "../packages/lakeql/src/node.js";
 
 export async function queryHttpParquet(options: Parameters<typeof httpStore>[0]) {
   const lake = createLake({

@@ -1,4 +1,4 @@
-import { eq, loadIcebergTable, r2Store } from "../packages/laql/src/cloudflare.js";
+import { eq, loadIcebergTable, r2Store } from "../packages/lakeql/src/cloudflare.js";
 
 export async function planR2Iceberg(bucket: Parameters<typeof r2Store>[0]) {
   const table = await loadIcebergTable({

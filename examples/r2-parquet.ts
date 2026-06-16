@@ -1,4 +1,4 @@
-import { createLake, r2Store } from "../packages/laql/src/cloudflare.js";
+import { createLake, r2Store } from "../packages/lakeql/src/cloudflare.js";
 
 export async function queryR2Parquet(bucket: Parameters<typeof r2Store>[0]) {
   const lake = createLake({

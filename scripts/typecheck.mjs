@@ -10,7 +10,7 @@ const projects = [
   "packages/geo",
   "packages/sql",
   "packages/cli",
-  "packages/laql",
+  "packages/lakeql",
   "fixtures",
 ];
 

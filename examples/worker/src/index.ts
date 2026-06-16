@@ -3,7 +3,7 @@ import {
   eq,
   loadIcebergTable,
   r2Store,
-} from "../../../packages/laql/src/cloudflare.js";
+} from "../../../packages/lakeql/src/cloudflare.js";
 
 export interface Env {
   DATA: Parameters<typeof r2Store>[0];

@@ -325,7 +325,7 @@
     "status": "supported+tested",
     "notes": "Adapter maps to R2 ranged get.",
     "evidence": [
-      { "file": "packages/laql/src/worker-example.workerd.ts", "pattern": "options?.range" }
+      { "file": "packages/lakeql/src/worker-example.workerd.ts", "pattern": "options?.range" }
     ]
   },
   {
