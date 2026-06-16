@@ -317,9 +317,13 @@ export class IcebergTable {
         .filter((candidate) => candidate["timestamp-ms"] <= (options.asOfTimestampMs as number))
         .sort((a, b) => b["timestamp-ms"] - a["timestamp-ms"])[0];
       if (!snapshot) {
-        throw new LakeqlError("LAKEQL_CATALOG_ERROR", "No Iceberg snapshot at requested timestamp", {
-          asOfTimestampMs: options.asOfTimestampMs,
-        });
+        throw new LakeqlError(
+          "LAKEQL_CATALOG_ERROR",
+          "No Iceberg snapshot at requested timestamp",
+          {
+            asOfTimestampMs: options.asOfTimestampMs,
+          },
+        );
       }
       return snapshot;
     }
@@ -329,7 +333,9 @@ export class IcebergTable {
   schema(schemaId: number): IcebergField[] {
     const schema = this.metadata.schemas.find((candidate) => candidate["schema-id"] === schemaId);
     if (!schema) {
-      throw new LakeqlError("LAKEQL_CATALOG_ERROR", `Unknown Iceberg schema ${schemaId}`, { schemaId });
+      throw new LakeqlError("LAKEQL_CATALOG_ERROR", `Unknown Iceberg schema ${schemaId}`, {
+        schemaId,
+      });
     }
     return schema.fields;
   }
@@ -579,9 +585,13 @@ export class ObjectStoreIcebergCommitCatalog implements IcebergCommitCatalog {
     }
     const currentBytes = await input.store.get(input.currentMetadataPath);
     if (!currentBytes) {
-      throw new LakeqlError("LAKEQL_OBJECT_NOT_FOUND", `No object at ${input.currentMetadataPath}`, {
-        path: input.currentMetadataPath,
-      });
+      throw new LakeqlError(
+        "LAKEQL_OBJECT_NOT_FOUND",
+        `No object at ${input.currentMetadataPath}`,
+        {
+          path: input.currentMetadataPath,
+        },
+      );
     }
     const current = validateMetadata(JSON.parse(new TextDecoder().decode(currentBytes)) as unknown);
     if (current["current-snapshot-id"] !== input.expectedSnapshotId) {
@@ -983,10 +993,14 @@ function isAsyncIterable(value: unknown): value is AsyncIterable<Row[] | Iceberg
 
 function validateDeletePosition(position: number, path: string): number {
   if (!Number.isInteger(position) || position < 0) {
-    throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Iceberg delete position must be non-negative", {
-      path,
-      position,
-    });
+    throw new LakeqlError(
+      "LAKEQL_VALIDATION_ERROR",
+      "Iceberg delete position must be non-negative",
+      {
+        path,
+        position,
+      },
+    );
   }
   return position;
 }
@@ -1098,7 +1112,9 @@ function publicDeleteFile(deleteFile: ManifestDeleteFile): ManifestDeleteFile {
 async function readManifestList(store: ObjectStore, path: string): Promise<Manifest[]> {
   const bytes = await store.get(path);
   if (!bytes) {
-    throw new LakeqlError("LAKEQL_OBJECT_NOT_FOUND", `No Iceberg manifest list at ${path}`, { path });
+    throw new LakeqlError("LAKEQL_OBJECT_NOT_FOUND", `No Iceberg manifest list at ${path}`, {
+      path,
+    });
   }
   try {
     return avroObjectContainer(bytes)
@@ -1319,9 +1335,13 @@ function validateManifestList(value: unknown, path: string): Manifest[] {
       ? value.manifests
       : undefined;
   if (manifests === undefined) {
-    throw new LakeqlError("LAKEQL_CATALOG_ERROR", "Iceberg manifest list has invalid required fields", {
-      path,
-    });
+    throw new LakeqlError(
+      "LAKEQL_CATALOG_ERROR",
+      "Iceberg manifest list has invalid required fields",
+      {
+        path,
+      },
+    );
   }
   return manifests.map((manifest) => validateManifestReference(manifest, path));
 }
@@ -1337,7 +1357,9 @@ function validateManifest(value: unknown, path: string): Manifest {
 
 function validateManifestReference(value: unknown, path: string): Manifest {
   if (!isRecord(value) || typeof value.path !== "string") {
-    throw new LakeqlError("LAKEQL_CATALOG_ERROR", "Iceberg manifest list entry is invalid", { path });
+    throw new LakeqlError("LAKEQL_CATALOG_ERROR", "Iceberg manifest list entry is invalid", {
+      path,
+    });
   }
   validateManifestContent(value.content, path);
   if (Array.isArray(value.files)) return value as unknown as Manifest;
@@ -1386,9 +1408,13 @@ function validateManifestSourcedPath(path: string, tablePrefix = ""): string {
     try {
       decoded = decodeURIComponent(segment);
     } catch {
-      throw new LakeqlError("LAKEQL_VALIDATION_ERROR", `Iceberg manifest path is invalid: ${path}`, {
-        path,
-      });
+      throw new LakeqlError(
+        "LAKEQL_VALIDATION_ERROR",
+        `Iceberg manifest path is invalid: ${path}`,
+        {
+          path,
+        },
+      );
     }
     if (decoded === "." || decoded === "..") {
       throw new LakeqlError(
@@ -1522,7 +1548,10 @@ async function commitResponseMetadataPath(response: Response): Promise<string | 
 function restAppendSnapshot(input: IcebergCommitInput): Record<string, unknown> {
   const snapshot = input.metadata.snapshots.at(-1);
   if (snapshot === undefined) {
-    throw new LakeqlError("LAKEQL_CATALOG_ERROR", "Iceberg append metadata is missing next snapshot");
+    throw new LakeqlError(
+      "LAKEQL_CATALOG_ERROR",
+      "Iceberg append metadata is missing next snapshot",
+    );
   }
   return {
     "snapshot-id": snapshot["snapshot-id"],
@@ -1716,7 +1745,10 @@ function validateMetadata(value: unknown): MetadataFile {
     );
   }
   if (!Array.isArray(value.snapshots) || !Array.isArray(value.schemas)) {
-    throw new LakeqlError("LAKEQL_CATALOG_ERROR", "Iceberg metadata is missing snapshots or schemas");
+    throw new LakeqlError(
+      "LAKEQL_CATALOG_ERROR",
+      "Iceberg metadata is missing snapshots or schemas",
+    );
   }
   if (!isMetadataFile(value)) {
     throw new LakeqlError("LAKEQL_CATALOG_ERROR", "Iceberg metadata has invalid required fields");

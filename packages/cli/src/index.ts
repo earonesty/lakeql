@@ -275,7 +275,10 @@ async function materializeCteIfNeeded(
 ): Promise<ReturnType<typeof parseSql>> {
   if (ast.cte === undefined) return ast;
   if (ast.source !== ast.cte.name) {
-    throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "CTEs are only supported as the outer FROM source");
+    throw new LakeqlError(
+      "LAKEQL_SQL_UNSUPPORTED",
+      "CTEs are only supported as the outer FROM source",
+    );
   }
   if (ast.join !== undefined || ast.subqueryJoin !== undefined) {
     throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "CTEs inside JOINs are not supported yet");

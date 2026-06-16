@@ -14,7 +14,8 @@ describeReference("SQL CLI DuckDB reference comparisons", () => {
   it.each([
     {
       name: "filtered ordered scan",
-      lakeql: "select store_id, region, amount from input where region = 'west' order by amount asc limit 5",
+      lakeql:
+        "select store_id, region, amount from input where region = 'west' order by amount asc limit 5",
       duckdb: `select store_id, region, amount from read_parquet('${sqlString(fixturePath(SALES.file))}') where region = 'west' order by amount asc limit 5`,
     },
     {
@@ -24,17 +25,20 @@ describeReference("SQL CLI DuckDB reference comparisons", () => {
     },
     {
       name: "computed projection",
-      lakeql: "select store_id, amount * 2 as doubled, case when amount > 10 then 'large' else 'small' end as bucket from input where amount < 20 order by amount asc limit 2",
+      lakeql:
+        "select store_id, amount * 2 as doubled, case when amount > 10 then 'large' else 'small' end as bucket from input where amount < 20 order by amount asc limit 2",
       duckdb: `select store_id, amount * 2 as doubled, case when amount > 10 then 'large' else 'small' end as bucket from read_parquet('${sqlString(fixturePath(SALES.file))}') where amount < 20 order by amount asc limit 2`,
     },
     {
       name: "grouped aggregate",
-      lakeql: "select region, count(*) as rows, max(amount) as max_amount from input group by region order by region asc",
+      lakeql:
+        "select region, count(*) as rows, max(amount) as max_amount from input group by region order by region asc",
       duckdb: `select region, count(*) as rows, max(amount) as max_amount from read_parquet('${sqlString(fixturePath(SALES.file))}') group by region order by region asc`,
     },
     {
       name: "grouped aggregate expression and count distinct",
-      lakeql: "select region, max(amount * 2) as max_doubled, count(distinct store_id) as stores from input group by region order by region asc",
+      lakeql:
+        "select region, max(amount * 2) as max_doubled, count(distinct store_id) as stores from input group by region order by region asc",
       duckdb: `select region, max(amount * 2) as max_doubled, count(distinct store_id) as stores from read_parquet('${sqlString(fixturePath(SALES.file))}') group by region order by region asc`,
     },
     {
@@ -44,7 +48,8 @@ describeReference("SQL CLI DuckDB reference comparisons", () => {
     },
     {
       name: "multiple group keys",
-      lakeql: "select region, store_id, count(*) as rows from input group by region, store_id order by region asc, store_id asc limit 5",
+      lakeql:
+        "select region, store_id, count(*) as rows from input group by region, store_id order by region asc, store_id asc limit 5",
       duckdb: `select region, store_id, count(*) as rows from read_parquet('${sqlString(fixturePath(SALES.file))}') group by region, store_id order by region asc, store_id asc limit 5`,
     },
     {
@@ -59,37 +64,44 @@ describeReference("SQL CLI DuckDB reference comparisons", () => {
     },
     {
       name: "distinct grouped count projection",
-      lakeql: "select distinct count(*) as rows from input group by region order by region asc limit 2",
+      lakeql:
+        "select distinct count(*) as rows from input group by region order by region asc limit 2",
       duckdb: `select distinct count(*) as rows from read_parquet('${sqlString(fixturePath(SALES.file))}') group by region order by region asc limit 2`,
     },
     {
       name: "grouped aggregate having",
-      lakeql: "select region, count(*) as rows, max(amount) as max_amount from input group by region having max_amount > 980 order by region asc limit 2",
+      lakeql:
+        "select region, count(*) as rows, max(amount) as max_amount from input group by region having max_amount > 980 order by region asc limit 2",
       duckdb: `select region, count(*) as rows, max(amount) as max_amount from read_parquet('${sqlString(fixturePath(SALES.file))}') group by region having max_amount > 980 order by region asc limit 2`,
     },
     {
       name: "simple filtered CTE",
-      lakeql: "with recent as (select store_id, amount from input where amount > 900) select store_id, amount from recent order by amount desc limit 2",
+      lakeql:
+        "with recent as (select store_id, amount from input where amount > 900) select store_id, amount from recent order by amount desc limit 2",
       duckdb: `with recent as (select store_id, amount from read_parquet('${sqlString(fixturePath(SALES.file))}') where amount > 900) select store_id, amount from recent order by amount desc limit 2`,
     },
     {
       name: "aggregate CTE",
-      lakeql: "with totals as (select region, count(*) as rows, max(amount) as max_amount from input group by region) select region, rows from totals where max_amount > 990 order by region asc",
+      lakeql:
+        "with totals as (select region, count(*) as rows, max(amount) as max_amount from input group by region) select region, rows from totals where max_amount > 990 order by region asc",
       duckdb: `with totals as (select region, count(*) as rows, max(amount) as max_amount from read_parquet('${sqlString(fixturePath(SALES.file))}') group by region) select region, rows from totals where max_amount > 990 order by region asc`,
     },
     {
       name: "aggregate scalar subquery",
-      lakeql: "select store_id, amount from input where amount = (select max(amount) as max_amount from input)",
+      lakeql:
+        "select store_id, amount from input where amount = (select max(amount) as max_amount from input)",
       duckdb: `select store_id, amount from read_parquet('${sqlString(fixturePath(SALES.file))}') where amount = (select max(amount) as max_amount from read_parquet('${sqlString(fixturePath(SALES.file))}'))`,
     },
     {
       name: "limit scalar subquery",
-      lakeql: "select store_id, amount from input where amount >= (select amount from input order by amount desc limit 1)",
+      lakeql:
+        "select store_id, amount from input where amount >= (select amount from input order by amount desc limit 1)",
       duckdb: `select store_id, amount from read_parquet('${sqlString(fixturePath(SALES.file))}') where amount >= (select amount from read_parquet('${sqlString(fixturePath(SALES.file))}') order by amount desc limit 1)`,
     },
     {
       name: "projection scalar subquery",
-      lakeql: "select store_id, (select max(amount) as max_amount from input) as max_amount from input order by amount asc limit 1",
+      lakeql:
+        "select store_id, (select max(amount) as max_amount from input) as max_amount from input order by amount asc limit 1",
       duckdb: `select store_id, (select max(amount) as max_amount from read_parquet('${sqlString(fixturePath(SALES.file))}')) as max_amount from read_parquet('${sqlString(fixturePath(SALES.file))}') order by amount asc limit 1`,
     },
   ])("matches DuckDB for $name", async ({ lakeql, duckdb }) => {

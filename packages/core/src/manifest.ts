@@ -208,10 +208,14 @@ export function createBookmark(init: BookmarkInit): Bookmark {
 
 export function assertBookmarkMatches(bookmark: Bookmark, planFingerprint: string): void {
   if (bookmark.planFingerprint !== planFingerprint) {
-    throw new LakeqlError("LAKEQL_BOOKMARK_STALE", "Bookmark does not match the current query plan", {
-      bookmarkPlanFingerprint: bookmark.planFingerprint,
-      planFingerprint,
-    });
+    throw new LakeqlError(
+      "LAKEQL_BOOKMARK_STALE",
+      "Bookmark does not match the current query plan",
+      {
+        bookmarkPlanFingerprint: bookmark.planFingerprint,
+        planFingerprint,
+      },
+    );
   }
 }
 
@@ -286,10 +290,14 @@ export function transitionTaskCheckpoint(
 ): TaskCheckpoint {
   if (!existing) return createCheckpoint(input);
   if (existing.taskId !== input.taskId) {
-    throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Task checkpoint id does not match transition", {
-      existingTaskId: existing.taskId,
-      taskId: input.taskId,
-    });
+    throw new LakeqlError(
+      "LAKEQL_VALIDATION_ERROR",
+      "Task checkpoint id does not match transition",
+      {
+        existingTaskId: existing.taskId,
+        taskId: input.taskId,
+      },
+    );
   }
   if (existing.state === input.nextState && existing.idempotencyKey === input.idempotencyKey) {
     return cloneCheckpoint(existing);

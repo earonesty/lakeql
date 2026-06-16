@@ -1,3 +1,7 @@
+import type { RowGroup } from "hyparquet";
+import { parquetMetadataAsync, parquetReadObjects } from "hyparquet";
+import type { BasicType, ColumnSource, ParquetWriteOptions } from "hyparquet-writer";
+import { parquetWriteBuffer } from "hyparquet-writer";
 import {
   advanceTaskCheckpoint,
   type CacheAdapter,
@@ -19,10 +23,6 @@ import {
   throwIfAborted,
   withObjectStoreReadControls,
 } from "lakeql-core";
-import type { RowGroup } from "hyparquet";
-import { parquetMetadataAsync, parquetReadObjects } from "hyparquet";
-import type { BasicType, ColumnSource, ParquetWriteOptions } from "hyparquet-writer";
-import { parquetWriteBuffer } from "hyparquet-writer";
 
 export interface ReadParquetOptions {
   /** Columns to project; all columns when omitted. */
@@ -608,7 +608,10 @@ export class ParquetScanAdapter implements ScanAdapter {
         try {
           yield normalizeDecodedRows(await parquetReadObjects(readOptions));
         } catch (cause) {
-          throw new LakeqlError("LAKEQL_PARQUET_READ_ERROR", `Failed to read ${path}`, { path, cause });
+          throw new LakeqlError("LAKEQL_PARQUET_READ_ERROR", `Failed to read ${path}`, {
+            path,
+            cause,
+          });
         }
       }
       rowGroupStart = rowGroupEnd;
@@ -930,7 +933,9 @@ function partitionOutputPath(
 function validateOptionalOutputPathComponent(name: string, value: string | undefined): void {
   if (value === undefined) return;
   if (typeof value !== "string" || value.trim() === "") {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", `${name} must be a non-empty string`, { [name]: value });
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", `${name} must be a non-empty string`, {
+      [name]: value,
+    });
   }
 }
 
@@ -984,10 +989,14 @@ function validateRange(
     const value = row[column];
     if (value === null || value === undefined) continue;
     if (!isComparableInsertValue(value)) {
-      throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Range constraints require comparable values", {
-        column,
-        rowIndex,
-      });
+      throw new LakeqlError(
+        "LAKEQL_VALIDATION_ERROR",
+        "Range constraints require comparable values",
+        {
+          column,
+          rowIndex,
+        },
+      );
     }
     if (
       (range.min !== undefined && compareInsertValues(value, range.min, column, rowIndex) < 0) ||
@@ -1046,10 +1055,14 @@ function compareInsertValues(
   rowIndex: number,
 ): number {
   if (typeof left !== typeof right) {
-    throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Range constraint types must match row values", {
-      column,
-      rowIndex,
-    });
+    throw new LakeqlError(
+      "LAKEQL_VALIDATION_ERROR",
+      "Range constraint types must match row values",
+      {
+        column,
+        rowIndex,
+      },
+    );
   }
   if (left < right) return -1;
   if (left > right) return 1;
@@ -1114,7 +1127,10 @@ function rowsToColumnData(
     ...new Set(rows.flatMap((row) => Object.keys(row).filter((key) => !partitionColumns.has(key)))),
   ].sort();
   if (columns.length === 0) {
-    throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "At least one non-partition column is required");
+    throw new LakeqlError(
+      "LAKEQL_VALIDATION_ERROR",
+      "At least one non-partition column is required",
+    );
   }
 
   return columns.map((name) => {
@@ -1243,7 +1259,9 @@ async function contentHash(bytes: Uint8Array): Promise<string> {
 
 function validateWriteMode(writeMode: WriteParquetOptions["writeMode"]): void {
   if (writeMode !== undefined && writeMode !== "overwrite" && writeMode !== "create") {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "writeMode must be overwrite or create", { writeMode });
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", "writeMode must be overwrite or create", {
+      writeMode,
+    });
   }
 }
 
@@ -1254,10 +1272,14 @@ function decodePositionDeleteRows(
     const path = row.file_path;
     const position = row.pos;
     if (typeof path !== "string" || path.length === 0) {
-      throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Iceberg position delete file_path is invalid", {
-        rowIndex,
-        path,
-      });
+      throw new LakeqlError(
+        "LAKEQL_VALIDATION_ERROR",
+        "Iceberg position delete file_path is invalid",
+        {
+          rowIndex,
+          path,
+        },
+      );
     }
     const numericPosition =
       typeof position === "bigint"
@@ -1287,10 +1309,14 @@ function decodeEqualityDeleteRows(
     for (const [column, value] of Object.entries(row)) {
       if (column.startsWith("_")) continue;
       if (!isIcebergEqualityValue(value)) {
-        throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Iceberg equality delete value is invalid", {
-          rowIndex,
-          column,
-        });
+        throw new LakeqlError(
+          "LAKEQL_VALIDATION_ERROR",
+          "Iceberg equality delete value is invalid",
+          {
+            rowIndex,
+            column,
+          },
+        );
       }
       equalityRow[column] = value;
     }

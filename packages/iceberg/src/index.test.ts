@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { readFileSync } from "node:fs";
+import avro from "avsc";
 import {
   and,
   between,
@@ -19,7 +20,6 @@ import {
   stableStringify,
 } from "lakeql-core";
 import { fixturePath, ICEBERG } from "lakeql-fixtures";
-import avro from "avsc";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   ParquetScanAdapter,

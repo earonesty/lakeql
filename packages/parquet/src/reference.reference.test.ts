@@ -2,6 +2,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DuckDBConnection } from "@duckdb/node-api";
+import type { SchemaElement } from "hyparquet";
+import { parquetWriteBuffer } from "hyparquet-writer";
 import {
   and,
   between,
@@ -17,8 +19,6 @@ import {
   stableStringify,
 } from "lakeql-core";
 import { fixturePath, SALES, STATS, TYPES } from "lakeql-fixtures";
-import type { SchemaElement } from "hyparquet";
-import { parquetWriteBuffer } from "hyparquet-writer";
 import { describe, expect, it } from "vitest";
 import { createParquetLake } from "./index.js";
 
@@ -197,14 +197,16 @@ describeReference("DuckDB reference comparisons", () => {
       const store = memoryStore();
       await store.put("duckdb-unsigned-binary.parquet", readFileSync(path));
       const lake = createParquetLake({ store });
-      const lakeqlRows = (await lake.path("duckdb-unsigned-binary.parquet").toArray()).map((row) => ({
-        id: row.id,
-        u8: row.u8,
-        u16: row.u16,
-        u32: row.u32,
-        u64: row.u64 === null ? null : String(row.u64),
-        payload: row.payload === null ? null : stringToHex(row.payload),
-      }));
+      const lakeqlRows = (await lake.path("duckdb-unsigned-binary.parquet").toArray()).map(
+        (row) => ({
+          id: row.id,
+          u8: row.u8,
+          u16: row.u16,
+          u32: row.u32,
+          u64: row.u64 === null ? null : String(row.u64),
+          payload: row.payload === null ? null : stringToHex(row.payload),
+        }),
+      );
       const referenceRows = await connection.runAndReadAll(`
         select
           id,

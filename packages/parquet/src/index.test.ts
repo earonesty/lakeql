@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import type { RowGroup } from "hyparquet";
 import {
   advanceTaskCheckpoint,
   and,
@@ -40,7 +41,6 @@ import {
   WIDE,
   WRITE,
 } from "lakeql-fixtures";
-import type { RowGroup } from "hyparquet";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   createParquetLake,
@@ -204,7 +204,9 @@ describe("readParquetObjects", () => {
 
   it("wraps decode failures in LAKEQL_PARQUET_READ_ERROR", async () => {
     await store.put("data/garbage.parquet", new TextEncoder().encode("not parquet bytes"));
-    await expect(readParquetObjects(store, "data/garbage.parquet")).rejects.toThrowError(LakeqlError);
+    await expect(readParquetObjects(store, "data/garbage.parquet")).rejects.toThrowError(
+      LakeqlError,
+    );
     await expect(readParquetObjects(store, "data/garbage.parquet")).rejects.toMatchObject({
       code: "LAKEQL_PARQUET_READ_ERROR",
     });

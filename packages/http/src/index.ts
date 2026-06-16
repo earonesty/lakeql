@@ -45,7 +45,10 @@ export class HttpObjectStore implements ObjectStore {
 
   async getRange(path: string, range: { offset: number; length: number }): Promise<Uint8Array> {
     if (range.offset < 0 || range.length < 0) {
-      throw new LakeqlError("LAKEQL_OBJECT_NOT_FOUND", `Invalid range for ${path}`, { path, range });
+      throw new LakeqlError("LAKEQL_OBJECT_NOT_FOUND", `Invalid range for ${path}`, {
+        path,
+        range,
+      });
     }
     const response = await this.fetchPath(path, {
       method: "GET",
@@ -80,9 +83,13 @@ export class HttpObjectStore implements ObjectStore {
 
   async *list(prefix: string, options?: ListOptions): AsyncIterable<ObjectInfo> {
     if (!this.objects) {
-      throw new LakeqlError("LAKEQL_UNSUPPORTED_PUSHDOWN", "HTTP store list requires an object index", {
-        prefix,
-      });
+      throw new LakeqlError(
+        "LAKEQL_UNSUPPORTED_PUSHDOWN",
+        "HTTP store list requires an object index",
+        {
+          prefix,
+        },
+      );
     }
     let emitted = 0;
     for (const object of this.objects
@@ -136,10 +143,14 @@ export class HttpObjectStore implements ObjectStore {
     const base = new URL(this.baseUrl);
     const url = new URL(encodeObjectPath(path), base);
     if (url.origin !== base.origin || !url.pathname.startsWith(base.pathname)) {
-      throw new LakeqlError("LAKEQL_VALIDATION_ERROR", `Object path escapes HTTP base URL: ${path}`, {
-        path,
-        baseUrl: this.baseUrl,
-      });
+      throw new LakeqlError(
+        "LAKEQL_VALIDATION_ERROR",
+        `Object path escapes HTTP base URL: ${path}`,
+        {
+          path,
+          baseUrl: this.baseUrl,
+        },
+      );
     }
     return url;
   }
@@ -159,14 +170,22 @@ function encodeObjectPath(path: string): string {
       try {
         decoded = decodeURIComponent(segment);
       } catch {
-        throw new LakeqlError("LAKEQL_VALIDATION_ERROR", `Object path has invalid encoding: ${path}`, {
-          path,
-        });
+        throw new LakeqlError(
+          "LAKEQL_VALIDATION_ERROR",
+          `Object path has invalid encoding: ${path}`,
+          {
+            path,
+          },
+        );
       }
       if (decoded === "." || decoded === "..") {
-        throw new LakeqlError("LAKEQL_VALIDATION_ERROR", `Object path contains traversal: ${path}`, {
-          path,
-        });
+        throw new LakeqlError(
+          "LAKEQL_VALIDATION_ERROR",
+          `Object path contains traversal: ${path}`,
+          {
+            path,
+          },
+        );
       }
       return encodeURIComponent(segment);
     })

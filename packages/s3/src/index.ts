@@ -1,3 +1,5 @@
+import { AwsClient } from "aws4fetch";
+import { XMLParser } from "fast-xml-parser";
 import {
   type ConditionalObjectStore,
   type ConditionalPutOptions,
@@ -7,8 +9,6 @@ import {
   type ObjectInfo,
   type PutOptions,
 } from "lakeql-core";
-import { AwsClient } from "aws4fetch";
-import { XMLParser } from "fast-xml-parser";
 
 export const PACKAGE = "lakeql-s3" as const;
 
@@ -288,14 +288,22 @@ function encodeObjectPath(path: string): string {
       try {
         decoded = decodeURIComponent(segment);
       } catch {
-        throw new LakeqlError("LAKEQL_VALIDATION_ERROR", `Object path has invalid encoding: ${path}`, {
-          path,
-        });
+        throw new LakeqlError(
+          "LAKEQL_VALIDATION_ERROR",
+          `Object path has invalid encoding: ${path}`,
+          {
+            path,
+          },
+        );
       }
       if (decoded === "." || decoded === "..") {
-        throw new LakeqlError("LAKEQL_VALIDATION_ERROR", `Object path contains traversal: ${path}`, {
-          path,
-        });
+        throw new LakeqlError(
+          "LAKEQL_VALIDATION_ERROR",
+          `Object path contains traversal: ${path}`,
+          {
+            path,
+          },
+        );
       }
       return encodeURIComponent(segment);
     })

@@ -4,6 +4,8 @@ import { sql } from "@codemirror/lang-sql";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { type Extension, Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
+import { tags } from "@lezer/highlight";
+import { basicSetup } from "codemirror";
 import {
   and,
   between,
@@ -27,8 +29,6 @@ import {
 import { httpStore } from "lakeql-http";
 import { createParquetLake } from "lakeql-parquet";
 import { parseSql } from "lakeql-sql";
-import { tags } from "@lezer/highlight";
-import { basicSetup } from "codemirror";
 import "./styles.css";
 
 type Mode = "sql" | "js" | "json";

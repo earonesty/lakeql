@@ -336,7 +336,9 @@ function validateBBox(box: BBoxIndex): void {
     box.minx > box.maxx ||
     box.miny > box.maxy
   ) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "BBox index bounds must be finite and ordered", { box });
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", "BBox index bounds must be finite and ordered", {
+      box,
+    });
   }
 }
 

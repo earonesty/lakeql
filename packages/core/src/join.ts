@@ -147,9 +147,13 @@ function validateJoinOptions(
 function normalizeJoinKeys(key: JoinKey, label: string, strategy: string): string[] {
   const keys = Array.isArray(key) ? key : [key];
   if (keys.some((column) => typeof column !== "string" || column.length === 0)) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", `${strategy} join ${label} must contain column names`, {
-      [label]: key,
-    });
+    throw new LakeqlError(
+      "LAKEQL_TYPE_ERROR",
+      `${strategy} join ${label} must contain column names`,
+      {
+        [label]: key,
+      },
+    );
   }
   return keys;
 }
