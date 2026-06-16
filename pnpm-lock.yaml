@@ -152,6 +152,9 @@ importers:
       '@laql/s3':
         specifier: workspace:*
         version: link:../s3
+      '@laql/sql':
+        specifier: workspace:*
+        version: link:../sql
       tsup:
         specifier: ^8.5.0
         version: 8.5.1(postcss@8.5.15)(typescript@6.0.3)

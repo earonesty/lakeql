@@ -1,6 +1,6 @@
 {
   "name": "lakeql",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "lakeql: lightweight TypeScript query engine for Iceberg + Parquet on object storage",
   "keywords": [
     "lakehouse",
@@ -14,6 +14,9 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "lakeql": "./dist/bin.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -67,6 +70,7 @@
     "@laql/parquet": "workspace:*",
     "@laql/r2": "workspace:*",
     "@laql/s3": "workspace:*",
+    "@laql/sql": "workspace:*",
     "tsup": "^8.5.0"
   }
 }

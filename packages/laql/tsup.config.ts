@@ -9,11 +9,22 @@ export default defineConfig({
     index: "src/index.ts",
     node: "src/node.ts",
     cloudflare: "src/cloudflare.ts",
+    // The CLI lives in the @laql/cli workspace source and is bundled in so a
+    // global install exposes a `lakeql` command. Shebang is preserved by tsup.
+    bin: "../cli/src/bin.ts",
   },
   format: ["esm"],
-  // resolve inlines the @laql/* workspace type declarations into the bundle
-  // so consumers don't need the (unpublished) internal packages for types.
-  dts: { resolve: true },
+  // Type declarations only for the library entries (the CLI bin needs none).
+  // resolve inlines the @laql/* workspace types so consumers don't need the
+  // (unpublished) internal packages for types.
+  dts: {
+    resolve: true,
+    entry: {
+      index: "src/index.ts",
+      node: "src/node.ts",
+      cloudflare: "src/cloudflare.ts",
+    },
+  },
   clean: true,
   treeshake: true,
   sourcemap: false,
