@@ -1,0 +1,101 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "e856c48d-9397-4e19-8278-28cc1acb2ffe",
+  "location" : "warehouse/db/places",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1781570794995,
+  "last-column-id" : 3,
+  "current-schema-id" : 1,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "country",
+      "required" : false,
+      "type" : "string"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 1,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "country",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "city",
+      "required" : false,
+      "type" : "string"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "country",
+      "transform" : "identity",
+      "source-id" : 2,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "erik",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 5622327259665169765,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 5622327259665169765,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 5622327259665169765,
+    "timestamp-ms" : 1781570794856,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1781570790348",
+      "added-data-files" : "2",
+      "added-records" : "2",
+      "added-files-size" : "1226",
+      "changed-partition-count" : "2",
+      "total-records" : "2",
+      "total-files-size" : "1226",
+      "total-data-files" : "2",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "warehouse/db/places/metadata/snap-5622327259665169765-1-39480b88-0a26-4bc7-9ff0-e2fc4236f795.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1781570794856,
+    "snapshot-id" : 5622327259665169765
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1781570794856,
+    "metadata-file" : "warehouse/db/places/metadata/v1.metadata.json"
+  } ]
+}

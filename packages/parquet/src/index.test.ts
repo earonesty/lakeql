@@ -47,9 +47,12 @@ import {
   createParquetTableAs,
   type ParquetMetadata,
   partitionedParquetOutputEntries,
+  planRowGroups,
+  planRowGroupsFromMetadata,
   readIcebergParquetDeletes,
   readParquetMetadata,
   readParquetObjects,
+  rejectUnsupportedParquetSchema,
   rowGroupMayMatch,
   writeParquet,
   writePartitionedParquet,
@@ -125,6 +128,16 @@ function rowGroupFromStatsEntries(
     total_byte_size: 0n,
     num_rows: 1n,
   };
+}
+
+function metadataWithSchema(schema: unknown[]): ParquetMetadata {
+  return {
+    version: 1,
+    schema,
+    num_rows: 0n,
+    row_groups: [],
+    metadata_length: 0,
+  } as unknown as ParquetMetadata;
 }
 
 beforeAll(async () => {
@@ -1164,6 +1177,23 @@ describe("createParquetLake", () => {
     ).resolves.toBe(golden);
   });
 
+  it("exposes first-class row-group planning with byte ranges", async () => {
+    const plan = await planRowGroups(store, `data/${STATS.file}`, { where: gte("metric", 100) });
+
+    expect(plan.rowGroupRanges).toEqual([{ start: 1, end: 3 }]);
+    expect(plan.rowGroups.map((group) => group.index)).toEqual([1, 2]);
+    expect(plan.rowGroups.map((group) => group.rowStart)).toEqual([
+      STATS.rowGroupSize,
+      STATS.rowGroupSize * 2,
+    ]);
+    for (const group of plan.rowGroups) {
+      expect(group.rowCount).toBe(STATS.rowGroupSize);
+      expect(group.byteRange?.offset).toEqual(expect.any(Number));
+      expect(group.byteRange?.length).toEqual(expect.any(Number));
+      expect(group.byteRange?.length).toBeGreaterThan(0);
+    }
+  });
+
   it("reuses cached Parquet footer metadata across scans", async () => {
     const metadataCache = memoryCache<ParquetMetadata>();
     const lake = createParquetLake({ store, metadataCache });
@@ -1462,5 +1492,189 @@ describe("readParquetMetadata", () => {
     expect(Number(meta.num_rows)).toBe(SALES.rows);
     const expectedGroups = Math.ceil(SALES.rows / SALES.rowGroupSize);
     expect(meta.row_groups).toHaveLength(expectedGroups);
+  });
+});
+
+describe("rejectUnsupportedParquetSchema", () => {
+  it("accepts absent or empty schema metadata", () => {
+    expect(() => rejectUnsupportedParquetSchema(metadataWithSchema([]))).not.toThrow();
+    expect(() =>
+      rejectUnsupportedParquetSchema({ row_groups: [] } as unknown as ParquetMetadata),
+    ).not.toThrow();
+  });
+
+  it("rejects unannotated Parquet groups as unsupported structs", () => {
+    expect(() =>
+      rejectUnsupportedParquetSchema(
+        metadataWithSchema([
+          { name: "root", num_children: 1 },
+          { name: "address", num_children: 1, repetition_type: "OPTIONAL" },
+          { name: "street", type: "BYTE_ARRAY", converted_type: "UTF8" },
+        ]),
+      ),
+    ).toThrowError(LaQLError);
+    expect(() =>
+      rejectUnsupportedParquetSchema(
+        metadataWithSchema([
+          { name: "root", num_children: 1 },
+          { name: "address", num_children: 1, repetition_type: "OPTIONAL" },
+          { name: "street", type: "BYTE_ARRAY", converted_type: "UTF8" },
+        ]),
+      ),
+    ).toThrow(/struct/u);
+  });
+
+  it("rejects precision-sensitive Parquet logical values that would decode lossy", () => {
+    expect(() =>
+      rejectUnsupportedParquetSchema(
+        metadataWithSchema([
+          { name: "root", num_children: 1 },
+          {
+            name: "wide_decimal",
+            type: "INT64",
+            converted_type: "DECIMAL",
+            precision: 18,
+            scale: 2,
+          },
+        ]),
+      ),
+    ).toThrow(/precision 15/u);
+    expect(() =>
+      rejectUnsupportedParquetSchema(
+        metadataWithSchema([
+          { name: "root", num_children: 1 },
+          {
+            name: "nanos",
+            type: "INT64",
+            logical_type: { type: "TIMESTAMP", unit: "NANOS", isAdjustedToUTC: false },
+          },
+        ]),
+      ),
+    ).toThrow(/millisecond/u);
+    expect(() =>
+      rejectUnsupportedParquetSchema(
+        metadataWithSchema([
+          { name: "root", num_children: 2 },
+          {
+            name: "safe_decimal",
+            type: "INT32",
+            converted_type: "DECIMAL",
+            precision: 9,
+            scale: 2,
+          },
+          { name: "millis", type: "INT64", converted_type: "TIMESTAMP_MILLIS" },
+        ]),
+      ),
+    ).not.toThrow();
+  });
+
+  it("allows LIST and MAP annotated groups to pass through to hyparquet", () => {
+    expect(() =>
+      rejectUnsupportedParquetSchema(
+        metadataWithSchema([
+          { name: "root", num_children: 4n },
+          { name: "tags", num_children: 1, converted_type: "LIST" },
+          { name: "list", num_children: 1, repetition_type: "REPEATED" },
+          { name: "element", type: "BYTE_ARRAY", converted_type: "UTF8" },
+          { name: "attrs", num_children: 1, logical_type: { MAP: {} } },
+          { name: "key_value", num_children: 2, repetition_type: "REPEATED" },
+          { name: "key", type: "BYTE_ARRAY", converted_type: "UTF8" },
+          { name: "value", type: "BYTE_ARRAY", converted_type: "UTF8" },
+          { name: "pairs", num_children: 1, converted_type: "MAP_KEY_VALUE" },
+          { name: "pair", num_children: 2, repetition_type: "REPEATED" },
+          { name: "key", type: "BYTE_ARRAY", converted_type: "UTF8" },
+          { name: "value", type: "BYTE_ARRAY", converted_type: "UTF8" },
+          { name: "logical_list", num_children: 1, logical_type: "LIST" },
+          { name: "list", num_children: 1, repetition_type: "REPEATED" },
+          { name: "element", type: "INT32" },
+        ]),
+      ),
+    ).not.toThrow();
+  });
+
+  it("applies the struct rejection before row-group planning", () => {
+    expect(() =>
+      planRowGroupsFromMetadata(
+        metadataWithSchema([
+          { name: "root", num_children: 1 },
+          { name: "payload", num_children: 1, repetition_type: "OPTIONAL" },
+          { name: "id", type: "INT32" },
+        ]),
+        undefined,
+      ),
+    ).toThrowError(LaQLError);
+  });
+});
+
+describe("planRowGroupsFromMetadata", () => {
+  it("derives byte ranges from row-group and column-chunk offsets when present", () => {
+    const metadata = {
+      row_groups: [
+        {
+          columns: [],
+          file_offset: 10n,
+          total_compressed_size: 20n,
+          num_rows: 5n,
+          total_byte_size: 20n,
+        },
+        {
+          columns: [
+            {
+              file_offset: 100n,
+              meta_data: {
+                path_in_schema: ["a"],
+                data_page_offset: 120n,
+                dictionary_page_offset: 90n,
+                total_compressed_size: 25n,
+                statistics: { min_value: 1, max_value: 9 },
+              },
+            },
+            {
+              file_offset: 200n,
+              meta_data: {
+                path_in_schema: ["b"],
+                data_page_offset: 150n,
+                total_compressed_size: 10n,
+                statistics: { min_value: 1, max_value: 9 },
+              },
+            },
+          ],
+          num_rows: 5n,
+          total_byte_size: 35n,
+        },
+        {
+          columns: [{ file_offset: 300n }],
+          num_rows: 5n,
+          total_byte_size: 0n,
+        },
+      ],
+    } as unknown as ParquetMetadata;
+
+    const plan = planRowGroupsFromMetadata(metadata, undefined);
+    expect(plan.rowGroups).toMatchObject([
+      { index: 0, rowStart: 0, rowCount: 5, byteRange: { offset: 10, length: 20 } },
+      { index: 1, rowStart: 5, rowCount: 5, byteRange: { offset: 90, length: 70 } },
+      { index: 2, rowStart: 10, rowCount: 5 },
+    ]);
+    expect(plan.rowGroups[2]?.byteRange).toBeUndefined();
+  });
+
+  it("keeps row offsets correct while pruning skipped groups", () => {
+    const metadata = {
+      row_groups: [
+        rowGroupWithStats("metric", 0, 9),
+        rowGroupWithStats("metric", 100, 109),
+        rowGroupWithStats("metric", 200, 209),
+      ],
+    } as unknown as ParquetMetadata;
+
+    for (const group of metadata.row_groups) {
+      group.num_rows = 10n;
+      group.total_byte_size = 1n;
+    }
+
+    const plan = planRowGroupsFromMetadata(metadata, gte("metric", 100));
+    expect(plan.rowGroupRanges).toEqual([{ start: 1, end: 3 }]);
+    expect(plan.rowGroups.map((group) => group.rowStart)).toEqual([10, 20]);
   });
 });

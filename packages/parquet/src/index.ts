@@ -16,6 +16,8 @@ import {
   type ScanTaskPlan,
   type ScanTaskPlanOptions,
   type TaskCheckpoint,
+  throwIfAborted,
+  withObjectStoreReadControls,
 } from "@laql/core";
 import type { RowGroup } from "hyparquet";
 import { parquetMetadataAsync, parquetReadObjects } from "hyparquet";
@@ -37,6 +39,22 @@ export interface ReadParquetBatchOptions extends ReadParquetOptions {
 export interface ParquetRowBatch {
   rowOffset: number;
   rows: Row[];
+}
+
+export interface PlanParquetRowGroupsOptions {
+  where?: Expr;
+}
+
+export interface PlannedParquetRowGroup {
+  index: number;
+  rowStart: number;
+  rowCount: number;
+  byteRange?: { offset: number; length: number };
+}
+
+export interface ParquetRowGroupPlan {
+  rowGroups: PlannedParquetRowGroup[];
+  rowGroupRanges: { start: number; end: number }[];
 }
 
 export type IcebergParquetDeleteFileContent =
@@ -151,7 +169,10 @@ export async function asyncBufferFromStore(
   path: string,
   options: ScanOptions | undefined = undefined,
 ) {
-  const head = await store.head(path);
+  const controlledStore =
+    options === undefined ? store : withObjectStoreReadControls(store, options.budget);
+  throwIfAborted(options?.budget.signal);
+  const head = await controlledStore.head(path);
   if (!head) {
     throw new LaQLError("LAQL_OBJECT_NOT_FOUND", `No object at ${path}`, { path });
   }
@@ -160,10 +181,12 @@ export async function asyncBufferFromStore(
     slice: async (start: number, end?: number): Promise<ArrayBuffer> => {
       const length = (end ?? head.size) - start;
       if (options) {
+        throwIfAborted(options.budget.signal);
         options.stats.rangeRequests += 1;
         options.stats.bytesRequested += length;
       }
-      const bytes = await store.getRange(path, { offset: start, length });
+      const bytes = await controlledStore.getRange(path, { offset: start, length });
+      throwIfAborted(options?.budget.signal);
       const out = new ArrayBuffer(bytes.byteLength);
       new Uint8Array(out).set(bytes);
       return out;
@@ -197,6 +220,7 @@ export async function* readParquetObjectBatches(
   const file = await asyncBufferFromStore(store, path);
   try {
     const metadata = await parquetMetadataAsync(file);
+    rejectUnsupportedParquetSchema(metadata);
     const batchSize = options.batchSize ?? 4096;
     const requestedStart = options.rowStart ?? 0;
     const requestedEnd = options.rowEnd ?? Number(metadata.num_rows);
@@ -223,11 +247,15 @@ export async function* readParquetObjectBatches(
           rowEnd,
         };
         if (options.columns) readOptions.columns = options.columns;
-        yield { rowOffset: rowStart, rows: await parquetReadObjects(readOptions) };
+        yield {
+          rowOffset: rowStart,
+          rows: normalizeDecodedRows(await parquetReadObjects(readOptions)),
+        };
       }
       rowGroupStart = rowGroupEnd;
     }
   } catch (cause) {
+    if (cause instanceof LaQLError) throw cause;
     throw new LaQLError("LAQL_PARQUET_READ_ERROR", `Failed to read ${path}`, { path, cause });
   }
 }
@@ -236,6 +264,15 @@ export async function* readParquetObjectBatches(
 export async function readParquetMetadata(store: ObjectStore, path: string) {
   const file = await asyncBufferFromStore(store, path);
   return parquetMetadataAsync(file);
+}
+
+export async function planRowGroups(
+  store: ObjectStore,
+  path: string,
+  options: PlanParquetRowGroupsOptions = {},
+): Promise<ParquetRowGroupPlan> {
+  const metadata = await readParquetMetadata(store, path);
+  return planRowGroupsFromMetadata(metadata, options.where);
 }
 
 export async function readIcebergParquetDeletes(
@@ -534,6 +571,7 @@ export class ParquetScanAdapter implements ScanAdapter {
     const batchSize = options.batchSize || this.defaultBatchSize;
     const file = await asyncBufferFromStore(this.store, path, options);
     const metadata = await this.metadata(path, file, options);
+    rejectUnsupportedParquetSchema(metadata);
     const readColumns = options.columns;
     if (readColumns) {
       const known = new Set(options.stats.columnsRead);
@@ -548,6 +586,7 @@ export class ParquetScanAdapter implements ScanAdapter {
 
     let rowGroupStart = 0;
     for (const rowGroup of metadata.row_groups) {
+      throwIfAborted(options.budget.signal);
       const rowGroupEnd = rowGroupStart + Number(rowGroup.num_rows);
       if (!rowGroupMayMatch(rowGroup, options.where)) {
         options.stats.rowGroupsSkipped += 1;
@@ -556,6 +595,7 @@ export class ParquetScanAdapter implements ScanAdapter {
       }
       options.stats.rowGroupsRead += 1;
       for (let rowStart = rowGroupStart; rowStart < rowGroupEnd; rowStart += batchSize) {
+        throwIfAborted(options.budget.signal);
         const rowEnd = Math.min(rowStart + batchSize, rowGroupEnd);
         const readOptions: Parameters<typeof parquetReadObjects>[0] = {
           file,
@@ -566,7 +606,7 @@ export class ParquetScanAdapter implements ScanAdapter {
         };
         if (readColumns) readOptions.columns = readColumns;
         try {
-          yield await parquetReadObjects(readOptions);
+          yield normalizeDecodedRows(await parquetReadObjects(readOptions));
         } catch (cause) {
           throw new LaQLError("LAQL_PARQUET_READ_ERROR", `Failed to read ${path}`, { path, cause });
         }
@@ -578,7 +618,7 @@ export class ParquetScanAdapter implements ScanAdapter {
   async planTask(path: string, options: ScanTaskPlanOptions): Promise<ScanTaskPlan> {
     const file = await asyncBufferFromStore(this.store, path);
     const metadata = await parquetMetadataAsync(file);
-    return { rowGroupRanges: matchingRowGroupRanges(metadata.row_groups, options.where) };
+    return { rowGroupRanges: planRowGroupsFromMetadata(metadata, options.where).rowGroupRanges };
   }
 
   private async metadata(
@@ -600,23 +640,195 @@ export class ParquetScanAdapter implements ScanAdapter {
   }
 }
 
-function matchingRowGroupRanges(
-  rowGroups: RowGroup[],
+export function planRowGroupsFromMetadata(
+  metadata: ParquetMetadata,
   where: Expr | undefined,
-): { start: number; end: number }[] {
+): ParquetRowGroupPlan {
+  rejectUnsupportedParquetSchema(metadata);
+  const rowGroups: PlannedParquetRowGroup[] = [];
   const ranges: { start: number; end: number }[] = [];
-  for (let index = 0; index < rowGroups.length; index += 1) {
-    const rowGroup = rowGroups[index];
-    if (rowGroup === undefined || !rowGroupMayMatch(rowGroup, where)) continue;
+  let rowStart = 0;
+  for (let index = 0; index < metadata.row_groups.length; index += 1) {
+    const rowGroup = metadata.row_groups[index];
+    const rowCount = rowGroup === undefined ? 0 : Number(rowGroup.num_rows);
+    const nextRowStart = rowStart + rowCount;
+    if (rowGroup === undefined || !rowGroupMayMatch(rowGroup, where)) {
+      rowStart = nextRowStart;
+      continue;
+    }
+    const planned: PlannedParquetRowGroup = { index, rowStart, rowCount };
+    const byteRange = rowGroupByteRange(rowGroup);
+    if (byteRange !== undefined) planned.byteRange = byteRange;
+    rowGroups.push(planned);
     const previous = ranges.at(-1);
     if (previous && previous.end === index) previous.end = index + 1;
     else ranges.push({ start: index, end: index + 1 });
+    rowStart = nextRowStart;
   }
-  return ranges;
+  return { rowGroups, rowGroupRanges: ranges };
+}
+
+export function rejectUnsupportedParquetSchema(metadata: ParquetMetadata): void {
+  const schema = metadata.schema;
+  if (!Array.isArray(schema) || schema.length === 0) return;
+  const root = schema[0];
+  const childCount = schemaChildCount(root);
+  let index = 1;
+  for (let child = 0; child < childCount && index < schema.length; child += 1) {
+    index = rejectUnsupportedParquetSchemaNode(schema, index, []);
+  }
+}
+
+type ParquetSchemaElement = NonNullable<ParquetMetadata["schema"]>[number];
+
+function rejectUnsupportedParquetSchemaNode(
+  schema: ParquetSchemaElement[],
+  index: number,
+  path: string[],
+): number {
+  const element = schema[index];
+  if (element === undefined) return index + 1;
+  const name = String(element.name ?? `field_${index}`);
+  const nodePath = [...path, name];
+  const childCount = schemaChildCount(element);
+  rejectUnsupportedParquetLeaf(element, nodePath);
+  if (childCount === 0) return index + 1;
+  if (isSupportedNestedParquetGroup(element)) {
+    return skipParquetSchemaSubtree(schema, index);
+  }
+  throw new LaQLError(
+    "LAQL_UNSUPPORTED_PARQUET_FEATURE",
+    "Parquet struct columns are not supported",
+    {
+      column: nodePath.join("."),
+      feature: "struct",
+    },
+  );
+}
+
+function skipParquetSchemaSubtree(schema: ParquetSchemaElement[], index: number): number {
+  const element = schema[index];
+  if (element === undefined) return index + 1;
+  let next = index + 1;
+  for (let child = 0; child < schemaChildCount(element) && next < schema.length; child += 1) {
+    next = skipParquetSchemaSubtree(schema, next);
+  }
+  return next;
+}
+
+function schemaChildCount(element: ParquetSchemaElement | undefined): number {
+  const count = element?.num_children;
+  if (typeof count === "number" && Number.isInteger(count) && count > 0) return count;
+  if (typeof count === "bigint" && count > 0n && count <= BigInt(Number.MAX_SAFE_INTEGER)) {
+    return Number(count);
+  }
+  return 0;
+}
+
+function isSupportedNestedParquetGroup(element: ParquetSchemaElement): boolean {
+  const convertedType = String(element.converted_type ?? "").toUpperCase();
+  if (convertedType === "LIST" || convertedType === "MAP" || convertedType === "MAP_KEY_VALUE") {
+    return true;
+  }
+  const logicalType = parquetLogicalTypeName(element.logical_type);
+  return logicalType === "LIST" || logicalType === "MAP";
+}
+
+function rejectUnsupportedParquetLeaf(element: ParquetSchemaElement, path: string[]): void {
+  const column = path.join(".");
+  const convertedType = String(element.converted_type ?? "").toUpperCase();
+  const logicalType = logicalTypeRecord(element.logical_type);
+  const logicalTypeName = parquetLogicalTypeName(element.logical_type);
+  const decimalPrecision =
+    typeof element.precision === "number"
+      ? element.precision
+      : logicalType?.type === "DECIMAL" && typeof logicalType.precision === "number"
+        ? logicalType.precision
+        : undefined;
+  if (
+    (convertedType === "DECIMAL" || logicalTypeName === "DECIMAL") &&
+    decimalPrecision !== undefined &&
+    decimalPrecision > 15
+  ) {
+    throw new LaQLError(
+      "LAQL_UNSUPPORTED_PARQUET_FEATURE",
+      "Parquet decimals above precision 15 are not supported",
+      { column, feature: "decimal-precision", precision: decimalPrecision },
+    );
+  }
+
+  const timestampUnit = parquetTimestampUnit(element);
+  if (timestampUnit === "MICROS" || timestampUnit === "NANOS") {
+    throw new LaQLError(
+      "LAQL_UNSUPPORTED_PARQUET_FEATURE",
+      "Parquet timestamps below millisecond precision are not supported",
+      { column, feature: "timestamp-precision", unit: timestampUnit.toLowerCase() },
+    );
+  }
+}
+
+function parquetLogicalTypeName(value: unknown): string | undefined {
+  if (typeof value === "string") return value.toUpperCase();
+  if (typeof value !== "object" || value === null) return undefined;
+  const keys = Object.keys(value);
+  if (keys.length === 0) return undefined;
+  return keys[0]?.toUpperCase();
+}
+
+function logicalTypeRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function parquetTimestampUnit(element: ParquetSchemaElement): string | undefined {
+  const convertedType = String(element.converted_type ?? "").toUpperCase();
+  if (convertedType === "TIMESTAMP_MILLIS") return "MILLIS";
+  if (convertedType === "TIMESTAMP_MICROS") return "MICROS";
+  const logicalType = logicalTypeRecord(element.logical_type);
+  if (
+    String(logicalType?.type ?? "").toUpperCase() === "TIMESTAMP" &&
+    typeof logicalType?.unit === "string"
+  ) {
+    return logicalType.unit.toUpperCase();
+  }
+  return undefined;
 }
 
 function metadataCacheKey(path: string, byteLength: number, etag: string | undefined): string {
   return `parquet-metadata:${path}:${byteLength}:${etag ?? "no-etag"}`;
+}
+
+function rowGroupByteRange(rowGroup: RowGroup): { offset: number; length: number } | undefined {
+  const groupOffset = safeNumber(rowGroup.file_offset);
+  const groupCompressedSize = safeNumber(rowGroup.total_compressed_size);
+  if (groupOffset !== undefined && groupCompressedSize !== undefined && groupCompressedSize > 0) {
+    return { offset: groupOffset, length: groupCompressedSize };
+  }
+
+  let start: number | undefined;
+  let end: number | undefined;
+  for (const column of rowGroup.columns) {
+    const metadata = column.meta_data;
+    if (!metadata) continue;
+    const pageOffset = safeNumber(metadata.dictionary_page_offset ?? metadata.data_page_offset);
+    const compressedSize = safeNumber(metadata.total_compressed_size);
+    if (pageOffset === undefined || compressedSize === undefined || compressedSize < 0) continue;
+    start = start === undefined ? pageOffset : Math.min(start, pageOffset);
+    end =
+      end === undefined ? pageOffset + compressedSize : Math.max(end, pageOffset + compressedSize);
+  }
+  if (start === undefined || end === undefined || end < start) return undefined;
+  return { offset: start, length: end - start };
+}
+
+function safeNumber(value: bigint | number | undefined): number | undefined {
+  if (typeof value === "number" && Number.isSafeInteger(value)) return value;
+  if (typeof value === "bigint") {
+    const numberValue = Number(value);
+    if (Number.isSafeInteger(numberValue) && BigInt(numberValue) === value) return numberValue;
+  }
+  return undefined;
 }
 
 interface RowPartition {
@@ -1398,6 +1610,22 @@ export function parquetScanner(
   options: { batchSize?: number; metadataCache?: CacheAdapter<ParquetMetadata> } = {},
 ): ScanAdapter {
   return new ParquetScanAdapter(store, options);
+}
+
+function normalizeDecodedRows(rows: Row[]): Row[] {
+  return rows.map((row) => normalizeDecodedValue(row) as Row);
+}
+
+function normalizeDecodedValue(value: unknown): unknown {
+  if (value === undefined) return null;
+  if (value instanceof Uint8Array || value instanceof Date) return value;
+  if (Array.isArray(value)) return value.map(normalizeDecodedValue);
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, nested] of Object.entries(value)) out[key] = normalizeDecodedValue(nested);
+    return out;
+  }
+  return value;
 }
 
 export function createParquetLake(config: ParquetLakeConfig): Lake {

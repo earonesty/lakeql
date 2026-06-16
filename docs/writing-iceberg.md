@@ -52,3 +52,6 @@ await table.appendOutputManifest({
 ```
 
 The default catalog writes through the configured ObjectStore. Production catalogs should enforce compare-and-swap semantics around the current metadata pointer.
+
+See [Iceberg Catalogs](./catalogs.md) for the full catalog adapter contract and current REST,
+object-store, Glue, and Nessie support status.

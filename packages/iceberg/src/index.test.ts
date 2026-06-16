@@ -31,10 +31,13 @@ import {
 import type { IcebergCommitCatalog, IcebergCommitInput } from "./index.js";
 import {
   applyIcebergDeletes,
+  icebergGlueCatalog,
+  icebergNessieCatalog,
   icebergRestCatalog,
   loadIcebergTable,
   loadIcebergTableFromObjectStore,
   loadIcebergTableFromRest,
+  planFiles,
   scanPlannedIcebergRows,
 } from "./index.js";
 
@@ -172,6 +175,50 @@ describe("loadIcebergTable", () => {
     expect(calls[0]?.headers.get("authorization")).toBe("Bearer token_123");
   });
 
+  it("lists tables through the Iceberg REST catalog API", async () => {
+    const calls: RestFetchCall[] = [];
+    const catalog = icebergRestCatalog({
+      url: "https://catalog.example/warehouse",
+      prefix: "prod",
+      namespace: ["accounting", "tax"],
+      table: "places",
+      token: "token_123",
+      fetch: restFetch(calls, () =>
+        jsonResponse({
+          identifiers: [
+            { namespace: ["accounting", "tax"], name: "places" },
+            { namespace: ["accounting", "tax"], name: "events" },
+          ],
+        }),
+      ),
+    });
+
+    await expect(catalog.listTables()).resolves.toEqual([
+      { namespace: ["accounting", "tax"], name: "places" },
+      { namespace: ["accounting", "tax"], name: "events" },
+    ]);
+    expect(calls).toMatchObject([
+      {
+        url: "https://catalog.example/warehouse/v1/prod/namespaces/accounting%1Ftax/tables",
+        method: "GET",
+      },
+    ]);
+    expect(calls[0]?.headers.get("authorization")).toBe("Bearer token_123");
+  });
+
+  it("rejects malformed REST catalog table listings", async () => {
+    const catalog = icebergRestCatalog({
+      url: "https://catalog.example",
+      namespace: "prod.analytics",
+      table: "places",
+      fetch: async () => jsonResponse({ identifiers: [{ namespace: ["prod"], table: "places" }] }),
+    });
+
+    await expect(catalog.listTables()).rejects.toMatchObject({
+      code: "LAQL_CATALOG_ERROR",
+    });
+  });
+
   it("loads the current metadata file from an object-store table location", async () => {
     const catalogStore = memoryStore();
     await putIcebergWarehouse(catalogStore);
@@ -234,6 +281,13 @@ describe("loadIcebergTable", () => {
       select: ["id", "nation"],
       readMode: "ignore-unsupported-deletes",
     });
+    expect(
+      planFiles(table, {
+        where: eq("country", "US"),
+        select: ["id", "nation"],
+        readMode: "ignore-unsupported-deletes",
+      }),
+    ).toEqual(plan);
 
     expect(plan).toMatchObject({
       snapshotId: 2,
@@ -1128,9 +1182,9 @@ describe("loadIcebergTable", () => {
   });
 
   it("classifies unknown Iceberg delete files conservatively", async () => {
-    const unknownDeleteStore = memoryStore();
-    await unknownDeleteStore.put(
-      "metadata.json",
+    const deleteStore = memoryStore();
+    await deleteStore.put(
+      "future-delete.metadata.json",
       new TextEncoder().encode(
         JSON.stringify({
           "format-version": 2,
@@ -1166,20 +1220,60 @@ describe("loadIcebergTable", () => {
         }),
       ),
     );
-    const table = await loadIcebergTable({
-      store: unknownDeleteStore,
-      metadataPath: "metadata.json",
-    });
+    await deleteStore.put(
+      "deletion-vector.metadata.json",
+      new TextEncoder().encode(
+        JSON.stringify({
+          "format-version": 2,
+          "table-uuid": "table",
+          location: "memory",
+          "current-snapshot-id": 1,
+          schemas: [
+            {
+              "schema-id": 1,
+              fields: [{ id: 1, name: "id", type: "int", required: true }],
+            },
+          ],
+          snapshots: [
+            {
+              "snapshot-id": 1,
+              "timestamp-ms": 1,
+              "schema-id": 1,
+              manifests: [
+                {
+                  path: "manifest-1.json",
+                  files: [
+                    {
+                      path: "data/a.parquet",
+                      sequenceNumber: 1,
+                      recordCount: 1,
+                      deleteFiles: [{ content: "deletion-vector", path: "deletes/a.dv" }],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+    );
 
-    expect(() => table.planFiles()).toThrowError(LaQLError);
-    expect(() => table.planFiles()).toThrow(/delete files/u);
-    expect(
-      table.planFiles({ readMode: "ignore-unsupported-deletes" }).files[0]?.deleteFiles,
-    ).toBeUndefined();
-    expect(table.planFiles({ readMode: "ignore-unsupported-deletes" })).toMatchObject({
-      deleteFilesPlanned: 0,
-      deleteFilesIgnored: 1,
-    });
+    for (const metadataPath of ["future-delete.metadata.json", "deletion-vector.metadata.json"]) {
+      const table = await loadIcebergTable({
+        store: deleteStore,
+        metadataPath,
+      });
+
+      expect(() => table.planFiles()).toThrowError(LaQLError);
+      expect(() => table.planFiles()).toThrow(/delete files/u);
+      expect(
+        table.planFiles({ readMode: "ignore-unsupported-deletes" }).files[0]?.deleteFiles,
+      ).toBeUndefined();
+      expect(table.planFiles({ readMode: "ignore-unsupported-deletes" })).toMatchObject({
+        deleteFilesPlanned: 0,
+        deleteFilesIgnored: 1,
+      });
+    }
   });
 
   it("applies decoded position, equality, and deletion-vector deletes to data file rows", () => {
@@ -1331,6 +1425,78 @@ describe("loadIcebergTable", () => {
     }
 
     expect(batches).toEqual([[{ id: 3 }, { id: 5 }]]);
+  });
+
+  it("aborts planned Iceberg row scans before reads and between delete/data reads", async () => {
+    const plan = [
+      {
+        path: "data/a.parquet",
+        sequenceNumber: 1,
+        partition: {},
+        recordCount: 1,
+        projectedFieldIds: [1],
+        snapshotId: 1,
+        deleteFiles: [{ content: "position-delete", path: "deletes/a.pos.parquet" }],
+      },
+    ];
+    const alreadyAborted = new AbortController();
+    alreadyAborted.abort("stop");
+
+    await expect(async () => {
+      for await (const _batch of scanPlannedIcebergRows({
+        plan,
+        signal: alreadyAborted.signal,
+        readDataFile: async () => [{ id: 1 }],
+        readDeleteFile: async () => ({ positionDeletes: [] }),
+      })) {
+        // The abort check happens before reads start.
+      }
+    }).rejects.toMatchObject({ code: "LAQL_ABORTED" });
+
+    const abortAfterDelete = new AbortController();
+    let dataReads = 0;
+    await expect(async () => {
+      for await (const _batch of scanPlannedIcebergRows({
+        plan,
+        signal: abortAfterDelete.signal,
+        readDataFile: async () => {
+          dataReads += 1;
+          return [{ id: 1 }];
+        },
+        readDeleteFile: async () => {
+          abortAfterDelete.abort("after-delete");
+          return { positionDeletes: [] };
+        },
+      })) {
+        // The abort check happens after delete reads and before data reads.
+      }
+    }).rejects.toMatchObject({ code: "LAQL_ABORTED" });
+    expect(dataReads).toBe(0);
+  });
+
+  it("times out planned Iceberg row scans at await boundaries", async () => {
+    await expect(async () => {
+      for await (const _batch of scanPlannedIcebergRows({
+        plan: [
+          {
+            path: "data/a.parquet",
+            sequenceNumber: 1,
+            partition: {},
+            recordCount: 1,
+            projectedFieldIds: [1],
+            snapshotId: 1,
+          },
+        ],
+        maxElapsedMs: 1,
+        readDataFile: async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          return [{ id: 1 }];
+        },
+        readDeleteFile: async () => ({}),
+      })) {
+        // The timeout is checked after the slow data read returns.
+      }
+    }).rejects.toMatchObject({ code: "LAQL_ABORTED" });
   });
 
   it("applies fixture equality delete files while scanning planned Parquet rows", async () => {
@@ -1962,6 +2128,32 @@ describe("loadIcebergTable", () => {
     ).toThrow(/namespace/u);
   });
 
+  it("exposes Glue and Nessie catalog stubs through the IcebergCatalog contract", async () => {
+    const catalogs = [
+      icebergGlueCatalog({ region: "us-east-1", namespace: "prod", table: "places" }),
+      icebergNessieCatalog({ url: "https://nessie.example", namespace: ["prod"], table: "places" }),
+    ];
+
+    for (const catalog of catalogs) {
+      await expect(catalog.loadTable(store)).rejects.toMatchObject({
+        code: "LAQL_CATALOG_ERROR",
+      });
+      await expect(catalog.listTables()).rejects.toMatchObject({
+        code: "LAQL_CATALOG_ERROR",
+      });
+      await expect(catalog.commitAppend({} as IcebergCommitInput)).rejects.toMatchObject({
+        code: "LAQL_CATALOG_ERROR",
+      });
+    }
+
+    expect(() => icebergGlueCatalog({ region: "", namespace: "prod", table: "places" })).toThrow(
+      /region/u,
+    );
+    expect(() =>
+      icebergNessieCatalog({ url: "https://nessie.example", namespace: [], table: "places" }),
+    ).toThrow(/namespace/u);
+  });
+
   it("fails loudly for missing or malformed metadata", async () => {
     await expect(loadIcebergTable({ store, metadataPath: "missing.json" })).rejects.toMatchObject({
       code: "LAQL_OBJECT_NOT_FOUND",
@@ -2127,6 +2319,218 @@ describe("loadIcebergTable", () => {
     await expect(
       loadIcebergTable({ store: malformedManifestListStore, metadataPath: "metadata.json" }),
     ).rejects.toMatchObject({ code: "LAQL_CATALOG_ERROR" });
+  });
+
+  it("rejects unsupported Iceberg metadata features before planning", async () => {
+    const baseMetadata = {
+      "format-version": 2,
+      "table-uuid": "table",
+      location: "memory",
+      "current-snapshot-id": 1,
+      schemas: [{ "schema-id": 1, fields: [{ id: 1, name: "id", type: "int", required: true }] }],
+      snapshots: [{ "snapshot-id": 1, "timestamp-ms": 1, "schema-id": 1, manifests: [] }],
+    };
+
+    await store.put(
+      "unsupported-partition-transform.json",
+      new TextEncoder().encode(
+        JSON.stringify({
+          ...baseMetadata,
+          "partition-specs": [
+            {
+              "spec-id": 1,
+              fields: [
+                { "source-id": 1, "field-id": 1000, name: "id_bucket", transform: "bucket[16]" },
+              ],
+            },
+          ],
+        }),
+      ),
+    );
+    await expect(
+      loadIcebergTable({ store, metadataPath: "unsupported-partition-transform.json" }),
+    ).rejects.toMatchObject({
+      code: "LAQL_UNSUPPORTED_ICEBERG_FEATURE",
+      details: { transform: "bucket[16]" },
+    });
+
+    await store.put(
+      "unsupported-sort-order.json",
+      new TextEncoder().encode(
+        JSON.stringify({
+          ...baseMetadata,
+          "sort-orders": [
+            {
+              "order-id": 1,
+              fields: [{ "source-id": 1, transform: "identity", direction: "asc" }],
+            },
+          ],
+        }),
+      ),
+    );
+    await expect(
+      loadIcebergTable({ store, metadataPath: "unsupported-sort-order.json" }),
+    ).rejects.toMatchObject({ code: "LAQL_UNSUPPORTED_ICEBERG_FEATURE" });
+
+    await store.put(
+      "unsupported-feature-flags.json",
+      new TextEncoder().encode(
+        JSON.stringify({
+          ...baseMetadata,
+          features: ["deletion-vectors"],
+        }),
+      ),
+    );
+    await expect(
+      loadIcebergTable({ store, metadataPath: "unsupported-feature-flags.json" }),
+    ).rejects.toMatchObject({
+      code: "LAQL_UNSUPPORTED_ICEBERG_FEATURE",
+      details: { featureProperty: "features" },
+    });
+
+    await store.put(
+      "supported-empty-sort-and-identity-partition.json",
+      new TextEncoder().encode(
+        JSON.stringify({
+          ...baseMetadata,
+          "partition-specs": [
+            {
+              "spec-id": 1,
+              fields: [{ "source-id": 1, "field-id": 1000, name: "id", transform: "identity" }],
+            },
+          ],
+          "sort-orders": [{ "order-id": 0, fields: [] }],
+        }),
+      ),
+    );
+    await expect(
+      loadIcebergTable({ store, metadataPath: "supported-empty-sort-and-identity-partition.json" }),
+    ).resolves.toMatchObject({
+      metadata: {
+        "partition-specs": [{ "spec-id": 1 }],
+        "sort-orders": [{ "order-id": 0 }],
+      },
+    });
+  });
+
+  it("rejects unsupported Iceberg manifest-list content types", async () => {
+    const manifestListStore = memoryStore();
+    await manifestListStore.put(
+      "metadata.json",
+      new TextEncoder().encode(
+        JSON.stringify({
+          "format-version": 2,
+          "table-uuid": "table",
+          location: "memory",
+          "current-snapshot-id": 1,
+          schemas: [
+            { "schema-id": 1, fields: [{ id: 1, name: "id", type: "int", required: true }] },
+          ],
+          snapshots: [
+            {
+              "snapshot-id": 1,
+              "timestamp-ms": 1,
+              "schema-id": 1,
+              "manifest-list": "manifest-list.json",
+            },
+          ],
+        }),
+      ),
+    );
+    await manifestListStore.put(
+      "manifest-list.json",
+      new TextEncoder().encode(
+        JSON.stringify({ manifests: [{ path: "manifest.json", content: 9 }] }),
+      ),
+    );
+
+    await expect(
+      loadIcebergTable({ store: manifestListStore, metadataPath: "metadata.json" }),
+    ).rejects.toMatchObject({
+      code: "LAQL_UNSUPPORTED_ICEBERG_FEATURE",
+      details: { content: 9 },
+    });
+  });
+
+  it("applies read controls while loading Iceberg metadata and manifests", async () => {
+    let activeReads = 0;
+    let peakReads = 0;
+    const controlledStore: ObjectStore = {
+      get: async (path) => {
+        activeReads += 1;
+        peakReads = Math.max(peakReads, activeReads);
+        if (path.endsWith(".manifest.json")) {
+          await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+        activeReads -= 1;
+        if (path === "metadata.json") {
+          return new TextEncoder().encode(
+            JSON.stringify({
+              "format-version": 2,
+              "table-uuid": "table",
+              location: "memory",
+              "current-snapshot-id": 1,
+              schemas: [
+                { "schema-id": 1, fields: [{ id: 1, name: "id", type: "int", required: true }] },
+              ],
+              snapshots: [
+                {
+                  "snapshot-id": 1,
+                  "timestamp-ms": 1,
+                  "schema-id": 1,
+                  manifests: [{ path: "a.manifest.json" }, { path: "b.manifest.json" }],
+                },
+              ],
+            }),
+          );
+        }
+        if (path.endsWith(".manifest.json")) {
+          return new TextEncoder().encode(JSON.stringify({ path, files: [] }));
+        }
+        return null;
+      },
+      getRange: async () => new Uint8Array(),
+      put: async () => {},
+      delete: async () => {},
+      list: async function* () {},
+      head: async () => null,
+    };
+
+    await expect(
+      loadIcebergTable({
+        store: controlledStore,
+        metadataPath: "metadata.json",
+        maxConcurrentReads: 1,
+      }),
+    ).resolves.toMatchObject({ metadataPath: "metadata.json" });
+    expect(peakReads).toBe(1);
+  });
+
+  it("aborts Iceberg metadata loading with signal and timeout controls", async () => {
+    const slowStore: ObjectStore = {
+      get: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return new TextEncoder().encode("{}");
+      },
+      getRange: async () => new Uint8Array(),
+      put: async () => {},
+      delete: async () => {},
+      list: async function* () {},
+      head: async () => null,
+    };
+    const controller = new AbortController();
+    controller.abort("stop");
+
+    await expect(
+      loadIcebergTable({
+        store: slowStore,
+        metadataPath: "metadata.json",
+        signal: controller.signal,
+      }),
+    ).rejects.toMatchObject({ code: "LAQL_ABORTED" });
+    await expect(
+      loadIcebergTable({ store: slowStore, metadataPath: "metadata.json", maxElapsedMs: 1 }),
+    ).rejects.toMatchObject({ code: "LAQL_ABORTED" });
   });
 
   it("rejects unsafe manifest-sourced paths before store reads", async () => {

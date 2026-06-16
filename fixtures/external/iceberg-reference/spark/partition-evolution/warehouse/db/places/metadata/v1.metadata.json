@@ -1,0 +1,74 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "22367e1e-d28a-4d5a-9a91-8b1d424d78d3",
+  "location" : "warehouse/db/places",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1781570784399,
+  "last-column-id" : 2,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "country",
+      "required" : false,
+      "type" : "string"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "erik",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 854222197868791994,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 854222197868791994,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 854222197868791994,
+    "timestamp-ms" : 1781570784399,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1781570780332",
+      "added-data-files" : "2",
+      "added-records" : "2",
+      "added-files-size" : "1226",
+      "changed-partition-count" : "1",
+      "total-records" : "2",
+      "total-files-size" : "1226",
+      "total-data-files" : "2",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "warehouse/db/places/metadata/snap-854222197868791994-1-2aab8420-11ef-4c4c-bd94-d7d9e2d3c8b3.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1781570784399,
+    "snapshot-id" : 854222197868791994
+  } ],
+  "metadata-log" : [ ]
+}

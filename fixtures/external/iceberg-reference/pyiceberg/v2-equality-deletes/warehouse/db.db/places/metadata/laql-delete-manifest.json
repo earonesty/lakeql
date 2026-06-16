@@ -1,0 +1,11 @@
+{
+  "deleteFiles": [
+    {
+      "content": "equality-delete",
+      "partition": {},
+      "path": "warehouse/db.db/places/deletes/country-ca.eq.parquet"
+    }
+  ],
+  "files": [],
+  "path": "warehouse/db.db/places/metadata/laql-delete-manifest.json"
+}

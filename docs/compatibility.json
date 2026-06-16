@@ -1,0 +1,345 @@
+[
+  {
+    "area": "Parquet",
+    "feature": "Primitive scalar columns",
+    "status": "supported+tested",
+    "notes": "Covered by local fixtures and hyparquet decoding.",
+    "evidence": [
+      {
+        "file": "packages/parquet/src/index.test.ts",
+        "pattern": "decodes the full type matrix, including int64 past MAX_SAFE_INTEGER"
+      }
+    ]
+  },
+  {
+    "area": "Parquet",
+    "feature": "Projection",
+    "status": "supported+tested",
+    "notes": "Column projection is threaded into Parquet reads.",
+    "evidence": [{ "file": "packages/parquet/src/index.test.ts", "pattern": "projects columns" }]
+  },
+  {
+    "area": "Parquet",
+    "feature": "Row-group pruning",
+    "status": "supported+tested",
+    "notes": "Predicate pruning uses row-group statistics where available.",
+    "evidence": [
+      {
+        "file": "packages/parquet/src/index.test.ts",
+        "pattern": "combines hive partition pruning with Parquet row-group pruning"
+      }
+    ]
+  },
+  {
+    "area": "Parquet",
+    "feature": "Lists and maps",
+    "status": "supported+tested",
+    "notes": "Delegated to hyparquet and compared against DuckDB-authored LIST and MAP Parquet values.",
+    "evidence": [
+      {
+        "file": "packages/parquet/src/reference.reference.test.ts",
+        "pattern": "matches DuckDB-authored list and map values"
+      }
+    ]
+  },
+  {
+    "area": "Parquet",
+    "feature": "Struct assembly",
+    "status": "detected+rejected",
+    "notes": "Rejected with LAQL_UNSUPPORTED_PARQUET_FEATURE to avoid silent flattening.",
+    "evidence": [
+      {
+        "file": "packages/parquet/src/index.test.ts",
+        "pattern": "rejects unannotated Parquet groups as unsupported structs"
+      }
+    ]
+  },
+  {
+    "area": "Parquet",
+    "feature": "Decimal/date/time/timestamp logical values",
+    "status": "supported+tested",
+    "notes": "Reference-engine comparison covers DuckDB-authored DECIMAL(9,2), TIME, DATE, and TIMESTAMP logical decoding.",
+    "evidence": [
+      {
+        "file": "packages/parquet/src/reference.reference.test.ts",
+        "pattern": "matches DuckDB for date and timestamp logical values"
+      },
+      {
+        "file": "packages/parquet/src/reference.reference.test.ts",
+        "pattern": "matches DuckDB-authored decimal, time, date, and timestamp logical values"
+      },
+      {
+        "file": "packages/parquet/src/reference.reference.test.ts",
+        "pattern": "matches DuckDB for UTC-adjusted millisecond timestamps"
+      }
+    ]
+  },
+  {
+    "area": "Parquet",
+    "feature": "Unsigned integer and byte-array values",
+    "status": "supported+tested",
+    "notes": "Reference-engine comparison covers DuckDB-authored unsigned integer logical values, binary payloads, and fixed-length byte arrays.",
+    "evidence": [
+      {
+        "file": "packages/parquet/src/reference.reference.test.ts",
+        "pattern": "matches DuckDB-authored unsigned integer and binary values"
+      },
+      {
+        "file": "packages/parquet/src/reference.reference.test.ts",
+        "pattern": "matches DuckDB for fixed-length byte arrays"
+      }
+    ]
+  },
+  {
+    "area": "Parquet",
+    "feature": "Wide decimal backing variants",
+    "status": "detected+rejected",
+    "notes": "Decimals above precision 15 are rejected with LAQL_UNSUPPORTED_PARQUET_FEATURE to avoid lossy JS number decoding.",
+    "evidence": [
+      {
+        "file": "packages/parquet/src/index.test.ts",
+        "pattern": "rejects precision-sensitive Parquet logical values that would decode lossy"
+      }
+    ]
+  },
+  {
+    "area": "Parquet",
+    "feature": "Timestamp micros/nanos",
+    "status": "detected+rejected",
+    "notes": "Sub-millisecond timestamp units are rejected with LAQL_UNSUPPORTED_PARQUET_FEATURE to avoid truncating precision.",
+    "evidence": [
+      {
+        "file": "packages/parquet/src/index.test.ts",
+        "pattern": "rejects precision-sensitive Parquet logical values that would decode lossy"
+      }
+    ]
+  },
+  {
+    "area": "Parquet",
+    "feature": "Null-heavy scalar and nested rows",
+    "status": "supported+tested",
+    "notes": "Reference-engine comparison covers null-heavy DuckDB-authored scalar, date/timestamp, list, map, and binary values.",
+    "evidence": [
+      {
+        "file": "packages/parquet/src/reference.reference.test.ts",
+        "pattern": "matches DuckDB-authored null-heavy scalar and nested values"
+      }
+    ]
+  },
+  {
+    "area": "Iceberg",
+    "feature": "Format v1 reads",
+    "status": "supported+tested",
+    "notes": "Metadata load and planning are covered.",
+    "evidence": [
+      {
+        "file": "packages/iceberg/src/index.test.ts",
+        "pattern": "loads format-version 1 metadata for read-only planning"
+      }
+    ]
+  },
+  {
+    "area": "Iceberg",
+    "feature": "Format v2 reads",
+    "status": "supported+tested",
+    "notes": "Metadata load, planning, and append boundaries are covered.",
+    "evidence": [
+      {
+        "file": "packages/iceberg/src/index.test.ts",
+        "pattern": "loads metadata and plans the current snapshot deterministically"
+      }
+    ]
+  },
+  {
+    "area": "Iceberg",
+    "feature": "Format v3+ reads",
+    "status": "detected+rejected",
+    "notes": "Rejected with LAQL_CATALOG_ERROR.",
+    "evidence": [{ "file": "packages/iceberg/src/index.test.ts", "pattern": "bad.json" }]
+  },
+  {
+    "area": "Iceberg",
+    "feature": "Snapshot-id, ref, and as-of planning",
+    "status": "supported+tested",
+    "notes": "Local metadata tests cover selection behavior.",
+    "evidence": [
+      {
+        "file": "packages/iceberg/src/index.test.ts",
+        "pattern": "selects snapshots by id, ref, and timestamp"
+      }
+    ]
+  },
+  {
+    "area": "Iceberg",
+    "feature": "Manifest lists and direct manifest references",
+    "status": "supported+tested",
+    "notes": "Snapshots can hydrate manifests from inline/direct metadata refs or manifest-list files.",
+    "evidence": [
+      {
+        "file": "packages/iceberg/src/index.test.ts",
+        "pattern": "hydrates Iceberg manifests referenced from metadata"
+      },
+      {
+        "file": "packages/iceberg/src/index.test.ts",
+        "pattern": "hydrates Iceberg manifest lists referenced from snapshots"
+      }
+    ]
+  },
+  {
+    "area": "Iceberg",
+    "feature": "Position deletes",
+    "status": "supported+tested",
+    "notes": "Delete metadata and planned row scanning are covered by fixtures.",
+    "evidence": [
+      {
+        "file": "packages/iceberg/src/index.test.ts",
+        "pattern": "applies fixture position delete files while scanning planned Parquet rows"
+      }
+    ]
+  },
+  {
+    "area": "Iceberg",
+    "feature": "Equality deletes",
+    "status": "supported+tested",
+    "notes": "Delete metadata and planned row scanning are covered by fixtures.",
+    "evidence": [
+      {
+        "file": "packages/iceberg/src/index.test.ts",
+        "pattern": "applies fixture equality delete files while scanning planned Parquet rows"
+      }
+    ]
+  },
+  {
+    "area": "Iceberg",
+    "feature": "Deletion vectors",
+    "status": "detected+rejected",
+    "notes": "Rejected with LAQL_UNSUPPORTED_DELETE_FILES.",
+    "evidence": [
+      {
+        "file": "packages/iceberg/src/index.test.ts",
+        "pattern": "classifies unknown Iceberg delete files conservatively"
+      }
+    ]
+  },
+  {
+    "area": "Iceberg",
+    "feature": "Non-identity partition transforms",
+    "status": "detected+rejected",
+    "notes": "Rejected with LAQL_UNSUPPORTED_ICEBERG_FEATURE.",
+    "evidence": [
+      {
+        "file": "packages/iceberg/src/index.test.ts",
+        "pattern": "unsupported-partition-transform.json"
+      }
+    ]
+  },
+  {
+    "area": "Iceberg",
+    "feature": "Non-empty sort orders",
+    "status": "detected+rejected",
+    "notes": "Rejected with LAQL_UNSUPPORTED_ICEBERG_FEATURE.",
+    "evidence": [
+      { "file": "packages/iceberg/src/index.test.ts", "pattern": "unsupported-sort-order.json" }
+    ]
+  },
+  {
+    "area": "Iceberg",
+    "feature": "Unknown manifest-list content values",
+    "status": "detected+rejected",
+    "notes": "Rejected with LAQL_UNSUPPORTED_ICEBERG_FEATURE.",
+    "evidence": [
+      {
+        "file": "packages/iceberg/src/index.test.ts",
+        "pattern": "rejects unsupported Iceberg manifest-list content types"
+      }
+    ]
+  },
+  {
+    "area": "Iceberg",
+    "feature": "Partition/schema evolution against external engines",
+    "status": "supported+tested",
+    "notes": "Strict external conformance loads Spark partition-evolution and schema-evolution fixture metadata.",
+    "evidence": [
+      {
+        "file": "packages/iceberg/src/conformance.conformance.test.ts",
+        "pattern": "includes the required Spark/PyIceberg reference case matrix"
+      },
+      {
+        "file": "fixtures/external/iceberg-reference/spark/partition-evolution/manifest.json",
+        "pattern": "\"case\": \"partition-evolution\""
+      },
+      {
+        "file": "fixtures/external/iceberg-reference/spark/schema-evolution/manifest.json",
+        "pattern": "\"case\": \"schema-evolution\""
+      }
+    ]
+  },
+  {
+    "area": "Catalogs",
+    "feature": "Object-store metadata",
+    "status": "supported+tested",
+    "notes": "loadIcebergTableFromObjectStore is the stable path.",
+    "evidence": [
+      { "file": "packages/iceberg/src/index.test.ts", "pattern": "loadIcebergTableFromObjectStore" }
+    ]
+  },
+  {
+    "area": "Catalogs",
+    "feature": "REST catalog load",
+    "status": "supported",
+    "notes": "Load/list/append contract is documented. Provider conformance covers create/list/load against a reference REST catalog; append and 409 conflict request handling are covered by unit tests."
+  },
+  {
+    "area": "Catalogs",
+    "feature": "Glue and Nessie",
+    "status": "planned",
+    "notes": "Live adapters are not implemented yet; typed catalog stubs are available and reject operations explicitly."
+  },
+  {
+    "area": "Catalogs",
+    "feature": "Glue and Nessie catalog stubs",
+    "status": "supported+tested",
+    "notes": "Stubs satisfy IcebergCatalog and fail load/list/commit operations with LAQL_CATALOG_ERROR.",
+    "evidence": [
+      {
+        "file": "packages/iceberg/src/index.test.ts",
+        "pattern": "exposes Glue and Nessie catalog stubs through the IcebergCatalog contract"
+      }
+    ]
+  },
+  {
+    "area": "Object storage",
+    "feature": "HTTP range reads",
+    "status": "supported+tested",
+    "notes": "Adapter uses Range for getRange.",
+    "evidence": [
+      {
+        "file": "packages/http/src/index.test.ts",
+        "pattern": "expect(seen.map((entry) => entry.range)).toContain(\"bytes=2-5\")"
+      }
+    ]
+  },
+  {
+    "area": "Object storage",
+    "feature": "R2 range reads",
+    "status": "supported+tested",
+    "notes": "Adapter maps to R2 ranged get.",
+    "evidence": [
+      { "file": "packages/laql/src/worker-example.workerd.ts", "pattern": "options?.range" }
+    ]
+  },
+  {
+    "area": "Object storage",
+    "feature": "S3 SigV4 and ListObjectsV2",
+    "status": "supported+tested",
+    "notes": "Signing delegates to aws4fetch; XML parsing uses fast-xml-parser.",
+    "evidence": [
+      { "file": "packages/s3/src/index.test.ts", "pattern": "adds SigV4 authorization headers" },
+      {
+        "file": "packages/s3/src/index.test.ts",
+        "pattern": "matches AWS S3 SigV4 documentation vectors with explicit payload hashes"
+      },
+      { "file": "packages/s3/src/index.test.ts", "pattern": "continuation-token=page-2" }
+    ]
+  }
+]

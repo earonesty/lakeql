@@ -1,0 +1,56 @@
+name: fixtures-regen
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 10 * * 1"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  iceberg-fixtures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Generate Spark/PyIceberg reference fixtures
+        run: pnpm fixtures:iceberg
+
+      - name: Refresh external fixture checksums
+        run: pnpm fixtures:external -- --update-checksums
+
+      - name: Run external conformance
+        run: pnpm test:conformance
+        env:
+          LAQL_REQUIRE_EXTERNAL_ICEBERG: "1"
+
+      - name: Open fixture update pull request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: automation/iceberg-reference-fixtures
+          commit-message: "chore: regenerate Iceberg reference fixtures"
+          title: "chore: regenerate Iceberg reference fixtures"
+          body: |
+            Regenerated the Dockerized Spark/PyIceberg Iceberg reference fixtures and refreshed checksums.
+          add-paths: |
+            fixtures/external/iceberg-reference/**
+            fixtures/external/CHECKSUMS.txt
+
+      - name: Upload generated fixtures
+        uses: actions/upload-artifact@v4
+        with:
+          name: iceberg-reference-fixtures
+          path: |
+            fixtures/external/iceberg-reference
+            fixtures/external/CHECKSUMS.txt

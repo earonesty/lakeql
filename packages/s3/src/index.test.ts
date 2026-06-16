@@ -48,6 +48,77 @@ describe("signS3Request", () => {
     expect(headers.get("x-amz-security-token")).toBe("TOKEN");
     expect(headers.get("authorization")).toContain("x-amz-security-token");
   });
+
+  it("matches AWS S3 SigV4 documentation vectors with explicit payload hashes", async () => {
+    const emptyHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    const vectors: {
+      name: string;
+      method: string;
+      url: string;
+      headers: Record<string, string>;
+      body?: BodyInit;
+      signedHeaders: string;
+      signature: string;
+    }[] = [
+      {
+        name: "PUT object",
+        method: "PUT",
+        url: "https://examplebucket.s3.amazonaws.com/test%24file.text",
+        headers: {
+          Date: "Fri, 24 May 2013 00:00:00 GMT",
+          "x-amz-content-sha256":
+            "44ce7dd67c959e0d3524ffac1771dfbba87d2b6b4b4e99e42034a8b803f8b072",
+          "x-amz-storage-class": "REDUCED_REDUNDANCY",
+        },
+        body: "Welcome to Amazon S3.",
+        signedHeaders: "date;host;x-amz-content-sha256;x-amz-date;x-amz-storage-class",
+        signature: "98ad721746da40c64f1a55b78f14c238d841ea1380cd77a1b5971af0ece108bd",
+      },
+      {
+        name: "GET bucket lifecycle",
+        method: "GET",
+        url: "https://examplebucket.s3.amazonaws.com/?lifecycle=",
+        headers: { "x-amz-content-sha256": emptyHash },
+        signedHeaders: "host;x-amz-content-sha256;x-amz-date",
+        signature: "fea454ca298b7da1c68078a5d1bdbfbbe0d65c699e0f91ac7a200a0136783543",
+      },
+      {
+        name: "GET bucket list objects",
+        method: "GET",
+        url: "https://examplebucket.s3.amazonaws.com/?max-keys=2&prefix=J",
+        headers: { "x-amz-content-sha256": emptyHash },
+        signedHeaders: "host;x-amz-content-sha256;x-amz-date",
+        signature: "34b48302e7b5fa45bde8084f4b7868a86f0a534bc59db6670ed5711ef69dc6f7",
+      },
+    ];
+
+    for (const vector of vectors) {
+      const headers = await signS3Request(
+        {
+          method: vector.method,
+          url: new URL(vector.url),
+          headers: vector.headers,
+          region: "us-east-1",
+          accessKeyId: "AKIAIOSFODNN7EXAMPLE",
+          secretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+          now: new Date("2013-05-24T00:00:00Z"),
+        },
+        undefined,
+        vector.body,
+      );
+      const authorization = headers.get("authorization") ?? "";
+
+      expect(headers.get("x-amz-date"), vector.name).toBe("20130524T000000Z");
+      expect(headers.get("x-amz-content-sha256"), vector.name).toBe(
+        vector.headers["x-amz-content-sha256"],
+      );
+      expect(authorization, vector.name).toContain(
+        "Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request",
+      );
+      expect(authorization, vector.name).toContain(`SignedHeaders=${vector.signedHeaders}`);
+      expect(authorization, vector.name).toContain(`Signature=${vector.signature}`);
+    }
+  });
 });
 
 describe("s3Store", () => {
@@ -166,6 +237,52 @@ describe("s3Store", () => {
     );
 
     expect(seen).toEqual([{ token: "TOKEN", hasBody: true }]);
+  });
+
+  it("supports conditional puts with S3 precondition headers", async () => {
+    const seen: {
+      ifMatch: string | null;
+      ifNoneMatch: string | null;
+      contentType: string | null;
+    }[] = [];
+    const store = s3Store(
+      options(async (_input, init) => {
+        const headers = new Headers(init?.headers);
+        seen.push({
+          ifMatch: headers.get("if-match"),
+          ifNoneMatch: headers.get("if-none-match"),
+          contentType: headers.get("content-type"),
+        });
+        if (headers.get("if-match") === '"stale"') return new Response(null, { status: 412 });
+        if (headers.get("if-none-match") === "*" && seen.length > 2) {
+          return new Response(null, { status: 409 });
+        }
+        return new Response(null, { status: 200 });
+      }) as typeof fetch,
+    );
+
+    await expect(
+      store.conditionalPut("new", enc.encode("x"), {
+        expectedEtag: null,
+        contentType: "text/plain",
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      store.conditionalPut("existing", enc.encode("x"), { expectedEtag: '"abc"' }),
+    ).resolves.toBe(true);
+    await expect(
+      store.conditionalPut("stale", enc.encode("x"), { expectedEtag: '"stale"' }),
+    ).resolves.toBe(false);
+    await expect(
+      store.conditionalPut("conflict", enc.encode("x"), { expectedEtag: null }),
+    ).resolves.toBe(false);
+
+    expect(seen).toEqual([
+      { ifMatch: null, ifNoneMatch: "*", contentType: "text/plain" },
+      { ifMatch: '"abc"', ifNoneMatch: null, contentType: null },
+      { ifMatch: '"stale"', ifNoneMatch: null, contentType: null },
+      { ifMatch: null, ifNoneMatch: "*", contentType: null },
+    ]);
   });
 
   it("encodes keys and rejects path escapes before signing", async () => {

@@ -9,7 +9,8 @@
   "types": "./src/index.ts",
   "scripts": {
     "generate": "node src/generate.ts",
-    "fetch:external": "node src/fetch-external.ts"
+    "fetch:external": "node src/fetch-external.ts",
+    "generate:iceberg": "./external/generate-iceberg/run.sh"
   },
   "engines": {
     "node": ">=22"

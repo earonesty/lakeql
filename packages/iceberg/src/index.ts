@@ -4,9 +4,13 @@ import {
   LaQLError,
   matches,
   type ObjectStore,
+  type ObjectStoreReadControls,
   type OutputManifest,
   type Row,
+  readControlSignal,
   stableStringify,
+  throwIfAborted,
+  withObjectStoreReadControls,
 } from "@laql/core";
 
 export const PACKAGE = "@laql/iceberg" as const;
@@ -23,12 +27,12 @@ declare const Buffer: {
 
 export type IcebergReadMode = "strict" | "ignore-deletes" | "ignore-unsupported-deletes";
 
-export interface LoadIcebergTableOptions {
+export interface LoadIcebergTableOptions extends ObjectStoreReadControls {
   store: ObjectStore;
   metadataPath: string;
 }
 
-export interface LoadIcebergTableFromObjectStoreOptions {
+export interface LoadIcebergTableFromObjectStoreOptions extends ObjectStoreReadControls {
   store: ObjectStore;
   tableLocation: string;
 }
@@ -42,7 +46,24 @@ export interface IcebergRestCatalogOptions {
   fetch?: typeof fetch;
 }
 
-export interface LoadIcebergTableFromRestOptions extends IcebergRestCatalogOptions {
+export interface IcebergGlueCatalogOptions {
+  region: string;
+  namespace: string | string[];
+  table: string;
+  catalogId?: string;
+}
+
+export interface IcebergNessieCatalogOptions {
+  url: string;
+  namespace: string | string[];
+  table: string;
+  ref?: string;
+  token?: string;
+}
+
+export interface LoadIcebergTableFromRestOptions
+  extends IcebergRestCatalogOptions,
+    ObjectStoreReadControls {
   store: ObjectStore;
 }
 
@@ -84,6 +105,16 @@ export interface IcebergAppendOutputManifestOptions
 
 export interface IcebergCommitCatalog {
   commitAppend(input: IcebergCommitInput): Promise<boolean | IcebergCommitResult>;
+}
+
+export interface IcebergCatalog extends IcebergCommitCatalog {
+  loadTable(store: ObjectStore): Promise<IcebergTable>;
+  listTables(): Promise<IcebergTableIdentifier[]>;
+}
+
+export interface IcebergTableIdentifier {
+  namespace: string[];
+  name: string;
 }
 
 export interface IcebergCommitResult {
@@ -181,7 +212,7 @@ export interface IcebergRowBatch {
   rows: Row[];
 }
 
-export interface ScanPlannedIcebergRowsOptions {
+export interface ScanPlannedIcebergRowsOptions extends ObjectStoreReadControls {
   plan: IcebergPlan | PlannedIcebergFile[];
   readDataFile(file: PlannedIcebergFile): Promise<Row[] | AsyncIterable<Row[] | IcebergRowBatch>>;
   readDeleteFile(
@@ -201,6 +232,25 @@ export interface MetadataFile {
     fields: IcebergField[];
   }[];
   snapshots: Snapshot[];
+  "partition-specs"?: IcebergPartitionSpec[];
+  "sort-orders"?: IcebergSortOrder[];
+}
+
+export interface IcebergPartitionSpec {
+  "spec-id": number;
+  fields: IcebergPartitionField[];
+}
+
+export interface IcebergPartitionField {
+  "source-id": number;
+  "field-id": number;
+  name: string;
+  transform: string;
+}
+
+export interface IcebergSortOrder {
+  "order-id": number;
+  fields: unknown[];
 }
 
 export interface Snapshot {
@@ -514,6 +564,10 @@ export class IcebergTable {
   }
 }
 
+export function planFiles(table: IcebergTable, options: PlanIcebergFilesOptions = {}): IcebergPlan {
+  return table.planFiles(options);
+}
+
 export class ObjectStoreIcebergCommitCatalog implements IcebergCommitCatalog {
   async commitAppend(input: IcebergCommitInput): Promise<IcebergCommitResult> {
     if (!supportsConditionalPut(input.store)) {
@@ -555,7 +609,7 @@ export class ObjectStoreIcebergCommitCatalog implements IcebergCommitCatalog {
   }
 }
 
-export class IcebergRestCatalog implements IcebergCommitCatalog {
+export class IcebergRestCatalog implements IcebergCatalog {
   private readonly url: string;
   private readonly namespace: string[];
   private readonly table: string;
@@ -583,6 +637,14 @@ export class IcebergRestCatalog implements IcebergCommitCatalog {
       store,
       response["metadata-location"],
       await hydrateMetadataManifests(store, validateMetadata(response.metadata)),
+    );
+  }
+
+  async listTables(): Promise<IcebergTableIdentifier[]> {
+    return validateListTablesResponse(
+      await this.requestJson(this.namespaceTablesUrl(), {
+        method: "GET",
+      }),
     );
   }
 
@@ -669,14 +731,15 @@ export class IcebergRestCatalog implements IcebergCommitCatalog {
   }
 
   private tableUrl(): string {
-    return restCatalogUrl(this.url, [
-      "v1",
-      ...this.prefix,
-      "namespaces",
-      this.namespace.join("\u001f"),
-      "tables",
-      this.table,
-    ]);
+    return restCatalogUrl(this.url, [...this.namespaceTableSegments(), this.table]);
+  }
+
+  private namespaceTablesUrl(): string {
+    return restCatalogUrl(this.url, this.namespaceTableSegments());
+  }
+
+  private namespaceTableSegments(): string[] {
+    return ["v1", ...this.prefix, "namespaces", this.namespace.join("\u001f"), "tables"];
   }
 }
 
@@ -684,19 +747,70 @@ export function icebergRestCatalog(options: IcebergRestCatalogOptions): IcebergR
   return new IcebergRestCatalog(options);
 }
 
+export class IcebergUnsupportedCatalog implements IcebergCatalog {
+  private readonly catalog: string;
+  private readonly namespace: string[];
+  private readonly table: string;
+
+  constructor(catalog: string, namespace: string | string[], table: string) {
+    this.catalog = requiredNonEmptyString(catalog, "catalog");
+    this.namespace = namespaceParts(namespace);
+    this.table = requiredNonEmptyString(table, "table");
+  }
+
+  async loadTable(_store: ObjectStore): Promise<IcebergTable> {
+    throw this.unsupported("loadTable");
+  }
+
+  async listTables(): Promise<IcebergTableIdentifier[]> {
+    throw this.unsupported("listTables");
+  }
+
+  async commitAppend(_input: IcebergCommitInput): Promise<IcebergCommitResult> {
+    throw this.unsupported("commitAppend");
+  }
+
+  private unsupported(operation: string): LaQLError {
+    return new LaQLError(
+      "LAQL_CATALOG_ERROR",
+      `${this.catalog} Iceberg catalog is not implemented`,
+      {
+        catalog: this.catalog,
+        namespace: this.namespace,
+        table: this.table,
+        operation,
+      },
+    );
+  }
+}
+
+export function icebergGlueCatalog(options: IcebergGlueCatalogOptions): IcebergCatalog {
+  requiredNonEmptyString(options.region, "region");
+  return new IcebergUnsupportedCatalog("Glue", options.namespace, options.table);
+}
+
+export function icebergNessieCatalog(options: IcebergNessieCatalogOptions): IcebergCatalog {
+  requiredNonEmptyString(options.url, "url");
+  if (options.ref !== undefined) requiredNonEmptyString(options.ref, "ref");
+  return new IcebergUnsupportedCatalog("Nessie", options.namespace, options.table);
+}
+
 export async function loadIcebergTable(options: LoadIcebergTableOptions): Promise<IcebergTable> {
-  const bytes = await options.store.get(options.metadataPath);
+  const readControls = loadReadControls(options);
+  const store = withObjectStoreReadControls(options.store, readControls);
+  const bytes = await store.get(options.metadataPath);
   if (!bytes) {
     throw new LaQLError("LAQL_OBJECT_NOT_FOUND", `No object at ${options.metadataPath}`, {
       path: options.metadataPath,
     });
   }
+  throwIfAborted(readControls.signal);
   const text = new TextDecoder().decode(bytes);
   try {
     return new IcebergTable(
-      options.store,
+      store,
       options.metadataPath,
-      await hydrateMetadataManifests(options.store, validateMetadata(JSON.parse(text))),
+      await hydrateMetadataManifests(store, validateMetadata(JSON.parse(text)), readControls),
     );
   } catch (cause) {
     if (cause instanceof LaQLError) throw cause;
@@ -714,21 +828,34 @@ export async function loadIcebergTable(options: LoadIcebergTableOptions): Promis
 export async function loadIcebergTableFromObjectStore(
   options: LoadIcebergTableFromObjectStoreOptions,
 ): Promise<IcebergTable> {
+  const readControls = loadReadControls(options);
+  const store = withObjectStoreReadControls(options.store, readControls);
   const tableLocation = trimTrailingSlash(options.tableLocation);
   const metadataPrefix = `${tableLocation}/metadata/`;
   const versionHintPath = `${metadataPrefix}version-hint.text`;
-  const hintedVersion = await readVersionHint(options.store, versionHintPath);
+  const hintedVersion = await readVersionHint(store, versionHintPath, readControls);
   const metadataPath =
     hintedVersion === undefined
-      ? await latestMetadataPathFromList(options.store, metadataPrefix)
+      ? await latestMetadataPathFromList(store, metadataPrefix, readControls)
       : `${metadataPrefix}v${hintedVersion}.metadata.json`;
-  return await loadIcebergTable({ store: options.store, metadataPath });
+  return await loadIcebergTable({ store, metadataPath, ...readControls });
 }
 
 export async function loadIcebergTableFromRest(
   options: LoadIcebergTableFromRestOptions,
 ): Promise<IcebergTable> {
-  return await icebergRestCatalog(options).loadTable(options.store);
+  return await icebergRestCatalog(options).loadTable(
+    withObjectStoreReadControls(options.store, loadReadControls(options)),
+  );
+}
+
+function loadReadControls(options: ObjectStoreReadControls): ObjectStoreReadControls {
+  const controls: ObjectStoreReadControls = {};
+  if (options.maxConcurrentReads !== undefined)
+    controls.maxConcurrentReads = options.maxConcurrentReads;
+  const signal = readControlSignal(options);
+  if (signal !== undefined) controls.signal = signal;
+  return controls;
 }
 
 export function applyIcebergDeletes(options: ApplyIcebergDeletesOptions): Row[] {
@@ -773,11 +900,16 @@ export async function* scanPlannedIcebergRows(
   options: ScanPlannedIcebergRowsOptions,
 ): AsyncIterable<Row[]> {
   const files = Array.isArray(options.plan) ? options.plan : options.plan.files;
+  const signal = readControlSignal(options);
   for (const file of files) {
-    const deletes = await decodedDeletesForFile(file, options);
+    throwIfAborted(signal);
+    const deletes = await decodedDeletesForFile(file, options, signal);
+    throwIfAborted(signal);
     const data = await options.readDataFile(file);
+    throwIfAborted(signal);
     let rowOffset = 0;
     for await (const batch of rowBatches(data)) {
+      throwIfAborted(signal);
       const rows = Array.isArray(batch) ? batch : batch.rows;
       const absoluteRowOffset = Array.isArray(batch) ? rowOffset : batch.rowOffset;
       const visibleRows = hasDeletes(deletes)
@@ -790,6 +922,7 @@ export async function* scanPlannedIcebergRows(
         : rows;
       rowOffset = absoluteRowOffset + rows.length;
       if (visibleRows.length > 0) yield visibleRows;
+      throwIfAborted(signal);
     }
   }
 }
@@ -797,10 +930,13 @@ export async function* scanPlannedIcebergRows(
 async function decodedDeletesForFile(
   file: PlannedIcebergFile,
   options: ScanPlannedIcebergRowsOptions,
+  signal: AbortSignal | undefined,
 ): Promise<DecodedIcebergDeletes> {
   const out: DecodedIcebergDeletes = {};
   for (const deleteFile of file.deleteFiles ?? []) {
+    throwIfAborted(signal);
     const decoded = await options.readDeleteFile(deleteFile, file);
+    throwIfAborted(signal);
     pushDeletes(out, decoded);
   }
   return out;
@@ -902,10 +1038,12 @@ function supportsConditionalPut(store: ObjectStore): store is ConditionalObjectS
 async function hydrateMetadataManifests(
   store: ObjectStore,
   metadata: MetadataFile,
+  controls: ObjectStoreReadControls = {},
 ): Promise<MetadataFile> {
   const hydrated = cloneMetadata(metadata);
   const tablePrefix = tableLocationObjectPrefix(hydrated.location);
   for (const snapshot of hydrated.snapshots) {
+    throwIfAborted(controls.signal);
     const manifestReferences =
       snapshot.manifests ??
       (snapshot["manifest-list"] !== undefined
@@ -922,6 +1060,7 @@ async function hydrateMetadataManifests(
         return await readManifest(store, manifestPath, tablePrefix);
       }),
     );
+    throwIfAborted(controls.signal);
     snapshot.manifests = mergeDeleteManifests(manifests);
   }
   return hydrated;
@@ -1000,6 +1139,7 @@ function validateAvroManifestList(records: unknown[], path: string): Manifest[] 
         path,
       });
     }
+    validateManifestContent(record.content, path);
     return { path: record.manifest_path } as Manifest;
   });
 }
@@ -1199,8 +1339,22 @@ function validateManifestReference(value: unknown, path: string): Manifest {
   if (!isRecord(value) || typeof value.path !== "string") {
     throw new LaQLError("LAQL_CATALOG_ERROR", "Iceberg manifest list entry is invalid", { path });
   }
+  validateManifestContent(value.content, path);
   if (Array.isArray(value.files)) return value as unknown as Manifest;
   return { path: value.path } as Manifest;
+}
+
+function validateManifestContent(content: unknown, path: string): void {
+  if (content === undefined || content === null) return;
+  if (content === 0 || content === 1 || content === "data" || content === "deletes") return;
+  throw new LaQLError(
+    "LAQL_UNSUPPORTED_ICEBERG_FEATURE",
+    "Iceberg manifest list contains an unsupported manifest content type",
+    {
+      path,
+      content,
+    },
+  );
 }
 
 function validateManifestPaths(manifest: Manifest, path: string, tablePrefix = ""): Manifest {
@@ -1273,9 +1427,14 @@ function trimSlashes(value: string): string {
   return value.replace(/^\/+|\/+$/gu, "");
 }
 
-async function readVersionHint(store: ObjectStore, path: string): Promise<number | undefined> {
+async function readVersionHint(
+  store: ObjectStore,
+  path: string,
+  controls: ObjectStoreReadControls = {},
+): Promise<number | undefined> {
   const bytes = await store.get(path);
   if (!bytes) return undefined;
+  throwIfAborted(controls.signal);
   const text = new TextDecoder().decode(bytes).trim();
   const version = Number(text);
   if (!Number.isInteger(version) || version < 0) {
@@ -1290,9 +1449,11 @@ async function readVersionHint(store: ObjectStore, path: string): Promise<number
 async function latestMetadataPathFromList(
   store: ObjectStore,
   metadataPrefix: string,
+  controls: ObjectStoreReadControls = {},
 ): Promise<string> {
   let latest: { path: string; version: number } | undefined;
   for await (const object of store.list(metadataPrefix)) {
+    throwIfAborted(controls.signal);
     const name = object.path.slice(metadataPrefix.length);
     const match = /^v(\d+)\.metadata\.json$/u.exec(name);
     if (!match) continue;
@@ -1421,11 +1582,7 @@ function supportedIcebergDeleteFiles(
 ): IcebergDeleteFile[] {
   const supported: IcebergDeleteFile[] = [];
   for (const deleteFile of deleteFiles ?? []) {
-    if (
-      deleteFile.content === "position-delete" ||
-      deleteFile.content === "equality-delete" ||
-      deleteFile.content === "deletion-vector"
-    ) {
+    if (deleteFile.content === "position-delete" || deleteFile.content === "equality-delete") {
       supported.push({ content: deleteFile.content, path: deleteFile.path });
     }
   }
@@ -1435,7 +1592,7 @@ function supportedIcebergDeleteFiles(
 function unsupportedIcebergDeleteFiles(
   deleteFiles: ManifestDeleteFile[] | undefined,
 ): ManifestDeleteFile[] {
-  const supported = new Set(["position-delete", "equality-delete", "deletion-vector"]);
+  const supported = new Set(["position-delete", "equality-delete"]);
   return (deleteFiles ?? []).filter((deleteFile) => !supported.has(deleteFile.content));
 }
 
@@ -1464,6 +1621,18 @@ function cloneMetadata(metadata: MetadataFile): MetadataFile {
     }),
   };
   if (metadata.refs) cloned.refs = cloneRefs(metadata.refs);
+  if (metadata["partition-specs"]) {
+    cloned["partition-specs"] = metadata["partition-specs"].map((spec) => ({
+      "spec-id": spec["spec-id"],
+      fields: spec.fields.map((field) => ({ ...field })),
+    }));
+  }
+  if (metadata["sort-orders"]) {
+    cloned["sort-orders"] = metadata["sort-orders"].map((order) => ({
+      "order-id": order["order-id"],
+      fields: order.fields.map((field) => field),
+    }));
+  }
   return cloned;
 }
 
@@ -1517,6 +1686,23 @@ function sortStringRecord(record: Record<string, string>): Record<string, string
   return out;
 }
 
+function validateListTablesResponse(value: unknown): IcebergTableIdentifier[] {
+  if (!isRecord(value) || !Array.isArray(value.identifiers)) {
+    throw new LaQLError("LAQL_CATALOG_ERROR", "Invalid Iceberg REST list tables response");
+  }
+  return value.identifiers.map((identifier) => {
+    if (
+      !isRecord(identifier) ||
+      !Array.isArray(identifier.namespace) ||
+      !identifier.namespace.every((part) => typeof part === "string") ||
+      typeof identifier.name !== "string"
+    ) {
+      throw new LaQLError("LAQL_CATALOG_ERROR", "Invalid Iceberg REST table identifier");
+    }
+    return { namespace: identifier.namespace, name: identifier.name };
+  });
+}
+
 function validateMetadata(value: unknown): MetadataFile {
   if (!isRecord(value))
     throw new LaQLError("LAQL_CATALOG_ERROR", "Iceberg metadata must be an object");
@@ -1535,7 +1721,79 @@ function validateMetadata(value: unknown): MetadataFile {
   if (!isMetadataFile(value)) {
     throw new LaQLError("LAQL_CATALOG_ERROR", "Iceberg metadata has invalid required fields");
   }
+  rejectUnsupportedMetadataFeatures(value);
   return value;
+}
+
+function rejectUnsupportedMetadataFeatures(metadata: Record<string, unknown>): void {
+  rejectAdvertisedFeatureFlags(metadata);
+  rejectUnsupportedPartitionTransforms(metadata["partition-specs"]);
+  rejectUnsupportedSortOrders(metadata["sort-orders"]);
+}
+
+function rejectAdvertisedFeatureFlags(metadata: Record<string, unknown>): void {
+  for (const key of ["features", "table-features", "format-version-features"]) {
+    const features = metadata[key];
+    if (features === undefined || (Array.isArray(features) && features.length === 0)) continue;
+    throw new LaQLError(
+      "LAQL_UNSUPPORTED_ICEBERG_FEATURE",
+      "Iceberg metadata advertises unsupported table-format features",
+      {
+        featureProperty: key,
+        features,
+      },
+    );
+  }
+}
+
+function rejectUnsupportedPartitionTransforms(partitionSpecs: unknown): void {
+  if (partitionSpecs === undefined) return;
+  if (!Array.isArray(partitionSpecs)) {
+    throw new LaQLError("LAQL_CATALOG_ERROR", "Iceberg partition-specs must be an array");
+  }
+  for (const spec of partitionSpecs) {
+    if (!isRecord(spec) || !Array.isArray(spec.fields)) {
+      throw new LaQLError("LAQL_CATALOG_ERROR", "Iceberg partition spec is invalid");
+    }
+    for (const field of spec.fields) {
+      if (!isRecord(field) || typeof field.transform !== "string") {
+        throw new LaQLError("LAQL_CATALOG_ERROR", "Iceberg partition field is invalid");
+      }
+      if (field.transform !== "identity" && field.transform !== "void") {
+        throw new LaQLError(
+          "LAQL_UNSUPPORTED_ICEBERG_FEATURE",
+          "Iceberg partition transform is not supported for strict planning",
+          {
+            specId: spec["spec-id"],
+            fieldName: field.name,
+            transform: field.transform,
+          },
+        );
+      }
+    }
+  }
+}
+
+function rejectUnsupportedSortOrders(sortOrders: unknown): void {
+  if (sortOrders === undefined) return;
+  if (!Array.isArray(sortOrders)) {
+    throw new LaQLError("LAQL_CATALOG_ERROR", "Iceberg sort-orders must be an array");
+  }
+  for (const order of sortOrders) {
+    if (!isRecord(order) || !Array.isArray(order.fields)) {
+      throw new LaQLError("LAQL_CATALOG_ERROR", "Iceberg sort order is invalid");
+    }
+    if (order.fields.length > 0) {
+      throw new LaQLError(
+        "LAQL_UNSUPPORTED_ICEBERG_FEATURE",
+        "Iceberg sorted table metadata is not supported for strict planning",
+        {
+          orderId: order["order-id"],
+          fields: order.fields,
+        },
+      );
+    }
+  }
 }
 
 function isMetadataFile(value: unknown): value is MetadataFile {

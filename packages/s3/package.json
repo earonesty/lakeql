@@ -40,6 +40,8 @@
     "access": "public"
   },
   "dependencies": {
-    "@laql/core": "workspace:*"
+    "@laql/core": "workspace:*",
+    "aws4fetch": "^1.0.20",
+    "fast-xml-parser": "^5.9.0"
   }
 }

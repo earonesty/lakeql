@@ -1,0 +1,46 @@
+{
+  "current-snapshot-id": 2,
+  "format-version": 2,
+  "location": "warehouse/db.db/places",
+  "refs": {
+    "main": {
+      "snapshot-id": 2,
+      "type": "branch"
+    }
+  },
+  "schemas": [
+    {
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "required": true,
+          "type": "int"
+        },
+        {
+          "id": 2,
+          "name": "country",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "schema-id": 1
+    }
+  ],
+  "snapshots": [
+    {
+      "manifests": [
+        {
+          "path": "warehouse/db.db/places/metadata/laql-data-manifest.json"
+        },
+        {
+          "path": "warehouse/db.db/places/metadata/laql-delete-manifest.json"
+        }
+      ],
+      "schema-id": 1,
+      "snapshot-id": 2,
+      "timestamp-ms": 1767225600000
+    }
+  ],
+  "table-uuid": "pyiceberg-equality-delete-reference"
+}

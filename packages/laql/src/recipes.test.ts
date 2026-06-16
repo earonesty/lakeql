@@ -6,13 +6,20 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { fixturePath, GEO, H3, ICEBERG, SALES } from "@laql/fixtures";
 import { describe, expect, it } from "vitest";
+import { queryHttpParquet } from "../../../examples/http-parquet.js";
+import { planR2Iceberg } from "../../../examples/r2-iceberg.js";
+import { queryR2Parquet } from "../../../examples/r2-parquet.js";
 import {
   col,
   createLake,
+  eq,
   fn,
   lit,
   loadIcebergTable,
+  loadTable,
   memoryStore,
+  planFiles,
+  scanRows,
   writePartitionedParquet,
 } from "./index.js";
 
@@ -25,9 +32,11 @@ const coveredRecipes = [
   "compact-small-files.md",
   "csv-export.md",
   "h3-place-search.md",
+  "http-parquet-api.md",
   "ndjson-export.md",
   "r2-iceberg-api.md",
   "r2-parquet-api.md",
+  "unified-engine.md",
 ] as const;
 
 describe("docs recipes", () => {
@@ -100,6 +109,36 @@ describe("docs recipes", () => {
     ]);
   });
 
+  it("runs the HTTP Parquet example recipe against committed fixtures", async () => {
+    const bytes = await readFile(fixturePath(SALES.file));
+    const rows = await queryHttpParquet({
+      baseUrl: "https://data.example/lake/",
+      objects: [{ path: SALES.file, size: bytes.byteLength }],
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        if (!url.pathname.endsWith(`/${SALES.file}`)) return new Response(null, { status: 404 });
+        if (init?.method === "HEAD") {
+          return new Response(null, {
+            headers: {
+              "content-length": String(bytes.byteLength),
+              "content-type": "application/vnd.apache.parquet",
+            },
+          });
+        }
+        const range = new Headers(init?.headers).get("range");
+        if (range === null) return new Response(bytes);
+        const match = /^bytes=(\d+)-(\d+)$/u.exec(range);
+        if (!match) return new Response(null, { status: 416 });
+        const start = Number(match[1]);
+        const end = Number(match[2]);
+        return new Response(bytes.slice(start, end + 1), { status: 206 });
+      },
+    });
+
+    expect(rows).toHaveLength(100);
+    expect(rows[0]).toMatchObject({ store_id: "store-000", region: "west" });
+  });
+
   it("runs the compact recipe against the sales fixture", async () => {
     const dir = await mkdtemp(join(tmpdir(), "laql-recipe-compact-"));
     try {
@@ -149,7 +188,168 @@ describe("docs recipes", () => {
     });
     expect(table.planFiles({ ref: "main", readMode: "ignore-deletes" }).files.length).toBe(3);
   });
+
+  it("runs the R2 Parquet and Iceberg example recipes against committed fixtures", async () => {
+    const bucket = new RecipeR2Bucket();
+    await bucket.put(SALES.file, await readFile(fixturePath(SALES.file)));
+    await bucket.put(
+      "warehouse/places/metadata/v2.metadata.json",
+      await readFile(fixturePath(ICEBERG.metadataFile)),
+    );
+    await bucket.put(ICEBERG.metadataFile, await readFile(fixturePath(ICEBERG.metadataFile)));
+    await bucket.put(
+      ICEBERG.manifestListFile,
+      await readFile(fixturePath(ICEBERG.manifestListFile)),
+    );
+    for (const manifestFile of ICEBERG.manifestFiles) {
+      await bucket.put(manifestFile, await readFile(fixturePath(manifestFile)));
+    }
+
+    const parquetRows = await queryR2Parquet(bucket);
+    const plan = await planR2Iceberg(bucket);
+
+    expect(parquetRows).toHaveLength(100);
+    expect(parquetRows[0]).toMatchObject({ store_id: "store-000", region: "west" });
+    expect(plan).toMatchObject({ snapshotId: 2, filesPlanned: 2 });
+    expect(plan.files.map((file) => file.partition.country)).toEqual(["US", "US"]);
+  });
+
+  it("runs the unified engine API recipe against committed fixtures", async () => {
+    const store = memoryStore();
+    await store.put(SALES.file, await readFile(fixturePath(SALES.file)));
+    await store.put(ICEBERG.metadataFile, await readFile(fixturePath(ICEBERG.metadataFile)));
+    await store.put(
+      ICEBERG.manifestListFile,
+      await readFile(fixturePath(ICEBERG.manifestListFile)),
+    );
+    for (const manifestFile of ICEBERG.manifestFiles) {
+      await store.put(manifestFile, await readFile(fixturePath(manifestFile)));
+    }
+    for (const dataFile of ICEBERG.dataFiles) {
+      await store.put(dataFile, await readFile(fixturePath(dataFile)));
+    }
+    await store.put(
+      ICEBERG.equalityDeleteFile,
+      await readFile(fixturePath(ICEBERG.equalityDeleteFile)),
+    );
+    await store.put(
+      ICEBERG.positionDeleteFile,
+      await readFile(fixturePath(ICEBERG.positionDeleteFile)),
+    );
+
+    const parquetRows = [];
+    const parquetTable = await loadTable({
+      format: "parquet",
+      store,
+      path: SALES.file,
+    });
+    for await (const row of scanRows(planFiles(parquetTable))) {
+      parquetRows.push(row);
+    }
+
+    const icebergRows = [];
+    const icebergTable = await loadTable({
+      format: "iceberg",
+      store,
+      metadataPath: ICEBERG.metadataFile,
+    });
+    const icebergPlan = planFiles(icebergTable, {
+      where: eq("country", "US"),
+      select: ["id", "nation"],
+    });
+    for await (const row of scanRows(icebergPlan, { batchSize: 256, maxConcurrentReads: 4 })) {
+      icebergRows.push(row);
+    }
+
+    expect(parquetRows).toHaveLength(SALES.rows);
+    expect(icebergRows).toEqual([
+      { id: 0, nation: "US" },
+      { id: 2, nation: "US" },
+      { id: 3, nation: "US" },
+      { id: 200, nation: "US" },
+      { id: 201, nation: "US" },
+      { id: 202, nation: "US" },
+      { id: 203, nation: "US" },
+    ]);
+  });
 });
+
+class RecipeR2Object {
+  readonly size: number;
+  readonly uploaded = new Date("2026-06-15T00:00:00Z");
+  readonly httpMetadata = { contentType: "application/octet-stream" };
+
+  constructor(
+    readonly key: string,
+    private readonly bytes: Uint8Array,
+    readonly etag = "etag",
+  ) {
+    this.size = bytes.byteLength;
+  }
+
+  async arrayBuffer(): Promise<ArrayBuffer> {
+    const out = new ArrayBuffer(this.bytes.byteLength);
+    new Uint8Array(out).set(this.bytes);
+    return out;
+  }
+}
+
+class RecipeR2Bucket {
+  private readonly objects = new Map<string, Uint8Array>();
+
+  async get(key: string, options?: { range?: { offset: number; length: number } }) {
+    const bytes = this.objects.get(key);
+    if (bytes === undefined) return null;
+    const ranged =
+      options?.range === undefined
+        ? bytes
+        : bytes.slice(options.range.offset, options.range.offset + options.range.length);
+    return new RecipeR2Object(key, ranged);
+  }
+
+  async head(key: string) {
+    const bytes = this.objects.get(key);
+    if (bytes === undefined) return null;
+    return new RecipeR2Object(key, bytes);
+  }
+
+  async put(key: string, value: Uint8Array | ReadableStream<Uint8Array>) {
+    if (value instanceof Uint8Array) {
+      this.objects.set(key, value);
+      return;
+    }
+    const chunks: Uint8Array[] = [];
+    for await (const chunk of value) chunks.push(chunk);
+    const length = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+    const out = new Uint8Array(length);
+    let offset = 0;
+    for (const chunk of chunks) {
+      out.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    this.objects.set(key, out);
+  }
+
+  async delete(key: string) {
+    this.objects.delete(key);
+  }
+
+  async list(options?: { prefix?: string; limit?: number; cursor?: string }) {
+    const prefix = options?.prefix ?? "";
+    const start = options?.cursor === undefined ? 0 : Number(options.cursor);
+    const limit = options?.limit ?? Number.POSITIVE_INFINITY;
+    const matching = [...this.objects.entries()]
+      .filter(([key]) => key.startsWith(prefix))
+      .sort(([left], [right]) => left.localeCompare(right));
+    const page = matching.slice(start, start + limit);
+    const next = start + page.length;
+    return {
+      objects: page.map(([key, bytes]) => new RecipeR2Object(key, bytes)),
+      truncated: next < matching.length,
+      cursor: next < matching.length ? String(next) : undefined,
+    };
+  }
+}
 
 async function runCli(args: string[]): Promise<{ stdout: string; stderr: string }> {
   const result = await execFileAsync(process.execPath, ["packages/cli/dist/bin.js", ...args], {

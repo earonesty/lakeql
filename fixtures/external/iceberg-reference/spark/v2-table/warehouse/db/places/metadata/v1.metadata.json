@@ -1,0 +1,79 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "d33dd87f-2d2a-46fe-94d2-fbbef5aae925",
+  "location" : "warehouse/db/places",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1781570765519,
+  "last-column-id" : 2,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "country",
+      "required" : false,
+      "type" : "string"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "country",
+      "transform" : "identity",
+      "source-id" : 2,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "erik",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 6419784254059496380,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 6419784254059496380,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 6419784254059496380,
+    "timestamp-ms" : 1781570765519,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1781570761485",
+      "added-data-files" : "3",
+      "added-records" : "4",
+      "added-files-size" : "1887",
+      "changed-partition-count" : "3",
+      "total-records" : "4",
+      "total-files-size" : "1887",
+      "total-data-files" : "3",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "warehouse/db/places/metadata/snap-6419784254059496380-1-133409b5-4207-4e52-8258-de97255c4568.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1781570765519,
+    "snapshot-id" : 6419784254059496380
+  } ],
+  "metadata-log" : [ ]
+}

@@ -5,6 +5,8 @@ export default defineConfig({
     projects: ["packages/*"],
     exclude: [
       "**/*.conformance.test.ts",
+      "**/*.provider.test.ts",
+      "**/*.reference.test.ts",
       "**/*.workerd.test.ts",
       "**/node_modules/**",
       "**/dist/**",

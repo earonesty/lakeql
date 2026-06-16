@@ -1,11 +1,14 @@
 import {
+  type ConditionalObjectStore,
+  type ConditionalPutOptions,
   LaQLError,
   type ListOptions,
   type ObjectHead,
   type ObjectInfo,
-  type ObjectStore,
   type PutOptions,
 } from "@laql/core";
+import { AwsClient } from "aws4fetch";
+import { XMLParser } from "fast-xml-parser";
 
 export const PACKAGE = "@laql/s3" as const;
 
@@ -20,17 +23,27 @@ export interface S3StoreOptions {
   now?: () => Date;
 }
 
-export function s3Store(options: S3StoreOptions): ObjectStore {
+export function s3Store(options: S3StoreOptions): ConditionalObjectStore {
   return new S3ObjectStore(options);
 }
 
-export class S3ObjectStore implements ObjectStore {
+export class S3ObjectStore implements ConditionalObjectStore {
   private readonly fetchImpl: typeof fetch;
   private readonly now: () => Date;
+  private readonly aws: AwsClient;
 
   constructor(private readonly options: S3StoreOptions) {
     this.fetchImpl = options.fetch ?? fetch;
     this.now = options.now ?? (() => new Date());
+    const awsOptions: ConstructorParameters<typeof AwsClient>[0] = {
+      accessKeyId: options.accessKeyId,
+      secretAccessKey: options.secretAccessKey,
+      region: options.region,
+      service: "s3",
+      retries: 0,
+    };
+    if (options.sessionToken !== undefined) awsOptions.sessionToken = options.sessionToken;
+    this.aws = new AwsClient(awsOptions);
   }
 
   async get(path: string): Promise<Uint8Array | null> {
@@ -59,6 +72,21 @@ export class S3ObjectStore implements ObjectStore {
     assertOk(response, path);
   }
 
+  async conditionalPut(
+    path: string,
+    body: Uint8Array | ReadableStream<Uint8Array>,
+    options: ConditionalPutOptions,
+  ): Promise<boolean> {
+    const headers: Record<string, string> = {};
+    if (options.contentType) headers["content-type"] = options.contentType;
+    if (options.expectedEtag === null) headers["if-none-match"] = "*";
+    else headers["if-match"] = options.expectedEtag;
+    const response = await this.request("PUT", path, headers, body);
+    if (response.status === 409 || response.status === 412) return false;
+    assertOk(response, path);
+    return true;
+  }
+
   async delete(path: string): Promise<void> {
     const response = await this.request("DELETE", path);
     assertOk(response, path);
@@ -70,6 +98,7 @@ export class S3ObjectStore implements ObjectStore {
     do {
       const query = new URLSearchParams({ "list-type": "2", prefix });
       if (options?.limit !== undefined) query.set("max-keys", String(options.limit - emitted));
+      if (options?.delimiter !== undefined) query.set("delimiter", options.delimiter);
       if (continuationToken !== undefined) query.set("continuation-token", continuationToken);
       const response = await this.request("GET", "", {}, undefined, query);
       assertOk(response, prefix);
@@ -129,9 +158,10 @@ export class S3ObjectStore implements ObjectStore {
     };
     if (this.options.sessionToken !== undefined)
       signRequest.sessionToken = this.options.sessionToken;
-    const signed = await signS3Request(signRequest);
+    const requestBody = body === undefined ? undefined : bodyInit(body);
+    const signed = await signS3Request(signRequest, this.aws, requestBody);
     const init: RequestInit = { method, headers: signed };
-    if (body !== undefined) init.body = bodyInit(body);
+    if (requestBody !== undefined) init.body = requestBody;
     return this.fetchImpl(url, init);
   }
 }
@@ -147,85 +177,97 @@ interface SignRequest {
   now: Date;
 }
 
-export async function signS3Request(request: SignRequest): Promise<Headers> {
+export async function signS3Request(
+  request: SignRequest,
+  client = s3SignerClient(request),
+  body?: BodyInit,
+): Promise<Headers> {
   const headers = new Headers(request.headers);
-  const amzDate = timestamp(request.now);
-  const date = amzDate.slice(0, 8);
-  headers.set("host", request.url.host);
-  headers.set("x-amz-date", amzDate);
-  headers.set("x-amz-content-sha256", "UNSIGNED-PAYLOAD");
-  if (request.sessionToken) headers.set("x-amz-security-token", request.sessionToken);
-
-  const signedHeaders = [...headers.keys()].map((key) => key.toLowerCase()).sort();
-  const canonicalHeaders = signedHeaders
-    .map((key) => `${key}:${headers.get(key)?.trim().replace(/\s+/gu, " ") ?? ""}\n`)
-    .join("");
-  const credentialScope = `${date}/${request.region}/s3/aws4_request`;
-  const canonicalRequest = [
-    request.method,
-    request.url.pathname,
-    canonicalQuery(request.url.searchParams),
-    canonicalHeaders,
-    signedHeaders.join(";"),
-    "UNSIGNED-PAYLOAD",
-  ].join("\n");
-  const stringToSign = [
-    "AWS4-HMAC-SHA256",
-    amzDate,
-    credentialScope,
-    await sha256Hex(canonicalRequest),
-  ].join("\n");
-  const signingKey = await hmac(
-    await hmac(
-      await hmac(await hmac(`AWS4${request.secretAccessKey}`, date), request.region),
-      "s3",
-    ),
-    "aws4_request",
-  );
-  const signature = await hmacHex(signingKey, stringToSign);
-  headers.set(
-    "authorization",
-    `AWS4-HMAC-SHA256 Credential=${request.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders.join(";")}, Signature=${signature}`,
-  );
-  return headers;
+  if (!headers.has("x-amz-content-sha256")) {
+    headers.set("x-amz-content-sha256", "UNSIGNED-PAYLOAD");
+  }
+  const init: Parameters<AwsClient["sign"]>[1] = {
+    method: request.method,
+    headers,
+    aws: {
+      datetime: timestamp(request.now),
+    },
+  };
+  if (body !== undefined) init.body = body;
+  const signed = await client.sign(request.url, init);
+  return signed.headers;
 }
 
-function parseListObjectsV2(xml: string): {
+function s3SignerClient(request: SignRequest): AwsClient {
+  const options: ConstructorParameters<typeof AwsClient>[0] = {
+    accessKeyId: request.accessKeyId,
+    secretAccessKey: request.secretAccessKey,
+    region: request.region,
+    service: "s3",
+    retries: 0,
+  };
+  if (request.sessionToken !== undefined) options.sessionToken = request.sessionToken;
+  return new AwsClient(options);
+}
+
+const listObjectsParser = new XMLParser({
+  ignoreAttributes: true,
+  parseTagValue: false,
+  trimValues: true,
+});
+
+export function parseListObjectsV2(xml: string): {
   objects: ObjectInfo[];
   nextContinuationToken?: string;
 } {
+  const parsed = listObjectsParser.parse(xml) as {
+    ListBucketResult?: {
+      Contents?: unknown;
+      IsTruncated?: unknown;
+      NextContinuationToken?: unknown;
+    };
+  };
+  const result = parsed.ListBucketResult ?? {};
   const objects: ObjectInfo[] = [];
-  for (const match of xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/gu)) {
-    const block = match[1] ?? "";
-    const key = text(block, "Key");
-    const size = Number(text(block, "Size"));
+  for (const content of arrayOf<ListObjectContent>(result.Contents)) {
+    const key = stringValue(content.Key);
+    const size = Number(stringValue(content.Size));
     if (!key || !Number.isFinite(size)) continue;
-    const info: ObjectInfo = { path: decodeXml(key), size };
-    const etag = text(block, "ETag");
-    const lastModified = text(block, "LastModified");
-    if (etag) info.etag = decodeXml(etag);
+    const info: ObjectInfo = { path: key, size };
+    const etag = stringValue(content.ETag);
+    const lastModified = stringValue(content.LastModified);
+    if (etag) info.etag = etag;
     if (lastModified) info.lastModified = new Date(lastModified);
     objects.push(info);
   }
-  const nextContinuationToken =
-    text(xml, "IsTruncated") === "true" ? decodeXml(text(xml, "NextContinuationToken")) : "";
+  const nextContinuationToken = isTrue(result.IsTruncated)
+    ? stringValue(result.NextContinuationToken)
+    : "";
   return {
     objects,
     ...(nextContinuationToken ? { nextContinuationToken } : {}),
   };
 }
 
-function text(block: string, tag: string): string {
-  return block.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, "u"))?.[1] ?? "";
+interface ListObjectContent {
+  Key?: unknown;
+  Size?: unknown;
+  ETag?: unknown;
+  LastModified?: unknown;
 }
 
-function decodeXml(value: string): string {
-  return value
-    .replaceAll("&lt;", "<")
-    .replaceAll("&gt;", ">")
-    .replaceAll("&quot;", '"')
-    .replaceAll("&apos;", "'")
-    .replaceAll("&amp;", "&");
+function arrayOf<T>(value: unknown): T[] {
+  if (value === undefined || value === null) return [];
+  return Array.isArray(value) ? (value as T[]) : [value as T];
+}
+
+function stringValue(value: unknown): string {
+  if (value === undefined || value === null) return "";
+  return String(value);
+}
+
+function isTrue(value: unknown): boolean {
+  return value === true || String(value).toLowerCase() === "true";
 }
 
 function ensureSlash(value: string): string {
@@ -271,33 +313,8 @@ function assertOk(response: Response, path: string): void {
   });
 }
 
-function canonicalQuery(params: URLSearchParams): string {
-  return [...params.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
-    .join("&");
-}
-
 function timestamp(date: Date): string {
   return date.toISOString().replace(/[:-]|\.\d{3}/gu, "");
-}
-
-async function sha256Hex(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return hex(new Uint8Array(digest));
-}
-
-async function hmac(key: string | Uint8Array, value: string): Promise<Uint8Array> {
-  const cryptoKey = await crypto.subtle.importKey(
-    "raw",
-    typeof key === "string" ? new TextEncoder().encode(key) : arrayBuffer(key),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  return new Uint8Array(
-    await crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(value)),
-  );
 }
 
 function bodyInit(body: Uint8Array | ReadableStream<Uint8Array>): BodyInit {
@@ -309,12 +326,4 @@ function arrayBuffer(bytes: Uint8Array): ArrayBuffer {
   const copy = new Uint8Array(bytes.byteLength);
   copy.set(bytes);
   return copy.buffer;
-}
-
-async function hmacHex(key: Uint8Array, value: string): Promise<string> {
-  return hex(await hmac(key, value));
-}
-
-function hex(bytes: Uint8Array): string {
-  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }

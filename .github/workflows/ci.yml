@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  ci:
+  check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,25 +20,135 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Lint (biome)
-        run: pnpm lint
+      - name: Full local gate
+        run: pnpm check
 
-      - name: Typecheck
-        run: pnpm typecheck
+  external:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Build (tsc -b)
-        run: pnpm build
+      - uses: pnpm/action-setup@v4
 
-      - name: Verify fixtures are reproducible
-        run: |
-          pnpm fixtures
-          git diff --exit-code fixtures/data || (echo "fixtures/data drifted from generator output" && exit 1)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
 
-      - name: Test with coverage gate (90%)
-        run: pnpm coverage
+      - run: pnpm install --frozen-lockfile
 
-      - name: Test Workers runtime
-        run: pnpm test:workerd
+      - name: Verify vendored external fixture checksums
+        run: pnpm fixtures:external -- --verify-only
 
-      - name: Test conformance config
+      - name: Run external conformance lane
         run: pnpm test:conformance
+        env:
+          LAQL_REQUIRE_EXTERNAL_ICEBERG: "1"
+
+  reference:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Run DuckDB reference comparisons
+        run: pnpm test:reference
+
+  providers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Start MinIO
+        run: |
+          docker run -d --name laql-minio \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio:latest server /data
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:9000/minio/health/ready >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs laql-minio
+          exit 1
+
+      - name: Start Iceberg REST fixture
+        run: |
+          docker run -d --name laql-iceberg-rest \
+            -p 8181:8181 \
+            apache/iceberg-rest-fixture:latest
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8181/v1/config >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs laql-iceberg-rest
+          exit 1
+
+      - name: Run provider conformance
+        run: pnpm test:providers
+        env:
+          LAQL_REQUIRE_PROVIDERS: "1"
+          LAQL_MINIO_ENDPOINT: http://127.0.0.1:9000
+          LAQL_MINIO_ACCESS_KEY: minioadmin
+          LAQL_MINIO_SECRET_KEY: minioadmin
+          LAQL_MINIO_BUCKET: laql-provider
+          LAQL_REST_CATALOG_URL: http://127.0.0.1:8181
+
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Run benchmark harness
+        run: pnpm bench
+
+  changeset:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Require changeset for package changes
+        run: pnpm check:changeset ${{ github.base_ref }}

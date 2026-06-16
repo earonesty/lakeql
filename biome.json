@@ -6,7 +6,13 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!**/dist", "!**/coverage", "!fixtures/data"]
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/coverage",
+      "!fixtures/data",
+      "!fixtures/external/iceberg-reference"
+    ]
   },
   "formatter": {
     "enabled": true,

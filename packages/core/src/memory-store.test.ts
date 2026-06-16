@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { LaQLError } from "./errors.js";
 import { memoryStore } from "./memory-store.js";
+import type { ObjectStore } from "./store.js";
+import { throwIfAborted, withObjectStoreReadControls } from "./store.js";
 
 const enc = new TextEncoder();
 
@@ -100,5 +102,131 @@ describe("MemoryObjectStore", () => {
       store.conditionalPut("cas", enc.encode("3"), { expectedEtag: "stale" }),
     ).resolves.toBe(false);
     expect(await store.get("cas")).toEqual(enc.encode("1"));
+  });
+
+  it("limits concurrent object reads and aborts queued reads", async () => {
+    let active = 0;
+    let peak = 0;
+    let releaseRead: (() => void) | undefined;
+    let resolveFirstStarted: () => void = () => {};
+    const firstReadStarted = new Promise<void>((resolve) => {
+      resolveFirstStarted = resolve;
+    });
+    const slowStore: ObjectStore = {
+      get: async () => {
+        active += 1;
+        peak = Math.max(peak, active);
+        resolveFirstStarted();
+        await new Promise<void>((release) => {
+          releaseRead = release;
+        });
+        active -= 1;
+        return enc.encode("ok");
+      },
+      getRange: async () => enc.encode("ok"),
+      put: async () => {},
+      delete: async () => {},
+      list: async function* () {},
+      head: async () => ({ size: 2 }),
+    };
+    const controller = new AbortController();
+    const controlled = withObjectStoreReadControls(slowStore, {
+      maxConcurrentReads: 1,
+      signal: controller.signal,
+    });
+
+    const first = controlled.get("first");
+    await firstReadStarted;
+    const second = controlled.get("second");
+    controller.abort("stop");
+
+    await expect(second).rejects.toMatchObject({ code: "LAQL_ABORTED" });
+    releaseRead?.();
+    await expect(first).rejects.toMatchObject({ code: "LAQL_ABORTED" });
+    expect(peak).toBe(1);
+  });
+
+  it("returns the original store when no read controls are set", () => {
+    const store = memoryStore();
+    expect(withObjectStoreReadControls(store, {})).toBe(store);
+  });
+
+  it("validates maxConcurrentReads", () => {
+    expect(() => withObjectStoreReadControls(memoryStore(), { maxConcurrentReads: 0 })).toThrow(
+      LaQLError,
+    );
+  });
+
+  it("allows queued reads to resume when a read slot opens", async () => {
+    let active = 0;
+    let peak = 0;
+    let releaseRead: (() => void) | undefined;
+    let resolveFirstStarted: () => void = () => {};
+    const firstReadStarted = new Promise<void>((resolve) => {
+      resolveFirstStarted = resolve;
+    });
+    const slowStore: ObjectStore = {
+      get: async (path) => {
+        active += 1;
+        peak = Math.max(peak, active);
+        if (path === "first") {
+          resolveFirstStarted();
+          await new Promise<void>((release) => {
+            releaseRead = release;
+          });
+        }
+        active -= 1;
+        return enc.encode(path);
+      },
+      getRange: async (_path, range) => enc.encode(`${range.offset}:${range.length}`),
+      put: async () => {},
+      delete: async () => {},
+      list: async function* () {},
+      head: async () => ({ size: 2 }),
+    };
+    const controlled = withObjectStoreReadControls(slowStore, { maxConcurrentReads: 1 });
+
+    const first = controlled.get("first");
+    await firstReadStarted;
+    const second = controlled.get("second");
+    releaseRead?.();
+
+    await expect(first).resolves.toEqual(enc.encode("first"));
+    await expect(second).resolves.toEqual(enc.encode("second"));
+    await expect(controlled.getRange("range", { offset: 1, length: 2 })).resolves.toEqual(
+      enc.encode("1:2"),
+    );
+    expect(peak).toBe(1);
+  });
+
+  it("checks abort signals around non-read store operations", async () => {
+    const store = memoryStore();
+    await store.put("a", enc.encode("a"));
+    const controller = new AbortController();
+    const controlled = withObjectStoreReadControls(store, { signal: controller.signal });
+
+    expect(await controlled.head("a")).toMatchObject({ size: 1 });
+    const listed = [];
+    for await (const object of controlled.list("")) listed.push(object.path);
+    expect(listed).toEqual(["a"]);
+
+    controller.abort(new Error("cancelled"));
+    expect(() => throwIfAborted(controller.signal)).toThrow("Query aborted");
+    expect(() => controlled.put("b", enc.encode("b"))).toThrow(
+      expect.objectContaining({
+        code: "LAQL_ABORTED",
+        details: { reason: "cancelled" },
+      }),
+    );
+    expect(() => controlled.delete("a")).toThrow(
+      expect.objectContaining({
+        code: "LAQL_ABORTED",
+      }),
+    );
+    await expect(async () => {
+      for await (const _object of controlled.list("")) {
+        // The abort check happens before iteration starts.
+      }
+    }).rejects.toMatchObject({ code: "LAQL_ABORTED" });
   });
 });

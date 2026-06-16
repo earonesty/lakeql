@@ -1,0 +1,79 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "31c62b58-8010-4d6c-b993-090b9c2ad011",
+  "location" : "warehouse/db/places",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1781570773891,
+  "last-column-id" : 2,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "country",
+      "required" : false,
+      "type" : "string"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "country",
+      "transform" : "identity",
+      "source-id" : 2,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "erik",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 817670843273595109,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 817670843273595109,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 817670843273595109,
+    "timestamp-ms" : 1781570773891,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1781570769751",
+      "added-data-files" : "2",
+      "added-records" : "3",
+      "added-files-size" : "1274",
+      "changed-partition-count" : "2",
+      "total-records" : "3",
+      "total-files-size" : "1274",
+      "total-data-files" : "2",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "warehouse/db/places/metadata/snap-817670843273595109-1-a5904347-be35-4f1a-8808-56beb6ae63ff.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1781570773891,
+    "snapshot-id" : 817670843273595109
+  } ],
+  "metadata-log" : [ ]
+}

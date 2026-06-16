@@ -3,13 +3,11 @@
 This Worker reads Parquet rows from R2 and returns JSON.
 
 ```ts
-import { createLake } from "laql/cloudflare";
-import { r2Store } from "@laql/r2";
+import { queryR2Parquet } from "../../examples/r2-parquet";
 
 export default {
   async fetch(_request: Request, env: { DATA: R2Bucket }) {
-    const lake = createLake({ store: r2Store(env.DATA), budget: { maxOutputRows: 1000 } });
-    return Response.json(await lake.path("sales.parquet").limit(100).toArray());
+    return Response.json(await queryR2Parquet(env.DATA));
   },
 };
 ```

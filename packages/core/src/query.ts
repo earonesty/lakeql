@@ -28,6 +28,10 @@ export interface QueryBudget {
   maxBufferedRows?: number;
   /** Maximum deterministic serialized bytes an in-memory operator may retain. */
   maxMemoryBytes?: number;
+  /** Maximum object-store reads allowed to be in flight at once. */
+  maxConcurrentReads?: number;
+  /** Abort query planning or scanning at await boundaries. */
+  signal?: AbortSignal;
 }
 
 export type QueryPolicyContext = Record<string, unknown>;

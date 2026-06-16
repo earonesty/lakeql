@@ -1,0 +1,8 @@
+name = "laql-worker-example"
+main = "src/index.ts"
+compatibility_date = "2026-06-15"
+compatibility_flags = ["nodejs_compat"]
+
+[[r2_buckets]]
+binding = "DATA"
+bucket_name = "laql-data"

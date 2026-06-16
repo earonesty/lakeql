@@ -1,3 +1,4 @@
+import { LaQLError } from "@laql/core";
 import { describe, expect, it } from "vitest";
 import { formatSql, parseSql } from "./index.js";
 
@@ -298,6 +299,20 @@ describe("parseSql", () => {
     expect(() => parseSql("from t where name = 'unterminated")).toThrow(/Unterminated/u);
     expect(() => parseSql("from t where name = @bad")).toThrow(/Unexpected character/u);
     expect(() => formatSql({ source: "bad source" })).toThrow(/cannot be represented/u);
+  });
+
+  it("rejects SQL outside the documented subset with typed parse errors", () => {
+    const unsupported = [
+      "with recent as (select id from t) from recent select id",
+      "from orders join customers on orders.customer_id = customers.id select orders.id",
+      "from (select id from orders) select id",
+      "from orders select id where id in (select order_id from refunds)",
+    ];
+
+    for (const sql of unsupported) {
+      expect(() => parseSql(sql)).toThrowError(LaQLError);
+      expect(() => parseSql(sql)).toThrow(expect.objectContaining({ code: "LAQL_PARSE_ERROR" }));
+    }
   });
 
   it("rejects excessive expression nesting and token counts with parse errors", () => {

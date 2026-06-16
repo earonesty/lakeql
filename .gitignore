@@ -3,4 +3,10 @@ dist/
 coverage/
 *.tsbuildinfo
 .DS_Store
-fixtures/external/
+fixtures/external/*
+!fixtures/external/CHECKSUMS.txt
+!fixtures/external/generate-iceberg/
+!fixtures/external/generate-iceberg/**
+!fixtures/external/iceberg-reference/
+!fixtures/external/iceberg-reference/**
+fixtures/external/parquet-testing/
