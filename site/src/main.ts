@@ -33,14 +33,12 @@ import "./styles.css";
 
 type Mode = "sql" | "js" | "json";
 
-const SAMPLE_COLUMNS = "store_id, region, amount";
-
 const DEFAULTS: Record<Mode, string> = {
   sql: `from sales.parquet
-select ${SAMPLE_COLUMNS}
-where amount > 50
-order by amount desc
-limit 10`,
+select region, sum(amount) as revenue, count() as orders
+where amount > 0
+group by region
+order by revenue desc`,
   js: `lake.path("sales.parquet")
   .select(["store_id", "region", "amount"])
   .where(gt("amount", 50))
@@ -201,6 +199,47 @@ function applyAst(builder: ReturnType<Lake["path"]>, ast: ReturnType<typeof pars
   return next;
 }
 
+type OrderTerm = { column: string; direction?: "asc" | "desc" };
+
+// Aggregated rows come back fully materialized, so order/limit are applied here
+// rather than through the streaming builder.
+function sortRows(rows: Row[], terms: OrderTerm[]): Row[] {
+  return [...rows].sort((a, b) => {
+    for (const term of terms) {
+      const dir = term.direction === "desc" ? -1 : 1;
+      const av = a[term.column];
+      const bv = b[term.column];
+      if (av === bv) continue;
+      if (av === null || av === undefined) return 1;
+      if (bv === null || bv === undefined) return -1;
+      return (av < bv ? -1 : 1) * dir;
+    }
+    return 0;
+  });
+}
+
+async function runSql(text: string, lake: Lake, key: string): Promise<Row[]> {
+  const ast = { ...parseSql(text), source: key };
+  const aggregates =
+    ast.aggregates && Object.keys(ast.aggregates).length > 0 ? ast.aggregates : undefined;
+  const grouped = (ast.groupBy?.length ?? 0) > 0;
+
+  if (!aggregates && !grouped) {
+    return (await applyAst(lake.path(key), ast).toArray()) as Row[];
+  }
+  if (ast.having) {
+    throw new Error("HAVING is supported by the engine but not yet wired into this playground.");
+  }
+  let base = lake.path(key);
+  if (ast.where) base = base.where(ast.where);
+  let rows = (await base.groupBy(ast.groupBy ?? []).aggregate(aggregates ?? {})) as Row[];
+  if (ast.orderBy) rows = sortRows(rows, ast.orderBy);
+  const offset = ast.offset ?? 0;
+  if (ast.limit !== undefined) rows = rows.slice(offset, offset + ast.limit);
+  else if (offset > 0) rows = rows.slice(offset);
+  return rows;
+}
+
 // A lake whose source is fixed to the resolved key, so the query text's
 // table name is cosmetic and always points at the configured URL.
 function boundLake(lake: Lake, key: string) {
@@ -262,8 +301,7 @@ async function run(): Promise<void> {
     const text = docs[mode];
     let rows: Row[];
     if (mode === "sql") {
-      const ast = { ...parseSql(text), source: key };
-      rows = (await applyAst(lake.path(key), ast).toArray()) as Row[];
+      rows = await runSql(text, lake, key);
     } else if (mode === "json") {
       const parsed = JSON.parse(text) as Record<string, unknown>;
       rows = (await lake.query({ ...parsed, from: key } as never).toArray()) as Row[];

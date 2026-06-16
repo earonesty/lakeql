@@ -133,4 +133,16 @@ describe("httpStore", () => {
     });
     expect(seen).toHaveLength(1);
   });
+
+  it("slices client-side when a server ignores Range and returns 200 with the full body", async () => {
+    const whole = enc.encode("0123456789");
+    const store = httpStore({
+      baseUrl: "https://example.test/data/",
+      // Simulates GitHub Pages and similar hosts that treat Range as advisory.
+      fetch: async () => new Response(whole, { status: 200 }),
+    });
+    await expect(store.getRange("file.parquet", { offset: 2, length: 4 })).resolves.toEqual(
+      enc.encode("2345"),
+    );
+  });
 });

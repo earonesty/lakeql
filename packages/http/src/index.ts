@@ -52,7 +52,14 @@ export class HttpObjectStore implements ObjectStore {
       headers: { Range: `bytes=${range.offset}-${range.offset + range.length - 1}` },
     });
     assertOk(response, path);
-    return new Uint8Array(await response.arrayBuffer());
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    // `Range` is advisory: some servers (e.g. GitHub Pages on certain assets)
+    // ignore it and return 200 with the full body. When that happens, slice the
+    // requested window ourselves instead of handing back the whole object.
+    if (response.status !== 206 && bytes.length > range.length) {
+      return bytes.subarray(range.offset, range.offset + range.length);
+    }
+    return bytes;
   }
 
   async put(
