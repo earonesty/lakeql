@@ -5,10 +5,9 @@ TypeScript. It is small and dependency-light enough to run in constrained runtim
 Cloudflare Workers, edge functions, serverless — where DuckDB-WASM or a JVM engine is too
 heavy. See [why not DuckDB-WASM?](./docs/why-not-duckdb-wasm.md).
 
-The scope is deliberately narrow: a strict read/scan core that either reads correctly or
-rejects precisely. It streams with HTTP range reads and bounded memory, and refuses table
-features it cannot honor with a typed error rather than guessing. Iceberg writes are
-append-only. What is supported, and what is detected-and-rejected, is enumerated in the
+It is strict about correctness: it streams with HTTP range reads and bounded memory, and
+either reads a table correctly or rejects it with a typed error rather than guessing. Every
+supported feature, and every feature it detects and refuses, is enumerated in the
 [compatibility matrix](./docs/compatibility.md) and [unsupported features](./docs/unsupported.md).
 
 ## Install
