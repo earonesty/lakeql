@@ -143,6 +143,42 @@ describe("evaluate", () => {
     expect(evaluate(fn("h3_parent", col("h3_8"), 7), row)).toBe("8729a1d75ffffff");
   });
 
+  it("uses exact geometry, not just bounding boxes, for spatial predicates", () => {
+    // Lower-left triangle (x + y <= 4); bbox is [0,0,4,4].
+    const triA = '{"type":"Polygon","coordinates":[[[0,0],[4,0],[0,4],[0,0]]]}';
+    // Upper-right triangle (x + y >= 6); bbox is [1,1,5,5] — overlaps triA's bbox
+    // in [1,1]..[4,4], but the two triangles never actually touch.
+    const triB = '{"type":"Polygon","coordinates":[[[5,5],[1,5],[5,1],[5,5]]]}';
+    // A point inside triA's bounding box but outside the triangle itself.
+    const outside = '{"type":"Point","coordinates":[3.5,3.5]}';
+    // A point genuinely inside triA.
+    const inside = '{"type":"Point","coordinates":[1,1]}';
+
+    // Bounding boxes overlap, so the cheap prefilter passes — but the exact
+    // check must report the geometries as disjoint.
+    expect(evaluate(fn("st_intersects", triA, triB), {})).toBe(false);
+    expect(evaluate(fn("st_disjoint", triA, triB), {})).toBe(true);
+    expect(evaluate(fn("st_contains", triA, outside), {})).toBe(false);
+    expect(evaluate(fn("st_within", outside, triA), {})).toBe(false);
+
+    // Genuine relationships still hold.
+    expect(evaluate(fn("st_intersects", triA, inside), {})).toBe(true);
+    expect(evaluate(fn("st_contains", triA, inside), {})).toBe(true);
+    expect(evaluate(fn("st_within", inside, triA), {})).toBe(true);
+    expect(evaluate(fn("st_disjoint", triA, inside), {})).toBe(false);
+
+    // LineStrings and unclosed polygon rings are handled too.
+    const crossing = '{"type":"LineString","coordinates":[[0,0],[6,6]]}';
+    expect(evaluate(fn("st_intersects", triA, crossing), {})).toBe(true);
+    const openTri = '{"type":"Polygon","coordinates":[[[0,0],[4,0],[0,4]]]}';
+    expect(evaluate(fn("st_contains", openTri, inside), {})).toBe(true);
+
+    // Geometry types LaQL cannot evaluate are rejected, not silently coerced.
+    expect(() =>
+      evaluate(fn("st_intersects", '{"type":"MultiPoint","coordinates":[[0,0]]}', triA), {}),
+    ).toThrowError(LaQLError);
+  });
+
   it("returns null from null-propagating functions", () => {
     expect(evaluate(fn("lower", lit(null)), row)).toBeNull();
     expect(evaluate(fn("substr", lit(null), 0, 1), row)).toBeNull();

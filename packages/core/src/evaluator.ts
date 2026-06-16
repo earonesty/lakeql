@@ -1,3 +1,5 @@
+import { booleanContains } from "@turf/boolean-contains";
+import { booleanIntersects } from "@turf/boolean-intersects";
 import { cellToParent, gridDisk, isValidCell, latLngToCell } from "h3-js";
 import { LaQLError } from "./errors.js";
 import type { Expr, Scalar } from "./expr.js";
@@ -244,13 +246,13 @@ function callFunction(name: string, args: EvalValue[]): EvalValue {
     case "st_bbox":
       return stBBox(args);
     case "st_intersects":
-      return spatialPredicate(fn, args, bboxIntersects);
+      return spatialPredicate(fn, args, "intersects");
     case "st_contains":
-      return spatialPredicate(fn, args, bboxContains);
+      return spatialPredicate(fn, args, "contains");
     case "st_within":
-      return spatialPredicate(fn, args, (left, right) => bboxContains(right, left));
+      return spatialPredicate(fn, args, "within");
     case "st_disjoint":
-      return spatialPredicate(fn, args, (left, right) => !bboxIntersects(left, right));
+      return spatialPredicate(fn, args, "disjoint");
     case "st_distance":
       return spatialMeasurement(fn, args, bboxDistance);
     case "st_area":
@@ -357,16 +359,107 @@ function stBBox(args: EvalValue[]): EvalValue {
   return JSON.stringify({ type: "BBox", minx, miny, maxx, maxy });
 }
 
-function spatialPredicate(
-  name: string,
-  args: EvalValue[],
-  predicate: (left: BBox, right: BBox) => boolean,
-): EvalValue {
+type SpatialOp = "intersects" | "contains" | "within" | "disjoint";
+
+// Bounding boxes are the cheap prefilter: a few float comparisons that can
+// decide the obvious cases without parsing full geometry. Turf only runs on the
+// survivors — the candidates whose envelopes overlap but whose true geometries
+// still need an exact answer.
+function spatialPredicate(name: string, args: EvalValue[], op: SpatialOp): EvalValue {
   requireArgCount(name, args, 2);
   const left = args[0] ?? null;
   const right = args[1] ?? null;
   if (left === null || right === null) return null;
-  return predicate(envelope(left, name), envelope(right, name));
+  const a = toGeometry(parseGeometry(left, name), name);
+  const b = toGeometry(parseGeometry(right, name), name);
+  const ea = envelopeOf(a);
+  const eb = envelopeOf(b);
+  switch (op) {
+    case "intersects":
+      // Disjoint envelopes cannot intersect; otherwise check the real geometry.
+      return bboxIntersects(ea, eb) && booleanIntersects(a, b);
+    case "disjoint":
+      // Disjoint envelopes are definitely disjoint; otherwise check the real geometry.
+      return !bboxIntersects(ea, eb) || !booleanIntersects(a, b);
+    case "contains":
+      // `a` can only contain `b` if `a`'s envelope contains `b`'s.
+      return bboxContains(ea, eb) && booleanContains(a, b);
+    case "within":
+      // `a` within `b` is `b` contains `a`; requires `b`'s envelope to contain `a`'s.
+      return bboxContains(eb, ea) && booleanContains(b, a);
+  }
+}
+
+// Envelope of an already-normalized geometry, for the bbox prefilter.
+function envelopeOf(geometry: GeoJsonGeometry): BBox {
+  switch (geometry.type) {
+    case "Point":
+      return pointsEnvelope([geometry.coordinates]);
+    case "LineString":
+      return pointsEnvelope(geometry.coordinates);
+    case "Polygon":
+      return pointsEnvelope(geometry.coordinates.flat());
+  }
+}
+
+type GeoJsonGeometry =
+  | { type: "Point"; coordinates: [number, number] }
+  | { type: "LineString"; coordinates: [number, number][] }
+  | { type: "Polygon"; coordinates: [number, number][][] };
+
+// Builds a clean, closed GeoJSON geometry from already-parsed input for Turf.
+// BBox geometries become their rectangle polygon so envelope-only inputs still
+// get an exact answer.
+function toGeometry(parsed: Record<string, unknown>, name: string): GeoJsonGeometry {
+  switch (parsed.type) {
+    case "Point":
+      return { type: "Point", coordinates: pointFromGeometry(parsed, name) };
+    case "LineString":
+      return { type: "LineString", coordinates: lineStringPoints(parsed, name) };
+    case "Polygon":
+      return { type: "Polygon", coordinates: polygonRings(parsed, name) };
+    case "BBox":
+      return { type: "Polygon", coordinates: [bboxRing(bboxFromRecord(parsed, name))] };
+    default:
+      throw new LaQLError(
+        "LAQL_TYPE_ERROR",
+        `${name}() supports Point, LineString, Polygon, or BBox geometry`,
+      );
+  }
+}
+
+function bboxRing(box: BBox): [number, number][] {
+  return [
+    [box.minx, box.miny],
+    [box.maxx, box.miny],
+    [box.maxx, box.maxy],
+    [box.minx, box.maxy],
+    [box.minx, box.miny],
+  ];
+}
+
+function polygonRings(record: Record<string, unknown>, name: string): [number, number][][] {
+  const rings = record.coordinates;
+  if (!Array.isArray(rings) || rings.length === 0) {
+    throw new LaQLError("LAQL_TYPE_ERROR", `${name}() Polygon coordinates are invalid`);
+  }
+  return rings.map((ring) => {
+    if (!Array.isArray(ring) || ring.length === 0 || !ring.every(isPosition)) {
+      throw new LaQLError("LAQL_TYPE_ERROR", `${name}() Polygon coordinates are invalid`);
+    }
+    return closeRing(ring);
+  });
+}
+
+// GeoJSON requires linear rings to be closed (first position === last). Turf
+// expects valid input, so close any ring the caller left open.
+function closeRing(ring: [number, number][]): [number, number][] {
+  const first = ring[0];
+  const last = ring[ring.length - 1];
+  if (first && last && (first[0] !== last[0] || first[1] !== last[1])) {
+    return [...ring, first];
+  }
+  return ring;
 }
 
 function spatialMeasurement(

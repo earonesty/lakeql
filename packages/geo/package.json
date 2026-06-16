@@ -40,6 +40,8 @@
     "access": "public"
   },
   "dependencies": {
-    "@laql/core": "workspace:*"
+    "@laql/core": "workspace:*",
+    "@turf/boolean-contains": "^7.2.0",
+    "@turf/boolean-intersects": "^7.2.0"
   }
 }

@@ -17,6 +17,22 @@ fn("st_centroid", col("geom"));
 fn("st_envelope", col("geom"));
 ```
 
-Predicate and distance functions use geometry envelopes. `st_intersects`, `st_contains`, `st_within`, `st_disjoint`, and `st_distance` are bbox operations over the input envelopes; `st_area`, `st_length`, and `st_centroid` operate on the parsed supported geometry.
+## Predicates are exact
 
-Sidecar bbox indexes can prune files for `st_intersects` when a file-level bbox cannot overlap the query bbox.
+`st_intersects`, `st_contains`, `st_within`, and `st_disjoint` return exact
+geometry answers, computed with [Turf](https://turfjs.org) (`@turf/boolean-intersects`,
+`@turf/boolean-contains`). Bounding boxes are used only as a cheap prefilter: a
+few float comparisons decide the obvious non-matches without parsing full
+geometry, and Turf runs only on the candidates whose envelopes overlap. Two
+polygons whose bounding boxes overlap but whose shapes do not touch correctly
+report `st_intersects = false`.
+
+`st_distance` is still an envelope (bounding-box) operation. `st_area`,
+`st_length`, and `st_centroid` operate on the parsed geometry directly
+(`st_centroid` returns the envelope center).
+
+## File pruning
+
+Sidecar bbox indexes prune files for `st_intersects` when a file-level bounding
+box cannot overlap the query bounding box — the same prefilter, applied one
+level up so non-matching files are never read at all.

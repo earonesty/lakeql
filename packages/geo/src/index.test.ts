@@ -42,7 +42,7 @@ describe("GeoJSON helpers", () => {
     expect(stFromGeojson(stAsGeojson(point))).toEqual(point);
   });
 
-  it("evaluates bbox-backed spatial predicates", () => {
+  it("evaluates spatial predicates", () => {
     const losAngeles = stBBox(-118.9, 33.7, -118.1, 34.4);
     const downtown = stBBox(-118.3, 34, -118.2, 34.1);
     const sanDiego = stBBox(-117.3, 32.6, -117.1, 32.8);
@@ -51,6 +51,57 @@ describe("GeoJSON helpers", () => {
     expect(stContains(losAngeles, downtown)).toBe(true);
     expect(stWithin(downtown, losAngeles)).toBe(true);
     expect(stDisjoint(losAngeles, sanDiego)).toBe(true);
+  });
+
+  it("uses exact geometry beyond bounding boxes", () => {
+    // Two triangles whose bounding boxes overlap but whose shapes never touch.
+    const triA = stFromGeojson({
+      type: "Polygon",
+      coordinates: [
+        [
+          [0, 0],
+          [4, 0],
+          [0, 4],
+          [0, 0],
+        ],
+      ],
+    });
+    const triB = stFromGeojson({
+      type: "Polygon",
+      coordinates: [
+        [
+          [5, 5],
+          [1, 5],
+          [5, 1],
+          [5, 5],
+        ],
+      ],
+    });
+
+    // Envelopes overlap ([0,0,4,4] vs [1,1,5,5]) so the bbox prefilter passes...
+    const ea = stEnvelope(triA);
+    const eb = stEnvelope(triB);
+    expect(ea.maxx >= eb.minx && ea.maxy >= eb.miny).toBe(true);
+    // ...but the exact geometry check must report the shapes as disjoint.
+    expect(stIntersects(triA, triB)).toBe(false);
+    expect(stDisjoint(triA, triB)).toBe(true);
+    expect(stContains(triA, stPoint(3.5, 3.5))).toBe(false); // in bbox, outside triangle
+    expect(stContains(triA, stPoint(1, 1))).toBe(true); // genuinely inside
+
+    // Unclosed rings are closed before the exact check, and an obviously
+    // separate box stays disjoint (exercises the bbox-contains miss path).
+    const openTriangle = stFromGeojson({
+      type: "Polygon",
+      coordinates: [
+        [
+          [0, 0],
+          [4, 0],
+          [0, 4],
+        ],
+      ],
+    });
+    expect(stContains(openTriangle, stPoint(1, 1))).toBe(true);
+    expect(stContains(triA, stBBox(10, 10, 12, 12))).toBe(false);
   });
 
   it("throws on invalid geometry inputs", () => {

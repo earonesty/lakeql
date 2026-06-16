@@ -1,3 +1,5 @@
+import { booleanContains } from "@turf/boolean-contains";
+import { booleanIntersects } from "@turf/boolean-intersects";
 import { col, type Expr, fn, lit } from "@laql/core";
 
 export type Position = [number, number];
@@ -64,8 +66,13 @@ export function stEnvelope(geometry: GeometryLike): BBox {
   return stBBox(minx, miny, maxx, maxy);
 }
 
+// Bounding boxes are the cheap prefilter; Turf decides the exact geometry only
+// for candidates whose envelopes already overlap.
 export function stIntersects(left: GeometryLike, right: GeometryLike): boolean {
-  return bboxIntersects(stEnvelope(left), stEnvelope(right));
+  return (
+    bboxIntersects(stEnvelope(left), stEnvelope(right)) &&
+    booleanIntersects(toTurfGeometry(left), toTurfGeometry(right))
+  );
 }
 
 export function stDisjoint(left: GeometryLike, right: GeometryLike): boolean {
@@ -73,13 +80,9 @@ export function stDisjoint(left: GeometryLike, right: GeometryLike): boolean {
 }
 
 export function stContains(left: GeometryLike, right: GeometryLike): boolean {
-  const outer = stEnvelope(left);
-  const inner = stEnvelope(right);
   return (
-    outer.minx <= inner.minx &&
-    outer.miny <= inner.miny &&
-    outer.maxx >= inner.maxx &&
-    outer.maxy >= inner.maxy
+    bboxContains(stEnvelope(left), stEnvelope(right)) &&
+    booleanContains(toTurfGeometry(left), toTurfGeometry(right))
   );
 }
 
@@ -132,6 +135,48 @@ function bboxIntersects(left: BBox, right: BBox): boolean {
     left.maxy >= right.miny &&
     left.miny <= right.maxy
   );
+}
+
+function bboxContains(outer: BBox, inner: BBox): boolean {
+  return (
+    outer.minx <= inner.minx &&
+    outer.miny <= inner.miny &&
+    outer.maxx >= inner.maxx &&
+    outer.maxy >= inner.maxy
+  );
+}
+
+// Converts a geometry to a closed GeoJSON shape Turf accepts. BBox rectangles
+// become their polygon so envelope-only inputs still get an exact comparison.
+function toTurfGeometry(geometry: GeometryLike): PointGeometry | PolygonGeometry {
+  if (geometry.type === "BBox") {
+    return {
+      type: "Polygon",
+      coordinates: [
+        [
+          [geometry.minx, geometry.miny],
+          [geometry.maxx, geometry.miny],
+          [geometry.maxx, geometry.maxy],
+          [geometry.minx, geometry.maxy],
+          [geometry.minx, geometry.miny],
+        ],
+      ],
+    };
+  }
+  if (geometry.type === "Polygon") {
+    return { type: "Polygon", coordinates: geometry.coordinates.map(closeRing) };
+  }
+  return geometry;
+}
+
+// GeoJSON linear rings must be closed (first position === last).
+function closeRing(ring: Position[]): Position[] {
+  const first = ring[0];
+  const last = ring[ring.length - 1];
+  if (first && last && (first[0] !== last[0] || first[1] !== last[1])) {
+    return [...ring, first];
+  }
+  return ring;
 }
 
 function columnOrExpr(value: string | Expr): Expr {
