@@ -267,6 +267,10 @@ function updateDirectUtf8Distinct(
   }
   const values = vector.values;
   const valid = vector.valid;
+  if (budget?.maxMemoryBytes === undefined && budget?.maxBufferedRows === undefined) {
+    updateDirectUtf8DistinctFromBatch(state, values, rowCount, selection, valid);
+    return true;
+  }
   if (selection === undefined && valid === undefined) {
     for (let index = 0; index < rowCount; index += 1) {
       addDistinctValue(state, `string:${values[index] ?? ""}`, budget);
@@ -279,6 +283,22 @@ function updateDirectUtf8Distinct(
     addDistinctValue(state, `string:${values[index] ?? ""}`, budget);
   }
   return true;
+}
+
+function updateDirectUtf8DistinctFromBatch(
+  state: Extract<VectorAggregateState, { op: "count_distinct" | "approx_count_distinct" }>,
+  values: string[],
+  rowCount: number,
+  selection?: Selection,
+  valid?: Uint8Array,
+): void {
+  const batchValues = new Set<string>();
+  for (let index = 0; index < rowCount; index += 1) {
+    if (selection !== undefined && selection[index] !== 1) continue;
+    if (valid !== undefined && valid[index] !== 1) continue;
+    batchValues.add(values[index] ?? "");
+  }
+  for (const value of batchValues) addDistinctValue(state, `string:${value}`);
 }
 
 function updateStateValue(
