@@ -1,4 +1,14 @@
-import { type Table, tableFromArrays, tableToIPC } from "apache-arrow";
+import {
+  Bool,
+  Float64,
+  Int64,
+  RecordBatchStreamWriter,
+  type Table,
+  tableFromArrays,
+  tableToIPC,
+  Utf8,
+  vectorFromArray,
+} from "apache-arrow";
 import {
   type Batch,
   createInMemoryLake,
@@ -19,6 +29,10 @@ export interface ArrowTableOptions {
 
 export interface ArrowQueryLike {
   toArray(): Promise<Row[]>;
+}
+
+export interface ArrowBatchQueryLike {
+  batches(): AsyncIterable<Row[]>;
 }
 
 export function arrowTableToRows(table: Table): Row[] {
@@ -89,6 +103,39 @@ export async function queryToArrowIPC(
   return tableToIPC(await queryToArrowTable(query, options));
 }
 
+export function queryToArrowIPCStream(
+  query: ArrowBatchQueryLike | QueryBuilder | QueryResult,
+  options: ArrowTableOptions = {},
+): ReadableStream<Uint8Array> {
+  const writer = new RecordBatchStreamWriter();
+  void writer.writeAll(queryRecordBatches(query, options)).catch((error: unknown) => {
+    writer.abort(error);
+  });
+  return writer.toDOMStream({ type: "bytes" }) as ReadableStream<Uint8Array>;
+}
+
+async function* queryRecordBatches(
+  query: ArrowBatchQueryLike | QueryBuilder | QueryResult,
+  options: ArrowTableOptions,
+) {
+  let columns = options.columns;
+  for await (const rows of query.batches()) {
+    if (rows.length === 0) continue;
+    columns ??= inferColumns(rows);
+    yield* rowsToArrowStreamTable(rows, columns).batches;
+  }
+}
+
+function rowsToArrowStreamTable(rows: readonly Row[], columns: string[]): Table {
+  const vectors = Object.fromEntries(
+    Object.entries(columnsFromRows(rows, columns)).map(([column, values]) => [
+      column,
+      vectorFromArray(values, arrowVectorType(values)),
+    ]),
+  );
+  return tableFromArrays(vectors as unknown as Record<string, readonly unknown[]>);
+}
+
 function columnsFromRows(rows: readonly Row[], columns: string[]): Record<string, ArrowScalar[]> {
   const out: Record<string, ArrowScalar[]> = Object.fromEntries(
     columns.map((column) => [column, []]),
@@ -112,6 +159,22 @@ function inferColumns(rows: readonly Row[]): string[] {
     }
   }
   return columns;
+}
+
+function arrowVectorType(values: readonly ArrowScalar[]) {
+  const value = values.find((entry) => entry !== null);
+  switch (typeof value) {
+    case "string":
+      return new Utf8();
+    case "number":
+      return new Float64();
+    case "bigint":
+      return new Int64();
+    case "boolean":
+      return new Bool();
+    case "undefined":
+      return new Utf8();
+  }
 }
 
 function normalizeArrowCell(value: unknown, rowIndex: number, column: string): ArrowScalar {

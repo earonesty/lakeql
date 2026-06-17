@@ -7,6 +7,7 @@ import {
   batchToArrowTable,
   createArrowLake,
   queryToArrowIPC,
+  queryToArrowIPCStream,
   queryToArrowTable,
   rowsToArrowIPC,
   rowsToArrowTable,
@@ -71,6 +72,38 @@ describe("Arrow output", () => {
     expect(restored.numRows).toBe(2);
     expect(restored.get(0)?.toJSON()).toEqual({ id: 2, amount: 30 });
     expect(restored.get(1)?.toJSON()).toEqual({ id: 3, amount: 50 });
+  });
+
+  it("streams query batches as one Arrow IPC stream", async () => {
+    const lake = createInMemoryLake({
+      rows: [
+        { id: 1, amount: 10, label: "a" },
+        { id: 2, amount: 30, label: "b" },
+        { id: 3, amount: 50, label: "c" },
+      ],
+    });
+    const query = lake.path("rows").batchSize(1).select(["id", "label"]).where(gt("amount", 10));
+
+    const restored = tableFromIPC(await streamBytes(queryToArrowIPCStream(query)));
+
+    expect(restored.numRows).toBe(2);
+    expect(restored.schema.fields.map((field) => field.name)).toEqual(["id", "label"]);
+    expect(restored.get(0)?.toJSON()).toEqual({ id: 2, label: "b" });
+    expect(restored.get(1)?.toJSON()).toEqual({ id: 3, label: "c" });
+  });
+
+  it("uses requested stream columns as the stable Arrow IPC schema", async () => {
+    const lake = createInMemoryLake({
+      rows: [{ id: 1 }, { id: 2, later: "x" }],
+    });
+    const query = lake.path("rows").batchSize(1);
+
+    const restored = tableFromIPC(
+      await streamBytes(queryToArrowIPCStream(query, { columns: ["id"] })),
+    );
+
+    expect(restored.schema.fields.map((field) => field.name)).toEqual(["id"]);
+    expect(restored.get(1)?.toJSON()).toEqual({ id: 2 });
   });
 
   it("registers Arrow tables as queryable in-memory lake tables", async () => {
@@ -165,3 +198,22 @@ describe("Arrow output", () => {
     );
   });
 });
+
+async function streamBytes(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    total += value.byteLength;
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
+}

@@ -109,9 +109,8 @@ Each is **independent of the lake engine** and is the highest-ROI work in the re
    Plot/Perspective/Arquero, Transferable across workers, 10–100× faster than JS
    objects. **Must be lazy** — `apache-arrow` lives in a separate **`lakeql-arrow`**
    package, never in core. *Status: ✅ initial opt-in package implemented:
-   row/query/batch conversion to Arrow tables and IPC. `apache-arrow` is scoped
-   to `lakeql-arrow`; core does not import it. Streaming Arrow IPC remains future
-   work.*
+   row/query/batch conversion to Arrow tables, IPC payloads, and readable IPC
+   streams. `apache-arrow` is scoped to `lakeql-arrow`; core does not import it.*
 
 ### Tier 2 — SQL depth (blocks porting real analytical queries)
 
