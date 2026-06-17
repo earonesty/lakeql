@@ -871,6 +871,44 @@ describe("runCli", () => {
     });
   });
 
+  it("describes a local Parquet path through SQL", async () => {
+    const result = await runCli([
+      "query",
+      "--path",
+      fixturePath(SALES.file),
+      "--sql",
+      "describe input",
+      "--format",
+      "json",
+    ]);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    expect(JSON.parse(result.stdout)).toEqual([
+      {
+        path: fixturePath(SALES.file),
+        rows: SALES.rows,
+        columns: expect.arrayContaining([expect.objectContaining({ name: "amount" })]),
+      },
+    ]);
+  });
+
+  it("describes a named CLI table through SQL", async () => {
+    const result = await runCli([
+      "query",
+      "--table",
+      `sales=${fixturePath(SALES.file)}`,
+      "--sql",
+      "describe sales",
+    ]);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      path: "sales",
+      rows: SALES.rows,
+      columns: expect.arrayContaining([expect.objectContaining({ name: "store_id" })]),
+    });
+  });
+
   it("matches CLI explain, inspect, and schema snapshots", async () => {
     const explain = await runCli([
       "explain",

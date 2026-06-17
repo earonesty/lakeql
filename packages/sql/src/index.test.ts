@@ -1,8 +1,21 @@
 import { LakeqlError } from "lakeql-core";
 import { describe, expect, it } from "vitest";
-import { formatSql, parseSql } from "./index.js";
+import { formatSql, parseSql, parseSqlStatement } from "./index.js";
 
 describe("parseSql", () => {
+  it("parses DESCRIBE as a metadata statement without changing SELECT parsing", () => {
+    expect(parseSqlStatement("describe input")).toEqual({ type: "describe", source: "input" });
+    expect(parseSqlStatement('describe "sales table";')).toEqual({
+      type: "describe",
+      source: "sales table",
+    });
+    expect(parseSqlStatement("select * from input")).toMatchObject({
+      source: "input",
+      select: ["*"],
+    });
+    expect(() => parseSql("describe input")).toThrow(LakeqlError);
+  });
+
   it("accepts select-first SQL with a later FROM clause", () => {
     expect(
       parseSql(`

@@ -22,7 +22,7 @@ import {
   type WriteParquetRowsOptions,
   writePartitionedParquet,
 } from "lakeql-parquet";
-import { parseSql } from "lakeql-sql";
+import { parseSql, parseSqlStatement } from "lakeql-sql";
 
 export const COMMANDS = ["query", "explain", "inspect", "write", "compact", "schema"] as const;
 
@@ -102,7 +102,11 @@ export function usage(): string {
 async function query(args: ParsedArgs): Promise<string> {
   const sql = requireOption(args.sql, "--sql");
   const { store, key, preserveSqlSource } = await queryStore(args);
-  const ast = parseCliSql(sql, key, preserveSqlSource);
+  const statement = parseCliSqlStatement(sql, key, preserveSqlSource);
+  if (isDescribeStatement(statement)) {
+    return formatRows([await schemaSummary(store, statement.source)], args.format);
+  }
+  const ast = statement;
   const lake = createParquetLake({ store });
   const executableAst = await materializeCteIfNeeded(store, lake, ast);
   const executableLake = createParquetLake({ store });
@@ -157,11 +161,7 @@ async function compact(args: ParsedArgs): Promise<string> {
 async function schema(args: ParsedArgs): Promise<string> {
   const path = requireOption(args.path, "--path");
   const { store, key } = await localStore(path);
-  const metadata = await readParquetMetadata(store, key);
-  const columns = metadata.schema
-    .filter((field) => field.name !== "root")
-    .map((field) => ({ name: field.name, type: field.type ?? field.converted_type ?? "group" }));
-  return `${JSON.stringify({ path, rows: Number(totalRows(metadata.row_groups)), columns })}\n`;
+  return `${JSON.stringify(await schemaSummary(store, key, path))}\n`;
 }
 
 async function inspect(args: ParsedArgs): Promise<string> {
@@ -866,6 +866,24 @@ function rowsToCsv(rows: Row[]): string {
   return `${lines.join("\n")}\n`;
 }
 
+function formatRows(rows: Row[], format: ParsedArgs["format"]): string {
+  if (format === "json") return `${JSON.stringify(rows)}\n`;
+  if (format === "csv") return rowsToCsv(rows);
+  return rows.map((row) => JSON.stringify(row)).join("\n") + (rows.length > 0 ? "\n" : "");
+}
+
+async function schemaSummary(
+  store: MemoryObjectStore,
+  key: string,
+  displayPath = key,
+): Promise<Row> {
+  const metadata = await readParquetMetadata(store, key);
+  const columns = metadata.schema
+    .filter((field) => field.name !== "root")
+    .map((field) => ({ name: field.name, type: field.type ?? field.converted_type ?? "group" }));
+  return { path: displayPath, rows: Number(totalRows(metadata.row_groups)), columns };
+}
+
 function csvCell(value: unknown): string {
   if (value === null || value === undefined) return "";
   const text = String(value);
@@ -885,23 +903,51 @@ function parseCliSql(
   return { ...parseSql(addDefaultFrom(trimmed)), source: defaultSource };
 }
 
+function parseCliSqlStatement(
+  sql: string,
+  defaultSource: string,
+  preserveSqlSource = false,
+): ReturnType<typeof parseSql> | ReturnType<typeof parseSqlStatement> {
+  const trimmed = sql.trim();
+  if (/^\s*describe\b/iu.test(trimmed)) {
+    const statement = parseSqlStatement(trimmed);
+    if (!isDescribeStatement(statement)) return statement;
+    if (preserveSqlSource || statement.source !== "input") return statement;
+    return { ...statement, source: defaultSource };
+  }
+  return parseCliSql(sql, defaultSource, preserveSqlSource);
+}
+
+function isDescribeStatement(
+  statement: ReturnType<typeof parseSql> | ReturnType<typeof parseSqlStatement>,
+): statement is Extract<ReturnType<typeof parseSqlStatement>, { type: "describe" }> {
+  return "type" in statement && statement.type === "describe";
+}
+
 function applyDefaultSource(
   ast: ReturnType<typeof parseSql>,
   defaultSource: string,
+  includeScalarSubqueries = true,
+  seen = new WeakSet<object>(),
 ): ReturnType<typeof parseSql> {
+  if (seen.has(ast)) return ast.cte === undefined ? { ...ast, source: defaultSource } : ast;
+  seen.add(ast);
   const out = { ...ast };
   if (out.cte !== undefined) {
-    out.cte = { ...out.cte, query: applyDefaultSource(out.cte.query, defaultSource) };
+    out.cte = {
+      ...out.cte,
+      query: applyDefaultSource(out.cte.query, defaultSource, includeScalarSubqueries, seen),
+    };
   } else {
     out.source = defaultSource;
   }
   if (out.subqueryJoin !== undefined)
     out.subqueryJoin = { ...out.subqueryJoin, source: defaultSource };
-  if (out.scalarSubqueries !== undefined) {
+  if (includeScalarSubqueries && out.scalarSubqueries !== undefined) {
     out.scalarSubqueries = Object.fromEntries(
       Object.entries(out.scalarSubqueries).map(([id, subquery]) => [
         id,
-        { ...subquery, query: applyDefaultSource(subquery.query, defaultSource) },
+        { ...subquery, query: applyDefaultSource(subquery.query, defaultSource, false, seen) },
       ]),
     );
   }

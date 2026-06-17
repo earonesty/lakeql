@@ -19,6 +19,13 @@ export interface SqlQueryAst extends PathQueryInit {
   scalarSubqueries?: Record<string, SqlScalarSubqueryAst>;
 }
 
+export type SqlStatementAst = SqlQueryAst | SqlDescribeAst;
+
+export interface SqlDescribeAst {
+  type: "describe";
+  source: string;
+}
+
 export type SqlParameterValue = Scalar;
 
 export interface SqlParseOptions {
@@ -86,6 +93,12 @@ export function parseSql(sql: string, options: SqlParseOptions = {}): SqlQueryAs
   return selectStatementToAst(statement, context);
 }
 
+export function parseSqlStatement(sql: string, options: SqlParseOptions = {}): SqlStatementAst {
+  const describe = parseDescribeStatement(sql);
+  if (describe !== undefined) return describe;
+  return parseSql(sql, options);
+}
+
 export function formatSql(ast: SqlQueryAst): string {
   const select = [...(ast.select ?? [])];
   for (const [alias, expr] of Object.entries(ast.projections ?? {})) {
@@ -113,6 +126,22 @@ export function formatSql(ast: SqlQueryAst): string {
   const sql = clauses.join("\n");
   if (ast.cte === undefined) return sql;
   return `with ${formatIdentifier(ast.cte.name)} as (${formatSql(ast.cte.query)})\n${sql}`;
+}
+
+function parseDescribeStatement(sql: string): SqlDescribeAst | undefined {
+  if (sql.length > MAX_SQL_LENGTH) {
+    throwParse(`SQL input length exceeds ${MAX_SQL_LENGTH}`);
+  }
+  const match = /^\s*describe\s+([A-Za-z_][A-Za-z0-9_]*|"(?:""|[^"])+")\s*;?\s*$/iu.exec(sql);
+  if (match === null) return undefined;
+  const source = match[1];
+  if (source === undefined) throwParse("DESCRIBE requires a table name");
+  return { type: "describe", source: unquoteIdentifier(source) };
+}
+
+function unquoteIdentifier(value: string): string {
+  if (!value.startsWith('"')) return value;
+  return value.slice(1, -1).replaceAll('""', '"');
 }
 
 function withStatementToAst(statement: PgNode, context: SqlParseContext): SqlQueryAst {

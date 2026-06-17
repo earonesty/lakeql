@@ -367,6 +367,22 @@
     ]
   },
   {
+    "area": "SQL",
+    "feature": "DESCRIBE metadata statement",
+    "status": "supported+tested",
+    "notes": "parseSqlStatement recognizes DESCRIBE and the CLI query path returns Parquet schema metadata for local paths or named tables.",
+    "evidence": [
+      {
+        "file": "packages/sql/src/index.test.ts",
+        "pattern": "parses DESCRIBE as a metadata statement without changing SELECT parsing"
+      },
+      {
+        "file": "packages/cli/src/index.test.ts",
+        "pattern": "describes a local Parquet path through SQL"
+      }
+    ]
+  },
+  {
     "area": "Browser parity",
     "feature": "In-memory JavaScript row arrays",
     "status": "supported+tested",

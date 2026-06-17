@@ -156,6 +156,18 @@ Parameters are bound to scalar literals before execution. Missing parameters,
 non-scalar values, and non-integer `LIMIT` / `OFFSET` bindings are rejected with
 typed errors.
 
+`DESCRIBE <table>` is supported as a metadata statement in the CLI query path:
+
+```sh
+node packages/cli/dist/bin.js query \
+  --path fixtures/data/sales.parquet \
+  --sql "describe input" \
+  --format json
+```
+
+The parser API exposes metadata statements through `parseSqlStatement(sql)`;
+`parseSql(sql)` remains SELECT-only.
+
 Invalid SQL is rejected with `LAKEQL_PARSE_ERROR`. Valid SQL outside the supported
 execution subset, including broad join forms, unsupported subqueries, nested or
 recursive CTEs, simple `CASE <expr>` forms, and broad SQL execution, is rejected with
@@ -166,6 +178,7 @@ recursive CTEs, simple `CASE <expr>` forms, and broad SQL execution, is rejected
 | Feature | Status | Rejection code | Notes |
 | --- | --- | --- | --- |
 | Standard `SELECT ... FROM ...` | Supported |  | CLI also supports omitted `from input` for `--path` queries. |
+| `DESCRIBE <table>` | Supported subset | `LAKEQL_OBJECT_NOT_FOUND` | CLI query path only; returns Parquet schema metadata. `SUMMARIZE` and SQL `SAMPLE` remain future work. |
 | Positional `$1` SQL parameters | Supported subset | `LAKEQL_SQL_UNSUPPORTED` / `LAKEQL_TYPE_ERROR` | Parser API only; bound values must be scalars. Named parameters and reusable prepared statement objects remain future work. |
 | `WHERE`, `ORDER BY`, `LIMIT`, `OFFSET` | Supported |  | Expressions use SQL three-valued null semantics. |
 | Scalar functions, arithmetic, searched `CASE WHEN` | Supported | `LAKEQL_SQL_UNSUPPORTED` | Includes regex matches/replace. Unknown functions and simple `CASE <expr>` are rejected. |

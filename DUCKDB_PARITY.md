@@ -140,7 +140,9 @@ Each is **independent of the lake engine** and is the highest-ROI work in the re
 
 9. **`DESCRIBE` / `SUMMARIZE` / `SAMPLE` as SQL** — the "preview an unknown file"
    workflow (Parquet-inspector extensions, first look at any dataset). *Status:
-   ⚠️ partial via CLI `inspect`, not exposed as SQL.*
+   ⚠️ partial: CLI `inspect` and `schema` are available, and `DESCRIBE <table>`
+   is exposed through the SQL statement parser / CLI query path; `SUMMARIZE` and
+   SQL `SAMPLE` remain future work.*
 
 10. **OPFS / persistent local cache** — duckdb-wasm persists tables in OPFS so
     reloads are instant. lakeql's edge cache story is strong but lacks a

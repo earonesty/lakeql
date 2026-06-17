@@ -36,6 +36,7 @@ Legend: supported+tested = covered by tests; supported = implemented with narrow
 | Object storage | HTTP range reads | supported+tested | Adapter uses Range for getRange. |
 | Object storage | R2 range reads | supported+tested | Adapter maps to R2 ranged get. |
 | Object storage | S3 SigV4 and ListObjectsV2 | supported+tested | Signing delegates to aws4fetch; XML parsing uses fast-xml-parser. |
+| SQL | DESCRIBE metadata statement | supported+tested | parseSqlStatement recognizes DESCRIBE and the CLI query path returns Parquet schema metadata for local paths or named tables. |
 | Browser parity | In-memory JavaScript row arrays | supported+tested | createInMemoryLake registers JS row arrays behind the normal Lake runtime with query-time budgets and task planning. |
 | Browser parity | CSV ingest | supported+tested | lakeql-csv is an opt-in package for headered/headerless CSV, delimiter options, quoted fields, type sniffing, null handling, and ingest budgets. |
 | Browser parity | JSON and NDJSON ingest | supported+tested | lakeql-json is an opt-in package for JSON arrays, single objects, NDJSON records, browser binary inputs, and ingest budgets. |

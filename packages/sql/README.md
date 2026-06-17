@@ -10,6 +10,7 @@ core `PathQueryInit` query ASTs and formats those ASTs back to SQL.
 ## Public Surface
 
 - `parseSql(sql)` parses the supported dialect into a `SqlQueryAst`.
+- `parseSqlStatement(sql)` parses SELECT queries plus metadata statements such as `DESCRIBE`.
 - `formatSql(ast)` formats a `SqlQueryAst`.
 - `SqlQueryAst` extends the core path-query shape with optional `groupBy`, aggregates, and `having`.
 
