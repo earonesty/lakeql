@@ -1190,13 +1190,17 @@ export class QueryResult {
         window.path,
         scanOptions,
       )) {
-        const materialized = materializeBatchRows(batch);
-        for (let index = 0; index < materialized.length; index += 1) {
+        for (let index = 0; index < batch.rowCount; index += 1) {
           const rowIndex = rowOffset + index;
           const key = rowRefKey({ path: window.path, rowIndex });
           const existing = rows.get(key);
-          const row = materialized[index];
-          if (existing !== undefined && row !== undefined) rows.set(key, { ...existing, ...row });
+          if (existing === undefined) continue;
+          const row: Row = {};
+          for (const column of lateColumns) {
+            const vector = batch.columns[column];
+            if (vector !== undefined) row[column] = vectorValue(vector, index);
+          }
+          rows.set(key, { ...existing, ...row });
         }
       }
     }

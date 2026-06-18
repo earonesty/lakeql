@@ -40,6 +40,22 @@ export function batchFromColumns(columns: Record<string, ArrayLike<VectorValue>>
   return { rowCount: rowCount ?? 0, columns: vectors };
 }
 
+export function batchFromVectors(columns: Record<string, Vector>): Batch {
+  let rowCount: number | undefined;
+  for (const [name, vector] of Object.entries(columns)) {
+    const length = vectorLength(vector);
+    if (rowCount === undefined) rowCount = length;
+    else if (length !== rowCount) {
+      throw new LakeqlError("LAKEQL_TYPE_ERROR", "Column vectors must have equal length", {
+        column: name,
+        expectedRows: rowCount,
+        actualRows: length,
+      });
+    }
+  }
+  return { rowCount: rowCount ?? 0, columns };
+}
+
 export function vectorFromValues(values: ArrayLike<VectorValue>): Vector {
   const { type, valid } = vectorShape(values);
   switch (type) {

@@ -6,7 +6,7 @@ import { readPlain } from "hyparquet/src/plain.js";
 import { getSchemaPath, isFlatColumn } from "hyparquet/src/schema.js";
 import { deserializeTCompactProtocol } from "hyparquet/src/thrift.js";
 import type { ColumnDecoder } from "hyparquet/src/types.js";
-import { type Batch, batchFromColumns } from "lakeql-core";
+import { type Batch, batchFromVectors, type Vector } from "lakeql-core";
 import {
   recordReadColumns,
   recordRowGroupRead,
@@ -25,13 +25,16 @@ export function canReadParquetVectorBatches(
   metadata: ParquetMetadata,
   options: ReadParquetBatchOptions,
 ): boolean {
-  const column = directVectorColumn(options.columns);
+  const columns = directVectorColumns(options.columns);
+  const column = columns?.length === 1 ? columns[0] : undefined;
   if (column === undefined) return false;
   for (const rowGroup of metadata.row_groups) {
     const chunk = rowGroup.columns.find(
       (candidate) => candidate.meta_data?.path_in_schema.join(".") === column,
     );
-    if (chunk?.meta_data === undefined || !canDirectVector(metadata, chunk.meta_data)) return false;
+    if (chunk?.meta_data === undefined || !canDirectVector(metadata, chunk.meta_data)) {
+      return false;
+    }
   }
   return true;
 }
@@ -41,7 +44,9 @@ export async function* readParquetVectorBatchesFromFile(
   metadata: ParquetMetadata,
   options: ReadParquetBatchOptions,
 ): AsyncIterable<ParquetVectorBatch> {
-  const column = directVectorColumn(options.columns);
+  const columns = directVectorColumns(options.columns);
+  if (columns === undefined) return;
+  const column = columns.length === 1 ? columns[0] : undefined;
   if (column === undefined) return;
   const requestedStart = options.rowStart ?? 0;
   const requestedEnd = options.rowEnd ?? Number(metadata.num_rows);
@@ -82,8 +87,8 @@ export async function* readParquetVectorBatchesFromFile(
   }
 }
 
-function directVectorColumn(columns: readonly string[] | undefined): string | undefined {
-  return columns?.length === 1 ? columns[0] : undefined;
+function directVectorColumns(columns: readonly string[] | undefined): string[] | undefined {
+  return columns !== undefined && columns.length > 0 ? [...columns] : undefined;
 }
 
 function canDirectVector(metadata: ParquetMetadata, column: ColumnMetaData): boolean {
@@ -152,14 +157,20 @@ async function* readColumnVectorBatches(
       );
       continue;
     }
+    const rowCount = dataPageRowCount(header);
+    if (rowCount === undefined) continue;
+    const pageRowEnd = pageRowStart + rowCount;
+    if (pageRowEnd <= requestedStart || pageRowStart >= requestedEnd) {
+      pageRowStart = pageRowEnd;
+      continue;
+    }
     const page = dataPageValues(compressedBytes, header, columnDecoder, dictionary);
     if (page === undefined) continue;
-    const pageRowEnd = pageRowStart + page.rowCount;
     const start = Math.max(pageRowStart, requestedStart);
     const end = Math.min(pageRowEnd, requestedEnd);
     if (start < end) {
-      const batch = batchFromColumns({
-        [column]: materializeFlatPageValues(
+      const batch = batchFromVectors({
+        [column]: flatPageVector(
           page.values,
           page.definitionLevels,
           start - pageRowStart,
@@ -174,6 +185,12 @@ async function* readColumnVectorBatches(
     }
     pageRowStart = pageRowEnd;
   }
+}
+
+function dataPageRowCount(header: PageHeader): number | undefined {
+  if (header.type === "DATA_PAGE") return header.data_page_header?.num_values;
+  if (header.type === "DATA_PAGE_V2") return header.data_page_header_v2?.num_rows;
+  return undefined;
 }
 
 function dataPageValues(
@@ -217,22 +234,202 @@ function dataPageValues(
   return undefined;
 }
 
-function materializeFlatPageValues(
+function flatPageVector(
   values: DecodedArray,
   definitionLevels: readonly number[] | undefined,
   start: number,
   end: number,
-): unknown[] {
-  if (definitionLevels === undefined) return Array.from(values).slice(start, end);
-  const out: unknown[] = [];
+): Vector {
+  if (definitionLevels === undefined) return nonNullFlatVector(values, start, end);
+  return nullableFlatVector(values, definitionLevels, start, end);
+}
+
+function nonNullFlatVector(values: DecodedArray, start: number, end: number): Vector {
+  const length = end - start;
+  if (values instanceof Float64Array) return { type: "f64", values: values.slice(start, end) };
+  if (values instanceof Float32Array) {
+    const out = new Float64Array(length);
+    for (let index = 0; index < length; index += 1) out[index] = values[start + index] ?? 0;
+    return { type: "f64", values: out };
+  }
+  if (
+    values instanceof Int32Array ||
+    values instanceof Uint32Array ||
+    values instanceof Uint8Array
+  ) {
+    const out = new Float64Array(length);
+    for (let index = 0; index < length; index += 1) out[index] = values[start + index] ?? 0;
+    return { type: "f64", values: out };
+  }
+  if (values instanceof BigInt64Array) return { type: "i64", values: values.slice(start, end) };
+  if (values instanceof BigUint64Array) {
+    const out = new BigInt64Array(length);
+    for (let index = 0; index < length; index += 1)
+      out[index] = BigInt(values[start + index] ?? 0n);
+    return { type: "i64", values: out };
+  }
+  return arrayFlatVector(values, start, end);
+}
+
+function nullableFlatVector(
+  values: DecodedArray,
+  definitionLevels: readonly number[],
+  start: number,
+  end: number,
+): Vector {
+  const length = end - start;
+  const valid = new Uint8Array(length);
+  if (
+    values instanceof Float64Array ||
+    values instanceof Float32Array ||
+    values instanceof Int32Array ||
+    values instanceof Uint32Array ||
+    values instanceof Uint8Array
+  ) {
+    const out = new Float64Array(length);
+    copyNullableValues(definitionLevels, start, end, valid, (outIndex, valueIndex) => {
+      out[outIndex] = Number(values[valueIndex] ?? 0);
+    });
+    return optionalVectorValidity({ type: "f64", values: out }, valid);
+  }
+  if (values instanceof BigInt64Array || values instanceof BigUint64Array) {
+    const out = new BigInt64Array(length);
+    copyNullableValues(definitionLevels, start, end, valid, (outIndex, valueIndex) => {
+      out[outIndex] = BigInt(values[valueIndex] ?? 0n);
+    });
+    return optionalVectorValidity({ type: "i64", values: out }, valid);
+  }
+  return nullableArrayFlatVector(values, definitionLevels, start, end, valid);
+}
+
+function copyNullableValues(
+  definitionLevels: readonly number[],
+  start: number,
+  end: number,
+  valid: Uint8Array,
+  copy: (outIndex: number, valueIndex: number) => void,
+): void {
   let valueIndex = 0;
   for (let row = 0; row < end; row += 1) {
     const present = definitionLevels[row] !== 0;
-    const value = present ? values[valueIndex] : null;
+    if (row >= start) {
+      const outIndex = row - start;
+      valid[outIndex] = present ? 1 : 0;
+      if (present) copy(outIndex, valueIndex);
+    }
     if (present) valueIndex += 1;
-    if (row >= start) out.push(value);
   }
-  return out;
+}
+
+function arrayFlatVector(values: unknown[], start: number, end: number): Vector {
+  const first = firstPresentArrayValue(values, start, end);
+  switch (typeof first) {
+    case "number": {
+      const out = new Float64Array(end - start);
+      for (let index = 0; index < out.length; index += 1) {
+        out[index] = Number(values[start + index] ?? 0);
+      }
+      return { type: "f64", values: out };
+    }
+    case "bigint": {
+      const out = new BigInt64Array(end - start);
+      for (let index = 0; index < out.length; index += 1) {
+        out[index] = bigintArrayValue(values[start + index]);
+      }
+      return { type: "i64", values: out };
+    }
+    case "boolean": {
+      const out = new Uint8Array(end - start);
+      for (let index = 0; index < out.length; index += 1) {
+        out[index] = values[start + index] === true ? 1 : 0;
+      }
+      return { type: "bool", values: out };
+    }
+    case "string":
+      return { type: "utf8", values: values.slice(start, end).map((value) => String(value ?? "")) };
+    default:
+      return { type: "null", length: end - start };
+  }
+}
+
+function nullableArrayFlatVector(
+  values: unknown[],
+  definitionLevels: readonly number[],
+  start: number,
+  end: number,
+  valid: Uint8Array,
+): Vector {
+  const first = firstPresentDefinitionValue(values, definitionLevels, start, end);
+  const length = end - start;
+  switch (typeof first) {
+    case "number": {
+      const out = new Float64Array(length);
+      copyNullableValues(definitionLevels, start, end, valid, (outIndex, valueIndex) => {
+        out[outIndex] = Number(values[valueIndex] ?? 0);
+      });
+      return optionalVectorValidity({ type: "f64", values: out }, valid);
+    }
+    case "bigint": {
+      const out = new BigInt64Array(length);
+      copyNullableValues(definitionLevels, start, end, valid, (outIndex, valueIndex) => {
+        out[outIndex] = bigintArrayValue(values[valueIndex]);
+      });
+      return optionalVectorValidity({ type: "i64", values: out }, valid);
+    }
+    case "boolean": {
+      const out = new Uint8Array(length);
+      copyNullableValues(definitionLevels, start, end, valid, (outIndex, valueIndex) => {
+        out[outIndex] = values[valueIndex] === true ? 1 : 0;
+      });
+      return optionalVectorValidity({ type: "bool", values: out }, valid);
+    }
+    case "string": {
+      const out = new Array<string>(length);
+      copyNullableValues(definitionLevels, start, end, valid, (outIndex, valueIndex) => {
+        out[outIndex] = String(values[valueIndex] ?? "");
+      });
+      for (let index = 0; index < out.length; index += 1) {
+        if (out[index] === undefined) out[index] = "";
+      }
+      return optionalVectorValidity({ type: "utf8", values: out }, valid);
+    }
+    default:
+      return { type: "null", length };
+  }
+}
+
+function firstPresentArrayValue(values: readonly unknown[], start: number, end: number): unknown {
+  for (let index = start; index < end; index += 1) {
+    const value = values[index];
+    if (value != null) return value;
+  }
+  return null;
+}
+
+function firstPresentDefinitionValue(
+  values: readonly unknown[],
+  definitionLevels: readonly number[],
+  start: number,
+  end: number,
+): unknown {
+  let valueIndex = 0;
+  for (let row = 0; row < end; row += 1) {
+    if (definitionLevels[row] !== 0) {
+      if (row >= start) return values[valueIndex];
+      valueIndex += 1;
+    }
+  }
+  return null;
+}
+
+function optionalVectorValidity<T extends Vector>(vector: T, valid: Uint8Array | undefined): T {
+  if (valid === undefined) return vector;
+  for (const value of valid) if (value === 0) return { ...vector, valid };
+  return vector;
+}
+
+function bigintArrayValue(value: unknown): bigint {
+  return typeof value === "bigint" ? value : 0n;
 }
 
 function parquetHeader(reader: { view: DataView; offset: number }): PageHeader {
