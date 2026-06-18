@@ -24,6 +24,7 @@ import { rowGroupMayMatch } from "./row-group-pruning.js";
 import { rejectUnsupportedParquetSchema } from "./schema.js";
 import { asyncBufferFromObjectInfo, asyncBufferFromStore } from "./store-buffer.js";
 import type { ParquetMetadata, StoreAsyncBuffer } from "./types.js";
+import { canReadParquetVectorBatches, readParquetVectorBatchesFromFile } from "./vector-batches.js";
 
 export class ParquetScanAdapter implements ScanAdapter {
   private readonly store: ObjectStore;
@@ -107,6 +108,25 @@ export class ParquetScanAdapter implements ScanAdapter {
     const metadata = await this.metadata(path, file, options);
     rejectUnsupportedParquetSchema(metadata);
     try {
+      const vectorOptions = {
+        batchSize: options.batchSize || this.defaultBatchSize,
+        ...(options.rowStart === undefined ? {} : { rowStart: options.rowStart }),
+        ...(options.rowEnd === undefined ? {} : { rowEnd: options.rowEnd }),
+        ...(options.columns === undefined ? {} : { columns: options.columns }),
+        ...(options.where === undefined ? {} : { where: options.where }),
+        stats: options.stats,
+      };
+      if (canReadParquetVectorBatches(metadata, vectorOptions)) {
+        for await (const vectorBatch of readParquetVectorBatchesFromFile(
+          file,
+          metadata,
+          vectorOptions,
+        )) {
+          throwIfAborted(options.budget.signal);
+          yield vectorBatch;
+        }
+        return;
+      }
       for await (const columnBatch of readParquetColumnBatchesFromFile(file, metadata, {
         batchSize: options.batchSize || this.defaultBatchSize,
         ...(options.rowStart === undefined ? {} : { rowStart: options.rowStart }),
