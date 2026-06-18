@@ -50,7 +50,7 @@ function decodedKey(key: string): string {
 function decodedPriority(policy: CachePolicy): number {
   if (policy === "latency") return 4;
   if (policy === "io") return 1;
-  return 3;
+  return 2;
 }
 
 function cloneBatch(batch: Batch): Batch {

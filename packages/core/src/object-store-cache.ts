@@ -175,9 +175,10 @@ export function cachedObjectStore(
 
 function objectCachePriority(value: CacheValue, options: ObjectStoreCacheOptions): number {
   const policy = options.policy ?? "balanced";
-  if (value.kind === "head") return 3;
+  if (value.kind === "head") return 4;
   if (policy === "io") return 3;
   if (policy === "latency") return 1;
+  if (value.kind === "range") return 3;
   return 2;
 }
 

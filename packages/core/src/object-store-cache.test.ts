@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { memoryStore } from "./memory-store.js";
-import { cachedObjectStore } from "./object-store-cache.js";
+import { cachedObjectStore, SharedMemoryCache } from "./object-store-cache.js";
 import type { ObjectStore } from "./store.js";
 
 function countingStore(inner: ObjectStore): ObjectStore & {
@@ -72,5 +72,17 @@ describe("cachedObjectStore", () => {
     await cached.getRange("data.bin", { offset: 0, length: 2 });
 
     expect(counted.counters).toEqual({ getRange: 2, bytes: 4 });
+  });
+
+  it("evicts lower-priority entries before higher-priority entries", () => {
+    const cache = new SharedMemoryCache({ maxBytes: 4 });
+
+    cache.set("decoded", "decoded", 2, { priority: 2 });
+    cache.set("range", "range", 2, { priority: 3 });
+    cache.set("next", "next", 2, { priority: 2 });
+
+    expect(cache.get<string>("decoded")).toBeUndefined();
+    expect(cache.get<string>("range")?.value).toBe("range");
+    expect(cache.get<string>("next")?.value).toBe("next");
   });
 });
