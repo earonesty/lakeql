@@ -1,6 +1,7 @@
 import type { ColumnData } from "hyparquet";
 import { parquetRead, parquetSchema } from "hyparquet";
 import { type Batch, batchFromColumns } from "lakeql-core";
+import { decodedColumnCacheKey } from "./decoded-column-cache.js";
 import {
   recordReadColumns,
   recordRowGroupRead,
@@ -43,7 +44,30 @@ export async function* readParquetColumnBatchesFromFile(
     const end = Math.min(rowGroupEnd, requestedEnd);
     for (let rowStart = start; rowStart < end; rowStart += batchSize) {
       const rowEnd = Math.min(rowStart + batchSize, end);
-      const batch = await readParquetColumnBatch(file, metadata, readColumns, rowStart, rowEnd);
+      const cache = options.decodedColumnCache;
+      const key =
+        cache === undefined || options.decodedColumnCacheKey === undefined
+          ? undefined
+          : decodedColumnCacheKey({
+              path: options.decodedColumnCacheKey,
+              byteLength: file.byteLength,
+              ...(file.etag === undefined ? {} : { etag: file.etag }),
+              columns: readColumns,
+              rowStart,
+              rowEnd,
+            });
+      const cached = key === undefined || cache === undefined ? undefined : cache.get(key);
+      let batch: Batch;
+      if (cached !== undefined) {
+        batch = cached;
+      } else {
+        batch = await readParquetColumnBatch(file, metadata, readColumns, rowStart, rowEnd);
+        if (key !== undefined && cache !== undefined) cache.set(key, batch);
+      }
+      if (key !== undefined && options.stats !== undefined) {
+        if (cached === undefined) options.stats.cacheMisses += 1;
+        else options.stats.cacheHits += 1;
+      }
       recordRowsDecoded(options.stats, batch.rowCount);
       yield { rowOffset: rowStart, batch, residualPredicateSatisfied };
     }

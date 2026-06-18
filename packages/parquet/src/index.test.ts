@@ -1909,6 +1909,34 @@ describe("createParquetLake", () => {
     expect(second.stats.cacheMisses).toBe(0);
   });
 
+  it("reuses decoded column batches from the shared cache budget", async () => {
+    const lake = createParquetLake({
+      store,
+      cache: { maxBytes: 1024 * 1024, policy: "latency" },
+    });
+
+    const first = lake
+      .path(`data/${STATS.file}`)
+      .select(["id", "metric"])
+      .where(gt("metric", 0))
+      .orderBy([{ column: "metric", direction: "desc" }])
+      .limit(2)
+      .run();
+    const firstRows = await first.toArray();
+    expect(firstRows).toHaveLength(2);
+    expect(first.stats.cacheMisses).toBeGreaterThan(0);
+
+    const second = lake
+      .path(`data/${STATS.file}`)
+      .select(["id", "metric"])
+      .where(gt("metric", 0))
+      .orderBy([{ column: "metric", direction: "desc" }])
+      .limit(2)
+      .run();
+    await expect(second.toArray()).resolves.toEqual(firstRows);
+    expect(second.stats.cacheHits).toBeGreaterThan(1);
+  });
+
   it("invalidates cached Parquet footer metadata when object etag changes", async () => {
     const metadataCache = memoryCache<ParquetMetadata>();
     const etagStore = memoryStore();

@@ -1,5 +1,6 @@
 import type { parquetMetadataAsync } from "hyparquet";
 import type { Batch, Expr, QueryStats, Row } from "lakeql-core";
+import type { DecodedColumnCache } from "./decoded-column-cache.js";
 
 export interface ReadParquetOptions {
   /** Columns to project; all columns when omitted. */
@@ -12,6 +13,8 @@ export interface ReadParquetBatchOptions extends ReadParquetOptions {
   batchSize?: number;
   where?: Expr;
   stats?: QueryStats;
+  decodedColumnCache?: DecodedColumnCache;
+  decodedColumnCacheKey?: string;
 }
 
 export interface ParquetRowBatch {

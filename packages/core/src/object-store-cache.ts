@@ -5,6 +5,102 @@ export interface ObjectStoreCacheOptions {
   maxBytes?: number;
   /** Optional time-to-live for cache entries. Entries do not expire by default. */
   ttlMs?: number;
+  /** How LakeQL should spend the cache budget. Defaults to balanced. */
+  policy?: CachePolicy;
+}
+
+export type CachePolicy = "balanced" | "io" | "latency";
+
+export interface SharedCacheEntry<T> {
+  value: T;
+  bytes: number;
+}
+
+interface SharedCacheRecord {
+  value: unknown;
+  bytes: number;
+  priority: number;
+  expiresAt?: number;
+}
+
+export interface SharedCacheSetOptions {
+  priority?: number;
+}
+
+export class SharedMemoryCache {
+  private readonly maxBytes: number;
+  private readonly ttlMs: number | undefined;
+  private readonly entries = new Map<string, SharedCacheRecord>();
+  private cachedBytes = 0;
+
+  constructor(options: ObjectStoreCacheOptions = {}) {
+    this.maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
+    this.ttlMs = options.ttlMs;
+  }
+
+  get<T>(key: string): SharedCacheEntry<T> | undefined {
+    const entry = this.entries.get(key);
+    if (!entry) return undefined;
+    if (entry.expiresAt !== undefined && entry.expiresAt <= Date.now()) {
+      this.delete(key);
+      return undefined;
+    }
+    this.entries.delete(key);
+    this.entries.set(key, entry);
+    return { value: entry.value as T, bytes: entry.bytes };
+  }
+
+  set<T>(key: string, value: T, bytes: number, options: SharedCacheSetOptions = {}): void {
+    if (bytes > this.maxBytes) return;
+    this.delete(key);
+    const entry: SharedCacheRecord = {
+      value,
+      bytes,
+      priority: options.priority ?? 1,
+    };
+    const expiry = this.expiresAt();
+    if (expiry !== undefined) entry.expiresAt = expiry;
+    this.entries.set(key, entry);
+    this.cachedBytes += bytes;
+    this.evict();
+  }
+
+  delete(key: string): void {
+    const entry = this.entries.get(key);
+    if (!entry) return;
+    this.entries.delete(key);
+    this.cachedBytes -= entry.bytes;
+  }
+
+  deleteWhere(predicate: (value: unknown) => boolean): void {
+    for (const [key, entry] of this.entries) {
+      if (!predicate(entry.value)) continue;
+      this.entries.delete(key);
+      this.cachedBytes -= entry.bytes;
+    }
+  }
+
+  private expiresAt(): number | undefined {
+    return this.ttlMs === undefined ? undefined : Date.now() + this.ttlMs;
+  }
+
+  private evict(): void {
+    while (this.cachedBytes > this.maxBytes) {
+      const evictKey = this.evictKey();
+      if (evictKey === undefined) return;
+      this.delete(evictKey);
+    }
+  }
+
+  private evictKey(): string | undefined {
+    let selected: { key: string; priority: number } | undefined;
+    for (const [key, entry] of this.entries) {
+      if (selected === undefined || entry.priority < selected.priority) {
+        selected = { key, priority: entry.priority };
+      }
+    }
+    return selected?.key;
+  }
 }
 
 type CacheValue =
@@ -12,72 +108,28 @@ type CacheValue =
   | { kind: "range"; path: string; value: Uint8Array }
   | { kind: "head"; path: string; value: ObjectHead | null };
 
-interface CacheEntry {
-  value: CacheValue;
-  bytes: number;
-  expiresAt?: number;
-}
-
 const DEFAULT_MAX_BYTES = 64 * 1024 * 1024;
 
 export function cachedObjectStore(
   inner: ObjectStore,
   options: ObjectStoreCacheOptions = {},
+  sharedCache = new SharedMemoryCache(options),
 ): ObjectStore {
-  const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
-  const ttlMs = options.ttlMs;
-  const entries = new Map<string, CacheEntry>();
-  let cachedBytes = 0;
-
-  function expiresAt(): number | undefined {
-    return ttlMs === undefined ? undefined : Date.now() + ttlMs;
-  }
-
   function get(key: string): CacheValue | undefined {
-    const entry = entries.get(key);
+    const entry = sharedCache.get<CacheValue>(key);
     if (!entry) return undefined;
-    if (entry.expiresAt !== undefined && entry.expiresAt <= Date.now()) {
-      entries.delete(key);
-      cachedBytes -= entry.bytes;
-      return undefined;
-    }
-    entries.delete(key);
-    entries.set(key, entry);
     return cloneValue(entry.value);
   }
 
   function set(key: string, value: CacheValue): void {
     const bytes = valueBytes(value);
-    if (bytes > maxBytes) return;
-    const current = entries.get(key);
-    if (current) {
-      entries.delete(key);
-      cachedBytes -= current.bytes;
-    }
-    const entry: CacheEntry = { value: cloneValue(value), bytes };
-    const expiry = expiresAt();
-    if (expiry !== undefined) entry.expiresAt = expiry;
-    entries.set(key, entry);
-    cachedBytes += bytes;
-    evict();
-  }
-
-  function evict(): void {
-    while (cachedBytes > maxBytes) {
-      const first = entries.keys().next().value;
-      if (first === undefined) return;
-      const entry = entries.get(first);
-      entries.delete(first);
-      if (entry) cachedBytes -= entry.bytes;
-    }
+    sharedCache.set(key, cloneValue(value), bytes, {
+      priority: objectCachePriority(value, options),
+    });
   }
 
   function invalidatePath(path: string): void {
-    for (const [key, entry] of entries) {
-      if (entry.value.path !== path) continue;
-      entries.delete(key);
-      cachedBytes -= entry.bytes;
-    }
+    sharedCache.deleteWhere((value) => isCacheValue(value) && value.path === path);
   }
 
   return {
@@ -119,6 +171,25 @@ export function cachedObjectStore(
       return value;
     },
   };
+}
+
+function objectCachePriority(value: CacheValue, options: ObjectStoreCacheOptions): number {
+  const policy = options.policy ?? "balanced";
+  if (value.kind === "head") return 3;
+  if (policy === "io") return 3;
+  if (policy === "latency") return 1;
+  return 2;
+}
+
+function isCacheValue(value: unknown): value is CacheValue {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "kind" in value &&
+    "path" in value &&
+    (value.kind === "object" || value.kind === "range" || value.kind === "head") &&
+    typeof value.path === "string"
+  );
 }
 
 function objectKey(path: string): string {

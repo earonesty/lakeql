@@ -18,9 +18,11 @@ import {
   type OutputManifestEntry,
   type Row,
   type ScanAdapter,
+  SharedMemoryCache,
   type TaskCheckpoint,
 } from "lakeql-core";
 import { readParquetColumnBatchesFromFile } from "./column-batches.js";
+import { DecodedColumnCache } from "./decoded-column-cache.js";
 import { readParquetMetadataFromFile } from "./metadata-cache.js";
 import { readParquetObjectBatchesFromFile } from "./object-batches.js";
 import { type ParquetRowGroupPlan, planRowGroupsFromMetadata } from "./row-group-plan.js";
@@ -1015,19 +1017,33 @@ function isIcebergEqualityValue(value: unknown): value is Row[string] {
 
 export function parquetScanner(
   store: ObjectStore,
-  options: { batchSize?: number; metadataCache?: CacheAdapter<ParquetMetadata> } = {},
+  options: {
+    batchSize?: number;
+    metadataCache?: CacheAdapter<ParquetMetadata>;
+    decodedColumnCache?: DecodedColumnCache;
+  } = {},
 ): ScanAdapter {
   return new ParquetScanAdapter(store, options);
 }
 
 export function createParquetLake(config: ParquetLakeConfig): Lake {
-  const scannerOptions: { batchSize?: number; metadataCache?: CacheAdapter<ParquetMetadata> } = {};
+  const sharedCache = config.cache === undefined ? undefined : new SharedMemoryCache(config.cache);
+  const scannerOptions: {
+    batchSize?: number;
+    metadataCache?: CacheAdapter<ParquetMetadata>;
+    decodedColumnCache?: DecodedColumnCache;
+  } = {};
   if (config.batchSize !== undefined) scannerOptions.batchSize = config.batchSize;
   if (config.metadataCache !== undefined) scannerOptions.metadataCache = config.metadataCache;
   else if (config.cache !== undefined)
     scannerOptions.metadataCache = memoryCache<ParquetMetadata>();
+  if (config.cache !== undefined && sharedCache !== undefined) {
+    scannerOptions.decodedColumnCache = new DecodedColumnCache(sharedCache, config.cache);
+  }
   const store =
-    config.cache === undefined ? config.store : cachedObjectStore(config.store, config.cache);
+    config.cache === undefined
+      ? config.store
+      : cachedObjectStore(config.store, config.cache, sharedCache);
   const planningCache =
     config.planningCache ?? (config.cache === undefined ? undefined : memoryCache<ObjectInfo[]>());
   return new Lake({

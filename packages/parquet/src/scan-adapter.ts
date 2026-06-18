@@ -12,6 +12,7 @@ import {
   throwIfAborted,
 } from "lakeql-core";
 import { readParquetColumnBatchesFromFile } from "./column-batches.js";
+import type { DecodedColumnCache } from "./decoded-column-cache.js";
 import { normalizeDecodedRows } from "./decoded-rows.js";
 import { readCachedParquetMetadata } from "./metadata-cache.js";
 import { recordReadColumns } from "./read-metrics.js";
@@ -25,14 +26,20 @@ export class ParquetScanAdapter implements ScanAdapter {
   private readonly store: ObjectStore;
   private readonly defaultBatchSize: number;
   private readonly metadataCache: CacheAdapter<ParquetMetadata> | undefined;
+  private readonly decodedColumnCache: DecodedColumnCache | undefined;
 
   constructor(
     store: ObjectStore,
-    options: { batchSize?: number; metadataCache?: CacheAdapter<ParquetMetadata> } = {},
+    options: {
+      batchSize?: number;
+      metadataCache?: CacheAdapter<ParquetMetadata>;
+      decodedColumnCache?: DecodedColumnCache;
+    } = {},
   ) {
     this.store = store;
     this.defaultBatchSize = options.batchSize ?? 4096;
     this.metadataCache = options.metadataCache;
+    this.decodedColumnCache = options.decodedColumnCache;
   }
 
   async *scan(path: string, options: ScanOptions): AsyncIterable<Row[]> {
@@ -88,6 +95,12 @@ export class ParquetScanAdapter implements ScanAdapter {
         batchSize: options.batchSize || this.defaultBatchSize,
         ...(options.columns === undefined ? {} : { columns: options.columns }),
         ...(options.where === undefined ? {} : { where: options.where }),
+        ...(this.decodedColumnCache === undefined
+          ? {}
+          : {
+              decodedColumnCache: this.decodedColumnCache,
+              decodedColumnCacheKey: path,
+            }),
         stats: options.stats,
       })) {
         throwIfAborted(options.budget.signal);
