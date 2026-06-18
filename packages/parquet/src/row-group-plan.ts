@@ -1,6 +1,6 @@
 import type { RowGroup } from "hyparquet";
-import type { Expr } from "lakeql-core";
-import { rowGroupMayMatch } from "./row-group-pruning.js";
+import type { Expr, ScanColumnStats } from "lakeql-core";
+import { columnStats, rowGroupMayMatch } from "./row-group-pruning.js";
 import { rejectUnsupportedParquetSchema } from "./schema.js";
 import type { ParquetMetadata } from "./types.js";
 
@@ -9,6 +9,7 @@ export interface PlannedParquetRowGroup {
   rowStart: number;
   rowCount: number;
   byteRange?: { offset: number; length: number };
+  stats?: Record<string, ScanColumnStats>;
 }
 
 export interface ParquetRowGroupPlan {
@@ -35,6 +36,8 @@ export function planRowGroupsFromMetadata(
     const planned: PlannedParquetRowGroup = { index, rowStart, rowCount };
     const byteRange = rowGroupByteRange(rowGroup);
     if (byteRange !== undefined) planned.byteRange = byteRange;
+    const stats = rowGroupColumnStats(rowGroup);
+    if (Object.keys(stats).length > 0) planned.stats = stats;
     rowGroups.push(planned);
     const previous = ranges.at(-1);
     if (previous && previous.end === index) previous.end = index + 1;
@@ -42,6 +45,17 @@ export function planRowGroupsFromMetadata(
     rowStart = nextRowStart;
   }
   return { rowGroups, rowGroupRanges: ranges };
+}
+
+function rowGroupColumnStats(rowGroup: RowGroup): Record<string, ScanColumnStats> {
+  const out: Record<string, ScanColumnStats> = {};
+  for (const column of rowGroup.columns) {
+    const name = column.meta_data?.path_in_schema.join(".");
+    if (name === undefined) continue;
+    const stats = columnStats(rowGroup, name);
+    if (stats !== undefined) out[name] = stats;
+  }
+  return out;
 }
 
 function rowGroupByteRange(rowGroup: RowGroup): { offset: number; length: number } | undefined {

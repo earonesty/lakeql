@@ -14,6 +14,8 @@ import {
   parseJsonQuery,
   type ScanAdapter,
   type ScanColumnBatch,
+  type ScanDataRange,
+  type ScanDataRangePlan,
   type ScanOptions,
   serializeAggregateOperatorState,
   serializeSortOperatorState,
@@ -30,7 +32,10 @@ class FakeScanner implements ScanAdapter {
   readonly requestedBatchSizes: number[] = [];
   readonly requestedPaths: string[] = [];
 
-  constructor(private readonly rowsByPath: Record<string, Row[]>) {}
+  constructor(
+    private readonly rowsByPath: Record<string, Row[]>,
+    private readonly dataRangesByPath: Record<string, ScanDataRange[]> = {},
+  ) {}
 
   async *scan(path: string, options: ScanOptions): AsyncIterable<Row[]> {
     this.requestedPaths.push(path);
@@ -71,6 +76,12 @@ class FakeScanner implements ScanAdapter {
       yield { rowOffset: offset, batch: batchFromColumns(columns) };
     }
   }
+
+  async planDataRanges(path: string): Promise<ScanDataRangePlan> {
+    const ranges = this.dataRangesByPath[path];
+    if (ranges !== undefined) return { ranges };
+    return { ranges: [{ rowStart: 0, rowEnd: this.rowsByPath[path]?.length ?? 0 }] };
+  }
 }
 
 async function makeLake(config: {
@@ -79,13 +90,14 @@ async function makeLake(config: {
   planningCache?: ConstructorParameters<typeof Lake>[0]["planningCache"];
   budget?: ConstructorParameters<typeof Lake>[0]["budget"];
   policy?: ConstructorParameters<typeof Lake>[0]["policy"];
+  dataRangesByPath?: Record<string, ScanDataRange[]>;
   now?: () => number;
 }) {
   const store = memoryStore();
   for (const path of Object.keys(config.rowsByPath)) {
     await store.put(path, new Uint8Array([1, 2, 3]));
   }
-  const scanner = new FakeScanner(config.rowsByPath);
+  const scanner = new FakeScanner(config.rowsByPath, config.dataRangesByPath);
   const lake = new Lake({
     store,
     scanner,
@@ -186,6 +198,44 @@ describe("Lake query runtime", () => {
     expect(scanner.requestedColumnBatchColumns[0]).toEqual(["score"]);
     expect(scanner.requestedColumnBatchColumns[1]).toEqual(["payload"]);
     expect(scanner.requestedColumnBatchWindows[1]).toEqual({ rowStart: 1, rowEnd: 2 });
+  });
+
+  it("uses planned range statistics to prune ordered top-k scans", async () => {
+    const { lake, scanner } = await makeLake({
+      rowsByPath: {
+        table: [
+          { score: 1, payload: "low-a" },
+          { score: 2, payload: "low-b" },
+          { score: 100, payload: "winner" },
+          { score: 99, payload: "runner-up" },
+          { score: 9, payload: "mid-a" },
+          { score: 10, payload: "mid-b" },
+        ],
+      },
+      dataRangesByPath: {
+        table: [
+          { rowStart: 0, rowEnd: 2, stats: { score: { min: 1, max: 2, hasNoNulls: true } } },
+          { rowStart: 2, rowEnd: 4, stats: { score: { min: 99, max: 100, hasNoNulls: true } } },
+          { rowStart: 4, rowEnd: 6, stats: { score: { min: 9, max: 10, hasNoNulls: true } } },
+        ],
+      },
+    });
+    const query = lake
+      .path("table")
+      .select(["score", "payload"])
+      .where(gt("score", 0))
+      .orderBy([{ column: "score", direction: "desc" }])
+      .limit(1)
+      .run();
+
+    await expect(query.toArray()).resolves.toEqual([{ score: 100, payload: "winner" }]);
+
+    expect(scanner.requestedColumnBatchColumns).toEqual([["score"], ["payload"]]);
+    expect(scanner.requestedColumnBatchWindows).toEqual([
+      { rowStart: 2, rowEnd: 4 },
+      { rowStart: 2, rowEnd: 3 },
+    ]);
+    expect(query.stats.rowGroupsSkipped).toBe(2);
   });
 
   it("evaluates computed projections and reads their source columns", async () => {

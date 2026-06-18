@@ -1,7 +1,7 @@
 import type { RowGroup } from "hyparquet";
 import type { CompareOp, Expr } from "lakeql-core";
 
-type StatsValue = string | number | bigint | boolean;
+export type RowGroupStatsValue = string | number | bigint | boolean;
 
 /** @internal Exposed for pruning tests; not part of the stable public API. */
 export function rowGroupMayMatch(rowGroup: RowGroup, expr: Expr | undefined): boolean {
@@ -311,7 +311,7 @@ function columnLiteralCompare(
   left: Expr,
   op: CompareOp,
   right: Expr,
-): { column: string; op: CompareOp; value: StatsValue } | undefined {
+): { column: string; op: CompareOp; value: RowGroupStatsValue } | undefined {
   if (left.kind === "column" && right.kind === "literal" && isStatsValue(right.value)) {
     return { column: left.name, op, value: right.value };
   }
@@ -338,10 +338,10 @@ function invertCompareOp(op: CompareOp): CompareOp {
   }
 }
 
-function columnStats(
+export function columnStats(
   rowGroup: RowGroup,
   column: string,
-): { min: StatsValue; max: StatsValue; hasNoNulls: boolean } | undefined {
+): { min: RowGroupStatsValue; max: RowGroupStatsValue; hasNoNulls: boolean } | undefined {
   for (const chunk of rowGroup.columns) {
     const metadata = chunk.meta_data;
     if (!metadata || metadata.path_in_schema.join(".") !== column) continue;
@@ -359,7 +359,7 @@ function columnStats(
   return undefined;
 }
 
-function isStatsValue(value: unknown): value is StatsValue {
+function isStatsValue(value: unknown): value is RowGroupStatsValue {
   return (
     typeof value === "string" ||
     (typeof value === "number" && Number.isFinite(value)) ||
@@ -368,24 +368,24 @@ function isStatsValue(value: unknown): value is StatsValue {
   );
 }
 
-function sameComparableType(left: StatsValue, right: StatsValue): boolean {
+function sameComparableType(left: RowGroupStatsValue, right: RowGroupStatsValue): boolean {
   if (typeof left === "number" && !Number.isFinite(left)) return false;
   if (typeof right === "number" && !Number.isFinite(right)) return false;
   if (typeof left === typeof right) return true;
   return isLosslessNumberBigIntPair(left, right);
 }
 
-function isNumberLike(value: StatsValue): value is number | bigint {
+function isNumberLike(value: RowGroupStatsValue): value is number | bigint {
   return typeof value === "number" || typeof value === "bigint";
 }
 
-function isLosslessNumberBigIntPair(left: StatsValue, right: StatsValue): boolean {
+function isLosslessNumberBigIntPair(left: RowGroupStatsValue, right: RowGroupStatsValue): boolean {
   if (typeof left === "number" && typeof right === "bigint") return Number.isSafeInteger(left);
   if (typeof left === "bigint" && typeof right === "number") return Number.isSafeInteger(right);
   return false;
 }
 
-function compareValues(left: StatsValue, right: StatsValue): number {
+function compareValues(left: RowGroupStatsValue, right: RowGroupStatsValue): number {
   if (left < right) return -1;
   if (left > right) return 1;
   return 0;

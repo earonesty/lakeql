@@ -102,12 +102,31 @@ export interface ScanAdapter {
   scan(path: string, options: ScanOptions): AsyncIterable<Row[]>;
   scanColumns?(path: string, options: ScanOptions): AsyncIterable<Batch>;
   scanColumnBatches?(path: string, options: ScanOptions): AsyncIterable<ScanColumnBatch>;
+  planDataRanges?(path: string, options: ScanTaskPlanOptions): Promise<ScanDataRangePlan>;
   planTask?(path: string, options: ScanTaskPlanOptions): Promise<ScanTaskPlan>;
 }
 
 export interface ScanColumnBatch {
   rowOffset: number;
   batch: Batch;
+}
+
+export type ScanStatsValue = string | number | bigint | boolean;
+
+export interface ScanColumnStats {
+  min: ScanStatsValue;
+  max: ScanStatsValue;
+  hasNoNulls: boolean;
+}
+
+export interface ScanDataRange {
+  rowStart: number;
+  rowEnd: number;
+  stats?: Record<string, ScanColumnStats>;
+}
+
+export interface ScanDataRangePlan {
+  ranges: ScanDataRange[];
 }
 
 export interface ScanTaskPlanOptions {
@@ -1092,19 +1111,31 @@ export class QueryResult {
     const rankColumns = rankReadColumns(config.where, orderBy);
     if (rankColumns.length === 0) return undefined;
     const outputColumns = [...new Set([...config.select, ...orderBy.map((term) => term.column)])];
-    if (outputColumns.every((column) => rankColumns.includes(column))) return undefined;
 
     const retained: RankedRowRef[] = [];
     const scanColumnBatches = config.scanner.scanColumnBatches;
     const { planned: paths, skipped: skippedFiles } = await this.planObjects();
     this.stats.filesSkipped = skippedFiles;
-    for (const object of paths) {
-      this.stats.filesPlanned += 1;
-      this.stats.filesRead += 1;
-      this.stats.bytesRequested += object.size;
+    const workItems = await this.topKScanWorkItems(paths, config.where, orderBy);
+    const countedFiles = new Set<string>();
+    for (const workItem of workItems) {
+      if (retainedTopKCannotBeatRange(retained, orderBy, topK, workItem.range)) {
+        this.stats.rowGroupsSkipped += 1;
+        continue;
+      }
+      const object = workItem.object;
+      if (!countedFiles.has(object.path)) {
+        countedFiles.add(object.path);
+        this.stats.filesPlanned += 1;
+        this.stats.filesRead += 1;
+        this.stats.bytesRequested += object.size;
+      }
       enforceBudget(config.budget, this.stats, config.now, startedAt);
       const scanOptions: ScanOptions = {
         columns: rankColumns,
+        ...(workItem.range === undefined
+          ? {}
+          : { rowStart: workItem.range.rowStart, rowEnd: workItem.range.rowEnd }),
         ...(config.where === undefined ? {} : { where: config.where }),
         batchSize: columnarBatchSize(config.batchSize),
         stats: this.stats,
@@ -1155,6 +1186,29 @@ export class QueryResult {
     return rows.map((row) => project(row, config.select, undefined));
   }
 
+  private async topKScanWorkItems(
+    objects: readonly ObjectInfo[],
+    where: Expr | undefined,
+    orderBy: readonly OrderByTerm[],
+  ): Promise<TopKScanWorkItem[]> {
+    const planDataRanges = this.config.scanner.planDataRanges;
+    if (planDataRanges === undefined) {
+      return objects.map((object) => ({ object }));
+    }
+    const out: TopKScanWorkItem[] = [];
+    for (const object of objects) {
+      const partitionValues = this.config.hive ? parseHivePartitions(object.path) : {};
+      const plan = await planDataRanges.call(this.config.scanner, object.path, {
+        columns: [orderBy[0]?.column].filter((column): column is string => column !== undefined),
+        ...(where === undefined ? {} : { where }),
+        partitionValues,
+        object,
+      });
+      for (const range of plan.ranges) out.push({ object, range });
+    }
+    return out.sort((left, right) => compareTopKScanWorkItems(left, right, orderBy));
+  }
+
   private async materializeRowRefs(
     refs: readonly RankedRowRef[],
     columns: readonly string[],
@@ -1167,12 +1221,13 @@ export class QueryResult {
     for (const ref of refs) rows.set(rowRefKey(ref), { ...ref.keys });
     const lateColumns = columns.filter((column) => !rankColumns.includes(column));
     if (lateColumns.length === 0) return rows;
-    for (const window of materializationWindows(refs, columnarBatchSize(this.config.batchSize))) {
+    const maxWindowRows = columnarBatchSize(this.config.batchSize);
+    for (const window of materializationWindows(refs, maxWindowRows)) {
       const scanOptions: ScanOptions = {
         columns: lateColumns,
         rowStart: window.rowStart,
         rowEnd: window.rowEnd,
-        batchSize: columnarBatchSize(this.config.batchSize),
+        batchSize: maxWindowRows,
         stats: this.stats,
         budget: this.config.budget,
         now: this.config.now,
@@ -2893,6 +2948,11 @@ interface RankedRowRef {
   keys: Row;
 }
 
+interface TopKScanWorkItem {
+  object: ObjectInfo;
+  range?: ScanDataRange;
+}
+
 interface MaterializationWindow {
   path: string;
   rowStart: number;
@@ -2977,6 +3037,73 @@ function addRankedRef(
   if (worst !== undefined && compareRankedRefs(ref, worst, orderBy) < 0) {
     retained[worstIndex] = ref;
   }
+}
+
+function compareTopKScanWorkItems(
+  left: TopKScanWorkItem,
+  right: TopKScanWorkItem,
+  orderBy: readonly OrderByTerm[],
+): number {
+  const first = orderBy[0];
+  if (first === undefined) return left.object.path.localeCompare(right.object.path);
+  const leftBound = rangeSortBound(left.range, first);
+  const rightBound = rangeSortBound(right.range, first);
+  if (leftBound === undefined || rightBound === undefined) {
+    if (leftBound !== undefined) return -1;
+    if (rightBound !== undefined) return 1;
+  } else {
+    const comparison = compareSortValues(leftBound, rightBound, first);
+    if (comparison !== 0) return comparison;
+  }
+  return (
+    left.object.path.localeCompare(right.object.path) ||
+    (left.range?.rowStart ?? 0) - (right.range?.rowStart ?? 0)
+  );
+}
+
+function retainedTopKCannotBeatRange(
+  retained: readonly RankedRowRef[],
+  orderBy: readonly OrderByTerm[],
+  topK: number,
+  range: ScanDataRange | undefined,
+): boolean {
+  if (retained.length < topK) return false;
+  const first = orderBy[0];
+  if (first === undefined) return false;
+  const bound = rangeSortBound(range, first);
+  if (bound === undefined) return false;
+  const worst = worstRankedRef(retained, orderBy);
+  if (worst === undefined) return false;
+  const worstValue = valueForColumn(worst.keys, first.column);
+  if (worstValue === null || worstValue === undefined) return false;
+  return compareSortValues(bound, worstValue, first) > 0;
+}
+
+function worstRankedRef(
+  retained: readonly RankedRowRef[],
+  orderBy: readonly OrderByTerm[],
+): RankedRowRef | undefined {
+  let worst = retained[0];
+  for (let index = 1; index < retained.length; index += 1) {
+    const candidate = retained[index];
+    if (
+      candidate !== undefined &&
+      worst !== undefined &&
+      compareRankedRefs(candidate, worst, orderBy) > 0
+    ) {
+      worst = candidate;
+    }
+  }
+  return worst;
+}
+
+function rangeSortBound(
+  range: ScanDataRange | undefined,
+  term: OrderByTerm,
+): ScanStatsValue | undefined {
+  const stats = range?.stats?.[term.column];
+  if (stats === undefined) return undefined;
+  return term.direction === "desc" ? stats.max : stats.min;
 }
 
 function rankKeyRow(batch: Batch, rowIndex: number, columns: readonly string[]): Row {
