@@ -1,5 +1,6 @@
 import { parquetReadObjects } from "hyparquet";
 import {
+  type Batch,
   type CacheAdapter,
   LakeqlError,
   type ObjectStore,
@@ -10,6 +11,7 @@ import {
   type ScanTaskPlanOptions,
   throwIfAborted,
 } from "lakeql-core";
+import { readParquetColumnBatchesFromFile } from "./column-batches.js";
 import { normalizeDecodedRows } from "./decoded-rows.js";
 import { readCachedParquetMetadata } from "./metadata-cache.js";
 import { recordReadColumns } from "./read-metrics.js";
@@ -74,6 +76,29 @@ export class ParquetScanAdapter implements ScanAdapter {
         }
       }
       rowGroupStart = rowGroupEnd;
+    }
+  }
+
+  async *scanColumns(path: string, options: ScanOptions): AsyncIterable<Batch> {
+    const file = await asyncBufferFromStore(this.store, path, options);
+    const metadata = await this.metadata(path, file, options);
+    rejectUnsupportedParquetSchema(metadata);
+    try {
+      for await (const columnBatch of readParquetColumnBatchesFromFile(file, metadata, {
+        batchSize: options.batchSize || this.defaultBatchSize,
+        ...(options.columns === undefined ? {} : { columns: options.columns }),
+        ...(options.where === undefined ? {} : { where: options.where }),
+        stats: options.stats,
+      })) {
+        throwIfAborted(options.budget.signal);
+        yield columnBatch.batch;
+      }
+    } catch (cause) {
+      if (cause instanceof LakeqlError) throw cause;
+      throw new LakeqlError("LAKEQL_PARQUET_READ_ERROR", `Failed to read ${path}`, {
+        path,
+        cause,
+      });
     }
   }
 

@@ -1,4 +1,5 @@
 import { continuousQuantile, requiredQuantile } from "./aggregate-quantile.js";
+import type { Batch } from "./batch.js";
 import { LakeqlError } from "./errors.js";
 import {
   encodeJsonLine,
@@ -83,6 +84,7 @@ export interface ScanOptions {
 
 export interface ScanAdapter {
   scan(path: string, options: ScanOptions): AsyncIterable<Row[]>;
+  scanColumns?(path: string, options: ScanOptions): AsyncIterable<Batch>;
   planTask?(path: string, options: ScanTaskPlanOptions): Promise<ScanTaskPlan>;
 }
 
