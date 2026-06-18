@@ -24,6 +24,7 @@
     "typecheck": "node scripts/typecheck.mjs",
     "docs:compatibility": "node scripts/generate-compatibility.mjs",
     "check:compatibility": "node scripts/generate-compatibility.mjs --check",
+    "check:large-files": "node scripts/check-large-files.mjs",
     "fixtures": "pnpm --filter lakeql-fixtures generate",
     "fixtures:external": "pnpm --filter lakeql-fixtures fetch:external",
     "fixtures:iceberg": "pnpm --filter lakeql-fixtures generate:iceberg",
@@ -35,11 +36,13 @@
     "bench:workunits:10m:duckdb": "LAKEQL_WORKUNIT_COMPARE_DUCKDB=1 pnpm bench:workunits:10m",
     "bench:workunits:10m:high-cardinality": "LAKEQL_WORKUNIT_BUCKET_CARDINALITY=100000 pnpm bench:workunits:10m",
     "bench:workunits:10m:high-cardinality:duckdb": "LAKEQL_WORKUNIT_COMPARE_DUCKDB=1 pnpm bench:workunits:10m:high-cardinality",
+    "perf:hot": "LAKEQL_HOT_PERF=1 vitest run packages/parquet/src/flights-hot-performance.test.ts",
+    "perf:hot:profile": "node scripts/profile-hot-performance.mjs",
     "check:changeset": "node scripts/check-changeset.mjs",
     "changeset": "changeset",
     "version": "changeset version",
     "release": "pnpm check && changeset publish",
-    "check": "pnpm lint && pnpm build && pnpm typecheck && pnpm check:compatibility && pnpm test && pnpm test:workerd && pnpm test:conformance && pnpm test:reference && pnpm coverage && node scripts/check-fixtures.mjs"
+    "check": "pnpm lint && pnpm build && pnpm typecheck && pnpm check:compatibility && pnpm check:large-files && pnpm test && pnpm test:workerd && pnpm test:conformance && pnpm test:reference && pnpm coverage && node scripts/check-fixtures.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.0",

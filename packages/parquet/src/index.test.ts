@@ -1893,6 +1893,22 @@ describe("createParquetLake", () => {
     expect(second.stats.rowGroupsSkipped).toBe(3);
   });
 
+  it("enables bounded runtime-local Parquet caching from config", async () => {
+    const taskStore = countingObjectStore(store);
+    const lake = createParquetLake({ store: taskStore, cache: { maxBytes: 1024 * 1024 } });
+
+    const first = lake.path(`data/${STATS.file}`).where(lt("metric", 0)).run();
+    await expect(first.count()).resolves.toBe(0);
+    expect(taskStore.counters.getRange).toBeGreaterThan(0);
+
+    taskStore.resetCounters();
+    const second = lake.path(`data/${STATS.file}`).where(lt("metric", 0)).run();
+    await expect(second.count()).resolves.toBe(0);
+    expect(taskStore.counters.getRange).toBe(0);
+    expect(second.stats.cacheHits).toBe(1);
+    expect(second.stats.cacheMisses).toBe(0);
+  });
+
   it("invalidates cached Parquet footer metadata when object etag changes", async () => {
     const metadataCache = memoryCache<ParquetMetadata>();
     const etagStore = memoryStore();

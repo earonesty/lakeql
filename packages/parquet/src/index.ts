@@ -4,12 +4,16 @@ import {
   advanceTaskCheckpoint,
   type CacheAdapter,
   type CheckpointAdapter,
+  cachedObjectStore,
   createOutputManifest,
   type Expr,
   Lake,
   type LakeConfig,
   LakeqlError,
+  memoryCache,
+  type ObjectInfo,
   type ObjectStore,
+  type ObjectStoreCacheOptions,
   type OutputManifest,
   type OutputManifestEntry,
   type Row,
@@ -164,6 +168,7 @@ export interface PartitionedParquetOutputEntryOptions {
 
 export interface ParquetLakeConfig extends Omit<LakeConfig, "scanner"> {
   batchSize?: number;
+  cache?: ObjectStoreCacheOptions;
   metadataCache?: CacheAdapter<ParquetMetadata>;
 }
 
@@ -1019,8 +1024,16 @@ export function createParquetLake(config: ParquetLakeConfig): Lake {
   const scannerOptions: { batchSize?: number; metadataCache?: CacheAdapter<ParquetMetadata> } = {};
   if (config.batchSize !== undefined) scannerOptions.batchSize = config.batchSize;
   if (config.metadataCache !== undefined) scannerOptions.metadataCache = config.metadataCache;
+  else if (config.cache !== undefined)
+    scannerOptions.metadataCache = memoryCache<ParquetMetadata>();
+  const store =
+    config.cache === undefined ? config.store : cachedObjectStore(config.store, config.cache);
+  const planningCache =
+    config.planningCache ?? (config.cache === undefined ? undefined : memoryCache<ObjectInfo[]>());
   return new Lake({
     ...config,
-    scanner: parquetScanner(config.store, scannerOptions),
+    store,
+    ...(planningCache !== undefined ? { planningCache } : {}),
+    scanner: parquetScanner(store, scannerOptions),
   });
 }

@@ -579,7 +579,7 @@ export class QueryResult {
       stats.bytesRequested += object.size;
       enforceBudget(config.budget, stats, config.now, startedAt);
       const scanOptions: ScanOptions = {
-        batchSize: config.batchSize ?? 4096,
+        batchSize: limitAwareBatchSize(config.batchSize ?? 4096, config.limit, config.offset),
         stats,
         budget: config.budget,
         now: config.now,
@@ -632,7 +632,7 @@ export class QueryResult {
       stats.bytesRequested += object.size;
       enforceBudget(config.budget, stats, config.now, startedAt);
       const scanOptions: ScanOptions = {
-        batchSize: config.batchSize ?? 4096,
+        batchSize: limitAwareBatchSize(config.batchSize ?? 4096, config.limit, config.offset),
         stats,
         budget: config.budget,
         now: config.now,
@@ -2086,19 +2086,20 @@ function snapshotRecord(record: Record<string, unknown>): Record<string, Aggrega
 }
 
 function snapshotValue(value: unknown): AggregateSnapshotValue {
+  const safe = jsonSafeValue(value);
   if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
+    safe === null ||
+    typeof safe === "string" ||
+    typeof safe === "number" ||
+    typeof safe === "boolean"
   ) {
-    return value;
+    return safe;
   }
   throw new LakeqlError(
     "LAKEQL_TYPE_ERROR",
     "Aggregate operator state values must be JSON scalars",
     {
-      value,
+      value: safe,
     },
   );
 }
@@ -2589,6 +2590,15 @@ function aggregateReadColumns(
   }
   collectExprColumns(where, columns);
   return columns.size === 0 ? undefined : [...columns].sort();
+}
+
+function limitAwareBatchSize(
+  batchSize: number,
+  limit: number | undefined,
+  offset: number | undefined,
+): number {
+  if (limit === undefined) return batchSize;
+  return Math.min(batchSize, Math.max(1, (offset ?? 0) + limit));
 }
 
 function collectExprColumns(expr: Expr | undefined, columns: Set<string>): void {

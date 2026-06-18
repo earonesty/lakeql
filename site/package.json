@@ -14,12 +14,13 @@
     "@codemirror/language": "^6.10.8",
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.36.4",
+    "@duckdb/duckdb-wasm": "1.33.1-dev45.0",
+    "@lezer/highlight": "^1.2.1",
+    "codemirror": "^6.0.1",
     "lakeql-core": "workspace:*",
     "lakeql-http": "workspace:*",
     "lakeql-parquet": "workspace:*",
-    "lakeql-sql": "workspace:*",
-    "@lezer/highlight": "^1.2.1",
-    "codemirror": "^6.0.1"
+    "lakeql-sql": "workspace:*"
   },
   "devDependencies": {
     "vite": "^6.3.5"

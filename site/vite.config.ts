@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 
 const require = createRequire(import.meta.url);
@@ -15,5 +16,11 @@ export default defineConfig({
     target: "es2022",
     outDir: "dist",
     sourcemap: false,
+    rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL("index.html", import.meta.url)),
+        compare: fileURLToPath(new URL("compare.html", import.meta.url)),
+      },
+    },
   },
 });

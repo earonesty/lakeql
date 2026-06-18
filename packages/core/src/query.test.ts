@@ -23,6 +23,7 @@ import type { Bookmark, Row } from "./types.js";
 
 class FakeScanner implements ScanAdapter {
   readonly requestedColumns: (string[] | undefined)[] = [];
+  readonly requestedBatchSizes: number[] = [];
   readonly requestedPaths: string[] = [];
 
   constructor(private readonly rowsByPath: Record<string, Row[]>) {}
@@ -30,6 +31,7 @@ class FakeScanner implements ScanAdapter {
   async *scan(path: string, options: ScanOptions): AsyncIterable<Row[]> {
     this.requestedPaths.push(path);
     this.requestedColumns.push(options.columns);
+    this.requestedBatchSizes.push(options.batchSize);
     options.stats.rangeRequests += 1;
     const rows = this.rowsByPath[path] ?? [];
     for (let offset = 0; offset < rows.length; offset += options.batchSize) {
@@ -120,6 +122,17 @@ describe("Lake query runtime", () => {
       { region: "west" },
       { region: "east" },
     ]);
+  });
+
+  it("pushes small unordered limits into scan batch sizing", async () => {
+    const { lake, scanner } = await makeLake({
+      rowsByPath: {
+        table: Array.from({ length: 100 }, (_, id) => ({ id })),
+      },
+    });
+
+    await expect(lake.path("table").select(["id"]).limit(20).toArray()).resolves.toHaveLength(20);
+    expect(scanner.requestedBatchSizes).toEqual([20]);
   });
 
   it("evaluates computed projections and reads their source columns", async () => {
@@ -1233,6 +1246,32 @@ describe("Lake query runtime", () => {
         details: { metric: "buffered rows", limit: 1 },
       });
     }
+  });
+
+  it("accounts aggregate state with bigint group keys", async () => {
+    const { lake } = await makeLake({
+      rowsByPath: {
+        table: [
+          { distance: 3000n, delay: 10 },
+          { distance: 3000n, delay: 20 },
+          { distance: 3200n, delay: 5 },
+        ],
+      },
+      budget: { maxBufferedRows: 10 },
+    });
+
+    await expect(
+      lake
+        .path("table")
+        .groupBy(["distance"])
+        .aggregate({
+          flights: { op: "count" },
+          avgDelay: { op: "avg", column: "delay" },
+        }),
+    ).resolves.toEqual([
+      { distance: 3000n, flights: 2, avgDelay: 15 },
+      { distance: 3200n, flights: 1, avgDelay: 5 },
+    ]);
   });
 
   it("rejects stale or invalid slice bookmarks", async () => {

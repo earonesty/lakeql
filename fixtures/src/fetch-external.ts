@@ -10,12 +10,17 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const parquetTestingRepo = "https://github.com/apache/parquet-testing.git";
 const parquetTestingBranch = "master";
+const plotlyFlightsUrl =
+  "https://raw.githubusercontent.com/plotly/datasets/master/2015_flights.parquet";
+const plotlyFlightsPath = "plotly/2015_flights.parquet";
+const plotlyFlightsSha256 = "8b3801ca9ecfc2290460c683f8d4269b001f2ecda7cd2ded9155c3855ad9d674";
 const externalRoot = fileURLToPath(new URL("../external/", import.meta.url));
 const parquetTestingDest = join(externalRoot, "parquet-testing");
 const icebergReferenceDir = join(externalRoot, "iceberg-reference");
@@ -29,11 +34,13 @@ if (dryRun) {
   console.log(
     `would fetch ${parquetTestingRepo}#${parquetTestingBranch} into ${parquetTestingDest}`,
   );
+  console.log(`would fetch ${plotlyFlightsUrl} into ${resolveExternalPath(plotlyFlightsPath)}`);
   console.log(`would verify vendored Iceberg checksums from ${checksumPath}`);
   process.exit(0);
 }
 
 if (verifyOnly) {
+  verifyPlotlyFlightsFixture();
   verifyVendoredIcebergChecksums();
   process.exit(0);
 }
@@ -46,6 +53,7 @@ if (updateChecksums) {
 
 if (existsSync(parquetTestingDest) && !force) {
   console.log(`external parquet-testing fixtures already exist at ${parquetTestingDest}`);
+  await ensurePlotlyFlightsFixture();
   verifyVendoredIcebergChecksums();
   process.exit(0);
 }
@@ -71,9 +79,43 @@ try {
   rmSync(parquetTestingDest, { recursive: true, force: true });
   cpSync(checkout, parquetTestingDest, { recursive: true });
   console.log(`fetched parquet-testing fixtures into ${parquetTestingDest}`);
+  await ensurePlotlyFlightsFixture();
   verifyVendoredIcebergChecksums();
 } finally {
   rmSync(tempRoot, { recursive: true, force: true });
+}
+
+async function ensurePlotlyFlightsFixture(): Promise<void> {
+  const destination = resolveExternalPath(plotlyFlightsPath);
+  if (existsSync(destination)) {
+    verifyPlotlyFlightsFixture();
+    console.log(`external Plotly flights fixture already exists at ${destination}`);
+    return;
+  }
+  mkdirSync(dirname(destination), { recursive: true });
+  const response = await fetch(plotlyFlightsUrl);
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch ${plotlyFlightsUrl}: ${response.status} ${response.statusText}`,
+    );
+  }
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  await writeFile(destination, bytes);
+  verifyPlotlyFlightsFixture();
+  console.log(`fetched Plotly flights fixture into ${destination}`);
+}
+
+function verifyPlotlyFlightsFixture(): void {
+  const destination = resolveExternalPath(plotlyFlightsPath);
+  if (!existsSync(destination)) {
+    throw new Error(`Missing external Plotly flights fixture at ${destination}`);
+  }
+  const actual = sha256File(destination);
+  if (actual !== plotlyFlightsSha256) {
+    throw new Error(
+      `Checksum mismatch for ${plotlyFlightsPath}: expected ${plotlyFlightsSha256}, got ${actual}`,
+    );
+  }
 }
 
 export function verifyVendoredIcebergChecksums(): void {

@@ -527,6 +527,184 @@ tbody tr:hover td {
 .foot a:hover {
   color: var(--acid);
 }
+
+/* ---------- comparison page ---------- */
+.eyebrow {
+  margin: 0 0 12px;
+  color: var(--cyan);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.compare-intro {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(320px, 1.2fr);
+  gap: 28px;
+  align-items: end;
+  max-width: var(--maxw);
+  margin-inline: auto;
+  padding: 44px 28px 22px;
+}
+
+.compare-intro h1 {
+  margin: 0;
+  font-size: clamp(1.9rem, 3.4vw, 3rem);
+  line-height: 1.04;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+
+.compare-intro p:not(.eyebrow) {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--ink-dim);
+  font-size: 1.02rem;
+  line-height: 1.5;
+}
+
+.compare-shell {
+  position: relative;
+  z-index: 1;
+  max-width: var(--maxw);
+  margin-inline: auto;
+  padding: 0 28px 18px;
+}
+
+.dataset-strip {
+  display: grid;
+  grid-template-columns: 1.8fr 0.8fr 0.9fr auto;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--line);
+  margin-bottom: 18px;
+}
+
+.dataset-strip > * {
+  min-width: 0;
+  padding: 13px 15px;
+  background: var(--bg-sink);
+}
+
+.dataset-strip__label {
+  display: block;
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dataset-strip strong {
+  display: block;
+  color: var(--ink);
+  font-size: 0.95rem;
+  overflow-wrap: anywhere;
+}
+
+.dataset-strip a {
+  display: grid;
+  place-items: center;
+  color: var(--acid);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+
+.compare-grid {
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: 18px;
+}
+
+.compare-console,
+.compare-output {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--bg-raise), var(--bg-sink));
+}
+
+.compare-console {
+  display: flex;
+  flex-direction: column;
+}
+
+.compare-options {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.query-picker {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.query-picker button,
+.cache-mode select {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-sink);
+  color: var(--ink-dim);
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+
+.cache-mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+
+.cache-mode select {
+  color: var(--ink);
+}
+
+.query-picker button:hover,
+.query-picker button.is-active {
+  border-color: rgba(198, 242, 78, 0.55);
+  color: var(--acid);
+}
+
+.compare-editor {
+  min-height: 340px;
+}
+
+.compare-output {
+  display: flex;
+  flex-direction: column;
+}
+
+.compare-gauges {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+@media (max-width: 900px) {
+  .compare-intro,
+  .dataset-strip,
+  .compare-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .compare-gauges {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
 .foot__sep {
   opacity: 0.4;
 }

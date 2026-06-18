@@ -6,6 +6,7 @@ export * from "./in-memory.js";
 export * from "./join.js";
 export * from "./manifest.js";
 export * from "./memory-store.js";
+export * from "./object-store-cache.js";
 export * from "./predicate-plan.js";
 export * from "./query.js";
 export * from "./runtime.js";

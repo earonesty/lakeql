@@ -42,7 +42,8 @@
     "hyparquet-writer": "^0.15.6"
   },
   "devDependencies": {
-    "lakeql-fixtures": "workspace:*"
+    "lakeql-fixtures": "workspace:*",
+    "lakeql-sql": "workspace:*"
   },
   "private": true
 }

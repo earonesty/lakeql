@@ -114,3 +114,9 @@ export const EXTERNAL_CONFORMANCE = {
   parquetTestingDir: "parquet-testing",
   icebergReferenceDir: "iceberg-reference",
 } as const;
+
+export const EXTERNAL_PLOTLY = {
+  flights2015: "plotly/2015_flights.parquet",
+  flights2015Rows: 5819079,
+  flights2015Size: 25_238_218,
+} as const;

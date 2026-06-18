@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>lakeql vs DuckDB-WASM — public Parquet range reads</title>
+    <meta
+      name="description"
+      content="Run lakeql and DuckDB-WASM against the same public Plotly flights Parquet file from your browser."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0c0e'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='20' fill='%23c6f24e' text-anchor='middle'%3E%E2%97%A2%3C/text%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <div class="grain" aria-hidden="true"></div>
+
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="lakeql home">
+        <span class="brand__mark" aria-hidden="true">◢</span>
+        <span class="brand__word">lakeql</span>
+        <span class="brand__ver" id="version-tag">compare</span>
+      </a>
+      <nav class="topnav">
+        <a href="./">demo</a>
+        <a href="https://github.com/plotly/datasets">dataset</a>
+        <a href="https://shell.duckdb.org">duckdb-wasm</a>
+        <a href="https://github.com/earonesty/lakeql">github</a>
+      </nav>
+    </header>
+
+    <section class="compare-intro">
+      <div>
+        <p class="eyebrow">remote parquet comparison</p>
+        <h1>lakeql vs DuckDB-WASM</h1>
+      </div>
+      <p>
+        Same SQL, same public Parquet object. Lakeql reports file reads directly;
+        DuckDB-WASM can run with a fresh runtime or with its file cache left warm.
+      </p>
+    </section>
+
+    <main class="compare-shell" id="compare">
+      <section class="dataset-strip">
+        <div>
+          <span class="dataset-strip__label">dataset</span>
+          <strong>Plotly 2015_flights.parquet</strong>
+        </div>
+        <div>
+          <span class="dataset-strip__label">size</span>
+          <strong>25.2 MB</strong>
+        </div>
+        <div>
+          <span class="dataset-strip__label">host</span>
+          <strong>raw.githubusercontent.com</strong>
+        </div>
+        <a href="https://raw.githubusercontent.com/plotly/datasets/master/2015_flights.parquet">source file</a>
+      </section>
+
+      <section class="compare-grid">
+        <div class="compare-console">
+          <div class="console__bar">
+            <div class="switch" role="tablist" aria-label="Execution engine">
+              <span class="switch__glide" id="engine-glide" aria-hidden="true"></span>
+              <button type="button" class="switch__opt is-active" role="tab" data-engine="lakeql">
+                lakeql
+              </button>
+              <button type="button" class="switch__opt" role="tab" data-engine="duckdb">
+                DuckDB-WASM
+              </button>
+            </div>
+            <button type="button" class="run" id="run">
+              <span class="run__glyph">▸</span> Run
+              <kbd>⌘↵</kbd>
+            </button>
+          </div>
+
+          <div class="compare-options">
+            <div class="query-picker" id="query-picker"></div>
+            <label class="cache-mode">
+              <span>DuckDB file cache</span>
+              <select id="duck-cache-mode">
+                <option value="fresh">clear before each run</option>
+                <option value="cached">allow warm cache</option>
+              </select>
+            </label>
+            <label class="cache-mode">
+              <span>lakeql file cache</span>
+              <select id="lake-cache-mode">
+                <option value="fresh">clear before each run</option>
+                <option value="cached">allow warm range cache</option>
+              </select>
+            </label>
+          </div>
+          <div class="editor-wrap compare-editor">
+            <div id="editor"></div>
+          </div>
+          <div class="err" id="error" hidden></div>
+        </div>
+
+        <section class="output compare-output">
+          <div class="gauges compare-gauges" id="gauges">
+            <div class="gauge"><span class="gauge__n" id="g-rows">—</span><span class="gauge__l">rows</span></div>
+            <div class="gauge"><span class="gauge__n" id="g-ms">—</span><span class="gauge__l">query ms</span></div>
+            <div class="gauge"><span class="gauge__n" id="g-init">—</span><span class="gauge__l">startup ms</span></div>
+            <div class="gauge"><span class="gauge__n" id="g-reqs">—</span><span class="gauge__l">file req</span></div>
+            <div class="gauge"><span class="gauge__n" id="g-bytes">—</span><span class="gauge__l">file bytes</span></div>
+            <div class="gauge"><span class="gauge__n" id="g-engine">lakeql</span><span class="gauge__l">engine</span></div>
+          </div>
+          <div class="result" id="result">
+            <div class="result__empty">Choose an engine, then run SQL.</div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <span>DuckDB-WASM stays out of the main demo</span>
+      <span class="foot__sep">·</span>
+      <span>single public Parquet URL</span>
+      <span class="foot__sep">·</span>
+      <span>runs in the browser</span>
+    </footer>
+
+    <script type="module" src="/src/compare.ts"></script>
+  </body>
+</html>
