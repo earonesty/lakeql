@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 
 const profileDir = resolve("bench/generated/profiles");
 const testFile = "packages/parquet/src/flights-hot-performance.test.ts";
+const vitestBin = resolve("node_modules/vitest/vitest.mjs");
 const caseArg = process.argv.find((arg) => arg.startsWith("--case="));
 const timeoutArg = process.argv.find((arg) => arg.startsWith("--timeout-ms="));
 const extraArgs = process.argv
@@ -16,18 +17,28 @@ const before = new Set(await profileFiles());
 const env = {
   ...process.env,
   LAKEQL_HOT_PERF: "1",
-  NODE_OPTIONS: appendNodeOptions(process.env.NODE_OPTIONS, [
-    `--cpu-prof`,
-    `--cpu-prof-dir=${profileDir}`,
-  ]),
 };
 if (caseArg) env.LAKEQL_HOT_PERF_CASES = caseArg.slice("--case=".length);
 if (timeoutArg) env.LAKEQL_HOT_PERF_TIMEOUT_MS = timeoutArg.slice("--timeout-ms=".length);
 
-const result = spawnSync("pnpm", ["exec", "vitest", "run", testFile, ...extraArgs], {
-  env,
-  stdio: "inherit",
-});
+const result = spawnSync(
+  process.execPath,
+  [
+    "--cpu-prof",
+    `--cpu-prof-dir=${profileDir}`,
+    vitestBin,
+    "run",
+    testFile,
+    "--pool=forks",
+    "--maxWorkers=1",
+    "--no-file-parallelism",
+    ...extraArgs,
+  ],
+  {
+    env,
+    stdio: "inherit",
+  },
+);
 
 const after = await profileFiles();
 const created = after.filter((file) => !before.has(file));
@@ -45,8 +56,4 @@ async function profileFiles() {
   return (await readdir(profileDir).catch(() => []))
     .filter((file) => file.endsWith(".cpuprofile"))
     .sort();
-}
-
-function appendNodeOptions(existing, options) {
-  return [...(existing ? [existing] : []), ...options].join(" ");
 }
