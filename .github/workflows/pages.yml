@@ -3,6 +3,8 @@ name: pages
 on:
   push:
     branches: [main]
+    tags:
+      - "v*"
     paths:
       - "site/**"
       - "packages/**"

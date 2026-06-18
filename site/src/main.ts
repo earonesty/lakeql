@@ -31,7 +31,10 @@ import { createParquetLake } from "lakeql-parquet";
 import { parseSql } from "lakeql-sql";
 import "./styles.css";
 
+declare const __LAKEQL_VERSION__: string;
+
 type Mode = "sql" | "js" | "json";
+const installCommand = `npm install lakeql@${__LAKEQL_VERSION__}`;
 
 const DEFAULTS: Record<Mode, string> = {
   sql: `select region, sum(amount) as revenue, count() as orders
@@ -429,7 +432,7 @@ function setupSwitch(): void {
 function setupCopy(): void {
   const btn = document.getElementById("copy-install");
   btn?.addEventListener("click", async () => {
-    await navigator.clipboard.writeText("npm install lakeql");
+    await navigator.clipboard.writeText(installCommand);
     const prev = btn.textContent;
     btn.textContent = "copied";
     setTimeout(() => {
@@ -438,7 +441,15 @@ function setupCopy(): void {
   });
 }
 
+function setupVersion(): void {
+  const tag = document.getElementById("version-tag");
+  if (tag) tag.textContent = `v${__LAKEQL_VERSION__}`;
+  const install = document.getElementById("install-cmd");
+  if (install) install.textContent = installCommand;
+}
+
 document.getElementById("run")?.addEventListener("click", () => void run());
+setupVersion();
 setupSwitch();
 setupCopy();
 mountEditor();
