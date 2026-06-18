@@ -1,8 +1,4 @@
 import { parquetReadObjects } from "hyparquet";
-import { PageTypes } from "hyparquet/src/constants.js";
-import { DEFAULT_PARSERS } from "hyparquet/src/convert.js";
-import { convertMetadata } from "hyparquet/src/metadata.js";
-import { deserializeTCompactProtocol } from "hyparquet/src/thrift.js";
 import {
   type Batch,
   type CacheAdapter,
@@ -11,10 +7,7 @@ import {
   type Row,
   type ScanAdapter,
   type ScanColumnBatch,
-  type ScanDataRange,
-  type ScanDataRangePlan,
   type ScanOptions,
-  type ScanStatsValue,
   type ScanTaskPlan,
   type ScanTaskPlanOptions,
   throwIfAborted,
@@ -147,27 +140,6 @@ export class ParquetScanAdapter implements ScanAdapter {
     };
   }
 
-  async planDataRanges(path: string, options: ScanTaskPlanOptions): Promise<ScanDataRangePlan> {
-    const file =
-      options.object === undefined
-        ? await asyncBufferFromStore(this.store, path)
-        : asyncBufferFromObjectInfo(this.store, options.object);
-    const metadata = await this.metadata(path, file);
-    const plan = planRowGroupsFromMetadata(metadata, options.where);
-    const pageColumn = options.columns?.[0];
-    if (pageColumn !== undefined) {
-      const pageRanges = await planPageDataRanges(file, metadata, plan.rowGroups, pageColumn);
-      if (pageRanges.length > 0) return { ranges: pageRanges };
-    }
-    return {
-      ranges: plan.rowGroups.map((rowGroup) => ({
-        rowStart: rowGroup.rowStart,
-        rowEnd: rowGroup.rowStart + rowGroup.rowCount,
-        ...(rowGroup.stats === undefined ? {} : { stats: rowGroup.stats }),
-      })),
-    };
-  }
-
   private async metadata(
     path: string,
     file: StoreAsyncBuffer,
@@ -185,150 +157,4 @@ export class ParquetScanAdapter implements ScanAdapter {
   private scanBuffer(file: StoreAsyncBuffer): StoreAsyncBuffer {
     return this.scanRangeCache === undefined ? file : cachedRangeBuffer(file, this.scanRangeCache);
   }
-}
-
-async function planPageDataRanges(
-  file: StoreAsyncBuffer,
-  metadata: ParquetMetadata,
-  rowGroups: readonly { index: number; rowStart: number; rowCount: number }[],
-  column: string,
-): Promise<ScanDataRange[]> {
-  const ranges: ScanDataRange[] = [];
-  let foundPages = false;
-  for (const planned of rowGroups) {
-    const rowGroup = metadata.row_groups[planned.index];
-    const chunk = rowGroup?.columns.find(
-      (candidate) => candidate.meta_data?.path_in_schema.join(".") === column,
-    );
-    const columnMetadata = chunk?.meta_data;
-    if (rowGroup === undefined || columnMetadata === undefined) {
-      ranges.push({ rowStart: planned.rowStart, rowEnd: planned.rowStart + planned.rowCount });
-      continue;
-    }
-    const schema = metadata.schema.find((element) => element.name === column);
-    if (schema === undefined) {
-      ranges.push({ rowStart: planned.rowStart, rowEnd: planned.rowStart + planned.rowCount });
-      continue;
-    }
-    const start = safeNumber(
-      columnMetadata.dictionary_page_offset ?? columnMetadata.data_page_offset,
-    );
-    const compressedSize = safeNumber(columnMetadata.total_compressed_size);
-    if (start === undefined || compressedSize === undefined || compressedSize <= 0) {
-      ranges.push({ rowStart: planned.rowStart, rowEnd: planned.rowStart + planned.rowCount });
-      continue;
-    }
-    const pageRanges = await columnPageDataRanges(
-      file,
-      start,
-      start + compressedSize,
-      planned.rowStart,
-      planned.rowCount,
-      column,
-      schema,
-    );
-    if (pageRanges.length === 0) {
-      ranges.push({ rowStart: planned.rowStart, rowEnd: planned.rowStart + planned.rowCount });
-      continue;
-    }
-    foundPages = true;
-    ranges.push(...pageRanges);
-  }
-  return foundPages ? ranges : [];
-}
-
-async function columnPageDataRanges(
-  file: StoreAsyncBuffer,
-  start: number,
-  end: number,
-  rowGroupStart: number,
-  rowGroupRows: number,
-  column: string,
-  schema: ParquetMetadata["schema"][number],
-): Promise<ScanDataRange[]> {
-  const buffer = await file.slice(start, end);
-  const reader = { view: new DataView(buffer), offset: 0 };
-  const ranges: ScanDataRange[] = [];
-  let pageRowStart = 0;
-  while (reader.offset < reader.view.byteLength - 1 && pageRowStart < rowGroupRows) {
-    const header = deserializeTCompactProtocol(reader);
-    const type = PageTypes[header.field_1 as keyof typeof PageTypes];
-    const compressedPageSize = safeNumber(header.field_3);
-    if (compressedPageSize === undefined) break;
-    if (type === "DATA_PAGE") {
-      const dataHeader = header.field_5;
-      const rowCount = safeNumber(dataHeader?.field_1);
-      if (rowCount === undefined) break;
-      ranges.push(
-        pageRange(rowGroupStart, pageRowStart, rowCount, column, schema, dataHeader?.field_5),
-      );
-      pageRowStart += rowCount;
-    } else if (type === "DATA_PAGE_V2") {
-      const dataHeader = header.field_8;
-      const rowCount = safeNumber(dataHeader?.field_3);
-      if (rowCount === undefined) break;
-      ranges.push(
-        pageRange(rowGroupStart, pageRowStart, rowCount, column, schema, dataHeader?.field_8),
-      );
-      pageRowStart += rowCount;
-    }
-    reader.offset += compressedPageSize;
-  }
-  return ranges;
-}
-
-function pageRange(
-  rowGroupStart: number,
-  pageRowStart: number,
-  rowCount: number,
-  column: string,
-  schema: ParquetMetadata["schema"][number],
-  stats: unknown,
-): ScanDataRange {
-  const range: ScanDataRange = {
-    rowStart: rowGroupStart + pageRowStart,
-    rowEnd: rowGroupStart + pageRowStart + rowCount,
-  };
-  const columnStats = pageColumnStats(stats, schema);
-  if (columnStats !== undefined) range.stats = { [column]: columnStats };
-  return range;
-}
-
-function pageColumnStats(
-  stats: unknown,
-  schema: ParquetMetadata["schema"][number],
-): { min: ScanStatsValue; max: ScanStatsValue; hasNoNulls: boolean } | undefined {
-  if (stats === undefined || stats === null || typeof stats !== "object") return undefined;
-  const record = stats as Record<string, unknown>;
-  const minBytes = uint8StatsValue(record.field_6 ?? record.field_2);
-  const maxBytes = uint8StatsValue(record.field_5 ?? record.field_1);
-  const min = scanStatsValue(convertMetadata(minBytes, schema, DEFAULT_PARSERS));
-  const max = scanStatsValue(convertMetadata(maxBytes, schema, DEFAULT_PARSERS));
-  if (min === undefined || max === undefined) return undefined;
-  return {
-    min,
-    max,
-    hasNoNulls: record.field_3 === 0n || record.field_3 === 0,
-  };
-}
-
-function uint8StatsValue(value: unknown): Uint8Array | undefined {
-  return value instanceof Uint8Array ? value : undefined;
-}
-
-function scanStatsValue(value: unknown): ScanStatsValue | undefined {
-  if (typeof value === "string") return value;
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "bigint") return value;
-  if (typeof value === "boolean") return value;
-  return undefined;
-}
-
-function safeNumber(value: bigint | number | undefined): number | undefined {
-  if (typeof value === "number" && Number.isSafeInteger(value)) return value;
-  if (typeof value === "bigint") {
-    const numberValue = Number(value);
-    if (Number.isSafeInteger(numberValue) && BigInt(numberValue) === value) return numberValue;
-  }
-  return undefined;
 }

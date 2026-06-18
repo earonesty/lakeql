@@ -29,11 +29,11 @@ export async function* readParquetColumnBatchesFromFile(
   let rowGroupStart = 0;
   for (const rowGroup of metadata.row_groups) {
     const rowGroupEnd = rowGroupStart + Number(rowGroup.num_rows);
-    if (rowGroupEnd <= requestedStart || rowGroupStart >= requestedEnd) {
-      rowGroupStart = rowGroupEnd;
-      continue;
-    }
-    if (!rowGroupMayMatch(rowGroup, options.where)) {
+    if (
+      rowGroupEnd <= requestedStart ||
+      rowGroupStart >= requestedEnd ||
+      !rowGroupMayMatch(rowGroup, options.where)
+    ) {
       recordRowGroupSkipped(options.stats);
       rowGroupStart = rowGroupEnd;
       continue;
@@ -91,7 +91,6 @@ async function readParquetColumnBatch(
     columns,
     rowStart,
     rowEnd,
-    useOffsetIndex: true,
     onChunk(chunk) {
       appendColumnChunk(columnValues, chunk, rowStart, rowEnd);
     },
