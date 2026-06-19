@@ -9,7 +9,7 @@ import duckdbWasmEh from "@duckdb/duckdb-wasm/dist/duckdb-eh.wasm?url";
 import duckdbWasmMvp from "@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm?url";
 import { tags } from "@lezer/highlight";
 import { basicSetup } from "codemirror";
-import type { ObjectStore, QueryStats } from "lakeql-core";
+import type { ObjectStore, QueryBudget, QueryStats } from "lakeql-core";
 import { httpStore } from "lakeql-http";
 import { createParquetLake } from "lakeql-parquet";
 import { parseSql } from "lakeql-sql";
@@ -27,7 +27,9 @@ const DATASET_KEY = "2015_flights.parquet";
 const DATASET_PROXY_PATH = "compare-data/2015_flights.parquet";
 const DATASET_SIZE = 25_238_218;
 const SCAN_RANGE_CACHE_BYTES = 32 * 1024 * 1024;
-const LAKE_WARM_CACHE_BYTES = 256 * 1024 * 1024;
+const BYTES_PER_MB = 1024 * 1024;
+const DEFAULT_MEMORY_BUDGET_MB = 256;
+const MEMORY_BUDGETS_MB = [16, 32, 64, 128, 256] as const;
 const PENDING_RUN_KEY = "lakeql_compare_pending_run";
 
 const EXAMPLES = [
@@ -65,11 +67,17 @@ limit 10`,
 let engine: Engine = "lakeql";
 let duckCacheMode: DuckCacheMode = "cached";
 let lakeCacheMode: LakeCacheMode = "cached";
+let memoryBudgetMb = DEFAULT_MEMORY_BUDGET_MB;
 let activeExample = 0;
 let view: EditorView;
-let lakeRuntime: { lake: Lake; cacheMode: LakeCacheMode } | undefined;
+let lakeRuntime: { lake: Lake; cacheMode: LakeCacheMode; memoryBudgetMb: number } | undefined;
 let duckState:
-  | Promise<{ db: duckdb.AsyncDuckDB; conn: duckdb.AsyncDuckDBConnection; initMs: number }>
+  | Promise<{
+      db: duckdb.AsyncDuckDB;
+      conn: duckdb.AsyncDuckDBConnection;
+      initMs: number;
+      memoryBudgetMb: number;
+    }>
   | undefined;
 let initialSqlText: string | undefined;
 
@@ -240,24 +248,37 @@ async function serviceWorkerRequest(
   });
 }
 
-function createLakeRuntime(cacheMode: LakeCacheMode): { lake: Lake; cacheMode: LakeCacheMode } {
+function createLakeRuntime(cacheMode: LakeCacheMode): {
+  lake: Lake;
+  cacheMode: LakeCacheMode;
+  memoryBudgetMb: number;
+} {
   const store = knownSizeStore(httpStore({ baseUrl: datasetProxyBase() }));
+  const budgetBytes = memoryBudgetBytes();
+  const budget: QueryBudget = { maxMemoryBytes: budgetBytes };
+  const scanRangeCache = { maxBytes: Math.min(SCAN_RANGE_CACHE_BYTES, budgetBytes) };
   const lake =
     cacheMode === "cached"
       ? createParquetLake({
           store,
-          cache: { maxBytes: LAKE_WARM_CACHE_BYTES, policy: "balanced" },
-          scanRangeCache: { maxBytes: SCAN_RANGE_CACHE_BYTES },
+          budget,
+          cache: { maxBytes: budgetBytes, policy: "balanced" },
+          scanRangeCache,
         })
-      : createParquetLake({ store, scanRangeCache: { maxBytes: SCAN_RANGE_CACHE_BYTES } });
-  return { lake, cacheMode };
+      : createParquetLake({ store, budget, scanRangeCache });
+  return { lake, cacheMode, memoryBudgetMb };
 }
 
 async function runLakeql(
   sqlText: string,
 ): Promise<{ rows: Row[]; ms: number; stats: Stats; lakeStats: QueryStats }> {
   await resetProxyStats();
-  if (lakeCacheMode === "fresh" || !lakeRuntime || lakeRuntime.cacheMode !== lakeCacheMode) {
+  if (
+    lakeCacheMode === "fresh" ||
+    !lakeRuntime ||
+    lakeRuntime.cacheMode !== lakeCacheMode ||
+    lakeRuntime.memoryBudgetMb !== memoryBudgetMb
+  ) {
     lakeRuntime = createLakeRuntime(lakeCacheMode);
   }
   const { lake } = lakeRuntime;
@@ -309,7 +330,8 @@ async function initDuckDb() {
     await db.registerFileURL(DATASET_KEY, datasetProxyUrl(), duckdb.DuckDBDataProtocol.HTTP, true);
     await db.collectFileStatistics(DATASET_KEY, true);
     const conn = await db.connect();
-    return { db, conn, initMs: performance.now() - started };
+    await conn.query(`SET memory_limit = '${memoryBudgetMb}MB'`);
+    return { db, conn, initMs: performance.now() - started, memoryBudgetMb };
   })();
   return duckState;
 }
@@ -327,7 +349,11 @@ async function runDuckDb(
 ): Promise<{ rows: Row[]; ms: number; initMs: number; stats: Stats }> {
   await resetProxyStats();
   if (duckCacheMode === "fresh") await resetDuckDb();
-  const { conn, initMs } = await initDuckDb();
+  const state = await initDuckDb();
+  if (state.memoryBudgetMb !== memoryBudgetMb) {
+    await resetDuckDb();
+  }
+  const { conn, initMs } = state.memoryBudgetMb === memoryBudgetMb ? state : await initDuckDb();
   const duckSql = sqlText.replace(/\bfrom\s+flights\.parquet\b/giu, `from '${DATASET_KEY}'`);
   const started = performance.now();
   const table = await conn.query(duckSql);
@@ -395,6 +421,7 @@ interface PendingRunState {
   engine: Engine;
   duckCacheMode: DuckCacheMode;
   lakeCacheMode: LakeCacheMode;
+  memoryBudgetMb: number;
   activeExample: number;
   sql: string;
   controlNavs: number;
@@ -405,6 +432,7 @@ function currentRunState(controlNavs = 0): PendingRunState {
     engine,
     duckCacheMode,
     lakeCacheMode,
+    memoryBudgetMb,
     activeExample,
     sql: view?.state.doc.toString() ?? initialSqlText ?? EXAMPLES[activeExample].sql,
     controlNavs,
@@ -439,6 +467,7 @@ function parsePendingRunState(raw: string): PendingRunState | undefined {
       engine: parsed.engine,
       duckCacheMode: parsed.duckCacheMode === "cached" ? "cached" : "fresh",
       lakeCacheMode: parsed.lakeCacheMode === "cached" ? "cached" : "fresh",
+      memoryBudgetMb: parseMemoryBudgetMb(parsed.memoryBudgetMb),
       activeExample:
         typeof parsed.activeExample === "number" &&
         parsed.activeExample >= 0 &&
@@ -457,6 +486,7 @@ function applyPendingRunState(state: PendingRunState): void {
   engine = state.engine;
   duckCacheMode = state.duckCacheMode;
   lakeCacheMode = state.lakeCacheMode;
+  memoryBudgetMb = state.memoryBudgetMb;
   activeExample = state.activeExample;
   initialSqlText = state.sql;
 }
@@ -474,6 +504,8 @@ function syncControlsFromState(): void {
   if (duckSelect) duckSelect.value = duckCacheMode;
   const lakeSelect = document.getElementById("lake-cache-mode") as HTMLSelectElement | null;
   if (lakeSelect) lakeSelect.value = lakeCacheMode;
+  const memorySelect = document.getElementById("memory-budget") as HTMLSelectElement | null;
+  if (memorySelect) memorySelect.value = String(memoryBudgetMb);
 }
 
 async function resumePendingRun(state: PendingRunState | undefined): Promise<void> {
@@ -577,6 +609,17 @@ function formatCount(count: number): string {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(count);
 }
 
+function memoryBudgetBytes(): number {
+  return memoryBudgetMb * BYTES_PER_MB;
+}
+
+function parseMemoryBudgetMb(value: unknown): number {
+  return typeof value === "number" &&
+    MEMORY_BUDGETS_MB.includes(value as (typeof MEMORY_BUDGETS_MB)[number])
+    ? value
+    : DEFAULT_MEMORY_BUDGET_MB;
+}
+
 function rowGroupSummary(stats: QueryStats): string {
   return `${stats.rowGroupsRead}/${stats.rowGroupsRead + stats.rowGroupsSkipped}`;
 }
@@ -664,6 +707,15 @@ function setupLakeCacheMode(): void {
   });
 }
 
+function setupMemoryBudget(): void {
+  const select = document.getElementById("memory-budget") as HTMLSelectElement | null;
+  select?.addEventListener("change", () => {
+    memoryBudgetMb = parseMemoryBudgetMb(Number(select.value));
+    lakeRuntime = undefined;
+    void resetDuckDb();
+  });
+}
+
 function setupVersion(): void {
   const tag = document.getElementById("version-tag");
   if (tag) tag.textContent = `v${__LAKEQL_VERSION__}`;
@@ -677,6 +729,7 @@ setupVersion();
 setupExamples();
 setupDuckCacheMode();
 setupLakeCacheMode();
+setupMemoryBudget();
 syncControlsFromState();
 setupEngineSwitch();
 mountEditor();
