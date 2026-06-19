@@ -21,6 +21,7 @@ const reportPath = resolve("bench/generated/flights-hot-performance.jsonl");
 const scanRangeCacheBytes = 32 * 1024 * 1024;
 const lakeCacheBytes = positiveIntegerEnv("LAKEQL_HOT_PERF_CACHE_BYTES", 64 * 1024 * 1024);
 const lakeCachePolicy = cachePolicyEnv("LAKEQL_HOT_PERF_CACHE_POLICY");
+const expectZeroHotBytes = envFlag("LAKEQL_HOT_PERF_EXPECT_ZERO_HOT_BYTES", true);
 
 interface StoreCounters {
   get: number;
@@ -109,7 +110,7 @@ describe.skipIf(!runHotPerf)("Plotly flights hot performance", () => {
         expect(cold.result.rows).toBeGreaterThan(0);
         expect(warmup.result.rows).toBe(cold.result.rows);
         expect(hot.result.rows).toBe(cold.result.rows);
-        expect(hot.result.counters.bytesFetched).toBe(0);
+        if (expectZeroHotBytes) expect(hot.result.counters.bytesFetched).toBe(0);
 
         const profile = {
           case: hotCase.name,
@@ -319,4 +320,10 @@ function cachePolicyEnv(name: string): "balanced" | "io" | "latency" | undefined
   if (value === undefined) return undefined;
   if (value === "balanced" || value === "io" || value === "latency") return value;
   throw new Error(`${name} must be balanced, io, or latency`);
+}
+
+function envFlag(name: string, defaultValue: boolean): boolean {
+  const value = process.env[name];
+  if (value === undefined) return defaultValue;
+  return value === "1" || value.toLowerCase() === "true";
 }
