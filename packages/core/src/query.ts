@@ -3,6 +3,7 @@ import {
   type Batch,
   materializeBatchRows,
   predicateSelection,
+  scalarVectorValue,
   selectedRowCount,
   selectedRowIndices,
   vectorValue,
@@ -35,10 +36,15 @@ import type {
 import { pruneFilesWithIndex, type SidecarFileIndex } from "./sidecar-index.js";
 import type { ObjectInfo, ObjectStore } from "./store.js";
 import type { Bookmark, BookmarkQuery, QueryStats, Row, SliceResult } from "./types.js";
+import type { VectorAggregateValue } from "./vector-aggregate.js";
 import {
   createVectorGroupByState,
+  enforceVectorGroupByBudget,
   finalizeVectorGroupByRows,
+  getOrCreateVectorGroup,
+  updateVectorGroupAggregateValue,
   updateVectorGroupByState,
+  type VectorGroup,
 } from "./vector-group-by.js";
 import { vectorProjectBatch } from "./vector-project.js";
 import { concatBatches, vectorTopKBatch } from "./vector-sort.js";
@@ -887,7 +893,8 @@ export class QueryResult {
   ): Promise<Row[] | undefined> {
     const config = this.config;
     if (
-      config.scanner.scanColumns === undefined ||
+      (config.scanner.scanColumns === undefined &&
+        vectorBatchScanner(config.scanner) === undefined) ||
       config.projections !== undefined ||
       config.hive === true ||
       options.operatorState !== undefined ||
@@ -901,6 +908,14 @@ export class QueryResult {
     validateAggregateRequest(groupColumns, spec, options);
     await ensureGeoBackendForExprs(Object.values(spec).map((aggregate) => aggregate.expr));
     const startedAt = config.now();
+    const adaptiveRows = await this.tryLateMaterializedAggregateRows(
+      groupColumns,
+      spec,
+      options,
+      startedAt,
+    );
+    if (adaptiveRows !== undefined) return adaptiveRows;
+    if (config.scanner.scanColumns === undefined) return undefined;
     const state = createVectorGroupByState(groupColumns, spec);
     for await (const batch of this.columnBatches(
       aggregateReadColumns(groupColumns, spec, config.where),
@@ -921,6 +936,160 @@ export class QueryResult {
     }
     this.stats.elapsedMs = config.now() - startedAt;
     return rows;
+  }
+
+  private async tryLateMaterializedAggregateRows(
+    groupColumns: string[],
+    spec: AggregateSpec,
+    options: AggregateOptions,
+    startedAt: number,
+  ): Promise<Row[] | undefined> {
+    const config = this.config;
+    const scanVectorBatches = vectorBatchScanner(config.scanner);
+    if (scanVectorBatches === undefined) return undefined;
+    const earlyColumns = aggregateEarlyReadColumns(groupColumns, config.where);
+    if (earlyColumns.length === 0) return undefined;
+    const aggregateColumns = aggregateInputColumns(spec);
+    const lateColumns = aggregateColumns.filter((column) => !earlyColumns.includes(column));
+    if (lateColumns.length === 0) return undefined;
+
+    const statsBefore = { ...this.stats };
+    const state = createVectorGroupByState(groupColumns, spec);
+    const refs: AggregateRowRef[] = [];
+    let scannedRows = 0;
+    let matchedRows = 0;
+    const maxLateDensity = 0.35;
+    const maxLateRows = Math.min(config.budget?.maxBufferedRows ?? 4096, 4096);
+    const aggregateEntries = Object.entries(spec);
+    const countStarAliases = aggregateEntries
+      .filter(
+        ([, aggregate]) =>
+          aggregate.op === "count" &&
+          aggregate.column === undefined &&
+          aggregate.expr === undefined,
+      )
+      .map(([alias]) => alias);
+    const { planned: paths, skipped: skippedFiles } = await this.planObjects();
+    this.stats.filesSkipped = skippedFiles;
+    for (const object of paths) {
+      this.stats.filesPlanned += 1;
+      this.stats.filesRead += 1;
+      this.stats.bytesRequested += object.size;
+      enforceBudget(config.budget, this.stats, config.now, startedAt);
+      const scanOptions: ScanOptions = {
+        columns: earlyColumns,
+        ...(config.where === undefined ? {} : { where: config.where }),
+        batchSize: columnarBatchSize(config.batchSize),
+        stats: this.stats,
+        budget: config.budget,
+        now: config.now,
+        startedAt,
+      };
+      for await (const { rowOffset, batch } of scanVectorBatches(
+        config.scanner,
+        object.path,
+        scanOptions,
+      )) {
+        scannedRows += batch.rowCount;
+        const selection = predicateSelection(batch, config.where);
+        const selected = [...selectedRowIndices(batch.rowCount, selection)];
+        for (const index of selected) {
+          matchedRows += 1;
+          if (matchedRows > maxLateRows) {
+            Object.assign(this.stats, statsBefore);
+            return undefined;
+          }
+          const group = getOrCreateVectorGroup(state, batch, index, {
+            budget: config.budget,
+            ...(options.maxGroups === undefined ? {} : { maxGroups: options.maxGroups }),
+          });
+          for (const alias of countStarAliases) {
+            updateVectorGroupAggregateValue(group, alias, true, { budget: config.budget });
+          }
+          refs.push({
+            path: object.path,
+            rowIndex: rowOffset + index,
+            group,
+            early: aggregateEarlyRow(batch, index, earlyColumns),
+          });
+        }
+        if (matchedRows / Math.max(1, scannedRows) > maxLateDensity) {
+          Object.assign(this.stats, statsBefore);
+          return undefined;
+        }
+        enforceBufferedRowsBudget(config.budget, refs.length);
+        enforceVectorGroupByBudget(state, config.budget);
+        enforceBudget(config.budget, this.stats, config.now, startedAt);
+      }
+    }
+    this.stats.rowsMatched += matchedRows;
+    for await (const materialized of this.aggregateMaterializedRows(refs, lateColumns, startedAt)) {
+      for (const [alias, aggregate] of aggregateEntries) {
+        if (
+          aggregate.op === "count" &&
+          aggregate.column === undefined &&
+          aggregate.expr === undefined
+        ) {
+          continue;
+        }
+        updateVectorGroupAggregateValue(
+          materialized.ref.group,
+          alias,
+          aggregateValueForRow(aggregate, materialized.row),
+          { budget: config.budget },
+        );
+      }
+      enforceVectorGroupByBudget(state, config.budget);
+      enforceBudget(config.budget, this.stats, config.now, startedAt);
+    }
+    const rows = applyAggregateResultOptions(finalizeVectorGroupByRows(state), options);
+    for (const _row of rows) {
+      this.stats.rowsReturned += 1;
+      enforceBudget(config.budget, this.stats, config.now, startedAt);
+    }
+    this.stats.elapsedMs = config.now() - startedAt;
+    return rows;
+  }
+
+  private async *aggregateMaterializedRows(
+    refs: readonly AggregateRowRef[],
+    lateColumns: readonly string[],
+    startedAt: number,
+  ): AsyncIterable<{ ref: AggregateRowRef; row: Row }> {
+    const scanVectorBatches = vectorBatchScanner(this.config.scanner);
+    if (scanVectorBatches === undefined) return;
+    const refsByKey = new Map<string, AggregateRowRef>();
+    for (const ref of refs) refsByKey.set(rowRefKey(ref), ref);
+    for (const window of aggregateMaterializationWindows(
+      refs,
+      columnarBatchSize(this.config.batchSize),
+    )) {
+      const scanOptions: ScanOptions = {
+        columns: [...lateColumns],
+        rowStart: window.rowStart,
+        rowEnd: window.rowEnd,
+        batchSize: columnarBatchSize(this.config.batchSize),
+        stats: this.stats,
+        budget: this.config.budget,
+        now: this.config.now,
+        startedAt,
+      };
+      for await (const { rowOffset, batch } of scanVectorBatches(
+        this.config.scanner,
+        window.path,
+        scanOptions,
+      )) {
+        for (let index = 0; index < batch.rowCount; index += 1) {
+          const key = rowRefKey({ path: window.path, rowIndex: rowOffset + index });
+          const ref = refsByKey.get(key);
+          if (ref === undefined) continue;
+          yield {
+            ref,
+            row: { ...ref.early, ...aggregateLateRow(batch, index, lateColumns) },
+          };
+        }
+      }
+    }
   }
 
   async aggregateWithState(
@@ -2922,10 +3091,93 @@ interface RankedRowRef {
   keys: Row;
 }
 
+interface AggregateRowRef {
+  path: string;
+  rowIndex: number;
+  group: VectorGroup;
+  early: Row;
+}
+
 interface MaterializationWindow {
   path: string;
   rowStart: number;
   rowEnd: number;
+}
+
+function aggregateEarlyReadColumns(
+  groupColumns: readonly string[],
+  where: Expr | undefined,
+): string[] {
+  const columns = new Set<string>();
+  for (const column of groupColumns) columns.add(column);
+  collectExprColumns(where, columns);
+  return [...columns].sort();
+}
+
+function aggregateInputColumns(spec: AggregateSpec): string[] {
+  const columns = new Set<string>();
+  for (const aggregate of Object.values(spec)) {
+    if (aggregate.column !== undefined) columns.add(aggregate.column);
+    collectExprColumns(aggregate.expr, columns);
+  }
+  return [...columns].sort();
+}
+
+function aggregateEarlyRow(batch: Batch, index: number, columns: readonly string[]): Row {
+  const row: Row = {};
+  for (const column of columns) {
+    const vector = batch.columns[column];
+    if (vector !== undefined) row[column] = scalarVectorValue(vector, index);
+  }
+  return row;
+}
+
+function aggregateLateRow(batch: Batch, index: number, columns: readonly string[]): Row {
+  const row: Row = {};
+  for (const column of columns) {
+    const vector = batch.columns[column];
+    if (vector !== undefined) row[column] = scalarVectorValue(vector, index);
+  }
+  return row;
+}
+
+function aggregateValueForRow(aggregate: AggregateExpr, row: Row): VectorAggregateValue {
+  if (aggregate.expr !== undefined) return aggregateValueFromUnknown(evaluate(aggregate.expr, row));
+  if (aggregate.column === undefined) return true;
+  return aggregateValueFromUnknown(row[aggregate.column]);
+}
+
+function aggregateValueFromUnknown(value: unknown): VectorAggregateValue {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "bigint"
+  ) {
+    return value;
+  }
+  return null;
+}
+
+function aggregateMaterializationWindows(
+  refs: readonly AggregateRowRef[],
+  maxWindowRows: number,
+): MaterializationWindow[] {
+  const out: MaterializationWindow[] = [];
+  for (const ref of refs) {
+    const current = out[out.length - 1];
+    if (
+      current !== undefined &&
+      current.path === ref.path &&
+      ref.rowIndex + 1 - current.rowStart <= maxWindowRows
+    ) {
+      current.rowEnd = Math.max(current.rowEnd, ref.rowIndex + 1);
+      continue;
+    }
+    out.push({ path: ref.path, rowStart: ref.rowIndex, rowEnd: ref.rowIndex + 1 });
+  }
+  return out;
 }
 
 function rankReadColumns(where: Expr | undefined, orderBy: readonly OrderByTerm[]): string[] {

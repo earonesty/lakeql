@@ -36,7 +36,7 @@ export interface VectorGroupByState {
   readonly groups: Map<string, VectorGroup>;
 }
 
-interface VectorGroup {
+export interface VectorGroup {
   keyValues: Scalar[];
   states: VectorAggregateStates;
 }
@@ -118,6 +118,51 @@ export function updateVectorGroupByState(
     enforceGroupByMemoryBudget(state, options.budget);
   }
   return matched;
+}
+
+export function getOrCreateVectorGroup(
+  state: VectorGroupByState,
+  batch: Batch,
+  index: number,
+  options: VectorGroupByOptions = {},
+): VectorGroup {
+  const keyReader = vectorGroupKeyReader(state.keys, batch);
+  const key = keyReader.keyAt(index);
+  let group = state.groups.get(key);
+  if (group !== undefined) return group;
+  if (options.maxGroups !== undefined && state.groups.size >= options.maxGroups) {
+    throw new LakeqlError(
+      "LAKEQL_GROUP_LIMIT_EXCEEDED",
+      `Query exceeded group budget (${state.groups.size + 1} > ${options.maxGroups})`,
+      { limit: options.maxGroups, actual: state.groups.size + 1 },
+    );
+  }
+  group = {
+    keyValues: keyReader.valuesAt(index),
+    states: createVectorAggregateStates(state.spec, options),
+  };
+  state.groups.set(key, group);
+  enforceGroupByMemoryBudget(state, options.budget);
+  return group;
+}
+
+export function updateVectorGroupAggregateValue(
+  group: VectorGroup,
+  alias: string,
+  value: VectorAggregateValue,
+  options: VectorAggregateOptions = {},
+): void {
+  const aggregateState = group.states[alias];
+  if (aggregateState === undefined) {
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", `Missing vector aggregate state ${alias}`, {
+      alias,
+    });
+  }
+  updateVectorAggregateStateValue(aggregateState, value, options);
+}
+
+export function enforceVectorGroupByBudget(state: VectorGroupByState, budget?: QueryBudget): void {
+  enforceGroupByMemoryBudget(state, budget);
 }
 
 interface VectorGroupKeyReader {

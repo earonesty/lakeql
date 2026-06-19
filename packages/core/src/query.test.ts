@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { batchFromColumns } from "./batch.js";
 import { LakeqlError } from "./errors.js";
-import { and, between, col, eq, fn, gt, isIn, isNull, like, lit, not, or } from "./expr.js";
+import { add, and, between, col, eq, fn, gt, isIn, isNull, like, lit, not, or } from "./expr.js";
 import { createBookmark } from "./manifest.js";
 import { memoryStore } from "./memory-store.js";
 import {
@@ -1487,6 +1487,72 @@ describe("Lake query runtime", () => {
       code: "LAKEQL_BUDGET_EXCEEDED",
       details: { metric: "output rows", limit: 1, actual: 2 },
     });
+  });
+
+  it("late materializes sparse grouped aggregates without skipping aggregate forms", async () => {
+    const rows = Array.from({ length: 100 }, (_, index) => ({
+      keep: index % 20 === 0,
+      region: index % 40 === 0 ? "west" : "east",
+      amount: index + 10,
+      bonus: 1,
+      id: index % 30,
+      label: index % 40 === 0 ? (index === 40 ? "c" : "a") : "b",
+    }));
+    const { lake, scanner } = await makeLake({ rowsByPath: { table: rows } });
+
+    await expect(
+      lake
+        .path("table")
+        .where(eq("keep", true))
+        .groupBy(["region"])
+        .aggregate(
+          {
+            rows: { op: "count" },
+            totalExpr: { op: "sum", expr: add(col("amount"), col("bonus")) },
+            average: { op: "avg", column: "amount" },
+            medianAmount: { op: "median", column: "amount" },
+            p50Amount: { op: "quantile", column: "amount", quantile: 0.5 },
+            modeLabel: { op: "mode", column: "label" },
+            distinctIds: { op: "count_distinct", column: "id" },
+            approximateIds: { op: "approx_count_distinct", column: "id" },
+            firstLabel: { op: "first", column: "label" },
+            lastLabel: { op: "last", column: "label" },
+          },
+          { orderBy: [{ column: "region" }] },
+        ),
+    ).resolves.toEqual([
+      {
+        region: "east",
+        rows: 2,
+        totalExpr: 102,
+        average: 50,
+        medianAmount: 50,
+        p50Amount: 50,
+        modeLabel: "b",
+        distinctIds: 2,
+        approximateIds: 2,
+        firstLabel: "b",
+        lastLabel: "b",
+      },
+      {
+        region: "west",
+        rows: 3,
+        totalExpr: 153,
+        average: 50,
+        medianAmount: 50,
+        p50Amount: 50,
+        modeLabel: "a",
+        distinctIds: 3,
+        approximateIds: 3,
+        firstLabel: "a",
+        lastLabel: "a",
+      },
+    ]);
+    expect(scanner.requestedColumnBatchColumns[0]).toEqual(["keep", "region"]);
+    expect(scanner.requestedColumnBatchColumns).toContainEqual(["amount", "bonus", "id", "label"]);
+    expect(
+      scanner.requestedColumnBatchWindows.some((window) => window.rowStart !== undefined),
+    ).toBe(true);
   });
 
   it("aggregates expressions and counts only non-null column values", async () => {
