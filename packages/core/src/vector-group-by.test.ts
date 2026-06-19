@@ -8,11 +8,14 @@ import {
 import { col, gt, mul } from "./expr.js";
 import {
   createVectorGroupByState,
+  enforceVectorGroupByBudget,
   finalizeVectorGroupByBatch,
   finalizeVectorGroupByRows,
+  getOrCreateVectorGroup,
   mergeVectorGroupByStates,
   restoreVectorGroupByState,
   snapshotVectorGroupByState,
+  updateVectorGroupAggregateValue,
   updateVectorGroupByState,
   vectorGroupByBatch,
 } from "./vector-group-by.js";
@@ -136,6 +139,44 @@ describe("vector group-by kernels", () => {
         distinctIds: 3,
       },
     ]);
+  });
+
+  it("groups nullable dictionary keys and global aggregate states through encoded paths", () => {
+    const dictionary = batchFromColumns({ value: ["east", "west"] }).columns.value;
+    const amount = batchFromColumns({ amount: [10, 20, 30, 40] }).columns.amount;
+    if (dictionary === undefined || amount === undefined) throw new Error("missing test vectors");
+    const batch = batchFromVectors({
+      region: {
+        type: "dict",
+        indices: new Uint32Array([0, 1, 0, 1]),
+        dictionary,
+        valid: new Uint8Array([1, 0, 1, 1]),
+      },
+      amount,
+    });
+
+    expect(
+      materializeBatchRows(
+        vectorGroupByBatch(
+          ["region"],
+          {
+            rows: { op: "count" },
+            total: { op: "sum", column: "amount" },
+          },
+          batch,
+        ),
+      ),
+    ).toEqual([
+      { region: "east", rows: 2, total: 40 },
+      { region: null, rows: 1, total: 20 },
+      { region: "west", rows: 1, total: 40 },
+    ]);
+
+    expect(
+      materializeBatchRows(
+        vectorGroupByBatch([], { total: { op: "sum", column: "amount" } }, batch),
+      ),
+    ).toEqual([{ total: 100 }]);
   });
 
   it("uses the encoded group loop for scalar and composite vector keys", () => {
@@ -364,6 +405,42 @@ describe("vector group-by kernels", () => {
         code: "LAKEQL_BUDGET_EXCEEDED",
         details: expect.objectContaining({ metric: "operator memory bytes", limit: 1 }),
       }),
+    );
+  });
+
+  it("exposes group update APIs with explicit missing-state and memory errors", () => {
+    const spec = {
+      rows: { op: "count" },
+      total: { op: "sum", column: "amount" },
+      labels: { op: "count_distinct", column: "label" },
+    } as const;
+    const state = createVectorGroupByState(["region"], spec);
+    const batch = batchFromColumns({
+      region: ["east", "west"],
+      amount: [10, 20],
+      label: ["alpha", "beta"],
+    });
+
+    const group = getOrCreateVectorGroup(state, batch, 0);
+    updateVectorGroupAggregateValue(group, "rows", true);
+    updateVectorGroupAggregateValue(group, "total", 5);
+    updateVectorGroupAggregateValue(group, "labels", "alpha");
+
+    expect(finalizeVectorGroupByRows(state)).toEqual([
+      { region: "east", rows: 1, total: 5, labels: 1 },
+    ]);
+    expect(getOrCreateVectorGroup(state, batch, 0)).toBe(group);
+    expect(() => getOrCreateVectorGroup(state, batch, 1, { maxGroups: 1 })).toThrowError(
+      expect.objectContaining({ code: "LAKEQL_GROUP_LIMIT_EXCEEDED" }),
+    );
+    expect(() => updateVectorGroupAggregateValue(group, "missing", true)).toThrowError(
+      expect.objectContaining({
+        code: "LAKEQL_TYPE_ERROR",
+        details: { alias: "missing" },
+      }),
+    );
+    expect(() => enforceVectorGroupByBudget(state, { maxMemoryBytes: 1 })).toThrowError(
+      expect.objectContaining({ code: "LAKEQL_BUDGET_EXCEEDED" }),
     );
   });
 });

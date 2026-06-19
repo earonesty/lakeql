@@ -10,6 +10,7 @@ import {
   restoreVectorAggregateStates,
   snapshotVectorAggregateStates,
   updateVectorAggregateStates,
+  updateVectorAggregateStateValue,
   vectorAggregateBatch,
 } from "./vector-aggregate.js";
 
@@ -507,5 +508,86 @@ describe("vector aggregate kernels", () => {
     expect(vectorAggregateBatch(spec, batchFromColumns({ label: labels }))).toEqual({
       labels: 1600,
     });
+  });
+
+  it("updates and merges aggregate state APIs across durable error boundaries", () => {
+    const spec = {
+      total: { op: "sum", column: "amount" },
+      rows: { op: "count" },
+      smallest: { op: "min", column: "amount" },
+      latest: { op: "max", column: "loaded_at" },
+    } as const;
+    const states = createVectorAggregateStates(spec);
+    const loadedAt = timestampFromEpoch(1_700_000_000_000n, "millis");
+
+    updateVectorAggregateStateValue(states.total ?? { op: "sum", sum: 0 }, 5);
+    updateVectorAggregateStateValue(states.rows ?? { op: "count", count: 0 }, true);
+    updateVectorAggregateStateValue(states.smallest ?? { op: "min", value: null }, 9);
+    updateVectorAggregateStateValue(states.smallest ?? { op: "min", value: null }, 4);
+    updateVectorAggregateStateValue(states.latest ?? { op: "max", value: null }, loadedAt);
+
+    expect(finalizeVectorAggregateStates(states)).toEqual({
+      total: 5,
+      rows: 1,
+      smallest: 4,
+      latest: loadedAt,
+    });
+    expect(() =>
+      updateVectorAggregateStateValue(states.total ?? { op: "sum", sum: 0 }, "x"),
+    ).toThrowError(expect.objectContaining({ code: "LAKEQL_TYPE_ERROR" }));
+    expect(() =>
+      updateVectorAggregateStateValue(states.smallest ?? { op: "min", value: null }, "x"),
+    ).toThrowError(expect.objectContaining({ code: "LAKEQL_TYPE_ERROR" }));
+
+    const count = createVectorAggregateStates({ value: { op: "count" } });
+    const sum = createVectorAggregateStates({ value: { op: "sum", column: "amount" } });
+    expect(() => mergeVectorAggregateStates(count, sum)).toThrowError(
+      expect.objectContaining({
+        code: "LAKEQL_TYPE_ERROR",
+        details: { target: "count", source: "sum" },
+      }),
+    );
+
+    const distinctSnapshot = snapshotVectorAggregateStates(
+      createVectorAggregateStates({ value: { op: "count_distinct", column: "label" } }),
+    );
+    expect(() => mergeVectorAggregateStateSnapshots(count, distinctSnapshot)).toThrowError(
+      expect.objectContaining({
+        code: "LAKEQL_TYPE_ERROR",
+        details: { target: "count", source: "count_distinct" },
+      }),
+    );
+  });
+
+  it("enforces memory budgets for aggregate work products that retain values", () => {
+    expect(() =>
+      vectorAggregateBatch(
+        { medianAmount: { op: "median", column: "amount" } },
+        batchFromColumns({ amount: [10, 20, 30] }),
+        undefined,
+        { budget: { maxMemoryBytes: 2 } },
+      ),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "LAKEQL_BUDGET_EXCEEDED",
+        details: expect.objectContaining({ metric: "operator memory bytes" }),
+      }),
+    );
+    expect(() =>
+      vectorAggregateBatch(
+        { amountP50: { op: "quantile", column: "amount", quantile: 0.5 } },
+        batchFromColumns({ amount: [10, 20, 30] }),
+        undefined,
+        { budget: { maxMemoryBytes: 2 } },
+      ),
+    ).toThrowError(expect.objectContaining({ code: "LAKEQL_BUDGET_EXCEEDED" }));
+    expect(() =>
+      vectorAggregateBatch(
+        { labelMode: { op: "mode", column: "label" } },
+        batchFromColumns({ label: ["alpha", "beta"] }),
+        undefined,
+        { budget: { maxMemoryBytes: 2 } },
+      ),
+    ).toThrowError(expect.objectContaining({ code: "LAKEQL_BUDGET_EXCEEDED" }));
   });
 });
