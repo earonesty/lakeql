@@ -1,4 +1,4 @@
-import { batchCallExprValues } from "./batch-call.js";
+import { batchCallExprValues, batchCallPredicateMask } from "./batch-call.js";
 import { LakeqlError } from "./errors.js";
 import type { CompareOp, Expr, Scalar } from "./expr.js";
 import type { Row } from "./types.js";
@@ -443,7 +443,16 @@ function predicateMask(batch: Batch, expr: Expr): Uint8Array {
     }
     case "not":
       return sqlNotMask(predicateMask(batch, expr.operand));
-    case "call":
+    case "call": {
+      const args = expr.args.map((arg) => batchExprValues(batch, arg));
+      const mask = batchCallPredicateMask(expr.fn, args);
+      if (mask !== undefined) return mask;
+      return scalarToPredicateMask(
+        batchCallExprValues(batch.rowCount, expr.fn, args, (left, right) =>
+          compareValue("eq", left, right),
+        ),
+      );
+    }
     case "case":
       return scalarToPredicateMask(batchExprValues(batch, expr));
     case "like":

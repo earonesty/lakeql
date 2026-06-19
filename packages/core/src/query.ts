@@ -3450,7 +3450,7 @@ function vectorExprSupported(expr: Expr | undefined): boolean {
     case "not":
       return vectorExprSupported(expr.operand);
     case "call":
-      return vectorCallExprSupported(expr.fn) && expr.args.every(vectorExprSupported);
+      return vectorCallExprSupported(expr) && expr.args.every(vectorExprSupported);
     case "arithmetic":
       return vectorExprSupported(expr.left) && vectorExprSupported(expr.right);
     case "case":

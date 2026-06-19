@@ -45,7 +45,7 @@ export function setGeoBackend(backend: GeoBackend): void {
   geoBackend = backend;
 }
 
-function requireGeoBackend(): GeoBackend {
+export function requireGeoBackend(): GeoBackend {
   if (geoBackend === null) {
     throw new LakeqlError(
       "LAKEQL_GEO_BACKEND_MISSING",
@@ -117,7 +117,7 @@ function exprNeedsGeoBackend(expr: Expr | undefined): boolean {
 
 type EvalValue = Scalar;
 
-interface BBox {
+export interface BBox {
   minx: number;
   miny: number;
   maxx: number;
@@ -581,7 +581,7 @@ function spatialPredicate(name: string, args: EvalValue[], op: SpatialOp): EvalV
 }
 
 // Envelope of an already-normalized geometry, for the bbox prefilter.
-function envelopeOf(geometry: GeoJsonGeometry): BBox {
+export function envelopeOf(geometry: GeoJsonGeometry): BBox {
   switch (geometry.type) {
     case "Point":
       return pointsEnvelope([geometry.coordinates]);
@@ -600,7 +600,7 @@ export type GeoJsonGeometry =
 // Builds a clean, closed GeoJSON geometry from already-parsed input for Turf.
 // BBox geometries become their rectangle polygon so envelope-only inputs still
 // get an exact answer.
-function toGeometry(parsed: Record<string, unknown>, name: string): GeoJsonGeometry {
+export function toGeometry(parsed: Record<string, unknown>, name: string): GeoJsonGeometry {
   switch (parsed.type) {
     case "Point":
       return { type: "Point", coordinates: pointFromGeometry(parsed, name) };
@@ -755,7 +755,7 @@ function envelope(value: EvalValue, name: string): BBox {
   return envelopeFromGeometry(parseGeometry(value, name), name);
 }
 
-function parseGeometry(value: EvalValue, name: string): Record<string, unknown> {
+export function parseGeometry(value: EvalValue, name: string): Record<string, unknown> {
   if (typeof value !== "string") throwType(name, "GeoJSON or BBox JSON string", value);
   let parsed: unknown;
   try {
@@ -771,7 +771,7 @@ function parseGeometry(value: EvalValue, name: string): Record<string, unknown> 
   return parsed;
 }
 
-function envelopeFromGeometry(parsed: Record<string, unknown>, name: string): BBox {
+export function envelopeFromGeometry(parsed: Record<string, unknown>, name: string): BBox {
   if (parsed.type === "BBox") return bboxFromRecord(parsed, name);
   if (parsed.type === "Point") return pointEnvelope(parsed, name);
   if (parsed.type === "LineString") return lineStringEnvelope(parsed, name);
@@ -818,7 +818,7 @@ function pointsEnvelope(points: [number, number][]): BBox {
   return { minx, miny, maxx, maxy };
 }
 
-function bboxIntersects(left: BBox, right: BBox): boolean {
+export function bboxIntersects(left: BBox, right: BBox): boolean {
   return (
     left.maxx >= right.minx &&
     left.minx <= right.maxx &&

@@ -11,7 +11,7 @@ import {
   vectorValue,
 } from "./batch.js";
 import { LakeqlError } from "./errors.js";
-import { evaluate, matches } from "./evaluator.js";
+import { evaluate, loadGeoBackend, matches } from "./evaluator.js";
 import {
   add,
   and,
@@ -253,5 +253,104 @@ describe("column batches", () => {
     expect(materializeSelectedBatchRows(batch, selection)).toEqual(
       rows.filter((row) => matches(predicate, row)),
     );
+  });
+
+  it("evaluates geo and h3 predicate kernels over large string and dictionary vectors", async () => {
+    await loadGeoBackend();
+    const rows = 20_000;
+    const downtown = JSON.stringify({ type: "Point", coordinates: [-118.25, 34.05] });
+    const valley = JSON.stringify({ type: "Point", coordinates: [-118.45, 34.2] });
+    const outside = JSON.stringify({ type: "Point", coordinates: [-119.1, 35.1] });
+    const losAngelesBox = JSON.stringify({
+      type: "Polygon",
+      coordinates: [
+        [
+          [-118.5, 34],
+          [-118, 34],
+          [-118, 34.3],
+          [-118.5, 34.3],
+          [-118.5, 34],
+        ],
+      ],
+    });
+    const h3A = "8829a1d757fffff";
+    const h3B = "8829a1d74bfffff";
+    const h3C = "8829a1d753fffff";
+    const geomValues = new Array<string>(rows);
+    const h3Values = new Array<string>(rows);
+    for (let index = 0; index < rows; index += 1) {
+      geomValues[index] = index % 3 === 0 ? downtown : index % 3 === 1 ? valley : outside;
+      h3Values[index] = index % 3 === 0 ? h3A : index % 3 === 1 ? h3B : h3C;
+    }
+    const batch = batchFromColumns({ geom: geomValues, h3_8: h3Values });
+
+    const intersects = predicateSelection(
+      batch,
+      fn("st_intersects", col("geom"), fn("st_bbox", lit(-118.5), lit(34), lit(-118), lit(34.3))),
+    );
+    const intersectsConstantGeometry = predicateSelection(
+      batch,
+      fn("st_intersects", lit(losAngelesBox), col("geom")),
+    );
+    const h3In = predicateSelection(
+      batch,
+      fn("h3_in", col("h3_8"), lit(JSON.stringify([h3A, h3B]))),
+    );
+    const h3Within = predicateSelection(batch, fn("h3_within", col("h3_8"), lit(h3A), lit(0)));
+    const composed = predicateSelection(
+      batch,
+      or(
+        fn("h3_within", col("h3_8"), lit(h3A), lit(0)),
+        not(
+          fn(
+            "st_intersects",
+            col("geom"),
+            fn("st_bbox", lit(-118.5), lit(34), lit(-118), lit(34.3)),
+          ),
+        ),
+      ),
+    );
+    const nullConstant = predicateSelection(batch, fn("h3_in", col("h3_8"), lit(null)));
+
+    for (let index = 0; index < rows; index += 1) {
+      expect(intersects[index]).toBe(index % 3 === 2 ? 0 : 1);
+      expect(intersectsConstantGeometry[index]).toBe(index % 3 === 2 ? 0 : 1);
+      expect(h3In[index]).toBe(index % 3 === 2 ? 0 : 1);
+      expect(h3Within[index]).toBe(index % 3 === 0 ? 1 : 0);
+      expect(composed[index]).toBe(index % 3 === 1 ? 0 : 1);
+      expect(nullConstant[index]).toBe(2);
+    }
+
+    const dictionaryBatch = batchFromVectors({
+      geom: {
+        type: "dict",
+        indices: Uint32Array.from([0, 1, 2, 0, 2, 1]),
+        dictionary: batchFromColumns({ value: [downtown, valley, outside] }).columns.value ?? {
+          type: "null",
+          length: 0,
+        },
+      },
+      h3_8: {
+        type: "dict",
+        indices: Uint32Array.from([0, 1, 2, 0, 2, 1]),
+        dictionary: batchFromColumns({ value: [h3A, h3B, h3C] }).columns.value ?? {
+          type: "null",
+          length: 0,
+        },
+      },
+    });
+
+    expect([
+      ...predicateSelection(
+        dictionaryBatch,
+        fn("st_intersects", col("geom"), fn("st_bbox", lit(-118.5), lit(34), lit(-118), lit(34.3))),
+      ),
+    ]).toEqual([1, 1, 0, 1, 0, 1]);
+    expect([
+      ...predicateSelection(dictionaryBatch, fn("h3_in", col("h3_8"), lit(JSON.stringify([h3A])))),
+    ]).toEqual([1, 0, 0, 1, 0, 0]);
+    expect([
+      ...predicateSelection(dictionaryBatch, fn("h3_within", col("h3_8"), lit(h3B), lit(0))),
+    ]).toEqual([0, 1, 0, 0, 0, 1]);
   });
 });
