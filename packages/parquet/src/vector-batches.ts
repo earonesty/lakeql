@@ -15,7 +15,9 @@ import {
   vectorLength,
   vectorValue,
 } from "lakeql-core";
+import { readParquetColumnBatch } from "./column-batches.js";
 import {
+  decodedColumnCacheKey,
   decodedColumnPageCacheKey,
   decodedDictionaryPageCacheKey,
 } from "./decoded-column-cache.js";
@@ -42,10 +44,7 @@ export function canReadParquetVectorBatches(
   if (columns === undefined) return false;
   for (const rowGroup of metadata.row_groups) {
     for (const column of columns) {
-      const chunk = rowGroup.columns.find(
-        (candidate) => candidate.meta_data?.path_in_schema.join(".") === column,
-      );
-      if (chunk?.meta_data === undefined || !canDirectVector(metadata, chunk.meta_data)) {
+      if (!canReadVectorColumn(metadata, rowGroup, column)) {
         return false;
       }
     }
@@ -77,33 +76,19 @@ export async function* readParquetVectorBatchesFromFile(
       rowGroupStart = rowGroupEnd;
       continue;
     }
-    const columnMetadata = columns.map((column) => {
-      const chunk = rowGroup.columns.find(
-        (candidate) => candidate.meta_data?.path_in_schema.join(".") === column,
-      );
-      return chunk?.meta_data;
-    });
-    if (
-      columnMetadata.some(
-        (metadataForColumn) =>
-          metadataForColumn === undefined || !canDirectVector(metadata, metadataForColumn),
-      )
-    ) {
-      return;
-    }
-    recordRowGroupRead(options.stats);
-    const start = Math.max(rowGroupStart, requestedStart);
-    const end = Math.min(rowGroupEnd, requestedEnd);
-    for await (const vectorBatch of readAlignedColumnVectorBatches(
+    const vectorSources = columnVectorSources(
       file,
       metadata,
-      columnMetadata as ColumnMetaData[],
+      rowGroup,
       columns,
       rowGroupStart,
-      start,
-      end,
+      Math.max(rowGroupStart, requestedStart),
+      Math.min(rowGroupEnd, requestedEnd),
       options,
-    )) {
+    );
+    if (vectorSources === undefined) return;
+    recordRowGroupRead(options.stats);
+    for await (const vectorBatch of readAlignedColumnVectorBatches(vectorSources)) {
       recordRowsDecoded(options.stats, vectorBatch.batch.rowCount);
       yield vectorBatch;
     }
@@ -113,6 +98,58 @@ export async function* readParquetVectorBatchesFromFile(
 
 function directVectorColumns(columns: readonly string[] | undefined): string[] | undefined {
   return columns !== undefined && columns.length > 0 ? [...columns] : undefined;
+}
+
+type RowGroupMetadata = ParquetMetadata["row_groups"][number];
+
+function canReadVectorColumn(
+  metadata: ParquetMetadata,
+  rowGroup: RowGroupMetadata,
+  column: string,
+): boolean {
+  const leaf = directLeafColumnMetadata(rowGroup, column);
+  if (leaf !== undefined) return canDirectVector(metadata, leaf);
+  if (!canRepresentNestedVectorColumn(metadata, column)) return false;
+  return rowGroup.columns.some((candidate) => candidate.meta_data?.path_in_schema[0] === column);
+}
+
+function directLeafColumnMetadata(
+  rowGroup: RowGroupMetadata,
+  column: string,
+): ColumnMetaData | undefined {
+  return rowGroup.columns.find(
+    (candidate) => candidate.meta_data?.path_in_schema.join(".") === column,
+  )?.meta_data;
+}
+
+function canRepresentNestedVectorColumn(metadata: ParquetMetadata, column: string): boolean {
+  let schemaPath: ReturnType<typeof getSchemaPath>;
+  try {
+    schemaPath = getSchemaPath(metadata.schema, [column]);
+  } catch {
+    return false;
+  }
+  const node = schemaPath.at(-1);
+  if (node === undefined || isFlatColumn(schemaPath)) return false;
+  const element = node.element;
+  const logicalType = element.logical_type;
+  return (
+    element.converted_type === "LIST" ||
+    element.converted_type === "MAP" ||
+    element.converted_type === "MAP_KEY_VALUE" ||
+    logicalTypeName(logicalType) === "LIST" ||
+    logicalTypeName(logicalType) === "MAP"
+  );
+}
+
+function logicalTypeName(logicalType: unknown): string | undefined {
+  if (typeof logicalType === "string") return logicalType;
+  if (typeof logicalType !== "object" || logicalType === null) return undefined;
+  if ("type" in logicalType && typeof logicalType.type === "string") return logicalType.type;
+  for (const key of ["LIST", "MAP"]) {
+    if (key in logicalType) return key;
+  }
+  return undefined;
 }
 
 function canDirectVector(metadata: ParquetMetadata, column: ColumnMetaData): boolean {
@@ -170,39 +207,64 @@ function canRepresentDirectVectorLeaf(leaf: ColumnDecoder["element"]): boolean {
   }
 }
 
-interface ColumnVectorCursor {
-  column: string;
+interface VectorBatchSource {
+  columns: readonly string[];
   iterator: AsyncIterator<ParquetVectorBatch>;
+}
+
+interface ColumnVectorCursor extends VectorBatchSource {
   current?: ParquetVectorBatch;
 }
 
-async function* readAlignedColumnVectorBatches(
+function columnVectorSources(
   file: StoreAsyncBuffer,
   metadata: ParquetMetadata,
-  columnMetadata: ColumnMetaData[],
+  rowGroup: RowGroupMetadata,
   columns: string[],
   rowGroupStart: number,
   requestedStart: number,
   requestedEnd: number,
   options: ReadParquetBatchOptions,
-): AsyncIterable<ParquetVectorBatch> {
-  const cursors: ColumnVectorCursor[] = columnMetadata.map((metadataForColumn, index) => {
-    const column = columns[index];
-    if (column === undefined) throw new Error("Missing vector column");
-    return {
-      column,
-      iterator: readColumnVectorBatches(
+): VectorBatchSource[] | undefined {
+  const sources: VectorBatchSource[] = [];
+  for (const column of columns) {
+    const metadataForColumn = directLeafColumnMetadata(rowGroup, column);
+    if (metadataForColumn !== undefined && canDirectVector(metadata, metadataForColumn)) {
+      sources.push({
+        columns: [column],
+        iterator: readColumnVectorBatches(
+          file,
+          metadata,
+          metadataForColumn,
+          column,
+          rowGroupStart,
+          requestedStart,
+          requestedEnd,
+          options,
+        )[Symbol.asyncIterator](),
+      });
+      continue;
+    }
+    if (!canRepresentNestedVectorColumn(metadata, column)) return undefined;
+    sources.push({
+      columns: [column],
+      iterator: readNestedColumnVectorBatches(
         file,
         metadata,
-        metadataForColumn,
         column,
-        rowGroupStart,
         requestedStart,
         requestedEnd,
         options,
       )[Symbol.asyncIterator](),
-    };
-  });
+    });
+  }
+  return sources;
+}
+
+async function* readAlignedColumnVectorBatches(
+  sources: VectorBatchSource[],
+): AsyncIterable<ParquetVectorBatch> {
+  const cursors: ColumnVectorCursor[] = sources.map((source) => ({ ...source }));
   for (const cursor of cursors) {
     const next = await cursor.iterator.next();
     if (next.done === true) return;
@@ -224,13 +286,15 @@ async function* readAlignedColumnVectorBatches(
       for (const cursor of cursors) {
         const current = cursor.current;
         if (current === undefined) return;
-        const vector = current.batch.columns[cursor.column];
-        if (vector === undefined) return;
-        vectors[cursor.column] = sliceVector(
-          vector,
-          rowOffset - current.rowOffset,
-          rowEnd - current.rowOffset,
-        );
+        for (const column of cursor.columns) {
+          const vector = current.batch.columns[column];
+          if (vector === undefined) return;
+          vectors[column] = sliceVector(
+            vector,
+            rowOffset - current.rowOffset,
+            rowEnd - current.rowOffset,
+          );
+        }
       }
       yield { rowOffset, batch: batchFromVectors(vectors) };
     }
@@ -244,6 +308,45 @@ async function* readAlignedColumnVectorBatches(
         else cursor.current = next.value;
       }
     }
+  }
+}
+
+async function* readNestedColumnVectorBatches(
+  file: StoreAsyncBuffer,
+  metadata: ParquetMetadata,
+  column: string,
+  requestedStart: number,
+  requestedEnd: number,
+  options: ReadParquetBatchOptions,
+): AsyncIterable<ParquetVectorBatch> {
+  const batchSize = options.batchSize ?? 4096;
+  for (let rowStart = requestedStart; rowStart < requestedEnd; rowStart += batchSize) {
+    const rowEnd = Math.min(rowStart + batchSize, requestedEnd);
+    const cache = options.decodedColumnCache;
+    const key =
+      cache === undefined || options.decodedColumnCacheKey === undefined
+        ? undefined
+        : decodedColumnCacheKey({
+            path: options.decodedColumnCacheKey,
+            byteLength: file.byteLength,
+            ...(file.etag === undefined ? {} : { etag: file.etag }),
+            columns: [column],
+            rowStart,
+            rowEnd,
+          });
+    const cached = key === undefined || cache === undefined ? undefined : cache.get(key);
+    let batch: Batch;
+    if (cached !== undefined) {
+      batch = cached;
+    } else {
+      batch = await readParquetColumnBatch(file, metadata, [column], rowStart, rowEnd);
+      if (key !== undefined && cache !== undefined) cache.set(key, batch);
+    }
+    if (key !== undefined && options.stats !== undefined) {
+      if (cached === undefined) options.stats.cacheMisses += 1;
+      else options.stats.cacheHits += 1;
+    }
+    yield { rowOffset: rowStart, batch };
   }
 }
 

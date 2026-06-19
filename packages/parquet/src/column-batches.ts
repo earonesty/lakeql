@@ -1,5 +1,6 @@
 import type { ColumnData } from "hyparquet";
 import { parquetRead, parquetSchema } from "hyparquet";
+import { getSchemaPath } from "hyparquet/src/schema.js";
 import { type Batch, batchFromColumns } from "lakeql-core";
 import { decodedColumnCacheKey } from "./decoded-column-cache.js";
 import { lakeqlParquetParsers } from "./parsers.js";
@@ -76,7 +77,7 @@ export async function* readParquetColumnBatchesFromFile(
   }
 }
 
-async function readParquetColumnBatch(
+export async function readParquetColumnBatch(
   file: StoreAsyncBuffer,
   metadata: ParquetMetadata,
   columns: string[],
@@ -98,7 +99,52 @@ async function readParquetColumnBatch(
     },
   };
   await parquetRead(readOptions);
-  return batchFromColumns(columnValues);
+  return batchFromColumns(normalizeParquetColumnValues(metadata, columns, columnValues));
+}
+
+function normalizeParquetColumnValues(
+  metadata: ParquetMetadata,
+  columns: readonly string[],
+  columnValues: Record<string, ArrayLike<unknown>>,
+): Record<string, ArrayLike<unknown>> {
+  const normalized = { ...columnValues };
+  for (const column of columns) {
+    const values = normalized[column];
+    if (values === undefined || !isParquetMapColumn(metadata, column)) continue;
+    normalized[column] = Array.from(values, parquetMapValue);
+  }
+  return normalized;
+}
+
+function isParquetMapColumn(metadata: ParquetMetadata, column: string): boolean {
+  try {
+    const element = getSchemaPath(metadata.schema, [column]).at(-1)?.element;
+    const logicalType = element?.logical_type;
+    return (
+      element?.converted_type === "MAP" ||
+      element?.converted_type === "MAP_KEY_VALUE" ||
+      logicalTypeName(logicalType) === "MAP"
+    );
+  } catch {
+    return false;
+  }
+}
+
+function logicalTypeName(logicalType: unknown): string | undefined {
+  if (typeof logicalType === "string") return logicalType;
+  if (typeof logicalType !== "object" || logicalType === null) return undefined;
+  if ("type" in logicalType && typeof logicalType.type === "string") return logicalType.type;
+  for (const key of ["LIST", "MAP"]) {
+    if (key in logicalType) return key;
+  }
+  return undefined;
+}
+
+function parquetMapValue(value: unknown): unknown {
+  if (value === null || value === undefined || value instanceof Map) return value;
+  if (Array.isArray(value)) return new Map(value as Iterable<readonly [unknown, unknown]>);
+  if (typeof value === "object") return new Map(Object.entries(value));
+  return value;
 }
 
 function appendColumnChunk(

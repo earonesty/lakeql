@@ -12,6 +12,101 @@ import type { StoreAsyncBuffer } from "./types.js";
 import { canReadParquetVectorBatches, readParquetVectorBatchesFromFile } from "./vector-batches.js";
 
 describe("direct Parquet vector batches", () => {
+  it("reads supported nested Parquet columns as aligned vector batches", async () => {
+    const store = memoryStore();
+    await writeParquet(store, "data/vector-nested.parquet", {
+      rowGroupSize: [4],
+      pageSize: 1024,
+      schema: [
+        { name: "root", num_children: 3 },
+        { name: "id", type: "INT32", repetition_type: "REQUIRED" },
+        { name: "tags", converted_type: "LIST", repetition_type: "OPTIONAL", num_children: 1 },
+        { name: "list", repetition_type: "REPEATED", num_children: 1 },
+        {
+          name: "element",
+          type: "BYTE_ARRAY",
+          converted_type: "UTF8",
+          repetition_type: "OPTIONAL",
+        },
+        { name: "attrs", converted_type: "MAP", repetition_type: "OPTIONAL", num_children: 1 },
+        { name: "key_value", repetition_type: "REPEATED", num_children: 2 },
+        { name: "key", type: "BYTE_ARRAY", converted_type: "UTF8", repetition_type: "REQUIRED" },
+        { name: "value", type: "BYTE_ARRAY", converted_type: "UTF8", repetition_type: "OPTIONAL" },
+      ],
+      columnData: [
+        { name: "id", data: [1, 2, 3, 4] },
+        { name: "tags", data: [["coffee", "wifi"], null, [], ["park"]] },
+        {
+          name: "attrs",
+          data: [
+            new Map<string, string | null>([
+              ["category", "cafe"],
+              ["chain", null],
+            ]),
+            null,
+            new Map<string, string>(),
+            new Map<string, string>([["category", "park"]]),
+          ],
+        },
+      ],
+    });
+    const file = await fileBuffer(store, "data/vector-nested.parquet");
+    const metadata = await readParquetMetadata(store, "data/vector-nested.parquet");
+    const decodedColumnCache = new DecodedColumnCache(
+      new SharedMemoryCache({ maxBytes: 1024 * 1024 }),
+      {
+        maxBytes: 1024 * 1024,
+        policy: "latency",
+      },
+    );
+    const stats = queryStats();
+
+    expect(canReadParquetVectorBatches(metadata, { columns: ["id", "tags", "attrs"] })).toBe(true);
+
+    const batches = [];
+    for await (const batch of readParquetVectorBatchesFromFile(file, metadata, {
+      columns: ["id", "tags", "attrs"],
+      rowStart: 1,
+      rowEnd: 4,
+      batchSize: 2,
+      stats,
+      decodedColumnCache,
+      decodedColumnCacheKey: "data/vector-nested.parquet",
+    })) {
+      batches.push(batch);
+    }
+
+    expect(batches.map((batch) => [batch.rowOffset, batch.batch.rowCount])).toEqual([
+      [1, 2],
+      [3, 1],
+    ]);
+    const rows = batches.flatMap((batch) => materializeBatchRows(batch.batch));
+    expect(rows).toEqual([
+      { id: 2, tags: null, attrs: null },
+      { id: 3, tags: [], attrs: {} },
+      { id: 4, tags: ["park"], attrs: { category: "park" } },
+    ]);
+    expect(batches[0]?.batch.columns.id?.type).toBe("f64");
+    expect(batches[0]?.batch.columns.tags?.type).toBe("list");
+    expect(batches[0]?.batch.columns.attrs?.type).toBe("map");
+    expect(stats.rowsDecoded).toBe(3);
+    expect(stats.cacheMisses).toBeGreaterThan(0);
+
+    const warmStats = queryStats();
+    for await (const _ of readParquetVectorBatchesFromFile(file, metadata, {
+      columns: ["id", "tags", "attrs"],
+      rowStart: 1,
+      rowEnd: 4,
+      batchSize: 2,
+      stats: warmStats,
+      decodedColumnCache,
+      decodedColumnCacheKey: "data/vector-nested.parquet",
+    })) {
+      // drain the warm nested vector scan
+    }
+    expect(warmStats.cacheHits).toBeGreaterThan(0);
+  });
+
   it("reads the known emitted DATA_PAGE_V2 vector shapes including dictionary strings", async () => {
     const store = memoryStore();
     await writeParquet(store, "data/vector-physical-shapes.parquet", {
