@@ -471,6 +471,91 @@ describe("Lake query runtime", () => {
     expect(resumedAggregate.rows).toHaveLength(2);
   });
 
+  it("covers fallback query execution branches for limits, hive partitions, and ordered batches", async () => {
+    const hive = await makeLake({
+      rowsByPath: {
+        "lake/country=US/date=2026-01-01/part-1.parquet": [{ amount: 10 }, { amount: 20 }],
+        "lake/country=CA/date=2026-01-01/part-1.parquet": [{ amount: 30 }],
+      },
+    });
+    await expect(
+      hive.lake
+        .hive("lake/**/*.parquet")
+        .where(eq("country", "US"))
+        .groupBy(["country"])
+        .aggregate({ rows: { op: "count" }, total: { op: "sum", column: "amount" } }),
+    ).resolves.toEqual([{ country: "US", rows: 2, total: 30 }]);
+    expect(hive.scanner.requestedColumns).toEqual([["amount"]]);
+
+    const partitionOnly = await makeLake({
+      rowsByPath: {
+        "lake/country=US/date=2026-01-01/part-1.parquet": [{ ignored: 1 }],
+      },
+    });
+    await expect(
+      partitionOnly.lake
+        .hive("lake/**/*.parquet")
+        .where(eq("country", "US"))
+        .groupBy(["country"])
+        .aggregate({ rows: { op: "count" } }),
+    ).resolves.toEqual([{ country: "US", rows: 1 }]);
+    expect(partitionOnly.scanner.requestedColumns).toEqual([undefined]);
+
+    const limited = await makeLake({
+      rowsByPath: { table: [{ id: 1 }, { id: 2 }, { id: 3 }] },
+    });
+    await expect(limited.lake.path("table").limit(1).toArray()).resolves.toEqual([{ id: 1 }]);
+
+    const ordered = await makeLake({
+      rowsByPath: { table: [{ id: 3 }, { id: 1 }, { id: 2 }] },
+    });
+    const orderedBatches = [];
+    for await (const batch of ordered.lake
+      .path("table")
+      .orderBy([{ column: "id" }])
+      .batchSize(1)
+      .batches()) {
+      orderedBatches.push(batch);
+    }
+    expect(orderedBatches).toEqual([[{ id: 1 }], [{ id: 2 }], [{ id: 3 }]]);
+  });
+
+  it("covers vector projected batch selection, offset, and limit windows", async () => {
+    const { lake, scanner } = await makeLake({
+      vectorBatches: true,
+      rowsByPath: {
+        table: [
+          { id: 1, keep: false, value: "a" },
+          { id: 2, keep: true, value: "b" },
+          { id: 3, keep: true, value: "c" },
+          { id: 4, keep: true, value: "d" },
+        ],
+      },
+    });
+
+    await expect(
+      lake
+        .path("table")
+        .select(["id", "value"])
+        .where(eq("keep", true))
+        .offset(1)
+        .limit(1)
+        .toArray(),
+    ).resolves.toEqual([{ id: 3, value: "c" }]);
+    expect(scanner.requestedVectorBatchColumns).toEqual([["id", "keep", "value"]]);
+    expect(scanner.requestedVectorBatchWindows).toEqual([{}]);
+
+    const unfiltered = await makeLake({
+      vectorBatches: true,
+      rowsByPath: { table: [{ id: 1 }, { id: 2 }, { id: 3 }] },
+    });
+    await expect(unfiltered.lake.path("table").select(["id"]).limit(2).toArray()).resolves.toEqual([
+      { id: 1 },
+      { id: 2 },
+    ]);
+    expect(unfiltered.scanner.requestedVectorBatchWindows).toEqual([{ rowEnd: 2 }]);
+  });
+
   it("supports first, count, batches, NDJSON, JSON, and CSV streams", async () => {
     const { lake } = await makeLake({
       rowsByPath: {
