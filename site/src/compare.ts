@@ -27,6 +27,7 @@ const DATASET_KEY = "2015_flights.parquet";
 const DATASET_PROXY_PATH = "compare-data/2015_flights.parquet";
 const DATASET_SIZE = 25_238_218;
 const SCAN_RANGE_CACHE_BYTES = 32 * 1024 * 1024;
+const PENDING_RUN_KEY = "lakeql_compare_pending_run";
 
 const EXAMPLES = [
   {
@@ -69,6 +70,7 @@ let lakeRuntime: { lake: Lake; cacheMode: LakeCacheMode } | undefined;
 let duckState:
   | Promise<{ db: duckdb.AsyncDuckDB; conn: duckdb.AsyncDuckDBConnection; initMs: number }>
   | undefined;
+let initialSqlText: string | undefined;
 
 const highlight = HighlightStyle.define([
   { tag: tags.keyword, color: "#c6f24e", fontWeight: "700" },
@@ -116,7 +118,7 @@ function mountEditor(): void {
   if (view) view.destroy();
   view = new EditorView({
     parent,
-    doc: EXAMPLES[activeExample].sql,
+    doc: initialSqlText ?? EXAMPLES[activeExample].sql,
     extensions: [
       basicSetup,
       sql(),
@@ -186,7 +188,7 @@ function datasetProxyBase(): string {
 
 let proxyReady: Promise<void> | undefined;
 
-async function ensureCompareProxy(): Promise<void> {
+function prepareCompareProxy(): Promise<void> {
   if (proxyReady) return proxyReady;
   proxyReady = (async () => {
     if (!("serviceWorker" in navigator)) {
@@ -196,22 +198,25 @@ async function ensureCompareProxy(): Promise<void> {
       scope: "./",
     });
     await navigator.serviceWorker.ready;
-    if (navigator.serviceWorker.controller) return;
-    await new Promise<void>((resolve, reject) => {
-      const timeout = window.setTimeout(() => {
-        reject(new Error("The file-read counter is not active yet. Reload and try again."));
-      }, 4000);
-      navigator.serviceWorker.addEventListener(
-        "controllerchange",
-        () => {
-          window.clearTimeout(timeout);
-          resolve();
-        },
-        { once: true },
-      );
-    });
   })();
   return proxyReady;
+}
+
+async function ensureCompareProxy(
+  options: { navigateOnUncontrolled?: boolean } = {},
+): Promise<void> {
+  await prepareCompareProxy();
+  if (navigator.serviceWorker.controller) return;
+  if (options.navigateOnUncontrolled) {
+    navigateForProxyControl();
+    return new Promise(() => {});
+  }
+  throw new Error("The file-read counter is not active yet. Reload and try again.");
+}
+
+function navigateForProxyControl(): void {
+  savePendingRunState();
+  window.location.assign(window.location.href);
 }
 
 async function resetProxyStats(): Promise<void> {
@@ -351,6 +356,7 @@ async function run(): Promise<void> {
   const text = view.state.doc.toString();
 
   try {
+    await ensureCompareProxy({ navigateOnUncontrolled: true });
     if (engine === "lakeql") {
       const { rows, ms, stats, lakeStats } = await runLakeql(text);
       renderResult(rows);
@@ -382,6 +388,100 @@ async function run(): Promise<void> {
   } finally {
     runBtn?.classList.remove("is-busy");
   }
+}
+
+interface PendingRunState {
+  engine: Engine;
+  duckCacheMode: DuckCacheMode;
+  lakeCacheMode: LakeCacheMode;
+  activeExample: number;
+  sql: string;
+  controlNavs: number;
+}
+
+function currentRunState(controlNavs = 0): PendingRunState {
+  return {
+    engine,
+    duckCacheMode,
+    lakeCacheMode,
+    activeExample,
+    sql: view?.state.doc.toString() ?? initialSqlText ?? EXAMPLES[activeExample].sql,
+    controlNavs,
+  };
+}
+
+function savePendingRunState(): void {
+  const previous = readPendingRunState();
+  sessionStorage.setItem(
+    PENDING_RUN_KEY,
+    JSON.stringify(currentRunState((previous?.controlNavs ?? 0) + 1)),
+  );
+}
+
+function takePendingRunState(): PendingRunState | undefined {
+  const raw = sessionStorage.getItem(PENDING_RUN_KEY);
+  if (!raw) return undefined;
+  sessionStorage.removeItem(PENDING_RUN_KEY);
+  return parsePendingRunState(raw);
+}
+
+function readPendingRunState(): PendingRunState | undefined {
+  const raw = sessionStorage.getItem(PENDING_RUN_KEY);
+  return raw ? parsePendingRunState(raw) : undefined;
+}
+
+function parsePendingRunState(raw: string): PendingRunState | undefined {
+  try {
+    const parsed = JSON.parse(raw) as Partial<PendingRunState>;
+    if (parsed.engine !== "lakeql" && parsed.engine !== "duckdb") return undefined;
+    return {
+      engine: parsed.engine,
+      duckCacheMode: parsed.duckCacheMode === "cached" ? "cached" : "fresh",
+      lakeCacheMode: parsed.lakeCacheMode === "cached" ? "cached" : "fresh",
+      activeExample:
+        typeof parsed.activeExample === "number" &&
+        parsed.activeExample >= 0 &&
+        parsed.activeExample < EXAMPLES.length
+          ? parsed.activeExample
+          : 0,
+      sql: typeof parsed.sql === "string" ? parsed.sql : EXAMPLES[0].sql,
+      controlNavs: typeof parsed.controlNavs === "number" ? parsed.controlNavs : 0,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function applyPendingRunState(state: PendingRunState): void {
+  engine = state.engine;
+  duckCacheMode = state.duckCacheMode;
+  lakeCacheMode = state.lakeCacheMode;
+  activeExample = state.activeExample;
+  initialSqlText = state.sql;
+}
+
+function syncControlsFromState(): void {
+  document.querySelectorAll<HTMLButtonElement>(".switch__opt").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.engine === engine);
+  });
+  document
+    .querySelectorAll<HTMLButtonElement>("#query-picker button[data-example]")
+    .forEach((button) => {
+      button.classList.toggle("is-active", Number(button.dataset.example) === activeExample);
+    });
+  const duckSelect = document.getElementById("duck-cache-mode") as HTMLSelectElement | null;
+  if (duckSelect) duckSelect.value = duckCacheMode;
+  const lakeSelect = document.getElementById("lake-cache-mode") as HTMLSelectElement | null;
+  if (lakeSelect) lakeSelect.value = lakeCacheMode;
+}
+
+async function resumePendingRun(state: PendingRunState | undefined): Promise<void> {
+  if (!state) return;
+  if (!navigator.serviceWorker.controller && state.controlNavs > 0) {
+    throw new Error("The file-read counter is not active after navigation. Try the run again.");
+  }
+  await ensureCompareProxy({ navigateOnUncontrolled: true });
+  await run();
 }
 
 function setGauges(input: {
@@ -539,6 +639,7 @@ function setupExamples(): void {
     const button = (event.target as Element).closest<HTMLButtonElement>("button[data-example]");
     if (!button) return;
     activeExample = Number(button.dataset.example);
+    initialSqlText = undefined;
     host.querySelectorAll("button").forEach((b) => {
       b.classList.remove("is-active");
     });
@@ -567,10 +668,16 @@ function setupVersion(): void {
   if (tag) tag.textContent = `v${__LAKEQL_VERSION__}`;
 }
 
+const pendingRunState = takePendingRunState();
+if (pendingRunState) applyPendingRunState(pendingRunState);
+
 document.getElementById("run")?.addEventListener("click", () => void run());
 setupVersion();
 setupExamples();
 setupDuckCacheMode();
 setupLakeCacheMode();
+syncControlsFromState();
 setupEngineSwitch();
 mountEditor();
+void prepareCompareProxy().catch(showError);
+void resumePendingRun(pendingRunState).catch(showError);
