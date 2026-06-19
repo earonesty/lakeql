@@ -1,7 +1,7 @@
 {
   "name": "lakeql",
   "sideEffects": false,
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "lakeql: lightweight TypeScript query engine for Iceberg + Parquet on object storage",
   "keywords": [
     "lakehouse",
