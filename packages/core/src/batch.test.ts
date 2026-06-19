@@ -419,6 +419,104 @@ describe("column batches", () => {
     );
   });
 
+  it("covers vector predicate truth tables across fast and scalar comparison paths", () => {
+    const dictionary = batchFromColumns({ value: ["alpha", "beta", "gamma"] }).columns.value;
+    if (dictionary === undefined) throw new Error("missing dictionary vector");
+    const batch = batchFromVectors({
+      f64: { type: "f64", values: new Float64Array([1, 2, 3]), valid: new Uint8Array([1, 1, 0]) },
+      i64: { type: "i64", values: new BigInt64Array([1n, 2n, 3n]) },
+      text: { type: "utf8", values: ["alpha", "beta", "gamma"] },
+      flag: { type: "bool", values: new Uint8Array([1, 0, 1]) },
+      dict: {
+        type: "dict",
+        indices: new Uint32Array([0, 1, 2]),
+        dictionary,
+        valid: new Uint8Array([1, 0, 1]),
+      },
+      loaded_at: {
+        type: "timestamp",
+        values: new BigInt64Array([1_700_000_000_000n, 1_700_000_000_500n, 1_700_000_001_000n]),
+        unit: "millis",
+        isAdjustedToUTC: true,
+      },
+    });
+
+    const masks = [
+      [eq("f64", 2), [0, 1, 2]],
+      [ne("f64", 2), [1, 0, 2]],
+      [lt("f64", 2), [1, 0, 2]],
+      [lte("f64", 2), [1, 1, 2]],
+      [gt("f64", 2), [0, 0, 2]],
+      [gte("f64", 2), [0, 1, 2]],
+      [lt(lit(2), col("i64")), [0, 0, 1]],
+      [lte(lit(2), col("i64")), [0, 1, 1]],
+      [gte(lit(2), col("i64")), [1, 1, 0]],
+      [eq("dict", "alpha"), [1, 2, 0]],
+      [eq("dict", null), [2, 2, 2]],
+      [gt("loaded_at", "2023-11-14T22:13:20.500Z"), [0, 0, 1]],
+      [isIn("text", ["delta", lit(null)]), [2, 2, 2]],
+      [isIn("text", ["alpha", "gamma"]), [1, 0, 1]],
+      [notIn("text", ["alpha", lit(null)]), [0, 2, 2]],
+      [and(lit(true), lit(null)), [2, 2, 2]],
+      [or(lit(false), lit(null)), [2, 2, 2]],
+      [not(lit(null)), [2, 2, 2]],
+      [col("flag"), [1, 0, 1]],
+      [lit(true), [1, 1, 1]],
+      [lit(false), [0, 0, 0]],
+      [lit(null), [2, 2, 2]],
+    ] as const;
+
+    for (const [predicate, expected] of masks) {
+      expect([...predicateSelection(batch, predicate)]).toEqual(expected);
+    }
+
+    expect(() => predicateSelection(batch, gt("loaded_at", 1))).toThrowError(
+      expect.objectContaining({
+        code: "LAKEQL_TYPE_ERROR",
+        details: { leftType: "timestamp", rightType: "number" },
+      }),
+    );
+    expect(() => predicateSelection(batch, eq("text", 1))).toThrowError(
+      expect.objectContaining({
+        code: "LAKEQL_TYPE_ERROR",
+        details: { leftType: "string", rightType: "number" },
+      }),
+    );
+  });
+
+  it("keeps scalar expression boundaries explicit for nested vectors and predicate-only forms", () => {
+    const batch = batchFromColumns({
+      tags: [["a"], ["b"]],
+      attrs: [{ id: 1 }, { id: 2 }],
+      lookup: [new Map([["k", 1]]), new Map([["k", 2]])],
+      amount: [1, 2],
+    });
+
+    for (const column of ["tags", "attrs", "lookup"]) {
+      expect(() => batchExprValues(batch, col(column)).valueAt(0)).toThrowError(
+        expect.objectContaining({
+          code: "LAKEQL_TYPE_ERROR",
+          details: { vectorType: expect.any(String) },
+        }),
+      );
+    }
+
+    const predicateOnlyExpressions = [
+      eq("amount", 1),
+      isIn("amount", [1]),
+      between("amount", 1, 2),
+      isNull("amount"),
+      and(eq("amount", 1), eq("amount", 2)),
+      not(eq("amount", 1)),
+      like("amount", "%1%"),
+    ];
+    for (const expr of predicateOnlyExpressions) {
+      expect(() => batchExprValues(batch, expr)).toThrowError(
+        expect.objectContaining({ code: "LAKEQL_UNSUPPORTED_PUSHDOWN" }),
+      );
+    }
+  });
+
   it("evaluates geo and h3 predicate kernels over large string and dictionary vectors", async () => {
     await loadGeoBackend();
     const rows = 20_000;
