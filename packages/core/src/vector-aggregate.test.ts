@@ -386,12 +386,22 @@ describe("vector aggregate kernels", () => {
   it("round-trips partial aggregate states through JSON for deployment fan-in", () => {
     const spec = {
       rows: { op: "count" },
+      total: { op: "sum", column: "amount" },
+      average: { op: "avg", column: "amount" },
       variance: { op: "var_samp", column: "amount" },
+      popVariance: { op: "var_pop", column: "amount" },
+      stddev: { op: "stddev_samp", column: "amount" },
+      popStddev: { op: "stddev_pop", column: "amount" },
       median: { op: "median", column: "amount" },
       p75: { op: "quantile", column: "amount", quantile: 0.75 },
+      minAmount: { op: "min", column: "amount" },
       maxBig: { op: "max", column: "big" },
       labels: { op: "count_distinct", column: "label" },
+      approximateLabels: { op: "approx_count_distinct", column: "label" },
       modeLabel: { op: "mode", column: "label" },
+      firstLabel: { op: "first", column: "label" },
+      lastLabel: { op: "last", column: "label" },
+      anyLabel: { op: "any", column: "label" },
     } as const;
     const left = createVectorAggregateStates(spec);
     const right = createVectorAggregateStates(spec);
@@ -413,12 +423,22 @@ describe("vector aggregate kernels", () => {
 
     expect(finalizeVectorAggregateStates(merged)).toEqual({
       rows: 3,
+      total: 6,
+      average: 2,
       variance: 1,
+      popVariance: 2 / 3,
+      stddev: 1,
+      popStddev: Math.sqrt(2 / 3),
       median: 2,
       p75: 2.5,
+      minAmount: 1,
       maxBig: 30n,
       labels: 2,
+      approximateLabels: 2,
       modeLabel: "b",
+      firstLabel: "a",
+      lastLabel: "b",
+      anyLabel: "a",
     });
   });
 

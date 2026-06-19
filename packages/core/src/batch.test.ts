@@ -17,16 +17,25 @@ import {
   and,
   between,
   col,
+  div,
   eq,
   fn,
   gt,
+  gte,
   isIn,
   isNotNull,
   isNull,
   like,
   lit,
+  lt,
+  lte,
+  mod,
+  mul,
+  ne,
   not,
+  notIn,
   or,
+  sub,
 } from "./expr.js";
 import { timestampFromEpoch } from "./timestamp.js";
 
@@ -184,6 +193,75 @@ describe("column batches", () => {
         rows.filter((row) => matches(predicate, row)),
       );
     }
+  });
+
+  it("covers scalar vector values and comparisons across supported primitive shapes", () => {
+    const dictionary = batchFromColumns({ value: ["a", "b"] }).columns.value;
+    if (dictionary === undefined) throw new Error("missing dictionary vector");
+    const batch = batchFromVectors({
+      f64: { type: "f64", values: new Float64Array([1, 2, 3]), valid: new Uint8Array([1, 0, 1]) },
+      i64: { type: "i64", values: new BigInt64Array([1n, 2n, 3n]) },
+      bool: { type: "bool", values: new Uint8Array([1, 0, 1]) },
+      utf8: { type: "utf8", values: ["a", "b", "c"] },
+      dict: { type: "dict", indices: new Uint32Array([0, 1, 0]), dictionary },
+      nulls: { type: "null", length: 3 },
+      loaded_at: {
+        type: "timestamp",
+        values: new BigInt64Array([1_700_000_000_000n, 1_700_000_000_500n, 1_700_000_001_000n]),
+        unit: "millis",
+        isAdjustedToUTC: true,
+      },
+    });
+
+    expect(vectorValue(batch.columns.f64 ?? { type: "null", length: 0 }, 1)).toBeNull();
+    expect(vectorValue(batch.columns.i64 ?? { type: "null", length: 0 }, 2)).toBe(3n);
+    expect(vectorValue(batch.columns.bool ?? { type: "null", length: 0 }, 1)).toBe(false);
+    expect(vectorValue(batch.columns.utf8 ?? { type: "null", length: 0 }, 2)).toBe("c");
+    expect(vectorValue(batch.columns.dict ?? { type: "null", length: 0 }, 1)).toBe("b");
+    expect(vectorValue(batch.columns.nulls ?? { type: "null", length: 0 }, 0)).toBeNull();
+    expect(() => vectorValue(batch.columns.f64 ?? { type: "null", length: 0 }, -1)).toThrowError(
+      LakeqlError,
+    );
+
+    const predicates = [
+      [eq("f64", 3), [2]],
+      [ne("utf8", "b"), [0, 2]],
+      [lt("i64", 3), [0, 1]],
+      [lte("i64", 2n), [0, 1]],
+      [gte("i64", 2), [1, 2]],
+      [gt(lit(2), col("f64")), [0]],
+      [eq("dict", "a"), [0, 2]],
+      [notIn("utf8", ["a", lit(null)]), []],
+      [gt("loaded_at", "2023-11-14T22:13:20.500Z"), [2]],
+    ] as const;
+
+    for (const [predicate, expectedRows] of predicates) {
+      expect(materializeSelectedBatchRows(batch, predicateSelection(batch, predicate))).toEqual(
+        expectedRows.map((index) => materializeBatchRows(batch)[index]),
+      );
+    }
+  });
+
+  it("evaluates every arithmetic vector expression operator and preserves null semantics", () => {
+    const batch = batchFromColumns({ left: [10, null, 7], right: [3, 2, 4] });
+    const rows = materializeBatchRows(batch);
+    const expressions = [
+      add(col("left"), col("right")),
+      sub(col("left"), col("right")),
+      mul(col("left"), col("right")),
+      div(col("left"), col("right")),
+      mod(col("left"), col("right")),
+    ];
+
+    for (const expr of expressions) {
+      const values = batchExprValues(batch, expr);
+      expect(rows.map((_row, index) => values.valueAt(index))).toEqual(
+        rows.map((row) => evaluate(expr, row)),
+      );
+    }
+    expect(() =>
+      batchExprValues(batchFromColumns({ value: ["x"] }), add(col("value"), 1)).valueAt(0),
+    ).toThrowError(LakeqlError);
   });
 
   it("evaluates searched CASE expressions with SQL null predicate semantics", () => {

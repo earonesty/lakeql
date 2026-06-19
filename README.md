@@ -93,7 +93,7 @@ kept as workspace source (not separately published):
 
 lakeql is checked in CI against real engine output, not just self-generated fixtures:
 conformance against Spark/PyIceberg reference warehouses, row-for-row comparison against
-DuckDB, real S3 (MinIO) and Iceberg REST catalog round-trips, a coverage gate, and a
+DuckDB, real S3 (MinIO) and Iceberg REST catalog round-trips, a 90% coverage gate, and a
 [reproducible benchmark report](./bench/REPORT.md). See [conformance](./docs/conformance.md).
 
 ## Development

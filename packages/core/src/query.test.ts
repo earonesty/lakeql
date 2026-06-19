@@ -1676,10 +1676,17 @@ describe("Lake query runtime", () => {
       rows: { op: "count" },
       total: { op: "sum", column: "amount" },
       average: { op: "avg", column: "amount" },
+      sampleVariance: { op: "var_samp", column: "amount" },
+      sampleStddev: { op: "stddev_samp", column: "amount" },
+      popVariance: { op: "var_pop", column: "amount" },
+      popStddev: { op: "stddev_pop", column: "amount" },
+      medianAmount: { op: "median", column: "amount" },
+      p75Amount: { op: "quantile", column: "amount", quantile: 0.75 },
       minId: { op: "min", column: "id" },
       maxId: { op: "max", column: "id" },
       distinctIds: { op: "count_distinct", column: "id" },
       approximateIds: { op: "approx_count_distinct", column: "id" },
+      modeLabel: { op: "mode", column: "label" },
       firstLabel: { op: "first", column: "label" },
       lastLabel: { op: "last", column: "label" },
       anyLabel: { op: "any", column: "label" },
@@ -1721,10 +1728,17 @@ describe("Lake query runtime", () => {
           rows: 3,
           total: 35,
           average: 35 / 3,
+          sampleVariance: 58.33333333333333,
+          sampleStddev: Math.sqrt(175 / 3),
+          popVariance: 350 / 9,
+          popStddev: Math.sqrt(350 / 9),
+          medianAmount: 10,
+          p75Amount: 15,
           minId: 1,
           maxId: 2,
           distinctIds: 2,
           approximateIds: 2,
+          modeLabel: "a",
           firstLabel: "a",
           lastLabel: "d",
           anyLabel: "a",
@@ -1734,10 +1748,17 @@ describe("Lake query runtime", () => {
           rows: 1,
           total: 7,
           average: 7,
+          sampleVariance: null,
+          sampleStddev: null,
+          popVariance: 0,
+          popStddev: 0,
+          medianAmount: 7,
+          p75Amount: 7,
           minId: 2,
           maxId: 2,
           distinctIds: 1,
           approximateIds: 1,
+          modeLabel: "c",
           firstLabel: "c",
           lastLabel: "c",
           anyLabel: "c",
@@ -1814,6 +1835,103 @@ describe("Lake query runtime", () => {
         .groupBy(["region"])
         .aggregateWithState({ firstPayload: { op: "first", column: "payload" } }),
     ).rejects.toMatchObject({ code: "LAKEQL_TYPE_ERROR" });
+  });
+
+  it("validates serialized operator state contracts for every aggregate shape", () => {
+    const aggregateStates = [
+      { op: "count", count: 1 },
+      { op: "sum", sum: 1 },
+      { op: "avg", sum: 3, count: 2 },
+      { op: "var_samp", count: 2, mean: 1.5, m2: 0.5 },
+      { op: "var_pop", count: 2, mean: 1.5, m2: 0.5 },
+      { op: "stddev_samp", count: 2, mean: 1.5, m2: 0.5 },
+      { op: "stddev_pop", count: 2, mean: 1.5, m2: 0.5 },
+      { op: "median", values: [1, "two"] },
+      { op: "quantile", quantile: 0.5, values: [1, 2] },
+      { op: "min", value: 1 },
+      { op: "max", value: "z" },
+      { op: "count_distinct", values: ["1", "2"] },
+      { op: "approx_count_distinct", values: ["1", "2"] },
+      { op: "mode", values: [{ key: "n:1", value: 1, count: 2 }] },
+      { op: "first", value: "a", seen: true },
+      { op: "last", value: null, seen: false },
+      { op: "any", value: true, seen: true },
+    ];
+    const spec = Object.fromEntries(
+      aggregateStates.map((state, index) => {
+        const alias = `a${index}`;
+        switch (state.op) {
+          case "quantile":
+            return [alias, { op: state.op, column: "value", quantile: state.quantile }];
+          default:
+            return [alias, { op: state.op, column: "value" }];
+        }
+      }),
+    ) as AggregateSpec;
+    const states = Object.fromEntries(aggregateStates.map((state, index) => [`a${index}`, state]));
+    const state = {
+      version: 1,
+      groupColumns: ["region"],
+      spec,
+      groups: [{ key: "region\u001fwest", keys: { region: "west" }, states }],
+    };
+
+    expect(deserializeAggregateOperatorState(state)).toEqual(state);
+
+    const invalidAggregateStates = [
+      { op: "count", count: "1" },
+      { op: "sum", sum: "1" },
+      { op: "avg", sum: 1, count: "2" },
+      { op: "var_samp", count: 2, mean: 1, m2: "bad" },
+      { op: "median", values: [true] },
+      { op: "quantile", quantile: 1.5, values: [1] },
+      { op: "min", value: { nested: true } },
+      { op: "count_distinct", values: [1] },
+      { op: "mode", values: [{ key: "x", value: 1, count: -1 }] },
+      { op: "first", value: "a", seen: "yes" },
+      { op: "unknown" },
+    ];
+    for (const invalidState of invalidAggregateStates) {
+      expect(() =>
+        deserializeAggregateOperatorState({
+          ...state,
+          groups: [
+            { key: "region\u001fwest", keys: { region: "west" }, states: { a0: invalidState } },
+          ],
+        }),
+      ).toThrowError(LakeqlError);
+    }
+
+    const invalidTopKStates = [
+      null,
+      { version: 2 },
+      { version: 1, orderBy: [], offset: 0, limit: 1, rows: [] },
+      { version: 1, orderBy: [{ column: "" }], offset: 0, limit: 1, rows: [] },
+      { version: 1, orderBy: [{ column: "id" }], offset: -1, limit: 1, rows: [] },
+      { version: 1, orderBy: [{ column: "id" }], offset: 0, limit: -1, rows: [] },
+      { version: 1, orderBy: [{ column: "id" }], offset: 0, limit: 1, rows: [{ x: {} }] },
+    ];
+    for (const invalidState of invalidTopKStates) {
+      expect(() => deserializeTopKOperatorState(invalidState)).toThrowError(LakeqlError);
+    }
+
+    const invalidSortStates = [
+      null,
+      {
+        version: 1,
+        orderBy: [{ column: "id" }],
+        runs: [{ spillRef: "", rowCount: 1, byteSize: 1 }],
+      },
+      {
+        version: 1,
+        orderBy: [{ column: "id" }],
+        runs: [{ spillRef: "run", rowCount: 1.5, byteSize: 1 }],
+      },
+      { version: 1, orderBy: [{ column: "id" }], runs: [{ rows: [{ nested: {} }] }] },
+    ];
+    for (const invalidState of invalidSortStates) {
+      expect(() => deserializeSortOperatorState(invalidState)).toThrowError(LakeqlError);
+    }
   });
 
   it("validates aggregate requests and value types", async () => {

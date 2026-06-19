@@ -320,6 +320,44 @@ describe("readParquetColumnBatches", () => {
     expect(stats.rowGroupsSkipped).toBe(1);
     expect(stats.rowsDecoded).toBe(STATS.rowGroupSize * 2);
   });
+
+  it("reads direct vector batches across scalar parquet leaf types and row windows", async () => {
+    const outStore = memoryStore();
+    await writeParquet(outStore, "data/vector-leaves.parquet", {
+      rowGroupSize: [3, 3],
+      columnData: [
+        { name: "flag", data: [true, false, null, true, false, true], type: "BOOLEAN" },
+        { name: "i32", data: [1, 2, 3, 4, 5, 6], type: "INT32" },
+        { name: "i64", data: [1n, 2n, 3n, 4n, 5n, 6n], type: "INT64" },
+        { name: "f32", data: [1.5, 2.5, 3.5, 4.5, 5.5, 6.5], type: "FLOAT" },
+        { name: "f64", data: [10, 20, 30, 40, 50, 60], type: "DOUBLE" },
+        { name: "name", data: ["a", "b", null, "d", "e", "f"], type: "STRING" },
+      ],
+    });
+
+    const batches = [];
+    for await (const batch of readParquetColumnBatches(outStore, "data/vector-leaves.parquet", {
+      columns: ["flag", "i32", "i64", "f32", "f64", "name"],
+      rowStart: 1,
+      rowEnd: 5,
+      batchSize: 2,
+    })) {
+      batches.push(batch);
+    }
+
+    expect(batches.map((batch) => [batch.rowOffset, batch.batch.rowCount])).toEqual([
+      [1, 2],
+      [3, 2],
+    ]);
+    expect(materializeBatchRows(batches[0]?.batch ?? { rowCount: 0, columns: {} })).toEqual([
+      { flag: false, i32: 2, i64: 2n, f32: 2.5, f64: 20, name: "b" },
+      { flag: null, i32: 3, i64: 3n, f32: 3.5, f64: 30, name: null },
+    ]);
+    expect(materializeBatchRows(batches[1]?.batch ?? { rowCount: 0, columns: {} })).toEqual([
+      { flag: true, i32: 4, i64: 4n, f32: 4.5, f64: 40, name: "d" },
+      { flag: false, i32: 5, i64: 5n, f32: 5.5, f64: 50, name: "e" },
+    ]);
+  });
 });
 
 describe("writeParquet", () => {
