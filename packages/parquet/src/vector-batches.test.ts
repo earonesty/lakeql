@@ -12,6 +12,165 @@ import type { StoreAsyncBuffer } from "./types.js";
 import { canReadParquetVectorBatches, readParquetVectorBatchesFromFile } from "./vector-batches.js";
 
 describe("direct Parquet vector batches", () => {
+  it("reads the known emitted DATA_PAGE_V2 vector shapes including dictionary strings", async () => {
+    const store = memoryStore();
+    await writeParquet(store, "data/vector-physical-shapes.parquet", {
+      rowGroupSize: [8],
+      pageSize: 1024,
+      schema: [
+        { name: "root", num_children: 6 },
+        { name: "f64", type: "DOUBLE", repetition_type: "REQUIRED" },
+        { name: "i64", type: "INT64", repetition_type: "OPTIONAL" },
+        {
+          name: "loaded_at",
+          type: "INT64",
+          converted_type: "TIMESTAMP_MICROS",
+          repetition_type: "OPTIONAL",
+        },
+        { name: "flag", type: "BOOLEAN", repetition_type: "OPTIONAL" },
+        { name: "label", type: "BYTE_ARRAY", converted_type: "UTF8", repetition_type: "REQUIRED" },
+        {
+          name: "plain_name",
+          type: "BYTE_ARRAY",
+          converted_type: "UTF8",
+          repetition_type: "OPTIONAL",
+        },
+      ],
+      columnData: [
+        { name: "f64", data: [1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5] },
+        { name: "i64", data: [1n, 2n, null, 4n, 5n, 6n, null, 8n] },
+        {
+          name: "loaded_at",
+          data: [
+            1_700_000_000_000_001n,
+            null,
+            1_700_000_000_000_003n,
+            1_700_000_000_000_004n,
+            1_700_000_000_000_005n,
+            null,
+            1_700_000_000_000_007n,
+            1_700_000_000_000_008n,
+          ],
+        },
+        { name: "flag", data: [true, false, true, null, false, true, false, true] },
+        {
+          name: "label",
+          data: ["a", "b", "a", "b", "a", "b", "a", "b"],
+          encoding: "RLE_DICTIONARY",
+        },
+        {
+          name: "plain_name",
+          data: ["aa", null, "cc", "dd", "ee", "ff", null, "hh"],
+          encoding: "PLAIN",
+        },
+      ],
+    });
+    const file = await fileBuffer(store, "data/vector-physical-shapes.parquet");
+    const metadata = await readParquetMetadata(store, "data/vector-physical-shapes.parquet");
+    const columnMetadata = Object.fromEntries(
+      metadata.row_groups[0]?.columns.map((column) => [
+        column.meta_data?.path_in_schema.join("."),
+        column.meta_data,
+      ]) ?? [],
+    );
+
+    for (const name of ["f64", "i64", "loaded_at", "flag", "plain_name"]) {
+      expect(columnMetadata[name]?.encoding_stats).toEqual([
+        { page_type: "DATA_PAGE_V2", encoding: "PLAIN", count: 1 },
+      ]);
+    }
+    expect(columnMetadata.label?.encoding_stats).toEqual([
+      { page_type: "DICTIONARY_PAGE", encoding: "PLAIN", count: 1 },
+      { page_type: "DATA_PAGE_V2", encoding: "RLE_DICTIONARY", count: 1 },
+    ]);
+    expect(columnMetadata.label?.dictionary_page_offset).toEqual(expect.any(BigInt));
+
+    const batches = [];
+    for await (const batch of readParquetVectorBatchesFromFile(file, metadata, {
+      columns: ["f64", "i64", "loaded_at", "flag", "label", "plain_name"],
+      rowStart: 1,
+      rowEnd: 7,
+      batchSize: 3,
+      stats: queryStats(),
+    })) {
+      batches.push(batch);
+    }
+    expect(batches).toHaveLength(1);
+    const batch = batches[0]?.batch;
+    if (batch === undefined) throw new Error("missing vector batch");
+    expect(batch.columns.f64).toMatchObject({ type: "f64" });
+    expect(batch.columns.i64).toMatchObject({
+      type: "i64",
+      valid: new Uint8Array([1, 0, 1, 1, 1, 0]),
+    });
+    expect(batch.columns.loaded_at).toMatchObject({
+      type: "timestamp",
+      unit: "micros",
+      isAdjustedToUTC: true,
+      valid: new Uint8Array([0, 1, 1, 1, 0, 1]),
+    });
+    expect(batch.columns.flag).toMatchObject({
+      type: "bool",
+      valid: new Uint8Array([1, 1, 0, 1, 1, 1]),
+    });
+    expect(batch.columns.label).toMatchObject({
+      type: "dict",
+      dictionary: { type: "utf8", values: ["a", "b"] },
+    });
+    expect(batch.columns.plain_name).toMatchObject({
+      type: "utf8",
+      valid: new Uint8Array([0, 1, 1, 1, 1, 0]),
+    });
+    expect(materializeBatchRows(batch)).toEqual([
+      { f64: 2.5, i64: 2n, loaded_at: null, flag: false, label: "b", plain_name: null },
+      {
+        f64: 3.5,
+        i64: null,
+        loaded_at: expect.objectContaining({
+          epochNanoseconds: 1_700_000_000_000_003_000n,
+          unit: "micros",
+        }),
+        flag: true,
+        label: "a",
+        plain_name: "cc",
+      },
+      {
+        f64: 4.5,
+        i64: 4n,
+        loaded_at: expect.objectContaining({
+          epochNanoseconds: 1_700_000_000_000_004_000n,
+          unit: "micros",
+        }),
+        flag: null,
+        label: "b",
+        plain_name: "dd",
+      },
+      {
+        f64: 5.5,
+        i64: 5n,
+        loaded_at: expect.objectContaining({
+          epochNanoseconds: 1_700_000_000_000_005_000n,
+          unit: "micros",
+        }),
+        flag: false,
+        label: "a",
+        plain_name: "ee",
+      },
+      { f64: 6.5, i64: 6n, loaded_at: null, flag: true, label: "b", plain_name: "ff" },
+      {
+        f64: 7.5,
+        i64: null,
+        loaded_at: expect.objectContaining({
+          epochNanoseconds: 1_700_000_000_000_007_000n,
+          unit: "micros",
+        }),
+        flag: false,
+        label: "a",
+        plain_name: null,
+      },
+    ]);
+  });
+
   it("reads supported scalar leaf types with row windows and decoded cache reuse", async () => {
     const store = memoryStore();
     await writeParquet(store, "data/vector-batches.parquet", {
@@ -107,6 +266,155 @@ describe("direct Parquet vector batches", () => {
       none.push(batch);
     }
     expect(none).toEqual([]);
+  });
+
+  it("checks direct vector capability across logical and malformed metadata shapes", async () => {
+    const store = memoryStore();
+    await writeParquet(store, "data/vector-logical-capability.parquet", {
+      schema: [
+        { name: "root", num_children: 5 },
+        { name: "id", type: "INT32", repetition_type: "OPTIONAL" },
+        {
+          name: "payload",
+          type: "BYTE_ARRAY",
+          converted_type: "JSON",
+          repetition_type: "OPTIONAL",
+        },
+        {
+          name: "event_time",
+          type: "INT64",
+          logical_type: { type: "TIMESTAMP", unit: "MICROS", isAdjustedToUTC: true },
+          repetition_type: "OPTIONAL",
+        },
+        { name: "raw", type: "BYTE_ARRAY", repetition_type: "OPTIONAL" },
+        { name: "name", type: "BYTE_ARRAY", converted_type: "UTF8", repetition_type: "OPTIONAL" },
+      ],
+      columnData: [
+        { name: "id", data: [1] },
+        { name: "payload", data: ['{"ok":true}'] },
+        { name: "event_time", data: [1_700_000_000_000_001n] },
+        { name: "raw", data: [new Uint8Array([1, 2, 3])] },
+        { name: "name", data: ["alpha"] },
+      ],
+    });
+    const metadata = await readParquetMetadata(store, "data/vector-logical-capability.parquet");
+
+    expect(
+      canReadParquetVectorBatches(metadata, { columns: ["payload", "event_time", "raw"] }),
+    ).toBe(true);
+
+    const unsignedLogical = structuredClone(metadata);
+    const idLeaf = unsignedLogical.schema.find((entry) => entry.name === "id");
+    if (idLeaf !== undefined) {
+      idLeaf.logical_type = { type: "INTEGER", bitWidth: 64, isSigned: false };
+    }
+    expect(canReadParquetVectorBatches(unsignedLogical, { columns: ["id"] })).toBe(false);
+
+    for (const logicalType of ["DATE", "GEOMETRY", "GEOGRAPHY"] as const) {
+      const unsupported = structuredClone(metadata);
+      const rawLeaf = unsupported.schema.find((entry) => entry.name === "raw");
+      if (rawLeaf !== undefined) rawLeaf.logical_type = { type: logicalType };
+      expect(canReadParquetVectorBatches(unsupported, { columns: ["raw"] })).toBe(false);
+    }
+
+    const bson = structuredClone(metadata);
+    const rawLeaf = bson.schema.find((entry) => entry.name === "raw");
+    if (rawLeaf !== undefined) rawLeaf.converted_type = "BSON";
+    expect(canReadParquetVectorBatches(bson, { columns: ["raw"] })).toBe(false);
+
+    const missingMetadata = structuredClone(metadata);
+    const firstColumn = missingMetadata.row_groups[0]?.columns[0];
+    if (firstColumn !== undefined) delete firstColumn.meta_data;
+    expect(canReadParquetVectorBatches(missingMetadata, { columns: ["id"] })).toBe(false);
+  });
+
+  it("returns no direct batches for skipped windows and runtime metadata fallback", async () => {
+    const store = memoryStore();
+    await writeParquet(store, "data/vector-runtime-fallback.parquet", {
+      rowGroupSize: [2, 2],
+      columnData: [
+        { name: "id", data: [1, 2, 3, 4], type: "INT32" },
+        { name: "name", data: ["a", "b", "c", "d"], type: "STRING" },
+      ],
+    });
+    const file = await fileBuffer(store, "data/vector-runtime-fallback.parquet");
+    const metadata = await readParquetMetadata(store, "data/vector-runtime-fallback.parquet");
+
+    const beforeWindowStats = queryStats();
+    expect(
+      await collectVectorRows(file, metadata, {
+        columns: ["id"],
+        rowStart: 4,
+        rowEnd: 4,
+        batchSize: 2,
+        stats: beforeWindowStats,
+      }),
+    ).toEqual([]);
+    expect(beforeWindowStats.rowGroupsRead).toBe(0);
+    expect(beforeWindowStats.rowGroupsSkipped).toBe(2);
+
+    const afterWindowStats = queryStats();
+    expect(
+      await collectVectorRows(file, metadata, {
+        columns: ["id"],
+        rowStart: 10,
+        rowEnd: 12,
+        batchSize: 2,
+        stats: afterWindowStats,
+      }),
+    ).toEqual([]);
+    expect(afterWindowStats.rowGroupsRead).toBe(0);
+    expect(afterWindowStats.rowGroupsSkipped).toBe(2);
+
+    const unsupported = structuredClone(metadata);
+    const idLeaf = unsupported.schema.find((entry) => entry.name === "id");
+    if (idLeaf !== undefined) idLeaf.converted_type = "DATE";
+    expect(
+      await collectVectorRows(file, unsupported, {
+        columns: ["id"],
+        batchSize: 2,
+        stats: queryStats(),
+      }),
+    ).toEqual([]);
+
+    const missingColumn = structuredClone(metadata);
+    missingColumn.row_groups[0]?.columns.pop();
+    expect(
+      await collectVectorRows(file, missingColumn, {
+        columns: ["name"],
+        batchSize: 2,
+        stats: queryStats(),
+      }),
+    ).toEqual([]);
+  });
+
+  it("reads vectors without stats or decoded cache keys", async () => {
+    const store = memoryStore();
+    await writeParquet(store, "data/vector-no-stats.parquet", {
+      columnData: [
+        { name: "id", data: [1, 2, 3], type: "INT32" },
+        { name: "name", data: ["a", null, "c"], type: "STRING" },
+      ],
+    });
+    const file = await fileBuffer(store, "data/vector-no-stats.parquet");
+    const metadata = await readParquetMetadata(store, "data/vector-no-stats.parquet");
+    const cache = new DecodedColumnCache(new SharedMemoryCache({ maxBytes: 1024 * 1024 }), {
+      maxBytes: 1024 * 1024,
+      policy: "balanced",
+    });
+
+    expect(
+      await collectVectorRows(file, metadata, {
+        columns: ["id", "name"],
+        rowStart: 1,
+        rowEnd: 3,
+        batchSize: 1,
+        decodedColumnCache: cache,
+      }),
+    ).toEqual([
+      { id: 2, name: null },
+      { id: 3, name: "c" },
+    ]);
   });
 
   it("reads timestamp and raw byte vectors across pruned row groups", async () => {
