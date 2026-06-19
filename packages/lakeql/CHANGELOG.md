@@ -1,5 +1,11 @@
 # lakeql
 
+## 0.1.6
+
+### Patch Changes
+
+- Improve cached Parquet scan performance with decoded page-vector reuse, lower-copy vector slicing, and faster grouped aggregate selection paths.
+
 ## 0.1.2
 
 ### Patch Changes
