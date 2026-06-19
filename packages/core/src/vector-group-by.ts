@@ -60,7 +60,7 @@ export interface VectorGroupByStateSnapshot {
 
 interface AggregateInput {
   alias: string;
-  valueAt(index: number): VectorAggregateValue;
+  update(group: VectorGroup, index: number, options: VectorAggregateOptions): void;
 }
 
 interface GroupKeyEncoder {
@@ -111,17 +111,7 @@ export function updateVectorGroupByState(
       enforceGroupByMemoryBudget(state, options.budget);
     }
     for (const input of aggregateInputs) {
-      const aggregateState = group.states[input.alias];
-      if (aggregateState === undefined) {
-        throw new LakeqlError(
-          "LAKEQL_TYPE_ERROR",
-          `Missing vector aggregate state ${input.alias}`,
-          {
-            alias: input.alias,
-          },
-        );
-      }
-      updateVectorAggregateStateValue(aggregateState, input.valueAt(index), options);
+      input.update(group, index, options);
     }
     enforceGroupByMemoryBudget(state, options.budget);
   }
@@ -149,7 +139,7 @@ function updateEncodedVectorGroupByState(
       groupsById[groupId] = group;
     }
     for (const input of aggregateInputs) {
-      updateVectorGroupAggregateValue(group, input.alias, input.valueAt(index), options);
+      input.update(group, index, options);
     }
     enforceGroupByMemoryBudget(state, options.budget);
   }
@@ -486,10 +476,108 @@ export function vectorGroupByBatch(
 }
 
 function aggregateInputValues(spec: AggregateSpec, batch: Batch): AggregateInput[] {
-  return Object.entries(spec).map(([alias, aggregate]) => ({
+  return Object.entries(spec).map(([alias, aggregate]) =>
+    aggregateInputValue(alias, aggregate, batch),
+  );
+}
+
+function aggregateInputValue(
+  alias: string,
+  aggregate: AggregateExpr,
+  batch: Batch,
+): AggregateInput {
+  const direct = directAggregateInput(alias, aggregate, batch);
+  if (direct !== undefined) return direct;
+  const valueAt = aggregateInputValueAt(aggregate, batch);
+  return {
     alias,
-    valueAt: aggregateInputValueAt(aggregate, batch),
-  }));
+    update(group, index, options) {
+      updateVectorGroupAggregateValue(group, alias, valueAt(index), options);
+    },
+  };
+}
+
+function directAggregateInput(
+  alias: string,
+  aggregate: AggregateExpr,
+  batch: Batch,
+): AggregateInput | undefined {
+  if (aggregate.op === "count" && aggregate.column === undefined && aggregate.expr === undefined) {
+    return {
+      alias,
+      update(group) {
+        const state = group.states[alias];
+        if (state === undefined) throwMissingAggregateState(alias);
+        if (state.op !== "count") throwAggregateStateMismatch(alias, "count", state.op);
+        state.count += 1;
+      },
+    };
+  }
+  if (aggregate.expr !== undefined || aggregate.column === undefined) return undefined;
+  const vector = batch.columns[aggregate.column];
+  if (vector === undefined) {
+    throw new LakeqlError("LAKEQL_UNKNOWN_COLUMN", `Unknown column ${aggregate.column}`, {
+      column: aggregate.column,
+    });
+  }
+  if (aggregate.op === "sum" && vector.type === "f64") return directF64SumInput(alias, vector);
+  if (aggregate.op === "avg" && vector.type === "f64") return directF64AvgInput(alias, vector);
+  return undefined;
+}
+
+function directF64SumInput(
+  alias: string,
+  vector: Extract<Vector, { type: "f64" }>,
+): AggregateInput {
+  const values = vector.values;
+  const valid = vector.valid;
+  return {
+    alias,
+    update(group, index) {
+      if (valid !== undefined && valid[index] === 0) return;
+      const state = group.states[alias];
+      if (state === undefined) throwMissingAggregateState(alias);
+      if (state.op !== "sum") throwAggregateStateMismatch(alias, "sum", state.op);
+      state.sum += values[index] ?? 0;
+    },
+  };
+}
+
+function directF64AvgInput(
+  alias: string,
+  vector: Extract<Vector, { type: "f64" }>,
+): AggregateInput {
+  const values = vector.values;
+  const valid = vector.valid;
+  return {
+    alias,
+    update(group, index) {
+      if (valid !== undefined && valid[index] === 0) return;
+      const state = group.states[alias];
+      if (state === undefined) throwMissingAggregateState(alias);
+      if (state.op !== "avg") throwAggregateStateMismatch(alias, "avg", state.op);
+      state.sum += values[index] ?? 0;
+      state.count += 1;
+    },
+  };
+}
+
+function throwMissingAggregateState(alias: string): never {
+  throw new LakeqlError("LAKEQL_TYPE_ERROR", `Missing vector aggregate state ${alias}`, {
+    alias,
+  });
+}
+
+function throwAggregateStateMismatch(
+  alias: string,
+  expected: VectorAggregateState["op"],
+  actual: VectorAggregateState["op"],
+): never {
+  throw new LakeqlError("LAKEQL_TYPE_ERROR", `Aggregate state ${alias} expected ${expected}`, {
+    alias,
+    expected,
+    actual,
+  });
 }
 
 function aggregateInputValueAt(

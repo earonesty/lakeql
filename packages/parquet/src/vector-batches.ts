@@ -460,23 +460,23 @@ function flatPageVector(
 function sliceVector(vector: Vector, start: number, end: number): Vector {
   if (start === 0 && end === vectorLength(vector)) return vector;
   const valid =
-    "valid" in vector && vector.valid !== undefined ? vector.valid.slice(start, end) : undefined;
+    "valid" in vector && vector.valid !== undefined ? vector.valid.subarray(start, end) : undefined;
   switch (vector.type) {
     case "null":
       return { type: "null", length: end - start };
     case "f64":
       return optionalVectorValidity(
-        { type: "f64", values: vector.values.slice(start, end) },
+        { type: "f64", values: vector.values.subarray(start, end) },
         valid,
       );
     case "i64":
       return optionalVectorValidity(
-        { type: "i64", values: vector.values.slice(start, end) },
+        { type: "i64", values: vector.values.subarray(start, end) },
         valid,
       );
     case "bool":
       return optionalVectorValidity(
-        { type: "bool", values: vector.values.slice(start, end) },
+        { type: "bool", values: vector.values.subarray(start, end) },
         valid,
       );
     case "utf8":
@@ -488,7 +488,7 @@ function sliceVector(vector: Vector, start: number, end: number): Vector {
       return optionalVectorValidity(
         {
           type: "dict",
-          indices: vector.indices.slice(start, end),
+          indices: vector.indices.subarray(start, end),
           dictionary: vector.dictionary,
         },
         valid,
@@ -528,7 +528,7 @@ function dictionaryPageVector(
 
 function nonNullFlatVector(values: DecodedArray, start: number, end: number): Vector {
   const length = end - start;
-  if (values instanceof Float64Array) return { type: "f64", values: values.slice(start, end) };
+  if (values instanceof Float64Array) return { type: "f64", values: values.subarray(start, end) };
   if (values instanceof Float32Array) {
     const out = new Float64Array(length);
     for (let index = 0; index < length; index += 1) out[index] = values[start + index] ?? 0;
@@ -543,7 +543,7 @@ function nonNullFlatVector(values: DecodedArray, start: number, end: number): Ve
     for (let index = 0; index < length; index += 1) out[index] = values[start + index] ?? 0;
     return { type: "f64", values: out };
   }
-  if (values instanceof BigInt64Array) return { type: "i64", values: values.slice(start, end) };
+  if (values instanceof BigInt64Array) return { type: "i64", values: values.subarray(start, end) };
   if (values instanceof BigUint64Array) {
     const out = new BigInt64Array(length);
     for (let index = 0; index < length; index += 1)

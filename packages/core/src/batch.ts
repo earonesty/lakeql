@@ -108,11 +108,13 @@ export function selectedRowCount(rowCount: number, selection?: Selection): numbe
 
 export function selectedRowIndices(rowCount: number, selection?: Selection): Iterable<number> {
   if (selection === undefined) return allRowIndices(rowCount);
-  const indices: number[] = [];
+  return selectedSelectionRowIndices(rowCount, selection);
+}
+
+function* selectedSelectionRowIndices(rowCount: number, selection: Selection): Iterable<number> {
   for (let index = 0; index < rowCount; index += 1) {
-    if (selection[index] === 1) indices.push(index);
+    if (selection[index] === 1) yield index;
   }
-  return indices;
 }
 
 function* allRowIndices(rowCount: number): Iterable<number> {
@@ -121,10 +123,7 @@ function* allRowIndices(rowCount: number): Iterable<number> {
 
 export function predicateSelection(batch: Batch, expr: Expr | undefined): Selection {
   if (expr === undefined) return allSelected(batch.rowCount);
-  const mask = predicateMask(batch, expr);
-  const selection = new Uint8Array(batch.rowCount);
-  for (let index = 0; index < mask.length; index += 1) selection[index] = mask[index] === 1 ? 1 : 0;
-  return selection;
+  return predicateMask(batch, expr);
 }
 
 export function tryPredicateSelection(batch: Batch, expr: Expr | undefined): Selection | undefined {
