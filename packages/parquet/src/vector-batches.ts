@@ -38,10 +38,6 @@ export function canReadParquetVectorBatches(
 ): boolean {
   const columns = directVectorColumns(options.columns);
   if (columns === undefined) return false;
-  if (columns.length > 1 && options.rowStart !== undefined && options.rowEnd !== undefined) {
-    const requestedRows = options.rowEnd - options.rowStart;
-    if (requestedRows < (options.batchSize ?? 262_144)) return false;
-  }
   for (const rowGroup of metadata.row_groups) {
     for (const column of columns) {
       const chunk = rowGroup.columns.find(

@@ -62,6 +62,12 @@ from flights.parquet
 limit 1`,
   },
   {
+    name: "triple-limit",
+    sql: `select "DEPARTURE_DELAY", "ARRIVAL_DELAY", "DISTANCE"
+from flights.parquet
+limit 20`,
+  },
+  {
     name: "top-delays",
     sql: `select "DEPARTURE_DELAY", "ARRIVAL_DELAY", "DISTANCE"
 from flights.parquet

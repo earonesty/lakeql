@@ -48,6 +48,28 @@ export function batchCallExprValues(
   }
 }
 
+export function vectorCallExprSupported(name: string): boolean {
+  switch (name.toLowerCase()) {
+    case "lower":
+    case "upper":
+    case "trim":
+    case "substr":
+    case "replace":
+    case "regexp_matches":
+    case "regexp_replace":
+    case "cast":
+    case "round":
+    case "floor":
+    case "ceil":
+    case "abs":
+    case "coalesce":
+    case "nullif":
+      return true;
+    default:
+      return false;
+  }
+}
+
 function coalesceCallValues(rowCount: number, args: BatchExprValues[]): BatchExprValues {
   return {
     rowCount,

@@ -2,12 +2,14 @@ import { continuousQuantile, requiredQuantile } from "./aggregate-quantile.js";
 import {
   type Batch,
   materializeBatchRows,
+  materializeSelectedBatchRows,
   predicateSelection,
   scalarVectorValue,
   selectedRowCount,
   selectedRowIndices,
   vectorValue,
 } from "./batch.js";
+import { vectorCallExprSupported } from "./batch-call.js";
 import { LakeqlError } from "./errors.js";
 import {
   encodeJsonLine,
@@ -649,6 +651,11 @@ export class QueryResult {
       yield* this.orderedBatches();
       return;
     }
+    const columnarBatches = this.tryColumnarProjectedBatches();
+    if (columnarBatches !== undefined) {
+      yield* columnarBatches;
+      return;
+    }
     const config = this.config;
     const { stats } = this;
     const startedAt = config.now();
@@ -699,6 +706,87 @@ export class QueryResult {
           }
           if (config.limit !== undefined && returned >= config.limit) break;
           out.push(projected);
+          returned += 1;
+          stats.rowsReturned += 1;
+          enforceBudget(config.budget, stats, config.now, startedAt);
+        }
+        stats.elapsedMs = config.now() - startedAt;
+        if (out.length > 0) yield out;
+        if (config.limit !== undefined && returned >= config.limit) return;
+      }
+    }
+    stats.elapsedMs = config.now() - startedAt;
+    config.metrics?.timing("lakeql.query.elapsed", stats.elapsedMs, { queryId: stats.queryId });
+  }
+
+  private tryColumnarProjectedBatches(): AsyncIterable<Row[]> | undefined {
+    const config = this.config;
+    if (
+      config.scanner.scanVectorBatches === undefined ||
+      config.distinct === true ||
+      config.hive === true ||
+      !vectorExprSupported(config.where) ||
+      !Object.values(config.projections ?? {}).every(vectorExprSupported)
+    ) {
+      return undefined;
+    }
+    return this.columnarProjectedBatches();
+  }
+
+  private async *columnarProjectedBatches(): AsyncIterable<Row[]> {
+    const config = this.config;
+    const { stats } = this;
+    const startedAt = config.now();
+    const scanVectorBatches = config.scanner.scanVectorBatches;
+    if (scanVectorBatches === undefined) return;
+    let offsetSkipped = 0;
+    let returned = 0;
+    const { planned: paths, skipped: skippedFiles } = await this.planObjects();
+    stats.filesSkipped = skippedFiles;
+    const columns = projectedReadColumns(
+      config.select,
+      config.where,
+      undefined,
+      config.projections,
+    );
+    for (const object of paths) {
+      stats.filesPlanned += 1;
+      stats.filesRead += 1;
+      stats.bytesRequested += object.size;
+      enforceBudget(config.budget, stats, config.now, startedAt);
+      const scanOptions: ScanOptions = {
+        batchSize: limitAwareBatchSize(config.batchSize ?? 4096, config.limit, config.offset),
+        stats,
+        budget: config.budget,
+        now: config.now,
+        startedAt,
+      };
+      if (columns !== undefined && columns.length > 0) scanOptions.columns = columns;
+      if (config.where !== undefined) scanOptions.where = config.where;
+      if (config.where === undefined && (config.offset ?? 0) === 0 && config.limit !== undefined) {
+        scanOptions.rowEnd = Math.max(0, config.limit - returned);
+      }
+      for await (const { batch } of scanVectorBatches.call(
+        config.scanner,
+        object.path,
+        scanOptions,
+      )) {
+        const selection =
+          config.where === undefined ? undefined : predicateSelection(batch, config.where);
+        stats.rowsMatched += selectedRowCount(batch.rowCount, selection);
+        const projected = vectorProjectBatch(batch, config.select, config.projections);
+        const rows =
+          selection === undefined
+            ? materializeBatchRows(projected)
+            : materializeSelectedBatchRows(projected, selection);
+        const out: Row[] = [];
+        for (const row of rows) {
+          if (offsetSkipped < (config.offset ?? 0)) {
+            offsetSkipped += 1;
+            continue;
+          }
+          if (config.limit !== undefined && returned >= config.limit) break;
+          out.push(row);
           returned += 1;
           stats.rowsReturned += 1;
           enforceBudget(config.budget, stats, config.now, startedAt);
@@ -3362,7 +3450,7 @@ function vectorExprSupported(expr: Expr | undefined): boolean {
     case "not":
       return vectorExprSupported(expr.operand);
     case "call":
-      return expr.args.every(vectorExprSupported);
+      return vectorCallExprSupported(expr.fn) && expr.args.every(vectorExprSupported);
     case "arithmetic":
       return vectorExprSupported(expr.left) && vectorExprSupported(expr.right);
     case "case":
