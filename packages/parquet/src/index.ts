@@ -176,10 +176,6 @@ export interface ParquetLakeConfig extends Omit<LakeConfig, "scanner"> {
   scanRangeCache?: RangeCacheOptions;
 }
 
-/**
- * Read rows from a Parquet object. Early scaffold: full planner-driven
- * row-group pruning and batch streaming land in phase 1-2 (see BUILD_PLAN.md).
- */
 export async function readParquetObjects(
   store: ObjectStore,
   path: string,

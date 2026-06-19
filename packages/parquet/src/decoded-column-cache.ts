@@ -23,6 +23,46 @@ export class DecodedColumnCache {
       priority: decodedPriority(this.options.policy ?? "balanced"),
     });
   }
+
+  getVector(key: string): Vector | undefined {
+    const entry = this.cache.get<Vector>(decodedVectorKey(key));
+    if (entry === undefined) return undefined;
+    return entry.value;
+  }
+
+  setVector(key: string, vector: Vector): boolean {
+    const bytes = estimateVectorBytes(vector);
+    if (!this.shouldAdmitDecodedVector(bytes)) return false;
+    this.cache.set(decodedVectorKey(key), vector, bytes, {
+      priority: decodedPriority(this.options.policy ?? "balanced"),
+    });
+    return true;
+  }
+
+  getValue<T>(key: string): T | undefined {
+    const entry = this.cache.get<T>(decodedValueKey(key));
+    if (entry === undefined) return undefined;
+    return entry.value;
+  }
+
+  setValue<T>(key: string, value: T, bytes: number): void {
+    if (!this.shouldAdmitDecodedWorkProduct(bytes)) return;
+    this.cache.set(decodedValueKey(key), value, bytes, {
+      priority: decodedPriority(this.options.policy ?? "balanced"),
+    });
+  }
+
+  private shouldAdmitDecodedVector(bytes: number): boolean {
+    return this.shouldAdmitDecodedWorkProduct(bytes);
+  }
+
+  private shouldAdmitDecodedWorkProduct(bytes: number): boolean {
+    const maxBytes = this.options.maxBytes ?? 64 * 1024 * 1024;
+    const policy = this.options.policy ?? "balanced";
+    if (policy === "latency") return bytes <= maxBytes;
+    if (maxBytes < 128 * 1024 * 1024) return false;
+    return bytes * 8 <= maxBytes;
+  }
 }
 
 export function decodedColumnCacheKey(options: {
@@ -43,8 +83,62 @@ export function decodedColumnCacheKey(options: {
   ].join("\u001f");
 }
 
+export function decodedColumnPageCacheKey(options: {
+  path: string;
+  byteLength: number;
+  etag?: string;
+  column: string;
+  rowGroupStart: number;
+  pageRowStart: number;
+  pageRowEnd: number;
+  pageOffset: number;
+  compressedPageSize: number;
+}): string {
+  return [
+    options.path,
+    options.byteLength,
+    options.etag ?? "",
+    options.column,
+    options.rowGroupStart,
+    options.pageRowStart,
+    options.pageRowEnd,
+    options.pageOffset,
+    options.compressedPageSize,
+  ].join("\u001f");
+}
+
+export function decodedDictionaryPageCacheKey(options: {
+  path: string;
+  byteLength: number;
+  etag?: string;
+  column: string;
+  rowGroupStart: number;
+  pageOffset: number;
+  compressedPageSize: number;
+  values: number;
+}): string {
+  return [
+    options.path,
+    options.byteLength,
+    options.etag ?? "",
+    options.column,
+    options.rowGroupStart,
+    options.pageOffset,
+    options.compressedPageSize,
+    options.values,
+  ].join("\u001f");
+}
+
 function decodedKey(key: string): string {
   return `decoded-column:${key}`;
+}
+
+function decodedVectorKey(key: string): string {
+  return `decoded-vector:${key}`;
+}
+
+function decodedValueKey(key: string): string {
+  return `decoded-value:${key}`;
 }
 
 function decodedPriority(policy: CachePolicy): number {

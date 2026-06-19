@@ -14,7 +14,10 @@ import {
   vectorLength,
   vectorValue,
 } from "lakeql-core";
-import { decodedColumnCacheKey } from "./decoded-column-cache.js";
+import {
+  decodedColumnPageCacheKey,
+  decodedDictionaryPageCacheKey,
+} from "./decoded-column-cache.js";
 import {
   recordReadColumns,
   recordRowGroupRead,
@@ -206,12 +209,12 @@ async function* readColumnVectorBatches(
   requestedEnd: number,
   options: ReadParquetBatchOptions,
 ): AsyncIterable<ParquetVectorBatch> {
-  const start = safeNumber(
+  const chunkStart = safeNumber(
     columnMetadata.dictionary_page_offset ?? columnMetadata.data_page_offset,
   );
   const compressedSize = safeNumber(columnMetadata.total_compressed_size);
-  if (start === undefined || compressedSize === undefined) return;
-  const buffer = await file.slice(start, start + compressedSize);
+  if (chunkStart === undefined || compressedSize === undefined) return;
+  const buffer = await file.slice(chunkStart, chunkStart + compressedSize);
   const reader = { view: new DataView(buffer), offset: 0 };
   const schemaPath = getSchemaPath(metadata.schema, columnMetadata.path_in_schema);
   const leaf = schemaPath[schemaPath.length - 1];
@@ -227,6 +230,7 @@ async function* readColumnVectorBatches(
   let pageRowStart = rowGroupStart;
   while (reader.offset < reader.view.byteLength - 1 && pageRowStart < requestedEnd) {
     const header = parquetHeader(reader);
+    const pageOffset = chunkStart + reader.offset;
     const compressedBytes = new Uint8Array(
       reader.view.buffer,
       reader.view.byteOffset + reader.offset,
@@ -234,26 +238,15 @@ async function* readColumnVectorBatches(
     );
     reader.offset += header.compressed_page_size;
     if (header.type === "DICTIONARY_PAGE") {
-      const dictionaryHeader = header.dictionary_page_header;
-      if (dictionaryHeader === undefined) continue;
-      const page = decompressPage(
+      dictionary = dictionaryPageValues(
         compressedBytes,
-        Number(header.uncompressed_page_size),
-        columnMetadata.codec,
-        undefined,
-      );
-      const pageReader = {
-        view: new DataView(page.buffer, page.byteOffset, page.byteLength),
-        offset: 0,
-      };
-      dictionary = convert(
-        readPlain(
-          pageReader,
-          columnMetadata.type,
-          dictionaryHeader.num_values,
-          columnDecoder.element.type_length,
-        ),
+        header,
         columnDecoder,
+        column,
+        rowGroupStart,
+        pageOffset,
+        file,
+        options,
       );
       continue;
     }
@@ -271,31 +264,26 @@ async function* readColumnVectorBatches(
       const key =
         cache === undefined || options.decodedColumnCacheKey === undefined
           ? undefined
-          : decodedColumnCacheKey({
+          : decodedColumnPageCacheKey({
               path: options.decodedColumnCacheKey,
               byteLength: file.byteLength,
               ...(file.etag === undefined ? {} : { etag: file.etag }),
-              columns: [column],
-              rowStart: start,
-              rowEnd: end,
+              column,
+              rowGroupStart,
+              pageRowStart,
+              pageRowEnd,
+              pageOffset,
+              compressedPageSize: header.compressed_page_size,
             });
-      const cached = key === undefined || cache === undefined ? undefined : cache.get(key);
-      let batch: Batch;
+      const cached = key === undefined || cache === undefined ? undefined : cache.getVector(key);
+      let vector: Vector;
       if (cached !== undefined) {
-        batch = cached;
+        vector = cached;
       } else {
         const page = dataPageValues(compressedBytes, header, columnDecoder, dictionary);
         if (page === undefined) continue;
-        batch = batchFromVectors({
-          [column]: flatPageVector(
-            page.values,
-            page.definitionLevels,
-            start - pageRowStart,
-            end - pageRowStart,
-            page.dictionary,
-          ),
-        });
-        if (key !== undefined && cache !== undefined) cache.set(key, batch);
+        vector = flatPageVector(page.values, page.definitionLevels, 0, rowCount, page.dictionary);
+        if (key !== undefined && cache !== undefined) cache.setVector(key, vector);
       }
       if (key !== undefined && options.stats !== undefined) {
         if (cached === undefined) options.stats.cacheMisses += 1;
@@ -303,7 +291,9 @@ async function* readColumnVectorBatches(
       }
       yield {
         rowOffset: start,
-        batch,
+        batch: batchFromVectors({
+          [column]: sliceVector(vector, start - pageRowStart, end - pageRowStart),
+        }),
       };
     }
     pageRowStart = pageRowEnd;
@@ -314,6 +304,64 @@ function dataPageRowCount(header: PageHeader): number | undefined {
   if (header.type === "DATA_PAGE") return header.data_page_header?.num_values;
   if (header.type === "DATA_PAGE_V2") return header.data_page_header_v2?.num_rows;
   return undefined;
+}
+
+function dictionaryPageValues(
+  compressedBytes: Uint8Array,
+  header: PageHeader,
+  columnDecoder: ColumnDecoder,
+  column: string,
+  rowGroupStart: number,
+  pageOffset: number,
+  file: StoreAsyncBuffer,
+  options: ReadParquetBatchOptions,
+): DecodedArray | undefined {
+  const dictionaryHeader = header.dictionary_page_header;
+  if (dictionaryHeader === undefined) return undefined;
+  const cache = options.decodedColumnCache;
+  const key =
+    cache === undefined || options.decodedColumnCacheKey === undefined
+      ? undefined
+      : decodedDictionaryPageCacheKey({
+          path: options.decodedColumnCacheKey,
+          byteLength: file.byteLength,
+          ...(file.etag === undefined ? {} : { etag: file.etag }),
+          column,
+          rowGroupStart,
+          pageOffset,
+          compressedPageSize: header.compressed_page_size,
+          values: dictionaryHeader.num_values,
+        });
+  const cached =
+    key === undefined || cache === undefined ? undefined : cache.getValue<DecodedArray>(key);
+  if (cached !== undefined) {
+    if (options.stats !== undefined) options.stats.cacheHits += 1;
+    return cached;
+  }
+  const page = decompressPage(
+    compressedBytes,
+    Number(header.uncompressed_page_size),
+    columnDecoder.codec,
+    undefined,
+  );
+  const pageReader = {
+    view: new DataView(page.buffer, page.byteOffset, page.byteLength),
+    offset: 0,
+  };
+  const dictionary = convert(
+    readPlain(
+      pageReader,
+      columnDecoder.type,
+      dictionaryHeader.num_values,
+      columnDecoder.element.type_length,
+    ),
+    columnDecoder,
+  );
+  if (key !== undefined && cache !== undefined) {
+    cache.setValue(key, dictionary, estimateDecodedArrayBytes(dictionary));
+    if (options.stats !== undefined) options.stats.cacheMisses += 1;
+  }
+  return dictionary;
 }
 
 function dataPageValues(
@@ -378,6 +426,18 @@ function dataPageValues(
     };
   }
   return undefined;
+}
+
+function estimateDecodedArrayBytes(values: DecodedArray): number {
+  if (ArrayBuffer.isView(values)) return values.byteLength;
+  let bytes = 0;
+  for (const value of values) {
+    if (typeof value === "string") bytes += value.length * 2;
+    else if (typeof value === "bigint") bytes += 8;
+    else if (typeof value === "number") bytes += 8;
+    else if (typeof value === "boolean") bytes += 1;
+  }
+  return bytes;
 }
 
 function isDictionaryEncoding(encoding: Encoding): boolean {
