@@ -25,7 +25,7 @@ type Lake = ReturnType<typeof createParquetLake>;
 
 const DATASET_KEY = "2015_flights.parquet";
 const DATASET_PROXY_PATH = "compare-data/2015_flights.parquet";
-const DATASET_SOURCE_BASE = "https://raw.githubusercontent.com/plotly/datasets/master/";
+const DATASET_SOURCE_BASE = "https://pub-9d5bcb33a5384d79875a943eef183b6d.r2.dev/plotly/";
 const DATASET_SIZE = 25_238_218;
 const SCAN_RANGE_CACHE_BYTES = 32 * 1024 * 1024;
 

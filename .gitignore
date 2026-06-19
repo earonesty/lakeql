@@ -19,6 +19,7 @@ yarn-error.log*
 .pnpm-store/
 .turbo/
 .vite/
+.wrangler/
 .next/
 .cache/
 .parcel-cache/

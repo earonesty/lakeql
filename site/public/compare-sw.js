@@ -1,4 +1,5 @@
-const SOURCE_URL = "https://raw.githubusercontent.com/plotly/datasets/master/2015_flights.parquet";
+const SOURCE_URL =
+  "https://pub-9d5bcb33a5384d79875a943eef183b6d.r2.dev/plotly/2015_flights.parquet";
 const DATASET_SIZE = 25238218;
 const DATASET_PATH = "/compare-data/2015_flights.parquet";
 
