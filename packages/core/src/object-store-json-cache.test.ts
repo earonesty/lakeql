@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { LakeqlError } from "./errors.js";
 import { memoryStore } from "./memory-store.js";
 import { objectStoreJsonCache } from "./object-store-json-cache.js";
 
@@ -46,5 +47,43 @@ describe("objectStoreJsonCache", () => {
     now = 151;
 
     expect(await cache.get("key")).toEqual({ value: "value", expiresAt: 300 });
+  });
+
+  it("normalizes prefixes and misses absent entries", async () => {
+    const store = memoryStore();
+    const cache = objectStoreJsonCache<string>({ store, prefix: "/cache/catalog/" });
+
+    expect(await cache.get("missing")).toBeUndefined();
+    await cache.set("key", { value: "value" });
+
+    const objects = [];
+    for await (const object of store.list("cache/catalog/")) objects.push(object.path);
+    expect(objects).toEqual(["cache/catalog/key.json"]);
+  });
+
+  it("rejects empty prefixes", () => {
+    expect(() => objectStoreJsonCache({ store: memoryStore(), prefix: "///" })).toThrow(
+      LakeqlError,
+    );
+  });
+
+  it("rejects undefined and circular values", async () => {
+    const cache = objectStoreJsonCache<unknown>({ store: memoryStore(), prefix: "cache" });
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+
+    await expect(cache.set("undefined", { value: undefined })).rejects.toThrow(LakeqlError);
+    await expect(cache.set("circular", { value: circular })).rejects.toThrow(LakeqlError);
+  });
+
+  it("rejects invalid stored entries", async () => {
+    const store = memoryStore();
+    const cache = objectStoreJsonCache<unknown>({ store, prefix: "cache" });
+
+    await store.put("cache/not-json.json", new TextEncoder().encode("{"), {});
+    await expect(cache.get("not-json")).rejects.toThrow(LakeqlError);
+
+    await store.put("cache/not-entry.json", new TextEncoder().encode("[]"), {});
+    await expect(cache.get("not-entry")).rejects.toThrow(LakeqlError);
   });
 });

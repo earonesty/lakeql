@@ -1,5 +1,14 @@
 # lakeql-cli
 
+## 0.0.5
+
+### Patch Changes
+
+- Updated dependencies
+  - lakeql-core@0.1.3
+  - lakeql-parquet@0.0.5
+  - lakeql-sql@0.0.5
+
 ## 0.0.4
 
 ### Patch Changes

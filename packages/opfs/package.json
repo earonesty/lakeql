@@ -1,6 +1,6 @@
 {
   "name": "lakeql-opfs",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "lakeql OPFS persistent cache adapter for browser runtimes",
   "keywords": [
     "opfs",

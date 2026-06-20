@@ -1,6 +1,6 @@
 {
   "name": "lakeql-parquet",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "lakeql Parquet adapter: hyparquet reads, hyparquet-writer writes, pruning, projection",
   "keywords": [
     "parquet",

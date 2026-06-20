@@ -1,6 +1,6 @@
 {
   "name": "lakeql-geo",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "lakeql geospatial: h3_* and st_* functions",
   "keywords": [
     "geospatial",
