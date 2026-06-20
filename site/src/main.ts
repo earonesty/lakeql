@@ -171,6 +171,7 @@ function countingStore(inner: ObjectStore): { store: ObjectStore; stats: Stats }
       return out;
     },
     put: inner.put?.bind(inner),
+    delete: inner.delete.bind(inner),
     list: inner.list?.bind(inner),
     async head(path) {
       stats.requests += 1;

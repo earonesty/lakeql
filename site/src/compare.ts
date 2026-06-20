@@ -65,7 +65,7 @@ limit 10`,
 ];
 
 let engine: Engine = "lakeql";
-let duckCacheMode: DuckCacheMode = "cached";
+let duckCacheMode: DuckCacheMode = "fresh";
 let lakeCacheMode: LakeCacheMode = "cached";
 let memoryBudgetMb = DEFAULT_MEMORY_BUDGET_MB;
 let activeExample = 0;
@@ -76,7 +76,6 @@ let duckState:
       db: duckdb.AsyncDuckDB;
       conn: duckdb.AsyncDuckDBConnection;
       initMs: number;
-      memoryBudgetMb: number;
     }>
   | undefined;
 let initialSqlText: string | undefined;
@@ -330,8 +329,7 @@ async function initDuckDb() {
     await db.registerFileURL(DATASET_KEY, datasetProxyUrl(), duckdb.DuckDBDataProtocol.HTTP, true);
     await db.collectFileStatistics(DATASET_KEY, true);
     const conn = await db.connect();
-    await conn.query(`SET memory_limit = '${memoryBudgetMb}MB'`);
-    return { db, conn, initMs: performance.now() - started, memoryBudgetMb };
+    return { db, conn, initMs: performance.now() - started };
   })();
   return duckState;
 }
@@ -349,11 +347,7 @@ async function runDuckDb(
 ): Promise<{ rows: Row[]; ms: number; initMs: number; stats: Stats }> {
   await resetProxyStats();
   if (duckCacheMode === "fresh") await resetDuckDb();
-  const state = await initDuckDb();
-  if (state.memoryBudgetMb !== memoryBudgetMb) {
-    await resetDuckDb();
-  }
-  const { conn, initMs } = state.memoryBudgetMb === memoryBudgetMb ? state : await initDuckDb();
+  const { conn, initMs } = await initDuckDb();
   const duckSql = sqlText.replace(/\bfrom\s+flights\.parquet\b/giu, `from '${DATASET_KEY}'`);
   const started = performance.now();
   const table = await conn.query(duckSql);
@@ -696,6 +690,7 @@ function setupDuckCacheMode(): void {
   const select = document.getElementById("duck-cache-mode") as HTMLSelectElement | null;
   select?.addEventListener("change", () => {
     duckCacheMode = select.value as DuckCacheMode;
+    if (duckCacheMode === "fresh") void resetDuckDb();
   });
 }
 
@@ -712,7 +707,6 @@ function setupMemoryBudget(): void {
   select?.addEventListener("change", () => {
     memoryBudgetMb = parseMemoryBudgetMb(Number(select.value));
     lakeRuntime = undefined;
-    void resetDuckDb();
   });
 }
 

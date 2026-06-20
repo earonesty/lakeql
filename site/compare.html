@@ -40,9 +40,8 @@
       </div>
       <p>
         Same SQL, same public Parquet object. Lakeql reports file reads directly;
-        DuckDB-WASM can run with a fresh runtime or with its file cache left warm.
-        The memory menu caps lakeql caches and operator state; DuckDB receives the
-        matching SQL memory limit.
+        cache controls are explicit for each engine. The memory menu applies to
+        lakeql caches and operator state.
       </p>
     </section>
 
@@ -84,10 +83,10 @@
           <div class="compare-options">
             <div class="query-picker" id="query-picker"></div>
             <label class="cache-mode">
-              <span>DuckDB file cache</span>
+              <span>DuckDB runtime</span>
               <select id="duck-cache-mode">
-                <option value="fresh">clear before each run</option>
-                <option value="cached">allow warm cache</option>
+                <option value="fresh" selected>fresh each run</option>
+                <option value="cached">keep warm</option>
               </select>
             </label>
             <label class="cache-mode">
@@ -98,7 +97,7 @@
               </select>
             </label>
             <label class="cache-mode">
-              <span>memory budget</span>
+              <span>lakeql memory budget</span>
               <select id="memory-budget">
                 <option value="16">16 MB</option>
                 <option value="32">32 MB</option>
