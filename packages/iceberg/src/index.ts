@@ -41,7 +41,9 @@ export interface IcebergRestCatalogOptions {
   url: string;
   namespace: string | string[];
   table: string;
+  warehouse?: string;
   prefix?: string;
+  accessDelegation?: readonly IcebergRestAccessDelegation[];
   token?: string;
   fetch?: typeof fetch;
 }
@@ -64,7 +66,39 @@ export interface IcebergNessieCatalogOptions {
 export interface LoadIcebergTableFromRestOptions
   extends IcebergRestCatalogOptions,
     ObjectStoreReadControls {
-  store: ObjectStore;
+  store?: ObjectStore;
+  storeFactory?: (context: IcebergRestLoadContext) => ObjectStore | Promise<ObjectStore>;
+}
+
+export type IcebergRestAccessDelegation = "vended-credentials" | "remote-signing" | (string & {});
+
+export interface IcebergRestStorageCredential {
+  prefix: string;
+  config: Record<string, string>;
+}
+
+export interface IcebergRestLoadTableOptions {
+  ifNoneMatch?: string;
+  snapshots?: "all" | "refs";
+}
+
+export interface IcebergRestLoadTableResult {
+  "metadata-location": string;
+  metadata: MetadataFile;
+  config: Record<string, string>;
+  "storage-credentials": IcebergRestStorageCredential[];
+  etag: string | null;
+}
+
+export interface IcebergRestCatalogConfig {
+  defaults: Record<string, string>;
+  overrides: Record<string, string>;
+  endpoints?: string[];
+  "idempotency-key-lifetime"?: string;
+}
+
+export interface IcebergRestLoadContext extends IcebergRestLoadTableResult {
+  catalog: IcebergRestCatalog;
 }
 
 export interface PlanIcebergFilesOptions {
@@ -623,42 +657,73 @@ export class IcebergRestCatalog implements IcebergCatalog {
   private readonly url: string;
   private readonly namespace: string[];
   private readonly table: string;
-  private readonly prefix: string[];
+  private readonly explicitPrefix: string[] | undefined;
+  private readonly warehouse: string | undefined;
+  private readonly accessDelegation: string | undefined;
   private readonly token: string | undefined;
   private readonly fetchFn: typeof fetch;
+  private configPromise: Promise<IcebergRestCatalogConfig> | undefined;
+  private prefixPromise: Promise<string[]> | undefined;
 
   constructor(options: IcebergRestCatalogOptions) {
     this.url = options.url;
     this.namespace = namespaceParts(options.namespace);
     this.table = requiredNonEmptyString(options.table, "table");
-    this.prefix = catalogPrefixParts(options.prefix);
+    this.explicitPrefix =
+      options.prefix === undefined ? undefined : catalogPrefixParts(options.prefix);
+    this.warehouse =
+      options.warehouse === undefined
+        ? undefined
+        : requiredNonEmptyString(options.warehouse, "warehouse");
+    this.accessDelegation = options.accessDelegation?.join(",");
     this.token = options.token;
     this.fetchFn = options.fetch ?? fetch;
   }
 
   async loadTable(store: ObjectStore): Promise<IcebergTable> {
-    const response = await this.requestJson(this.tableUrl(), { method: "GET" });
-    if (!isRecord(response) || typeof response["metadata-location"] !== "string") {
-      throw new LakeqlError("LAKEQL_CATALOG_ERROR", "Invalid Iceberg REST load table response", {
-        url: this.tableUrl(),
-      });
-    }
+    const response = await this.loadTableResult();
     return new IcebergTable(
       store,
       response["metadata-location"],
-      await hydrateMetadataManifests(store, validateMetadata(response.metadata)),
+      await hydrateMetadataManifests(store, response.metadata),
     );
+  }
+
+  async loadTableResult(
+    options: IcebergRestLoadTableOptions = {},
+  ): Promise<IcebergRestLoadTableResult> {
+    const url = await this.tableUrl(options.snapshots);
+    const headers = this.headers(false);
+    if (this.accessDelegation !== undefined)
+      headers.set("X-Iceberg-Access-Delegation", this.accessDelegation);
+    if (options.ifNoneMatch !== undefined) headers.set("If-None-Match", options.ifNoneMatch);
+    const response = await this.requestJsonResponse(url, { method: "GET", headers });
+    return validateRestLoadTableResult(response.body, url, response.headers.get("etag"));
+  }
+
+  async loadConfig(): Promise<IcebergRestCatalogConfig> {
+    if (this.configPromise === undefined) {
+      const url = this.configUrl();
+      this.configPromise = this.requestJson(url, { method: "GET" })
+        .then((body) => validateRestCatalogConfig(body, url))
+        .catch((cause) => {
+          this.configPromise = undefined;
+          throw cause;
+        });
+    }
+    return await this.configPromise;
   }
 
   async listTables(): Promise<IcebergTableIdentifier[]> {
     return validateListTablesResponse(
-      await this.requestJson(this.namespaceTablesUrl(), {
+      await this.requestJson(await this.namespaceTablesUrl(), {
         method: "GET",
       }),
     );
   }
 
   async commitAppend(input: IcebergCommitInput): Promise<IcebergCommitResult> {
+    const tableUrl = await this.tableUrl();
     await input.store.put(
       input.manifestPath,
       new TextEncoder().encode(`${stableStringify(input.manifest)}\n`),
@@ -670,7 +735,7 @@ export class IcebergRestCatalog implements IcebergCatalog {
       { contentType: "application/json" },
     );
 
-    const response = await this.fetchFn(this.tableUrl(), {
+    const response = await this.fetchFn(tableUrl, {
       method: "POST",
       headers: this.headers(true),
       body: JSON.stringify({
@@ -699,7 +764,7 @@ export class IcebergRestCatalog implements IcebergCatalog {
     if (response.status === 409) return { committed: false };
     if (!response.ok) {
       throw new LakeqlError("LAKEQL_CATALOG_ERROR", "Iceberg REST table commit failed", {
-        url: this.tableUrl(),
+        url: tableUrl,
         status: response.status,
         statusText: response.statusText,
       });
@@ -712,9 +777,16 @@ export class IcebergRestCatalog implements IcebergCatalog {
   }
 
   private async requestJson(url: string, init: RequestInit): Promise<unknown> {
+    return (await this.requestJsonResponse(url, init)).body;
+  }
+
+  private async requestJsonResponse(
+    url: string,
+    init: RequestInit,
+  ): Promise<{ body: unknown; headers: Headers }> {
     const response = await this.fetchFn(url, {
       ...init,
-      headers: this.headers(init.body !== undefined),
+      headers: init.headers ?? this.headers(init.body !== undefined),
     });
     if (!response.ok) {
       throw new LakeqlError("LAKEQL_CATALOG_ERROR", "Iceberg REST catalog request failed", {
@@ -724,7 +796,7 @@ export class IcebergRestCatalog implements IcebergCatalog {
       });
     }
     try {
-      return await response.json();
+      return { body: await response.json(), headers: response.headers };
     } catch (cause) {
       throw new LakeqlError("LAKEQL_CATALOG_ERROR", "Iceberg REST catalog response is not JSON", {
         url,
@@ -740,16 +812,52 @@ export class IcebergRestCatalog implements IcebergCatalog {
     return headers;
   }
 
-  private tableUrl(): string {
-    return restCatalogUrl(this.url, [...this.namespaceTableSegments(), this.table]);
+  private async tableUrl(snapshots?: "all" | "refs"): Promise<string> {
+    const url = new URL(
+      restCatalogUrl(this.url, [...(await this.namespaceTableSegments()), this.table]),
+    );
+    if (snapshots !== undefined) url.searchParams.set("snapshots", snapshots);
+    return url.toString();
   }
 
-  private namespaceTablesUrl(): string {
-    return restCatalogUrl(this.url, this.namespaceTableSegments());
+  private async namespaceTablesUrl(): Promise<string> {
+    return restCatalogUrl(this.url, await this.namespaceTableSegments());
   }
 
-  private namespaceTableSegments(): string[] {
-    return ["v1", ...this.prefix, "namespaces", this.namespace.join("\u001f"), "tables"];
+  private async namespaceTableSegments(): Promise<string[]> {
+    return [
+      "v1",
+      ...(await this.prefixParts()),
+      "namespaces",
+      this.namespace.join("\u001f"),
+      "tables",
+    ];
+  }
+
+  private async prefixParts(): Promise<string[]> {
+    if (this.explicitPrefix !== undefined) return this.explicitPrefix;
+    if (this.warehouse === undefined) return [];
+    if (this.prefixPromise === undefined) this.prefixPromise = this.computePrefixParts();
+    return await this.prefixPromise;
+  }
+
+  private async computePrefixParts(): Promise<string[]> {
+    try {
+      const config = await this.loadConfig();
+      const serverPrefix = config.overrides.prefix ?? config.defaults.prefix;
+      if (serverPrefix !== undefined && serverPrefix.trim() !== "") {
+        return catalogPrefixParts(serverPrefix);
+      }
+    } catch {
+      return [this.warehouse as string];
+    }
+    return [this.warehouse as string];
+  }
+
+  private configUrl(): string {
+    const url = new URL(restCatalogUrl(this.url, ["v1", "config"]));
+    if (this.warehouse !== undefined) url.searchParams.set("warehouse", this.warehouse);
+    return url.toString();
   }
 }
 
@@ -854,8 +962,24 @@ export async function loadIcebergTableFromObjectStore(
 export async function loadIcebergTableFromRest(
   options: LoadIcebergTableFromRestOptions,
 ): Promise<IcebergTable> {
-  return await icebergRestCatalog(options).loadTable(
-    withObjectStoreReadControls(options.store, loadReadControls(options)),
+  const catalog = icebergRestCatalog(options);
+  const response = await catalog.loadTableResult();
+  const baseStore =
+    options.store ??
+    (options.storeFactory === undefined
+      ? undefined
+      : await options.storeFactory({ ...response, catalog }));
+  if (baseStore === undefined) {
+    throw new LakeqlError(
+      "LAKEQL_VALIDATION_ERROR",
+      "Iceberg REST table loading requires a store or storeFactory",
+    );
+  }
+  const store = withObjectStoreReadControls(baseStore, loadReadControls(options));
+  return new IcebergTable(
+    store,
+    response["metadata-location"],
+    await hydrateMetadataManifests(store, response.metadata),
   );
 }
 
@@ -1802,6 +1926,80 @@ function validateListTablesResponse(value: unknown): IcebergTableIdentifier[] {
     }
     return { namespace: identifier.namespace, name: identifier.name };
   });
+}
+
+function validateRestLoadTableResult(
+  value: unknown,
+  url: string,
+  etag: string | null,
+): IcebergRestLoadTableResult {
+  if (!isRecord(value) || typeof value["metadata-location"] !== "string") {
+    throw new LakeqlError("LAKEQL_CATALOG_ERROR", "Invalid Iceberg REST load table response", {
+      url,
+    });
+  }
+  return {
+    "metadata-location": value["metadata-location"],
+    metadata: validateMetadata(value.metadata),
+    config: validateStringRecord(value.config, "Iceberg REST load table config"),
+    "storage-credentials": validateStorageCredentials(value["storage-credentials"]),
+    etag,
+  };
+}
+
+function validateRestCatalogConfig(value: unknown, url: string): IcebergRestCatalogConfig {
+  if (!isRecord(value)) {
+    throw new LakeqlError("LAKEQL_CATALOG_ERROR", "Invalid Iceberg REST catalog config response", {
+      url,
+    });
+  }
+  const config: IcebergRestCatalogConfig = {
+    defaults: validateStringRecord(value.defaults, "Iceberg REST catalog defaults"),
+    overrides: validateStringRecord(value.overrides, "Iceberg REST catalog overrides"),
+  };
+  if (
+    Array.isArray(value.endpoints) &&
+    value.endpoints.every((endpoint) => typeof endpoint === "string")
+  ) {
+    config.endpoints = value.endpoints;
+  }
+  if (typeof value["idempotency-key-lifetime"] === "string") {
+    config["idempotency-key-lifetime"] = value["idempotency-key-lifetime"];
+  }
+  return config;
+}
+
+function validateStorageCredentials(value: unknown): IcebergRestStorageCredential[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    throw new LakeqlError("LAKEQL_CATALOG_ERROR", "Invalid Iceberg REST storage credentials");
+  }
+  return value.map((credential) => {
+    if (!isRecord(credential) || typeof credential.prefix !== "string") {
+      throw new LakeqlError("LAKEQL_CATALOG_ERROR", "Invalid Iceberg REST storage credential");
+    }
+    return {
+      prefix: credential.prefix,
+      config: validateStringRecord(credential.config, "Iceberg REST storage credential config"),
+    };
+  });
+}
+
+function validateStringRecord(value: unknown, label: string): Record<string, string> {
+  if (value === undefined) return {};
+  if (!isRecord(value)) {
+    throw new LakeqlError("LAKEQL_CATALOG_ERROR", `${label} must be an object`);
+  }
+  const out: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry !== "string") {
+      throw new LakeqlError("LAKEQL_CATALOG_ERROR", `${label} values must be strings`, {
+        key,
+      });
+    }
+    out[key] = entry;
+  }
+  return out;
 }
 
 function validateMetadata(value: unknown): MetadataFile {

@@ -12,13 +12,24 @@ import {
 
 export const PACKAGE = "lakeql-s3" as const;
 
+export interface S3Credentials {
+  accessKeyId: string;
+  secretAccessKey: string;
+  sessionToken?: string;
+  expiresAt?: Date;
+}
+
+export type S3CredentialsProvider = () => S3Credentials | Promise<S3Credentials>;
+
 export interface S3StoreOptions {
   endpoint: string;
   bucket: string;
   region: string;
-  accessKeyId: string;
-  secretAccessKey: string;
+  accessKeyId?: string;
+  secretAccessKey?: string;
   sessionToken?: string;
+  credentials?: S3CredentialsProvider;
+  credentialRefreshWindowMs?: number;
   fetch?: typeof fetch;
   now?: () => Date;
 }
@@ -30,20 +41,15 @@ export function s3Store(options: S3StoreOptions): ConditionalObjectStore {
 export class S3ObjectStore implements ConditionalObjectStore {
   private readonly fetchImpl: typeof fetch;
   private readonly now: () => Date;
-  private readonly aws: AwsClient;
+  private credentialsSnapshot: S3Credentials | undefined;
+  private credentialsPromise: Promise<S3Credentials> | undefined;
 
   constructor(private readonly options: S3StoreOptions) {
     this.fetchImpl = options.fetch ?? fetch;
     this.now = options.now ?? (() => new Date());
-    const awsOptions: ConstructorParameters<typeof AwsClient>[0] = {
-      accessKeyId: options.accessKeyId,
-      secretAccessKey: options.secretAccessKey,
-      region: options.region,
-      service: "s3",
-      retries: 0,
-    };
-    if (options.sessionToken !== undefined) awsOptions.sessionToken = options.sessionToken;
-    this.aws = new AwsClient(awsOptions);
+    if (options.credentials === undefined) {
+      this.credentialsSnapshot = staticCredentials(options);
+    }
   }
 
   async get(path: string): Promise<Uint8Array | null> {
@@ -152,17 +158,50 @@ export class S3ObjectStore implements ConditionalObjectStore {
       url,
       headers,
       region: this.options.region,
-      accessKeyId: this.options.accessKeyId,
-      secretAccessKey: this.options.secretAccessKey,
+      ...(await this.currentCredentials()),
       now: this.now(),
     };
-    if (this.options.sessionToken !== undefined)
-      signRequest.sessionToken = this.options.sessionToken;
     const requestBody = body === undefined ? undefined : bodyInit(body);
-    const signed = await signS3Request(signRequest, this.aws, requestBody);
+    const signed = await signS3Request(signRequest, undefined, requestBody);
     const init: RequestInit = { method, headers: signed };
     if (requestBody !== undefined) init.body = requestBody;
     return this.fetchImpl(url, init);
+  }
+
+  private async currentCredentials(): Promise<S3Credentials> {
+    if (this.options.credentials === undefined) {
+      if (this.credentialsSnapshot === undefined)
+        this.credentialsSnapshot = staticCredentials(this.options);
+      return this.credentialsSnapshot;
+    }
+    if (
+      this.credentialsSnapshot !== undefined &&
+      !credentialsNeedRefresh(
+        this.credentialsSnapshot,
+        this.now(),
+        this.credentialRefreshWindowMs(),
+      )
+    ) {
+      return this.credentialsSnapshot;
+    }
+    if (this.credentialsPromise === undefined) {
+      this.credentialsPromise = Promise.resolve(this.options.credentials())
+        .then((credentials) => {
+          const normalized = validateCredentials(credentials);
+          this.credentialsSnapshot = normalized;
+          this.credentialsPromise = undefined;
+          return normalized;
+        })
+        .catch((cause) => {
+          this.credentialsPromise = undefined;
+          throw cause;
+        });
+    }
+    return await this.credentialsPromise;
+  }
+
+  private credentialRefreshWindowMs(): number {
+    return this.options.credentialRefreshWindowMs ?? 300_000;
   }
 }
 
@@ -208,6 +247,43 @@ function s3SignerClient(request: SignRequest): AwsClient {
   };
   if (request.sessionToken !== undefined) options.sessionToken = request.sessionToken;
   return new AwsClient(options);
+}
+
+function staticCredentials(options: S3StoreOptions): S3Credentials {
+  if (options.accessKeyId === undefined || options.secretAccessKey === undefined) {
+    throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "S3 credentials are required", {
+      bucket: options.bucket,
+    });
+  }
+  return validateCredentials({
+    accessKeyId: options.accessKeyId,
+    secretAccessKey: options.secretAccessKey,
+    ...(options.sessionToken !== undefined ? { sessionToken: options.sessionToken } : {}),
+  });
+}
+
+function validateCredentials(credentials: S3Credentials): S3Credentials {
+  const accessKeyId = credentials.accessKeyId.trim();
+  const secretAccessKey = credentials.secretAccessKey.trim();
+  if (accessKeyId === "" || secretAccessKey === "") {
+    throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "S3 credentials are required");
+  }
+  const normalized: S3Credentials = {
+    accessKeyId,
+    secretAccessKey,
+  };
+  if (credentials.sessionToken !== undefined) normalized.sessionToken = credentials.sessionToken;
+  if (credentials.expiresAt !== undefined) normalized.expiresAt = credentials.expiresAt;
+  return normalized;
+}
+
+function credentialsNeedRefresh(
+  credentials: S3Credentials,
+  now: Date,
+  refreshWindowMs: number,
+): boolean {
+  if (credentials.expiresAt === undefined) return false;
+  return credentials.expiresAt.getTime() - now.getTime() <= refreshWindowMs;
 }
 
 const listObjectsParser = new XMLParser({

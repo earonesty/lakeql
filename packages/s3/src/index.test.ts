@@ -239,6 +239,72 @@ describe("s3Store", () => {
     expect(seen).toEqual([{ token: "TOKEN", hasBody: true }]);
   });
 
+  it("refreshes provider credentials when the active session reaches its refresh window", async () => {
+    const seen: { credential: string; token: string | null }[] = [];
+    let now = new Date("2026-06-13T00:00:00Z");
+    let providerCalls = 0;
+    const store = s3Store({
+      endpoint: "https://s3.example.test",
+      bucket: "bucket",
+      region: "us-east-1",
+      now: () => now,
+      credentialRefreshWindowMs: 60_000,
+      credentials: () => {
+        providerCalls += 1;
+        return {
+          accessKeyId: `AKID${providerCalls}`,
+          secretAccessKey: `SECRET${providerCalls}`,
+          sessionToken: `TOKEN${providerCalls}`,
+          expiresAt: new Date(now.getTime() + (providerCalls === 1 ? 120_000 : 600_000)),
+        };
+      },
+      fetch: (async (_input, init) => {
+        const headers = new Headers(init?.headers);
+        const authorization = headers.get("authorization") ?? "";
+        seen.push({
+          credential: authorization.match(/Credential=([^/]+)/u)?.[1] ?? "",
+          token: headers.get("x-amz-security-token"),
+        });
+        return new Response(enc.encode("ok"));
+      }) as typeof fetch,
+    });
+
+    await store.get("first");
+    now = new Date("2026-06-13T00:00:30Z");
+    await store.get("still-valid");
+    now = new Date("2026-06-13T00:01:01Z");
+    await store.get("refresh");
+
+    expect(providerCalls).toBe(2);
+    expect(seen).toEqual([
+      { credential: "AKID1", token: "TOKEN1" },
+      { credential: "AKID1", token: "TOKEN1" },
+      { credential: "AKID2", token: "TOKEN2" },
+    ]);
+  });
+
+  it("retries credential providers after a refresh error", async () => {
+    let providerCalls = 0;
+    const store = s3Store({
+      endpoint: "https://s3.example.test",
+      bucket: "bucket",
+      region: "us-east-1",
+      credentials: () => {
+        providerCalls += 1;
+        if (providerCalls === 1) throw new Error("catalog unavailable");
+        return {
+          accessKeyId: "AKID",
+          secretAccessKey: "SECRET",
+        };
+      },
+      fetch: (async () => new Response(enc.encode("ok"))) as typeof fetch,
+    });
+
+    await expect(store.get("first")).rejects.toThrow("catalog unavailable");
+    await expect(store.get("second")).resolves.toEqual(enc.encode("ok"));
+    expect(providerCalls).toBe(2);
+  });
+
   it("supports conditional puts with S3 precondition headers", async () => {
     const seen: {
       ifMatch: string | null;

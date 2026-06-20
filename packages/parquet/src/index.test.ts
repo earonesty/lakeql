@@ -51,6 +51,7 @@ import {
   WRITE,
 } from "lakeql-fixtures";
 import { beforeAll, describe, expect, it } from "vitest";
+import { lakeqlParquetCompressors } from "./compressors.js";
 import { DecodedColumnCache } from "./decoded-column-cache.js";
 import {
   aggregateParquetGroupTasks,
@@ -86,6 +87,18 @@ import {
 } from "./test-helpers.js";
 
 const store = memoryStore();
+
+describe("lakeqlParquetCompressors", () => {
+  it("exposes ZSTD decompression as a Parquet adapter capability", () => {
+    const compressedHello = new Uint8Array([
+      40, 181, 47, 253, 32, 5, 41, 0, 0, 104, 101, 108, 108, 111,
+    ]);
+
+    expect(new TextDecoder().decode(lakeqlParquetCompressors.ZSTD(compressedHello, 5))).toBe(
+      "hello",
+    );
+  });
+});
 
 function rowGroupWithStats(
   column: string,

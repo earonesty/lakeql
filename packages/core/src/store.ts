@@ -71,6 +71,59 @@ export interface ObjectStoreReadControls {
   maxElapsedMs?: number;
 }
 
+export interface ObjectStoreUriAuthority {
+  scheme: string;
+  authority: string;
+  prefix?: string;
+}
+
+export function uriObjectStore(
+  store: ConditionalObjectStore,
+  authorities: ObjectStoreUriAuthority | readonly ObjectStoreUriAuthority[],
+): ConditionalObjectStore;
+export function uriObjectStore(
+  store: ObjectStore,
+  authorities: ObjectStoreUriAuthority | readonly ObjectStoreUriAuthority[],
+): ObjectStore;
+export function uriObjectStore(
+  store: ObjectStore,
+  authorities: ObjectStoreUriAuthority | readonly ObjectStoreUriAuthority[],
+): ObjectStore {
+  const mappings = (Array.isArray(authorities) ? authorities : [authorities]).map(
+    normalizeUriAuthority,
+  );
+  const wrapped: ObjectStore = {
+    async get(path) {
+      return await store.get(normalizeObjectStorePath(path, mappings));
+    },
+    async getRange(path, range) {
+      return await store.getRange(normalizeObjectStorePath(path, mappings), range);
+    },
+    async put(path, body, options) {
+      return await store.put(normalizeObjectStorePath(path, mappings), body, options);
+    },
+    async delete(path) {
+      return await store.delete(normalizeObjectStorePath(path, mappings));
+    },
+    async *list(prefix, options) {
+      yield* store.list(normalizeObjectStorePath(prefix, mappings), options);
+    },
+    async head(path) {
+      return await store.head(normalizeObjectStorePath(path, mappings));
+    },
+  };
+  if (isConditionalObjectStore(store)) {
+    const conditional: ConditionalObjectStore = {
+      ...wrapped,
+      async conditionalPut(path, body, options) {
+        return await store.conditionalPut(normalizeObjectStorePath(path, mappings), body, options);
+      },
+    };
+    return conditional;
+  }
+  return wrapped;
+}
+
 export function withObjectStoreReadControls(
   store: ObjectStore,
   controls: ObjectStoreReadControls,
@@ -151,6 +204,117 @@ async function controlledRead<T>(
   } finally {
     release?.();
   }
+}
+
+function normalizeUriAuthority(
+  mapping: ObjectStoreUriAuthority,
+): Required<ObjectStoreUriAuthority> {
+  const scheme = requiredUriPart(mapping.scheme, "scheme").toLowerCase();
+  const authority = requiredUriPart(mapping.authority, "authority");
+  const prefix = trimSlashes(mapping.prefix ?? "");
+  return { scheme, authority, prefix };
+}
+
+function normalizeObjectStorePath(
+  path: string,
+  mappings: readonly Required<ObjectStoreUriAuthority>[],
+): string {
+  const maybeUri = absoluteObjectStoreUri(path);
+  if (maybeUri === undefined) return path;
+  const match = mappings.find(
+    (mapping) => mapping.scheme === maybeUri.scheme && mapping.authority === maybeUri.authority,
+  );
+  if (match === undefined) {
+    throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Object URI does not match configured store", {
+      path,
+      scheme: maybeUri.scheme,
+      authority: maybeUri.authority,
+      configuredAuthorities: mappings.map((mapping) => `${mapping.scheme}://${mapping.authority}`),
+    });
+  }
+  const key = maybeUri.path;
+  if (match.prefix === "") return key;
+  if (key === match.prefix) return "";
+  const prefix = `${match.prefix}/`;
+  if (key.startsWith(prefix)) return key.slice(prefix.length);
+  throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Object URI is outside configured prefix", {
+    path,
+    prefix: match.prefix,
+  });
+}
+
+function absoluteObjectStoreUri(
+  path: string,
+): { scheme: string; authority: string; path: string } | undefined {
+  if (!/^[A-Za-z][A-Za-z0-9+.-]*:\/\//u.test(path)) return undefined;
+  rejectPathEscape(rawUriPath(path), path);
+  let url: URL;
+  try {
+    url = new URL(path);
+  } catch (cause) {
+    throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Invalid object URI", { path, cause });
+  }
+  const objectPath = trimLeadingSlash(url.pathname);
+  rejectPathEscape(objectPath, path);
+  return {
+    scheme: url.protocol.slice(0, -1).toLowerCase(),
+    authority: url.host,
+    path: objectPath,
+  };
+}
+
+function rejectPathEscape(objectPath: string, original: string): void {
+  const decoded = objectPath
+    .split("/")
+    .map((segment) => {
+      try {
+        return decodeURIComponent(segment);
+      } catch {
+        return segment;
+      }
+    })
+    .join("/");
+  if (
+    decoded === ".." ||
+    decoded.startsWith("../") ||
+    decoded.includes("/../") ||
+    decoded.endsWith("/..")
+  ) {
+    throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Object URI path may not escape its store", {
+      path: original,
+    });
+  }
+}
+
+function rawUriPath(uri: string): string {
+  const authorityStart = uri.indexOf("://") + 3;
+  const pathStart = uri.indexOf("/", authorityStart);
+  if (pathStart === -1) return "";
+  const queryStart = uri.indexOf("?", pathStart);
+  const fragmentStart = uri.indexOf("#", pathStart);
+  const endCandidates = [queryStart, fragmentStart].filter((index) => index !== -1);
+  const pathEnd = endCandidates.length === 0 ? uri.length : Math.min(...endCandidates);
+  return trimLeadingSlash(uri.slice(pathStart, pathEnd));
+}
+
+function requiredUriPart(value: string, name: string): string {
+  const trimmed = value.trim();
+  if (trimmed === "") {
+    throw new LakeqlError("LAKEQL_VALIDATION_ERROR", `Object URI ${name} is required`);
+  }
+  return trimmed;
+}
+
+function trimSlashes(value: string): string {
+  return value.replace(/^\/+/u, "").replace(/\/+$/u, "");
+}
+
+function trimLeadingSlash(value: string): string {
+  return value.replace(/^\/+/u, "");
+}
+
+function isConditionalObjectStore(store: ObjectStore): store is ConditionalObjectStore {
+  return typeof (store as Partial<ConditionalObjectStore>).conditionalPut === "function";
 }
 
 async function* controlledList(

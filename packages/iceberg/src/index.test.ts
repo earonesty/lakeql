@@ -28,7 +28,7 @@ import {
   readParquetObjects,
   writeParquet,
 } from "../../parquet/src/index.js";
-import type { IcebergCommitCatalog, IcebergCommitInput } from "./index.js";
+import type { IcebergCommitCatalog, IcebergCommitInput, IcebergRestLoadContext } from "./index.js";
 import {
   applyIcebergDeletes,
   icebergGlueCatalog,
@@ -173,6 +173,94 @@ describe("loadIcebergTable", () => {
       },
     ]);
     expect(calls[0]?.headers.get("authorization")).toBe("Bearer token_123");
+  });
+
+  it("loads a delegated REST table through warehouse discovery and a store factory", async () => {
+    const restStore = memoryStore();
+    await putIcebergWarehouse(restStore);
+    const metadata = JSON.parse(readFileSync(fixturePath(ICEBERG.metadataFile), "utf8")) as unknown;
+    const calls: RestFetchCall[] = [];
+    const fakeFetch = restFetch(calls, (input) => {
+      const url = String(input);
+      if (url.endsWith("/v1/config?warehouse=places")) {
+        return jsonResponse({
+          defaults: {},
+          overrides: { prefix: "places" },
+        });
+      }
+      return jsonResponse(
+        {
+          "metadata-location": ICEBERG.metadataFile,
+          metadata,
+          config: {
+            "client.region": "us-east-1",
+            "s3.access-key-id": "AKID",
+          },
+          "storage-credentials": [
+            {
+              prefix: "s3://bucket/warehouse/places",
+              config: { "s3.session-token": "TOKEN" },
+            },
+          ],
+        },
+        200,
+        { etag: '"table-etag"' },
+      );
+    });
+    const contexts: IcebergRestLoadContext[] = [];
+
+    const table = await loadIcebergTableFromRest({
+      url: "https://catalog.example",
+      warehouse: "places",
+      namespace: ["datasets"],
+      table: "places_os",
+      accessDelegation: ["vended-credentials"],
+      fetch: fakeFetch,
+      storeFactory: (context) => {
+        contexts.push(context);
+        return restStore;
+      },
+    });
+
+    expect(table.planFiles({ ref: "main" }).snapshotId).toBe(2);
+    expect(contexts).toMatchObject([
+      {
+        "metadata-location": ICEBERG.metadataFile,
+        config: {
+          "client.region": "us-east-1",
+          "s3.access-key-id": "AKID",
+        },
+        "storage-credentials": [
+          {
+            prefix: "s3://bucket/warehouse/places",
+            config: { "s3.session-token": "TOKEN" },
+          },
+        ],
+        etag: '"table-etag"',
+      },
+    ]);
+    expect(calls.map((call) => call.url)).toEqual([
+      "https://catalog.example/v1/config?warehouse=places",
+      "https://catalog.example/v1/places/namespaces/datasets/tables/places_os",
+    ]);
+    expect(calls[1]?.headers.get("X-Iceberg-Access-Delegation")).toBe("vended-credentials");
+  });
+
+  it("requires REST table loaders to receive or construct an object store", async () => {
+    const metadata = JSON.parse(readFileSync(fixturePath(ICEBERG.metadataFile), "utf8")) as unknown;
+
+    await expect(
+      loadIcebergTableFromRest({
+        url: "https://catalog.example",
+        namespace: "prod",
+        table: "places",
+        fetch: async () =>
+          jsonResponse({
+            "metadata-location": ICEBERG.metadataFile,
+            metadata,
+          }),
+      }),
+    ).rejects.toMatchObject({ code: "LAKEQL_VALIDATION_ERROR" });
   });
 
   it("lists tables through the Iceberg REST catalog API", async () => {
@@ -2739,9 +2827,11 @@ function restFetch(
   };
 }
 
-function jsonResponse(value: unknown, status = 200): Response {
+function jsonResponse(value: unknown, status = 200, headers: HeadersInit = {}): Response {
+  const responseHeaders = new Headers(headers);
+  responseHeaders.set("content-type", "application/json");
   return new Response(JSON.stringify(value), {
     status,
-    headers: { "content-type": "application/json" },
+    headers: responseHeaders,
   });
 }
