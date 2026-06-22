@@ -35,6 +35,9 @@ jobs:
       - name: Refresh external fixture checksums
         run: pnpm fixtures:external -- --update-checksums
 
+      - name: Build workspace packages
+        run: pnpm build
+
       - name: Run external conformance
         run: pnpm test:conformance
         env:
