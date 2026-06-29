@@ -1,9 +1,9 @@
 {
   "format-version" : 2,
-  "table-uuid" : "22367e1e-d28a-4d5a-9a91-8b1d424d78d3",
+  "table-uuid" : "463680d7-9ba5-49c0-b967-a72038b1ae77",
   "location" : "warehouse/db/places",
   "last-sequence-number" : 2,
-  "last-updated-ms" : 1781570785182,
+  "last-updated-ms" : 1782742396519,
   "last-column-id" : 2,
   "current-schema-id" : 0,
   "schemas" : [ {
@@ -41,23 +41,23 @@
     "fields" : [ ]
   } ],
   "properties" : {
-    "owner" : "erik",
+    "owner" : "root",
     "write.parquet.compression-codec" : "zstd"
   },
-  "current-snapshot-id" : 5005585067905336602,
+  "current-snapshot-id" : 5231606687235979293,
   "refs" : {
     "main" : {
-      "snapshot-id" : 5005585067905336602,
+      "snapshot-id" : 5231606687235979293,
       "type" : "branch"
     }
   },
   "snapshots" : [ {
     "sequence-number" : 1,
-    "snapshot-id" : 854222197868791994,
-    "timestamp-ms" : 1781570784399,
+    "snapshot-id" : 3488625995649555195,
+    "timestamp-ms" : 1782742395864,
     "summary" : {
       "operation" : "append",
-      "spark.app.id" : "local-1781570780332",
+      "spark.app.id" : "local-1782742392131",
       "added-data-files" : "2",
       "added-records" : "2",
       "added-files-size" : "1226",
@@ -69,16 +69,16 @@
       "total-position-deletes" : "0",
       "total-equality-deletes" : "0"
     },
-    "manifest-list" : "warehouse/db/places/metadata/snap-854222197868791994-1-2aab8420-11ef-4c4c-bd94-d7d9e2d3c8b3.avro",
+    "manifest-list" : "warehouse/db/places/metadata/snap-3488625995649555195-1-c8119a75-b726-43f5-ba05-b909a7ef2d94.avro",
     "schema-id" : 0
   }, {
     "sequence-number" : 2,
-    "snapshot-id" : 5005585067905336602,
-    "parent-snapshot-id" : 854222197868791994,
-    "timestamp-ms" : 1781570785182,
+    "snapshot-id" : 5231606687235979293,
+    "parent-snapshot-id" : 3488625995649555195,
+    "timestamp-ms" : 1782742396519,
     "summary" : {
       "operation" : "append",
-      "spark.app.id" : "local-1781570780332",
+      "spark.app.id" : "local-1782742392131",
       "added-data-files" : "2",
       "added-records" : "2",
       "added-files-size" : "1225",
@@ -90,23 +90,23 @@
       "total-position-deletes" : "0",
       "total-equality-deletes" : "0"
     },
-    "manifest-list" : "warehouse/db/places/metadata/snap-5005585067905336602-1-2a9a39e6-5d80-4b82-b5a1-f2a5d6bb0d99.avro",
+    "manifest-list" : "warehouse/db/places/metadata/snap-5231606687235979293-1-2049445c-2e82-4798-a36f-d1ada9702898.avro",
     "schema-id" : 0
   } ],
   "statistics" : [ ],
   "partition-statistics" : [ ],
   "snapshot-log" : [ {
-    "timestamp-ms" : 1781570784399,
-    "snapshot-id" : 854222197868791994
+    "timestamp-ms" : 1782742395864,
+    "snapshot-id" : 3488625995649555195
   }, {
-    "timestamp-ms" : 1781570785182,
-    "snapshot-id" : 5005585067905336602
+    "timestamp-ms" : 1782742396519,
+    "snapshot-id" : 5231606687235979293
   } ],
   "metadata-log" : [ {
-    "timestamp-ms" : 1781570784399,
+    "timestamp-ms" : 1782742395864,
     "metadata-file" : "warehouse/db/places/metadata/v1.metadata.json"
   }, {
-    "timestamp-ms" : 1781570784552,
+    "timestamp-ms" : 1782742395980,
     "metadata-file" : "warehouse/db/places/metadata/v2.metadata.json"
   } ]
 }

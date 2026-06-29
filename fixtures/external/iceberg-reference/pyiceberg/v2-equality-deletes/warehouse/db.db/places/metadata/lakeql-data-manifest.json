@@ -3,7 +3,7 @@
     {
       "fileSizeInBytes": 1033,
       "partition": {},
-      "path": "warehouse/db.db/places/data/00000-0-eb3c4c8d-9af9-4212-85f2-6f02970bb168.parquet",
+      "path": "warehouse/db.db/places/data/00000-0-8449de80-bf7c-4e0b-80e5-df15d488b725.parquet",
       "recordCount": 3,
       "sequenceNumber": 1
     }
