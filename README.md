@@ -1,14 +1,30 @@
 # lakeql
 
-lakeql reads Parquet files and plans Iceberg tables directly from object storage, in
-TypeScript. It is small and dependency-light enough to run in constrained runtimes —
-Cloudflare Workers, edge functions, serverless — where DuckDB-WASM or a JVM engine is too
-heavy. See [why not DuckDB-WASM?](./docs/why-not-duckdb-wasm.md).
+LakeQL is a pure JavaScript analytical query engine for Parquet and Iceberg, designed for
+edge runtimes such as Cloudflare Workers. It requires no WASM, no native modules, and
+streams large datasets with low memory usage.
 
-It is strict about correctness: it streams with HTTP range reads and bounded memory, and
-either reads a table correctly or rejects it with a typed error rather than guessing. Every
-supported feature, and every feature it detects and refuses, is enumerated in the
-[compatibility matrix](./docs/compatibility.md) and [unsupported features](./docs/unsupported.md).
+LakeQL exists for the places DuckDB-WASM and native analytical engines do not fit well:
+edge functions, serverless jobs, browser-hosted tools, and JavaScript-only deployments.
+It runs anywhere JavaScript runs, reads directly from object storage, and keeps execution
+bounded with streaming HTTP range reads instead of loading whole datasets into memory.
+
+Why care:
+
+- Pure JavaScript: no WASM startup cost, no native modules, no JVM.
+- Edge runtime friendly: works in Cloudflare Workers and other constrained JavaScript runtimes.
+- Low-memory streaming execution: scan Parquet and plan Iceberg tables from object storage.
+- Strict correctness: LakeQL reads supported data correctly or rejects unsupported semantics with typed errors.
+
+Although LakeQL is optimized for portability and memory efficiency rather than raw
+throughput, it is competitive with DuckDB-WASM and is faster on several common workloads.
+Try the live [LakeQL vs DuckDB-WASM browser/R2 comparison](https://lakeql.com/compare.html)
+or read [why not DuckDB-WASM?](./docs/why-not-duckdb-wasm.md).
+
+LakeQL supports SQL, JavaScript builder expressions, and a JSON query API over Parquet and
+Iceberg. Every supported feature, and every feature it detects and refuses, is enumerated
+in the [compatibility matrix](./docs/compatibility.md) and
+[unsupported features](./docs/unsupported.md).
 
 ## Install
 

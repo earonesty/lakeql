@@ -3,12 +3,25 @@
 [![npm](https://img.shields.io/npm/v/lakeql.svg)](https://www.npmjs.com/package/lakeql)
 [![license](https://img.shields.io/npm/l/lakeql.svg)](https://github.com/earonesty/lakeql/blob/main/LICENSE)
 
-**Query Parquet and Iceberg tables directly from object storage, in TypeScript.**
+LakeQL is a pure JavaScript analytical query engine for Parquet and Iceberg, designed for
+edge runtimes such as Cloudflare Workers. It requires no WASM, no native modules, and
+streams large datasets with low memory usage.
 
-lakeql is small and dependency-light enough to run in **Cloudflare Workers and
-other edge/serverless runtimes**, where DuckDB-WASM or a JVM engine is too heavy.
-It streams with HTTP range reads and bounded memory, and either reads a table
-correctly or rejects it with a typed error — it won't return quietly-wrong rows.
+LakeQL runs anywhere JavaScript runs: browsers, Node.js, Cloudflare Workers, and other
+edge/serverless environments. It reads directly from object storage, uses bounded
+streaming execution, and avoids the startup and deployment cost of DuckDB-WASM, native
+modules, or a JVM.
+
+Why care:
+
+- Pure JavaScript: no WASM startup cost, no native modules.
+- Edge runtime friendly: built for constrained JavaScript runtimes.
+- Low-memory streaming execution over Parquet and Iceberg.
+- Strict correctness: supported data is read correctly, unsupported semantics are rejected with typed errors.
+
+Although LakeQL is optimized for portability and memory efficiency rather than raw
+throughput, it is competitive with DuckDB-WASM and is faster on several common workloads.
+Compare them in-browser at https://lakeql.com/compare.html.
 
 ▶ **Try it live in your browser:** https://lakeql.com/
 
