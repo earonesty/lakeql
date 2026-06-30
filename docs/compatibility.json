@@ -395,7 +395,11 @@
     "evidence": [
       {
         "file": "packages/http/src/index.test.ts",
-        "pattern": "expect(seen.map((entry) => entry.range)).toContain(\"bytes=2-5\")"
+        "pattern": "expect(seen.some((entry) => entry.range === \"bytes=0-1\")).toBe(true)"
+      },
+      {
+        "file": "packages/http/src/index.test.ts",
+        "pattern": "falls back to full-object slicing when static hosts range over compressed bytes"
       }
     ]
   },

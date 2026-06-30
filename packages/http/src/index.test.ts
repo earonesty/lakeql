@@ -45,9 +45,12 @@ describe("httpStore", () => {
       etag: "v1",
       contentType: "application/octet-stream",
     });
-    await expect(store.get("file.parquet")).resolves.toEqual(enc.encode("whole"));
     await expect(store.getRange("file.parquet", { offset: 2, length: 4 })).resolves.toEqual(
       enc.encode("bytes=2-5"),
+    );
+    await expect(store.get("file.parquet")).resolves.toEqual(enc.encode("whole"));
+    await expect(store.getRange("file.parquet", { offset: 2, length: 4 })).resolves.toEqual(
+      enc.encode("ole"),
     );
     const listed = [];
     for await (const object of store.list("nested/")) listed.push(object.path);
@@ -70,8 +73,8 @@ describe("httpStore", () => {
     expect(seen.map((entry) => entry.method)).toEqual(
       expect.arrayContaining(["GET", "PUT", "DELETE"]),
     );
-    // head() probes with a ranged GET (bytes=0-0), not HEAD.
-    expect(seen.some((entry) => entry.range === "bytes=0-0")).toBe(true);
+    // head() probes with a tiny ranged GET, not HEAD.
+    expect(seen.some((entry) => entry.range === "bytes=0-1")).toBe(true);
   });
 
   it("returns null for 404 reads and throws when list has no object index", async () => {
@@ -147,5 +150,91 @@ describe("httpStore", () => {
     await expect(store.getRange("file.parquet", { offset: 2, length: 4 })).resolves.toEqual(
       enc.encode("2345"),
     );
+  });
+
+  it("falls back to full-object slicing when static hosts range over compressed bytes", async () => {
+    const whole = enc.encode("PAR1decoded-parquet-body");
+    const seen: { range: string | null }[] = [];
+    const store = httpStore({
+      baseUrl: "https://example.test/data/",
+      fetch: async (_input, init) => {
+        const headers = new Headers(init?.headers);
+        const range = headers.get("range");
+        seen.push({ range });
+        if (range === "bytes=0-1") {
+          return new Response(new Uint8Array([0x1f, 0x8b]), {
+            status: 206,
+            headers: {
+              "content-range": "bytes 0-1/11",
+              "content-length": "2",
+              vary: "Accept-Encoding",
+            },
+          });
+        }
+        if (range) {
+          return new Response(null, {
+            status: 416,
+            headers: { "content-range": "bytes */11" },
+          });
+        }
+        return new Response(whole, {
+          status: 200,
+          headers: { "content-length": String(whole.byteLength) },
+        });
+      },
+    });
+
+    await expect(store.head("file.parquet")).resolves.toMatchObject({ size: whole.byteLength });
+    await expect(store.getRange("file.parquet", { offset: 4, length: 7 })).resolves.toEqual(
+      enc.encode("decoded"),
+    );
+    expect(seen.map((entry) => entry.range)).toEqual(["bytes=0-1", null]);
+  });
+
+  it("falls back when compressed ranged probes expose no decoded bytes", async () => {
+    const whole = enc.encode("PAR1decoded-parquet-body");
+    const store = httpStore({
+      baseUrl: "https://example.test/data/",
+      fetch: async (_input, init) => {
+        const range = new Headers(init?.headers).get("range");
+        if (range === "bytes=0-1") {
+          return new Response(new Uint8Array(), {
+            status: 206,
+            headers: {
+              "content-range": "bytes 0-1/11",
+              vary: "Accept-Encoding",
+            },
+          });
+        }
+        return new Response(whole);
+      },
+    });
+
+    await expect(store.head("file.parquet")).resolves.toMatchObject({ size: whole.byteLength });
+    await expect(store.getRange("file.parquet", { offset: 0, length: 4 })).resolves.toEqual(
+      enc.encode("PAR1"),
+    );
+  });
+
+  it("falls back when ranged probes carry content-encoding", async () => {
+    const whole = enc.encode("PAR1decoded-parquet-body");
+    const store = httpStore({
+      baseUrl: "https://example.test/data/",
+      fetch: async (_input, init) => {
+        const range = new Headers(init?.headers).get("range");
+        if (range === "bytes=0-1") {
+          return new Response(new Uint8Array([0x1f, 0x8b]), {
+            status: 206,
+            headers: {
+              "content-encoding": "gzip",
+              "content-range": "bytes 0-1/11",
+            },
+          });
+        }
+        return new Response(whole);
+      },
+    });
+
+    await expect(store.head("file.parquet")).resolves.toMatchObject({ size: whole.byteLength });
   });
 });

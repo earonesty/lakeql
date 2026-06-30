@@ -25,6 +25,7 @@ export class HttpObjectStore implements ObjectStore {
   private readonly fetchImpl: typeof fetch;
   private readonly headers: HeadersInit | undefined;
   private readonly objects: ObjectInfo[] | undefined;
+  private readonly fullObjectCache = new Map<string, Uint8Array>();
 
   constructor(options: HttpStoreOptions) {
     this.baseUrl = options.baseUrl.endsWith("/") ? options.baseUrl : `${options.baseUrl}/`;
@@ -40,7 +41,9 @@ export class HttpObjectStore implements ObjectStore {
     const response = await this.fetchPath(path, { method: "GET" });
     if (response.status === 404) return null;
     assertOk(response, path);
-    return new Uint8Array(await response.arrayBuffer());
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    this.fullObjectCache.set(path, bytes);
+    return bytes;
   }
 
   async getRange(path: string, range: { offset: number; length: number }): Promise<Uint8Array> {
@@ -50,16 +53,23 @@ export class HttpObjectStore implements ObjectStore {
         range,
       });
     }
+    const cached = this.fullObjectCache.get(path);
+    if (cached !== undefined) return cached.subarray(range.offset, range.offset + range.length);
     const response = await this.fetchPath(path, {
       method: "GET",
       headers: { Range: `bytes=${range.offset}-${range.offset + range.length - 1}` },
     });
+    if (response.status === 416) {
+      const full = await this.fetchFullObject(path);
+      return full.subarray(range.offset, range.offset + range.length);
+    }
     assertOk(response, path);
     const bytes = new Uint8Array(await response.arrayBuffer());
     // `Range` is advisory: some servers (e.g. GitHub Pages on certain assets)
     // ignore it and return 200 with the full body. When that happens, slice the
     // requested window ourselves instead of handing back the whole object.
     if (response.status !== 206 && bytes.length > range.length) {
+      this.fullObjectCache.set(path, bytes);
       return bytes.subarray(range.offset, range.offset + range.length);
     }
     return bytes;
@@ -102,22 +112,25 @@ export class HttpObjectStore implements ObjectStore {
   }
 
   async head(path: string): Promise<ObjectHead | null> {
-    // Probe with a 1-byte ranged GET rather than HEAD. Under transparent
-    // compression (e.g. gzip on static hosts like GitHub Pages) a HEAD reports
-    // the COMPRESSED content-length, but range reads operate on the
-    // uncompressed object — the `content-range` total is the authoritative
-    // uncompressed size and is what subsequent range reads must agree with.
+    // Probe with a tiny ranged GET rather than HEAD. Some static hosts report
+    // compressed content-lengths from HEAD; the ranged response is normally the
+    // authoritative byte length for follow-up ranges.
     const response = await this.fetchPath(path, {
       method: "GET",
-      headers: { Range: "bytes=0-0" },
+      headers: { Range: "bytes=0-1" },
     });
     if (response.status === 404) return null;
     assertOk(response, path);
-    // Release the body; we only need the headers.
-    await response.arrayBuffer().catch(() => undefined);
+    const probe = new Uint8Array(await response.arrayBuffer().catch(() => new ArrayBuffer(0)));
     const total = parseContentRangeTotal(response.headers.get("content-range"));
     const contentLength = response.headers.get("content-length");
-    const size = total ?? (contentLength ? Number(contentLength) : Number.NaN);
+    let size = total ?? (contentLength ? Number(contentLength) : Number.NaN);
+    if (response.status === 206 && isCompressedRangeProbe(probe, response.headers)) {
+      size = (await this.fetchFullObject(path)).byteLength;
+    } else if (response.status !== 206 && probe.byteLength > 0) {
+      this.fullObjectCache.set(path, probe);
+      size = probe.byteLength;
+    }
     if (!Number.isFinite(size)) {
       throw new LakeqlError("LAKEQL_OBJECT_NOT_FOUND", `Missing size for ${path}`, { path });
     }
@@ -139,6 +152,16 @@ export class HttpObjectStore implements ObjectStore {
     return this.fetchImpl(this.urlForPath(path), { ...init, headers });
   }
 
+  private async fetchFullObject(path: string): Promise<Uint8Array> {
+    const cached = this.fullObjectCache.get(path);
+    if (cached !== undefined) return cached;
+    const response = await this.fetchPath(path, { method: "GET" });
+    assertOk(response, path);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    this.fullObjectCache.set(path, bytes);
+    return bytes;
+  }
+
   private urlForPath(path: string): URL {
     const base = new URL(this.baseUrl);
     const url = new URL(encodeObjectPath(path), base);
@@ -154,6 +177,15 @@ export class HttpObjectStore implements ObjectStore {
     }
     return url;
   }
+}
+
+function isCompressedRangeProbe(bytes: Uint8Array, headers: Headers): boolean {
+  const encoding = headers.get("content-encoding")?.toLowerCase();
+  if (encoding && encoding !== "identity") return true;
+  const vary = headers.get("vary")?.toLowerCase();
+  if (vary?.split(",").some((value) => value.trim() === "accept-encoding")) return true;
+  if (bytes[0] === 0x1f && bytes[1] === 0x8b) return true;
+  return false;
 }
 
 function encodeObjectPath(path: string): string {
