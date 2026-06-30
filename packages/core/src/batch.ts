@@ -24,6 +24,7 @@ export type Vector =
     }
   | { type: "bool"; values: Uint8Array; valid?: Uint8Array }
   | { type: "utf8"; values: string[]; valid?: Uint8Array }
+  | { type: "binary"; values: Uint8Array[]; valid?: Uint8Array }
   | { type: "dict"; indices: Uint32Array; dictionary: Vector; valid?: Uint8Array }
   | { type: "list"; offsets: Int32Array; child: Vector; valid?: Uint8Array }
   | { type: "struct"; fields: Record<string, Vector>; length: number; valid?: Uint8Array }
@@ -89,6 +90,8 @@ export function vectorFromValues(values: ArrayLike<VectorValue>): Vector {
       return optionalValidity({ type, values: boolValues(values) }, valid);
     case "utf8":
       return optionalValidity({ type, values: utf8Values(values) }, valid);
+    case "binary":
+      return optionalValidity({ type, values: binaryValues(values) }, valid);
     case "list":
       return optionalValidity(listValues(values), valid);
     case "struct":
@@ -167,6 +170,7 @@ export function vectorValue(
   | number
   | bigint
   | boolean
+  | Uint8Array
   | TimestampValue
   | unknown[]
   | Record<string, unknown>
@@ -195,6 +199,8 @@ export function vectorValue(
       return vector.values[index] === 1;
     case "utf8":
       return vector.values[index] ?? "";
+    case "binary":
+      return vector.values[index] ?? new Uint8Array();
     case "dict":
       return vectorValue(vector.dictionary, vector.indices[index] ?? 0);
     case "list": {
@@ -240,6 +246,7 @@ export function vectorLength(vector: Vector): number {
     case "timestamp":
     case "bool":
     case "utf8":
+    case "binary":
       return vector.values.length;
     case "dict":
       return vector.indices.length;
@@ -284,6 +291,7 @@ function vectorShape(values: ArrayLike<VectorValue>): {
 function vectorShapeForValue(value: Exclude<VectorValue, null | undefined>): VectorShape {
   if (Array.isArray(value)) return "list";
   if (value instanceof Map) return "map";
+  if (value instanceof Uint8Array) return "binary";
   switch (typeof value) {
     case "number":
       return "f64";
@@ -366,6 +374,15 @@ function utf8Values(values: ArrayLike<VectorValue>): string[] {
   const out = new Array<string>(values.length);
   for (let index = 0; index < values.length; index += 1) {
     out[index] = values[index] == null ? "" : String(values[index]);
+  }
+  return out;
+}
+
+function binaryValues(values: ArrayLike<VectorValue>): Uint8Array[] {
+  const out = new Array<Uint8Array>(values.length);
+  for (let index = 0; index < values.length; index += 1) {
+    const value = values[index];
+    out[index] = value instanceof Uint8Array ? value : new Uint8Array();
   }
   return out;
 }
@@ -614,6 +631,8 @@ export function scalarVectorValue(vector: Vector, index: number): Scalar {
       return vector.values[index] === 1;
     case "utf8":
       return vector.values[index] ?? "";
+    case "binary":
+      return vector.values[index] ?? new Uint8Array();
     case "dict":
       return scalarVectorValue(vector.dictionary, vector.indices[index] ?? 0);
     case "list":
@@ -861,6 +880,12 @@ function sqlNotMask(input: Uint8Array): Uint8Array {
 
 function compareValue(op: CompareOp, left: Scalar, right: Scalar): boolean | null {
   if (left === null || right === null) return null;
+  if (left instanceof Uint8Array || right instanceof Uint8Array) {
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Cannot compare binary values", {
+      leftType: scalarType(left),
+      rightType: scalarType(right),
+    });
+  }
   if (isTimestampValue(left) || isTimestampValue(right)) {
     const leftTimestamp = timestampLiteral(left);
     const rightTimestamp = timestampLiteral(right);
@@ -987,6 +1012,7 @@ function timestampNanos(value: bigint, unit: TimestampUnit): bigint {
 }
 
 function scalarType(value: Scalar): string {
+  if (value instanceof Uint8Array) return "binary";
   return isTimestampValue(value) ? "timestamp" : typeof value;
 }
 

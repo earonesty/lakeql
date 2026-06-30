@@ -623,4 +623,20 @@ describe("column batches", () => {
       ),
     ]).toEqual([1, 0]);
   });
+
+  it("materializes binary vectors and rejects binary scalar comparisons", () => {
+    const first = new Uint8Array([1, 2, 3]);
+    const second = new Uint8Array([4, 5]);
+    const batch = batchFromColumns({ id: [1, 2, 3], payload: [first, null, second] });
+
+    expect(batch.columns.payload?.type).toBe("binary");
+    expect(vectorValue(batch.columns.payload ?? { type: "null", length: 0 }, 0)).toBe(first);
+    expect(materializeBatchRows(batch)).toEqual([
+      { id: 1, payload: first },
+      { id: 2, payload: null },
+      { id: 3, payload: second },
+    ]);
+    expect(() => predicateSelection(batch, eq("payload", first))).toThrowError(LakeqlError);
+    expect(() => evaluate(eq(lit(first), lit(second)), {})).toThrowError(LakeqlError);
+  });
 });

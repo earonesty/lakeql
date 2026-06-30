@@ -206,6 +206,7 @@ function canEncodeScalarVector(vector: Vector): boolean {
     case "utf8":
     case "dict":
       return true;
+    case "binary":
     case "list":
     case "struct":
     case "map":
@@ -371,6 +372,8 @@ function vectorGroupKeyPart(vector: Vector, index: number): string {
       return scalarGroupKeyPart(vector.values[index] === 1);
     case "utf8":
       return scalarGroupKeyPart(vector.values[index] ?? "");
+    case "binary":
+      throw new LakeqlError("LAKEQL_TYPE_ERROR", "Binary values are not group keys");
     case "dict":
       return vectorGroupKeyPart(vector.dictionary, vector.indices[index] ?? 0);
     case "list":
@@ -605,11 +608,18 @@ function aggregateInputValueAt(
       column: aggregate.column,
     });
   }
-  return (index) => scalarVectorValue(vector, index);
+  return (index) => aggregateScalarValue(scalarVectorValue(vector, index));
 }
 
 function aggregateValue(values: BatchExprValues, index: number): VectorAggregateValue {
-  return values.valueAt(index);
+  return aggregateScalarValue(values.valueAt(index));
+}
+
+function aggregateScalarValue(value: Scalar): VectorAggregateValue {
+  if (value instanceof Uint8Array) {
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Binary values are not aggregate values");
+  }
+  return value;
 }
 
 function groupKey(values: readonly Scalar[]): string {
@@ -625,11 +635,17 @@ function groupKey(values: readonly Scalar[]): string {
 function scalarGroupKeyPart(value: Scalar): string {
   if (value === null) return "null:";
   if (typeof value === "bigint") return `bigint:${value}`;
-  if (typeof value === "object") return `timestamp:${value.epochNanoseconds}`;
+  if (value instanceof Uint8Array) {
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Binary values are not group keys");
+  }
+  if (isTimestampValue(value)) return `timestamp:${value.epochNanoseconds}`;
   return `${typeof value}:${value}`;
 }
 
 function snapshotGroupValue(value: Scalar): VectorGroupBySnapshotValue {
+  if (value instanceof Uint8Array) {
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Binary values are not group keys");
+  }
   if (isTimestampValue(value)) {
     return {
       type: "timestamp",

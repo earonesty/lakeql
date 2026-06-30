@@ -260,6 +260,12 @@ describe("evaluate", () => {
     expect(evaluate(fn("st_disjoint", col("geom"), fn("st_bbox", 0, 0, 1, 1)), row)).toBe(true);
     expect(evaluate(fn("st_contains", col("polygon"), col("geom")), row)).toBe(true);
     expect(evaluate(fn("st_within", col("geom"), col("polygon")), row)).toBe(true);
+    expect(evaluate(fn("st_dwithin", col("geom"), fn("st_point", -118.25, 34.05), 0.02), row)).toBe(
+      true,
+    );
+    expect(evaluate(fn("st_dwithin", col("geom"), fn("st_point", -118.5, 34.05), 0.02), row)).toBe(
+      false,
+    );
     expect(evaluate(fn("st_intersects", col("geom"), fn("st_bbox", 0, 0, 1, 1)), row)).toBe(false);
     expect(
       evaluate(fn("st_distance", fn("st_bbox", 0, 0, 1, 1), fn("st_bbox", 4, 5, 6, 7)), row),
@@ -289,6 +295,47 @@ describe("evaluate", () => {
     expect(evaluate(fn("h3_parent", col("h3_8"), 7), row)).toBe("8729a1d75ffffff");
   });
 
+  it("parses WKB geometry bytes in spatial functions", () => {
+    const point = wkbPoint(-118.24, 34.05);
+    const bigEndianPoint = wkbPoint(2, 3, { littleEndian: false });
+    const sridPoint = wkbPoint(4, 5, { srid: 4326 });
+    const zPoint = wkbPoint(6, 7, { dimensions: 3 });
+    const line = wkbLineString([
+      [0, 0],
+      [3, 4],
+    ]);
+    const polygon = wkbPolygon([
+      [-119, 33],
+      [-117, 33],
+      [-117, 35],
+      [-119, 35],
+      [-119, 33],
+    ]);
+    expect(evaluate(fn("st_x", lit(point)), {})).toBe(-118.24);
+    expect(evaluate(fn("st_x", lit(bigEndianPoint)), {})).toBe(2);
+    expect(evaluate(fn("st_y", lit(sridPoint)), {})).toBe(5);
+    expect(evaluate(fn("st_x", lit(zPoint)), {})).toBe(6);
+    expect(evaluate(fn("st_length", lit(line)), {})).toBe(5);
+    expect(evaluate(fn("st_contains", lit(polygon), lit(point)), {})).toBe(true);
+    expect(evaluate(fn("st_within", lit(point), lit(polygon)), {})).toBe(true);
+    expect(evaluate(fn("st_dwithin", lit(point), fn("st_point", -118.25, 34.05), 0.02), {})).toBe(
+      true,
+    );
+    expect(() => evaluate(fn("st_x", lit(new Uint8Array([2, 1, 0, 0, 0]))), {})).toThrowError(
+      LakeqlError,
+    );
+    expect(() => evaluate(fn("st_x", lit(new Uint8Array([1, 1, 0]))), {})).toThrowError(
+      LakeqlError,
+    );
+    expect(() => evaluate(fn("st_x", lit(wkbPoint(Number.NaN, 1))), {})).toThrowError(LakeqlError);
+    expect(() => evaluate(fn("st_x", lit(wkbGeometryHeader(4, 0))), {})).toThrowError(LakeqlError);
+    expect(() => {
+      const trailing = new Uint8Array(point.byteLength + 1);
+      trailing.set(point);
+      evaluate(fn("st_x", lit(trailing)), {});
+    }).toThrowError(LakeqlError);
+  });
+
   it("uses exact geometry, not just bounding boxes, for spatial predicates", () => {
     // Lower-left triangle (x + y <= 4); bbox is [0,0,4,4].
     const triA = '{"type":"Polygon","coordinates":[[[0,0],[4,0],[0,4],[0,0]]]}';
@@ -304,11 +351,14 @@ describe("evaluate", () => {
     // check must report the geometries as disjoint.
     expect(evaluate(fn("st_intersects", triA, triB), {})).toBe(false);
     expect(evaluate(fn("st_disjoint", triA, triB), {})).toBe(true);
+    expect(evaluate(fn("st_dwithin", triA, triB, 1.3), {})).toBe(false);
+    expect(evaluate(fn("st_dwithin", triA, triB, 1.5), {})).toBe(true);
     expect(evaluate(fn("st_contains", triA, outside), {})).toBe(false);
     expect(evaluate(fn("st_within", outside, triA), {})).toBe(false);
 
     // Genuine relationships still hold.
     expect(evaluate(fn("st_intersects", triA, inside), {})).toBe(true);
+    expect(evaluate(fn("st_dwithin", triA, inside, 0), {})).toBe(true);
     expect(evaluate(fn("st_contains", triA, inside), {})).toBe(true);
     expect(evaluate(fn("st_within", inside, triA), {})).toBe(true);
     expect(evaluate(fn("st_disjoint", triA, inside), {})).toBe(false);
@@ -370,6 +420,9 @@ describe("evaluate", () => {
     expect(evaluate(fn("st_contains", lit(null), col("geom")), row)).toBeNull();
     expect(evaluate(fn("st_within", lit(null), col("geom")), row)).toBeNull();
     expect(evaluate(fn("st_disjoint", lit(null), col("geom")), row)).toBeNull();
+    expect(evaluate(fn("st_dwithin", lit(null), col("geom"), 1), row)).toBeNull();
+    expect(evaluate(fn("st_dwithin", col("geom"), lit(null), 1), row)).toBeNull();
+    expect(evaluate(fn("st_dwithin", col("geom"), col("polygon"), lit(null)), row)).toBeNull();
     expect(evaluate(fn("st_distance", lit(null), col("geom")), row)).toBeNull();
     expect(evaluate(fn("st_area", lit(null)), row)).toBeNull();
     expect(evaluate(fn("st_length", lit(null)), row)).toBeNull();
@@ -428,6 +481,9 @@ describe("evaluate", () => {
     expect(() =>
       evaluate(fn("st_intersects", '{"type":"Polygon","coordinates":[]}', col("geom")), row),
     ).toThrowError(LakeqlError);
+    expect(() => evaluate(fn("st_dwithin", col("geom"), col("polygon"), -1), row)).toThrowError(
+      LakeqlError,
+    );
     expect(() =>
       evaluate(fn("st_length", '{"type":"LineString","coordinates":[]}'), row),
     ).toThrowError(LakeqlError);
@@ -462,3 +518,66 @@ describe("evaluate", () => {
     });
   });
 });
+
+function wkbPoint(
+  x: number,
+  y: number,
+  options: { littleEndian?: boolean; dimensions?: 2 | 3 | 4; srid?: number } = {},
+): Uint8Array {
+  const dimensions = options.dimensions ?? 2;
+  const sridBytes = options.srid === undefined ? 0 : 4;
+  const bytes = new Uint8Array(1 + 4 + sridBytes + dimensions * 8);
+  const view = new DataView(bytes.buffer);
+  const littleEndian = options.littleEndian ?? true;
+  const rawType =
+    (dimensions === 2 ? 1 : dimensions === 3 ? 1001 : 3001) |
+    (options.srid === undefined ? 0 : 0x20000000);
+  view.setUint8(0, littleEndian ? 1 : 0);
+  view.setUint32(1, rawType, littleEndian);
+  let offset = 5;
+  if (options.srid !== undefined) {
+    view.setUint32(offset, options.srid, littleEndian);
+    offset += 4;
+  }
+  view.setFloat64(offset, x, littleEndian);
+  view.setFloat64(offset + 8, y, littleEndian);
+  for (let index = 2; index < dimensions; index += 1) {
+    view.setFloat64(offset + index * 8, 10 + index, littleEndian);
+  }
+  return bytes;
+}
+
+function wkbLineString(points: [number, number][]): Uint8Array {
+  const bytes = wkbGeometryHeader(2, 4 + points.length * 16);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(5, points.length, true);
+  let offset = 9;
+  for (const [x, y] of points) {
+    view.setFloat64(offset, x, true);
+    view.setFloat64(offset + 8, y, true);
+    offset += 16;
+  }
+  return bytes;
+}
+
+function wkbPolygon(points: [number, number][]): Uint8Array {
+  const bytes = wkbGeometryHeader(3, 4 + 4 + points.length * 16);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(5, 1, true);
+  view.setUint32(9, points.length, true);
+  let offset = 13;
+  for (const [x, y] of points) {
+    view.setFloat64(offset, x, true);
+    view.setFloat64(offset + 8, y, true);
+    offset += 16;
+  }
+  return bytes;
+}
+
+function wkbGeometryHeader(type: number, payloadBytes: number): Uint8Array {
+  const bytes = new Uint8Array(1 + 4 + payloadBytes);
+  const view = new DataView(bytes.buffer);
+  view.setUint8(0, 1);
+  view.setUint32(1, type, true);
+  return bytes;
+}

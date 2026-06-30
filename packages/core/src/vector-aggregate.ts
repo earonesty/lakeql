@@ -8,6 +8,7 @@ import {
   type Vector,
 } from "./batch.js";
 import { LakeqlError } from "./errors.js";
+import type { Scalar } from "./expr.js";
 import type { AggregateExpr, AggregateSpec, QueryBudget } from "./query.js";
 import { compareTimestampValues, isTimestampValue, type TimestampValue } from "./timestamp.js";
 import {
@@ -278,8 +279,15 @@ function updateVectorAggregateState(
         : vector === undefined
           ? true
           : scalarVectorValue(vector, index);
-    updateStateValue(state, value, budget);
+    updateStateValue(state, aggregateScalarValue(value), budget);
   }
+}
+
+function aggregateScalarValue(value: Scalar): VectorAggregateValue {
+  if (value instanceof Uint8Array) {
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Binary values are not aggregate values");
+  }
+  return value;
 }
 
 function updateDirectUtf8Distinct(

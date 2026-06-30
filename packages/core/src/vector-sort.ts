@@ -293,6 +293,14 @@ function gatherVector(vector: Vector, indices: readonly number[]): Vector {
         { type: vector.type, values: indices.map((index) => vector.values[index] ?? "") },
         valid,
       );
+    case "binary":
+      return optionalValidity(
+        {
+          type: vector.type,
+          values: indices.map((index) => vector.values[index] ?? new Uint8Array()),
+        },
+        valid,
+      );
     case "dict":
       return optionalValidity(
         {
@@ -391,6 +399,14 @@ function concatVectors(name: string, vectors: readonly Vector[]): Vector {
         {
           type: first.type,
           values: vectors.flatMap((vector) => [...requireVectorType(vector, "utf8").values]),
+        },
+        valid,
+      );
+    case "binary":
+      return optionalValidity(
+        {
+          type: first.type,
+          values: vectors.flatMap((vector) => [...requireVectorType(vector, "binary").values]),
         },
         valid,
       );

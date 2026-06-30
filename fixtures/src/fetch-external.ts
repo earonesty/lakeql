@@ -40,7 +40,6 @@ if (dryRun) {
 }
 
 if (verifyOnly) {
-  verifyPlotlyFlightsFixture();
   verifyVendoredIcebergChecksums();
   process.exit(0);
 }

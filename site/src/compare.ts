@@ -20,12 +20,14 @@ declare const __LAKEQL_VERSION__: string;
 type Engine = "lakeql" | "duckdb";
 type DuckCacheMode = "fresh" | "cached";
 type LakeCacheMode = "fresh" | "cached";
+type DatasetKind = "tabular" | "spatial";
 type Row = Record<string, unknown>;
 type Lake = ReturnType<typeof createParquetLake>;
 
-const DATASET_KEY = "2015_flights.parquet";
-const DATASET_PROXY_PATH = "compare-data/2015_flights.parquet";
-const DATASET_SIZE = 25_238_218;
+const DEFAULT_SOURCE_URL =
+  "https://pub-9d5bcb33a5384d79875a943eef183b6d.r2.dev/plotly/2015_flights.parquet";
+const DEFAULT_DATASET_KEY = "2015_flights.parquet";
+const DEFAULT_DATASET_SIZE = 25_238_218;
 const SCAN_RANGE_CACHE_BYTES = 32 * 1024 * 1024;
 const BYTES_PER_MB = 1024 * 1024;
 const DEFAULT_MEMORY_BUDGET_MB = 256;
@@ -63,6 +65,52 @@ order by flights desc
 limit 10`,
   },
 ];
+
+const SPATIAL_EXAMPLES = [
+  {
+    name: "BBox Intersects",
+    sql: `select id, name
+from spatial.parquet
+where st_intersects(geometry, st_bbox(-118.245, 34.050, -118.242, 34.055))
+limit 20`,
+  },
+  {
+    name: "DWithin Near",
+    sql: `select id, name
+from spatial.parquet
+where st_dwithin(geometry, st_point(-118.2437, 34.0522), 0.001)
+order by id
+limit 20`,
+  },
+  {
+    name: "Within Window",
+    sql: `select id, name
+from spatial.parquet
+where st_within(geometry, st_bbox(-118.245, 34.050, -118.242, 34.055))
+order by id
+limit 20`,
+  },
+  {
+    name: "Contains Window",
+    sql: `select id, name
+from spatial.parquet
+where st_contains(st_bbox(-118.245, 34.050, -118.242, 34.055), geometry)
+order by id
+limit 20`,
+  },
+];
+
+interface DatasetConfig {
+  sourceUrl: string;
+  key: string;
+  size?: number;
+  name: string;
+  host: string;
+  kind: DatasetKind;
+}
+
+const dataset = datasetConfigFromLocation();
+const examples = dataset.kind === "spatial" ? SPATIAL_EXAMPLES : EXAMPLES;
 
 let engine: Engine = "lakeql";
 let duckCacheMode: DuckCacheMode = "cached";
@@ -128,7 +176,7 @@ function mountEditor(): void {
   if (view) view.destroy();
   view = new EditorView({
     parent,
-    doc: initialSqlText ?? EXAMPLES[activeExample].sql,
+    doc: initialSqlText ?? examples[activeExample].sql,
     extensions: [
       basicSetup,
       sql(),
@@ -153,7 +201,7 @@ function knownSizeStore(inner: ObjectStore): ObjectStore {
     delete: inner.delete.bind(inner),
     list: inner.list.bind(inner),
     async head(path) {
-      if (path === DATASET_KEY) return { size: DATASET_SIZE };
+      if (path === dataset.key && dataset.size !== undefined) return { size: dataset.size };
       return inner.head(path);
     },
   };
@@ -171,11 +219,14 @@ function applyAst(builder: ReturnType<Lake["path"]>, ast: ReturnType<typeof pars
 }
 
 function datasetProxyUrl(): string {
-  return new URL(DATASET_PROXY_PATH, window.location.href).href;
+  const url = new URL(`compare-data/${encodeURIComponent(dataset.key)}`, window.location.href);
+  url.searchParams.set("source", dataset.sourceUrl);
+  if (dataset.size !== undefined) url.searchParams.set("size", String(dataset.size));
+  return url.href;
 }
 
 function duckDatasetProxyUrl(fileName: string): string {
-  if (fileName === DATASET_KEY) return datasetProxyUrl();
+  if (fileName === dataset.key) return datasetProxyUrl();
   const url = new URL(datasetProxyUrl());
   url.searchParams.set("duckdb_run", fileName);
   return url.href;
@@ -183,7 +234,9 @@ function duckDatasetProxyUrl(fileName: string): string {
 
 function datasetProxyBase(): string {
   const url = datasetProxyUrl();
-  return url.slice(0, url.length - DATASET_KEY.length);
+  const key = encodeURIComponent(dataset.key);
+  const index = url.indexOf(key);
+  return index >= 0 ? url.slice(0, index) : url;
 }
 
 let proxyReady: Promise<void> | undefined;
@@ -244,7 +297,7 @@ function createLakeRuntime(cacheMode: LakeCacheMode): {
   cacheMode: LakeCacheMode;
   memoryBudgetMb: number;
 } {
-  const store = knownSizeStore(httpStore({ baseUrl: datasetProxyBase() }));
+  const store = knownSizeStore(httpStore({ baseUrl: datasetProxyBase(), fetch: benchmarkFetch }));
   const budgetBytes = memoryBudgetBytes();
   const budget: QueryBudget = { maxMemoryBytes: budgetBytes };
   const scanRangeCache = { maxBytes: Math.min(SCAN_RANGE_CACHE_BYTES, budgetBytes) };
@@ -258,6 +311,17 @@ function createLakeRuntime(cacheMode: LakeCacheMode): {
         })
       : createParquetLake({ store, budget, scanRangeCache });
   return { lake, cacheMode, memoryBudgetMb };
+}
+
+function benchmarkFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const request = new Request(input, init);
+  const url = new URL(request.url);
+  if (url.origin === window.location.origin && url.pathname.includes("/compare-data/")) {
+    url.searchParams.set("source", dataset.sourceUrl);
+    if (dataset.size !== undefined) url.searchParams.set("size", String(dataset.size));
+    return fetch(new Request(url, request));
+  }
+  return fetch(request);
 }
 
 async function runLakeql(
@@ -274,7 +338,7 @@ async function runLakeql(
   }
   const { lake } = lakeRuntime;
   const started = performance.now();
-  const ast = { ...parseSql(sqlText), source: DATASET_KEY };
+  const ast = { ...parseSql(sqlText), source: dataset.key };
   const aggregates =
     ast.aggregates && Object.keys(ast.aggregates).length > 0 ? ast.aggregates : undefined;
   const grouped = (ast.groupBy?.length ?? 0) > 0;
@@ -282,11 +346,11 @@ async function runLakeql(
   let lakeStats: QueryStats;
 
   if (!aggregates && !grouped) {
-    const result = applyAst(lake.path(DATASET_KEY), ast).run();
+    const result = applyAst(lake.path(dataset.key), ast).run();
     rows = (await result.toArray()) as Row[];
     lakeStats = result.stats;
   } else {
-    let base = lake.path(DATASET_KEY);
+    let base = lake.path(dataset.key);
     if (ast.where) base = base.where(ast.where);
     const result = base.run();
     rows = (await result.aggregate(ast.groupBy ?? [], aggregates ?? {}, {
@@ -326,6 +390,9 @@ async function initDuckDb(fileName: string) {
     );
     await db.collectFileStatistics(fileName, true);
     const conn = await db.connect();
+    if (dataset.kind === "spatial") {
+      await conn.query("INSTALL spatial; LOAD spatial;");
+    }
     return { db, conn, initMs: performance.now() - started, fileName };
   })();
   return duckState;
@@ -343,14 +410,14 @@ async function runDuckDb(
   sqlText: string,
 ): Promise<{ rows: Row[]; ms: number; initMs: number; stats: Stats }> {
   await resetProxyStats();
-  const fileName = duckCacheMode === "fresh" ? `${duckFreshRunId++}-${DATASET_KEY}` : DATASET_KEY;
+  const fileName = duckCacheMode === "fresh" ? `${duckFreshRunId++}-${dataset.key}` : dataset.key;
   if (duckCacheMode === "fresh") await resetDuckDb();
   const state = await initDuckDb(fileName);
   if (state.fileName !== fileName) {
     await resetDuckDb();
   }
   const { conn, initMs } = state.fileName === fileName ? state : await initDuckDb(fileName);
-  const duckSql = sqlText.replace(/\bfrom\s+flights\.parquet\b/giu, `from '${fileName}'`);
+  const duckSql = duckSqlForDataset(sqlText, fileName);
   const started = performance.now();
   const table = await conn.query(duckSql);
   return {
@@ -430,7 +497,7 @@ function currentRunState(controlNavs = 0): PendingRunState {
     lakeCacheMode,
     memoryBudgetMb,
     activeExample,
-    sql: view?.state.doc.toString() ?? initialSqlText ?? EXAMPLES[activeExample].sql,
+    sql: view?.state.doc.toString() ?? initialSqlText ?? examples[activeExample].sql,
     controlNavs,
   };
 }
@@ -467,10 +534,10 @@ function parsePendingRunState(raw: string): PendingRunState | undefined {
       activeExample:
         typeof parsed.activeExample === "number" &&
         parsed.activeExample >= 0 &&
-        parsed.activeExample < EXAMPLES.length
+        parsed.activeExample < examples.length
           ? parsed.activeExample
           : 0,
-      sql: typeof parsed.sql === "string" ? parsed.sql : EXAMPLES[0].sql,
+      sql: typeof parsed.sql === "string" ? parsed.sql : examples[0].sql,
       controlNavs: typeof parsed.controlNavs === "number" ? parsed.controlNavs : 0,
     };
   } catch {
@@ -669,12 +736,14 @@ function setupEngineSwitch(): void {
 function setupExamples(): void {
   const host = document.getElementById("query-picker");
   if (!host) return;
-  host.innerHTML = EXAMPLES.map(
-    (example, i) =>
-      `<button type="button" class="${i === activeExample ? "is-active" : ""}" data-example="${i}">${escapeHtml(
-        example.name,
-      )}</button>`,
-  ).join("");
+  host.innerHTML = examples
+    .map(
+      (example, i) =>
+        `<button type="button" class="${i === activeExample ? "is-active" : ""}" data-example="${i}">${escapeHtml(
+          example.name,
+        )}</button>`,
+    )
+    .join("");
   host.addEventListener("click", (event) => {
     const button = (event.target as Element).closest<HTMLButtonElement>("button[data-example]");
     if (!button) return;
@@ -717,11 +786,108 @@ function setupVersion(): void {
   if (tag) tag.textContent = `v${__LAKEQL_VERSION__}`;
 }
 
+function datasetConfigFromLocation(): DatasetConfig {
+  const params = new URLSearchParams(window.location.search);
+  const kind = params.get("kind") === "spatial" ? "spatial" : "tabular";
+  const sourceUrl =
+    sourceUrlParam(params.get("source")) ??
+    (kind === "spatial"
+      ? new URL("spatial.parquet", window.location.href).href
+      : DEFAULT_SOURCE_URL);
+  return {
+    sourceUrl,
+    key:
+      nonEmptyParam(params.get("key")) ??
+      sourceKey(sourceUrl) ??
+      (kind === "spatial" ? "spatial.parquet" : DEFAULT_DATASET_KEY),
+    size:
+      positiveNumberParam(params.get("size")) ??
+      (kind === "tabular" ? DEFAULT_DATASET_SIZE : undefined),
+    name:
+      nonEmptyParam(params.get("name")) ??
+      (kind === "spatial" ? "Spatial Parquet on R2" : "Plotly 2015 flights"),
+    host: nonEmptyParam(params.get("host")) ?? "Cloudflare R2",
+    kind,
+  };
+}
+
+function sourceUrlParam(value: string | null): string | undefined {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.origin === window.location.origin
+      ? url.href
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function nonEmptyParam(value: string | null): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function positiveNumberParam(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function sourceKey(sourceUrl: string): string | undefined {
+  const name = new URL(sourceUrl).pathname.split("/").filter(Boolean).at(-1);
+  return name?.endsWith(".parquet") ? name : undefined;
+}
+
+function duckSqlForDataset(sqlText: string, fileName: string): string {
+  const escaped = fileName.replace(/'/g, "''");
+  let out = sqlText
+    .replace(/\bfrom\s+flights\.parquet\b/giu, `from '${escaped}'`)
+    .replace(/\bfrom\s+spatial\.parquet\b/giu, `from '${escaped}'`)
+    .replace(new RegExp(`\\bfrom\\s+${escapeRegExp(dataset.key)}\\b`, "giu"), `from '${escaped}'`);
+  if (dataset.kind === "spatial") {
+    out = out
+      .replace(/\bst_dwithin\s*\(\s*geometry\s*,/giu, "ST_DWithin(ST_GeomFromWKB(geometry),")
+      .replace(/\bst_intersects\s*\(\s*geometry\s*,/giu, "ST_Intersects(ST_GeomFromWKB(geometry),")
+      .replace(/\bst_within\s*\(\s*geometry\s*,/giu, "ST_Within(ST_GeomFromWKB(geometry),")
+      .replace(/\bst_contains\s*\(/giu, "ST_Contains(")
+      .replace(/,\s*geometry\s*\)/giu, ", ST_GeomFromWKB(geometry))")
+      .replace(
+        /\bst_point\s*\(\s*([+-]?(?:\d+\.?\d*|\.\d+))\s*,\s*([+-]?(?:\d+\.?\d*|\.\d+))\s*\)/giu,
+        "ST_GeomFromText('POINT($1 $2)')",
+      )
+      .replace(
+        /\bst_bbox\s*\(\s*([^,\s]+)\s*,\s*([^,\s]+)\s*,\s*([^,\s]+)\s*,\s*([^)]+?)\s*\)/giu,
+        "ST_GeomFromText('POLYGON((' || $1 || ' ' || $2 || ',' || $3 || ' ' || $2 || ',' || $3 || ' ' || $4 || ',' || $1 || ' ' || $4 || ',' || $1 || ' ' || $2 || '))')",
+      );
+  }
+  return out;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function renderDatasetConfig(): void {
+  setText("dataset-name", dataset.name);
+  setText("dataset-size", dataset.size === undefined ? "probed" : formatBytes(dataset.size));
+  setText("dataset-host", dataset.host);
+  const source = document.getElementById("dataset-source") as HTMLAnchorElement | null;
+  if (source) source.href = dataset.sourceUrl;
+  document.body.dataset.datasetKind = dataset.kind;
+}
+
+function setText(id: string, value: string): void {
+  const element = document.getElementById(id);
+  if (element) element.textContent = value;
+}
+
 const pendingRunState = takePendingRunState();
 if (pendingRunState) applyPendingRunState(pendingRunState);
 
 document.getElementById("run")?.addEventListener("click", () => void run());
 setupVersion();
+renderDatasetConfig();
 setupExamples();
 setupDuckCacheMode();
 setupLakeCacheMode();

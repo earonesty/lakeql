@@ -27,6 +27,7 @@ export type ArrowValue =
   | number
   | bigint
   | boolean
+  | Uint8Array
   | null
   | unknown[]
   | Record<string, unknown>;

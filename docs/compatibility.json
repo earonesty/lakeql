@@ -58,7 +58,7 @@
     "area": "Parquet",
     "feature": "Direct vector batch reads",
     "status": "supported+tested",
-    "notes": "Parquet scans can produce aligned column vectors for scalar, dictionary, nullable, timestamp, byte-array, LIST, and MAP physical shapes without materializing row objects at the scan boundary.",
+    "notes": "Parquet scans can produce aligned column vectors for scalar, dictionary, nullable, timestamp, byte-array, GeoParquet WKB, LIST, and MAP physical shapes without materializing row objects at the scan boundary.",
     "evidence": [
       {
         "file": "packages/parquet/src/vector-batches.test.ts",
@@ -75,6 +75,10 @@
       {
         "file": "packages/parquet/src/vector-batches.test.ts",
         "pattern": "reads the known emitted DATA_PAGE_V2 vector shapes including dictionary strings"
+      },
+      {
+        "file": "packages/parquet/src/vector-batches.test.ts",
+        "pattern": "queries GeoParquet WKB geometry columns through vector spatial predicates"
       }
     ]
   },
@@ -460,9 +464,9 @@
   },
   {
     "area": "Geospatial",
-    "feature": "GeoJSON, WKT point, bbox, and H3 predicates",
+    "feature": "GeoJSON, WKT point, WKB, GeoParquet, bbox, and H3 predicates",
     "status": "supported+tested",
-    "notes": "st_intersects, h3_in, and h3_within can run as composable vector predicates over plain and dictionary string vectors; row-group pruning uses bbox and H3 statistics when available.",
+    "notes": "st_intersects, st_contains, st_within, st_dwithin, h3_in, and h3_within can run as composable vector predicates over plain string, dictionary string, and WKB binary vectors when spatial predicates use supported constant geometry shapes; row-group pruning uses bbox and H3 statistics when available.",
     "evidence": [
       {
         "file": "packages/core/src/batch.test.ts",
@@ -475,6 +479,10 @@
       {
         "file": "packages/parquet/src/index.test.ts",
         "pattern": "prunes bbox and h3 function predicates with row-group stats"
+      },
+      {
+        "file": "packages/core/src/batch-call.test.ts",
+        "pattern": "evaluates vectorized H3 radius and spatial intersection masks"
       }
     ]
   },
