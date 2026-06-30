@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>lakeql vs DuckDB-WASM — public Parquet range reads</title>
+    <title>lakeql vs DuckDB-WASM — browser to R2 range reads</title>
     <meta
       name="description"
-      content="Run lakeql and DuckDB-WASM against the same public Plotly flights Parquet file from your browser."
+      content="Run lakeql and DuckDB-WASM in the browser against the same public R2 Parquet object."
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -27,7 +27,7 @@
       </a>
       <nav class="topnav">
         <a href="./">demo</a>
-        <a href="https://github.com/plotly/datasets">dataset</a>
+        <a href="https://docs.overturemaps.org/getting-data/duckdb/">public data</a>
         <a href="https://shell.duckdb.org">duckdb-wasm</a>
         <a href="https://github.com/earonesty/lakeql">github</a>
       </nav>
@@ -35,13 +35,13 @@
 
     <section class="compare-intro">
       <div>
-        <p class="eyebrow">remote parquet comparison</p>
+        <p class="eyebrow">browser to r2 comparison</p>
         <h1>lakeql vs DuckDB-WASM</h1>
       </div>
       <p>
-        Same SQL, same public Parquet object. Lakeql reports file reads directly;
-        cache controls are explicit for each engine. The memory menu applies to
-        lakeql caches and operator state.
+        Same browser, same remote Parquet object, same measured HTTP/range path.
+        DuckDB means DuckDB-WASM here; native DuckDB is not part of the measured
+        lane. Cold runs include DuckDB-WASM startup and extension load cost.
       </p>
     </section>
 
@@ -49,17 +49,21 @@
       <section class="dataset-strip">
         <div>
           <span class="dataset-strip__label">dataset</span>
-          <strong>Plotly 2015_flights.parquet</strong>
+          <strong id="dataset-name">Plotly 2015 flights</strong>
         </div>
         <div>
           <span class="dataset-strip__label">size</span>
-          <strong>25.2 MB</strong>
+          <strong id="dataset-size">25.2 MB</strong>
         </div>
         <div>
           <span class="dataset-strip__label">host</span>
-          <strong>Cloudflare R2</strong>
+          <strong id="dataset-host">Cloudflare R2</strong>
         </div>
-        <a href="https://pub-9d5bcb33a5384d79875a943eef183b6d.r2.dev/plotly/2015_flights.parquet">source file</a>
+        <a
+          id="dataset-source"
+          href="https://pub-9d5bcb33a5384d79875a943eef183b6d.r2.dev/plotly/2015_flights.parquet"
+          >source file</a
+        >
       </section>
 
       <section class="compare-grid">
@@ -83,7 +87,7 @@
           <div class="compare-options">
             <div class="query-picker" id="query-picker"></div>
             <label class="cache-mode">
-              <span>DuckDB runtime</span>
+              <span>DuckDB-WASM runtime</span>
               <select id="duck-cache-mode">
                 <option value="fresh">fresh each run</option>
                 <option value="cached" selected>keep warm</option>
@@ -132,9 +136,9 @@
     </main>
 
     <footer class="foot">
-      <span>DuckDB-WASM stays out of the main demo</span>
+      <span>DuckDB-WASM only, no native DuckDB timing</span>
       <span class="foot__sep">·</span>
-      <span>single public Parquet URL</span>
+      <span>public R2/HTTP Parquet URL</span>
       <span class="foot__sep">·</span>
       <span>runs in the browser</span>
     </footer>

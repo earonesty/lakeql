@@ -123,6 +123,15 @@ describe("batch call vector kernels", () => {
       '{"type":"BBox","minx":-1,"miny":-2,"maxx":1,"maxy":2}',
     ]);
     expect(
+      collect(
+        batchCallExprValues(3, "st_point", [literal(3, -118.24), literal(3, 34.05)], compareEq),
+      ),
+    ).toEqual([
+      '{"type":"Point","coordinates":[-118.24,34.05]}',
+      '{"type":"Point","coordinates":[-118.24,34.05]}',
+      '{"type":"Point","coordinates":[-118.24,34.05]}',
+    ]);
+    expect(
       collect(batchCallExprValues(3, "coalesce", [values([null, "x", null]), text], compareEq)),
     ).toEqual([" Alpha ", "x", null]);
     expect(
@@ -178,6 +187,14 @@ describe("batch call vector kernels", () => {
       batchCallExprValues(
         1,
         "st_bbox",
+        [literal(1, "x"), literal(1, 0), literal(1, 1), literal(1, 3)],
+        compareEq,
+      ),
+    ).toThrow(/literal bounds/u);
+    expect(() =>
+      batchCallExprValues(
+        1,
+        "st_bbox",
         [literal(1, 2), literal(1, 0), literal(1, 1), literal(1, 3)],
         compareEq,
       ),
@@ -190,14 +207,40 @@ describe("batch call vector kernels", () => {
         compareEq,
       ),
     ).toThrow(/finite/u);
+    expect(() =>
+      batchCallExprValues(1, "st_point", [literal(1, "x"), literal(1, 0)], compareEq),
+    ).toThrow(/literal lon\/lat/u);
+    expect(() =>
+      batchCallExprValues(1, "st_point", [literal(1, Number.NaN), literal(1, 0)], compareEq),
+    ).toThrow(/finite/u);
     expect(() => batchCallExprValues(1, "missing", [], compareEq)).toThrow(
       /does not support call expressions/u,
     );
   });
 
   it("checks vector call support shapes", () => {
+    for (const name of [
+      "lower",
+      "upper",
+      "trim",
+      "substr",
+      "replace",
+      "regexp_matches",
+      "regexp_replace",
+      "cast",
+      "round",
+      "floor",
+      "ceil",
+      "abs",
+      "coalesce",
+      "nullif",
+    ]) {
+      expect(vectorCallExprSupported(fn(name, col("value")))).toBe(true);
+    }
     expect(vectorCallExprSupported(fn("st_bbox", lit(0), lit(1), lit(2), lit(3)))).toBe(true);
     expect(vectorCallExprSupported(fn("st_bbox", lit(0), lit("x"), lit(2), lit(3)))).toBe(false);
+    expect(vectorCallExprSupported(fn("st_point", lit(0), lit(1)))).toBe(true);
+    expect(vectorCallExprSupported(fn("st_point", lit(0), lit("x")))).toBe(false);
     expect(vectorCallExprSupported(fn("h3_in", col("cell"), lit('["a"]')))).toBe(true);
     expect(vectorCallExprSupported(fn("h3_in", col("cell")))).toBe(false);
     expect(vectorCallExprSupported(fn("h3_in", lit("cell"), lit('["a"]')))).toBe(false);
@@ -211,6 +254,50 @@ describe("batch call vector kernels", () => {
         fn("st_intersects", col("geom"), fn("st_bbox", lit(0), lit(0), lit(1), lit(1))),
       ),
     ).toBe(true);
+    expect(
+      vectorCallExprSupported(fn("st_intersects", fn("st_point", lit(0), lit(0)), col("geom"))),
+    ).toBe(true);
+    expect(vectorCallExprSupported(fn("st_intersects", col("geom")))).toBe(false);
+    expect(vectorCallExprSupported(fn("st_intersects", col("geom"), col("other")))).toBe(false);
+    expect(
+      vectorCallExprSupported(
+        fn("st_dwithin", col("geom"), fn("st_point", lit(0), lit(0)), lit(1)),
+      ),
+    ).toBe(true);
+    expect(
+      vectorCallExprSupported(
+        fn("st_dwithin", fn("st_point", lit(0), lit(0)), col("geom"), lit(1)),
+      ),
+    ).toBe(true);
+    expect(
+      vectorCallExprSupported(
+        fn("st_dwithin", col("geom"), fn("st_point", lit(0), lit(0)), lit(-1)),
+      ),
+    ).toBe(false);
+    expect(
+      vectorCallExprSupported(
+        fn(
+          "st_dwithin",
+          col("geom"),
+          fn("st_point", lit(0), lit(0)),
+          lit(Number.POSITIVE_INFINITY),
+        ),
+      ),
+    ).toBe(false);
+    expect(
+      vectorCallExprSupported(fn("st_contains", col("geom"), fn("st_point", lit(0), lit(0)))),
+    ).toBe(true);
+    expect(
+      vectorCallExprSupported(fn("st_contains", fn("st_point", lit(0), lit(0)), col("geom"))),
+    ).toBe(true);
+    expect(vectorCallExprSupported(fn("st_contains", col("geom"), lit(wkbPoint(0, 0))))).toBe(true);
+    expect(
+      vectorCallExprSupported(
+        fn("st_within", col("geom"), fn("st_bbox", lit(0), lit(0), lit(1), lit(1))),
+      ),
+    ).toBe(true);
+    expect(vectorCallExprSupported(fn("st_within", col("geom")))).toBe(false);
+    expect(vectorCallExprSupported(fn("st_within", col("geom"), col("other")))).toBe(false);
     expect(vectorCallExprSupported(fn("unknown", col("x")))).toBe(false);
   });
 
@@ -331,5 +418,266 @@ describe("batch call vector kernels", () => {
         ]),
       ),
     ).toEqual([2, 2, 2]);
+
+    const point = literal(3, JSON.stringify({ type: "Point", coordinates: [0, 0] }));
+    expect(
+      mask(
+        batchCallPredicateMask("st_dwithin", [
+          { rowCount: 3, vector: geom, valueAt: () => null },
+          point,
+          literal(3, 1),
+        ]),
+      ),
+    ).toEqual([1, 0, 2]);
+    expect(
+      mask(
+        batchCallPredicateMask("st_dwithin", [
+          point,
+          { rowCount: 3, vector: geom, valueAt: () => null },
+          literal(3, 1),
+        ]),
+      ),
+    ).toEqual([1, 0, 2]);
+    expect(
+      mask(
+        batchCallPredicateMask("st_dwithin", [
+          { rowCount: 3, vector: geom, valueAt: () => null },
+          point,
+          literal(3, null),
+        ]),
+      ),
+    ).toEqual([2, 2, 2]);
+
+    const polygon = literal(
+      3,
+      JSON.stringify({
+        type: "Polygon",
+        coordinates: [
+          [
+            [-1, -1],
+            [1, -1],
+            [1, 1],
+            [-1, 1],
+            [-1, -1],
+          ],
+        ],
+      }),
+    );
+    const binary = batchFromColumns({
+      geom: [wkbPoint(0, 0), wkbPoint(10, 10), null],
+    }).columns.geom;
+    if (binary === undefined) throw new Error("missing binary geometry vector");
+    expect(
+      mask(
+        batchCallPredicateMask("st_within", [
+          { rowCount: 3, vector: binary, valueAt: () => null },
+          polygon,
+        ]),
+      ),
+    ).toEqual([1, 0, 2]);
+    expect(
+      mask(
+        batchCallPredicateMask("st_contains", [
+          polygon,
+          { rowCount: 3, vector: binary, valueAt: () => null },
+        ]),
+      ),
+    ).toEqual([1, 0, 2]);
+    expect(
+      mask(
+        batchCallPredicateMask("st_contains", [
+          { rowCount: 3, vector: binary, valueAt: () => null },
+          literal(3, wkbPoint(0, 0)),
+        ]),
+      ),
+    ).toEqual([1, 0, 2]);
+    expect(
+      mask(
+        batchCallPredicateMask("st_within", [
+          polygon,
+          { rowCount: 3, vector: binary, valueAt: () => null },
+        ]),
+      ),
+    ).toEqual([0, 0, 2]);
+    expect(
+      mask(
+        batchCallPredicateMask("st_within", [
+          { rowCount: 3, vector: { type: "null", length: 3 }, valueAt: () => null },
+          polygon,
+        ]),
+      ),
+    ).toEqual([2, 2, 2]);
+
+    const binaryDictionary = {
+      type: "dict" as const,
+      indices: new Uint32Array([0, 1, 0]),
+      dictionary: binary,
+      valid: new Uint8Array([1, 0, 1]),
+    };
+    expect(
+      mask(
+        batchCallPredicateMask("st_within", [
+          { rowCount: 3, vector: binaryDictionary, valueAt: () => null },
+          polygon,
+        ]),
+      ),
+    ).toEqual([1, 2, 1]);
+    expect(() =>
+      batchCallPredicateMask("st_contains", [
+        { rowCount: 3, vector: numericVector(), valueAt: () => null },
+        polygon,
+      ]),
+    ).toThrow(/geometry values/u);
+    expect(() =>
+      batchCallPredicateMask("h3_in", [
+        { rowCount: 3, vector: numericVector(), valueAt: () => null },
+        literal(3, "[]"),
+      ]),
+    ).toThrow(/requires strings/u);
+    expect(
+      batchCallPredicateMask("h3_within", [{ rowCount: 3, vector: h3, valueAt: () => null }]),
+    ).toBeUndefined();
+    expect(() =>
+      batchCallPredicateMask("h3_within", [
+        { rowCount: 3, vector: h3, valueAt: () => null },
+        literal(3, "8829a1d757fffff"),
+        literal(3, -1),
+      ]),
+    ).toThrow(/non-negative integer/u);
+    expect(
+      batchCallPredicateMask("st_intersects", [
+        { rowCount: 3, vector: geom, valueAt: () => null },
+        values([1]),
+      ]),
+    ).toBeUndefined();
+    expect(
+      batchCallPredicateMask("st_dwithin", [
+        { rowCount: 3, vector: geom, valueAt: () => null },
+        point,
+        literal(3, "x"),
+      ]),
+    ).toBeUndefined();
+    expect(() =>
+      batchCallPredicateMask("st_dwithin", [
+        { rowCount: 3, vector: geom, valueAt: () => null },
+        point,
+        literal(3, -1),
+      ]),
+    ).toThrow(/non-negative distance/u);
+    expect(
+      mask(
+        batchCallPredicateMask("st_intersects", [
+          literal(3, null),
+          { rowCount: 3, vector: geom, valueAt: () => null },
+        ]),
+      ),
+    ).toEqual([2, 2, 2]);
+    expect(
+      mask(
+        batchCallPredicateMask("st_contains", [
+          { rowCount: 3, vector: binary, valueAt: () => null },
+          literal(3, null),
+        ]),
+      ),
+    ).toEqual([2, 2, 2]);
+    expect(
+      mask(
+        batchCallPredicateMask("st_contains", [
+          literal(3, null),
+          { rowCount: 3, vector: binary, valueAt: () => null },
+        ]),
+      ),
+    ).toEqual([2, 2, 2]);
+    expect(
+      mask(
+        batchCallPredicateMask("st_within", [
+          literal(3, null),
+          { rowCount: 3, vector: binary, valueAt: () => null },
+        ]),
+      ),
+    ).toEqual([2, 2, 2]);
+    expect(
+      mask(
+        batchCallPredicateMask("st_dwithin", [
+          literal(3, null),
+          { rowCount: 3, vector: binary, valueAt: () => null },
+          literal(3, 1),
+        ]),
+      ),
+    ).toEqual([2, 2, 2]);
+    expect(
+      mask(
+        batchCallPredicateMask("st_within", [
+          {
+            rowCount: 3,
+            vector: {
+              type: "binary",
+              values: [wkbPoint(0, 0), wkbPoint(10, 10), wkbPoint(0, 0)],
+            },
+            valueAt: () => null,
+          },
+          polygon,
+        ]),
+      ),
+    ).toEqual([1, 0, 1]);
+    expect(
+      mask(
+        batchCallPredicateMask("st_within", [
+          {
+            rowCount: 3,
+            vector: {
+              type: "dict",
+              indices: new Uint32Array([0, 5, 1]),
+              dictionary: binary,
+            },
+            valueAt: () => null,
+          },
+          polygon,
+        ]),
+      ),
+    ).toEqual([1, 2, 0]);
+    const utf8Dictionary = {
+      type: "dict" as const,
+      indices: new Uint32Array([0, 1, 0]),
+      dictionary: geom,
+      valid: new Uint8Array([1, 0, 1]),
+    };
+    expect(
+      mask(batchCallPredicateMask("st_intersects", [utf8DictionaryMask(utf8Dictionary), bbox])),
+    ).toEqual([1, 2, 1]);
+    expect(() =>
+      batchCallPredicateMask("st_within", [
+        {
+          rowCount: 3,
+          vector: {
+            type: "dict",
+            indices: new Uint32Array([0, 1, 0]),
+            dictionary: numericVector(),
+          },
+          valueAt: () => null,
+        },
+        polygon,
+      ]),
+    ).toThrow(/geometry values/u);
   });
 });
+
+function wkbPoint(x: number, y: number): Uint8Array {
+  const bytes = new Uint8Array(1 + 4 + 16);
+  const view = new DataView(bytes.buffer);
+  view.setUint8(0, 1);
+  view.setUint32(1, 1, true);
+  view.setFloat64(5, x, true);
+  view.setFloat64(13, y, true);
+  return bytes;
+}
+
+function numericVector() {
+  const vector = batchFromColumns({ n: [1, 2, 3] }).columns.n;
+  if (vector === undefined) throw new Error("missing numeric vector");
+  return vector;
+}
+
+function utf8DictionaryMask(vector: NonNullable<BatchExprValues["vector"]>): BatchExprValues {
+  return { rowCount: 3, vector, valueAt: () => null };
+}

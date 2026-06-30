@@ -1,7 +1,7 @@
 import { LakeqlError } from "./errors.js";
 import type { TimestampValue } from "./timestamp.js";
 
-export type Scalar = string | number | boolean | bigint | TimestampValue | null;
+export type Scalar = string | number | boolean | bigint | Uint8Array | TimestampValue | null;
 
 export type CompareOp = "eq" | "ne" | "lt" | "lte" | "gt" | "gte";
 

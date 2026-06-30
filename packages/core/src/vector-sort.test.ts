@@ -119,11 +119,13 @@ describe("vector sort kernels", () => {
   });
 
   it("gathers typed columns and validity masks without changing vector layout", () => {
+    const first = new Uint8Array([1]);
     const batch = batchFromColumns({
       id: [1, 2, 3],
       big: [10n, 20n, 30n],
       flag: [true, null, false],
       label: ["a", null, "c"],
+      payload: [first, null, new Uint8Array([3])],
     });
     const gathered = gatherBatch(batch, [2, 1]);
 
@@ -131,9 +133,10 @@ describe("vector sort kernels", () => {
     expect(gathered.columns.big?.type).toBe("i64");
     expect(gathered.columns.flag?.type).toBe("bool");
     expect(gathered.columns.label?.type).toBe("utf8");
+    expect(gathered.columns.payload?.type).toBe("binary");
     expect(materializeBatchRows(gathered)).toEqual([
-      { id: 3, big: 30n, flag: false, label: "c" },
-      { id: 2, big: 20n, flag: null, label: null },
+      { id: 3, big: 30n, flag: false, label: "c", payload: new Uint8Array([3]) },
+      { id: 2, big: 20n, flag: null, label: null, payload: null },
     ]);
   });
 
@@ -180,11 +183,13 @@ describe("vector sort kernels", () => {
       id: [1, 2],
       flag: [true, null],
       label: ["a", null],
+      payload: [new Uint8Array([1]), null],
     });
     const right = batchFromColumns({
       id: [3],
       flag: [false],
       label: ["c"],
+      payload: [new Uint8Array([3])],
     });
 
     const combined = concatBatches([left, right]);
@@ -192,11 +197,15 @@ describe("vector sort kernels", () => {
     expect(combined.columns.id?.type).toBe("f64");
     expect(combined.columns.flag?.type).toBe("bool");
     expect(combined.columns.label?.type).toBe("utf8");
+    expect(combined.columns.payload?.type).toBe("binary");
     expect(materializeBatchRows(combined)).toEqual([
-      { id: 1, flag: true, label: "a" },
-      { id: 2, flag: null, label: null },
-      { id: 3, flag: false, label: "c" },
+      { id: 1, flag: true, label: "a", payload: new Uint8Array([1]) },
+      { id: 2, flag: null, label: null, payload: null },
+      { id: 3, flag: false, label: "c", payload: new Uint8Array([3]) },
     ]);
+    expect(() => vectorOrderByBatch(combined, [{ column: "payload" }])).toThrowError(
+      /orderBy values must be scalar/u,
+    );
   });
 
   it("concatenates null, timestamp, dictionary, and nested vectors with stable materialization", () => {

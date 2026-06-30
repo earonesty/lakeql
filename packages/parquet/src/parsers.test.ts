@@ -15,4 +15,11 @@ describe("lakeql Parquet parsers", () => {
     expect(timestampEpochForUnit(micros, "micros")).toBe(1_700_000_000_123_456n);
     expect(timestampEpochForUnit(nanos, "nanos")).toBe(1_700_000_000_123_456_789n);
   });
+
+  it("keeps GeoParquet geometry bytes available for WKB ingestion", () => {
+    const bytes = new Uint8Array([1, 2, 3]);
+
+    expect(lakeqlParquetParsers.geometryFromBytes(bytes)).toBe(bytes);
+    expect(lakeqlParquetParsers.geographyFromBytes(bytes)).toBe(bytes);
+  });
 });

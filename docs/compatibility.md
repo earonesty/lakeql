@@ -10,7 +10,7 @@ Legend: supported+tested = covered by tests; supported = implemented with narrow
 | Parquet | Projection | supported+tested | Column projection is threaded into Parquet reads. |
 | Parquet | Row-group pruning | supported+tested | Predicate pruning uses row-group statistics where available. |
 | Parquet | Deployment-neutral work-unit fan-out | supported+tested | Parquet task manifests split into portable JSON row-group work units, fan aggregate partials back in, and can reuse runtime metadata caches without changing the work-unit payload. |
-| Parquet | Direct vector batch reads | supported+tested | Parquet scans can produce aligned column vectors for scalar, dictionary, nullable, timestamp, byte-array, LIST, and MAP physical shapes without materializing row objects at the scan boundary. |
+| Parquet | Direct vector batch reads | supported+tested | Parquet scans can produce aligned column vectors for scalar, dictionary, nullable, timestamp, byte-array, GeoParquet WKB, LIST, and MAP physical shapes without materializing row objects at the scan boundary. |
 | Parquet | Shared bounded scan cache | supported+tested | A single caller-sized cache budget can cover object bytes, scan range reads, Parquet metadata, decoded column batches, and decoded page vectors according to the selected cache policy. |
 | Parquet | Lists and maps | supported+tested | Delegated to hyparquet and compared against DuckDB-authored LIST and MAP Parquet values. |
 | Parquet | Struct assembly | detected+rejected | Rejected with LAKEQL_UNSUPPORTED_PARQUET_FEATURE to avoid silent flattening. |
@@ -40,7 +40,7 @@ Legend: supported+tested = covered by tests; supported = implemented with narrow
 | Object storage | S3 SigV4 and ListObjectsV2 | supported+tested | Signing delegates to aws4fetch; XML parsing uses fast-xml-parser. |
 | SQL | DESCRIBE metadata statement | supported+tested | parseSqlStatement recognizes DESCRIBE and the CLI query path returns Parquet schema metadata for local paths or named tables. |
 | Execution | Vectorized predicates and grouping | supported+tested | The execution layer evaluates scalar, timestamp, dictionary, composite-key, and nullable vector predicates and grouped aggregate states before materializing output rows. |
-| Geospatial | GeoJSON, WKT point, bbox, and H3 predicates | supported+tested | st_intersects, h3_in, and h3_within can run as composable vector predicates over plain and dictionary string vectors; row-group pruning uses bbox and H3 statistics when available. |
+| Geospatial | GeoJSON, WKT point, WKB, GeoParquet, bbox, and H3 predicates | supported+tested | st_intersects, st_contains, st_within, st_dwithin, h3_in, and h3_within can run as composable vector predicates over plain string, dictionary string, and WKB binary vectors when spatial predicates use supported constant geometry shapes; row-group pruning uses bbox and H3 statistics when available. |
 | Browser parity | In-memory JavaScript row arrays | supported+tested | createInMemoryLake registers JS row arrays behind the normal Lake runtime with query-time budgets and task planning. |
 | Browser parity | CSV ingest | supported+tested | lakeql-csv is an opt-in package for headered/headerless CSV, delimiter options, quoted fields, type sniffing, null handling, and ingest budgets. |
 | Browser parity | JSON and NDJSON ingest | supported+tested | lakeql-json is an opt-in package for JSON arrays, single objects, NDJSON records, browser binary inputs, and ingest budgets. |

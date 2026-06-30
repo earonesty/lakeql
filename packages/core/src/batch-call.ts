@@ -2,10 +2,12 @@ import type { BatchExprValues } from "./batch.js";
 import { LakeqlError } from "./errors.js";
 import {
   type BBox,
+  bboxDistance,
   bboxIntersects,
   envelopeFromGeometry,
   envelopeOf,
   type GeoJsonGeometry,
+  geometryDistance,
   parseGeometry,
   requireGeoBackend,
   toGeometry,
@@ -51,6 +53,8 @@ export function batchCallExprValues(
       return nullifCallValues(rowCount, args, compareEq);
     case "st_bbox":
       return stBBoxCallValues(args);
+    case "st_point":
+      return stPointCallValues(args);
     default:
       throw new LakeqlError(
         "LAKEQL_UNSUPPORTED_PUSHDOWN",
@@ -71,6 +75,12 @@ export function batchCallPredicateMask(
       return h3WithinMask(args);
     case "st_intersects":
       return stIntersectsMask(args);
+    case "st_contains":
+      return stContainsMask(args);
+    case "st_within":
+      return stWithinMask(args);
+    case "st_dwithin":
+      return stDWithinMask(args);
     default:
       return undefined;
   }
@@ -98,6 +108,11 @@ export function vectorCallExprSupported(expr: Extract<Expr, { kind: "call" }>): 
         expr.args.length === 4 &&
         expr.args.every((arg) => arg.kind === "literal" && typeof arg.value === "number")
       );
+    case "st_point":
+      return (
+        expr.args.length === 2 &&
+        expr.args.every((arg) => arg.kind === "literal" && typeof arg.value === "number")
+      );
     case "h3_in":
       return (
         expr.args.length === 2 && expr.args[0]?.kind === "column" && literalStringExpr(expr.args[1])
@@ -111,6 +126,11 @@ export function vectorCallExprSupported(expr: Extract<Expr, { kind: "call" }>): 
       );
     case "st_intersects":
       return stIntersectsVectorShape(expr);
+    case "st_contains":
+    case "st_within":
+      return stBinarySpatialVectorShape(expr);
+    case "st_dwithin":
+      return stDWithinVectorShape(expr);
     default:
       return false;
   }
@@ -142,6 +162,20 @@ function stBBoxCallValues(args: BatchExprValues[]): BatchExprValues {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "st_bbox() bounds must be ordered min <= max");
   }
   const value = JSON.stringify({ type: "BBox", minx, miny, maxx, maxy });
+  return { rowCount: args[0]?.rowCount ?? 0, literal: value, valueAt: () => value };
+}
+
+function stPointCallValues(args: BatchExprValues[]): BatchExprValues {
+  requireVectorArgCount("st_point", args, 2);
+  const lon = args[0]?.literal;
+  const lat = args[1]?.literal;
+  if (typeof lon !== "number" || typeof lat !== "number") {
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", "st_point() vector kernel requires literal lon/lat");
+  }
+  if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", "st_point() expects finite lon/lat numbers");
+  }
+  const value = JSON.stringify({ type: "Point", coordinates: [lon, lat] });
   return { rowCount: args[0]?.rowCount ?? 0, literal: value, valueAt: () => value };
 }
 
@@ -199,14 +233,87 @@ function stIntersectsMask(args: BatchExprValues[]): Uint8Array | undefined {
   return undefined;
 }
 
+function stDWithinMask(args: BatchExprValues[]): Uint8Array | undefined {
+  const left = args[0];
+  const right = args[1];
+  const distance = args[2]?.literal;
+  if (distance === null && (left?.vector !== undefined || right?.vector !== undefined)) {
+    return nullMask(left?.rowCount ?? right?.rowCount ?? 0);
+  }
+  if (typeof distance !== "number") return undefined;
+  if (!Number.isFinite(distance) || distance < 0) {
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", "st_dwithin() expects a non-negative distance");
+  }
+  if (left?.vector !== undefined && right !== undefined) {
+    if (right.literal === null) return nullMask(left.rowCount);
+    const constant = spatialConstant(right, "st_dwithin");
+    if (constant !== undefined) {
+      return geometryVectorDWithinMask(left.vector, constant, distance);
+    }
+  }
+  if (right?.vector !== undefined && left !== undefined) {
+    if (left.literal === null) return nullMask(right.rowCount);
+    const constant = spatialConstant(left, "st_dwithin");
+    if (constant !== undefined) {
+      return geometryVectorDWithinMask(right.vector, constant, distance);
+    }
+  }
+  return undefined;
+}
+
+function stContainsMask(args: BatchExprValues[]): Uint8Array | undefined {
+  const left = args[0];
+  const right = args[1];
+  if (left?.vector !== undefined && right !== undefined) {
+    if (right.literal === null) return nullMask(left.rowCount);
+    const constant = spatialConstant(right, "st_contains");
+    if (constant !== undefined) {
+      return geometryVectorContainsMask(left.vector, constant, false, "st_contains");
+    }
+  }
+  if (right?.vector !== undefined && left !== undefined) {
+    if (left.literal === null) return nullMask(right.rowCount);
+    const constant = spatialConstant(left, "st_contains");
+    if (constant !== undefined) {
+      return geometryVectorContainsMask(right.vector, constant, true, "st_contains");
+    }
+  }
+  return undefined;
+}
+
+function stWithinMask(args: BatchExprValues[]): Uint8Array | undefined {
+  const left = args[0];
+  const right = args[1];
+  if (left?.vector !== undefined && right !== undefined) {
+    if (right.literal === null) return nullMask(left.rowCount);
+    const constant = spatialConstant(right, "st_within");
+    if (constant !== undefined) {
+      return geometryVectorContainsMask(left.vector, constant, true, "st_within");
+    }
+  }
+  if (right?.vector !== undefined && left !== undefined) {
+    if (left.literal === null) return nullMask(right.rowCount);
+    const constant = spatialConstant(left, "st_within");
+    if (constant !== undefined) {
+      return geometryVectorContainsMask(right.vector, constant, false, "st_within");
+    }
+  }
+  return undefined;
+}
+
 interface SpatialConstant {
   geometry: GeoJsonGeometry;
   envelope: BBox;
 }
 
-function spatialConstant(values: BatchExprValues): SpatialConstant | undefined {
-  if (typeof values.literal !== "string") return undefined;
-  const geometry = toGeometry(parseGeometry(values.literal, "st_intersects"), "st_intersects");
+function spatialConstant(
+  values: BatchExprValues,
+  name = "st_intersects",
+): SpatialConstant | undefined {
+  if (typeof values.literal !== "string" && !(values.literal instanceof Uint8Array)) {
+    return undefined;
+  }
+  const geometry = toGeometry(parseGeometry(values.literal, name), name);
   return { geometry, envelope: envelopeOf(geometry) };
 }
 
@@ -216,7 +323,7 @@ function geometryVectorIntersectsMask(
   constantFirst: boolean,
 ): Uint8Array {
   const geo = requireGeoBackend();
-  return stringVectorMask(vector, (value) => {
+  return geometryVectorMask(vector, (value) => {
     const parsed = parseGeometry(value, "st_intersects");
     const envelope = envelopeFromGeometry(parsed, "st_intersects");
     if (!bboxIntersects(envelope, constant.envelope)) return false;
@@ -225,6 +332,72 @@ function geometryVectorIntersectsMask(
       ? geo.booleanIntersects(constant.geometry, geometry)
       : geo.booleanIntersects(geometry, constant.geometry);
   });
+}
+
+function geometryVectorContainsMask(
+  vector: NonNullable<BatchExprValues["vector"]>,
+  constant: SpatialConstant,
+  constantContainsValue: boolean,
+  name: string,
+): Uint8Array {
+  const geo = requireGeoBackend();
+  return geometryVectorMask(vector, (value) => {
+    const parsed = parseGeometry(value, name);
+    const envelope = envelopeFromGeometry(parsed, name);
+    if (constantContainsValue) {
+      if (!bboxContainsLocal(constant.envelope, envelope)) return false;
+      return geo.booleanContains(constant.geometry, toGeometry(parsed, name));
+    }
+    if (!bboxContainsLocal(envelope, constant.envelope)) return false;
+    return geo.booleanContains(toGeometry(parsed, name), constant.geometry);
+  });
+}
+
+function geometryVectorDWithinMask(
+  vector: NonNullable<BatchExprValues["vector"]>,
+  constant: SpatialConstant,
+  distance: number,
+): Uint8Array {
+  return geometryVectorMask(vector, (value) => {
+    const parsed = parseGeometry(value, "st_dwithin");
+    const envelope = envelopeFromGeometry(parsed, "st_dwithin");
+    if (bboxDistance(envelope, constant.envelope) > distance) return false;
+    const geometry = toGeometry(parsed, "st_dwithin");
+    return geometryDistance(geometry, constant.geometry) <= distance;
+  });
+}
+
+function bboxContainsLocal(left: BBox, right: BBox): boolean {
+  return (
+    left.minx <= right.minx &&
+    left.miny <= right.miny &&
+    left.maxx >= right.maxx &&
+    left.maxy >= right.maxy
+  );
+}
+
+function geometryVectorMask(
+  vector: NonNullable<BatchExprValues["vector"]>,
+  predicate: (value: string | Uint8Array) => boolean,
+): Uint8Array {
+  switch (vector.type) {
+    case "null":
+      return nullMask(vector.length);
+    case "utf8":
+      return utf8VectorMask(vector, predicate);
+    case "binary":
+      return binaryVectorMask(vector, predicate);
+    case "dict":
+      return dictGeometryVectorMask(vector, predicate);
+    default:
+      throw new LakeqlError(
+        "LAKEQL_TYPE_ERROR",
+        "Vector spatial predicate requires geometry values",
+        {
+          vectorType: vector.type,
+        },
+      );
+  }
 }
 
 function stringVectorMask(
@@ -243,6 +416,51 @@ function stringVectorMask(
         vectorType: vector.type,
       });
   }
+}
+
+function binaryVectorMask(
+  vector: Extract<NonNullable<BatchExprValues["vector"]>, { type: "binary" }>,
+  predicate: (value: Uint8Array) => boolean,
+): Uint8Array {
+  const mask = new Uint8Array(vector.values.length);
+  const valid = vector.valid;
+  for (let index = 0; index < vector.values.length; index += 1) {
+    if (valid !== undefined && valid[index] === 0) {
+      mask[index] = 2;
+      continue;
+    }
+    mask[index] = predicate(vector.values[index] ?? new Uint8Array()) ? 1 : 0;
+  }
+  return mask;
+}
+
+function dictGeometryVectorMask(
+  vector: Extract<NonNullable<BatchExprValues["vector"]>, { type: "dict" }>,
+  predicate: (value: string | Uint8Array) => boolean,
+): Uint8Array {
+  if (vector.dictionary.type !== "utf8" && vector.dictionary.type !== "binary") {
+    throw new LakeqlError(
+      "LAKEQL_TYPE_ERROR",
+      "Dictionary spatial predicate requires geometry values",
+      {
+        vectorType: vector.dictionary.type,
+      },
+    );
+  }
+  const dictionaryMask =
+    vector.dictionary.type === "utf8"
+      ? utf8VectorMask(vector.dictionary, predicate)
+      : binaryVectorMask(vector.dictionary, predicate);
+  const mask = new Uint8Array(vector.indices.length);
+  const valid = vector.valid;
+  for (let index = 0; index < vector.indices.length; index += 1) {
+    if (valid !== undefined && valid[index] === 0) {
+      mask[index] = 2;
+      continue;
+    }
+    mask[index] = dictionaryMask[vector.indices[index] ?? 0] ?? 2;
+  }
+  return mask;
 }
 
 function utf8VectorMask(
@@ -299,13 +517,42 @@ function stIntersectsVectorShape(expr: Extract<Expr, { kind: "call" }>): boolean
   );
 }
 
+function stDWithinVectorShape(expr: Extract<Expr, { kind: "call" }>): boolean {
+  if (expr.args.length !== 3 || !literalNonNegativeNumberExpr(expr.args[2])) return false;
+  const left = expr.args[0];
+  const right = expr.args[1];
+  return (
+    (left?.kind === "column" && spatialConstantExpr(right)) ||
+    (right?.kind === "column" && spatialConstantExpr(left))
+  );
+}
+
+function stBinarySpatialVectorShape(expr: Extract<Expr, { kind: "call" }>): boolean {
+  if (expr.args.length !== 2) return false;
+  const left = expr.args[0];
+  const right = expr.args[1];
+  return (
+    (left?.kind === "column" && spatialConstantExpr(right)) ||
+    (right?.kind === "column" && spatialConstantExpr(left))
+  );
+}
+
 function spatialConstantExpr(expr: Expr | undefined): boolean {
-  if (literalStringExpr(expr)) return true;
+  if (literalGeometryExpr(expr)) return true;
   return (
     expr?.kind === "call" &&
-    expr.fn.toLowerCase() === "st_bbox" &&
-    expr.args.length === 4 &&
-    expr.args.every(literalNumberExpr)
+    ((expr.fn.toLowerCase() === "st_bbox" &&
+      expr.args.length === 4 &&
+      expr.args.every(literalNumberExpr)) ||
+      (expr.fn.toLowerCase() === "st_point" &&
+        expr.args.length === 2 &&
+        expr.args.every(literalNumberExpr)))
+  );
+}
+
+function literalGeometryExpr(expr: Expr | undefined): boolean {
+  return (
+    expr?.kind === "literal" && (typeof expr.value === "string" || expr.value instanceof Uint8Array)
   );
 }
 
@@ -322,6 +569,15 @@ function literalNonNegativeIntegerExpr(expr: Expr | undefined): boolean {
     expr?.kind === "literal" &&
     typeof expr.value === "number" &&
     Number.isInteger(expr.value) &&
+    expr.value >= 0
+  );
+}
+
+function literalNonNegativeNumberExpr(expr: Expr | undefined): boolean {
+  return (
+    expr?.kind === "literal" &&
+    typeof expr.value === "number" &&
+    Number.isFinite(expr.value) &&
     expr.value >= 0
   );
 }

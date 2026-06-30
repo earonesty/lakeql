@@ -408,6 +408,23 @@ describe("vector group-by kernels", () => {
     );
   });
 
+  it("rejects binary group keys and aggregate values without coercion", () => {
+    const batch = batchFromColumns({
+      id: [1, 2],
+      payload: [new Uint8Array([1]), new Uint8Array([2])],
+    });
+
+    expect(() => vectorGroupByBatch(["payload"], { rows: { op: "count" } }, batch)).toThrowError(
+      /Binary values are not group keys/u,
+    );
+    expect(() =>
+      vectorGroupByBatch([], { payloads: { op: "count", column: "payload" } }, batch),
+    ).toThrowError(/Binary values are not aggregate values/u);
+    expect(() =>
+      vectorGroupByBatch([], { firstPayload: { op: "first", column: "payload" } }, batch),
+    ).toThrowError(/Binary values are not aggregate values/u);
+  });
+
   it("exposes group update APIs with explicit missing-state and memory errors", () => {
     const spec = {
       rows: { op: "count" },

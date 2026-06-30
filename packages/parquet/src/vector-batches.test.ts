@@ -1,13 +1,17 @@
 import {
+  col,
+  fn,
   gt,
+  lit,
   materializeBatchRows,
+  memoryCache,
   memoryStore,
   type QueryStats,
   SharedMemoryCache,
 } from "lakeql-core";
 import { describe, expect, it } from "vitest";
 import { DecodedColumnCache } from "./decoded-column-cache.js";
-import { readParquetMetadata, writeParquet } from "./index.js";
+import { createParquetLake, readParquetMetadata, writeParquet } from "./index.js";
 import type { StoreAsyncBuffer } from "./types.js";
 import { canReadParquetVectorBatches, readParquetVectorBatchesFromFile } from "./vector-batches.js";
 
@@ -682,7 +686,14 @@ describe("direct Parquet vector batches", () => {
     }
     expect(canReadParquetVectorBatches(unsignedLogical, { columns: ["id"] })).toBe(false);
 
-    for (const logicalType of ["DATE", "GEOMETRY", "GEOGRAPHY"] as const) {
+    for (const logicalType of ["GEOMETRY", "GEOGRAPHY"] as const) {
+      const supported = structuredClone(metadata);
+      const rawLeaf = supported.schema.find((entry) => entry.name === "raw");
+      if (rawLeaf !== undefined) rawLeaf.logical_type = { type: logicalType };
+      expect(canReadParquetVectorBatches(supported, { columns: ["raw"] })).toBe(true);
+    }
+
+    for (const logicalType of ["DATE"] as const) {
       const unsupported = structuredClone(metadata);
       const rawLeaf = unsupported.schema.find((entry) => entry.name === "raw");
       if (rawLeaf !== undefined) rawLeaf.logical_type = { type: logicalType };
@@ -698,6 +709,76 @@ describe("direct Parquet vector batches", () => {
     const firstColumn = missingMetadata.row_groups[0]?.columns[0];
     if (firstColumn !== undefined) delete firstColumn.meta_data;
     expect(canReadParquetVectorBatches(missingMetadata, { columns: ["id"] })).toBe(false);
+  });
+
+  it("queries GeoParquet WKB geometry columns through vector spatial predicates", async () => {
+    const store = memoryStore();
+    const path = "data/vector-geoparquet-wkb.parquet";
+    await writeParquet(store, path, {
+      rowGroupSize: [4],
+      pageSize: 1024,
+      schema: [
+        { name: "root", num_children: 2 },
+        { name: "id", type: "INT32", repetition_type: "REQUIRED" },
+        {
+          name: "geometry",
+          type: "BYTE_ARRAY",
+          repetition_type: "OPTIONAL",
+        },
+      ],
+      columnData: [
+        { name: "id", data: [1, 2, 3, 4] },
+        {
+          name: "geometry",
+          data: [wkbPoint(1, 1), wkbPoint(5, 5), null, wkbPoint(1.5, 1.5)],
+        },
+      ],
+    });
+
+    const file = await fileBuffer(store, path);
+    const metadata = await readParquetMetadata(store, path);
+    const geometryLeaf = metadata.schema.find((entry) => entry.name === "geometry");
+    if (geometryLeaf !== undefined) geometryLeaf.logical_type = { type: "GEOMETRY" };
+    const batches = [];
+    for await (const batch of readParquetVectorBatchesFromFile(file, metadata, {
+      columns: ["id", "geometry"],
+      rowStart: 0,
+      rowEnd: 4,
+      batchSize: 4,
+      stats: queryStats(),
+    })) {
+      batches.push(batch.batch);
+    }
+    expect(batches[0]?.columns.geometry?.type).toBe("binary");
+
+    const head = await store.head(path);
+    if (head === null) throw new Error(`missing ${path}`);
+    const metadataCache = memoryCache<typeof metadata>();
+    await metadataCache.set(`parquet-metadata:${path}:${head.size}:${head.etag ?? "no-etag"}`, {
+      value: metadata,
+    });
+    const lake = createParquetLake({ store, metadataCache });
+    const polygon = wkbPolygon([
+      [0, 0],
+      [2, 0],
+      [2, 2],
+      [0, 2],
+      [0, 0],
+    ]);
+    await expect(
+      lake
+        .path(path)
+        .where(fn("st_within", col("geometry"), lit(polygon)))
+        .select(["id"])
+        .toArray(),
+    ).resolves.toEqual([{ id: 1 }, { id: 4 }]);
+    await expect(
+      lake
+        .path(path)
+        .where(fn("st_contains", lit(polygon), col("geometry")))
+        .select(["id"])
+        .toArray(),
+    ).resolves.toEqual([{ id: 1 }, { id: 4 }]);
   });
 
   it("returns no direct batches for skipped windows and runtime metadata fallback", async () => {
@@ -950,4 +1031,30 @@ function queryStats(): QueryStats {
     cacheHits: 0,
     cacheMisses: 0,
   };
+}
+
+function wkbPoint(x: number, y: number): Uint8Array {
+  const bytes = new Uint8Array(1 + 4 + 8 + 8);
+  const view = new DataView(bytes.buffer);
+  view.setUint8(0, 1);
+  view.setUint32(1, 1, true);
+  view.setFloat64(5, x, true);
+  view.setFloat64(13, y, true);
+  return bytes;
+}
+
+function wkbPolygon(points: readonly (readonly [number, number])[]): Uint8Array {
+  const bytes = new Uint8Array(1 + 4 + 4 + 4 + points.length * 16);
+  const view = new DataView(bytes.buffer);
+  view.setUint8(0, 1);
+  view.setUint32(1, 3, true);
+  view.setUint32(5, 1, true);
+  view.setUint32(9, points.length, true);
+  let offset = 13;
+  for (const [x, y] of points) {
+    view.setFloat64(offset, x, true);
+    view.setFloat64(offset + 8, y, true);
+    offset += 16;
+  }
+  return bytes;
 }

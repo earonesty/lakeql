@@ -190,9 +190,7 @@ function canRepresentDirectVectorLeaf(leaf: ColumnDecoder["element"]): boolean {
     leaf.converted_type === "BSON" ||
     leaf.converted_type === "INTERVAL" ||
     logicalType?.type === "DATE" ||
-    logicalType?.type === "UUID" ||
-    logicalType?.type === "GEOMETRY" ||
-    logicalType?.type === "GEOGRAPHY"
+    logicalType?.type === "UUID"
   ) {
     return false;
   }
@@ -204,7 +202,11 @@ function canRepresentDirectVectorLeaf(leaf: ColumnDecoder["element"]): boolean {
     case "INT64":
       return true;
     case "BYTE_ARRAY":
-      return leaf.converted_type === undefined && logicalType === undefined;
+      return (
+        (leaf.converted_type === undefined && logicalType === undefined) ||
+        logicalType?.type === "GEOMETRY" ||
+        logicalType?.type === "GEOGRAPHY"
+      );
     default:
       return false;
   }
@@ -834,6 +836,11 @@ function sliceVector(vector: Vector, start: number, end: number): Vector {
         { type: "utf8", values: vector.values.slice(start, end) },
         valid,
       );
+    case "binary":
+      return optionalVectorValidity(
+        { type: "binary", values: vector.values.slice(start, end) },
+        valid,
+      );
     case "dict":
       return optionalVectorValidity(
         {
@@ -981,6 +988,12 @@ function arrayFlatVector(values: unknown[], start: number, end: number): Vector 
       return { type: "utf8", values: values.slice(start, end).map((value) => String(value ?? "")) };
     case "object":
       if (isTimestampValue(first)) return vectorFromValues(values.slice(start, end));
+      if (isBinaryValue(first)) {
+        return {
+          type: "binary",
+          values: values.slice(start, end).map((value) => binaryArrayValue(value)),
+        };
+      }
       return { type: "null", length: end - start };
     default:
       return { type: "null", length: end - start };
@@ -1029,6 +1042,16 @@ function nullableArrayFlatVector(
       return optionalVectorValidity({ type: "utf8", values: out }, valid);
     }
     case "object": {
+      if (isBinaryValue(first)) {
+        const out = new Array<Uint8Array>(length);
+        copyNullableValues(definitionLevels, start, end, valid, (outIndex, valueIndex) => {
+          out[outIndex] = binaryArrayValue(values[valueIndex]);
+        });
+        for (let index = 0; index < out.length; index += 1) {
+          if (out[index] === undefined) out[index] = new Uint8Array();
+        }
+        return optionalVectorValidity({ type: "binary", values: out }, valid);
+      }
       if (!isTimestampValue(first)) return { type: "null", length };
       const out = new Array<unknown>(length);
       copyNullableValues(definitionLevels, start, end, valid, (outIndex, valueIndex) => {
@@ -1047,6 +1070,19 @@ function firstPresentArrayValue(values: readonly unknown[], start: number, end: 
     if (value != null) return value;
   }
   return null;
+}
+
+function isBinaryValue(value: unknown): boolean {
+  return value instanceof Uint8Array || value instanceof ArrayBuffer || ArrayBuffer.isView(value);
+}
+
+function binaryArrayValue(value: unknown): Uint8Array {
+  if (value instanceof Uint8Array) return value;
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  if (ArrayBuffer.isView(value)) {
+    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  }
+  return new Uint8Array();
 }
 
 function firstPresentDefinitionValue(

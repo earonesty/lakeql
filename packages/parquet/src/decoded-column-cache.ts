@@ -168,6 +168,9 @@ function estimateVectorBytes(vector: Vector): number {
     case "utf8":
       for (const value of vector.values) bytes += value.length * 2;
       return bytes;
+    case "binary":
+      for (const value of vector.values) bytes += value.byteLength;
+      return bytes;
     case "dict":
       return bytes + vector.indices.byteLength + estimateVectorBytes(vector.dictionary);
     case "list":

@@ -12,4 +12,10 @@ export const lakeqlParquetParsers = {
   timestampFromNanoseconds(value: bigint | number) {
     return timestampFromEpoch(BigInt(value), "nanos");
   },
+  geometryFromBytes(value: Uint8Array | undefined) {
+    return value;
+  },
+  geographyFromBytes(value: Uint8Array | undefined) {
+    return value;
+  },
 };

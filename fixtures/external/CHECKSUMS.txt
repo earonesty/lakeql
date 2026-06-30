@@ -1,15 +1,15 @@
 # SHA-256 checksums for vendored external Iceberg reference fixtures.
 # Regenerate with: pnpm fixtures:external -- --update-checksums
 2381e345c3e9dbd9d8b48988e82e1662dbdca8fe7566682b04b650813d5ff4d6  iceberg-reference/pyiceberg/v2-equality-deletes/catalog.db
-6f5e361440bda0fffb524505c140cf0168e6fccbb23a59e91f6bf7df64d8acd7  iceberg-reference/pyiceberg/v2-equality-deletes/manifest.json
+fb5a664189e32e42a588f75085f5c47114223806de58d273e1d4b9a1c6ecb128  iceberg-reference/pyiceberg/v2-equality-deletes/manifest.json
 b1b5a89f4ad0ca831d8732d50f22f0d43edd73e5b0eef4a7815e31e469d3a316  iceberg-reference/pyiceberg/v2-equality-deletes/warehouse/db.db/places/data/00000-0-eb3c4c8d-9af9-4212-85f2-6f02970bb168.parquet
 70cd56cb2516b79b5c63a349c458a1cadc4dc27bd111808029bc0d4fb7e9796b  iceberg-reference/pyiceberg/v2-equality-deletes/warehouse/db.db/places/deletes/country-ca.eq.parquet
 147a274e9c95da87bb29bacae722f6a0332140cf20e5aa8fe91121420c9c18fb  iceberg-reference/pyiceberg/v2-equality-deletes/warehouse/db.db/places/metadata/00000-03a942eb-205c-4f54-85c2-3225ea80dbd6.metadata.json
 ca153e306561621bdcbabffcfd228aea22a617220e39b4a42e1b4c8481aee1f8  iceberg-reference/pyiceberg/v2-equality-deletes/warehouse/db.db/places/metadata/00001-70a7db08-78fb-4baf-b99d-c205df6eb4a8.metadata.json
 d5ea26a48f261db6d506e68d82507a31f4295256afd33c1bdc994551fe9a733a  iceberg-reference/pyiceberg/v2-equality-deletes/warehouse/db.db/places/metadata/eb3c4c8d-9af9-4212-85f2-6f02970bb168-m0.avro
-5a661cc479a41ff9f0975d9e76db37d4bf942cceb6b3d2fb9033b57a31d3287a  iceberg-reference/pyiceberg/v2-equality-deletes/warehouse/db.db/places/metadata/lakeql-data-manifest.json
-87fc7e49e6d7aeecdbdadfbc17f40c1cfcbcb4f68002f1274c1f2eadca9ad76c  iceberg-reference/pyiceberg/v2-equality-deletes/warehouse/db.db/places/metadata/lakeql-delete-manifest.json
-95376c7ad528e1eae50ff36f0212245d4d1cc8153ec422277734edf1ea2d3ec7  iceberg-reference/pyiceberg/v2-equality-deletes/warehouse/db.db/places/metadata/lakeql-equality.metadata.json
+8528b9e2815f4cd3e310ad0634d51dc6f4362e9a09e97befa2d90f2f3d49313d  iceberg-reference/pyiceberg/v2-equality-deletes/warehouse/db.db/places/metadata/lakeql-data-manifest.json
+0a645084ad90e53e301814761188f39691e8125fae754d3e96892c947e4faac7  iceberg-reference/pyiceberg/v2-equality-deletes/warehouse/db.db/places/metadata/lakeql-delete-manifest.json
+dcfa93bf38ff71c30b8ea2f04b3fe2b7333bd7b4575a6512f06190c5bf26d4c3  iceberg-reference/pyiceberg/v2-equality-deletes/warehouse/db.db/places/metadata/lakeql-equality.metadata.json
 f779f3196b6907f065efc9d0daec3bef3d394accc5646434554e18aa73f5f17c  iceberg-reference/pyiceberg/v2-equality-deletes/warehouse/db.db/places/metadata/snap-6877658114620335408-0-eb3c4c8d-9af9-4212-85f2-6f02970bb168.avro
 9e0b7214ee48eaf2c43c634ec297c10e8f2b41384592aef7d412719dd7e080fd  iceberg-reference/spark/partition-evolution/manifest.json
 d20a8ae13b80a8f211a4341c894fac27624f4b346d77e856919792e0899290e5  iceberg-reference/spark/partition-evolution/warehouse/db/places/data/.00000-0-f5afbf05-40ce-4876-838c-834f517dd71a-0-00001.parquet.crc

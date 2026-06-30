@@ -34,6 +34,7 @@ const GEO_BACKEND_FUNCTIONS: ReadonlySet<string> = new Set([
   "st_disjoint",
   "st_contains",
   "st_within",
+  "st_dwithin",
   "h3_within",
   "h3_cell",
   "h3_parent",
@@ -189,6 +190,7 @@ export function matches(expr: Expr | undefined, row: Row): boolean {
 
 export function jsonSafeValue(value: unknown): unknown {
   if (isTimestampValue(value)) return value.toJSON();
+  if (value instanceof Uint8Array) return bytesToHex(value);
   if (typeof value === "bigint") {
     const asNumber = Number(value);
     return Number.isSafeInteger(asNumber) ? asNumber : value.toString();
@@ -217,6 +219,7 @@ function rowValue(row: Row, name: string): EvalValue {
     typeof value === "number" ||
     typeof value === "boolean" ||
     typeof value === "bigint" ||
+    value instanceof Uint8Array ||
     isTimestampValue(value)
   ) {
     return value;
@@ -237,6 +240,12 @@ function toSqlBoolean(value: EvalValue): SqlBoolean {
 
 function compare(op: "eq" | "ne" | "lt" | "lte" | "gt" | "gte", left: EvalValue, right: EvalValue) {
   if (left === null || right === null) return null;
+  if (left instanceof Uint8Array || right instanceof Uint8Array) {
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Cannot compare binary values", {
+      leftType: evalValueType(left),
+      rightType: evalValueType(right),
+    });
+  }
   if (isTimestampValue(left) || isTimestampValue(right)) {
     const leftTimestamp = timestampEvalValue(left);
     const rightTimestamp = timestampEvalValue(right);
@@ -282,6 +291,7 @@ function timestampEvalValue(value: EvalValue) {
 }
 
 function evalValueType(value: EvalValue): string {
+  if (value instanceof Uint8Array) return "binary";
   return isTimestampValue(value) ? "timestamp" : typeof value;
 }
 
@@ -426,6 +436,8 @@ function callFunction(name: string, args: EvalValue[]): EvalValue {
       return spatialPredicate(fn, args, "within");
     case "st_disjoint":
       return spatialPredicate(fn, args, "disjoint");
+    case "st_dwithin":
+      return stDWithin(fn, args);
     case "st_distance":
       return spatialMeasurement(fn, args, bboxDistance);
     case "st_area":
@@ -608,6 +620,23 @@ function spatialPredicate(name: string, args: EvalValue[], op: SpatialOp): EvalV
   }
 }
 
+function stDWithin(name: string, args: EvalValue[]): EvalValue {
+  requireArgCount(name, args, 3);
+  const left = args[0] ?? null;
+  const right = args[1] ?? null;
+  const distance = args[2] ?? null;
+  if (left === null || right === null || distance === null) return null;
+  if (typeof distance !== "number" || !Number.isFinite(distance) || distance < 0) {
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", "st_dwithin() expects a non-negative distance");
+  }
+  const a = toGeometry(parseGeometry(left, name), name);
+  const b = toGeometry(parseGeometry(right, name), name);
+  const ea = envelopeOf(a);
+  const eb = envelopeOf(b);
+  if (bboxDistance(ea, eb) > distance) return false;
+  return geometryDistance(a, b) <= distance;
+}
+
 // Envelope of an already-normalized geometry, for the bbox prefilter.
 export function envelopeOf(geometry: GeoJsonGeometry): BBox {
   switch (geometry.type) {
@@ -784,7 +813,9 @@ function envelope(value: EvalValue, name: string): BBox {
 }
 
 export function parseGeometry(value: EvalValue, name: string): Record<string, unknown> {
-  if (typeof value !== "string") throwType(name, "GeoJSON or BBox JSON string", value);
+  if (value instanceof Uint8Array) return parseWkbGeometry(value, name);
+  if (typeof value !== "string")
+    throwType(name, "GeoJSON, WKT point, BBox JSON, or WKB bytes", value);
   const wkt = parseWktGeometry(value);
   if (wkt !== undefined) return wkt;
   let parsed: unknown;
@@ -799,6 +830,146 @@ export function parseGeometry(value: EvalValue, name: string): Record<string, un
     throw new LakeqlError("LAKEQL_TYPE_ERROR", `${name}() expects GeoJSON or BBox JSON`);
   }
   return parsed;
+}
+
+function parseWkbGeometry(value: Uint8Array, name: string): Record<string, unknown> {
+  const reader = new WkbReader(value, name);
+  const geometry = reader.geometry();
+  if (!reader.done()) {
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", `${name}() received trailing WKB bytes`);
+  }
+  return geometry;
+}
+
+class WkbReader {
+  private offset = 0;
+  private littleEndian = true;
+
+  constructor(
+    private readonly bytes: Uint8Array,
+    private readonly name: string,
+  ) {}
+
+  done(): boolean {
+    return this.offset === this.bytes.byteLength;
+  }
+
+  geometry(): Record<string, unknown> {
+    this.byteOrder();
+    const header = this.typeHeader();
+    if (header.hasSrid) this.uint32();
+    switch (header.type) {
+      case 1:
+        return { type: "Point", coordinates: this.position(header.dimensions) };
+      case 2:
+        return { type: "LineString", coordinates: this.positions(header.dimensions) };
+      case 3:
+        return {
+          type: "Polygon",
+          coordinates: this.rings(header.dimensions),
+        };
+      default:
+        throw new LakeqlError(
+          "LAKEQL_TYPE_ERROR",
+          `${this.name}() supports WKB Point, LineString, or Polygon geometry`,
+          { wkbType: header.rawType },
+        );
+    }
+  }
+
+  private byteOrder(): void {
+    const order = this.uint8();
+    if (order === 0) {
+      this.littleEndian = false;
+      return;
+    }
+    if (order === 1) {
+      this.littleEndian = true;
+      return;
+    }
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", `${this.name}() WKB byte order is invalid`);
+  }
+
+  private typeHeader(): { rawType: number; type: number; dimensions: number; hasSrid: boolean } {
+    const rawType = this.uint32();
+    const hasZFlag = (rawType & 0x80000000) !== 0;
+    const hasMFlag = (rawType & 0x40000000) !== 0;
+    const hasSrid = (rawType & 0x20000000) !== 0;
+    const baseWithEwkbFlags = rawType & 0x0fffffff;
+    const isoFamily = Math.trunc(baseWithEwkbFlags / 1000);
+    const type = baseWithEwkbFlags % 1000;
+    const hasZ = hasZFlag || isoFamily === 1 || isoFamily === 3;
+    const hasM = hasMFlag || isoFamily === 2 || isoFamily === 3;
+    return {
+      rawType,
+      type,
+      dimensions: 2 + (hasZ ? 1 : 0) + (hasM ? 1 : 0),
+      hasSrid,
+    };
+  }
+
+  private rings(dimensions: number): [number, number][][] {
+    const count = this.uint32();
+    const rings: [number, number][][] = [];
+    for (let index = 0; index < count; index += 1) {
+      rings.push(this.positions(dimensions));
+    }
+    return rings;
+  }
+
+  private positions(dimensions: number): [number, number][] {
+    const count = this.uint32();
+    const points: [number, number][] = [];
+    for (let index = 0; index < count; index += 1) {
+      points.push(this.position(dimensions));
+    }
+    return points;
+  }
+
+  private position(dimensions: number): [number, number] {
+    if (dimensions < 2) {
+      throw new LakeqlError(
+        "LAKEQL_TYPE_ERROR",
+        `${this.name}() WKB coordinate dimension is invalid`,
+      );
+    }
+    const x = this.float64();
+    const y = this.float64();
+    for (let index = 2; index < dimensions; index += 1) this.float64();
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      throw new LakeqlError("LAKEQL_TYPE_ERROR", `${this.name}() WKB coordinates must be finite`);
+    }
+    return [x, y];
+  }
+
+  private uint8(): number {
+    this.require(1);
+    const value = this.bytes[this.offset];
+    this.offset += 1;
+    return value ?? 0;
+  }
+
+  private uint32(): number {
+    this.require(4);
+    const view = new DataView(this.bytes.buffer, this.bytes.byteOffset + this.offset, 4);
+    const value = view.getUint32(0, this.littleEndian);
+    this.offset += 4;
+    return value;
+  }
+
+  private float64(): number {
+    this.require(8);
+    const view = new DataView(this.bytes.buffer, this.bytes.byteOffset + this.offset, 8);
+    const value = view.getFloat64(0, this.littleEndian);
+    this.offset += 8;
+    return value;
+  }
+
+  private require(bytes: number): void {
+    if (this.offset + bytes > this.bytes.byteLength) {
+      throw new LakeqlError("LAKEQL_TYPE_ERROR", `${this.name}() received truncated WKB`);
+    }
+  }
 }
 
 function parseWktGeometry(value: string): Record<string, unknown> | undefined {
@@ -881,7 +1052,7 @@ function bboxContains(left: BBox, right: BBox): boolean {
   );
 }
 
-function bboxDistance(left: BBox, right: BBox): number {
+export function bboxDistance(left: BBox, right: BBox): number {
   const dx =
     left.maxx < right.minx
       ? right.minx - left.maxx
@@ -895,6 +1066,133 @@ function bboxDistance(left: BBox, right: BBox): number {
         ? left.miny - right.maxy
         : 0;
   return Math.hypot(dx, dy);
+}
+
+export function geometryDistance(left: GeoJsonGeometry, right: GeoJsonGeometry): number {
+  if (requireGeoBackend().booleanIntersects(left, right)) return 0;
+  const leftSegments = geometrySegments(left);
+  const rightSegments = geometrySegments(right);
+  const leftPoints = geometryPoints(left);
+  const rightPoints = geometryPoints(right);
+  let best = Number.POSITIVE_INFINITY;
+
+  for (const point of leftPoints) {
+    for (const other of rightPoints) best = Math.min(best, pointDistance(point, other));
+    for (const segment of rightSegments)
+      best = Math.min(best, pointSegmentDistance(point, segment));
+  }
+  for (const point of rightPoints) {
+    for (const segment of leftSegments) best = Math.min(best, pointSegmentDistance(point, segment));
+  }
+  for (const leftSegment of leftSegments) {
+    for (const rightSegment of rightSegments) {
+      best = Math.min(best, segmentDistance(leftSegment, rightSegment));
+    }
+  }
+
+  return best;
+}
+
+type Segment = [[number, number], [number, number]];
+
+function geometryPoints(geometry: GeoJsonGeometry): [number, number][] {
+  switch (geometry.type) {
+    case "Point":
+      return [geometry.coordinates];
+    case "LineString":
+      return geometry.coordinates;
+    case "Polygon":
+      return geometry.coordinates.flat();
+  }
+}
+
+function geometrySegments(geometry: GeoJsonGeometry): Segment[] {
+  switch (geometry.type) {
+    case "Point":
+      return [];
+    case "LineString":
+      return pathSegments(geometry.coordinates, false);
+    case "Polygon":
+      return geometry.coordinates.flatMap((ring) => pathSegments(ring, true));
+  }
+}
+
+function pathSegments(points: [number, number][], closed: boolean): Segment[] {
+  const out: Segment[] = [];
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = points[index - 1];
+    const current = points[index];
+    if (previous !== undefined && current !== undefined) out.push([previous, current]);
+  }
+  if (closed && points.length > 1) {
+    const first = points[0];
+    const last = points[points.length - 1];
+    if (
+      first !== undefined &&
+      last !== undefined &&
+      (first[0] !== last[0] || first[1] !== last[1])
+    ) {
+      out.push([last, first]);
+    }
+  }
+  return out;
+}
+
+function segmentDistance(left: Segment, right: Segment): number {
+  if (segmentsIntersect(left, right)) return 0;
+  return Math.min(
+    pointSegmentDistance(left[0], right),
+    pointSegmentDistance(left[1], right),
+    pointSegmentDistance(right[0], left),
+    pointSegmentDistance(right[1], left),
+  );
+}
+
+function pointDistance(left: [number, number], right: [number, number]): number {
+  return Math.hypot(left[0] - right[0], left[1] - right[1]);
+}
+
+function pointSegmentDistance(point: [number, number], segment: Segment): number {
+  const [start, end] = segment;
+  const dx = end[0] - start[0];
+  const dy = end[1] - start[1];
+  const lengthSq = dx * dx + dy * dy;
+  if (lengthSq === 0) return pointDistance(point, start);
+  const t = Math.max(
+    0,
+    Math.min(1, ((point[0] - start[0]) * dx + (point[1] - start[1]) * dy) / lengthSq),
+  );
+  return pointDistance(point, [start[0] + t * dx, start[1] + t * dy]);
+}
+
+function segmentsIntersect(left: Segment, right: Segment): boolean {
+  const [a, b] = left;
+  const [c, d] = right;
+  const abC = orientation(a, b, c);
+  const abD = orientation(a, b, d);
+  const cdA = orientation(c, d, a);
+  const cdB = orientation(c, d, b);
+  if (abC === 0 && pointOnSegment(c, left)) return true;
+  if (abD === 0 && pointOnSegment(d, left)) return true;
+  if (cdA === 0 && pointOnSegment(a, right)) return true;
+  if (cdB === 0 && pointOnSegment(b, right)) return true;
+  return abC * abD < 0 && cdA * cdB < 0;
+}
+
+function orientation(a: [number, number], b: [number, number], c: [number, number]): number {
+  const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  if (Math.abs(cross) < Number.EPSILON) return 0;
+  return cross > 0 ? 1 : -1;
+}
+
+function pointOnSegment(point: [number, number], segment: Segment): boolean {
+  const [start, end] = segment;
+  return (
+    point[0] >= Math.min(start[0], end[0]) &&
+    point[0] <= Math.max(start[0], end[0]) &&
+    point[1] >= Math.min(start[1], end[1]) &&
+    point[1] <= Math.max(start[1], end[1])
+  );
 }
 
 function geometryArea(geometry: Record<string, unknown>, name: string): number {
@@ -1094,4 +1392,10 @@ function throwType(name: string, expected: string, value: EvalValue): never {
 
 function pad(value: number): string {
   return String(value).padStart(2, "0");
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  let out = "";
+  for (const byte of bytes) out += byte.toString(16).padStart(2, "0");
+  return out;
 }
