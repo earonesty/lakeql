@@ -721,7 +721,10 @@ export class QueryResult {
   }
 
   async *batches(): AsyncIterable<Row[]> {
-    if (this.config.windows !== undefined && Object.keys(this.config.windows).length > 0) {
+    if (
+      (this.config.windows !== undefined && Object.keys(this.config.windows).length > 0) ||
+      this.config.qualify !== undefined
+    ) {
       yield* this.windowedBatches();
       return;
     }
@@ -3098,12 +3101,18 @@ function validatePolicyColumns(
   if (allowedColumns === undefined) return;
   const allowed = new Set(allowedColumns);
   const requested = new Set<string>();
-  for (const column of init.select ?? []) requested.add(column);
-  for (const term of init.orderBy ?? []) requested.add(term.column);
+  const windowAliases = new Set(Object.keys(init.windows ?? {}));
+  for (const column of init.select ?? []) {
+    if (column !== "*" && !windowAliases.has(column)) requested.add(column);
+  }
+  for (const term of init.orderBy ?? []) {
+    if (!windowAliases.has(term.column)) requested.add(term.column);
+  }
   for (const expr of Object.values(init.projections ?? {})) collectExprColumns(expr, requested);
   for (const expr of Object.values(init.windows ?? {})) collectWindowColumns(expr, requested);
   collectExprColumns(init.qualify, requested);
   collectExprColumns(effectiveWhere, requested);
+  for (const alias of windowAliases) requested.delete(alias);
   for (const column of requested) {
     if (!allowed.has(column)) {
       throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Query references a disallowed column", {
@@ -3197,7 +3206,9 @@ function projectedReadColumns(
   projections: Record<string, Expr> | undefined = undefined,
 ): string[] | undefined {
   const columns = new Set<string>();
-  for (const column of select ?? []) columns.add(column);
+  for (const column of select ?? []) {
+    if (column !== "*") columns.add(column);
+  }
   for (const term of orderBy ?? []) columns.add(term.column);
   for (const expr of Object.values(projections ?? {})) collectExprColumns(expr, columns);
   collectExprColumns(where, columns);
@@ -3215,7 +3226,9 @@ function outputReadColumns(
   projections: Record<string, Expr> | undefined,
 ): string[] {
   const columns = new Set<string>();
-  for (const column of select) columns.add(column);
+  for (const column of select) {
+    if (column !== "*") columns.add(column);
+  }
   for (const expr of Object.values(projections ?? {})) collectExprColumns(expr, columns);
   return [...columns].sort();
 }
@@ -3525,8 +3538,13 @@ function project(
   projections: Record<string, Expr> | undefined,
 ): Row {
   if (!select && !projections) return row;
+  if (select?.includes("*") && !projections) return row;
   const out: Row = {};
   for (const column of select ?? []) {
+    if (column === "*") {
+      Object.assign(out, row);
+      continue;
+    }
     if (!(column in row)) {
       throw new LakeqlError("LAKEQL_UNKNOWN_COLUMN", `Unknown column ${column}`, { column });
     }

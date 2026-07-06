@@ -141,6 +141,7 @@ async function runLakeql(fixture, sql, extraFiles = {}, sourceAliases = {}) {
   );
   let rows;
   let stats;
+  let windowExecution;
 
   const aggregates =
     ast.aggregates && Object.keys(ast.aggregates).length > 0 ? ast.aggregates : undefined;
@@ -374,9 +375,7 @@ async function runLakeql(fixture, sql, extraFiles = {}, sourceAliases = {}) {
     rows = await result.toArray();
     if (ast.projections !== undefined) rows = projectRows(rows, ast);
     stats = result.stats;
-    if (ast.windows !== undefined || ast.qualify !== undefined) {
-      ast.__benchWindowExecution = (await result.explain()).json.windowPlan?.execution;
-    }
+    if (hasWindows(ast)) windowExecution = (await result.explain()).json.windowPlan?.execution;
   }
 
   return {
@@ -384,9 +383,9 @@ async function runLakeql(fixture, sql, extraFiles = {}, sourceAliases = {}) {
     path:
       aggregates || grouped
         ? "row aggregate"
-        : ast.__benchWindowExecution === undefined
+        : windowExecution === undefined
           ? "row scan"
-          : ast.__benchWindowExecution,
+          : windowExecution,
     workUnits: "",
     bytesFetched: counters.bytesFetched,
     objectRequests: counters.totalRequests,
@@ -610,7 +609,9 @@ function canUseVectorScan(ast, aggregates, grouped) {
 }
 
 function hasWindows(ast) {
-  return ast.windows !== undefined || ast.qualify !== undefined;
+  return (
+    (ast.windows !== undefined && Object.keys(ast.windows).length > 0) || ast.qualify !== undefined
+  );
 }
 
 async function scanSubqueryJoinSourceBatch(store, lake, source, ast, stats, side, metadataCache) {

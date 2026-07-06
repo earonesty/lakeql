@@ -76,6 +76,22 @@ describe("window segment tree aggregates", () => {
     ).toBeUndefined();
   });
 
+  it("uses stable variance state for large-magnitude values", () => {
+    const rows = [
+      { id: 1, account: "a", amount: 1_000_000_001 },
+      { id: 2, account: "a", amount: 1_000_000_002 },
+      { id: 3, account: "a", amount: 1_000_000_003 },
+    ];
+    const expr = window({ aggregate: "stddev_samp" });
+    const sorted = partitionRows(rows, expr);
+    sortWindowRows(sorted, expr.over.orderBy);
+    const values = segmentTreeAggregateValues(sorted, expr);
+    expect(values?.[2]).toBeCloseTo(1);
+    expect(values).toEqual(
+      sorted.map((_row, index) => aggregateWindowValue(frameRows(sorted, index, expr), expr)),
+    );
+  });
+
   it("handles filters, empty frames, timestamp ordering, and typed errors", () => {
     const rows: Row[] = [
       { id: 1, account: "a", amount: 5, keep: false, ts: timestampFromEpoch(2n, "millis") },
@@ -116,7 +132,7 @@ describe("window segment tree aggregates", () => {
     );
     sortWindowRows(mixedMinRows, [{ expr: col("id") }]);
     expect(() => segmentTreeAggregateValues(mixedMinRows, window({ aggregate: "min" }))).toThrow(
-      "Cannot compare timestamp with non-timestamp",
+      "aggregate timestamp values must have matching types",
     );
 
     const mixedScalarRows = partitionRows(
@@ -128,7 +144,7 @@ describe("window segment tree aggregates", () => {
     );
     sortWindowRows(mixedScalarRows, [{ expr: col("id") }]);
     expect(() => segmentTreeAggregateValues(mixedScalarRows, window({ aggregate: "min" }))).toThrow(
-      "Cannot compare aggregate values of different types",
+      "aggregate values must have matching types",
     );
 
     const stringRows = partitionRows(
@@ -153,7 +169,7 @@ describe("window segment tree aggregates", () => {
     );
     sortWindowRows(intervalMinRows, [{ expr: col("id") }]);
     expect(() => segmentTreeAggregateValues(intervalMinRows, window({ aggregate: "min" }))).toThrow(
-      "Aggregate value is not orderable",
+      "aggregate values must be scalar",
     );
   });
 });

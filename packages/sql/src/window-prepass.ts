@@ -1,3 +1,11 @@
+import {
+  findTopLevelKeyword,
+  isBoundary,
+  keywordAt,
+  skipBlockComment,
+  skipLineComment,
+} from "./sql-scan.js";
+
 export interface SqlWindowPrepassFrame {
   text?: string;
   ignoreNulls?: boolean;
@@ -289,41 +297,6 @@ function findKeyword(sql: string, keyword: string, start: number): number {
   return -1;
 }
 
-function findTopLevelKeyword(sql: string, keyword: string, start: number): number {
-  let depth = 0;
-  let quote: "'" | '"' | "`" | undefined;
-  for (let index = start; index < sql.length; index += 1) {
-    const char = sql[index];
-    const next = sql[index + 1];
-    if (quote !== undefined) {
-      if (char === quote) {
-        if (next === quote) {
-          index += 1;
-          continue;
-        }
-        quote = undefined;
-      }
-      continue;
-    }
-    if (char === "-" && next === "-") {
-      index = skipLineComment(sql, index + 2);
-      continue;
-    }
-    if (char === "/" && next === "*") {
-      index = skipBlockComment(sql, index + 2);
-      continue;
-    }
-    if (char === "'" || char === '"' || char === "`") {
-      quote = char;
-      continue;
-    }
-    if (char === "(") depth += 1;
-    else if (char === ")") depth = Math.max(0, depth - 1);
-    if (depth === 0 && keywordAt(sql, index, keyword)) return index;
-  }
-  return -1;
-}
-
 function findNamedWindowClauseEnd(sql: string, start: number): number {
   const candidates = ["order", "limit", "offset", "fetch", "union", "qualify"];
   let end = sql.length;
@@ -443,23 +416,4 @@ function trimRightWhitespace(sql: string, index: number): number {
   let cursor = index;
   while (cursor < sql.length && /\s/u.test(sql[cursor] ?? "")) cursor += 1;
   return cursor;
-}
-
-function keywordAt(sql: string, index: number, keyword: string): boolean {
-  if (sql.slice(index, index + keyword.length).toLowerCase() !== keyword) return false;
-  return isBoundary(sql[index - 1]) && isBoundary(sql[index + keyword.length]);
-}
-
-function isBoundary(char: string | undefined): boolean {
-  return char === undefined || !/[A-Za-z0-9_]/u.test(char);
-}
-
-function skipLineComment(sql: string, index: number): number {
-  const newline = sql.indexOf("\n", index);
-  return newline === -1 ? sql.length : newline;
-}
-
-function skipBlockComment(sql: string, index: number): number {
-  const end = sql.indexOf("*/", index);
-  return end === -1 ? sql.length : end + 1;
 }

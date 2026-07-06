@@ -50,7 +50,7 @@ export function windowReadColumns(input: WindowReadColumnInput): string[] | unde
   const columns = new Set<string>();
   const windowAliases = new Set(Object.keys(input.windows ?? {}));
   for (const column of input.select ?? []) {
-    if (!windowAliases.has(column)) columns.add(column);
+    if (column !== "*" && !windowAliases.has(column)) columns.add(column);
   }
   for (const term of input.orderBy ?? []) {
     if (!windowAliases.has(term.column)) columns.add(term.column);
@@ -186,9 +186,9 @@ function orderTermsPrefixOf(
 }
 
 function stableExprListKey(exprs: readonly Expr[]): string {
-  return JSON.stringify(exprs);
+  return stableStringify(exprs);
 }
 
 function stableOrderTermKey(term: WindowExpr["over"]["orderBy"][number] | undefined): string {
-  return JSON.stringify(term);
+  return stableStringify(term);
 }

@@ -29,6 +29,7 @@ import {
 import { httpStore } from "lakeql-http";
 import { createParquetLake } from "lakeql-parquet";
 import { parseSql } from "lakeql-sql";
+import { applyAst } from "./apply-ast.js";
 import "./styles.css";
 
 declare const __LAKEQL_VERSION__: string;
@@ -214,20 +215,7 @@ function resolveSource(raw: string): { baseUrl: string; key: string } {
 
 // ---- run pipelines --------------------------------------------------------
 
-type Lake = ReturnType<typeof createParquetLake>;
 type Row = Record<string, unknown>;
-
-function applyAst(builder: ReturnType<Lake["path"]>, ast: ReturnType<typeof parseSql>) {
-  let next = builder;
-  if (ast.select) next = next.select(ast.select);
-  if (ast.where) next = next.where(ast.where);
-  for (const [alias, expr] of Object.entries(ast.windows ?? {})) next = next.window(alias, expr);
-  if (ast.qualify) next = next.qualify(ast.qualify);
-  if (ast.orderBy) next = next.orderBy(ast.orderBy);
-  if (ast.offset !== undefined) next = next.offset(ast.offset);
-  if (ast.limit !== undefined) next = next.limit(ast.limit);
-  return next;
-}
 
 type OrderTerm = { column: string; direction?: "asc" | "desc" };
 

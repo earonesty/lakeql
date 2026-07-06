@@ -2,7 +2,7 @@ import { LakeqlError } from "./errors.js";
 import { evaluate } from "./evaluator.js";
 import type { Scalar } from "./expr.js";
 import type { AggregateOp } from "./query.js";
-import { compareTimestampValues, isTimestampValue } from "./timestamp.js";
+import { compareAggregateScalars, numericAggregateValue } from "./scalar-order.js";
 import type { WindowExpr } from "./window.js";
 import { frameSpan } from "./window-frame.js";
 import { filterRow, type WindowRow } from "./window-utils.js";
@@ -10,7 +10,8 @@ import { filterRow, type WindowRow } from "./window-utils.js";
 interface SegmentNode {
   count: number;
   sum: number;
-  sumSquares: number;
+  mean: number;
+  m2: number;
   min: Scalar | undefined;
   max: Scalar | undefined;
 }
@@ -18,7 +19,8 @@ interface SegmentNode {
 const EMPTY_NODE: SegmentNode = {
   count: 0,
   sum: 0,
-  sumSquares: 0,
+  mean: 0,
+  m2: 0,
   min: undefined,
   max: undefined,
 };
@@ -61,7 +63,7 @@ function leafNode(windowRow: WindowRow, expr: WindowExpr, op: AggregateOp): Segm
   if (value === null) return EMPTY_NODE;
   if (op === "min" || op === "max") return { ...EMPTY_NODE, count: 1, min: value, max: value };
   const numeric = numericValue(op, value);
-  return { count: 1, sum: numeric, sumSquares: numeric * numeric, min: undefined, max: undefined };
+  return { count: 1, sum: numeric, mean: numeric, m2: 0, min: undefined, max: undefined };
 }
 
 function aggregateInputValue(expr: WindowExpr, windowRow: WindowRow): Scalar {
@@ -96,16 +98,11 @@ function aggregateValue(op: AggregateOp, node: SegmentNode): Scalar {
 }
 
 function variance(node: SegmentNode): number {
-  return Math.max(0, node.sumSquares - (node.sum * node.sum) / node.count);
+  return Math.max(0, node.m2);
 }
 
 function numericValue(op: AggregateOp, value: Scalar): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", `${op} window aggregate requires numeric input`, {
-      aggregate: op,
-    });
-  }
-  return value;
+  return numericAggregateValue(op, value);
 }
 
 class SegmentTree {
@@ -150,10 +147,15 @@ class SegmentTree {
 }
 
 function mergeNodes(left: SegmentNode, right: SegmentNode): SegmentNode {
+  if (left.count === 0) return right;
+  if (right.count === 0) return left;
+  const count = left.count + right.count;
+  const delta = right.mean - left.mean;
   return {
-    count: left.count + right.count,
+    count,
     sum: left.sum + right.sum,
-    sumSquares: left.sumSquares + right.sumSquares,
+    mean: left.mean + (delta * right.count) / count,
+    m2: left.m2 + right.m2 + (delta * delta * (left.count * right.count)) / count,
     min: mergeOrderValue(left.min, right.min, "min"),
     max: mergeOrderValue(left.max, right.max, "max"),
   };
@@ -171,30 +173,5 @@ function mergeOrderValue(
 }
 
 function compareScalar(left: Scalar, right: Scalar): number {
-  if (left === null || right === null) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Cannot compare null aggregate values");
-  }
-  if (isTimestampValue(left) || isTimestampValue(right)) {
-    if (!isTimestampValue(left) || !isTimestampValue(right)) {
-      throw new LakeqlError("LAKEQL_TYPE_ERROR", "Cannot compare timestamp with non-timestamp");
-    }
-    return compareTimestampValues(left, right);
-  }
-  if (typeof left !== typeof right) {
-    throw new LakeqlError(
-      "LAKEQL_TYPE_ERROR",
-      "Cannot compare aggregate values of different types",
-    );
-  }
-  if (
-    typeof left !== "string" &&
-    typeof left !== "number" &&
-    typeof left !== "bigint" &&
-    typeof left !== "boolean"
-  ) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Aggregate value is not orderable");
-  }
-  if (left < right) return -1;
-  if (left > right) return 1;
-  return 0;
+  return compareAggregateScalars(left, right);
 }

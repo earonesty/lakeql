@@ -1,7 +1,7 @@
 import { LakeqlError } from "./errors.js";
 import { evaluate, jsonSafeValue, matches } from "./evaluator.js";
 import type { AggregateOp } from "./query.js";
-import { compareTimestampValues, isTimestampValue } from "./timestamp.js";
+import { compareOrderedScalars } from "./scalar-order.js";
 import type { Row } from "./types.js";
 import type { WindowExpr, WindowOrderTerm } from "./window.js";
 
@@ -102,40 +102,7 @@ function compareKeyValues(
 }
 
 export function compareWindowValues(left: unknown, right: unknown, term: WindowOrderTerm): number {
-  const direction = term.direction ?? "asc";
-  const nulls = term.nulls ?? (direction === "asc" ? "last" : "first");
-  const leftNull = left === null || left === undefined;
-  const rightNull = right === null || right === undefined;
-  if (leftNull || rightNull) {
-    if (leftNull && rightNull) return 0;
-    const nullOrder = nulls === "first" ? -1 : 1;
-    return leftNull ? nullOrder : -nullOrder;
-  }
-  if (isTimestampValue(left) || isTimestampValue(right)) {
-    if (!isTimestampValue(left) || !isTimestampValue(right)) {
-      throw new LakeqlError(
-        "LAKEQL_TYPE_ERROR",
-        "Window ORDER BY timestamp values must have matching types",
-      );
-    }
-    const multiplier = direction === "desc" ? -1 : 1;
-    return compareTimestampValues(left, right) * multiplier;
-  }
-  if (typeof left !== typeof right) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Window ORDER BY values must have matching types");
-  }
-  if (
-    typeof left !== "string" &&
-    typeof left !== "number" &&
-    typeof left !== "bigint" &&
-    typeof left !== "boolean"
-  ) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Window ORDER BY values must be scalar");
-  }
-  const multiplier = direction === "desc" ? -1 : 1;
-  if (left < right) return -1 * multiplier;
-  if (left > right) return multiplier;
-  return 0;
+  return compareOrderedScalars(left, right, term, "Window ORDER BY");
 }
 
 function defaultOrderTerm(): WindowOrderTerm {

@@ -18,6 +18,7 @@ import {
   createParquetLake,
   scanParquetTaskBatches,
   scanParquetTaskColumnBatches,
+  windowParquetTask,
   windowParquetTasks,
   writeParquet,
 } from "./index.js";
@@ -180,6 +181,49 @@ describe("Parquet task execution", () => {
       { id: 5, region: "west", amount: 50, rn: 3, running: 90 },
       { id: 6, region: "east", amount: 60, rn: 3, running: 120 },
     ]);
+  });
+
+  it("uses planned bucket counts and budget checks in direct window tasks", async () => {
+    const store = memoryStore();
+    await writeParquet(store, "data/task-window-direct.parquet", {
+      rowGroupSize: [2],
+      columnData: [
+        { name: "id", data: [1, 2, 3, 4], type: "INT32" },
+        { name: "region", data: ["west", "east", "west", "east"], type: "STRING" },
+      ],
+    });
+    const task: TaskInput = {
+      path: "data/task-window-direct.parquet",
+      rowGroupRanges: [{ start: 0, end: 2 }],
+      projectedColumns: ["id", "region"],
+      partitionValues: {},
+      window: {
+        topology: "window-partition-fanout",
+        available: true,
+        bucketCount: 4,
+        partitionBy: [col("region")],
+      },
+    };
+    const windows = {
+      rn: {
+        fn: "row_number" as const,
+        args: [],
+        over: { partitionBy: [col("region")], orderBy: [{ expr: col("id") }] },
+      },
+    };
+    const partial = await windowParquetTask(store, task, windows, 0);
+    expect(partial.bucketCount).toBe(4);
+
+    await expect(
+      windowParquetTask(store, task, windows, 0, { budget: { maxBufferedRows: 1 } }),
+    ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+    await expect(
+      windowParquetTask(store, task, windows, 0, {
+        budget: { maxElapsedMs: 1 },
+        now: () => 10,
+        startedAt: 0,
+      }),
+    ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
   });
 
   it("uses window work-unit fan-out for normal partitioned window queries", async () => {

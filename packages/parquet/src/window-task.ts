@@ -1,6 +1,7 @@
 import {
   evaluateWindowWorkUnitPartials,
   fanInWorkUnits,
+  LakeqlError,
   type ObjectStore,
   partitionWindowWorkUnitRows,
   type QueryBudget,
@@ -37,9 +38,14 @@ export async function windowParquetTask(
     for (const row of batch) {
       rows.push({ ordinal: { task: index, row: rowIndex }, row });
       rowIndex += 1;
+      enforceWindowTaskBudget(options, rows.length);
     }
   }
-  return partitionWindowWorkUnitRows(rows, windows, options.bucketCount ?? 1);
+  return partitionWindowWorkUnitRows(
+    rows,
+    windows,
+    options.bucketCount ?? task.window?.bucketCount ?? 1,
+  );
 }
 
 export async function windowParquetTasks(
@@ -72,4 +78,25 @@ export async function windowParquetTasks(
 function plannedWindowBucketCount(tasks: readonly TaskInput[]): number {
   const planned = tasks.find((task) => task.window?.available === true)?.window;
   return planned?.available === true ? planned.bucketCount : 1;
+}
+
+function enforceWindowTaskBudget(options: WindowParquetTasksOptions, rows: number): void {
+  options.budget?.signal?.throwIfAborted?.();
+  if (options.budget?.maxBufferedRows !== undefined && rows > options.budget.maxBufferedRows) {
+    throw new LakeqlError(
+      "LAKEQL_BUDGET_EXCEEDED",
+      `Query exceeded maxBufferedRows budget ${options.budget.maxBufferedRows}`,
+    );
+  }
+  if (
+    options.budget?.maxElapsedMs !== undefined &&
+    options.now !== undefined &&
+    options.startedAt !== undefined &&
+    options.now() - options.startedAt > options.budget.maxElapsedMs
+  ) {
+    throw new LakeqlError(
+      "LAKEQL_BUDGET_EXCEEDED",
+      `Query exceeded maxElapsedMs budget ${options.budget.maxElapsedMs}`,
+    );
+  }
 }

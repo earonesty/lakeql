@@ -43,15 +43,15 @@ export function intervalValue(input: string): IntervalValue {
       months += integerAmount(amount, unit, input);
     else if (unit.startsWith("day")) days += integerAmount(amount, unit, input);
     else if (unit.startsWith("hour") || unit === "hr" || unit === "hrs")
-      nanoseconds += decimalNanoseconds(amount, 60n * 60n * NANOS_PER_SECOND);
+      nanoseconds += decimalNanoseconds(match[1] ?? "", 60n * 60n * NANOS_PER_SECOND);
     else if (unit.startsWith("minute") || unit === "min" || unit === "mins")
-      nanoseconds += decimalNanoseconds(amount, 60n * NANOS_PER_SECOND);
+      nanoseconds += decimalNanoseconds(match[1] ?? "", 60n * NANOS_PER_SECOND);
     else if (unit.startsWith("second") || unit === "sec" || unit === "secs")
-      nanoseconds += decimalNanoseconds(amount, NANOS_PER_SECOND);
+      nanoseconds += decimalNanoseconds(match[1] ?? "", NANOS_PER_SECOND);
     else if (unit.startsWith("millisecond") || unit === "milli" || unit === "millis")
-      nanoseconds += decimalNanoseconds(amount, NANOS_PER_MILLI);
+      nanoseconds += decimalNanoseconds(match[1] ?? "", NANOS_PER_MILLI);
     else if (unit.startsWith("microsecond") || unit === "micro" || unit === "micros")
-      nanoseconds += decimalNanoseconds(amount, NANOS_PER_MICRO);
+      nanoseconds += decimalNanoseconds(match[1] ?? "", NANOS_PER_MICRO);
     else if (unit.startsWith("nanosecond") || unit === "nano" || unit === "nanos")
       nanoseconds += BigInt(integerAmount(amount, unit, input));
     else throwInterval(input);
@@ -104,7 +104,7 @@ export function applyIntervalToTimestamp(
   direction: -1 | 1,
 ): TimestampValue {
   const date = new Date(Number(value.epochNanoseconds / NANOS_PER_MILLI));
-  if (interval.months !== 0) date.setUTCMonth(date.getUTCMonth() + direction * interval.months);
+  if (interval.months !== 0) shiftUtcMonthsClamped(date, direction * interval.months);
   if (interval.days !== 0) date.setUTCDate(date.getUTCDate() + direction * interval.days);
   const nanosWithinMilli = value.epochNanoseconds % NANOS_PER_MILLI;
   const epochNanoseconds =
@@ -124,12 +124,36 @@ function integerAmount(value: number, unit: string, input: string): number {
   return value;
 }
 
-function decimalNanoseconds(value: number, unitNanos: bigint): bigint {
-  const scaled = value * Number(unitNanos);
-  if (!Number.isFinite(scaled) || !Number.isInteger(scaled)) {
+function decimalNanoseconds(value: string, unitNanos: bigint): bigint {
+  const match = /^([+-]?)(?:(\d+)(?:\.(\d+))?|\.(\d+))$/u.exec(value);
+  if (match === null) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Interval component exceeds nanosecond precision");
   }
-  return BigInt(scaled);
+  const sign = match[1] === "-" ? -1n : 1n;
+  const whole = BigInt(match[2] ?? "0");
+  const fraction = match[3] ?? match[4] ?? "";
+  const scale = 10n ** BigInt(fraction.length);
+  const numerator = whole * scale + BigInt(fraction || "0");
+  const scaled = numerator * unitNanos;
+  if (scaled % scale !== 0n) {
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Interval component exceeds nanosecond precision");
+  }
+  return sign * (scaled / scale);
+}
+
+function shiftUtcMonthsClamped(date: Date, months: number): void {
+  const day = date.getUTCDate();
+  const targetMonthStart = new Date(date.getTime());
+  targetMonthStart.setUTCDate(1);
+  targetMonthStart.setUTCMonth(targetMonthStart.getUTCMonth() + months);
+  const daysInTargetMonth = new Date(
+    Date.UTC(targetMonthStart.getUTCFullYear(), targetMonthStart.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+  date.setUTCFullYear(
+    targetMonthStart.getUTCFullYear(),
+    targetMonthStart.getUTCMonth(),
+    Math.min(day, daysInTargetMonth),
+  );
 }
 
 function parseIntervalTime(value: string, input: string): bigint {

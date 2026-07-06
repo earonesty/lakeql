@@ -1,6 +1,6 @@
 import { LakeqlError } from "./errors.js";
 import type { OrderByTerm } from "./query.js";
-import { compareTimestampValues, isTimestampValue, type TimestampValue } from "./timestamp.js";
+import { compareOrderedScalars, isSortableScalar } from "./scalar-order.js";
 import type { Row } from "./types.js";
 
 export function normalizeOrderBy(terms: OrderByTerm[]): OrderByTerm[] {
@@ -74,23 +74,81 @@ export function flushSortRun(runs: Row[][], currentRun: Row[], orderBy: OrderByT
 
 export function mergeSortRuns(runs: Row[][], orderBy: OrderByTerm[]): Row[] {
   const cursors = runs.map(() => 0);
+  const heap: { runIndex: number; row: Row }[] = [];
   const out: Row[] = [];
-  while (true) {
-    let bestRun = -1;
-    let bestRow: Row | undefined;
-    for (let runIndex = 0; runIndex < runs.length; runIndex += 1) {
-      const run = runs[runIndex];
-      const cursor = cursors[runIndex] ?? 0;
-      const row = run?.[cursor];
-      if (row === undefined) continue;
-      if (bestRow === undefined || compareRows(row, bestRow, orderBy) < 0) {
-        bestRow = row;
-        bestRun = runIndex;
-      }
+  for (let runIndex = 0; runIndex < runs.length; runIndex += 1) {
+    const row = runs[runIndex]?.[0];
+    if (row !== undefined) heapPush(heap, { runIndex, row }, orderBy);
+  }
+  while (heap.length > 0) {
+    const next = heapPop(heap, orderBy);
+    if (next === undefined) break;
+    out.push(next.row);
+    cursors[next.runIndex] = (cursors[next.runIndex] ?? 0) + 1;
+    const row = runs[next.runIndex]?.[cursors[next.runIndex] ?? 0];
+    if (row !== undefined) heapPush(heap, { runIndex: next.runIndex, row }, orderBy);
+  }
+  return out;
+}
+
+function heapPush(
+  heap: { runIndex: number; row: Row }[],
+  item: { runIndex: number; row: Row },
+  orderBy: OrderByTerm[],
+): void {
+  heap.push(item);
+  for (let index = heap.length - 1; index > 0; ) {
+    const parent = Math.floor((index - 1) / 2);
+    if (compareRows(heap[index]?.row ?? {}, heap[parent]?.row ?? {}, orderBy) >= 0) break;
+    [heap[index], heap[parent]] = [
+      heap[parent] as { runIndex: number; row: Row },
+      heap[index] as { runIndex: number; row: Row },
+    ];
+    index = parent;
+  }
+}
+
+function heapPop(
+  heap: { runIndex: number; row: Row }[],
+  orderBy: OrderByTerm[],
+): { runIndex: number; row: Row } | undefined {
+  const root = heap[0];
+  const last = heap.pop();
+  if (root === undefined || last === undefined) return root;
+  if (heap.length > 0) {
+    heap[0] = last;
+    heapifyDown(heap, 0, orderBy);
+  }
+  return root;
+}
+
+function heapifyDown(
+  heap: { runIndex: number; row: Row }[],
+  start: number,
+  orderBy: OrderByTerm[],
+): void {
+  for (let index = start; ; ) {
+    const left = index * 2 + 1;
+    const right = left + 1;
+    let smallest = index;
+    if (
+      heap[left] !== undefined &&
+      compareRows(heap[left].row, heap[smallest]?.row ?? {}, orderBy) < 0
+    ) {
+      smallest = left;
     }
-    if (bestRow === undefined) return out;
-    out.push(bestRow);
-    cursors[bestRun] = (cursors[bestRun] ?? 0) + 1;
+    if (
+      heap[right] !== undefined &&
+      compareRows(heap[right].row, heap[smallest]?.row ?? {}, orderBy) < 0
+    ) {
+      smallest = right;
+    }
+    if (smallest === index) return;
+    [heap[index], heap[smallest]] = [
+      heap[smallest] as { runIndex: number; row: Row },
+      heap[index] as { runIndex: number; row: Row },
+    ];
+    index = smallest;
   }
 }
 
@@ -98,7 +156,7 @@ export function validateSortRow(row: Row, orderBy: OrderByTerm[]): void {
   for (const term of orderBy) {
     const value = valueForColumn(row, term.column);
     if (value === null || value === undefined) continue;
-    if (!isSortableValue(value)) {
+    if (!isSortableScalar(value)) {
       throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy values must be scalar", {
         column: term.column,
       });
@@ -114,48 +172,5 @@ export function valueForColumn(row: Row, column: string): unknown {
 }
 
 function compareSortValues(left: unknown, right: unknown, term: OrderByTerm): number {
-  const leftNull = left === null || left === undefined;
-  const rightNull = right === null || right === undefined;
-  if (leftNull || rightNull) {
-    if (leftNull && rightNull) return 0;
-    const nullOrder = term.nulls === "first" ? -1 : 1;
-    return leftNull ? nullOrder : -nullOrder;
-  }
-  if (!isSortableValue(left) || !isSortableValue(right)) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy values must be scalar", {
-      column: term.column,
-    });
-  }
-  if (isTimestampValue(left) || isTimestampValue(right)) {
-    if (!isTimestampValue(left) || !isTimestampValue(right)) {
-      throw new LakeqlError(
-        "LAKEQL_TYPE_ERROR",
-        "orderBy timestamp values must have matching types",
-        { column: term.column },
-      );
-    }
-    const direction = term.direction === "desc" ? -1 : 1;
-    return compareTimestampValues(left, right) * direction;
-  }
-  if (typeof left !== typeof right) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy values must have matching types", {
-      column: term.column,
-    });
-  }
-  const direction = term.direction === "desc" ? -1 : 1;
-  if (left < right) return -1 * direction;
-  if (left > right) return direction;
-  return 0;
-}
-
-function isSortableValue(
-  value: unknown,
-): value is string | number | bigint | boolean | TimestampValue {
-  return (
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "bigint" ||
-    typeof value === "boolean" ||
-    isTimestampValue(value)
-  );
+  return compareOrderedScalars(left, right, term, "orderBy");
 }

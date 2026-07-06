@@ -2,7 +2,7 @@ import { LakeqlError } from "./errors.js";
 import { evaluate, jsonSafeValue } from "./evaluator.js";
 import type { Scalar } from "./expr.js";
 import type { AggregateOp } from "./query.js";
-import { compareTimestampValues, isTimestampValue } from "./timestamp.js";
+import { compareAggregateScalars, numericAggregateValue } from "./scalar-order.js";
 import type { Row } from "./types.js";
 import type { WindowExpr } from "./window.js";
 import { filterRow, requireExactWindowAggregate } from "./window-utils.js";
@@ -202,39 +202,9 @@ function continuousQuantile(values: readonly Scalar[], q: number): number | null
 }
 
 function numericValue(op: AggregateOp, value: Scalar): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", `${op} window aggregate requires numeric input`, {
-      aggregate: op,
-    });
-  }
-  return value;
+  return numericAggregateValue(op, value);
 }
 
 function compareScalar(left: Scalar, right: Scalar): number {
-  if (left === null || right === null) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Cannot compare null aggregate values");
-  }
-  if (isTimestampValue(left) || isTimestampValue(right)) {
-    if (!isTimestampValue(left) || !isTimestampValue(right)) {
-      throw new LakeqlError("LAKEQL_TYPE_ERROR", "Cannot compare timestamp with non-timestamp");
-    }
-    return compareTimestampValues(left, right);
-  }
-  if (typeof left !== typeof right) {
-    throw new LakeqlError(
-      "LAKEQL_TYPE_ERROR",
-      "Cannot compare aggregate values of different types",
-    );
-  }
-  if (
-    typeof left !== "string" &&
-    typeof left !== "number" &&
-    typeof left !== "bigint" &&
-    typeof left !== "boolean"
-  ) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Aggregate value is not orderable");
-  }
-  if (left < right) return -1;
-  if (left > right) return 1;
-  return 0;
+  return compareAggregateScalars(left, right);
 }

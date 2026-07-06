@@ -137,7 +137,6 @@ export async function executeWindowWithState(
       : windowedRunQueryBatches({
           ...windowBatchOptions(options, startedAt),
           runs,
-          enforceBufferedRows: skipBufferedRowsBudget,
         });
   for await (const batch of batches) rows.push(...batch);
 
@@ -423,5 +422,3 @@ function flushWindowRun(runs: Row[][], currentRun: Row[]): void {
 function windowRunCapacity(budget: QueryBudget): number {
   return Math.max(1, budget.maxBufferedRows ?? Number.POSITIVE_INFINITY);
 }
-
-function skipBufferedRowsBudget(_budget: QueryBudget, _rows: number): void {}

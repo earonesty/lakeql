@@ -270,6 +270,12 @@ function hasAggregation(ast: ReturnType<typeof parseSql>): boolean {
   );
 }
 
+function hasWindowSemantics(ast: ReturnType<typeof parseSql>): boolean {
+  return (
+    (ast.windows !== undefined && Object.keys(ast.windows).length > 0) || ast.qualify !== undefined
+  );
+}
+
 async function materializeCteIfNeeded(
   store: MemoryObjectStore,
   lake: ReturnType<typeof createParquetLake>,
@@ -399,6 +405,9 @@ async function joinRowsFromAst(
 ): Promise<Row[]> {
   if (ast.join === undefined) throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Missing SQL JOIN");
   const join = ast.join;
+  if (hasWindowSemantics(ast)) {
+    throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "Window SQL over JOIN is not supported");
+  }
   if (hasAggregation(ast)) {
     throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "Aggregate SQL over JOIN is not supported yet");
   }
@@ -691,6 +700,9 @@ async function subqueryJoinRowsFromAst(
   if (ast.subqueryJoin === undefined) {
     throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Missing SQL IN subquery");
   }
+  if (hasWindowSemantics(ast)) {
+    throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "Window SQL over IN subquery is not supported");
+  }
   if (hasAggregation(ast)) {
     throw new LakeqlError(
       "LAKEQL_SQL_UNSUPPORTED",
@@ -751,6 +763,9 @@ async function aggregateRowsFromAst(
   builder: QueryBuilder,
   ast: ReturnType<typeof parseSql>,
 ): Promise<Row[]> {
+  if (hasWindowSemantics(ast)) {
+    throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "Window SQL over aggregates is not supported");
+  }
   validateAggregateProjection(ast);
   let next = builder;
   if (ast.where) next = next.where(ast.where);

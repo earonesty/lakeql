@@ -13,6 +13,7 @@ import type { ObjectStore, QueryBudget, QueryStats } from "lakeql-core";
 import { httpStore } from "lakeql-http";
 import { createParquetLake } from "lakeql-parquet";
 import { parseSql } from "lakeql-sql";
+import { applyAst } from "./apply-ast.js";
 import "./styles.css";
 
 declare const __LAKEQL_VERSION__: string;
@@ -270,18 +271,6 @@ function knownSizeStore(inner: ObjectStore): ObjectStore {
     },
   };
   return store;
-}
-
-function applyAst(builder: ReturnType<Lake["path"]>, ast: ReturnType<typeof parseSql>) {
-  let next = builder;
-  for (const [alias, expr] of Object.entries(ast.windows ?? {})) next = next.window(alias, expr);
-  if (ast.select) next = next.select(ast.select);
-  if (ast.where) next = next.where(ast.where);
-  if (ast.qualify) next = next.qualify(ast.qualify);
-  if (ast.orderBy) next = next.orderBy(ast.orderBy);
-  if (ast.offset !== undefined) next = next.offset(ast.offset);
-  if (ast.limit !== undefined) next = next.limit(ast.limit);
-  return next;
 }
 
 function datasetProxyUrl(): string {

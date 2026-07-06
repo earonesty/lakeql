@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { eq, gt, isIn, like } from "./expr.js";
+import { col, eq, gt, isIn, like, lit } from "./expr.js";
 import {
   advanceTaskCheckpoint,
   assertBookmarkMatches,
@@ -326,7 +326,17 @@ describe("bookmarks and checkpoints", () => {
       query: {
         source: "data/*.parquet",
         select: ["id"],
+        projections: { doubled: { kind: "arithmetic", op: "mul", left: col("id"), right: lit(2) } },
         where: eq("country", "US"),
+        distinct: true,
+        windows: {
+          rn: {
+            fn: "row_number",
+            args: [],
+            over: { partitionBy: [col("country")], orderBy: [{ expr: col("id") }] },
+          },
+        },
+        qualify: gt("rn", 1),
         orderBy: [{ column: "id", direction: "asc" }],
         limit: 10,
         offset: 1,

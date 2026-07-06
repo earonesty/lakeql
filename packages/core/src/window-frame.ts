@@ -102,9 +102,12 @@ function groupsFrameSpan(
   if (groupIndex === -1) return { start: 0, end: 0 };
   const startGroup = groupBoundIndex(groups.length, groupIndex, frame.start, partition[index]?.row);
   const endGroup = groupBoundIndex(groups.length, groupIndex, frame.end, partition[index]?.row);
+  if (endGroup < 0 || startGroup >= groups.length) return { start: 0, end: 0 };
+  const clampedStartGroup = clamp(startGroup, 0, groups.length - 1);
+  const clampedEndGroup = clamp(endGroup, 0, groups.length - 1);
   return normalizeSpan(partition.length, {
-    start: groups[startGroup]?.start ?? partition.length,
-    end: groups[endGroup]?.end ?? 0,
+    start: groups[clampedStartGroup]?.start ?? 0,
+    end: groups[clampedEndGroup]?.end ?? partition.length,
   });
 }
 

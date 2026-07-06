@@ -459,6 +459,56 @@ describe("window backend", () => {
     ]);
   });
 
+  it("front-loads ntile remainder rows and honors zero-offset ignore-null offsets", () => {
+    const out = applyWindowsToRows(
+      Array.from({ length: 10 }, (_value, index) => ({
+        id: index + 1,
+        amount: index === 4 ? null : index + 1,
+      })),
+      {
+        tile: {
+          fn: "ntile",
+          args: [lit(4)],
+          over: { partitionBy: [], orderBy: [{ expr: col("id") }] },
+        },
+        current_non_null: {
+          fn: "lag",
+          args: [col("amount"), lit(0), lit(-1)],
+          ignoreNulls: true,
+          over: { partitionBy: [], orderBy: [{ expr: col("id") }] },
+        },
+      },
+    );
+    expect(out.map((row) => row.tile)).toEqual([1, 1, 1, 2, 2, 2, 3, 3, 4, 4]);
+    expect(out.map((row) => row.current_non_null)).toEqual([1, 2, 3, 4, null, 6, 7, 8, 9, 10]);
+  });
+
+  it("clamps GROUPS bounds that overshoot partition edges", () => {
+    const grouped: WindowExpr = {
+      fn: { aggregate: "sum" },
+      args: [col("amount")],
+      over: {
+        partitionBy: [],
+        orderBy: [{ expr: col("bucket") }],
+        frame: {
+          mode: "groups",
+          start: { kind: "preceding", offset: lit(2) },
+          end: { kind: "current-row" },
+          exclude: "no-others",
+        },
+      },
+    };
+    const out = applyWindowsToRows(
+      [
+        { id: 1, bucket: 1, amount: 5 },
+        { id: 2, bucket: 2, amount: 7 },
+        { id: 3, bucket: 2, amount: 11 },
+      ],
+      { running_groups: grouped },
+    ).sort((left, right) => Number(left.id) - Number(right.id));
+    expect(out.map((row) => row.running_groups)).toEqual([5, 23, 23]);
+  });
+
   it("uses whole-partition frames when no ORDER BY is present", () => {
     const out = applyWindowsToRows(
       [

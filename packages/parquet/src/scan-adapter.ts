@@ -190,6 +190,8 @@ export class ParquetScanAdapter implements ScanAdapter {
       batchSize: options.batchSize,
       budget: options.budget,
       stats: options.stats,
+      now: options.now,
+      startedAt: options.startedAt,
       ...(this.metadataCache === undefined ? {} : { metadataCache: this.metadataCache }),
       ...(options.maxConcurrentTasks === undefined
         ? {}

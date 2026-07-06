@@ -1128,6 +1128,77 @@ describe("Lake query runtime", () => {
     expect(replayed).toEqual(await query.toArray());
   });
 
+  it("applies qualify predicates even when no windows are defined", async () => {
+    const { lake } = await makeLake({
+      rowsByPath: { table: [{ id: 1 }, { id: 2 }, { id: 3 }] },
+    });
+    await expect(
+      lake
+        .path("table")
+        .qualify(gt("id", lit(1)))
+        .select(["id"])
+        .toArray(),
+    ).resolves.toEqual([{ id: 2 }, { id: 3 }]);
+  });
+
+  it("supports select-star window queries without reading or projecting a literal star column", async () => {
+    const { lake, scanner } = await makeLake({
+      rowsByPath: {
+        table: [
+          { id: 1, group: "a" },
+          { id: 2, group: "a" },
+        ],
+      },
+    });
+    const rows = await lake
+      .path("table")
+      .select(["*"])
+      .window("rn", {
+        fn: "row_number",
+        args: [],
+        over: { partitionBy: [col("group")], orderBy: [{ expr: col("id") }] },
+      })
+      .qualify(gt("rn", lit(0)))
+      .toArray();
+    expect(rows).toEqual([
+      { id: 1, group: "a", rn: 1 },
+      { id: 2, group: "a", rn: 2 },
+    ]);
+    expect(scanner.requestedColumns.some((columns) => columns?.includes("*"))).toBe(false);
+  });
+
+  it("preserves window query shape when resuming bookmarks", async () => {
+    const { lake } = await makeLake({
+      rowsByPath: {
+        table: [
+          { id: 1, group: "a" },
+          { id: 2, group: "a" },
+          { id: 3, group: "a" },
+        ],
+      },
+    });
+    const query = lake
+      .path("table")
+      .window("rn", {
+        fn: "row_number",
+        args: [],
+        over: { partitionBy: [col("group")], orderBy: [{ expr: col("id") }] },
+      })
+      .qualify(gt("rn", lit(1)))
+      .select(["id", "rn"]);
+
+    const first = await query.run({ slice: { maxRows: 1 } });
+    expect(first.rows).toEqual([{ id: 2, rn: 2 }]);
+    expect(first.bookmark?.query).toMatchObject({
+      windows: { rn: { fn: "row_number" } },
+      qualify: gt("rn", lit(1)),
+    });
+    if (first.bookmark === undefined) throw new Error("expected bookmark");
+    await expect(lake.resume(first.bookmark).run({ slice: { maxRows: 1 } })).resolves.toEqual({
+      rows: [{ id: 3, rn: 3 }],
+    });
+  });
+
   it("preserves run-to-completion output across deterministic slice boundaries", async () => {
     for (const rowCount of [0, 1, 2, 5, 9, 17]) {
       const rows = Array.from({ length: rowCount }, (_, index) => ({

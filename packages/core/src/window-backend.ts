@@ -284,7 +284,13 @@ function ntileValues(rows: readonly Row[], expr: WindowExpr): number[] {
   if (!Number.isInteger(bucketCount) || bucketCount <= 0) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "ntile requires a positive integer bucket count");
   }
-  return rows.map((_row, index) => Math.floor((index * bucketCount) / rows.length) + 1);
+  const base = Math.floor(rows.length / bucketCount);
+  const extra = rows.length % bucketCount;
+  return rows.map((_row, index) =>
+    index < (base + 1) * extra
+      ? Math.floor(index / (base + 1)) + 1
+      : extra + Math.floor((index - (base + 1) * extra) / base) + 1,
+  );
 }
 
 function offsetValues(rows: readonly Row[], expr: WindowExpr, direction: -1 | 1): unknown[] {
@@ -309,6 +315,7 @@ function offsetIgnoringNulls(
 ): unknown[] {
   const arg = valueArg(expr);
   return rows.map((row, index) => {
+    if (offset === 0) return evaluate(arg, row);
     let remaining = offset;
     for (
       let targetIndex = index + direction;

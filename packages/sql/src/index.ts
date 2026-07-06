@@ -89,12 +89,12 @@ export function parseSql(sql: string, options: SqlParseOptions = {}): SqlQueryAs
   if (sql.length > MAX_SQL_LENGTH) {
     throwParse(`SQL input length exceeds ${MAX_SQL_LENGTH}`);
   }
-  const prepass = extractTopLevelQualify(sql);
-  const windowPrepass = extractWindowFrames(prepass.sql);
+  const windowPrepass = extractWindowFrames(sql);
+  const prepass = extractTopLevelQualify(windowPrepass.sql);
 
   let statements: unknown[];
   try {
-    statements = parse(windowPrepass.sql) as unknown[];
+    statements = parse(prepass.sql) as unknown[];
   } catch (error) {
     if (error instanceof Error) throwParse(error.message);
     throwParse("Invalid SQL");
@@ -238,6 +238,7 @@ function selectStatementToAstInScope(statement: PgNode, context: SqlParseContext
   const select: string[] = [];
   const projections: Record<string, Expr> = {};
   const aggregates: AggregateSpec = {};
+  const outputAliases = new Set<string>();
 
   for (const column of columns) {
     const item = asNode(column, "select item");
@@ -248,19 +249,23 @@ function selectStatementToAstInScope(statement: PgNode, context: SqlParseContext
       continue;
     }
     if (expr.type === "call" && hasWindowOver(expr)) {
-      const alias = aliasName(item.alias) ?? functionName(expr.function);
+      const alias = aliasName(item.alias) ?? syntheticWindowAlias(context);
+      ensureUniqueOutputAlias(alias, outputAliases);
       context.windows[alias] = windowCallToExpr(expr, scope, context);
       select.push(alias);
       continue;
     }
     if (expr.type === "call" && isAggregateCall(expr)) {
       const alias = aliasName(item.alias) ?? functionName(expr.function);
+      ensureUniqueOutputAlias(alias, outputAliases);
       aggregates[alias] = aggregateCallToSpec(expr, scope, context);
       continue;
     }
     if (expr.type === "ref") {
       const name = scope.refName(expr);
       const alias = aliasName(item.alias);
+      const output = alias === undefined ? name : alias;
+      ensureUniqueOutputAlias(output, outputAliases);
       if (alias === undefined || alias === name) select.push(name);
       else projections[alias] = { kind: "column", name };
       continue;
@@ -269,6 +274,7 @@ function selectStatementToAstInScope(statement: PgNode, context: SqlParseContext
     if (alias === undefined) {
       throwUnsupported("Computed projections require an explicit alias");
     }
+    ensureUniqueOutputAlias(alias, outputAliases);
     projections[alias] = exprToLakeql(expr, scope, context);
   }
 
@@ -657,10 +663,20 @@ function hasWindowOver(expr: PgNode): boolean {
 }
 
 function registerSyntheticWindow(expr: PgNode, scope: SqlScope, context: SqlParseContext): string {
-  const alias = `__lakeql_window_${context.nextWindowId}`;
-  context.nextWindowId += 1;
+  const alias = syntheticWindowAlias(context);
   context.windows[alias] = windowCallToExpr(expr, scope, context);
   return alias;
+}
+
+function syntheticWindowAlias(context: SqlParseContext): string {
+  const alias = `__lakeql_window_${context.nextWindowId}`;
+  context.nextWindowId += 1;
+  return alias;
+}
+
+function ensureUniqueOutputAlias(alias: string, aliases: Set<string>): void {
+  if (aliases.has(alias)) throwUnsupported(`Duplicate SELECT output alias ${alias}`);
+  aliases.add(alias);
 }
 
 function windowCallToExpr(expr: PgNode, scope: SqlScope, context: SqlParseContext): WindowExpr {

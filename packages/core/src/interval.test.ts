@@ -35,6 +35,7 @@ describe("interval values", () => {
       nanoseconds: "3723004005006",
     });
     expect(intervalValue("-01:00")).toMatchObject({ nanoseconds: "-3600000000000" });
+    expect(intervalValue("1.1 hours")).toMatchObject({ nanoseconds: "3960000000000" });
   });
 
   it("validates structural interval values", () => {
@@ -51,7 +52,7 @@ describe("interval values", () => {
   it("applies intervals to timestamps with calendar-month semantics", () => {
     const start = timestampFromEpoch(BigInt(Date.parse("2026-01-31T00:00:00.000Z")), "millis");
     const shifted = applyIntervalToTimestamp(start, intervalValue("1 month 1 day"), 1);
-    expect(timestampToIsoString(shifted)).toBe("2026-03-04T00:00:00.000Z");
+    expect(timestampToIsoString(shifted)).toBe("2026-03-01T00:00:00.000Z");
   });
 
   it("rejects invalid interval literals", () => {

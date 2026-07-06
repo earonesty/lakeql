@@ -966,6 +966,50 @@ describe("parseSql", () => {
     });
   });
 
+  it("uses unique synthetic aliases for unaliased window projections", () => {
+    const ast = parseSql(
+      "select row_number() over (order by a), row_number() over (order by b desc) from t",
+    );
+    expect(ast.select).toEqual(["__lakeql_window_0", "__lakeql_window_1"]);
+    expect(Object.keys(ast.windows ?? {})).toEqual(["__lakeql_window_0", "__lakeql_window_1"]);
+    expect(ast.windows?.__lakeql_window_0?.over.orderBy).toEqual([
+      { expr: { kind: "column", name: "a" } },
+    ]);
+    expect(ast.windows?.__lakeql_window_1?.over.orderBy).toEqual([
+      { expr: { kind: "column", name: "b" }, direction: "desc" },
+    ]);
+  });
+
+  it("rejects duplicate explicit output aliases", () => {
+    expect(() => parseSql("select id, row_number() over (order by id) as id from orders")).toThrow(
+      "Duplicate SELECT output alias id",
+    );
+  });
+
+  it("runs the window prepass on QUALIFY predicates", () => {
+    const framed = parseSql(`
+      select id
+      from orders
+      qualify sum(total) over (order by id rows between 1 preceding and current row) > 10
+    `);
+    expect(framed.windows?.__lakeql_window_0?.over.frame).toMatchObject({
+      mode: "rows",
+      start: { kind: "preceding" },
+      end: { kind: "current-row" },
+    });
+
+    const named = parseSql(`
+      select id
+      from orders
+      qualify row_number() over ranked = 1
+      window ranked as (partition by customer_id order by id)
+    `);
+    expect(named.windows?.__lakeql_window_0?.over).toMatchObject({
+      partitionBy: [{ kind: "column", name: "customer_id" }],
+      orderBy: [{ expr: { kind: "column", name: "id" } }],
+    });
+  });
+
   it("keeps QUALIFY and synthetic window aliases scoped to the owning SELECT", () => {
     const ast = parseSql(`
         with recent as (
