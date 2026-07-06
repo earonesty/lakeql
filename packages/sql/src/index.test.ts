@@ -34,6 +34,20 @@ describe("parseSql", () => {
     });
   });
 
+  it("maps read_parquet FROM calls to path sources", () => {
+    expect(parseSql("select * from read_parquet('events/year=*/*.parquet') p")).toMatchObject({
+      source: "events/year=*/*.parquet",
+      select: ["*"],
+    });
+    expect(() => parseSql("select * from read_parquet(1)")).toThrow(/string literal/u);
+    expect(() => parseSql("select * from read_parquet('a.parquet', 'b.parquet')")).toThrow(
+      /exactly one/u,
+    );
+    expect(() => parseSql("select * from generate_series(1)")).toThrow(
+      /Only read_parquet FROM functions/u,
+    );
+  });
+
   it("compiles the core VISION read-query shape", () => {
     expect(
       parseSql(`

@@ -946,6 +946,9 @@ function renderDatasetConfig(): void {
   const source = document.getElementById("dataset-source") as HTMLAnchorElement | null;
   if (source) source.href = dataset.sourceUrl;
   document.body.dataset.datasetKind = dataset.kind;
+  document.querySelectorAll<HTMLElement>("[data-kind]").forEach((element) => {
+    element.classList.toggle("is-active", element.dataset.kind === dataset.kind);
+  });
 }
 
 function setText(id: string, value: string): void {

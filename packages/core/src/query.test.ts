@@ -593,7 +593,9 @@ describe("Lake query runtime", () => {
       maybe: null,
     });
     expect(await lake.path("data/types.parquet").count()).toBe(2);
-    expect(await lake.path("missing*.parquet").first()).toBeUndefined();
+    await expect(lake.path("missing*.parquet").first()).rejects.toMatchObject({
+      code: "LAKEQL_NO_FILES_MATCHED",
+    });
 
     const batches: Row[][] = [];
     for await (const batch of lake.path("data/types.parquet").batchSize(1).batches()) {

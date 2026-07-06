@@ -98,6 +98,31 @@
       </section>
     </main>
 
+    <section class="examples compare-datasets" aria-labelledby="compare-datasets-title">
+      <div class="examples__head">
+        <p class="eyebrow examples__eyebrow">comparison datasets</p>
+        <h2 id="compare-datasets-title">Run the browser benchmark on each query shape.</h2>
+        <a href="./compare.html">Open compare</a>
+      </div>
+      <div class="dataset-card-grid">
+        <a class="dataset-card" href="./compare.html">
+          <span>Flights</span>
+          <strong>R2 range-read baseline</strong>
+          <small>Projection, filters, aggregates, and Top-K on the public 2015 flights file.</small>
+        </a>
+        <a class="dataset-card" href="./compare.html?kind=spatial">
+          <span>Spatial</span>
+          <strong>WKB GeoParquet predicates</strong>
+          <small>Compare bbox, within, contains, and distance queries against DuckDB-WASM spatial.</small>
+        </a>
+        <a class="dataset-card" href="./compare.html?kind=window">
+          <span>Windows</span>
+          <strong>Rank, frames, and QUALIFY</strong>
+          <small>Exercise partitioned windows, interval RANGE frames, and filtered aggregates.</small>
+        </a>
+      </div>
+    </section>
+
     <section class="examples" aria-labelledby="examples-title">
       <div class="examples__head">
         <p class="eyebrow examples__eyebrow">window examples</p>

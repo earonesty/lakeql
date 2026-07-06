@@ -1,3 +1,4 @@
+.hermes-channel
 node_modules/
 dist/
 coverage/

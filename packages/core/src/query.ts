@@ -152,12 +152,18 @@ export interface ScanAdapter {
   scanColumns?(path: string, options: ScanOptions): AsyncIterable<Batch>;
   scanVectorBatches?(path: string, options: ScanOptions): AsyncIterable<ScanVectorBatch>;
   scanColumnBatches?(path: string, options: ScanOptions): AsyncIterable<ScanColumnBatch>;
+  planObjects?(objects: ObjectInfo[], options: ScanObjectPlanOptions): Promise<ObjectInfo[]>;
   planTask?(path: string, options: ScanTaskPlanOptions): Promise<ScanTaskPlan>;
   executeWindowTasks?(
     tasks: TaskInput[],
     windows: Record<string, WindowExpr>,
     options: WindowTaskExecutionOptions,
   ): Promise<Row[]>;
+}
+
+export interface ScanObjectPlanOptions {
+  columns?: string[];
+  where?: Expr;
 }
 
 export interface WindowTaskExecutionOptions {
@@ -1902,7 +1908,12 @@ export class QueryResult {
       ...Object.values(config.projections ?? {}),
       ...windowExpressions(config.windows),
     ]);
-    const objects = await expandPaths(config.lake.store, config.source, config.planningCache);
+    const objects = await expandPaths(
+      config.lake.store,
+      config.source,
+      config.planningCache,
+      config.budget,
+    );
     let planned = objects;
     let skipped = 0;
     if (config.hive && config.where) {
@@ -1924,6 +1935,16 @@ export class QueryResult {
       const pruned = pruneFilesWithIndex(indexedObjects, config.where);
       planned = pruned.planned;
       skipped += pruned.skipped.length;
+    }
+    if (config.scanner.planObjects !== undefined) {
+      const columns =
+        config.windows === undefined
+          ? projectedReadColumns(config.select, config.where, config.orderBy, config.projections)
+          : windowReadColumns(config);
+      planned = await config.scanner.planObjects(planned, {
+        ...(columns !== undefined ? { columns } : {}),
+        ...(config.where !== undefined ? { where: config.where } : {}),
+      });
     }
     return { planned, skipped };
   }
@@ -3134,18 +3155,31 @@ async function expandPaths(
   store: ObjectStore,
   pattern: string,
   planningCache?: CacheAdapter<ObjectInfo[]>,
+  budget: QueryBudget = {},
 ): Promise<ObjectInfo[]> {
   const cacheKey = `object-plan:${pattern}`;
   const cached = await planningCache?.get(cacheKey);
-  if (cached !== undefined) return cloneObjectInfos(cached.value);
+  if (cached !== undefined) {
+    if (budget.maxFiles !== undefined && cached.value.length > budget.maxFiles) {
+      throwBudget("files", budget.maxFiles, cached.value.length);
+    }
+    return cloneObjectInfos(cached.value);
+  }
 
-  const paths = await expandPathsUncached(store, pattern);
+  const paths = await expandPathsUncached(store, pattern, budget);
   await planningCache?.set(cacheKey, { value: cloneObjectInfos(paths) });
   return paths;
 }
 
-async function expandPathsUncached(store: ObjectStore, pattern: string): Promise<ObjectInfo[]> {
+async function expandPathsUncached(
+  store: ObjectStore,
+  pattern: string,
+  budget: QueryBudget,
+): Promise<ObjectInfo[]> {
   if (!hasGlob(pattern)) {
+    if (isPrefixSource(pattern)) {
+      return listMatchingObjects(store, pattern, budget, (path) => path.endsWith(".parquet"));
+    }
     const head = await store.head(pattern);
     if (!head) {
       throw new LakeqlError("LAKEQL_OBJECT_NOT_FOUND", `No object at ${pattern}`, {
@@ -3158,10 +3192,25 @@ async function expandPathsUncached(store: ObjectStore, pattern: string): Promise
     return [object];
   }
   const prefix = globPrefix(pattern);
-  const regex = globRegex(pattern);
+  return listMatchingObjects(store, prefix, budget, (path) => globMatches(pattern, path));
+}
+
+async function listMatchingObjects(
+  store: ObjectStore,
+  prefix: string,
+  budget: QueryBudget,
+  matchesPath: (path: string) => boolean,
+): Promise<ObjectInfo[]> {
   const paths: ObjectInfo[] = [];
   for await (const object of store.list(prefix)) {
-    if (regex.test(object.path)) paths.push(object);
+    if (!matchesPath(object.path)) continue;
+    paths.push(object);
+    if (budget.maxFiles !== undefined && paths.length > budget.maxFiles) {
+      throwBudget("files", budget.maxFiles, paths.length);
+    }
+  }
+  if (paths.length === 0) {
+    throw new LakeqlError("LAKEQL_NO_FILES_MATCHED", `No files matched ${prefix}`, { prefix });
   }
   paths.sort((a, b) => a.path.localeCompare(b.path));
   return paths;
@@ -3191,20 +3240,39 @@ function hasGlob(pattern: string): boolean {
   return pattern.includes("*") || pattern.includes("?");
 }
 
+function isPrefixSource(pattern: string): boolean {
+  return pattern.endsWith("/");
+}
+
 function globPrefix(pattern: string): string {
   const wildcard = pattern.search(/[*?]/u);
   const slash = pattern.lastIndexOf("/", wildcard);
   return slash === -1 ? "" : pattern.slice(0, slash + 1);
 }
 
-function globRegex(pattern: string): RegExp {
-  let source = "^";
-  for (const char of pattern) {
-    if (char === "*") source += ".*";
-    else if (char === "?") source += ".";
-    else source += char.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+function globMatches(pattern: string, path: string): boolean {
+  return globSegmentsMatch(pattern.split("/"), path.split("/"));
+}
+
+function globSegmentsMatch(pattern: readonly string[], path: readonly string[]): boolean {
+  if (pattern.length === 0) return path.length === 0;
+  const [head, ...tail] = pattern;
+  if (head === "**") {
+    if (globSegmentsMatch(tail, path)) return true;
+    return path.length > 0 && globSegmentsMatch(pattern, path.slice(1));
   }
-  return new RegExp(`${source}$`, "u");
+  if (path.length === 0 || head === undefined) return false;
+  return globSegmentMatches(head, path[0] ?? "") && globSegmentsMatch(tail, path.slice(1));
+}
+
+function globSegmentMatches(pattern: string, value: string): boolean {
+  let expression = "^";
+  for (const char of pattern) {
+    if (char === "*") expression += "[^/]*";
+    else if (char === "?") expression += "[^/]";
+    else expression += char.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  }
+  return new RegExp(`${expression}$`, "u").test(value);
 }
 
 function projectedReadColumns(

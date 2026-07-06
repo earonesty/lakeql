@@ -1008,15 +1008,32 @@ class SqlScope {
 
 function sourceTable(value: unknown): SourceTable {
   const node = asNode(value, "FROM item");
+  if (node.type === "call") return readParquetSourceTable(node);
   if (node.type !== "table") throwUnsupported("Only table FROM sources are supported");
   if (node.join !== undefined) throwUnsupported("Unexpected JOIN position");
   const source = nameNodeToString(node.name);
   return { source, alias: aliasName(node.name) ?? source };
 }
 
+function readParquetSourceTable(node: PgNode): SourceTable {
+  const functionName = nameNodeToString(node.function).toLowerCase();
+  if (functionName !== "read_parquet") {
+    throwUnsupported("Only read_parquet FROM functions are supported");
+  }
+  const args = optionalArray(node.args);
+  if (args.length !== 1) throwUnsupported("read_parquet requires exactly one path argument");
+  const arg = asNode(args[0], "read_parquet argument");
+  if (arg.type !== "string" || typeof arg.value !== "string") {
+    throwUnsupported("read_parquet path must be a string literal");
+  }
+  return { source: arg.value, alias: aliasName(node.alias) ?? arg.value };
+}
+
 function joinToAst(value: unknown, left: SourceTable): SqlJoinAst {
   const node = asNode(value, "JOIN source");
-  if (node.type !== "table") throwUnsupported("Only table JOIN sources are supported");
+  if (node.type !== "table" && node.type !== "call") {
+    throwUnsupported("Only table JOIN sources are supported");
+  }
   const join = asNode(node.join, "JOIN");
   const joinType = String(join.type).toUpperCase();
   if (joinType !== "INNER JOIN" && joinType !== "LEFT JOIN") {

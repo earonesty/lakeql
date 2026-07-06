@@ -1221,6 +1221,88 @@ describe("createParquetLake", () => {
     expect(count).toBe(single * 2);
   });
 
+  it("queries a prefix of loose Parquet files and prunes Hive partitions before scans", async () => {
+    const prefixStore = memoryStore();
+    await writeParquet(prefixStore, "events/year=2025/month=01/part-0.parquet", {
+      columnData: [
+        { name: "id", data: [1], type: "INT32" },
+        { name: "amount", data: [10], type: "DOUBLE" },
+      ],
+    });
+    await writeParquet(prefixStore, "events/year=2026/month=01/part-0.parquet", {
+      columnData: [
+        { name: "id", data: [2], type: "INT32" },
+        { name: "amount", data: [20], type: "DOUBLE" },
+      ],
+    });
+
+    const lake = createParquetLake({ store: prefixStore });
+    const result = lake
+      .hive("events/")
+      .select(["id", "year", "month"])
+      .where(eq("year", "2026"))
+      .run();
+
+    await expect(result.toArray()).resolves.toEqual([{ id: 2, year: "2026", month: "01" }]);
+    expect(result.stats.filesSkipped).toBe(1);
+    expect(result.stats.filesRead).toBe(1);
+  });
+
+  it("enforces file expansion budgets and empty-match errors while planning", async () => {
+    const prefixStore = memoryStore();
+    await writeParquet(prefixStore, "budget/a.parquet", {
+      columnData: [{ name: "id", data: [1], type: "INT32" }],
+    });
+    await writeParquet(prefixStore, "budget/b.parquet", {
+      columnData: [{ name: "id", data: [2], type: "INT32" }],
+    });
+
+    await expect(
+      createParquetLake({ store: prefixStore, budget: { maxFiles: 1 } })
+        .path("budget/*.parquet")
+        .count(),
+    ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+    await expect(
+      createParquetLake({ store: prefixStore }).path("budget/missing/*.parquet").count(),
+    ).rejects.toMatchObject({ code: "LAKEQL_NO_FILES_MATCHED" });
+  });
+
+  it("unifies compatible file schemas with nulls and rejects conflicting columns", async () => {
+    const schemaStore = memoryStore();
+    await writeParquet(schemaStore, "schemas/compatible/a.parquet", {
+      columnData: [
+        { name: "id", data: [1], type: "INT32" },
+        { name: "extra", data: ["a"], type: "BYTE_ARRAY", converted_type: "UTF8" },
+      ],
+    });
+    await writeParquet(schemaStore, "schemas/compatible/b.parquet", {
+      columnData: [{ name: "id", data: [2], type: "INT32" }],
+    });
+
+    await expect(
+      createParquetLake({ store: schemaStore }).path("schemas/compatible/*.parquet").toArray(),
+    ).resolves.toEqual([
+      { id: 1, extra: "a" },
+      { id: 2, extra: null },
+    ]);
+    await expect(
+      createParquetLake({ store: schemaStore })
+        .path("schemas/compatible/*.parquet")
+        .select(["extra"])
+        .toArray(),
+    ).resolves.toEqual([{ extra: "a" }, { extra: null }]);
+
+    await writeParquet(schemaStore, "schemas/conflict/a.parquet", {
+      columnData: [{ name: "id", data: [1], type: "INT32" }],
+    });
+    await writeParquet(schemaStore, "schemas/conflict/b.parquet", {
+      columnData: [{ name: "id", data: ["2"], type: "BYTE_ARRAY", converted_type: "UTF8" }],
+    });
+    await expect(
+      createParquetLake({ store: schemaStore }).path("schemas/conflict/*.parquet").toArray(),
+    ).rejects.toMatchObject({ code: "LAKEQL_SCHEMA_CONFLICT" });
+  });
+
   it("streams NDJSON and JSON with unsafe int64 mapped safely", async () => {
     const lake = createParquetLake({ store });
     const ndjson = await new Response(
