@@ -1,5 +1,13 @@
 # lakeql-http
 
+## 0.0.7
+
+### Patch Changes
+
+- 8d687ff: Detect static hosts that serve byte ranges over compressed assets and fall back to cached full-object slicing so Parquet footer reads use decoded byte offsets.
+- Updated dependencies
+  - lakeql-core@0.3.0
+
 ## 0.0.6
 
 ### Patch Changes

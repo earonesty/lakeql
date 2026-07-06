@@ -1,5 +1,11 @@
 # lakeql
 
+## 0.1.9
+
+### Patch Changes
+
+- Add SQL window function execution across in-memory and Parquet scans, including partition/order frames, ranking and analytic functions, aggregate windows, `QUALIFY`, and browser benchmark coverage.
+
 ## 0.1.8
 
 ### Patch Changes

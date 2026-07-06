@@ -1,5 +1,11 @@
 # lakeql-core
 
+## 0.3.0
+
+### Minor Changes
+
+- Add SQL window function execution across in-memory and Parquet scans, including partition/order frames, ranking and analytic functions, aggregate windows, `QUALIFY`, and browser benchmark coverage.
+
 ## 0.2.0
 
 ### Minor Changes
