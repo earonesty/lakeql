@@ -1,5 +1,16 @@
 # lakeql-sql
 
+## 0.2.0
+
+### Minor Changes
+
+- 5e21864: Add multi-file Parquet planning for prefixes and globs, including bounded file expansion, Hive partition pruning, schema compatibility checks, missing-column null fill, and SQL `read_parquet('...')` sources. Empty glob and prefix matches now fail with `LAKEQL_NO_FILES_MATCHED`, and `*` is segment-local; use `**` for recursive matches.
+
+### Patch Changes
+
+- Updated dependencies [5e21864]
+  - lakeql-core@0.4.0
+
 ## 0.1.0
 
 ### Minor Changes

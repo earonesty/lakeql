@@ -1,5 +1,12 @@
 # lakeql-csv
 
+## 0.0.7
+
+### Patch Changes
+
+- Updated dependencies [5e21864]
+  - lakeql-core@0.4.0
+
 ## 0.0.6
 
 ### Patch Changes

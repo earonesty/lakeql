@@ -1,6 +1,6 @@
 {
   "name": "lakeql-json",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "lakeql JSON adapter: browser-friendly JSON and NDJSON ingest with bounded parsing",
   "keywords": [
     "json",
