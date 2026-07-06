@@ -986,6 +986,17 @@ describe("parseSql", () => {
     );
   });
 
+  it("rejects output aliases that would mutate plain object prototypes", () => {
+    for (const alias of ['"__proto__"', '"constructor"', '"prototype"']) {
+      expect(() => parseSql(`select id as ${alias} from orders`)).toThrow(
+        "Unsafe SELECT output alias",
+      );
+      expect(() =>
+        parseSql(`select row_number() over (order by id) as ${alias} from orders`),
+      ).toThrow("Unsafe SELECT output alias");
+    }
+  });
+
   it("runs the window prepass on QUALIFY predicates", () => {
     const framed = parseSql(`
       select id

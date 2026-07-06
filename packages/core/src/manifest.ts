@@ -1,4 +1,5 @@
 import { LakeqlError } from "./errors.js";
+import { isPrototypeMutationKey } from "./object-key.js";
 import type { TaskInput } from "./query.js";
 import type { ObjectStore } from "./store.js";
 import type { Bookmark, BookmarkQuery } from "./types.js";
@@ -552,13 +553,18 @@ function sortRecord(record: Record<string, string>): Record<string, string> {
   return out;
 }
 
-function sortValueRecord<T>(record: Record<string, T>): Record<string, T> {
+function sortValueRecord<T>(record: Record<string, T>, message: string): Record<string, T> {
   const out: Record<string, T> = {};
   for (const key of Object.keys(record).sort()) {
+    assertSafeRecordKey(key, message);
     const value = record[key];
     if (value !== undefined) out[key] = value;
   }
   return out;
+}
+
+function assertSafeRecordKey(key: string, message: string): void {
+  if (key.length === 0 || isPrototypeMutationKey(key)) throwInvalidBookmark(message);
 }
 
 function isStringRecord(value: unknown): value is Record<string, string> {
@@ -712,10 +718,14 @@ function cloneBytes(bytes: Uint8Array): Uint8Array {
 function normalizeBookmarkQuery(query: BookmarkQuery): BookmarkQuery {
   const normalized: BookmarkQuery = { source: query.source };
   if (query.select !== undefined) normalized.select = [...query.select];
-  if (query.projections !== undefined) normalized.projections = sortValueRecord(query.projections);
+  if (query.projections !== undefined) {
+    normalized.projections = sortValueRecord(query.projections, "Bookmark projections are invalid");
+  }
   if (query.where !== undefined) normalized.where = query.where;
   if (query.distinct !== undefined) normalized.distinct = query.distinct;
-  if (query.windows !== undefined) normalized.windows = sortValueRecord(query.windows);
+  if (query.windows !== undefined) {
+    normalized.windows = sortValueRecord(query.windows, "Bookmark windows are invalid");
+  }
   if (query.qualify !== undefined) normalized.qualify = query.qualify;
   if (query.orderBy !== undefined) {
     normalized.orderBy = query.orderBy.map((term) => {
@@ -839,9 +849,7 @@ function parseBookmarkQuery(value: unknown): BookmarkQuery {
     if (!isRecord(value.projections)) throwInvalidBookmark("Bookmark projections are invalid");
     query.projections = {};
     for (const [key, expr] of Object.entries(value.projections)) {
-      if (typeof key !== "string" || key.length === 0) {
-        throwInvalidBookmark("Bookmark projections are invalid");
-      }
+      assertSafeRecordKey(key, "Bookmark projections are invalid");
       query.projections[key] = parseBookmarkExpr(expr);
     }
   }
@@ -854,10 +862,9 @@ function parseBookmarkQuery(value: unknown): BookmarkQuery {
     if (!isRecord(value.windows)) throwInvalidBookmark("Bookmark windows are invalid");
     query.windows = {};
     for (const [key, expr] of Object.entries(value.windows)) {
-      if (typeof key !== "string" || key.length === 0 || !isWindowExprSnapshot(expr)) {
-        throwInvalidBookmark("Bookmark windows are invalid");
-      }
-      query.windows[key] = expr as unknown as NonNullable<BookmarkQuery["windows"]>[string];
+      assertSafeRecordKey(key, "Bookmark windows are invalid");
+      if (!isWindowExprSnapshot(expr)) throwInvalidBookmark("Bookmark windows are invalid");
+      query.windows[key] = expr;
     }
   }
   if (value.qualify !== undefined) query.qualify = parseBookmarkExpr(value.qualify);

@@ -942,6 +942,27 @@ describe("Lake query runtime", () => {
     expect(() => lake.path("table").limit(-1).run()).toThrow(/limit/u);
     expect(() => lake.path("table").offset(-1).run()).toThrow(/offset/u);
     expect(() => lake.path("table").batchSize(0).run()).toThrow(/batchSize/u);
+    const unsafeProjections = Object.create(null) as Record<string, unknown>;
+    Object.defineProperty(unsafeProjections, "__proto__", {
+      value: col("id"),
+      enumerable: true,
+    });
+    expect(() =>
+      lake
+        .path("table")
+        .project(unsafeProjections as never)
+        .run(),
+    ).toThrow(/projection aliases/u);
+    expect(() =>
+      lake
+        .path("table")
+        .window("constructor", {
+          fn: "row_number",
+          args: [],
+          over: { partitionBy: [], orderBy: [] },
+        })
+        .run(),
+    ).toThrow(/window aliases/u);
   });
 
   it("throws typed runtime errors for missing objects, unknown columns, and budgets", async () => {

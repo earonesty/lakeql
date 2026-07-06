@@ -71,6 +71,7 @@ export interface SqlScalarSubqueryAst {
 
 const MAX_SQL_LENGTH = 128_000;
 const MAX_AST_DEPTH = 128;
+const PROTOTYPE_MUTATION_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 type PgNode = Record<string, unknown>;
 
@@ -675,6 +676,7 @@ function syntheticWindowAlias(context: SqlParseContext): string {
 }
 
 function ensureUniqueOutputAlias(alias: string, aliases: Set<string>): void {
+  if (PROTOTYPE_MUTATION_KEYS.has(alias)) throwUnsupported(`Unsafe SELECT output alias ${alias}`);
   if (aliases.has(alias)) throwUnsupported(`Duplicate SELECT output alias ${alias}`);
   aliases.add(alias);
 }

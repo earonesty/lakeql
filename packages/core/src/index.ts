@@ -8,6 +8,7 @@ export * from "./interval.js";
 export * from "./join.js";
 export * from "./manifest.js";
 export * from "./memory-store.js";
+export * from "./object-key.js";
 export * from "./object-store-cache.js";
 export * from "./object-store-json-cache.js";
 export * from "./predicate-plan.js";

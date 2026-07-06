@@ -27,6 +27,7 @@ import {
   stableStringify,
   type TaskManifest,
 } from "./manifest.js";
+import { isPrototypeMutationKey } from "./object-key.js";
 import { classifyPredicate, type PredicatePlan } from "./predicate-plan.js";
 import { parseJsonQuery } from "./query-json.js";
 import {
@@ -3012,8 +3013,15 @@ function validateQueryInit(init: PathQueryInit): void {
   }
   if (init.windows !== undefined) {
     for (const alias of Object.keys(init.windows)) {
-      if (alias.length === 0) {
-        throw new LakeqlError("LAKEQL_TYPE_ERROR", "window aliases must be non-empty strings");
+      if (alias.length === 0 || isPrototypeMutationKey(alias)) {
+        throw new LakeqlError("LAKEQL_TYPE_ERROR", "window aliases must be valid object keys");
+      }
+    }
+  }
+  if (init.projections !== undefined) {
+    for (const alias of Object.keys(init.projections)) {
+      if (alias.length === 0 || isPrototypeMutationKey(alias)) {
+        throw new LakeqlError("LAKEQL_TYPE_ERROR", "projection aliases must be valid object keys");
       }
     }
   }

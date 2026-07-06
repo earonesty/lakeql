@@ -436,6 +436,33 @@ describe("bookmarks and checkpoints", () => {
     expect(stableStringify(bookmark)).toContain('"partNumber":1');
   });
 
+  it("rejects bookmark query keys that would mutate plain object prototypes", async () => {
+    const unsafeProjections = Object.create(null) as Record<string, unknown>;
+    Object.defineProperty(unsafeProjections, "__proto__", {
+      value: col("id"),
+      enumerable: true,
+    });
+    expect(() =>
+      createBookmark({
+        planFingerprint: "fp_bad_projection_key",
+        snapshot: "snapshot_bad_projection_key",
+        query: { source: "data/*.parquet", projections: unsafeProjections as never },
+        position: { fileIndex: 0, rowGroup: 0, rowOffset: 0 },
+      }),
+    ).toThrow("Bookmark projections are invalid");
+
+    const payloads = [
+      `{"version":1,"planFingerprint":"fp","snapshot":"s","position":{"fileIndex":0,"rowGroup":0,"rowOffset":0},"query":{"source":"table","projections":{"__proto__":{"kind":"column","name":"id"}}}}`,
+      `{"version":1,"planFingerprint":"fp","snapshot":"s","position":{"fileIndex":0,"rowGroup":0,"rowOffset":0},"query":{"source":"table","windows":{"__proto__":{"fn":"row_number","args":[],"over":{"partitionBy":[],"orderBy":[]}}}}}`,
+    ];
+
+    for (const payload of payloads) {
+      await expect(
+        verifyPaginationToken(await signRawPayload(payload, "secret"), "secret"),
+      ).rejects.toMatchObject({ code: "LAKEQL_BOOKMARK_INVALID" });
+    }
+  });
+
   it("rejects signed bookmark payloads with invalid structure", async () => {
     const invalidBookmarks: unknown[] = [
       { version: 2, planFingerprint: "fp", snapshot: "s", position: {} },
