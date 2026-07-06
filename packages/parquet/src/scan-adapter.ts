@@ -42,7 +42,6 @@ export class ParquetScanAdapter implements ScanAdapter {
   private readonly metadataCache: CacheAdapter<ParquetMetadata> | undefined;
   private readonly decodedColumnCache: DecodedColumnCache | undefined;
   private readonly scanRangeCache: RangeCacheOptions | undefined;
-  private readonly plannedSchemas = new Map<string, PlannedParquetSchema>();
 
   constructor(
     store: ObjectStore,
@@ -92,14 +91,16 @@ export class ParquetScanAdapter implements ScanAdapter {
     }
 
     const unifiedColumns = [...unified.keys()].sort();
-    for (const object of objects) {
+    return objects.map((object) => {
       const fileColumns = perFile.get(object.path) ?? new Map();
-      this.plannedSchemas.set(object.path, {
-        columns: unifiedColumns,
-        present: new Set(fileColumns.keys()),
-      });
-    }
-    return objects;
+      return {
+        ...object,
+        parquetSchemaPlan: {
+          columns: unifiedColumns,
+          present: new Set(fileColumns.keys()),
+        },
+      };
+    });
   }
 
   async *scan(path: string, options: ScanOptions): AsyncIterable<Row[]> {
@@ -107,7 +108,7 @@ export class ParquetScanAdapter implements ScanAdapter {
     const file = this.scanBuffer(path, await asyncBufferFromStore(this.store, path, options));
     const metadata = await this.metadata(path, file, options);
     rejectUnsupportedParquetSchema(metadata, { columns: options.columns });
-    const planned = this.plannedSchemas.get(path);
+    const planned = plannedParquetSchema(options.object);
     const requestedColumns = options.columns ?? planned?.columns;
     const readColumns = presentColumns(requestedColumns, planned, metadata);
     const missingColumns = missingColumnsFor(requestedColumns, planned);
@@ -172,16 +173,17 @@ export class ParquetScanAdapter implements ScanAdapter {
   }
 
   async *scanVectorBatches(path: string, options: ScanOptions): AsyncIterable<ScanVectorBatch> {
+    const batchSize = options.batchSize || this.defaultBatchSize;
     const file = this.scanBuffer(path, await asyncBufferFromStore(this.store, path, options));
     const metadata = await this.metadata(path, file, options);
     rejectUnsupportedParquetSchema(metadata, { columns: options.columns });
-    const planned = this.plannedSchemas.get(path);
+    const planned = plannedParquetSchema(options.object);
     const requestedColumns = options.columns ?? planned?.columns;
     const present = presentColumns(requestedColumns, planned, metadata);
     const missing = missingColumnsFor(requestedColumns, planned);
     try {
       const vectorOptions = {
-        batchSize: options.batchSize || this.defaultBatchSize,
+        batchSize,
         ...(options.rowStart === undefined ? {} : { rowStart: options.rowStart }),
         ...(options.rowEnd === undefined ? {} : { rowEnd: options.rowEnd }),
         ...(present === undefined ? {} : { columns: present }),
@@ -214,11 +216,11 @@ export class ParquetScanAdapter implements ScanAdapter {
         return;
       }
       if (present !== undefined && present.length === 0) {
-        yield* nullOnlyVectorBatches(metadata, options, missing);
+        yield* nullOnlyVectorBatches(metadata, options, missing, batchSize);
         return;
       }
       for await (const columnBatch of readParquetColumnBatchesFromFile(file, metadata, {
-        batchSize: options.batchSize || this.defaultBatchSize,
+        batchSize,
         ...(options.rowStart === undefined ? {} : { rowStart: options.rowStart }),
         ...(options.rowEnd === undefined ? {} : { rowEnd: options.rowEnd }),
         ...(present === undefined ? {} : { columns: present }),
@@ -304,6 +306,14 @@ export class ParquetScanAdapter implements ScanAdapter {
 interface PlannedParquetSchema {
   columns: string[];
   present: Set<string>;
+}
+
+interface PlannedParquetObjectInfo extends ObjectInfo {
+  parquetSchemaPlan?: PlannedParquetSchema;
+}
+
+function plannedParquetSchema(object: ObjectInfo | undefined): PlannedParquetSchema | undefined {
+  return (object as PlannedParquetObjectInfo | undefined)?.parquetSchemaPlan;
 }
 
 interface ParquetColumnDescriptor {
@@ -411,8 +421,8 @@ async function* nullOnlyVectorBatches(
   metadata: ParquetMetadata,
   options: ScanOptions,
   columns: readonly string[],
+  batchSize: number,
 ): AsyncIterable<ScanVectorBatch> {
-  const batchSize = options.batchSize;
   const requestedStart = options.rowStart ?? 0;
   const requestedEnd = options.rowEnd ?? Number(metadata.num_rows);
   let rowGroupStart = 0;

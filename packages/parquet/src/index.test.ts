@@ -30,6 +30,7 @@ import {
   ne,
   not,
   notIn,
+  type ObjectInfo,
   or,
   restoreVectorAggregateStates,
   SharedMemoryCache,
@@ -60,6 +61,7 @@ import {
   createParquetLake,
   createParquetTableAs,
   type ParquetMetadata,
+  ParquetScanAdapter,
   partitionedParquetOutputEntries,
   planParquetTaskWorkUnits,
   planRowGroups,
@@ -1291,6 +1293,42 @@ describe("createParquetLake", () => {
         .select(["extra"])
         .toArray(),
     ).resolves.toEqual([{ extra: "a" }, { extra: null }]);
+
+    await writeParquet(schemaStore, "schemas/stale/a.parquet", {
+      columnData: [{ name: "id", data: [1], type: "INT32" }],
+    });
+    await writeParquet(schemaStore, "schemas/stale/b.parquet", {
+      columnData: [{ name: "other", data: [2], type: "INT32" }],
+    });
+    await expect(
+      createParquetLake({ store: schemaStore }).path("schemas/stale/*.parquet").toArray(),
+    ).resolves.toEqual([
+      { id: 1, other: null },
+      { other: 2, id: null },
+    ]);
+    await expect(
+      createParquetLake({ store: schemaStore }).path("schemas/stale/a.parquet").toArray(),
+    ).resolves.toEqual([{ id: 1 }]);
+
+    const adapter = new ParquetScanAdapter(schemaStore);
+    const staleObjects: ObjectInfo[] = [];
+    for await (const object of schemaStore.list("schemas/stale/")) staleObjects.push(object);
+    staleObjects.sort((left, right) => left.path.localeCompare(right.path));
+    const planned = await adapter.planObjects(staleObjects, { columns: ["other"] });
+    const vectorBatches = [];
+    for await (const { batch } of adapter.scanVectorBatches("schemas/stale/a.parquet", {
+      object: planned[0],
+      columns: ["other"],
+      stats: testQueryStats(),
+      budget: {},
+      now: () => 0,
+      startedAt: 0,
+    } as Parameters<ParquetScanAdapter["scanVectorBatches"]>[1])) {
+      vectorBatches.push(batch);
+    }
+    expect(vectorBatches.flatMap((batch) => materializeBatchRows(batch))).toEqual([
+      { other: null },
+    ]);
 
     await writeParquet(schemaStore, "schemas/conflict/a.parquet", {
       columnData: [{ name: "id", data: [1], type: "INT32" }],

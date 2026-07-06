@@ -947,7 +947,10 @@ function renderDatasetConfig(): void {
   if (source) source.href = dataset.sourceUrl;
   document.body.dataset.datasetKind = dataset.kind;
   document.querySelectorAll<HTMLElement>("[data-kind]").forEach((element) => {
-    element.classList.toggle("is-active", element.dataset.kind === dataset.kind);
+    const active = element.dataset.kind === dataset.kind;
+    element.classList.toggle("is-active", active);
+    if (active) element.setAttribute("aria-current", "page");
+    else element.removeAttribute("aria-current");
   });
 }
 

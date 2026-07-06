@@ -137,6 +137,7 @@ export interface LakeConfig {
 export interface ScanOptions {
   columns?: string[];
   where?: Expr;
+  object?: ObjectInfo;
   rowStart?: number;
   rowEnd?: number;
   canStopEarly?: boolean;
@@ -698,6 +699,7 @@ export class QueryResult {
       stats.bytesRequested += object.size;
       enforceBudget(config.budget, stats, config.now, startedAt);
       const scanOptions: ScanOptions = {
+        object,
         batchSize: limitAwareBatchSize(config.batchSize ?? 4096, config.limit, config.offset),
         stats,
         budget: config.budget,
@@ -764,6 +766,7 @@ export class QueryResult {
       stats.bytesRequested += object.size;
       enforceBudget(config.budget, stats, config.now, startedAt);
       const scanOptions: ScanOptions = {
+        object,
         batchSize: limitAwareBatchSize(config.batchSize ?? 4096, config.limit, config.offset),
         stats,
         budget: config.budget,
@@ -880,6 +883,7 @@ export class QueryResult {
       stats.bytesRequested += object.size;
       enforceBudget(config.budget, stats, config.now, startedAt);
       const scanOptions: ScanOptions = {
+        object,
         batchSize: limitAwareBatchSize(config.batchSize ?? 4096, config.limit, config.offset),
         stats,
         budget: config.budget,
@@ -955,6 +959,7 @@ export class QueryResult {
       this.stats.bytesRequested += object.size;
       enforceBudget(config.budget, this.stats, config.now, startedAt);
       const scanOptions: ScanOptions = {
+        object,
         columns: predicateColumns,
         where: config.where,
         canStopEarly: true,
@@ -975,6 +980,7 @@ export class QueryResult {
         for (const index of selected) {
           refs.push({
             path: object.path,
+            object,
             rowIndex: rowOffset + index,
             keys: rankKeyRow(batch, index, predicateColumns),
           });
@@ -1285,6 +1291,7 @@ export class QueryResult {
       this.stats.bytesRequested += object.size;
       enforceBudget(config.budget, this.stats, config.now, startedAt);
       const scanOptions: ScanOptions = {
+        object,
         columns: earlyColumns,
         ...(config.where === undefined ? {} : { where: config.where }),
         batchSize: columnarBatchSize(config.batchSize),
@@ -1316,6 +1323,7 @@ export class QueryResult {
           }
           refs.push({
             path: object.path,
+            object,
             rowIndex: rowOffset + index,
             group,
             early: aggregateEarlyRow(batch, index, earlyColumns),
@@ -1373,6 +1381,7 @@ export class QueryResult {
       columnarBatchSize(this.config.batchSize),
     )) {
       const scanOptions: ScanOptions = {
+        ...(window.object === undefined ? {} : { object: window.object }),
         columns: [...lateColumns],
         rowStart: window.rowStart,
         rowEnd: window.rowEnd,
@@ -1588,6 +1597,7 @@ export class QueryResult {
       this.stats.bytesRequested += object.size;
       enforceBudget(config.budget, this.stats, config.now, startedAt);
       const scanOptions: ScanOptions = {
+        object,
         columns: rankColumns,
         ...(config.where === undefined ? {} : { where: config.where }),
         batchSize: columnarBatchSize(config.batchSize),
@@ -1606,6 +1616,7 @@ export class QueryResult {
         addRankedRefs(
           retained,
           object.path,
+          object,
           rowOffset,
           batch,
           selection,
@@ -1654,6 +1665,7 @@ export class QueryResult {
     if (lateColumns.length === 0) return rows;
     for (const window of materializationWindows(refs, maxWindowRows)) {
       const scanOptions: ScanOptions = {
+        ...(window.object === undefined ? {} : { object: window.object }),
         columns: lateColumns,
         rowStart: window.rowStart,
         rowEnd: window.rowEnd,
@@ -1701,6 +1713,7 @@ export class QueryResult {
       this.stats.bytesRequested += object.size;
       enforceBudget(config.budget, this.stats, config.now, startedAt);
       const scanOptions: ScanOptions = {
+        object,
         batchSize,
         stats: this.stats,
         budget: config.budget,
@@ -1735,6 +1748,7 @@ export class QueryResult {
       stats.bytesRequested += object.size;
       enforceBudget(config.budget, stats, config.now, startedAt);
       const scanOptions: ScanOptions = {
+        object,
         batchSize: config.batchSize ?? 4096,
         stats,
         budget: config.budget,
@@ -1782,6 +1796,7 @@ export class QueryResult {
       stats.bytesRequested += object.size;
       enforceBudget(config.budget, stats, config.now, startedAt);
       const scanOptions: ScanOptions = {
+        object,
         batchSize: config.batchSize ?? 4096,
         stats,
         budget: config.budget,
@@ -3192,7 +3207,7 @@ async function expandPathsUncached(
     return [object];
   }
   const prefix = globPrefix(pattern);
-  return listMatchingObjects(store, prefix, budget, (path) => globMatches(pattern, path));
+  return listMatchingObjects(store, prefix, budget, globMatcher(pattern));
 }
 
 async function listMatchingObjects(
@@ -3250,11 +3265,17 @@ function globPrefix(pattern: string): string {
   return slash === -1 ? "" : pattern.slice(0, slash + 1);
 }
 
-function globMatches(pattern: string, path: string): boolean {
-  return globSegmentsMatch(pattern.split("/"), path.split("/"));
+type GlobSegmentMatcher = "**" | RegExp;
+
+function globMatcher(pattern: string): (path: string) => boolean {
+  const segments = pattern.split("/").map(compileGlobSegment);
+  return (path) => globSegmentsMatch(segments, path.split("/"));
 }
 
-function globSegmentsMatch(pattern: readonly string[], path: readonly string[]): boolean {
+function globSegmentsMatch(
+  pattern: readonly GlobSegmentMatcher[],
+  path: readonly string[],
+): boolean {
   if (pattern.length === 0) return path.length === 0;
   const [head, ...tail] = pattern;
   if (head === "**") {
@@ -3262,17 +3283,18 @@ function globSegmentsMatch(pattern: readonly string[], path: readonly string[]):
     return path.length > 0 && globSegmentsMatch(pattern, path.slice(1));
   }
   if (path.length === 0 || head === undefined) return false;
-  return globSegmentMatches(head, path[0] ?? "") && globSegmentsMatch(tail, path.slice(1));
+  return head.test(path[0] ?? "") && globSegmentsMatch(tail, path.slice(1));
 }
 
-function globSegmentMatches(pattern: string, value: string): boolean {
+function compileGlobSegment(pattern: string): GlobSegmentMatcher {
+  if (pattern === "**") return "**";
   let expression = "^";
   for (const char of pattern) {
     if (char === "*") expression += "[^/]*";
     else if (char === "?") expression += "[^/]";
     else expression += char.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
   }
-  return new RegExp(`${expression}$`, "u").test(value);
+  return new RegExp(`${expression}$`, "u");
 }
 
 function projectedReadColumns(
@@ -3363,12 +3385,14 @@ async function* emptyVectorBatches(): AsyncIterable<ScanVectorBatch> {}
 
 interface RankedRowRef {
   path: string;
+  object?: ObjectInfo;
   rowIndex: number;
   keys: Row;
 }
 
 interface AggregateRowRef {
   path: string;
+  object?: ObjectInfo;
   rowIndex: number;
   group: VectorGroup;
   early: Row;
@@ -3376,6 +3400,7 @@ interface AggregateRowRef {
 
 interface MaterializationWindow {
   path: string;
+  object?: ObjectInfo;
   rowStart: number;
   rowEnd: number;
 }
@@ -3451,7 +3476,12 @@ function aggregateMaterializationWindows(
       current.rowEnd = Math.max(current.rowEnd, ref.rowIndex + 1);
       continue;
     }
-    out.push({ path: ref.path, rowStart: ref.rowIndex, rowEnd: ref.rowIndex + 1 });
+    out.push({
+      path: ref.path,
+      ...(ref.object === undefined ? {} : { object: ref.object }),
+      rowStart: ref.rowIndex,
+      rowEnd: ref.rowIndex + 1,
+    });
   }
   return out;
 }
@@ -3466,6 +3496,7 @@ function rankReadColumns(where: Expr | undefined, orderBy: readonly OrderByTerm[
 function addRankedRefs(
   retained: RankedRowRef[],
   path: string,
+  object: ObjectInfo | undefined,
   rowOffset: number,
   batch: Batch,
   selection: Uint8Array,
@@ -3477,6 +3508,7 @@ function addRankedRefs(
   for (const index of selectedRowIndices(batch.rowCount, selection)) {
     const ref: RankedRowRef = {
       path,
+      ...(object === undefined ? {} : { object }),
       rowIndex: rowOffset + index,
       keys: rankKeyRow(batch, index, rankColumns),
     };
@@ -3502,7 +3534,12 @@ function materializationWindows(
       current.rowEnd = Math.max(current.rowEnd, ref.rowIndex + 1);
       continue;
     }
-    out.push({ path: ref.path, rowStart: ref.rowIndex, rowEnd: ref.rowIndex + 1 });
+    out.push({
+      path: ref.path,
+      ...(ref.object === undefined ? {} : { object: ref.object }),
+      rowStart: ref.rowIndex,
+      rowEnd: ref.rowIndex + 1,
+    });
   }
   return out;
 }
