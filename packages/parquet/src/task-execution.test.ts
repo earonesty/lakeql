@@ -1,4 +1,13 @@
-import { eq, gt, like, materializeBatchRows, memoryStore, type TaskInput } from "lakeql-core";
+import {
+  col,
+  eq,
+  gt,
+  jsonWorkUnitBoundary,
+  like,
+  materializeBatchRows,
+  memoryStore,
+  type TaskInput,
+} from "lakeql-core";
 import { describe, expect, it } from "vitest";
 import {
   aggregateParquetGroupTask,
@@ -6,8 +15,11 @@ import {
   aggregateParquetGroupTasksBatch,
   aggregateParquetTask,
   aggregateParquetTasks,
+  createParquetLake,
   scanParquetTaskBatches,
   scanParquetTaskColumnBatches,
+  windowParquetTask,
+  windowParquetTasks,
   writeParquet,
 } from "./index.js";
 import { testQueryStats } from "./test-helpers.js";
@@ -90,6 +102,170 @@ describe("Parquet task execution", () => {
       passthroughRows.push(...materializeBatchRows(batch.batch));
     }
     expect(passthroughRows).toEqual([{ id: 1 }, { id: 2 }, { id: 3 }]);
+  });
+
+  it("runs window functions over repartitioned Parquet work units", async () => {
+    const store = memoryStore();
+    await writeParquet(store, "data/task-window.parquet", {
+      rowGroupSize: [2],
+      columnData: [
+        { name: "id", data: [1, 2, 3, 4, 5, 6], type: "INT32" },
+        { name: "region", data: ["west", "east", "west", "east", "west", "east"], type: "STRING" },
+        { name: "amount", data: [10, 20, 30, 40, 50, 60], type: "DOUBLE" },
+      ],
+    });
+    const tasks: TaskInput[] = [
+      {
+        path: "data/task-window.parquet",
+        rowGroupRanges: [{ start: 0, end: 1 }],
+        projectedColumns: ["id", "region", "amount"],
+        partitionValues: {},
+      },
+      {
+        path: "data/task-window.parquet",
+        rowGroupRanges: [{ start: 1, end: 2 }],
+        projectedColumns: ["id", "region", "amount"],
+        partitionValues: {},
+      },
+      {
+        path: "data/task-window.parquet",
+        rowGroupRanges: [{ start: 2, end: 3 }],
+        projectedColumns: ["id", "region", "amount"],
+        partitionValues: {},
+      },
+    ];
+    const windows = {
+      rn: {
+        fn: "row_number",
+        args: [],
+        over: { partitionBy: [col("region")], orderBy: [{ expr: col("id") }] },
+      },
+      running: {
+        fn: { aggregate: "sum" },
+        args: [col("amount")],
+        over: { partitionBy: [col("region")], orderBy: [{ expr: col("id") }] },
+      },
+    };
+    const plannedTasks = tasks.map((task) => ({
+      ...task,
+      window: {
+        topology: "window-partition-fanout" as const,
+        available: true as const,
+        bucketCount: 3,
+        partitionBy: [col("region")],
+      },
+    }));
+    let partials = 0;
+    const fanOut = await windowParquetTasks(store, plannedTasks, windows, {
+      maxConcurrentTasks: 2,
+      partialBoundary(partial) {
+        partials += 1;
+        expect(partial.bucketCount).toBe(3);
+        return jsonWorkUnitBoundary(partial);
+      },
+    });
+    expect(partials).toBe(3);
+
+    const lake = createParquetLake({ store });
+    const materialized = await lake
+      .path("data/task-window.parquet")
+      .window("rn", windows.rn)
+      .window("running", windows.running)
+      .toArray();
+    expect(fanOut).toEqual(materialized);
+    expect(fanOut).toEqual([
+      { id: 1, region: "west", amount: 10, rn: 1, running: 10 },
+      { id: 2, region: "east", amount: 20, rn: 1, running: 20 },
+      { id: 3, region: "west", amount: 30, rn: 2, running: 40 },
+      { id: 4, region: "east", amount: 40, rn: 2, running: 60 },
+      { id: 5, region: "west", amount: 50, rn: 3, running: 90 },
+      { id: 6, region: "east", amount: 60, rn: 3, running: 120 },
+    ]);
+  });
+
+  it("uses planned bucket counts and budget checks in direct window tasks", async () => {
+    const store = memoryStore();
+    await writeParquet(store, "data/task-window-direct.parquet", {
+      rowGroupSize: [2],
+      columnData: [
+        { name: "id", data: [1, 2, 3, 4], type: "INT32" },
+        { name: "region", data: ["west", "east", "west", "east"], type: "STRING" },
+      ],
+    });
+    const task: TaskInput = {
+      path: "data/task-window-direct.parquet",
+      rowGroupRanges: [{ start: 0, end: 2 }],
+      projectedColumns: ["id", "region"],
+      partitionValues: {},
+      window: {
+        topology: "window-partition-fanout",
+        available: true,
+        bucketCount: 4,
+        partitionBy: [col("region")],
+      },
+    };
+    const windows = {
+      rn: {
+        fn: "row_number" as const,
+        args: [],
+        over: { partitionBy: [col("region")], orderBy: [{ expr: col("id") }] },
+      },
+    };
+    const partial = await windowParquetTask(store, task, windows, 0);
+    expect(partial.bucketCount).toBe(4);
+
+    await expect(
+      windowParquetTask(store, task, windows, 0, { budget: { maxBufferedRows: 1 } }),
+    ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+    await expect(
+      windowParquetTask(store, task, windows, 0, {
+        budget: { maxElapsedMs: 1 },
+        now: () => 10,
+        startedAt: 0,
+      }),
+    ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  });
+
+  it("uses window work-unit fan-out for normal partitioned window queries", async () => {
+    const store = memoryStore();
+    await writeParquet(store, "data/query-window.parquet", {
+      rowGroupSize: [2],
+      columnData: [
+        { name: "id", data: [1, 2, 3, 4], type: "INT32" },
+        { name: "region", data: ["west", "east", "west", "east"], type: "STRING" },
+        { name: "amount", data: [10, 20, 30, 40], type: "DOUBLE" },
+      ],
+    });
+    const lake = createParquetLake({ store });
+    const query = lake
+      .path("data/query-window.parquet")
+      .window("rn", {
+        fn: "row_number",
+        args: [],
+        over: { partitionBy: [col("region")], orderBy: [{ expr: col("id") }] },
+      })
+      .window("running", {
+        fn: { aggregate: "sum" },
+        args: [col("amount")],
+        over: { partitionBy: [col("region")], orderBy: [{ expr: col("id") }] },
+      })
+      .qualify(gt("rn", 1))
+      .select(["id", "region", "running"])
+      .orderBy([{ column: "id" }]);
+
+    await expect(query.explain()).resolves.toMatchObject({
+      json: { windowPlan: { execution: "parquet-work-unit-fanout" } },
+    });
+    const result = query.run();
+    await expect(result.toArray()).resolves.toEqual([
+      { id: 3, region: "west", running: 40 },
+      { id: 4, region: "east", running: 60 },
+    ]);
+    expect(result.stats).toMatchObject({
+      rowsDecoded: 4,
+      rowsMatched: 4,
+      rowsReturned: 2,
+    });
   });
 
   it("aggregates task batches with vector residuals, partition groups, and result options", async () => {

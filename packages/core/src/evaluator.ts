@@ -1,5 +1,6 @@
 import { LakeqlError } from "./errors.js";
 import type { Expr, Scalar } from "./expr.js";
+import { intervalToString, isIntervalValue } from "./interval.js";
 import { regexpMatchesValue, regexpReplaceValue } from "./regex-functions.js";
 import { compareTimestampValues, isTimestampValue, timestampValueFromIso } from "./timestamp.js";
 import type { Row } from "./types.js";
@@ -190,6 +191,7 @@ export function matches(expr: Expr | undefined, row: Row): boolean {
 
 export function jsonSafeValue(value: unknown): unknown {
   if (isTimestampValue(value)) return value.toJSON();
+  if (isIntervalValue(value)) return intervalToString(value);
   if (value instanceof Uint8Array) return bytesToHex(value);
   if (typeof value === "bigint") {
     const asNumber = Number(value);
@@ -220,7 +222,8 @@ function rowValue(row: Row, name: string): EvalValue {
     typeof value === "boolean" ||
     typeof value === "bigint" ||
     value instanceof Uint8Array ||
-    isTimestampValue(value)
+    isTimestampValue(value) ||
+    isIntervalValue(value)
   ) {
     return value;
   }
@@ -257,6 +260,12 @@ function compare(op: "eq" | "ne" | "lt" | "lte" | "gt" | "gte", left: EvalValue,
     }
     return compareOrder(op, compareTimestampValues(leftTimestamp, rightTimestamp));
   }
+  if (isIntervalValue(left) || isIntervalValue(right)) {
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Cannot compare interval values", {
+      leftType: evalValueType(left),
+      rightType: evalValueType(right),
+    });
+  }
   if (typeof left !== typeof right && !(isNumberLike(left) && isNumberLike(right))) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Cannot compare values of different types", {
       leftType: typeof left,
@@ -292,6 +301,7 @@ function timestampEvalValue(value: EvalValue) {
 
 function evalValueType(value: EvalValue): string {
   if (value instanceof Uint8Array) return "binary";
+  if (isIntervalValue(value)) return "interval";
   return isTimestampValue(value) ? "timestamp" : typeof value;
 }
 

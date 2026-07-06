@@ -9,6 +9,7 @@ import {
   deserializeAggregateOperatorState,
   deserializeSortOperatorState,
   deserializeTopKOperatorState,
+  deserializeWindowOperatorState,
   Lake,
   parseHivePartitions,
   parseJsonQuery,
@@ -18,9 +19,14 @@ import {
   serializeAggregateOperatorState,
   serializeSortOperatorState,
   serializeTopKOperatorState,
+  serializeWindowOperatorState,
+  type TaskInput,
+  type WindowExpr,
+  type WindowTaskExecutionOptions,
 } from "./query.js";
 import { memoryCache, memorySpillAdapter, type RuntimeSubstrate } from "./runtime.js";
 import type { ObjectInfo } from "./store.js";
+import { timestampValueFromIso } from "./timestamp.js";
 import type { Bookmark, Row } from "./types.js";
 
 class FakeScanner implements ScanAdapter {
@@ -31,12 +37,25 @@ class FakeScanner implements ScanAdapter {
   readonly requestedVectorBatchWindows: { rowStart?: number; rowEnd?: number }[] = [];
   readonly requestedBatchSizes: number[] = [];
   readonly requestedPaths: string[] = [];
+  readonly requestedWindowTasks: TaskInput[][] = [];
   readonly scanVectorBatches?: ScanAdapter["scanVectorBatches"];
+  readonly executeWindowTasks?: ScanAdapter["executeWindowTasks"];
 
   constructor(
     private readonly rowsByPath: Record<string, Row[]>,
     enableVectorBatches = false,
+    windowTaskRows?: Row[],
   ) {
+    if (windowTaskRows !== undefined) {
+      this.executeWindowTasks = async (
+        tasks: TaskInput[],
+        _windows: Record<string, WindowExpr>,
+        _options: WindowTaskExecutionOptions,
+      ): Promise<Row[]> => {
+        this.requestedWindowTasks.push(tasks);
+        return windowTaskRows;
+      };
+    }
     if (enableVectorBatches) {
       this.scanVectorBatches = async function* (
         this: FakeScanner,
@@ -115,12 +134,13 @@ async function makeLake(config: {
   policy?: ConstructorParameters<typeof Lake>[0]["policy"];
   now?: () => number;
   vectorBatches?: boolean;
+  windowTaskRows?: Row[];
 }) {
   const store = memoryStore();
   for (const path of Object.keys(config.rowsByPath)) {
     await store.put(path, new Uint8Array([1, 2, 3]));
   }
-  const scanner = new FakeScanner(config.rowsByPath, config.vectorBatches);
+  const scanner = new FakeScanner(config.rowsByPath, config.vectorBatches, config.windowTaskRows);
   const lake = new Lake({
     store,
     scanner,
@@ -922,6 +942,27 @@ describe("Lake query runtime", () => {
     expect(() => lake.path("table").limit(-1).run()).toThrow(/limit/u);
     expect(() => lake.path("table").offset(-1).run()).toThrow(/offset/u);
     expect(() => lake.path("table").batchSize(0).run()).toThrow(/batchSize/u);
+    const unsafeProjections = Object.create(null) as Record<string, unknown>;
+    Object.defineProperty(unsafeProjections, "__proto__", {
+      value: col("id"),
+      enumerable: true,
+    });
+    expect(() =>
+      lake
+        .path("table")
+        .project(unsafeProjections as never)
+        .run(),
+    ).toThrow(/projection aliases/u);
+    expect(() =>
+      lake
+        .path("table")
+        .window("constructor", {
+          fn: "row_number",
+          args: [],
+          over: { partitionBy: [], orderBy: [] },
+        })
+        .run(),
+    ).toThrow(/window aliases/u);
   });
 
   it("throws typed runtime errors for missing objects, unknown columns, and budgets", async () => {
@@ -1106,6 +1147,77 @@ describe("Lake query runtime", () => {
       replayed.push(...batch.rows);
     }
     expect(replayed).toEqual(await query.toArray());
+  });
+
+  it("applies qualify predicates even when no windows are defined", async () => {
+    const { lake } = await makeLake({
+      rowsByPath: { table: [{ id: 1 }, { id: 2 }, { id: 3 }] },
+    });
+    await expect(
+      lake
+        .path("table")
+        .qualify(gt("id", lit(1)))
+        .select(["id"])
+        .toArray(),
+    ).resolves.toEqual([{ id: 2 }, { id: 3 }]);
+  });
+
+  it("supports select-star window queries without reading or projecting a literal star column", async () => {
+    const { lake, scanner } = await makeLake({
+      rowsByPath: {
+        table: [
+          { id: 1, group: "a" },
+          { id: 2, group: "a" },
+        ],
+      },
+    });
+    const rows = await lake
+      .path("table")
+      .select(["*"])
+      .window("rn", {
+        fn: "row_number",
+        args: [],
+        over: { partitionBy: [col("group")], orderBy: [{ expr: col("id") }] },
+      })
+      .qualify(gt("rn", lit(0)))
+      .toArray();
+    expect(rows).toEqual([
+      { id: 1, group: "a", rn: 1 },
+      { id: 2, group: "a", rn: 2 },
+    ]);
+    expect(scanner.requestedColumns.some((columns) => columns?.includes("*"))).toBe(false);
+  });
+
+  it("preserves window query shape when resuming bookmarks", async () => {
+    const { lake } = await makeLake({
+      rowsByPath: {
+        table: [
+          { id: 1, group: "a" },
+          { id: 2, group: "a" },
+          { id: 3, group: "a" },
+        ],
+      },
+    });
+    const query = lake
+      .path("table")
+      .window("rn", {
+        fn: "row_number",
+        args: [],
+        over: { partitionBy: [col("group")], orderBy: [{ expr: col("id") }] },
+      })
+      .qualify(gt("rn", lit(1)))
+      .select(["id", "rn"]);
+
+    const first = await query.run({ slice: { maxRows: 1 } });
+    expect(first.rows).toEqual([{ id: 2, rn: 2 }]);
+    expect(first.bookmark?.query).toMatchObject({
+      windows: { rn: { fn: "row_number" } },
+      qualify: gt("rn", lit(1)),
+    });
+    if (first.bookmark === undefined) throw new Error("expected bookmark");
+    await expect(lake.resume(first.bookmark).run({ slice: { maxRows: 1 } })).resolves.toEqual({
+      rows: [{ id: 3, rn: 3 }],
+    });
   });
 
   it("preserves run-to-completion output across deterministic slice boundaries", async () => {
@@ -1488,7 +1600,7 @@ describe("Lake query runtime", () => {
     const chunked = await (
       await makeLake({
         rowsByPath: { table: [{ id: 5 }, { id: 1 }, { id: 4 }, { id: 2 }, { id: 3 }] },
-        budget: { maxBufferedRows: 2 },
+        budget: { maxBufferedRows: 2, maxWindowPartitionRows: 10 },
       })
     ).lake
       .path("table")
@@ -1530,6 +1642,499 @@ describe("Lake query runtime", () => {
     ).rejects.toMatchObject({ code: "LAKEQL_BOOKMARK_INVALID" });
   });
 
+  it("serializes and resumes window operator state", async () => {
+    const windows = {
+      rn: {
+        fn: "row_number",
+        args: [],
+        over: {
+          partitionBy: [col("region")],
+          orderBy: [{ expr: col("id") }],
+        },
+      },
+      running: {
+        fn: { aggregate: "sum" },
+        args: [col("amount")],
+        over: {
+          partitionBy: [col("region")],
+          orderBy: [{ expr: col("id") }],
+        },
+      },
+    } as const;
+    const first = await makeLake({
+      rowsByPath: {
+        table: [
+          { id: 2, region: "west", amount: 20 },
+          { id: 1, region: "east", amount: 10 },
+        ],
+      },
+      budget: { maxBufferedRows: 4 },
+    });
+    const partial = await first.lake
+      .path("table")
+      .window("rn", windows.rn)
+      .window("running", windows.running)
+      .select(["id", "region", "rn", "running"])
+      .orderBy([{ column: "id" }])
+      .windowWithState();
+    expect(partial.rows).toEqual([
+      { id: 1, region: "east", rn: 1, running: 10 },
+      { id: 2, region: "west", rn: 1, running: 20 },
+    ]);
+
+    const snapshot = deserializeWindowOperatorState(partial.operatorState);
+    expect(deserializeWindowOperatorState(serializeWindowOperatorState(snapshot))).toEqual(
+      snapshot,
+    );
+    expect(snapshot.rows).toEqual([
+      { amount: 20, id: 2, region: "west" },
+      { amount: 10, id: 1, region: "east" },
+    ]);
+
+    const spill = memorySpillAdapter();
+    const spilled = await first.lake
+      .path("table")
+      .window("rn", windows.rn)
+      .window("running", windows.running)
+      .windowWithState({ spill, spillId: "window-state" });
+    expect(spilled.operatorSpill).toEqual({
+      id: "window-state",
+      byteSize: spilled.operatorState.byteLength,
+    });
+    await expect(spill.read("window-state")).resolves.toEqual(spilled.operatorState);
+    const spilledSnapshot = deserializeWindowOperatorState(spilled.operatorState);
+    expect(spilledSnapshot.runs).toEqual([
+      { spillRef: "window-state-run-000000", rowCount: 2, byteSize: expect.any(Number) },
+    ]);
+    await expect(spill.read("window-state-run-000000")).resolves.toBeInstanceOf(Uint8Array);
+
+    const chunkedSpill = memorySpillAdapter();
+    const chunked = await (
+      await makeLake({
+        rowsByPath: {
+          table: [
+            { id: 1, region: "west", amount: 10 },
+            { id: 2, region: "west", amount: 20 },
+            { id: 3, region: "west", amount: 30 },
+            { id: 4, region: "west", amount: 40 },
+            { id: 5, region: "west", amount: 50 },
+          ],
+        },
+        budget: { maxBufferedRows: 2, maxWindowPartitionRows: 10 },
+      })
+    ).lake
+      .path("table")
+      .window("running", windows.running)
+      .select(["id", "running"])
+      .orderBy([{ column: "id" }])
+      .windowWithState({ spill: chunkedSpill, spillId: "window-chunked" });
+    expect(chunked.rows).toEqual([
+      { id: 1, running: 10 },
+      { id: 2, running: 30 },
+      { id: 3, running: 60 },
+      { id: 4, running: 100 },
+      { id: 5, running: 150 },
+    ]);
+    expect(
+      deserializeWindowOperatorState(chunked.operatorState).runs?.map((run) =>
+        "rows" in run ? run.rows.length : run.rowCount,
+      ),
+    ).toEqual([2, 2, 1]);
+
+    const partitionSpill = await (
+      await makeLake({
+        rowsByPath: {
+          table: [
+            { id: 1, region: "a", amount: 10 },
+            { id: 2, region: "a", amount: 20 },
+            { id: 3, region: "b", amount: 30 },
+            { id: 4, region: "b", amount: 40 },
+            { id: 5, region: "c", amount: 50 },
+            { id: 6, region: "c", amount: 60 },
+          ],
+        },
+        budget: { maxBufferedRows: 2, maxWindowPartitionRows: 2, maxMemoryBytes: 170 },
+      })
+    ).lake
+      .path("table")
+      .window("running", windows.running)
+      .select(["id", "running"])
+      .orderBy([{ column: "id" }])
+      .windowWithState({ spill: memorySpillAdapter(), spillId: "window-partitions" });
+    expect(partitionSpill.rows).toEqual([
+      { id: 1, running: 10 },
+      { id: 2, running: 30 },
+      { id: 3, running: 30 },
+      { id: 4, running: 70 },
+      { id: 5, running: 50 },
+      { id: 6, running: 110 },
+    ]);
+
+    const second = await makeLake({
+      rowsByPath: {
+        table: [
+          { id: 3, region: "west", amount: 30 },
+          { id: 4, region: "east", amount: 40 },
+        ],
+      },
+      budget: { maxBufferedRows: 8 },
+    });
+    await expect(
+      second.lake
+        .path("table")
+        .window("rn", windows.rn)
+        .window("running", windows.running)
+        .select(["id", "region", "rn", "running"])
+        .orderBy([{ column: "id" }])
+        .windowWithState({ operatorState: partial.operatorState }),
+    ).resolves.toMatchObject({
+      rows: [
+        { id: 1, region: "east", rn: 1, running: 10 },
+        { id: 2, region: "west", rn: 1, running: 20 },
+        { id: 3, region: "west", rn: 2, running: 50 },
+        { id: 4, region: "east", rn: 2, running: 50 },
+      ],
+    });
+    await expect(
+      second.lake
+        .path("table")
+        .window("rn", windows.rn)
+        .window("running", windows.running)
+        .select(["id", "region", "rn", "running"])
+        .orderBy([{ column: "id" }])
+        .windowWithState({ operatorState: { spillRef: "window-state" }, spill }),
+    ).resolves.toMatchObject({
+      rows: [
+        { id: 1, region: "east", rn: 1, running: 10 },
+        { id: 2, region: "west", rn: 1, running: 20 },
+        { id: 3, region: "west", rn: 2, running: 50 },
+        { id: 4, region: "east", rn: 2, running: 50 },
+      ],
+    });
+    await expect(
+      second.lake
+        .path("table")
+        .window("rn", windows.rn)
+        .window("running", windows.running)
+        .windowWithState({ operatorState: { spillRef: "window-state" } }),
+    ).rejects.toMatchObject({ code: "LAKEQL_BOOKMARK_INVALID" });
+    await expect(
+      second.lake
+        .path("table")
+        .window("rn", {
+          ...windows.rn,
+          over: { ...windows.rn.over, orderBy: [{ expr: col("id"), direction: "desc" }] },
+        })
+        .window("running", windows.running)
+        .windowWithState({ operatorState: partial.operatorState }),
+    ).rejects.toMatchObject({ code: "LAKEQL_BOOKMARK_STALE" });
+    await expect(
+      second.lake
+        .path("table")
+        .window("rn", windows.rn)
+        .window("running", windows.running)
+        .windowWithState({ operatorState: new TextEncoder().encode("{}") }),
+    ).rejects.toMatchObject({ code: "LAKEQL_BOOKMARK_INVALID" });
+
+    await expect(
+      (await makeLake({ rowsByPath: { table: [] } })).lake.path("table").windowWithState(),
+    ).rejects.toMatchObject({
+      code: "LAKEQL_TYPE_ERROR",
+    });
+  });
+
+  it("uses vector batch scans for window queries when the scanner exposes vector batches", async () => {
+    const { lake, scanner } = await makeLake({
+      vectorBatches: true,
+      rowsByPath: {
+        table: [
+          { id: 3, region: "west", amount: 30, keep: true },
+          { id: 1, region: "east", amount: 10, keep: true },
+          { id: 2, region: "west", amount: 20, keep: false },
+          { id: 4, region: "west", amount: 40, keep: true },
+        ],
+      },
+    });
+
+    await expect(
+      lake
+        .path("table")
+        .where(eq("keep", true))
+        .window("rn", {
+          fn: "row_number",
+          args: [],
+          over: { partitionBy: [col("region")], orderBy: [{ expr: col("id") }] },
+        })
+        .window("running", {
+          fn: { aggregate: "sum" },
+          args: [col("amount")],
+          over: { partitionBy: [col("region")], orderBy: [{ expr: col("id") }] },
+        })
+        .select(["id", "region", "rn", "running"])
+        .orderBy([{ column: "id" }])
+        .toArray(),
+    ).resolves.toEqual([
+      { id: 1, region: "east", rn: 1, running: 10 },
+      { id: 3, region: "west", rn: 1, running: 30 },
+      { id: 4, region: "west", rn: 2, running: 70 },
+    ]);
+
+    expect(scanner.requestedColumns).toEqual([]);
+    expect(scanner.requestedVectorBatchColumns).toEqual([["amount", "id", "keep", "region"]]);
+  });
+
+  it("explains window operator shape and shared sort groups", async () => {
+    const { lake } = await makeLake({
+      rowsByPath: {
+        table: [
+          { id: 1, region: "east", amount: 10 },
+          { id: 2, region: "east", amount: 20 },
+        ],
+      },
+    });
+    const explain = await lake
+      .path("table")
+      .window("rn", {
+        fn: "row_number",
+        args: [],
+        over: { partitionBy: [col("region")], orderBy: [{ expr: col("id") }] },
+      })
+      .window("running", {
+        fn: { aggregate: "sum" },
+        args: [col("amount")],
+        over: { partitionBy: [col("region")], orderBy: [{ expr: col("id") }] },
+      })
+      .qualify(gt("rn", 0))
+      .explain();
+
+    expect(explain.json.windowPlan).toEqual({
+      expressions: 2,
+      sortGroups: 1,
+      qualify: true,
+      execution: "vector-window",
+      workUnits: {
+        topology: "window-partition-fanout",
+        available: true,
+        bucketCount: 2,
+        partitionBy: [col("region")],
+      },
+    });
+    expect(explain.text).toContain("window sort groups: 1");
+    expect(explain.text).toContain("window qualify: yes");
+  });
+
+  it("explains prefix-compatible windows as one physical sort group", async () => {
+    const { lake } = await makeLake({
+      rowsByPath: {
+        table: [
+          { id: 1, region: "east", bucket: 1, amount: 10 },
+          { id: 2, region: "east", bucket: 2, amount: 20 },
+        ],
+      },
+    });
+    const explain = await lake
+      .path("table")
+      .window("by_region_bucket", {
+        fn: "row_number",
+        args: [],
+        over: {
+          partitionBy: [col("region")],
+          orderBy: [{ expr: col("bucket") }, { expr: col("id") }],
+        },
+      })
+      .window("by_region", {
+        fn: { aggregate: "sum" },
+        args: [col("amount")],
+        over: {
+          partitionBy: [col("region")],
+          orderBy: [{ expr: col("bucket") }],
+        },
+      })
+      .explain();
+
+    expect(explain.json.windowPlan?.sortGroups).toBe(1);
+    expect(explain.text).toContain("window sort groups: 1");
+  });
+
+  it("plans window work-unit fan-out and explains unavailable topologies", async () => {
+    const { lake } = await makeLake({
+      rowsByPath: {
+        "data/a.parquet": [{ id: 1, region: "east", amount: 10 }],
+        "data/b.parquet": [{ id: 2, region: "west", amount: 20 }],
+      },
+    });
+    const partitioned = lake
+      .path("data/*.parquet")
+      .window("running", {
+        fn: { aggregate: "sum" },
+        args: [col("amount")],
+        over: { partitionBy: [col("region")], orderBy: [{ expr: col("id") }] },
+      })
+      .select(["id", "running"]);
+    const tasks = await partitioned.planTasks();
+    expect(tasks).toHaveLength(2);
+    expect(tasks[0]?.projectedColumns).toEqual(["amount", "id", "region"]);
+    expect(tasks[0]?.window).toEqual({
+      topology: "window-partition-fanout",
+      available: true,
+      bucketCount: 4,
+      partitionBy: [col("region")],
+    });
+    await expect(partitioned.explain()).resolves.toMatchObject({
+      json: {
+        windowPlan: {
+          workUnits: {
+            topology: "window-partition-fanout",
+            available: true,
+            bucketCount: 4,
+          },
+        },
+      },
+    });
+
+    const global = await lake
+      .path("data/*.parquet")
+      .window("running", {
+        fn: { aggregate: "sum" },
+        args: [col("amount")],
+        over: { partitionBy: [], orderBy: [{ expr: col("id") }] },
+      })
+      .explain();
+    expect(global.json.windowPlan?.workUnits).toEqual({
+      topology: "window-partition-fanout",
+      available: false,
+      bucketCount: 1,
+      reason: "window query has one global semantic partition",
+    });
+    expect(global.json.tasks[0]?.window).toEqual(global.json.windowPlan?.workUnits);
+  });
+
+  it("executes available window work-unit fan-out through the scan adapter", async () => {
+    const { lake, scanner } = await makeLake({
+      rowsByPath: {
+        "data/a.parquet": [{ id: 1, region: "east", amount: 10 }],
+        "data/b.parquet": [{ id: 2, region: "east", amount: 20 }],
+        "data/c.parquet": [{ id: 3, region: "east", amount: 30 }],
+        "data/d.parquet": [{ id: 4, region: "east", amount: 40 }],
+      },
+      windowTaskRows: [
+        { id: 1, region: "east", amount: 10, rn: 1, running: 10 },
+        { id: 2, region: "east", amount: 20, rn: 2, running: 30 },
+        { id: 2, region: "east", amount: 20, rn: 2, running: 30 },
+        { id: 3, region: "east", amount: 30, rn: 3, running: 60 },
+        { id: 4, region: "east", amount: 40, rn: 4, running: 100 },
+      ],
+    });
+    const query = lake
+      .path("data/*.parquet")
+      .window("rn", {
+        fn: "row_number",
+        args: [],
+        over: { partitionBy: [col("region")], orderBy: [{ expr: col("id") }] },
+      })
+      .window("running", {
+        fn: { aggregate: "sum" },
+        args: [col("amount")],
+        over: { partitionBy: [col("region")], orderBy: [{ expr: col("id") }] },
+      })
+      .qualify(gt("rn", 1))
+      .select(["running"])
+      .distinct()
+      .offset(1)
+      .limit(1)
+      .batchSize(1)
+      .orderBy([{ column: "id" }]);
+
+    await expect(query.explain()).resolves.toMatchObject({
+      json: { windowPlan: { execution: "parquet-work-unit-fanout" } },
+    });
+    await expect(query.toArray()).resolves.toEqual([{ running: 60 }]);
+    expect(scanner.requestedWindowTasks).toHaveLength(1);
+    expect(scanner.requestedWindowTasks[0]).toHaveLength(4);
+    expect(scanner.requestedWindowTasks[0]?.[0]?.window).toMatchObject({
+      topology: "window-partition-fanout",
+      available: true,
+      bucketCount: 8,
+    });
+    expect(scanner.requestedColumns).toEqual([]);
+    expect(scanner.requestedVectorBatchColumns).toEqual([]);
+  });
+
+  it("explains vector-window execution when vector batches are available", async () => {
+    const { lake } = await makeLake({
+      vectorBatches: true,
+      rowsByPath: {
+        table: [
+          { id: 1, region: "east", amount: 10 },
+          { id: 2, region: "east", amount: 20 },
+        ],
+      },
+    });
+    const explain = await lake
+      .path("table")
+      .window("running", {
+        fn: { aggregate: "sum" },
+        args: [col("amount")],
+        over: { partitionBy: [col("region")], orderBy: [{ expr: col("id") }] },
+      })
+      .select(["id", "running"])
+      .explain();
+
+    expect(explain.json.projectedColumns).toEqual(["amount", "id", "region"]);
+    expect(explain.json.windowPlan?.execution).toBe("vector-window");
+    expect(explain.text).toContain("window execution: vector-window");
+  });
+
+  it("uses row-materialized window spill runs when no vector batch scanner is available", async () => {
+    const store = memoryStore();
+    await store.put("table", new Uint8Array([1, 2, 3]));
+    const scanner: ScanAdapter = {
+      async *scan(path, options) {
+        expect(path).toBe("table");
+        const rows = [
+          { id: 2, region: "west", amount: 20 },
+          { id: 1, region: "west", amount: 10 },
+        ];
+        for (const row of rows) {
+          options.stats.rowsDecoded += 1;
+          yield [row];
+        }
+      },
+    };
+    const lake = new Lake({
+      store,
+      scanner,
+      budget: { maxBufferedRows: 1, maxWindowPartitionRows: 10 },
+      queryId: () => "q_row_window",
+    });
+    const query = lake
+      .path("table")
+      .window("running", {
+        fn: { aggregate: "sum" },
+        args: [col("amount")],
+        over: { partitionBy: [col("region")], orderBy: [{ expr: col("id") }] },
+      })
+      .select(["id", "running"])
+      .orderBy([{ column: "id" }]);
+    await expect(query.explain()).resolves.toMatchObject({
+      json: { windowPlan: { execution: "row-materialized" } },
+    });
+
+    const result = await query.windowWithState({
+      spill: memorySpillAdapter(),
+      spillId: "row-window",
+    });
+    expect(result.rows).toEqual([
+      { id: 1, running: 10 },
+      { id: 2, running: 30 },
+    ]);
+    expect(
+      deserializeWindowOperatorState(result.operatorState).runs?.map((run) =>
+        "rows" in run ? run.rows.length : run.rowCount,
+      ),
+    ).toEqual([1, 1]);
+  });
+
   it("propagates typed spill budget failures through stateful operators", async () => {
     const rowsByPath = {
       table: [
@@ -1568,6 +2173,20 @@ describe("Lake query runtime", () => {
           { rows: { op: "count" } },
           { spill: memorySpillAdapter({ maxBytes: 1 }) },
         ),
+    ).rejects.toMatchObject({
+      code: "LAKEQL_BUDGET_EXCEEDED",
+      details: { metric: "spill bytes", limit: 1 },
+    });
+
+    await expect(
+      (await makeLake({ rowsByPath })).lake
+        .path("table")
+        .window("rn", {
+          fn: "row_number",
+          args: [],
+          over: { partitionBy: [col("region")], orderBy: [{ expr: col("id") }] },
+        })
+        .windowWithState({ spill: memorySpillAdapter({ maxBytes: 1 }) }),
     ).rejects.toMatchObject({
       code: "LAKEQL_BUDGET_EXCEEDED",
       details: { metric: "spill bytes", limit: 1 },
@@ -2294,6 +2913,158 @@ describe("Lake query runtime", () => {
     for (const invalidState of invalidSortStates) {
       expect(() => deserializeSortOperatorState(invalidState)).toThrowError(LakeqlError);
     }
+
+    const richWindowState = {
+      version: 1,
+      windows: {
+        rich: {
+          fn: { aggregate: "sum" },
+          args: [
+            { kind: "arithmetic", op: "add", left: col("amount"), right: lit(1) },
+            {
+              kind: "case",
+              whens: [{ when: gt("amount", 0), value: lit(1) }],
+              else: lit(0),
+            },
+          ],
+          over: {
+            partitionBy: [
+              and(
+                eq("region", "west"),
+                isIn("id", [1, 2]),
+                between("amount", 1, 100),
+                isNull("missing"),
+                not(like("region", "x%")),
+                fn("floor", col("amount")),
+              ),
+            ],
+            orderBy: [{ expr: col("id"), direction: "desc", nulls: "first" }],
+            frame: {
+              mode: "rows",
+              start: { kind: "preceding", offset: lit(1) },
+              end: { kind: "current-row" },
+              exclude: "ties",
+            },
+          },
+          filter: or(eq("region", "east"), {
+            kind: "null-check",
+            negated: true,
+            target: col("id"),
+          }),
+          ignoreNulls: false,
+          distinct: true,
+        },
+      },
+      rows: [{ id: 1, region: "west", amount: 10 }],
+    };
+    expect(deserializeWindowOperatorState(richWindowState)).toEqual(richWindowState);
+    const runWindowState = {
+      version: 1,
+      windows: richWindowState.windows,
+      runs: [{ rows: [{ id: 1, region: "west", amount: 10 }] }],
+    };
+    expect(deserializeWindowOperatorState(runWindowState)).toEqual(runWindowState);
+
+    const invalidWindowStates = [
+      null,
+      { version: 2, windows: {}, rows: [] },
+      { version: 1, windows: [], rows: [] },
+      { version: 1, windows: richWindowState.windows },
+      { version: 1, windows: richWindowState.windows, rows: [], runs: [] },
+      {
+        version: 1,
+        windows: richWindowState.windows,
+        runs: [{ spillRef: "", rowCount: 1, byteSize: 1 }],
+      },
+      {
+        version: 1,
+        windows: richWindowState.windows,
+        runs: [{ spillRef: "run", rowCount: 1.5, byteSize: 1 }],
+      },
+      {
+        version: 1,
+        windows: richWindowState.windows,
+        runs: [{ spillRef: "run", rowCount: 1, byteSize: -1 }],
+      },
+      { version: 1, windows: richWindowState.windows, runs: [{ rows: [{ nested: {} }] }] },
+      {
+        version: 1,
+        windows: { rn: { fn: 1, args: [], over: { partitionBy: [], orderBy: [] } } },
+        rows: [],
+      },
+      {
+        version: 1,
+        windows: { rn: { fn: "row_number", args: "bad", over: { partitionBy: [], orderBy: [] } } },
+        rows: [],
+      },
+      {
+        version: 1,
+        windows: { rn: { fn: "row_number", args: [], over: { partitionBy: "bad", orderBy: [] } } },
+        rows: [],
+      },
+      {
+        version: 1,
+        windows: {
+          rn: {
+            fn: "row_number",
+            args: [],
+            over: { partitionBy: [], orderBy: [{ expr: col("id"), direction: "sideways" }] },
+          },
+        },
+        rows: [],
+      },
+      {
+        version: 1,
+        windows: {
+          rn: {
+            fn: "row_number",
+            args: [],
+            over: { partitionBy: [], orderBy: [], frame: { mode: "bad" } },
+          },
+        },
+        rows: [],
+      },
+      {
+        version: 1,
+        windows: {
+          rn: {
+            fn: "row_number",
+            args: [],
+            over: { partitionBy: [], orderBy: [] },
+            filter: { kind: "unknown" },
+          },
+        },
+        rows: [],
+      },
+      {
+        version: 1,
+        windows: { rn: { fn: "row_number", args: [], over: { partitionBy: [], orderBy: [] } } },
+        rows: [{ nested: {} }],
+      },
+    ];
+    for (const invalidState of invalidWindowStates) {
+      expect(() => deserializeWindowOperatorState(invalidState)).toThrowError(LakeqlError);
+    }
+  });
+
+  it("requires a spill adapter when resuming spilled window run state", async () => {
+    const windowExpr = {
+      fn: "row_number",
+      args: [],
+      over: { partitionBy: [col("region")], orderBy: [{ expr: col("id") }] },
+    } as const;
+    await expect(
+      (await makeLake({ rowsByPath: { table: [] } })).lake
+        .path("table")
+        .window("rn", windowExpr)
+        .windowWithState({
+          operatorState: {
+            version: 1,
+            windows: { rn: windowExpr },
+            runs: [{ spillRef: "missing-run", rowCount: 1, byteSize: 1 }],
+          },
+        }),
+    ).rejects.toMatchObject({ code: "LAKEQL_BOOKMARK_INVALID" });
   });
 
   it("validates aggregate requests and value types", async () => {
@@ -2330,5 +3101,47 @@ describe("Lake query runtime", () => {
         .groupBy(["missing"])
         .aggregate({ rows: { op: "count" } }),
     ).rejects.toMatchObject({ code: "LAKEQL_UNKNOWN_COLUMN" });
+  });
+
+  it("rejects mixed timestamp ordering and non-scalar window state snapshots", async () => {
+    const timestamp = timestampValueFromIso("2026-01-01T00:00:00.000Z");
+    if (timestamp === undefined) throw new Error("missing timestamp fixture");
+    await expect(
+      (
+        await makeLake({
+          rowsByPath: {
+            table: [
+              { id: 1, ts: timestamp },
+              { id: 2, ts: "2026-01-02T00:00:00.000Z" },
+            ],
+          },
+        })
+      ).lake
+        .path("table")
+        .orderBy([{ column: "ts" }])
+        .toArray(),
+    ).rejects.toMatchObject({ code: "LAKEQL_TYPE_ERROR" });
+
+    await expect(
+      (
+        await makeLake({
+          rowsByPath: {
+            table: [{ id: 1, region: "west", payload: { nested: true } }],
+          },
+        })
+      ).lake
+        .path("table")
+        .window("rn", {
+          fn: "row_number",
+          args: [],
+          over: { partitionBy: [col("region")], orderBy: [{ expr: col("id") }] },
+        })
+        .window("first_payload", {
+          fn: "first_value",
+          args: [col("payload")],
+          over: { partitionBy: [col("region")], orderBy: [{ expr: col("id") }] },
+        })
+        .windowWithState({ spill: memorySpillAdapter() }),
+    ).rejects.toMatchObject({ code: "LAKEQL_TYPE_ERROR" });
   });
 });

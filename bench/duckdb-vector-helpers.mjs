@@ -30,8 +30,11 @@ export function selectionIndices(selection) {
 export function referencedColumns(ast) {
   const columns = new Set(ast.select ?? []);
   if (ast.where !== undefined) collectExprColumns(ast.where, columns);
+  if (ast.qualify !== undefined) collectExprColumns(ast.qualify, columns);
   for (const expr of Object.values(ast.projections ?? {})) collectExprColumns(expr, columns);
+  for (const expr of Object.values(ast.windows ?? {})) collectWindowColumns(expr, columns);
   for (const term of ast.orderBy ?? []) columns.add(term.column);
+  for (const alias of Object.keys(ast.windows ?? {})) columns.delete(alias);
   return [...columns].filter((column) => column !== "*");
 }
 
@@ -64,8 +67,17 @@ function referencedJoinColumns(ast) {
   const columns = new Set(ast.select ?? []);
   if (ast.where !== undefined) collectExprColumns(ast.where, columns);
   for (const expr of Object.values(ast.projections ?? {})) collectExprColumns(expr, columns);
+  for (const expr of Object.values(ast.windows ?? {})) collectWindowColumns(expr, columns);
   for (const term of ast.orderBy ?? []) columns.add(term.column);
+  for (const alias of Object.keys(ast.windows ?? {})) columns.delete(alias);
   return [...columns].filter((column) => column !== "*");
+}
+
+function collectWindowColumns(expr, columns) {
+  for (const part of expr.over.partitionBy ?? []) collectExprColumns(part, columns);
+  for (const term of expr.over.orderBy ?? []) collectExprColumns(term.expr, columns);
+  for (const arg of expr.args ?? []) collectExprColumns(arg, columns);
+  if (expr.filter !== undefined) collectExprColumns(expr.filter, columns);
 }
 
 function sliceIndices(rowCount, offset, limit) {

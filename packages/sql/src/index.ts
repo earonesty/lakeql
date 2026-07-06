@@ -2,13 +2,22 @@ import {
   type AggregateOp,
   type AggregateSpec,
   type Expr,
+  intervalToString,
+  intervalValue,
+  isIntervalValue,
   isTimestampValue,
   LakeqlError,
   type OrderByTerm,
   type PathQueryInit,
   type Scalar,
+  type WindowExpr,
+  type WindowFrame,
+  type WindowFrameBound,
+  type WindowOrderTerm,
 } from "lakeql-core";
 import { parse } from "pgsql-ast-parser";
+import { extractTopLevelQualify } from "./qualify-prepass.js";
+import { extractWindowFrames, type SqlWindowPrepassFrame } from "./window-prepass.js";
 
 export interface SqlQueryAst extends PathQueryInit {
   groupBy?: string[];
@@ -62,12 +71,18 @@ export interface SqlScalarSubqueryAst {
 
 const MAX_SQL_LENGTH = 128_000;
 const MAX_AST_DEPTH = 128;
+const PROTOTYPE_MUTATION_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 type PgNode = Record<string, unknown>;
 
 interface SqlParseContext {
   scalarSubqueries: Record<string, SqlScalarSubqueryAst>;
   nextScalarSubqueryId: number;
+  windows: Record<string, WindowExpr>;
+  nextWindowId: number;
+  windowFrames: (SqlWindowPrepassFrame | undefined)[];
+  nextWindowFrameId: number;
+  qualifySql?: string;
   parameters?: readonly SqlParameterValue[];
 }
 
@@ -75,10 +90,12 @@ export function parseSql(sql: string, options: SqlParseOptions = {}): SqlQueryAs
   if (sql.length > MAX_SQL_LENGTH) {
     throwParse(`SQL input length exceeds ${MAX_SQL_LENGTH}`);
   }
+  const windowPrepass = extractWindowFrames(sql);
+  const prepass = extractTopLevelQualify(windowPrepass.sql);
 
   let statements: unknown[];
   try {
-    statements = parse(sql) as unknown[];
+    statements = parse(prepass.sql) as unknown[];
   } catch (error) {
     if (error instanceof Error) throwParse(error.message);
     throwParse("Invalid SQL");
@@ -88,10 +105,12 @@ export function parseSql(sql: string, options: SqlParseOptions = {}): SqlQueryAs
   const statement = asNode(statements[0], "statement");
   assertAstDepth(statement);
   const context = newSqlParseContext(options);
+  context.windowFrames = windowPrepass.frames;
+  if (prepass.qualify !== undefined) context.qualifySql = prepass.qualify;
   if (statement.type === "with") return withStatementToAst(statement, context);
   if (statement.type !== "select") throwUnsupported("Only SELECT statements are supported");
 
-  return selectStatementToAst(statement, context);
+  return selectStatementToAst(statement, context, context.qualifySql);
 }
 
 export function parseSqlStatement(sql: string, options: SqlParseOptions = {}): SqlStatementAst {
@@ -156,7 +175,7 @@ function withStatementToAst(statement: PgNode, context: SqlParseContext): SqlQue
   validateCteQuery(cteQuery);
   const outer = asNode(statement.in, "CTE outer query");
   if (outer.type !== "select") throwUnsupported("Only SELECT after WITH is supported");
-  const ast = selectStatementToAst(outer, context);
+  const ast = selectStatementToAst(outer, context, context.qualifySql);
   ast.cte = { name, query: cteQuery };
   return ast;
 }
@@ -175,7 +194,24 @@ function validateCteQuery(ast: SqlQueryAst): void {
 function selectStatementToAst(
   statement: PgNode,
   context: SqlParseContext = newSqlParseContext(),
+  qualifySql?: string,
 ): SqlQueryAst {
+  const previousWindows = context.windows;
+  const previousNextWindowId = context.nextWindowId;
+  const previousQualifySql = context.qualifySql;
+  context.windows = {};
+  context.nextWindowId = 0;
+  if (qualifySql === undefined) delete context.qualifySql;
+  else context.qualifySql = qualifySql;
+  const ast = selectStatementToAstInScope(statement, context);
+  context.windows = previousWindows;
+  context.nextWindowId = previousNextWindowId;
+  if (previousQualifySql === undefined) delete context.qualifySql;
+  else context.qualifySql = previousQualifySql;
+  return ast;
+}
+
+function selectStatementToAstInScope(statement: PgNode, context: SqlParseContext): SqlQueryAst {
   rejectPresent(statement, "with", "CTEs are not supported");
   rejectPresent(statement, "windows", "Window functions are not supported");
 
@@ -203,6 +239,7 @@ function selectStatementToAst(
   const select: string[] = [];
   const projections: Record<string, Expr> = {};
   const aggregates: AggregateSpec = {};
+  const outputAliases = new Set<string>();
 
   for (const column of columns) {
     const item = asNode(column, "select item");
@@ -212,14 +249,24 @@ function selectStatementToAst(
       select.push("*");
       continue;
     }
+    if (expr.type === "call" && hasWindowOver(expr)) {
+      const alias = aliasName(item.alias) ?? syntheticWindowAlias(context);
+      ensureUniqueOutputAlias(alias, outputAliases);
+      context.windows[alias] = windowCallToExpr(expr, scope, context);
+      select.push(alias);
+      continue;
+    }
     if (expr.type === "call" && isAggregateCall(expr)) {
       const alias = aliasName(item.alias) ?? functionName(expr.function);
+      ensureUniqueOutputAlias(alias, outputAliases);
       aggregates[alias] = aggregateCallToSpec(expr, scope, context);
       continue;
     }
     if (expr.type === "ref") {
       const name = scope.refName(expr);
       const alias = aliasName(item.alias);
+      const output = alias === undefined ? name : alias;
+      ensureUniqueOutputAlias(output, outputAliases);
       if (alias === undefined || alias === name) select.push(name);
       else projections[alias] = { kind: "column", name };
       continue;
@@ -228,6 +275,7 @@ function selectStatementToAst(
     if (alias === undefined) {
       throwUnsupported("Computed projections require an explicit alias");
     }
+    ensureUniqueOutputAlias(alias, outputAliases);
     projections[alias] = exprToLakeql(expr, scope, context);
   }
 
@@ -248,6 +296,10 @@ function selectStatementToAst(
   if (statement.having !== undefined) {
     ast.having = exprToLakeql(asNode(statement.having, "HAVING"), scope, context);
   }
+  if (context.qualifySql !== undefined) {
+    ast.qualify = qualifyToExpr(context.qualifySql, scope, context);
+  }
+  if (Object.keys(context.windows).length > 0) ast.windows = context.windows;
   if (statement.orderBy !== undefined) {
     ast.orderBy = optionalArray(statement.orderBy).map((term) => orderByToTerm(term, scope));
   }
@@ -265,10 +317,27 @@ function selectStatementToAst(
   return ast;
 }
 
+function qualifyToExpr(sql: string, scope: SqlScope, context: SqlParseContext): Expr {
+  let statements: unknown[];
+  try {
+    statements = parse(`select * from __lakeql_qualify where ${sql}`) as unknown[];
+  } catch (error) {
+    if (error instanceof Error) throwParse(error.message);
+    throwParse("Invalid QUALIFY clause");
+  }
+  const statement = asNode(statements[0], "QUALIFY wrapper");
+  const where = asNode(statement.where, "QUALIFY predicate");
+  return exprToLakeql(where, scope, context);
+}
+
 function newSqlParseContext(options: SqlParseOptions = {}): SqlParseContext {
   return {
     scalarSubqueries: {},
     nextScalarSubqueryId: 0,
+    windows: {},
+    nextWindowId: 0,
+    windowFrames: [],
+    nextWindowFrameId: 0,
     ...(options.parameters === undefined ? {} : { parameters: options.parameters }),
   };
 }
@@ -300,9 +369,11 @@ function exprToLakeql(
       return caseToExpr(expr, scope, context);
     case "select":
       return scalarSubqueryToExpr(expr, context);
+    case "cast":
+      return castToExpr(expr, scope, context);
     case "call":
       if ("over" in expr && expr.over !== undefined) {
-        throwUnsupported("Window functions are not supported");
+        return { kind: "column", name: registerSyntheticWindow(expr, scope, context) };
       }
       return {
         kind: "call",
@@ -314,6 +385,22 @@ function exprToLakeql(
     default:
       throwUnsupported(`Unsupported SQL expression ${String(expr.type)}`);
   }
+}
+
+function castToExpr(
+  expr: PgNode,
+  scope = SqlScope.empty(),
+  context: SqlParseContext = newSqlParseContext(),
+): Expr {
+  const target = String(asNode(expr.to, "cast target").name ?? "").toLowerCase();
+  if (target === "interval") {
+    const operand = exprToLakeql(asNode(expr.operand, "interval literal"), scope, context);
+    if (operand.kind !== "literal" || typeof operand.value !== "string") {
+      throwType("INTERVAL requires a string literal", { target });
+    }
+    return literal(intervalValue(operand.value));
+  }
+  throwUnsupported(`Unsupported SQL cast to ${target}`);
 }
 
 function binaryToExpr(
@@ -572,6 +659,243 @@ function aggregateCallToSpec(
   return { op, expr: exprToLakeql(arg, scope, context) };
 }
 
+function hasWindowOver(expr: PgNode): boolean {
+  return "over" in expr && expr.over !== undefined;
+}
+
+function registerSyntheticWindow(expr: PgNode, scope: SqlScope, context: SqlParseContext): string {
+  const alias = syntheticWindowAlias(context);
+  context.windows[alias] = windowCallToExpr(expr, scope, context);
+  return alias;
+}
+
+function syntheticWindowAlias(context: SqlParseContext): string {
+  const alias = `__lakeql_window_${context.nextWindowId}`;
+  context.nextWindowId += 1;
+  return alias;
+}
+
+function ensureUniqueOutputAlias(alias: string, aliases: Set<string>): void {
+  if (PROTOTYPE_MUTATION_KEYS.has(alias)) throwUnsupported(`Unsafe SELECT output alias ${alias}`);
+  if (aliases.has(alias)) throwUnsupported(`Duplicate SELECT output alias ${alias}`);
+  aliases.add(alias);
+}
+
+function windowCallToExpr(expr: PgNode, scope: SqlScope, context: SqlParseContext): WindowExpr {
+  if (!hasWindowOver(expr)) throwUnsupported("Window call requires OVER");
+  const args = optionalArray(expr.args);
+  const fnName = functionName(expr.function);
+  let aggregate = aggregateOpOrUndefined(fnName);
+  if (expr.distinct !== undefined) {
+    if (expr.distinct !== "distinct") {
+      throwUnsupported("Only DISTINCT window arguments are supported");
+    }
+    if (aggregate !== "count")
+      throwUnsupported("Only COUNT(DISTINCT x) window arguments are supported");
+    aggregate = "count_distinct";
+  }
+  const windowFn: WindowExpr["fn"] =
+    aggregate === undefined ? windowFunctionName(fnName) : { aggregate };
+  const over = callOverToWindowSpec(asNode(expr.over, "OVER clause"), scope, context);
+  const out: WindowExpr = {
+    fn: windowFn,
+    args: args
+      .filter((arg) => !isWildcard(asNode(arg, "window argument")))
+      .map((arg) => exprToLakeql(asNode(arg, "window argument"), scope, context)),
+    over: over.spec,
+  };
+  if (over.ignoreNulls !== undefined) out.ignoreNulls = over.ignoreNulls;
+  if (expr.filter !== undefined) {
+    out.filter = exprToLakeql(asNode(expr.filter, "window FILTER predicate"), scope, context);
+  }
+  return out;
+}
+
+function windowFunctionName(name: string): Extract<WindowExpr["fn"], string> {
+  switch (name.toLowerCase()) {
+    case "row_number":
+    case "rank":
+    case "dense_rank":
+    case "percent_rank":
+    case "cume_dist":
+    case "ntile":
+    case "lag":
+    case "lead":
+    case "first_value":
+    case "last_value":
+    case "nth_value":
+      return name.toLowerCase() as Extract<WindowExpr["fn"], string>;
+    default:
+      throwUnsupported(`Unsupported window function ${name}`);
+  }
+}
+
+function callOverToWindowSpec(
+  over: PgNode,
+  scope: SqlScope,
+  context: SqlParseContext,
+): { spec: WindowExpr["over"]; ignoreNulls?: boolean } {
+  rejectPresent(over, "name", "Named windows require the window pre-pass");
+  const prepass = nextWindowFrame(context);
+  const spec: WindowExpr["over"] = {
+    partitionBy: optionalArray(over.partitionBy).map((expr) =>
+      exprToLakeql(asNode(expr, "window PARTITION BY expression"), scope, context),
+    ),
+    orderBy: optionalArray(over.orderBy).map((term) => windowOrderByToTerm(term, scope, context)),
+  };
+  if (prepass?.text !== undefined) spec.frame = frameTextToSpec(prepass.text, scope, context);
+  return prepass?.ignoreNulls === undefined ? { spec } : { spec, ignoreNulls: prepass.ignoreNulls };
+}
+
+function nextWindowFrame(context: SqlParseContext): SqlWindowPrepassFrame | undefined {
+  const frame = context.windowFrames[context.nextWindowFrameId];
+  context.nextWindowFrameId += 1;
+  return frame;
+}
+
+function frameTextToSpec(text: string, scope: SqlScope, context: SqlParseContext): WindowFrame {
+  const { body, exclude } = splitFrameExclude(text);
+  const modeMatch = /^(rows|range|groups)\b/iu.exec(body.trim());
+  if (modeMatch === null || modeMatch[1] === undefined) {
+    throwParse("Window frame must start with ROWS, RANGE, or GROUPS");
+  }
+  const mode = modeMatch[1].toLowerCase() as WindowFrame["mode"];
+  const rest = body.trim().slice(modeMatch[0].length).trim();
+  const bounds = frameBounds(rest, scope, context);
+  return { mode, ...bounds, exclude };
+}
+
+function splitFrameExclude(text: string): {
+  body: string;
+  exclude: WindowFrame["exclude"];
+} {
+  const match = /\bexclude\s+(no\s+others|current\s+row|group|ties)\s*$/iu.exec(text);
+  if (match === null) return { body: text, exclude: "no-others" };
+  const value = String(match[1]).toLowerCase().replace(/\s+/gu, "-");
+  const exclude =
+    value === "no-others" || value === "current-row" || value === "group" || value === "ties"
+      ? value
+      : "no-others";
+  return { body: text.slice(0, match.index).trim(), exclude };
+}
+
+function frameBounds(
+  text: string,
+  scope: SqlScope,
+  context: SqlParseContext,
+): Pick<WindowFrame, "start" | "end"> {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) {
+    return { start: { kind: "unbounded-preceding" }, end: { kind: "current-row" } };
+  }
+  if (/^between\b/iu.test(trimmed)) {
+    const between = trimmed.replace(/^between\b/iu, "").trim();
+    const andIndex = findTopLevelAnd(between);
+    if (andIndex === -1) throwParse("Window frame BETWEEN requires AND");
+    return {
+      start: frameBound(between.slice(0, andIndex).trim(), scope, context),
+      end: frameBound(between.slice(andIndex + "and".length).trim(), scope, context),
+    };
+  }
+  return {
+    start: frameBound(trimmed, scope, context),
+    end: { kind: "current-row" },
+  };
+}
+
+function frameBound(text: string, scope: SqlScope, context: SqlParseContext): WindowFrameBound {
+  if (/^unbounded\s+preceding$/iu.test(text)) return { kind: "unbounded-preceding" };
+  if (/^unbounded\s+following$/iu.test(text)) return { kind: "unbounded-following" };
+  if (/^current\s+row$/iu.test(text)) return { kind: "current-row" };
+  const preceding = /\bpreceding$/iu.exec(text);
+  if (preceding !== null) {
+    return {
+      kind: "preceding",
+      offset: parseFrameOffset(text.slice(0, preceding.index).trim(), scope, context),
+    };
+  }
+  const following = /\bfollowing$/iu.exec(text);
+  if (following !== null) {
+    return {
+      kind: "following",
+      offset: parseFrameOffset(text.slice(0, following.index).trim(), scope, context),
+    };
+  }
+  throwParse(`Unsupported window frame bound ${text}`);
+}
+
+function parseFrameOffset(text: string, scope: SqlScope, context: SqlParseContext): Expr {
+  if (text.length === 0) throwParse("Window frame offset is required");
+  let statements: unknown[];
+  try {
+    statements = parse(`select ${text} as frame_offset from __lakeql_frame`) as unknown[];
+  } catch (error) {
+    if (error instanceof Error) throwParse(error.message);
+    throwParse("Invalid window frame offset");
+  }
+  const statement = asNode(statements[0], "frame offset wrapper");
+  const column = asNode(optionalArray(statement.columns)[0], "frame offset column");
+  return exprToLakeql(asNode(column.expr, "frame offset expression"), scope, context);
+}
+
+function findTopLevelAnd(text: string): number {
+  let depth = 0;
+  let quote: "'" | '"' | "`" | undefined;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+    if (quote !== undefined) {
+      if (char === quote) {
+        if (next === quote) {
+          index += 1;
+          continue;
+        }
+        quote = undefined;
+      }
+      continue;
+    }
+    if (char === "'" || char === '"' || char === "`") {
+      quote = char;
+      continue;
+    }
+    if (char === "(") depth += 1;
+    else if (char === ")") depth = Math.max(0, depth - 1);
+    if (
+      depth === 0 &&
+      text.slice(index, index + "and".length).toLowerCase() === "and" &&
+      /(?:^|[^A-Za-z0-9_])$/u.test(text.slice(0, index)) &&
+      !/[A-Za-z0-9_]/u.test(text[index + "and".length] ?? "")
+    ) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function windowOrderByToTerm(
+  value: unknown,
+  scope: SqlScope,
+  context: SqlParseContext,
+): WindowOrderTerm {
+  const node = asNode(value, "window ORDER BY term");
+  const term: WindowOrderTerm = {
+    expr: exprToLakeql(asNode(node.by, "window ORDER BY expression"), scope, context),
+  };
+  if (node.order !== undefined) {
+    const order = String(node.order).toLowerCase();
+    if (order !== "asc" && order !== "desc") throwUnsupported(`Unsupported ORDER BY ${order}`);
+    term.direction = order;
+  }
+  if (node.nulls !== undefined) {
+    const nulls = String(node.nulls).toLowerCase();
+    if (nulls !== "first" && nulls !== "last") {
+      throwUnsupported(`Unsupported ORDER BY NULLS ${nulls}`);
+    }
+    term.nulls = nulls;
+  }
+  return term;
+}
+
 function quantileAggregateCallToSpec(
   args: unknown[],
   scope: SqlScope,
@@ -605,6 +929,7 @@ function requiredQuantilePercentile(expr: Expr): number {
 
 function isAggregateCall(expr: PgNode): boolean {
   if (expr.type !== "call") return false;
+  if (hasWindowOver(expr)) return false;
   return aggregateOpOrUndefined(functionName(expr.function)) !== undefined;
 }
 
@@ -898,6 +1223,7 @@ function isScalar(value: unknown): value is Scalar {
     typeof value === "boolean" ||
     typeof value === "bigint" ||
     isTimestampValue(value) ||
+    isIntervalValue(value) ||
     (typeof value === "number" && Number.isFinite(value))
   );
 }
@@ -1043,6 +1369,7 @@ function formatArithmeticOp(op: "add" | "sub" | "mul" | "div" | "mod"): string {
 function formatLiteral(value: Scalar): string {
   if (value === null) return "null";
   if (isTimestampValue(value)) return `'${value.toJSON()}'`;
+  if (isIntervalValue(value)) return `interval '${intervalToString(value).replaceAll("'", "''")}'`;
   if (typeof value === "string") return `'${value.replaceAll("'", "''")}'`;
   if (typeof value === "bigint") return value.toString();
   return String(value);

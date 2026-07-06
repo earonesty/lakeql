@@ -98,6 +98,46 @@
       </section>
     </main>
 
+    <section class="examples" aria-labelledby="examples-title">
+      <div class="examples__head">
+        <p class="eyebrow examples__eyebrow">window examples</p>
+        <h2 id="examples-title">Rank, frame, and compare window queries in the browser.</h2>
+        <a href="./compare.html?kind=window">Open the DuckDB-WASM comparison</a>
+      </div>
+      <div class="example-grid">
+        <article>
+          <h3>Top rows per partition</h3>
+          <pre><code>select region, store_id, amount
+from sales.parquet
+qualify row_number() over (
+  partition by region
+  order by amount desc, store_id asc
+) &lt;= 3</code></pre>
+        </article>
+        <article>
+          <h3>Running aggregate frame</h3>
+          <pre><code>select region, store_id, amount,
+  sum(amount) over (
+    partition by region
+    order by amount asc
+    rows between 2 preceding and current row
+  ) as moving_amount
+from sales.parquet</code></pre>
+        </article>
+        <article>
+          <h3>Timestamp RANGE frame</h3>
+          <pre><code>select account, id, amount,
+  sum(amount) over (
+    partition by account
+    order by event_ts
+    range between interval '1 day' preceding
+      and current row
+  ) as day_amount
+from window_events.parquet</code></pre>
+        </article>
+      </div>
+    </section>
+
     <section class="notes">
       <article>
         <h3>Range reads, not downloads</h3>

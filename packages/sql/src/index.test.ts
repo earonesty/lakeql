@@ -1,4 +1,4 @@
-import { LakeqlError } from "lakeql-core";
+import { intervalValue, LakeqlError } from "lakeql-core";
 import { describe, expect, it } from "vitest";
 import { formatSql, parseSql, parseSqlStatement } from "./index.js";
 
@@ -898,8 +898,6 @@ describe("parseSql", () => {
       "select id from orders where id in (select order_id from refunds order by order_id)",
       "select id from orders o where id in (select order_id from refunds r where r.customer_id = o.customer_id)",
       "select case status when 'paid' then 1 else 0 end as paid from orders",
-      "select row_number() over (partition by customer_id order by id) as rn from orders",
-      "select sum(total) over (partition by customer_id order by id) as running_total from orders",
     ];
 
     for (const sql of unsupported) {
@@ -910,6 +908,305 @@ describe("parseSql", () => {
         }),
       );
     }
+  });
+
+  it("compiles basic window functions into core window specs", () => {
+    expect(
+      parseSql(
+        "select row_number() over (partition by customer_id order by id) as rn, sum(total) over (partition by customer_id order by id) as running_total from orders",
+      ),
+    ).toMatchObject({
+      source: "orders",
+      select: ["rn", "running_total"],
+      windows: {
+        rn: {
+          fn: "row_number",
+          args: [],
+          over: {
+            partitionBy: [{ kind: "column", name: "customer_id" }],
+            orderBy: [{ expr: { kind: "column", name: "id" } }],
+          },
+        },
+        running_total: {
+          fn: { aggregate: "sum" },
+          args: [{ kind: "column", name: "total" }],
+          over: {
+            partitionBy: [{ kind: "column", name: "customer_id" }],
+            orderBy: [{ expr: { kind: "column", name: "id" } }],
+          },
+        },
+      },
+    });
+  });
+
+  it("extracts QUALIFY predicates with window expressions", () => {
+    expect(
+      parseSql(
+        "select customer_id, id from orders qualify row_number() over (partition by customer_id order by id) = 1 order by id",
+      ),
+    ).toMatchObject({
+      source: "orders",
+      select: ["customer_id", "id"],
+      qualify: {
+        kind: "compare",
+        op: "eq",
+        left: { kind: "column", name: "__lakeql_window_0" },
+        right: { kind: "literal", value: 1 },
+      },
+      windows: {
+        __lakeql_window_0: {
+          fn: "row_number",
+          over: {
+            partitionBy: [{ kind: "column", name: "customer_id" }],
+            orderBy: [{ expr: { kind: "column", name: "id" } }],
+          },
+        },
+      },
+      orderBy: [{ column: "id" }],
+    });
+  });
+
+  it("uses unique synthetic aliases for unaliased window projections", () => {
+    const ast = parseSql(
+      "select row_number() over (order by a), row_number() over (order by b desc) from t",
+    );
+    expect(ast.select).toEqual(["__lakeql_window_0", "__lakeql_window_1"]);
+    expect(Object.keys(ast.windows ?? {})).toEqual(["__lakeql_window_0", "__lakeql_window_1"]);
+    expect(ast.windows?.__lakeql_window_0?.over.orderBy).toEqual([
+      { expr: { kind: "column", name: "a" } },
+    ]);
+    expect(ast.windows?.__lakeql_window_1?.over.orderBy).toEqual([
+      { expr: { kind: "column", name: "b" }, direction: "desc" },
+    ]);
+  });
+
+  it("rejects duplicate explicit output aliases", () => {
+    expect(() => parseSql("select id, row_number() over (order by id) as id from orders")).toThrow(
+      "Duplicate SELECT output alias id",
+    );
+  });
+
+  it("rejects output aliases that would mutate plain object prototypes", () => {
+    for (const alias of ['"__proto__"', '"constructor"', '"prototype"']) {
+      expect(() => parseSql(`select id as ${alias} from orders`)).toThrow(
+        "Unsafe SELECT output alias",
+      );
+      expect(() =>
+        parseSql(`select row_number() over (order by id) as ${alias} from orders`),
+      ).toThrow("Unsafe SELECT output alias");
+    }
+  });
+
+  it("runs the window prepass on QUALIFY predicates", () => {
+    const framed = parseSql(`
+      select id
+      from orders
+      qualify sum(total) over (order by id rows between 1 preceding and current row) > 10
+    `);
+    expect(framed.windows?.__lakeql_window_0?.over.frame).toMatchObject({
+      mode: "rows",
+      start: { kind: "preceding" },
+      end: { kind: "current-row" },
+    });
+
+    const named = parseSql(`
+      select id
+      from orders
+      qualify row_number() over ranked = 1
+      window ranked as (partition by customer_id order by id)
+    `);
+    expect(named.windows?.__lakeql_window_0?.over).toMatchObject({
+      partitionBy: [{ kind: "column", name: "customer_id" }],
+      orderBy: [{ expr: { kind: "column", name: "id" } }],
+    });
+  });
+
+  it("keeps QUALIFY and synthetic window aliases scoped to the owning SELECT", () => {
+    const ast = parseSql(`
+        with recent as (
+          select customer_id, id
+          from orders
+          where id > 10
+        )
+        select customer_id, id
+        from recent
+        qualify row_number() over (partition by customer_id order by id) = 1
+      `);
+    expect(ast).toMatchObject({
+      cte: {
+        query: {
+          source: "orders",
+          select: ["customer_id", "id"],
+          where: { kind: "compare", op: "gt" },
+        },
+      },
+      windows: {
+        __lakeql_window_0: {
+          fn: "row_number",
+          over: {
+            partitionBy: [{ kind: "column", name: "customer_id" }],
+            orderBy: [{ expr: { kind: "column", name: "id" } }],
+          },
+        },
+      },
+      qualify: {
+        kind: "compare",
+        left: { kind: "column", name: "__lakeql_window_0" },
+        right: { kind: "literal", value: 1 },
+      },
+    });
+    expect(ast.cte?.query.windows).toBeUndefined();
+    expect(ast.cte?.query.qualify).toBeUndefined();
+  });
+
+  it("compiles aggregate window FILTER predicates and count distinct windows", () => {
+    expect(
+      parseSql(`
+        select
+          sum(total) filter (where status = 'paid') over (partition by customer_id order by id) as paid_total,
+          count(distinct user_id) over (partition by customer_id) as distinct_users
+        from orders
+      `),
+    ).toMatchObject({
+      windows: {
+        paid_total: {
+          fn: { aggregate: "sum" },
+          filter: {
+            kind: "compare",
+            op: "eq",
+            left: { kind: "column", name: "status" },
+            right: { kind: "literal", value: "paid" },
+          },
+        },
+        distinct_users: {
+          fn: { aggregate: "count_distinct" },
+          args: [{ kind: "column", name: "user_id" }],
+        },
+      },
+    });
+  });
+
+  it("compiles window null-treatment modifiers into value window specs", () => {
+    expect(
+      parseSql(`
+        select
+          first_value(total ignore nulls) over (partition by customer_id order by id) as first_paid,
+          lag(total) respect nulls over (partition by customer_id order by id) as previous_total
+        from orders
+      `),
+    ).toMatchObject({
+      windows: {
+        first_paid: {
+          fn: "first_value",
+          ignoreNulls: true,
+        },
+        previous_total: {
+          fn: "lag",
+          ignoreNulls: false,
+        },
+      },
+    });
+  });
+
+  it("compiles named window clauses and inherited named windows", () => {
+    expect(
+      parseSql(`
+        select
+          row_number() over ranked as rn,
+          sum(total) over (running rows between 1 preceding and current row) as rolling_total
+        from orders
+        window ranked as (partition by customer_id order by id),
+          running as (ranked)
+      `),
+    ).toMatchObject({
+      windows: {
+        rn: {
+          fn: "row_number",
+          over: {
+            partitionBy: [{ kind: "column", name: "customer_id" }],
+            orderBy: [{ expr: { kind: "column", name: "id" } }],
+          },
+        },
+        rolling_total: {
+          fn: { aggregate: "sum" },
+          over: {
+            partitionBy: [{ kind: "column", name: "customer_id" }],
+            orderBy: [{ expr: { kind: "column", name: "id" } }],
+            frame: {
+              mode: "rows",
+              start: { kind: "preceding", offset: { kind: "literal", value: 1 } },
+              end: { kind: "current-row" },
+              exclude: "no-others",
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it("compiles explicit window frame clauses", () => {
+    expect(
+      parseSql(
+        "select sum(total) over (partition by customer_id order by id rows between 1 preceding and current row exclude current row) as prior_total from orders",
+      ),
+    ).toMatchObject({
+      windows: {
+        prior_total: {
+          fn: { aggregate: "sum" },
+          over: {
+            frame: {
+              mode: "rows",
+              start: { kind: "preceding", offset: { kind: "literal", value: 1 } },
+              end: { kind: "current-row" },
+              exclude: "current-row",
+            },
+          },
+        },
+      },
+    });
+
+    expect(
+      parseSql(
+        "select last_value(total) over (partition by customer_id order by id groups between current row and 1 following exclude ties) as grouped_value from orders",
+      ),
+    ).toMatchObject({
+      windows: {
+        grouped_value: {
+          fn: "last_value",
+          over: {
+            frame: {
+              mode: "groups",
+              start: { kind: "current-row" },
+              end: { kind: "following", offset: { kind: "literal", value: 1 } },
+              exclude: "ties",
+            },
+          },
+        },
+      },
+    });
+
+    expect(
+      parseSql(
+        "select sum(total) over (partition by customer_id order by created_at range between interval '1 day' preceding and current row) as day_total from orders",
+      ),
+    ).toMatchObject({
+      windows: {
+        day_total: {
+          fn: { aggregate: "sum" },
+          over: {
+            frame: {
+              mode: "range",
+              start: {
+                kind: "preceding",
+                offset: { kind: "literal", value: intervalValue("1 day") },
+              },
+              end: { kind: "current-row" },
+              exclude: "no-others",
+            },
+          },
+        },
+      },
+    });
   });
 
   it("rejects excessive expression nesting and token counts with parse errors", () => {

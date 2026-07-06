@@ -135,6 +135,35 @@ from totals
 where max_amount > 990
 ```
 
+Window functions are supported in select-list expressions, `QUALIFY`, and outer
+`ORDER BY` expressions. lakeql follows DuckDB-compatible default frame semantics:
+with `ORDER BY`, the default is peer-aware `RANGE BETWEEN UNBOUNDED PRECEDING
+AND CURRENT ROW`; without `ORDER BY`, the frame is the whole partition.
+
+```sql
+select region, store_id, amount,
+  sum(amount) over (
+    partition by region
+    order by amount asc, store_id asc
+    rows between 1 preceding and current row
+  ) as moving_amount
+from input
+qualify row_number() over (
+  partition by region
+  order by amount desc, store_id asc
+) <= 2
+order by region asc, amount desc, store_id asc
+```
+
+Supported window clauses include `PARTITION BY`, `ORDER BY`, explicit `ROWS`,
+`RANGE`, and `GROUPS` frames, `EXCLUDE`, named windows, `FILTER`, `DISTINCT`
+aggregate inputs where DuckDB accepts them, and `IGNORE NULLS` / `RESPECT NULLS`
+for value functions. Offset `RANGE` frames require exactly one `ORDER BY` key;
+numeric keys use non-negative numeric offsets, and timestamp keys use
+non-negative `INTERVAL` offsets. Ties under an under-specified window `ORDER BY`
+are broken by stable scan order, so deterministic output for tied rows requires
+a complete ordering key.
+
 The CLI also accepts omitted `from input` and injects the `--path` as the source.
 
 ```sh
@@ -187,10 +216,10 @@ recursive CTEs, simple `CASE <expr>` forms, and broad SQL execution, is rejected
 | `COUNT(DISTINCT x)` and engine aggregate ops | Supported | `LAKEQL_SQL_UNSUPPORTED` | `COUNT(DISTINCT *)` is rejected. |
 | Two-table `INNER JOIN` / `LEFT JOIN` | Supported | `LAKEQL_SQL_UNSUPPORTED` | Bounded broadcast joins over named CLI tables only. |
 | Multi-key `JOIN ... ON` / `JOIN ... USING` | Supported | `LAKEQL_SQL_UNSUPPORTED` | Equality keys only. |
-| Right/full/cross/N-way/non-equality joins | Rejected | `LAKEQL_SQL_UNSUPPORTED` | Broad join planning is intentionally out of scope. |
+| Right/full/cross/N-way/non-equality joins | Not yet built | `LAKEQL_SQL_UNSUPPORTED` | Typed error until broader join planning ships. |
 | `IN` / `NOT IN` subqueries | Supported | `LAKEQL_SQL_UNSUPPORTED` | Scoped named-table subqueries execute as bounded semi/anti joins. |
 | Scalar subqueries | Supported subset | `LAKEQL_SQL_UNSUPPORTED` | Only uncorrelated aggregate or `LIMIT 1` scalar subqueries. |
 | Non-recursive single-table CTEs | Supported subset | `LAKEQL_SQL_UNSUPPORTED` | One outer CTE; nested joins/subqueries/CTEs in the CTE body are rejected. |
-| Recursive CTEs and correlated subqueries | Rejected | `LAKEQL_PARSE_ERROR` / `LAKEQL_SQL_UNSUPPORTED` | No partial execution. |
-| Window functions and explicit frames | Rejected | `LAKEQL_SQL_UNSUPPORTED` | Reserved for a future streaming-friendly subset. |
-| DDL, DML, multi-statement SQL | Rejected | `LAKEQL_SQL_UNSUPPORTED` | SQL is a CLI query dialect, not a database runtime. |
+| Recursive CTEs and correlated subqueries | Not yet built | `LAKEQL_PARSE_ERROR` / `LAKEQL_SQL_UNSUPPORTED` | Typed error today; no partial execution. |
+| Window functions and explicit frames | Supported | `LAKEQL_SQL_UNSUPPORTED` / `LAKEQL_TYPE_ERROR` | Ranking/value/aggregate windows, explicit `ROWS` / `RANGE` / `GROUPS` frames, `EXCLUDE`, named windows, null-treatment modifiers, `FILTER`, `DISTINCT`, `QUALIFY`, stateful execution, budgets, Workers runtime, and Parquet work-unit fan-out are covered by reference and unit gates. |
+| DDL, DML, multi-statement SQL | Not yet built | `LAKEQL_SQL_UNSUPPORTED` | Typed error today; the SQL surface currently covers querying only. |

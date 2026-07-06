@@ -51,6 +51,7 @@ export async function* scanParquetTaskBatches(
         .map((row: Row) => ({ ...task.partitionValues, ...row }))
         .filter((row: Row) => matches(task.residualPredicate, row))
         .map((row: Row) => projectTaskRow(row, task.projectedColumns));
+      recordRowsMatched(options.stats, rows.length);
       if (rows.length > 0) yield rows;
     }
   }

@@ -11,6 +11,9 @@ console.log(explanation.json.predicatePlan);
 ```
 
 The JSON predicate plan classifies pruning candidates as partition, file stats, row-group stats, or residual predicates.
+For window queries, `explain()` also reports the number of window expressions,
+the number of shared window sort groups, whether `QUALIFY` is present, and the
+execution path used by the query API.
 
 Parquet row-group pruning currently uses footer min/max statistics. hyparquet 1.26.0
 does not expose a public dictionary-filter API; dictionary pruning should be added
@@ -24,6 +27,17 @@ Parquet task manifests can be split into row-group-sized work units and reduced
 with bounded fan-in. This keeps the deployment boundary data-only: the same JSON
 work-unit payload can run in a browser, Cloudflare Worker, Supabase Edge function,
 or Node process, then merge vector aggregate partials in task order.
+
+Window fan-out uses the same portable boundary for partitioned window work:
+`windowParquetTask()` projects each row group into JSON work-unit rows,
+`windowParquetTasks()` repartitions rows by the evaluated window `PARTITION BY`
+keys, evaluates each bucket with the core window backend, and restores source
+order from the transported row ordinal. Normal Parquet window queries select this
+topology automatically when every window in the query has the same non-empty
+`PARTITION BY`; `explain().json.windowPlan` reports the selected execution path,
+bucket count, and unavailable reason for global or incompatible window specs.
+Call the explicit helpers when a deployment needs to choose bucket count,
+concurrency, or transport boundaries directly.
 
 Vector aggregate optimizations must preserve that boundary. "Single-pass"
 aggregate work means updating several aggregate states while scanning one decoded

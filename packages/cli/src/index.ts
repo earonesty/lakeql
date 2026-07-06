@@ -113,27 +113,27 @@ async function query(args: ParsedArgs): Promise<string> {
   const resolvedAst = await resolveScalarSubqueries(executableLake, executableAst);
   if (resolvedAst.subqueryJoin !== undefined) {
     const rows = await subqueryJoinRowsFromAst(executableLake, resolvedAst, args);
-    if (args.format === "json") return `${JSON.stringify(rows)}\n`;
+    if (args.format === "json") return `${jsonStringify(rows)}\n`;
     if (args.format === "csv") return rowsToCsv(rows);
-    return rows.map((row) => JSON.stringify(row)).join("\n") + (rows.length > 0 ? "\n" : "");
+    return rows.map((row) => jsonStringify(row)).join("\n") + (rows.length > 0 ? "\n" : "");
   }
   if (resolvedAst.join !== undefined) {
     const rows = await joinRowsFromAst(executableLake, resolvedAst, args);
-    if (args.format === "json") return `${JSON.stringify(rows)}\n`;
+    if (args.format === "json") return `${jsonStringify(rows)}\n`;
     if (args.format === "csv") return rowsToCsv(rows);
-    return rows.map((row) => JSON.stringify(row)).join("\n") + (rows.length > 0 ? "\n" : "");
+    return rows.map((row) => jsonStringify(row)).join("\n") + (rows.length > 0 ? "\n" : "");
   }
   const result = builderFromAst(executableLake.path(resolvedAst.source), resolvedAst);
   if (hasAggregation(resolvedAst)) {
     const rows = await aggregateRowsFromAst(executableLake.path(resolvedAst.source), resolvedAst);
-    if (args.format === "json") return `${JSON.stringify(rows)}\n`;
+    if (args.format === "json") return `${jsonStringify(rows)}\n`;
     if (args.format === "csv") return rowsToCsv(rows);
-    return rows.map((row) => JSON.stringify(row)).join("\n") + (rows.length > 0 ? "\n" : "");
+    return rows.map((row) => jsonStringify(row)).join("\n") + (rows.length > 0 ? "\n" : "");
   }
-  if (args.format === "json") return `${JSON.stringify(await result.toArray())}\n`;
+  if (args.format === "json") return `${jsonStringify(await result.toArray())}\n`;
   if (args.format === "csv") return new Response(result.streamCsv()).text();
   let out = "";
-  for await (const row of result.rows()) out += `${JSON.stringify(row)}\n`;
+  for await (const row of result.rows()) out += `${jsonStringify(row)}\n`;
   return out;
 }
 
@@ -161,14 +161,14 @@ async function compact(args: ParsedArgs): Promise<string> {
 async function schema(args: ParsedArgs): Promise<string> {
   const path = requireOption(args.path, "--path");
   const { store, key } = await localStore(path);
-  return `${JSON.stringify(await schemaSummary(store, key, path))}\n`;
+  return `${jsonStringify(await schemaSummary(store, key, path))}\n`;
 }
 
 async function inspect(args: ParsedArgs): Promise<string> {
   const path = requireOption(args.path, "--path");
   const { store, key } = await localStore(path);
   const metadata = await readParquetMetadata(store, key);
-  return `${JSON.stringify({
+  return `${jsonStringify({
     path,
     rows: Number(totalRows(metadata.row_groups)),
     rowGroups: metadata.row_groups.length,
@@ -245,14 +245,16 @@ async function writeRows(outputPrefix: string, rows: Row[], args: ParsedArgs): P
     body.manifest = args.manifest;
   }
 
-  return `${JSON.stringify(body)}\n`;
+  return `${jsonStringify(body)}\n`;
 }
 
 function builderFromAst(builder: QueryBuilder, ast: ReturnType<typeof parseSql>): QueryBuilder {
   let next = builder;
+  for (const [alias, expr] of Object.entries(ast.windows ?? {})) next = next.window(alias, expr);
   if (ast.select) next = next.select(ast.select);
   if (ast.projections) next = next.project(ast.projections);
   if (ast.where) next = next.where(ast.where);
+  if (ast.qualify) next = next.qualify(ast.qualify);
   if (ast.distinct === true) next = next.distinct();
   if (ast.orderBy) next = next.orderBy(ast.orderBy);
   if (ast.offset !== undefined) next = next.offset(ast.offset);
@@ -265,6 +267,12 @@ function hasAggregation(ast: ReturnType<typeof parseSql>): boolean {
     ast.aggregates !== undefined ||
     (ast.groupBy !== undefined && ast.groupBy.length > 0) ||
     ast.having !== undefined
+  );
+}
+
+function hasWindowSemantics(ast: ReturnType<typeof parseSql>): boolean {
+  return (
+    (ast.windows !== undefined && Object.keys(ast.windows).length > 0) || ast.qualify !== undefined
   );
 }
 
@@ -397,6 +405,9 @@ async function joinRowsFromAst(
 ): Promise<Row[]> {
   if (ast.join === undefined) throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Missing SQL JOIN");
   const join = ast.join;
+  if (hasWindowSemantics(ast)) {
+    throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "Window SQL over JOIN is not supported");
+  }
   if (hasAggregation(ast)) {
     throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "Aggregate SQL over JOIN is not supported yet");
   }
@@ -689,6 +700,9 @@ async function subqueryJoinRowsFromAst(
   if (ast.subqueryJoin === undefined) {
     throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Missing SQL IN subquery");
   }
+  if (hasWindowSemantics(ast)) {
+    throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "Window SQL over IN subquery is not supported");
+  }
   if (hasAggregation(ast)) {
     throw new LakeqlError(
       "LAKEQL_SQL_UNSUPPORTED",
@@ -749,6 +763,9 @@ async function aggregateRowsFromAst(
   builder: QueryBuilder,
   ast: ReturnType<typeof parseSql>,
 ): Promise<Row[]> {
+  if (hasWindowSemantics(ast)) {
+    throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "Window SQL over aggregates is not supported");
+  }
   validateAggregateProjection(ast);
   let next = builder;
   if (ast.where) next = next.where(ast.where);
@@ -867,9 +884,13 @@ function rowsToCsv(rows: Row[]): string {
 }
 
 function formatRows(rows: Row[], format: ParsedArgs["format"]): string {
-  if (format === "json") return `${JSON.stringify(rows)}\n`;
+  if (format === "json") return `${jsonStringify(rows)}\n`;
   if (format === "csv") return rowsToCsv(rows);
-  return rows.map((row) => JSON.stringify(row)).join("\n") + (rows.length > 0 ? "\n" : "");
+  return rows.map((row) => jsonStringify(row)).join("\n") + (rows.length > 0 ? "\n" : "");
+}
+
+function jsonStringify(value: unknown): string {
+  return JSON.stringify(value, (_key, item) => (typeof item === "bigint" ? item.toString() : item));
 }
 
 async function schemaSummary(

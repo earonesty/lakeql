@@ -13,6 +13,7 @@ import type { ObjectStore, QueryBudget, QueryStats } from "lakeql-core";
 import { httpStore } from "lakeql-http";
 import { createParquetLake } from "lakeql-parquet";
 import { parseSql } from "lakeql-sql";
+import { applyAst } from "./apply-ast.js";
 import "./styles.css";
 
 declare const __LAKEQL_VERSION__: string;
@@ -20,7 +21,7 @@ declare const __LAKEQL_VERSION__: string;
 type Engine = "lakeql" | "duckdb";
 type DuckCacheMode = "fresh" | "cached";
 type LakeCacheMode = "fresh" | "cached";
-type DatasetKind = "tabular" | "spatial";
+type DatasetKind = "tabular" | "spatial" | "window";
 type Row = Record<string, unknown>;
 type Lake = ReturnType<typeof createParquetLake>;
 
@@ -100,6 +101,65 @@ limit 20`,
   },
 ];
 
+const WINDOW_EXAMPLES = [
+  {
+    name: "Running Sum",
+    sql: `select account, event_id, event_ts, amount,
+  sum(amount) over (
+    partition by account
+    order by event_ts, event_id
+    rows between unbounded preceding and current row
+  ) as running_amount
+from window_events.parquet
+order by account, event_ts, event_id
+limit 24`,
+  },
+  {
+    name: "Moving Avg",
+    sql: `select account, event_id, amount,
+  avg(amount) over (
+    partition by account
+    order by event_ts, event_id
+    rows between 2 preceding and current row
+  ) as moving_avg
+from window_events.parquet
+order by account, event_ts, event_id
+limit 24`,
+  },
+  {
+    name: "Peer Rank",
+    sql: `select region, account, event_id, score,
+  rank() over (partition by region order by score desc) as region_rank,
+  dense_rank() over (partition by region order by score desc) as dense_region_rank
+from window_events.parquet
+order by region, region_rank, account, event_id
+limit 24`,
+  },
+  {
+    name: "Top Event",
+    sql: `select region, account, event_id, amount, score,
+  row_number() over (
+    partition by region
+    order by score desc, amount desc, event_id asc
+  ) as rn
+from window_events.parquet
+qualify rn <= 3
+order by region, rn`,
+  },
+  {
+    name: "Interval Range",
+    sql: `select account, event_id, amount,
+  sum(amount) filter (where category = 'purchase') over (
+    partition by account
+    order by event_ts
+    range between interval '2 days' preceding and current row
+  ) as purchase_2d
+from window_events.parquet
+order by account, event_ts, event_id
+limit 24`,
+  },
+];
+
 interface DatasetConfig {
   sourceUrl: string;
   key: string;
@@ -110,7 +170,12 @@ interface DatasetConfig {
 }
 
 const dataset = datasetConfigFromLocation();
-const examples = dataset.kind === "spatial" ? SPATIAL_EXAMPLES : EXAMPLES;
+const examples =
+  dataset.kind === "spatial"
+    ? SPATIAL_EXAMPLES
+    : dataset.kind === "window"
+      ? WINDOW_EXAMPLES
+      : EXAMPLES;
 
 let engine: Engine = "lakeql";
 let duckCacheMode: DuckCacheMode = "cached";
@@ -206,16 +271,6 @@ function knownSizeStore(inner: ObjectStore): ObjectStore {
     },
   };
   return store;
-}
-
-function applyAst(builder: ReturnType<Lake["path"]>, ast: ReturnType<typeof parseSql>) {
-  let next = builder;
-  if (ast.select) next = next.select(ast.select);
-  if (ast.where) next = next.where(ast.where);
-  if (ast.orderBy) next = next.orderBy(ast.orderBy);
-  if (ast.offset !== undefined) next = next.offset(ast.offset);
-  if (ast.limit !== undefined) next = next.limit(ast.limit);
-  return next;
 }
 
 function datasetProxyUrl(): string {
@@ -788,27 +843,41 @@ function setupVersion(): void {
 
 function datasetConfigFromLocation(): DatasetConfig {
   const params = new URLSearchParams(window.location.search);
-  const kind = params.get("kind") === "spatial" ? "spatial" : "tabular";
+  const kind = datasetKindParam(params.get("kind"));
   const sourceUrl =
     sourceUrlParam(params.get("source")) ??
     (kind === "spatial"
       ? new URL("spatial.parquet", window.location.href).href
-      : DEFAULT_SOURCE_URL);
+      : kind === "window"
+        ? new URL("window-events.parquet", window.location.href).href
+        : DEFAULT_SOURCE_URL);
   return {
     sourceUrl,
     key:
       nonEmptyParam(params.get("key")) ??
       sourceKey(sourceUrl) ??
-      (kind === "spatial" ? "spatial.parquet" : DEFAULT_DATASET_KEY),
+      (kind === "spatial"
+        ? "spatial.parquet"
+        : kind === "window"
+          ? "window-events.parquet"
+          : DEFAULT_DATASET_KEY),
     size:
       positiveNumberParam(params.get("size")) ??
       (kind === "tabular" ? DEFAULT_DATASET_SIZE : undefined),
     name:
       nonEmptyParam(params.get("name")) ??
-      (kind === "spatial" ? "Spatial Parquet on R2" : "Plotly 2015 flights"),
+      (kind === "spatial"
+        ? "Spatial Parquet on R2"
+        : kind === "window"
+          ? "Window function fixture"
+          : "Plotly 2015 flights"),
     host: nonEmptyParam(params.get("host")) ?? "Cloudflare R2",
     kind,
   };
+}
+
+function datasetKindParam(value: string | null): DatasetKind {
+  return value === "spatial" || value === "window" ? value : "tabular";
 }
 
 function sourceUrlParam(value: string | null): string | undefined {
@@ -844,6 +913,8 @@ function duckSqlForDataset(sqlText: string, fileName: string): string {
   let out = sqlText
     .replace(/\bfrom\s+flights\.parquet\b/giu, `from '${escaped}'`)
     .replace(/\bfrom\s+spatial\.parquet\b/giu, `from '${escaped}'`)
+    .replace(/\bfrom\s+window_events\.parquet\b/giu, `from '${escaped}'`)
+    .replace(/\bfrom\s+window-events\.parquet\b/giu, `from '${escaped}'`)
     .replace(new RegExp(`\\bfrom\\s+${escapeRegExp(dataset.key)}\\b`, "giu"), `from '${escaped}'`);
   if (dataset.kind === "spatial") {
     out = out

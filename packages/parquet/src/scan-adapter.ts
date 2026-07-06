@@ -11,7 +11,10 @@ import {
   type ScanTaskPlan,
   type ScanTaskPlanOptions,
   type ScanVectorBatch,
+  type TaskInput,
   throwIfAborted,
+  type WindowExpr,
+  type WindowTaskExecutionOptions,
 } from "lakeql-core";
 import { readParquetColumnBatchesFromFile } from "./column-batches.js";
 import { lakeqlParquetCompressors } from "./compressors.js";
@@ -27,6 +30,7 @@ import { rejectUnsupportedParquetSchema } from "./schema.js";
 import { asyncBufferFromObjectInfo, asyncBufferFromStore } from "./store-buffer.js";
 import type { ParquetMetadata, StoreAsyncBuffer } from "./types.js";
 import { canReadParquetVectorBatches, readParquetVectorBatchesFromFile } from "./vector-batches.js";
+import { windowParquetTasks } from "./window-task.js";
 
 export class ParquetScanAdapter implements ScanAdapter {
   private readonly store: ObjectStore;
@@ -175,6 +179,27 @@ export class ParquetScanAdapter implements ScanAdapter {
       rowGroupCount: metadata.row_groups.length,
       rowGroupRanges: planRowGroupsFromMetadata(metadata, options.where).rowGroupRanges,
     };
+  }
+
+  async executeWindowTasks(
+    tasks: TaskInput[],
+    windows: Record<string, WindowExpr>,
+    options: WindowTaskExecutionOptions,
+  ): Promise<Row[]> {
+    return windowParquetTasks(this.store, tasks, windows, {
+      batchSize: options.batchSize,
+      budget: options.budget,
+      stats: options.stats,
+      now: options.now,
+      startedAt: options.startedAt,
+      ...(this.metadataCache === undefined ? {} : { metadataCache: this.metadataCache }),
+      ...(options.maxConcurrentTasks === undefined
+        ? {}
+        : { maxConcurrentTasks: options.maxConcurrentTasks }),
+      ...(options.maxBufferedPartials === undefined
+        ? {}
+        : { maxBufferedPartials: options.maxBufferedPartials }),
+    });
   }
 
   private async metadata(

@@ -81,6 +81,7 @@ kbd {
 .topbar,
 .lede,
 .bench,
+.examples,
 .notes,
 .foot {
   position: relative;
@@ -88,6 +89,65 @@ kbd {
   max-width: var(--maxw);
   margin-inline: auto;
   padding-inline: 28px;
+}
+
+/* ---------- examples ---------- */
+.examples {
+  padding-top: 42px;
+  padding-bottom: 8px;
+}
+.examples__head {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto;
+  gap: 12px 24px;
+  align-items: end;
+  margin-bottom: 18px;
+}
+.examples__eyebrow {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+}
+.examples h2 {
+  margin: 0;
+  max-width: 22ch;
+  font-size: clamp(1.45rem, 2.5vw, 2.1rem);
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+}
+.examples__head a {
+  color: var(--acid);
+  font-family: var(--mono);
+  font-size: 0.82rem;
+}
+.example-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+.example-grid article {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-sink);
+  overflow: hidden;
+}
+.example-grid h3 {
+  margin: 0;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 0.92rem;
+}
+.example-grid pre {
+  margin: 0;
+  padding: 13px 14px 15px;
+  overflow: auto;
+  color: var(--ink-dim);
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  line-height: 1.62;
+}
+.example-grid code {
+  color: inherit;
 }
 
 /* ---------- topbar ---------- */
@@ -745,6 +805,10 @@ tbody tr:hover td {
 
 @media (max-width: 860px) {
   .bench {
+    grid-template-columns: 1fr;
+  }
+  .examples__head,
+  .example-grid {
     grid-template-columns: 1fr;
   }
   .notes {

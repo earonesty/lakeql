@@ -116,7 +116,12 @@ Each is **independent of the lake engine** and is the highest-ROI work in the re
 
 5. **Window functions** — `ROW_NUMBER`, `RANK`, `LAG`/`LEAD`, running sums,
    `OVER (PARTITION BY … ORDER BY …)`. Core of analytics/dashboards; the most
-   conspicuous absence. *Status: ❌ rejected.*
+   conspicuous absence. *Status: ✅ supported and tested: ranking/value/exact
+   aggregate windows, explicit `ROWS` / `RANGE` / `GROUPS` frames, `EXCLUDE`,
+   named windows, null-treatment modifiers, `FILTER`, `DISTINCT`, `QUALIFY`,
+   stateful execution, Workers runtime, and Parquet work-unit fan-out are covered
+   by DuckDB reference cases, deterministic seeded differential cases, unit tests,
+   bundle checks, and workerd tests.*
 
 6. **Broader JOINs** — N-way, `RIGHT` / `FULL` / `CROSS`, non-equi predicates.
    Real queries join 3+ tables / dimension tables. *Status: ⚠️ bounded two-table

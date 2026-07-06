@@ -30,6 +30,9 @@ const entries = [
       "@turf/boolean-contains",
       "@turf/boolean-intersects",
       "h3-js",
+      "function evaluateWindow(",
+      "function aggregateWindowValue(",
+      "sum window aggregate requires numeric input",
     ],
   },
   {

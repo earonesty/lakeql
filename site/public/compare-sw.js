@@ -60,8 +60,8 @@ async function proxyDataset(request, url) {
   });
 
   const parsed = range && body ? parseRange(range, body.byteLength, totalSize) : undefined;
-  if (parsed && totalSize !== undefined) {
-    responseHeaders.set("content-range", `bytes ${parsed.start}-${parsed.end}/${totalSize}`);
+  if (parsed) {
+    responseHeaders.set("content-range", `bytes ${parsed.start}-${parsed.end}/${totalSize ?? "*"}`);
   }
 
   return new Response(body, {

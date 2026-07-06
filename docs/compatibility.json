@@ -443,6 +443,34 @@
     ]
   },
   {
+    "area": "SQL",
+    "feature": "Window functions and QUALIFY",
+    "status": "supported+tested",
+    "notes": "Ranking, value, and exact aggregate windows support PARTITION BY, ORDER BY, explicit ROWS/RANGE/GROUPS frames, named windows, FILTER, DISTINCT, null-treatment modifiers, and QUALIFY, with DuckDB reference coverage and deterministic seeded differential cases.",
+    "evidence": [
+      {
+        "file": "packages/cli/src/sql-reference.reference.test.ts",
+        "pattern": "running aggregate window"
+      },
+      {
+        "file": "packages/cli/src/sql-reference.reference.test.ts",
+        "pattern": "qualify top rows per partition"
+      },
+      {
+        "file": "packages/cli/src/sql-reference.reference.test.ts",
+        "pattern": "deterministic randomized window differential seeds"
+      },
+      {
+        "file": "packages/sql/src/window-prepass.test.ts",
+        "pattern": "expands quoted and inherited named windows"
+      },
+      {
+        "file": "packages/core/src/window-backend.test.ts",
+        "pattern": "evaluates ranking and offset windows through the public query builder"
+      }
+    ]
+  },
+  {
     "area": "Execution",
     "feature": "Vectorized predicates and grouping",
     "status": "supported+tested",
@@ -463,6 +491,34 @@
       {
         "file": "packages/core/src/vector-group-by.test.ts",
         "pattern": "uses the encoded group loop for scalar and composite vector keys"
+      }
+    ]
+  },
+  {
+    "area": "Execution",
+    "feature": "Window operator state, budgets, and work-unit fan-out",
+    "status": "supported+tested",
+    "notes": "Window execution enforces materialization, partition-row, and memory budgets; windowWithState provides versioned state and spill-ref restore; Parquet work units repartition window partitions into deterministic buckets and restore source order after bucket-local evaluation.",
+    "evidence": [
+      {
+        "file": "packages/core/src/window-backend.test.ts",
+        "pattern": "fails with typed errors for budgets"
+      },
+      {
+        "file": "packages/core/src/query.test.ts",
+        "pattern": "serializes and resumes window operator state"
+      },
+      {
+        "file": "packages/core/src/window-work-unit.test.ts",
+        "pattern": "repartitions rows by window partition key and restores source order after evaluation"
+      },
+      {
+        "file": "packages/parquet/src/task-execution.test.ts",
+        "pattern": "runs window functions over repartitioned Parquet work units"
+      },
+      {
+        "file": "packages/core/src/query.workerd.ts",
+        "pattern": "runs window functions through the lazy backend in the Workers runtime"
       }
     ]
   },

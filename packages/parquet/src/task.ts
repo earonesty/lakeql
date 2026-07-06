@@ -17,6 +17,9 @@ export interface ScanParquetTaskOptions {
   batchSize?: number;
   stats?: QueryStats;
   metadataCache?: CacheAdapter<ParquetMetadata>;
+  budget?: QueryBudget;
+  now?: () => number;
+  startedAt?: number;
 }
 
 export interface PlanParquetTaskWorkUnitsOptions {

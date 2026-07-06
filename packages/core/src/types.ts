@@ -1,4 +1,5 @@
 import type { Expr } from "./expr.js";
+import type { WindowExpr } from "./window.js";
 
 export type Row = Record<string, unknown>;
 
@@ -8,6 +9,8 @@ export interface BookmarkQuery {
   projections?: Record<string, Expr>;
   where?: Expr;
   distinct?: boolean;
+  windows?: Record<string, WindowExpr>;
+  qualify?: Expr;
   orderBy?: {
     column: string;
     direction?: "asc" | "desc";

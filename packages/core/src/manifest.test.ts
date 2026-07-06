@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { eq, gt, isIn, like } from "./expr.js";
+import { col, eq, gt, isIn, like, lit } from "./expr.js";
 import {
   advanceTaskCheckpoint,
   assertBookmarkMatches,
@@ -326,7 +326,17 @@ describe("bookmarks and checkpoints", () => {
       query: {
         source: "data/*.parquet",
         select: ["id"],
+        projections: { doubled: { kind: "arithmetic", op: "mul", left: col("id"), right: lit(2) } },
         where: eq("country", "US"),
+        distinct: true,
+        windows: {
+          rn: {
+            fn: "row_number",
+            args: [],
+            over: { partitionBy: [col("country")], orderBy: [{ expr: col("id") }] },
+          },
+        },
+        qualify: gt("rn", 1),
         orderBy: [{ column: "id", direction: "asc" }],
         limit: 10,
         offset: 1,
@@ -338,6 +348,17 @@ describe("bookmarks and checkpoints", () => {
     await expect(
       verifyPaginationToken(await signPaginationToken(resumableBookmark, "secret"), "secret"),
     ).resolves.toEqual(resumableBookmark);
+    expect(() =>
+      createBookmark({
+        planFingerprint: "fp_bad_window",
+        snapshot: "snapshot_bad_window",
+        query: {
+          source: "data/*.parquet",
+          windows: { rn: { fn: "row_number" } } as never,
+        },
+        position: { fileIndex: 0, rowGroup: 0, rowOffset: 0 },
+      }),
+    ).toThrow("Bookmark windows are invalid");
     const operatorBookmark = createBookmark({
       planFingerprint: "fp_operator",
       snapshot: "snapshot_4",
@@ -412,6 +433,47 @@ describe("bookmarks and checkpoints", () => {
     ).resolves.toEqual(bookmark);
     expect(stableStringify(bookmark)).toContain('"multipart"');
     expect(stableStringify(bookmark)).toContain('"partNumber":1');
+  });
+
+  it("rejects bookmark query keys that would mutate plain object prototypes", async () => {
+    const unsafeProjections = Object.create(null) as Record<string, unknown>;
+    Object.defineProperty(unsafeProjections, "__proto__", {
+      value: col("id"),
+      enumerable: true,
+    });
+    const unsafeSketches = Object.create(null) as Record<string, Uint8Array>;
+    Object.defineProperty(unsafeSketches, "__proto__", {
+      value: new Uint8Array([1]),
+      enumerable: true,
+    });
+    expect(() =>
+      createBookmark({
+        planFingerprint: "fp_bad_projection_key",
+        snapshot: "snapshot_bad_projection_key",
+        query: { source: "data/*.parquet", projections: unsafeProjections as never },
+        position: { fileIndex: 0, rowGroup: 0, rowOffset: 0 },
+      }),
+    ).toThrow("Bookmark projections are invalid");
+    expect(() =>
+      createBookmark({
+        planFingerprint: "fp_bad_sketch_key",
+        snapshot: "snapshot_bad_sketch_key",
+        operatorState: { sketches: unsafeSketches },
+        position: { fileIndex: 0, rowGroup: 0, rowOffset: 0 },
+      }),
+    ).toThrow("Bookmark sketches state is invalid");
+
+    const payloads = [
+      `{"version":1,"planFingerprint":"fp","snapshot":"s","position":{"fileIndex":0,"rowGroup":0,"rowOffset":0},"query":{"source":"table","projections":{"__proto__":{"kind":"column","name":"id"}}}}`,
+      `{"version":1,"planFingerprint":"fp","snapshot":"s","position":{"fileIndex":0,"rowGroup":0,"rowOffset":0},"query":{"source":"table","windows":{"__proto__":{"fn":"row_number","args":[],"over":{"partitionBy":[],"orderBy":[]}}}}}`,
+      `{"version":1,"planFingerprint":"fp","snapshot":"s","position":{"fileIndex":0,"rowGroup":0,"rowOffset":0},"operatorState":{"sketches":{"__proto__":"AQ"}}}`,
+    ];
+
+    for (const payload of payloads) {
+      await expect(
+        verifyPaginationToken(await signRawPayload(payload, "secret"), "secret"),
+      ).rejects.toMatchObject({ code: "LAKEQL_BOOKMARK_INVALID" });
+    }
   });
 
   it("rejects signed bookmark payloads with invalid structure", async () => {
@@ -614,6 +676,13 @@ describe("bookmarks and checkpoints", () => {
         planFingerprint: "fp",
         snapshot: "s",
         query: { source: "table", hive: "yes" },
+        position: { fileIndex: 0, rowGroup: 0, rowOffset: 0 },
+      },
+      {
+        version: 1,
+        planFingerprint: "fp",
+        snapshot: "s",
+        query: { source: "table", windows: { rn: { fn: "row_number" } } },
         position: { fileIndex: 0, rowGroup: 0, rowOffset: 0 },
       },
     ];
