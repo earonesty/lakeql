@@ -1,5 +1,11 @@
 # lakeql
 
+## 0.2.0
+
+### Minor Changes
+
+- df9cc3c: Add `lake.sql(...)` and `querySql(...)` so JavaScript applications can execute LakeQL SQL strings directly, including implicit `input` paths, `read_parquet(...)` sources, parameters, and named table joins.
+
 ## 0.1.9
 
 ### Patch Changes
