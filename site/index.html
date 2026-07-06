@@ -23,7 +23,7 @@
       <a class="brand" href="./" aria-label="lakeql home">
         <span class="brand__mark" aria-hidden="true">◢</span>
         <span class="brand__word">lakeql</span>
-        <span class="brand__ver" id="version-tag">v0.1.3</span>
+        <span class="brand__ver" id="version-tag">v__LAKEQL_VERSION__</span>
       </a>
       <nav class="topnav">
         <a href="./compare.html">compare</a>
@@ -44,7 +44,9 @@
         correctly or rejects precisely.
       </p>
       <div class="install">
-        <code id="install-cmd">npm&nbsp;install&nbsp;lakeql@0.1.3</code>
+        <!-- No @version here: Cloudflare's email obfuscation rewrites "lakeql@x.y.z"
+             into an email-protection link for no-JS consumers. JS pins the version. -->
+        <code id="install-cmd">npm&nbsp;install&nbsp;lakeql</code>
         <button type="button" class="install__copy" id="copy-install" title="Copy">copy</button>
       </div>
     </section>

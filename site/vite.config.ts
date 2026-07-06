@@ -12,6 +12,14 @@ export default defineConfig({
   define: {
     __LAKEQL_VERSION__: JSON.stringify(lakeqlPackage.version),
   },
+  plugins: [
+    {
+      name: "inject-lakeql-version",
+      transformIndexHtml(html) {
+        return html.replaceAll("__LAKEQL_VERSION__", lakeqlPackage.version);
+      },
+    },
+  ],
   build: {
     target: "es2022",
     outDir: "dist",

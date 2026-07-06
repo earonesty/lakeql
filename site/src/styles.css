@@ -109,7 +109,8 @@ kbd {
 }
 .examples h2 {
   margin: 0;
-  max-width: 22ch;
+  max-width: 26ch;
+  text-wrap: balance;
   font-size: clamp(1.45rem, 2.5vw, 2.1rem);
   line-height: 1.08;
   letter-spacing: -0.02em;
@@ -257,7 +258,8 @@ kbd {
   letter-spacing: -0.035em;
   font-weight: 800;
   margin: 0 0 22px;
-  max-width: 16ch;
+  max-width: 30ch;
+  text-wrap: balance;
   animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 .hl {
@@ -524,6 +526,7 @@ kbd {
   display: block;
   font-family: var(--mono);
   font-size: 1.35rem;
+  white-space: nowrap;
   font-weight: 700;
   color: var(--acid);
   font-variant-numeric: tabular-nums;
@@ -907,6 +910,43 @@ tbody tr:hover td {
   }
   .topnav {
     gap: 16px;
+  }
+}
+
+@media (max-width: 560px) {
+  /* 2x2 gauges: values like "6.8 KB" don't fit four-up */
+  .gauges {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .gauge {
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .gauge:nth-child(2n) {
+    border-right: 0;
+  }
+  .gauge:nth-last-child(-n + 2) {
+    border-bottom: 0;
+  }
+
+  /* keep the source input usable: hint drops to its own line */
+  .source {
+    flex-wrap: wrap;
+  }
+  .source input {
+    min-width: 200px;
+  }
+  .source__hint {
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .brand__ver {
+    display: none;
+  }
+  .topnav {
+    gap: 12px;
+    font-size: 0.78rem;
   }
 }
 
