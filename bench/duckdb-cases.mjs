@@ -154,6 +154,72 @@ export const cases = [
       `select region, max(amount * 2) as max_doubled, count(distinct store_id) as stores from read_parquet('${sqlString(path)}') group by region order by region asc`,
   },
   {
+    name: "running aggregate window",
+    fixture: "sales.parquet",
+    lakeql:
+      "select region, store_id, amount, sum(amount) over (partition by region order by amount asc, store_id asc) as running_amount from input order by region asc, amount asc, store_id asc limit 12",
+    duckdb: (path) =>
+      `select region, store_id, amount, sum(amount) over (partition by region order by amount asc, store_id asc) as running_amount from read_parquet('${sqlString(path)}') order by region asc, amount asc, store_id asc limit 12`,
+  },
+  {
+    name: "qualify top rows per partition",
+    fixture: "sales.parquet",
+    lakeql:
+      "select region, store_id, amount from input qualify row_number() over (partition by region order by amount desc, store_id asc) <= 2 order by region asc, amount desc, store_id asc",
+    duckdb: (path) =>
+      `select region, store_id, amount from read_parquet('${sqlString(path)}') qualify row_number() over (partition by region order by amount desc, store_id asc) <= 2 order by region asc, amount desc, store_id asc`,
+  },
+  {
+    name: "rows frame moving window",
+    fixture: "sales.parquet",
+    lakeql:
+      "select region, store_id, amount, sum(amount) over (partition by region order by amount asc, store_id asc rows between 1 preceding and current row) as moving_amount from input order by region asc, amount asc, store_id asc limit 12",
+    duckdb: (path) =>
+      `select region, store_id, amount, sum(amount) over (partition by region order by amount asc, store_id asc rows between 1 preceding and current row) as moving_amount from read_parquet('${sqlString(path)}') order by region asc, amount asc, store_id asc limit 12`,
+  },
+  {
+    name: "groups frame peer window",
+    fixture: "sales.parquet",
+    lakeql:
+      "select region, store_id, amount, count(*) over (partition by region order by floor(amount / 100) groups between current row and 1 following) as peer_rows from input order by region asc, amount asc, store_id asc limit 12",
+    duckdb: (path) =>
+      `select region, store_id, amount, count(*) over (partition by region order by floor(amount / 100) groups between current row and 1 following) as peer_rows from read_parquet('${sqlString(path)}') order by region asc, amount asc, store_id asc limit 12`,
+  },
+  {
+    name: "range frame numeric offset window",
+    fixture: "sales.parquet",
+    lakeql:
+      "select region, store_id, amount, count(*) over (partition by region order by amount range between 25 preceding and current row) as nearby_rows from input order by region asc, amount asc, store_id asc limit 12",
+    duckdb: (path) =>
+      `select region, store_id, amount, count(*) over (partition by region order by amount range between 25 preceding and current row) as nearby_rows from read_parquet('${sqlString(path)}') order by region asc, amount asc, store_id asc limit 12`,
+  },
+  {
+    name: "range frame timestamp interval window",
+    fixture: "sales.parquet",
+    extraFiles: timestampWindowFixture,
+    sourceAliases: { event_windows: "event-windows.parquet" },
+    lakeql:
+      "select account, id, amount, sum(amount) over (partition by account order by event_ts range between interval '1 day' preceding and current row) as day_amount from event_windows order by account asc, id asc",
+    duckdb: (_path, files) =>
+      `select account, id, amount, sum(amount) over (partition by account order by event_ts range between interval '1 day' preceding and current row) as day_amount from read_parquet('${sqlString(files["event-windows.parquet"].path)}') order by account asc, id asc`,
+  },
+  {
+    name: "filtered aggregate window",
+    fixture: "sales.parquet",
+    lakeql:
+      "select region, store_id, amount, sum(amount) filter (where amount >= 500) over (partition by region order by amount asc, store_id asc) as running_large_amount from input order by region asc, amount asc, store_id asc limit 12",
+    duckdb: (path) =>
+      `select region, store_id, amount, sum(amount) filter (where amount >= 500) over (partition by region order by amount asc, store_id asc) as running_large_amount from read_parquet('${sqlString(path)}') order by region asc, amount asc, store_id asc limit 12`,
+  },
+  {
+    name: "named window clause",
+    fixture: "sales.parquet",
+    lakeql:
+      "select region, store_id, amount, row_number() over ranked as rn from input window ranked as (partition by region order by amount desc, store_id asc) order by region asc, rn asc limit 12",
+    duckdb: (path) =>
+      `select region, store_id, amount, row_number() over ranked as rn from read_parquet('${sqlString(path)}') window ranked as (partition by region order by amount desc, store_id asc) order by region asc, rn asc limit 12`,
+  },
+  {
     name: "high-cardinality group aggregate",
     fixture: "sales.parquet",
     extraFiles: highCardinalityFixture,
@@ -284,6 +350,41 @@ async function stringHeavyFixture() {
     ],
   });
   return { "string-heavy.parquet": await storedFixtureFile(store, "string-heavy.parquet") };
+}
+
+async function timestampWindowFixture() {
+  const store = memoryStore();
+  await writeParquet(store, "event-windows.parquet", {
+    schema: [
+      { name: "root", num_children: 4 },
+      { name: "id", type: "INT32", repetition_type: "OPTIONAL" },
+      { name: "account", type: "BYTE_ARRAY", converted_type: "UTF8", repetition_type: "OPTIONAL" },
+      {
+        name: "event_ts",
+        type: "INT64",
+        converted_type: "TIMESTAMP_MILLIS",
+        logical_type: { type: "TIMESTAMP", isAdjustedToUTC: true, unit: "MILLIS" },
+        repetition_type: "OPTIONAL",
+      },
+      { name: "amount", type: "DOUBLE", repetition_type: "OPTIONAL" },
+    ],
+    columnData: [
+      { name: "id", data: [1, 2, 3, 4, 5] },
+      { name: "account", data: ["a", "a", "a", "a", "b"] },
+      {
+        name: "event_ts",
+        data: [
+          new Date("2026-01-01T00:00:00.000Z"),
+          new Date("2026-01-02T00:00:00.000Z"),
+          new Date("2026-01-04T00:00:00.000Z"),
+          new Date("2026-01-05T00:00:00.000Z"),
+          new Date("2026-01-02T12:00:00.000Z"),
+        ],
+      },
+      { name: "amount", data: [5, 7, 11, 13, 17] },
+    ],
+  });
+  return { "event-windows.parquet": await storedFixtureFile(store, "event-windows.parquet") };
 }
 
 async function highCardinalityFixture() {

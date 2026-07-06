@@ -19,7 +19,7 @@ import {
   matches,
 } from "./evaluator.js";
 import type { Expr } from "./expr.js";
-import { col, eq, gt, gte, isIn, isNotNull, isNull, lt, lte, ne, notIn } from "./expr.js";
+import { collectExprColumns } from "./expr-utils.js";
 import {
   assertBookmarkMatches,
   createBookmark,
@@ -28,6 +28,16 @@ import {
   type TaskManifest,
 } from "./manifest.js";
 import { classifyPredicate, type PredicatePlan } from "./predicate-plan.js";
+import { parseJsonQuery } from "./query-json.js";
+import {
+  addOrderedMatch,
+  compareRows,
+  flushSortRun,
+  mergeSortRuns,
+  normalizeOrderBy,
+  validateSortRow,
+  valueForColumn,
+} from "./query-sort.js";
 import type {
   CacheAdapter,
   MetricsHook,
@@ -37,7 +47,6 @@ import type {
 } from "./runtime.js";
 import { pruneFilesWithIndex, type SidecarFileIndex } from "./sidecar-index.js";
 import type { ObjectInfo, ObjectStore } from "./store.js";
-import { compareTimestampValues, isTimestampValue, type TimestampValue } from "./timestamp.js";
 import type { Bookmark, BookmarkQuery, QueryStats, Row, SliceResult } from "./types.js";
 import type { VectorAggregateValue } from "./vector-aggregate.js";
 import {
@@ -51,6 +60,32 @@ import {
 } from "./vector-group-by.js";
 import { vectorProjectBatch } from "./vector-project.js";
 import { concatBatches, vectorTopKBatch } from "./vector-sort.js";
+import type { WindowExpr } from "./window.js";
+import {
+  collectWindowColumns,
+  type WindowExecutionMode,
+  type WindowExplainPlan,
+  type WindowTaskPlan,
+  windowExpressions,
+  windowReadColumns,
+  windowSortGroupCount,
+  windowTaskPlanForWindows,
+} from "./window-query.js";
+import {
+  executeWindowBatches,
+  executeWindowWithState,
+  type WindowRunnerOptions,
+} from "./window-runner.js";
+import type { WindowOptions, WindowResult } from "./window-state.js";
+
+export { parseJsonQuery } from "./query-json.js";
+export {
+  deserializeWindowOperatorState,
+  serializeWindowOperatorState,
+  type WindowOperatorState,
+  type WindowOptions,
+  type WindowResult,
+} from "./window-state.js";
 
 const textEncoder = new TextEncoder();
 const DEFAULT_COLUMNAR_BATCH_SIZE = 262_144;
@@ -64,6 +99,8 @@ export interface QueryBudget {
   maxElapsedMs?: number;
   /** Maximum rows an operator may buffer in memory for orderBy/top-k work. */
   maxBufferedRows?: number;
+  /** Maximum rows a single window partition may retain during window evaluation. */
+  maxWindowPartitionRows?: number;
   /** Maximum deterministic serialized bytes an in-memory operator may retain. */
   maxMemoryBytes?: number;
   /** Maximum object-store reads allowed to be in flight at once. */
@@ -115,6 +152,21 @@ export interface ScanAdapter {
   scanVectorBatches?(path: string, options: ScanOptions): AsyncIterable<ScanVectorBatch>;
   scanColumnBatches?(path: string, options: ScanOptions): AsyncIterable<ScanColumnBatch>;
   planTask?(path: string, options: ScanTaskPlanOptions): Promise<ScanTaskPlan>;
+  executeWindowTasks?(
+    tasks: TaskInput[],
+    windows: Record<string, WindowExpr>,
+    options: WindowTaskExecutionOptions,
+  ): Promise<Row[]>;
+}
+
+export interface WindowTaskExecutionOptions {
+  budget: QueryBudget;
+  stats: QueryStats;
+  now: () => number;
+  startedAt: number;
+  batchSize: number;
+  maxConcurrentTasks?: number;
+  maxBufferedPartials?: number;
 }
 
 export interface ScanVectorBatch {
@@ -145,6 +197,8 @@ export interface PathQueryInit {
   projections?: Record<string, Expr>;
   where?: Expr;
   distinct?: boolean;
+  windows?: Record<string, WindowExpr>;
+  qualify?: Expr;
   orderBy?: OrderByTerm[];
   limit?: number;
   offset?: number;
@@ -312,6 +366,7 @@ export interface TaskInput {
   projectedColumns?: string[];
   residualPredicate?: Expr;
   partitionValues: Record<string, string>;
+  window?: WindowTaskPlan;
 }
 
 export interface ExplainJson {
@@ -320,6 +375,7 @@ export interface ExplainJson {
   filesSkipped: number;
   projectedColumns: string[];
   predicatePlan: PredicatePlan;
+  windowPlan?: WindowExplainPlan;
   tasks: TaskInput[];
 }
 
@@ -463,6 +519,17 @@ export class QueryBuilder {
     return new QueryBuilder(this.lake, { ...this.init, projections });
   }
 
+  window(alias: string, expr: WindowExpr): QueryBuilder {
+    return new QueryBuilder(this.lake, {
+      ...this.init,
+      windows: { ...(this.init.windows ?? {}), [alias]: expr },
+    });
+  }
+
+  qualify(expr: Expr): QueryBuilder {
+    return new QueryBuilder(this.lake, { ...this.init, qualify: expr });
+  }
+
   where(expr: Expr): QueryBuilder {
     return new QueryBuilder(this.lake, { ...this.init, where: expr });
   }
@@ -525,6 +592,10 @@ export class QueryBuilder {
 
   sortWithState(options: SortOptions = {}): Promise<SortResult> {
     return this.run().sortWithState(options);
+  }
+
+  windowWithState(options: WindowOptions = {}): Promise<WindowResult> {
+    return this.run().windowWithState(options);
   }
 
   first(): Promise<Row | undefined> {
@@ -650,6 +721,10 @@ export class QueryResult {
   }
 
   async *batches(): AsyncIterable<Row[]> {
+    if (this.config.windows !== undefined && Object.keys(this.config.windows).length > 0) {
+      yield* this.windowedBatches();
+      return;
+    }
     if (this.config.orderBy !== undefined) {
       yield* this.orderedBatches();
       return;
@@ -721,6 +796,33 @@ export class QueryResult {
     }
     stats.elapsedMs = config.now() - startedAt;
     config.metrics?.timing("lakeql.query.elapsed", stats.elapsedMs, { queryId: stats.queryId });
+  }
+
+  private async *windowedBatches(): AsyncIterable<Row[]> {
+    yield* executeWindowBatches(this.windowRunnerOptions());
+  }
+
+  private windowRunnerOptions(): WindowRunnerOptions {
+    return {
+      config: this.config,
+      stats: this.stats,
+      planObjects: () => this.planObjects(),
+      tasksFromObjects: (objects) => this.tasksFromObjects(objects),
+      vectorBatchScanner,
+      columnarBatchSize,
+      parseHivePartitions,
+      enforceBudget,
+      enforceBufferedRows: enforceBufferedRowsBudget,
+      enforceWindowPartitionRows: enforceWindowPartitionRowsBudget,
+      enforceMemoryBytes: enforceOperatorMemoryBudget,
+      estimateMemoryBytes: estimateOperatorMemoryBytes,
+      batchExecution: {
+        project,
+        compareRows,
+        addDistinctRow,
+        vectorExprSupported,
+      },
+    };
   }
 
   private tryColumnarProjectedBatches(): AsyncIterable<Row[]> | undefined {
@@ -981,6 +1083,18 @@ export class QueryResult {
       );
     }
     return result;
+  }
+
+  async windowWithState(options: WindowOptions = {}): Promise<WindowResult> {
+    const config = this.config;
+    if (config.windows === undefined || Object.keys(config.windows).length === 0) {
+      throw new LakeqlError("LAKEQL_TYPE_ERROR", "windowWithState requires windows");
+    }
+    return executeWindowWithState(
+      this.windowRunnerOptions(),
+      options,
+      options.spillId ?? `window-${this.stats.queryId}`,
+    );
   }
 
   async first(): Promise<Row | undefined> {
@@ -1693,12 +1807,14 @@ export class QueryResult {
     const { planned, skipped } = await this.planObjects();
     const tasks = await this.tasksFromObjects(planned);
     const projectedColumns =
-      projectedReadColumns(
-        this.config.select,
-        this.config.where,
-        undefined,
-        this.config.projections,
-      ) ?? [];
+      (this.config.windows === undefined
+        ? projectedReadColumns(
+            this.config.select,
+            this.config.where,
+            undefined,
+            this.config.projections,
+          )
+        : windowReadColumns(this.config)) ?? [];
     const json: ExplainJson = {
       queryId: this.stats.queryId,
       filesPlanned: tasks.length,
@@ -1708,6 +1824,11 @@ export class QueryResult {
         partitionColumns: partitionColumnsFromTasks(tasks),
         rowGroupStatsColumns: projectedColumns,
       }),
+      ...(this.config.windows === undefined
+        ? {}
+        : {
+            windowPlan: explainWindowPlan(this.config, Math.max(1, tasks.length * 2)),
+          }),
       tasks,
     };
     return {
@@ -1716,19 +1837,29 @@ export class QueryResult {
         `files planned: ${json.filesPlanned}`,
         `files skipped: ${json.filesSkipped}`,
         `projected columns: ${json.projectedColumns.join(", ") || "*"}`,
+        ...(json.windowPlan === undefined
+          ? []
+          : [
+              `window expressions: ${json.windowPlan.expressions}`,
+              `window sort groups: ${json.windowPlan.sortGroups}`,
+              `window qualify: ${json.windowPlan.qualify ? "yes" : "no"}`,
+              `window execution: ${json.windowPlan.execution}`,
+            ]),
       ].join("\n"),
     };
   }
 
   private async tasksFromObjects(objects: ObjectInfo[]): Promise<TaskInput[]> {
     const config = this.config;
-    const projectedColumns = projectedReadColumns(
-      config.select,
-      config.where,
-      config.orderBy,
-      config.projections,
-    );
+    const projectedColumns =
+      config.windows === undefined
+        ? projectedReadColumns(config.select, config.where, config.orderBy, config.projections)
+        : windowReadColumns(config);
     const tasks: TaskInput[] = [];
+    const windowTaskPlan =
+      config.windows === undefined
+        ? undefined
+        : windowTaskPlanForWindows(config.windows, Math.max(1, objects.length * 2));
     for (const object of objects) {
       const partitionValues = config.hive ? parseHivePartitions(object.path) : {};
       const physicalColumns = projectedColumns?.filter((column) => !(column in partitionValues));
@@ -1750,6 +1881,7 @@ export class QueryResult {
       if (object.etag !== undefined) task.etag = object.etag;
       if (projectedColumns !== undefined) task.projectedColumns = projectedColumns;
       if (config.where !== undefined) task.residualPredicate = config.where;
+      if (windowTaskPlan !== undefined) task.window = windowTaskPlan;
       tasks.push(task);
     }
     return tasks;
@@ -1760,7 +1892,12 @@ export class QueryResult {
     // Lazily load the geospatial backend before any row is evaluated, but only
     // if this query's filter/projection expressions actually use a spatial
     // function that needs it. Every read path funnels through planObjects().
-    await ensureGeoBackendForExprs([config.where, ...Object.values(config.projections ?? {})]);
+    await ensureGeoBackendForExprs([
+      config.where,
+      config.qualify,
+      ...Object.values(config.projections ?? {}),
+      ...windowExpressions(config.windows),
+    ]);
     const objects = await expandPaths(config.lake.store, config.source, config.planningCache);
     let planned = objects;
     let skipped = 0;
@@ -2763,13 +2900,6 @@ function aggregateValue(row: Row, alias: string, aggregate: AggregateExpr | unde
   return valueForColumn(row, aggregate.column);
 }
 
-function valueForColumn(row: Row, column: string): unknown {
-  if (!(column in row)) {
-    throw new LakeqlError("LAKEQL_UNKNOWN_COLUMN", `Unknown column ${column}`, { column });
-  }
-  return row[column];
-}
-
 function validateAggregateRequest(
   groupColumns: string[],
   spec: AggregateSpec,
@@ -2863,167 +2993,6 @@ function throwAggregateType(op: string): never {
   });
 }
 
-export function parseJsonQuery(input: unknown): PathQueryInit {
-  if (!isRecord(input)) throwParse("JSON query must be an object");
-  if (input.version !== 1) throwParse("JSON query version must be 1");
-  if (typeof input.from !== "string") throwParse("JSON query from must be a string");
-  const init: PathQueryInit = { source: input.from };
-  if (input.select !== undefined) {
-    if (!Array.isArray(input.select) || input.select.some((value) => typeof value !== "string")) {
-      throwParse("JSON query select must be an array of strings");
-    }
-    init.select = input.select;
-  }
-  if (input.where !== undefined) init.where = parseJsonExpr(input.where);
-  if (input.distinct !== undefined) {
-    if (typeof input.distinct !== "boolean") throwParse("JSON query distinct must be a boolean");
-    init.distinct = input.distinct;
-  }
-  if (input.orderBy !== undefined) {
-    if (!Array.isArray(input.orderBy)) throwParse("JSON query orderBy must be an array");
-    init.orderBy = normalizeOrderBy(input.orderBy.map(parseJsonOrderByTerm));
-  }
-  if (input.limit !== undefined) init.limit = parseNonNegativeInt(input.limit, "limit");
-  if (input.offset !== undefined) init.offset = parseNonNegativeInt(input.offset, "offset");
-  return init;
-}
-
-function parseJsonOrderByTerm(input: unknown): OrderByTerm {
-  if (!isRecord(input)) throwParse("JSON query orderBy terms must be objects");
-  if (typeof input.column !== "string") throwParse("JSON query orderBy column must be a string");
-  const term: OrderByTerm = { column: input.column };
-  if (input.direction !== undefined) {
-    if (input.direction !== "asc" && input.direction !== "desc") {
-      throwParse("JSON query orderBy direction must be asc or desc");
-    }
-    term.direction = input.direction;
-  }
-  if (input.nulls !== undefined) {
-    if (input.nulls !== "first" && input.nulls !== "last") {
-      throwParse("JSON query orderBy nulls must be first or last");
-    }
-    term.nulls = input.nulls;
-  }
-  return term;
-}
-
-function parseJsonExpr(input: unknown): Expr {
-  if (!isRecord(input)) throwParse("JSON expression must be an object");
-  const entries = Object.entries(input);
-  if (entries.length !== 1) throwParse("JSON expression must have exactly one operator");
-  const [op, value] = entries[0] ?? [];
-  switch (op) {
-    case "eq":
-      return tuple2(value, op, eq);
-    case "ne":
-      return tuple2(value, op, ne);
-    case "lt":
-      return tuple2(value, op, lt);
-    case "lte":
-      return tuple2(value, op, lte);
-    case "gt":
-      return tuple2(value, op, gt);
-    case "gte":
-      return tuple2(value, op, gte);
-    case "in":
-      return tupleArray(value, op, isIn);
-    case "notIn":
-      return tupleArray(value, op, notIn);
-    case "between": {
-      const tuple = requireTuple(value, op, 3);
-      return {
-        kind: "between",
-        target: col(requireColumn(tuple[0], op)),
-        low: literal(tuple[1]),
-        high: literal(tuple[2]),
-      };
-    }
-    case "isNull":
-      return isNull(requireColumn(value, op));
-    case "isNotNull":
-      return isNotNull(requireColumn(value, op));
-    case "like":
-      return tuplePattern(value, op, false);
-    case "ilike":
-      return tuplePattern(value, op, true);
-    case "and":
-    case "or": {
-      if (!Array.isArray(value)) throwParse(`${op} expects an array`);
-      if (value.length < 2) throwParse(`${op} expects at least two expressions`);
-      return { kind: "logical", op, operands: value.map(parseJsonExpr) };
-    }
-    case "not":
-      return { kind: "not", operand: parseJsonExpr(value) };
-    default:
-      throwParse(`Unsupported JSON expression operator ${op}`);
-  }
-}
-
-function tuple2(
-  value: unknown,
-  op: string,
-  cb: (column: string, value: string | number | boolean | bigint | null) => Expr,
-): Expr {
-  const tuple = requireTuple(value, op, 2);
-  return cb(requireColumn(tuple[0], op), requireScalar(tuple[1], op));
-}
-
-function tupleArray(
-  value: unknown,
-  op: string,
-  cb: (column: string, values: (string | number | boolean | bigint | null)[]) => Expr,
-): Expr {
-  const tuple = requireTuple(value, op, 2);
-  if (!Array.isArray(tuple[1])) throwParse(`${op} values must be an array`);
-  return cb(
-    requireColumn(tuple[0], op),
-    tuple[1].map((inner) => requireScalar(inner, op)),
-  );
-}
-
-function tuplePattern(value: unknown, op: string, caseInsensitive: boolean): Expr {
-  const tuple = requireTuple(value, op, 2);
-  const pattern = tuple[1];
-  if (typeof pattern !== "string") throwParse(`${op} pattern must be a string`);
-  return { kind: "like", caseInsensitive, target: col(requireColumn(tuple[0], op)), pattern };
-}
-
-function literal(value: unknown): Expr {
-  return { kind: "literal", value: requireScalar(value, "literal") };
-}
-
-function requireTuple(value: unknown, op: string, length: number): unknown[] {
-  if (!Array.isArray(value) || value.length !== length) {
-    throwParse(`${op} expects a ${length}-item array`);
-  }
-  return value;
-}
-
-function requireColumn(value: unknown, op: string): string {
-  if (typeof value !== "string") throwParse(`${op} column must be a string`);
-  return value;
-}
-
-function requireScalar(value: unknown, op: string): string | number | boolean | bigint | null {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean" ||
-    typeof value === "bigint"
-  ) {
-    return value;
-  }
-  throwParse(`${op} value must be a scalar`);
-}
-
-function parseNonNegativeInt(value: unknown, field: string): number {
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
-    throwParse(`${field} must be a non-negative integer`);
-  }
-  return value;
-}
-
 function validateQueryInit(init: PathQueryInit): void {
   if (init.limit !== undefined && (!Number.isInteger(init.limit) || init.limit < 0)) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "limit must be a non-negative integer");
@@ -3037,6 +3006,13 @@ function validateQueryInit(init: PathQueryInit): void {
   if (init.orderBy !== undefined) normalizeOrderBy(init.orderBy);
   if (init.distinct !== undefined && typeof init.distinct !== "boolean") {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "distinct must be a boolean");
+  }
+  if (init.windows !== undefined) {
+    for (const alias of Object.keys(init.windows)) {
+      if (alias.length === 0) {
+        throw new LakeqlError("LAKEQL_TYPE_ERROR", "window aliases must be non-empty strings");
+      }
+    }
   }
 }
 
@@ -3069,6 +3045,8 @@ function cloneBookmarkQuery(init: PathQueryInit): BookmarkQuery {
   if (init.projections !== undefined) query.projections = init.projections;
   if (init.where !== undefined) query.where = init.where;
   if (init.distinct !== undefined) query.distinct = init.distinct;
+  if (init.windows !== undefined) query.windows = init.windows;
+  if (init.qualify !== undefined) query.qualify = init.qualify;
   if (init.orderBy !== undefined) {
     query.orderBy = init.orderBy.map((term) => {
       const queryTerm: NonNullable<BookmarkQuery["orderBy"]>[number] = { column: term.column };
@@ -3123,6 +3101,8 @@ function validatePolicyColumns(
   for (const column of init.select ?? []) requested.add(column);
   for (const term of init.orderBy ?? []) requested.add(term.column);
   for (const expr of Object.values(init.projections ?? {})) collectExprColumns(expr, requested);
+  for (const expr of Object.values(init.windows ?? {})) collectWindowColumns(expr, requested);
+  collectExprColumns(init.qualify, requested);
   collectExprColumns(effectiveWhere, requested);
   for (const column of requested) {
     if (!allowed.has(column)) {
@@ -3496,56 +3476,6 @@ function rowRefKey(ref: Pick<RankedRowRef, "path" | "rowIndex">): string {
   return `${ref.path}\u001f${ref.rowIndex}`;
 }
 
-function collectExprColumns(expr: Expr | undefined, columns: Set<string>): void {
-  if (!expr) return;
-  switch (expr.kind) {
-    case "column":
-      columns.add(expr.name);
-      return;
-    case "literal":
-      return;
-    case "compare":
-      collectExprColumns(expr.left, columns);
-      collectExprColumns(expr.right, columns);
-      return;
-    case "in":
-      collectExprColumns(expr.target, columns);
-      for (const value of expr.values) collectExprColumns(value, columns);
-      return;
-    case "between":
-      collectExprColumns(expr.target, columns);
-      collectExprColumns(expr.low, columns);
-      collectExprColumns(expr.high, columns);
-      return;
-    case "null-check":
-      collectExprColumns(expr.target, columns);
-      return;
-    case "logical":
-      for (const operand of expr.operands) collectExprColumns(operand, columns);
-      return;
-    case "not":
-      collectExprColumns(expr.operand, columns);
-      return;
-    case "like":
-      collectExprColumns(expr.target, columns);
-      return;
-    case "call":
-      for (const arg of expr.args) collectExprColumns(arg, columns);
-      return;
-    case "arithmetic":
-      collectExprColumns(expr.left, columns);
-      collectExprColumns(expr.right, columns);
-      return;
-    case "case":
-      for (const branch of expr.whens) {
-        collectExprColumns(branch.when, columns);
-        collectExprColumns(branch.value, columns);
-      }
-      collectExprColumns(expr.else, columns);
-      return;
-  }
-}
-
 function vectorExprSupported(expr: Expr | undefined): boolean {
   if (expr === undefined) return true;
   switch (expr.kind) {
@@ -3613,156 +3543,6 @@ function addDistinctRow(seen: Set<string>, row: Row, budget: QueryBudget): boole
   enforceBufferedRowsBudget(budget, seen.size);
   enforceOperatorMemoryBudget(budget, estimateOperatorMemoryBytes([...seen]));
   return true;
-}
-
-function normalizeOrderBy(terms: OrderByTerm[]): OrderByTerm[] {
-  if (!Array.isArray(terms) || terms.length === 0) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy must contain at least one term");
-  }
-  return terms.map((term) => {
-    if (typeof term.column !== "string" || term.column.length === 0) {
-      throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy columns must be non-empty strings");
-    }
-    const direction = term.direction ?? "asc";
-    if (direction !== "asc" && direction !== "desc") {
-      throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy direction must be asc or desc", { term });
-    }
-    const nulls = term.nulls ?? (direction === "asc" ? "last" : "first");
-    if (nulls !== "first" && nulls !== "last") {
-      throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy nulls must be first or last", { term });
-    }
-    return { column: term.column, direction, nulls };
-  });
-}
-
-function compareRows(left: Row, right: Row, orderBy: OrderByTerm[]): number {
-  for (const term of orderBy) {
-    const comparison = compareSortValues(
-      valueForColumn(left, term.column),
-      valueForColumn(right, term.column),
-      term,
-    );
-    if (comparison !== 0) return comparison;
-  }
-  return 0;
-}
-
-function addOrderedMatch(
-  matched: Row[],
-  row: Row,
-  orderBy: OrderByTerm[],
-  topK: number | undefined,
-): void {
-  if (topK === undefined) {
-    matched.push(row);
-    return;
-  }
-  if (topK === 0) return;
-  if (matched.length < topK) {
-    matched.push(row);
-    return;
-  }
-  let worstIndex = 0;
-  for (let index = 1; index < matched.length; index += 1) {
-    const candidate = matched[index];
-    const worst = matched[worstIndex];
-    if (
-      candidate !== undefined &&
-      worst !== undefined &&
-      compareRows(candidate, worst, orderBy) > 0
-    ) {
-      worstIndex = index;
-    }
-  }
-  const worst = matched[worstIndex];
-  if (worst !== undefined && compareRows(row, worst, orderBy) < 0) matched[worstIndex] = row;
-}
-
-function flushSortRun(runs: Row[][], currentRun: Row[], orderBy: OrderByTerm[]): void {
-  if (currentRun.length === 0) return;
-  currentRun.sort((left, right) => compareRows(left, right, orderBy));
-  runs.push(currentRun.splice(0, currentRun.length));
-}
-
-function mergeSortRuns(runs: Row[][], orderBy: OrderByTerm[]): Row[] {
-  const cursors = runs.map(() => 0);
-  const out: Row[] = [];
-  while (true) {
-    let bestRun = -1;
-    let bestRow: Row | undefined;
-    for (let runIndex = 0; runIndex < runs.length; runIndex += 1) {
-      const run = runs[runIndex];
-      const cursor = cursors[runIndex] ?? 0;
-      const row = run?.[cursor];
-      if (row === undefined) continue;
-      if (bestRow === undefined || compareRows(row, bestRow, orderBy) < 0) {
-        bestRow = row;
-        bestRun = runIndex;
-      }
-    }
-    if (bestRow === undefined) return out;
-    out.push(bestRow);
-    cursors[bestRun] = (cursors[bestRun] ?? 0) + 1;
-  }
-}
-
-function validateSortRow(row: Row, orderBy: OrderByTerm[]): void {
-  for (const term of orderBy) {
-    const value = valueForColumn(row, term.column);
-    if (value === null || value === undefined) continue;
-    if (!isSortableValue(value)) {
-      throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy values must be scalar", {
-        column: term.column,
-      });
-    }
-  }
-}
-
-function compareSortValues(left: unknown, right: unknown, term: OrderByTerm): number {
-  const leftNull = left === null || left === undefined;
-  const rightNull = right === null || right === undefined;
-  if (leftNull || rightNull) {
-    if (leftNull && rightNull) return 0;
-    const nullOrder = term.nulls === "first" ? -1 : 1;
-    return leftNull ? nullOrder : -nullOrder;
-  }
-  if (!isSortableValue(left) || !isSortableValue(right)) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy values must be scalar", {
-      column: term.column,
-    });
-  }
-  if (isTimestampValue(left) || isTimestampValue(right)) {
-    if (!isTimestampValue(left) || !isTimestampValue(right)) {
-      throw new LakeqlError(
-        "LAKEQL_TYPE_ERROR",
-        "orderBy timestamp values must have matching types",
-        { column: term.column },
-      );
-    }
-    const direction = term.direction === "desc" ? -1 : 1;
-    return compareTimestampValues(left, right) * direction;
-  }
-  if (typeof left !== typeof right) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy values must have matching types", {
-      column: term.column,
-    });
-  }
-  const direction = term.direction === "desc" ? -1 : 1;
-  if (left < right) return -1 * direction;
-  if (left > right) return direction;
-  return 0;
-}
-
-function isSortableValue(
-  value: unknown,
-): value is string | number | bigint | boolean | TimestampValue {
-  return (
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "bigint" ||
-    typeof value === "boolean" ||
-    isTimestampValue(value)
-  );
 }
 
 export function parseHivePartitions(path: string): Record<string, string> {
@@ -3857,6 +3637,13 @@ function enforceBufferedRowsBudget(budget: QueryBudget, bufferedRows: number): v
   }
 }
 
+function enforceWindowPartitionRowsBudget(budget: QueryBudget, partitionRows: number): void {
+  const limit = budget.maxWindowPartitionRows ?? budget.maxBufferedRows;
+  if (limit !== undefined && partitionRows > limit) {
+    throwBudget("window partition rows", limit, partitionRows);
+  }
+}
+
 function enforceOperatorMemoryBudget(budget: QueryBudget, memoryBytes: number): void {
   if (budget.maxMemoryBytes !== undefined && memoryBytes > budget.maxMemoryBytes) {
     throwBudget("operator memory bytes", budget.maxMemoryBytes, memoryBytes);
@@ -3907,6 +3694,40 @@ function throwBudget(metric: string, limit: number, actual: number): never {
   );
 }
 
+function explainWindowPlan(
+  config: QueryResultConfig,
+  plannedBucketCount: number,
+): WindowExplainPlan {
+  const windows = config.windows ?? {};
+  return {
+    expressions: Object.keys(windows).length,
+    sortGroups: windowSortGroupCount(windows),
+    qualify: config.qualify !== undefined,
+    execution: plannedWindowExecutionMode(config, plannedBucketCount),
+    workUnits: windowTaskPlanForWindows(windows, plannedBucketCount),
+  };
+}
+
+function plannedWindowExecutionMode(
+  config: QueryResultConfig,
+  plannedBucketCount: number,
+): WindowExecutionMode {
+  if (
+    config.scanner.executeWindowTasks !== undefined &&
+    windowTaskPlanForWindows(config.windows ?? {}, plannedBucketCount).available === true
+  ) {
+    return "parquet-work-unit-fanout";
+  }
+  if (
+    vectorBatchScanner(config.scanner) !== undefined &&
+    config.hive !== true &&
+    vectorExprSupported(config.where)
+  ) {
+    return "vector-window";
+  }
+  return "row-materialized";
+}
+
 function initialStats(queryId: string): QueryStats {
   return {
     queryId,
@@ -3927,10 +3748,6 @@ function initialStats(queryId: string): QueryStats {
     cacheHits: 0,
     cacheMisses: 0,
   };
-}
-
-function throwParse(message: string): never {
-  throw new LakeqlError("LAKEQL_PARSE_ERROR", message);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

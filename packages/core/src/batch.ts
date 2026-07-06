@@ -105,6 +105,19 @@ export function materializeBatchRows(batch: Batch): Row[] {
   return materializeSelectedBatchRows(batch);
 }
 
+export function materializeBatchRow(batch: Batch, index: number): Row {
+  if (index < 0 || index >= batch.rowCount) {
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Batch row index is out of bounds", {
+      index,
+      rowCount: batch.rowCount,
+    });
+  }
+  const row: Row = {};
+  for (const [name, vector] of Object.entries(batch.columns))
+    row[name] = vectorValue(vector, index);
+  return row;
+}
+
 export function materializeSelectedBatchRows(batch: Batch, selection?: Selection): Row[] {
   const rows: Row[] = [];
   const columns = Object.entries(batch.columns);

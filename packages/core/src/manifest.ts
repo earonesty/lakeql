@@ -361,6 +361,22 @@ function normalizeTaskInput(task: TaskInput): TaskInput {
   if (task.projectedColumns !== undefined)
     normalized.projectedColumns = [...task.projectedColumns].sort();
   if (task.residualPredicate !== undefined) normalized.residualPredicate = task.residualPredicate;
+  if (task.window !== undefined) {
+    normalized.window =
+      task.window.available === true
+        ? {
+            topology: task.window.topology,
+            available: true,
+            bucketCount: task.window.bucketCount,
+            partitionBy: task.window.partitionBy,
+          }
+        : {
+            topology: task.window.topology,
+            available: false,
+            bucketCount: 1,
+            reason: task.window.reason,
+          };
+  }
   return normalized;
 }
 

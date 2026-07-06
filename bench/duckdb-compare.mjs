@@ -361,9 +361,12 @@ async function runLakeql(fixture, sql, extraFiles = {}, sourceAliases = {}) {
     else if (ast.distinct === true && offset > 0) rows = rows.slice(offset);
   } else {
     let query = lake.path(ast.source);
+    for (const [alias, expr] of Object.entries(ast.windows ?? {}))
+      query = query.window(alias, expr);
     if (ast.projections !== undefined) query = query.select(referencedColumns(ast));
     else if (ast.select) query = query.select(ast.select);
     if (ast.where) query = query.where(ast.where);
+    if (ast.qualify) query = query.qualify(ast.qualify);
     if (ast.orderBy) query = query.orderBy(ast.orderBy);
     if (ast.offset !== undefined) query = query.offset(ast.offset);
     if (ast.limit !== undefined) query = query.limit(ast.limit);
@@ -371,11 +374,19 @@ async function runLakeql(fixture, sql, extraFiles = {}, sourceAliases = {}) {
     rows = await result.toArray();
     if (ast.projections !== undefined) rows = projectRows(rows, ast);
     stats = result.stats;
+    if (ast.windows !== undefined || ast.qualify !== undefined) {
+      ast.__benchWindowExecution = (await result.explain()).json.windowPlan?.execution;
+    }
   }
 
   return {
     rows,
-    path: aggregates || grouped ? "row aggregate" : "row scan",
+    path:
+      aggregates || grouped
+        ? "row aggregate"
+        : ast.__benchWindowExecution === undefined
+          ? "row scan"
+          : ast.__benchWindowExecution,
     workUnits: "",
     bytesFetched: counters.bytesFetched,
     objectRequests: counters.totalRequests,
@@ -398,6 +409,7 @@ function vectorScanPath(ast) {
 function canUseVectorAggregate(ast, aggregates, grouped) {
   return (
     aggregates !== undefined &&
+    !hasWindows(ast) &&
     ast.having === undefined &&
     ast.distinct !== true &&
     (grouped || (ast.orderBy === undefined && ast.limit === undefined && ast.offset === undefined))
@@ -407,6 +419,7 @@ function canUseVectorAggregate(ast, aggregates, grouped) {
 function canUseVectorJoin(ast, aggregates, grouped) {
   return (
     ast.join !== undefined &&
+    !hasWindows(ast) &&
     aggregates === undefined &&
     !grouped &&
     ast.distinct !== true &&
@@ -583,6 +596,7 @@ function replaceScalarSubqueryExpr(expr, values) {
 function canUseVectorSubqueryJoin(ast, aggregates, grouped) {
   return (
     ast.subqueryJoin !== undefined &&
+    !hasWindows(ast) &&
     aggregates === undefined &&
     !grouped &&
     ast.distinct !== true &&
@@ -592,7 +606,11 @@ function canUseVectorSubqueryJoin(ast, aggregates, grouped) {
 }
 
 function canUseVectorScan(ast, aggregates, grouped) {
-  return aggregates === undefined && !grouped && ast.distinct !== true;
+  return aggregates === undefined && !grouped && ast.distinct !== true && !hasWindows(ast);
+}
+
+function hasWindows(ast) {
+  return ast.windows !== undefined || ast.qualify !== undefined;
 }
 
 async function scanSubqueryJoinSourceBatch(store, lake, source, ast, stats, side, metadataCache) {

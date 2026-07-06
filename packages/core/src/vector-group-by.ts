@@ -11,6 +11,7 @@ import {
 } from "./batch.js";
 import { LakeqlError } from "./errors.js";
 import type { Scalar } from "./expr.js";
+import { isIntervalValue } from "./interval.js";
 import type { AggregateExpr, AggregateSpec, QueryBudget } from "./query.js";
 import { isTimestampValue, TimestampValue } from "./timestamp.js";
 import type { Row } from "./types.js";
@@ -619,6 +620,9 @@ function aggregateScalarValue(value: Scalar): VectorAggregateValue {
   if (value instanceof Uint8Array) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Binary values are not aggregate values");
   }
+  if (isIntervalValue(value)) {
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Interval values are not aggregate values");
+  }
   return value;
 }
 
@@ -638,6 +642,9 @@ function scalarGroupKeyPart(value: Scalar): string {
   if (value instanceof Uint8Array) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Binary values are not group keys");
   }
+  if (isIntervalValue(value)) {
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Interval values are not group keys");
+  }
   if (isTimestampValue(value)) return `timestamp:${value.epochNanoseconds}`;
   return `${typeof value}:${value}`;
 }
@@ -645,6 +652,9 @@ function scalarGroupKeyPart(value: Scalar): string {
 function snapshotGroupValue(value: Scalar): VectorGroupBySnapshotValue {
   if (value instanceof Uint8Array) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Binary values are not group keys");
+  }
+  if (isIntervalValue(value)) {
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Interval values are not group keys");
   }
   if (isTimestampValue(value)) {
     return {

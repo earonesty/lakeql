@@ -9,6 +9,7 @@ import {
 } from "./batch.js";
 import { LakeqlError } from "./errors.js";
 import type { Scalar } from "./expr.js";
+import { isIntervalValue } from "./interval.js";
 import type { AggregateExpr, AggregateSpec, QueryBudget } from "./query.js";
 import { compareTimestampValues, isTimestampValue, type TimestampValue } from "./timestamp.js";
 import {
@@ -286,6 +287,9 @@ function updateVectorAggregateState(
 function aggregateScalarValue(value: Scalar): VectorAggregateValue {
   if (value instanceof Uint8Array) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Binary values are not aggregate values");
+  }
+  if (isIntervalValue(value)) {
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Interval values are not aggregate values");
   }
   return value;
 }

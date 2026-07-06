@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eq } from "./expr.js";
+import { col, eq } from "./expr.js";
 import { memoryStore } from "./memory-store.js";
 import { Lake, type ScanAdapter, type ScanOptions } from "./query.js";
 import type { Row } from "./types.js";
@@ -44,5 +44,32 @@ describe("workerd runtime", () => {
     await expect(lake.resume(first.bookmark).run({ slice: { maxRows: 2 } })).resolves.toEqual({
       rows: [{ id: 3, region: "west" }],
     });
+  });
+
+  it("runs window functions through the lazy backend in the Workers runtime", async () => {
+    const store = memoryStore();
+    await store.put("table", new Uint8Array([1, 2, 3]));
+    const lake = new Lake({
+      store,
+      scanner: new InlineScanner(),
+      queryId: () => "q_window_workerd",
+    });
+
+    await expect(
+      lake
+        .path("table")
+        .window("rn", {
+          fn: "row_number",
+          args: [],
+          over: { partitionBy: [col("region")], orderBy: [{ expr: col("id") }] },
+        })
+        .select(["id", "region", "rn"])
+        .orderBy([{ column: "id" }])
+        .toArray(),
+    ).resolves.toEqual([
+      { id: 1, region: "west", rn: 1 },
+      { id: 2, region: "east", rn: 1 },
+      { id: 3, region: "west", rn: 2 },
+    ]);
   });
 });

@@ -30,7 +30,7 @@
     "fixtures:iceberg": "pnpm --filter lakeql-fixtures generate:iceberg",
     "bench": "pnpm build && node bench/run.mjs",
     "bench:duckdb": "pnpm build && node bench/duckdb-compare.mjs",
-    "bench:browser-r2": "pnpm build && node bench/browser-spatial-fixture.mjs && pnpm --dir site build",
+    "bench:browser-r2": "pnpm build && node bench/browser-spatial-fixture.mjs && node bench/browser-window-fixture.mjs && pnpm --dir site build",
     "bench:bundle": "pnpm build && node bench/bundle.mjs",
     "bench:workunits": "pnpm build && node bench/workunits.mjs",
     "bench:workunits:10m": "LAKEQL_WORKUNIT_ROWS=10000000 LAKEQL_WORKUNIT_ROWS_PER_FILE=100000 LAKEQL_WORKUNIT_ROW_GROUP_ROWS=10000 LAKEQL_WORKUNIT_ROW_GROUPS_PER_TASK=1 LAKEQL_WORKUNIT_CONCURRENT_TASKS=2 LAKEQL_WORKUNIT_SELECTED_TAIL_ROWS=100000 LAKEQL_WORKUNIT_MAX_FANOUT_RSS_DELTA_MB=256 LAKEQL_WORKUNIT_MAX_FANOUT_BYTES=6291456 LAKEQL_WORKUNIT_MAX_FANOUT_RANGES=32 LAKEQL_WORKUNIT_MAX_PLANNING_BYTES=8388608 LAKEQL_WORKUNIT_MAX_PLANNING_RANGES=100 LAKEQL_WORKUNIT_MAX_ROWS_DECODED=100000 LAKEQL_WORKUNIT_MAX_PLANNED_ROW_GROUPS=10 LAKEQL_WORKUNIT_MAX_WORK_UNITS=10 LAKEQL_WORKUNIT_MAX_ROWS_PER_FANOUT_WAVE=20000 pnpm bench:workunits",

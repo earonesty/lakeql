@@ -11,8 +11,17 @@ import {
   snapshotVectorAggregateStates,
   updateVectorAggregateStates,
   updateVectorAggregateStateValue,
+  type VectorAggregateState,
+  type VectorAggregateStates,
   vectorAggregateBatch,
 } from "./vector-aggregate.js";
+
+function aggregateState(states: VectorAggregateStates, alias: string): VectorAggregateState {
+  const state = states[alias];
+  expect(state).toBeDefined();
+  if (state === undefined) throw new Error(`Missing aggregate state ${alias}`);
+  return state;
+}
 
 describe("vector aggregate kernels", () => {
   it("aggregates selected column batches with current global aggregate semantics", () => {
@@ -83,6 +92,157 @@ describe("vector aggregate kernels", () => {
       stringMode: "b",
       allNullMode: null,
     });
+  });
+
+  it("covers aggregate state merge, finalize, and typed error branches", () => {
+    const target = createVectorAggregateStates({
+      total: { op: "sum", column: "amount" },
+      avg: { op: "avg", column: "amount" },
+      variance: { op: "var_samp", column: "amount" },
+      minSeen: { op: "min", column: "amount" },
+      firstSeen: { op: "first", column: "label" },
+      lastSeen: { op: "last", column: "label" },
+      anySeen: { op: "any", column: "label" },
+      modeSeen: { op: "mode", column: "label" },
+      medianSeen: { op: "median", column: "amount" },
+      p90: { op: "quantile", column: "amount", quantile: 0.9 },
+    });
+    updateVectorAggregateStateValue(aggregateState(target, "total"), 1);
+    updateVectorAggregateStateValue(aggregateState(target, "avg"), 2);
+    updateVectorAggregateStateValue(aggregateState(target, "variance"), 10);
+    updateVectorAggregateStateValue(aggregateState(target, "minSeen"), 5);
+    updateVectorAggregateStateValue(aggregateState(target, "firstSeen"), "a");
+    updateVectorAggregateStateValue(aggregateState(target, "lastSeen"), "a");
+    updateVectorAggregateStateValue(aggregateState(target, "anySeen"), "a");
+    updateVectorAggregateStateValue(aggregateState(target, "modeSeen"), "a");
+    updateVectorAggregateStateValue(aggregateState(target, "medianSeen"), "left");
+    updateVectorAggregateStateValue(aggregateState(target, "p90"), 10);
+
+    const source = createVectorAggregateStates({
+      total: { op: "sum", column: "amount" },
+      avg: { op: "avg", column: "amount" },
+      variance: { op: "var_samp", column: "amount" },
+      minSeen: { op: "min", column: "amount" },
+      firstSeen: { op: "first", column: "label" },
+      lastSeen: { op: "last", column: "label" },
+      anySeen: { op: "any", column: "label" },
+      modeSeen: { op: "mode", column: "label" },
+      medianSeen: { op: "median", column: "amount" },
+      p90: { op: "quantile", column: "amount", quantile: 0.9 },
+      newCount: { op: "count" },
+    });
+    updateVectorAggregateStateValue(aggregateState(source, "total"), 4);
+    updateVectorAggregateStateValue(aggregateState(source, "avg"), 4);
+    updateVectorAggregateStateValue(aggregateState(source, "variance"), 20);
+    updateVectorAggregateStateValue(aggregateState(source, "minSeen"), 3);
+    updateVectorAggregateStateValue(aggregateState(source, "firstSeen"), "b");
+    updateVectorAggregateStateValue(aggregateState(source, "lastSeen"), "b");
+    updateVectorAggregateStateValue(aggregateState(source, "anySeen"), "b");
+    updateVectorAggregateStateValue(aggregateState(source, "modeSeen"), "b");
+    updateVectorAggregateStateValue(aggregateState(source, "modeSeen"), "b");
+    updateVectorAggregateStateValue(aggregateState(source, "medianSeen"), "right");
+    updateVectorAggregateStateValue(aggregateState(source, "p90"), 20);
+    updateVectorAggregateStateValue(aggregateState(source, "newCount"), true);
+
+    mergeVectorAggregateStates(target, source);
+    expect(finalizeVectorAggregateStates(target)).toMatchObject({
+      total: 5,
+      avg: 3,
+      variance: 50,
+      minSeen: 3,
+      firstSeen: "a",
+      lastSeen: "b",
+      anySeen: "a",
+      modeSeen: "b",
+      medianSeen: "left",
+      p90: 19,
+      newCount: 1,
+    });
+
+    const emptyVariance = createVectorAggregateStates({
+      variance: { op: "var_samp", column: "x" },
+    });
+    mergeVectorAggregateStates(emptyVariance, {
+      variance: { op: "var_samp", count: 0, mean: 0, m2: 0 },
+    });
+    expect(finalizeVectorAggregateStates(emptyVariance)).toEqual({ variance: null });
+
+    expect(() =>
+      mergeVectorAggregateStates(
+        { bad: { op: "sum", sum: 0 } },
+        { bad: { op: "count", count: 1 } },
+      ),
+    ).toThrow("Cannot merge different aggregate states");
+    expect(() => updateVectorAggregateStateValue(aggregateState(target, "total"), "bad")).toThrow(
+      "Aggregate sum requires compatible values",
+    );
+    expect(() =>
+      updateVectorAggregateStateValue(aggregateState(target, "medianSeen"), true),
+    ).toThrow("Aggregate median requires compatible values");
+    expect(() => updateVectorAggregateStateValue(aggregateState(target, "minSeen"), "bad")).toThrow(
+      "Aggregate min requires compatible values",
+    );
+  });
+
+  it("clones aggregate state families when merging into an empty target", () => {
+    const source = createVectorAggregateStates({
+      total: { op: "sum", column: "amount" },
+      avgSeen: { op: "avg", column: "amount" },
+      varianceSeen: { op: "var_pop", column: "amount" },
+      minSeen: { op: "min", column: "amount" },
+      maxSeen: { op: "max", column: "amount" },
+      medianSeen: { op: "median", column: "amount" },
+      p25: { op: "quantile", column: "amount", quantile: 0.25 },
+      labels: { op: "count_distinct", column: "label" },
+      approxLabels: { op: "approx_count_distinct", column: "label" },
+      modeSeen: { op: "mode", column: "label" },
+      firstSeen: { op: "first", column: "label" },
+      lastSeen: { op: "last", column: "label" },
+      anySeen: { op: "any", column: "label" },
+    });
+    updateVectorAggregateStateValue(aggregateState(source, "total"), 10);
+    updateVectorAggregateStateValue(aggregateState(source, "avgSeen"), 10);
+    updateVectorAggregateStateValue(aggregateState(source, "avgSeen"), 20);
+    updateVectorAggregateStateValue(aggregateState(source, "varianceSeen"), 10);
+    updateVectorAggregateStateValue(aggregateState(source, "varianceSeen"), 20);
+    updateVectorAggregateStateValue(aggregateState(source, "minSeen"), 10);
+    updateVectorAggregateStateValue(aggregateState(source, "minSeen"), 5);
+    updateVectorAggregateStateValue(aggregateState(source, "maxSeen"), 10);
+    updateVectorAggregateStateValue(aggregateState(source, "maxSeen"), 20);
+    updateVectorAggregateStateValue(aggregateState(source, "medianSeen"), 1);
+    updateVectorAggregateStateValue(aggregateState(source, "medianSeen"), 3);
+    updateVectorAggregateStateValue(aggregateState(source, "p25"), 1);
+    updateVectorAggregateStateValue(aggregateState(source, "p25"), 5);
+    updateVectorAggregateStateValue(aggregateState(source, "labels"), "a");
+    updateVectorAggregateStateValue(aggregateState(source, "approxLabels"), "a");
+    updateVectorAggregateStateValue(aggregateState(source, "modeSeen"), "b");
+    updateVectorAggregateStateValue(aggregateState(source, "modeSeen"), "b");
+    updateVectorAggregateStateValue(aggregateState(source, "firstSeen"), "first");
+    updateVectorAggregateStateValue(aggregateState(source, "lastSeen"), "last");
+    updateVectorAggregateStateValue(aggregateState(source, "anySeen"), "any");
+
+    const target = {};
+    mergeVectorAggregateStates(target, source);
+    expect(finalizeVectorAggregateStates(target)).toEqual({
+      total: 10,
+      avgSeen: 15,
+      varianceSeen: 25,
+      minSeen: 5,
+      maxSeen: 20,
+      medianSeen: 2,
+      p25: 2,
+      labels: 1,
+      approxLabels: 1,
+      modeSeen: "b",
+      firstSeen: "first",
+      lastSeen: "last",
+      anySeen: "any",
+    });
+
+    updateVectorAggregateStateValue(aggregateState(source, "total"), 100);
+    updateVectorAggregateStateValue(aggregateState(source, "medianSeen"), 100);
+    expect(finalizeVectorAggregateStates(target).total).toBe(10);
+    expect(finalizeVectorAggregateStates(target).medianSeen).toBe(2);
   });
 
   it("aggregates timestamp min and max with snapshot round trips", () => {

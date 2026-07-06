@@ -37,24 +37,48 @@ type Mode = "sql" | "js" | "json";
 const installCommand = `npm install lakeql@${__LAKEQL_VERSION__}`;
 
 const DEFAULTS: Record<Mode, string> = {
-  sql: `select region, sum(amount) as revenue, count() as orders
+  sql: `select region, store_id, amount,
+  row_number() over (partition by region order by amount desc, store_id asc) as rank_in_region
 from sales.parquet
-where amount > 0
-group by region
-order by revenue desc`,
+qualify rank_in_region <= 3
+order by region asc, rank_in_region asc`,
   js: `lake.path("sales.parquet")
-  .select(["store_id", "region", "amount"])
-  .where(gt("amount", 50))
-  .orderBy([{ column: "amount", direction: "desc" }])
-  .limit(10)
+  .window("rank_in_region", {
+    fn: "row_number",
+    args: [],
+    over: {
+      partitionBy: [col("region")],
+      orderBy: [{ expr: col("amount"), direction: "desc" }, { expr: col("store_id") }],
+    },
+  })
+  .qualify(lte("rank_in_region", 3))
+  .select(["region", "store_id", "amount", "rank_in_region"])
+  .orderBy([{ column: "region" }, { column: "rank_in_region" }])
   .toArray()`,
   json: `{
   "version": 1,
   "from": "sales.parquet",
-  "select": ["store_id", "region", "amount"],
-  "where": { "gt": ["amount", 50] },
-  "orderBy": [{ "column": "amount", "direction": "desc" }],
-  "limit": 10
+  "select": ["region", "store_id", "amount", "rank_in_region"],
+  "windows": {
+    "rank_in_region": {
+      "fn": "row_number",
+      "args": [],
+      "over": {
+        "partitionBy": [{ "kind": "column", "name": "region" }],
+        "orderBy": [
+          { "expr": { "kind": "column", "name": "amount" }, "direction": "desc" },
+          { "expr": { "kind": "column", "name": "store_id" } }
+        ]
+      }
+    }
+  },
+  "qualify": {
+    "kind": "compare",
+    "op": "lte",
+    "left": { "kind": "column", "name": "rank_in_region" },
+    "right": { "kind": "literal", "value": 3 }
+  },
+  "orderBy": [{ "column": "region" }, { "column": "rank_in_region" }]
 }`,
 };
 
@@ -197,6 +221,8 @@ function applyAst(builder: ReturnType<Lake["path"]>, ast: ReturnType<typeof pars
   let next = builder;
   if (ast.select) next = next.select(ast.select);
   if (ast.where) next = next.where(ast.where);
+  for (const [alias, expr] of Object.entries(ast.windows ?? {})) next = next.window(alias, expr);
+  if (ast.qualify) next = next.qualify(ast.qualify);
   if (ast.orderBy) next = next.orderBy(ast.orderBy);
   if (ast.offset !== undefined) next = next.offset(ast.offset);
   if (ast.limit !== undefined) next = next.limit(ast.limit);
