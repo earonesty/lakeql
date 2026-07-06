@@ -1,5 +1,7 @@
 # Compatibility Matrix
 
+Reference page: use this matrix when you need exact support status for formats, catalogs, storage adapters, SQL, and execution behavior.
+
 This file is generated from `docs/compatibility.json`. Run `pnpm docs:compatibility` after editing the source of truth.
 
 Legend: supported+tested = covered by tests; supported = implemented with narrower coverage; detected+rejected = fails with a typed `LakeqlError`; planned = not yet a compatibility promise.

@@ -1,5 +1,8 @@
 # Iceberg Catalogs
 
+Reference page: use this page when you need exact Iceberg catalog interfaces and
+commit behavior.
+
 Lakeql keeps Iceberg catalog integration small and explicit. Catalogs are responsible for locating
 the current metadata file and, for appends, committing the next snapshot with compare-and-swap
 semantics. Data-file reads still go through the configured `ObjectStore`.

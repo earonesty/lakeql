@@ -1,5 +1,8 @@
 # Errors
 
+Reference page: use this page when you need stable error codes for application
+handling or tests.
+
 Lakeql throws `LakeqlError` with stable `code`, `message`, and optional `details`.
 
 Common codes include:

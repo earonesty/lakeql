@@ -1,5 +1,8 @@
 # Unsupported But Detected
 
+Reference page: use this page to see features LakeQL detects and rejects instead
+of reading with incomplete semantics.
+
 Lakeql rejects table features that can change query results when it cannot honor
 them. Callers can catch these failures by `LakeqlError.code`.
 

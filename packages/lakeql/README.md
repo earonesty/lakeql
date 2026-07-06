@@ -29,6 +29,25 @@ Use `--format json`, `--format ndjson`, or `--format csv` to choose the output.
 
 ## Query from JavaScript
 
+Use SQL strings from application code:
+
+```ts
+import { createLake, httpStore } from "lakeql/node";
+
+const lake = createLake({
+  store: httpStore({ baseUrl: "https://example.com/data" }),
+});
+
+const rows = await lake
+  .sql("select store_id, amount from input where amount > $1 limit 100", {
+    path: "sales.parquet",
+    parameters: [100],
+  })
+  .toArray();
+```
+
+Or use the builder API:
+
 ```ts
 import { createLake, gt, httpStore } from "lakeql/node";
 
@@ -68,18 +87,13 @@ export default {
 ## Documentation
 
 - [Full README](https://github.com/earonesty/lakeql#readme)
+- [Docs index](https://github.com/earonesty/lakeql/blob/main/docs/README.md)
+- [Examples](https://github.com/earonesty/lakeql/blob/main/docs/examples.md)
 - [Querying Parquet](https://github.com/earonesty/lakeql/blob/main/docs/querying-parquet.md)
 - [SQL guide](https://github.com/earonesty/lakeql/blob/main/docs/sql-dialect.md)
 - [Querying Iceberg](https://github.com/earonesty/lakeql/blob/main/docs/querying-iceberg.md)
 - [Cloudflare Workers](https://github.com/earonesty/lakeql/blob/main/docs/cloudflare-workers.md)
 - [Compatibility matrix](https://github.com/earonesty/lakeql/blob/main/docs/compatibility.md)
-
-## Current DX Gaps
-
-The CLI has a simple SQL path today. JavaScript app code does not yet have a
-single exported helper such as `lake.sql("select ...").toArray()` or
-`querySql(lake, sql)`. The repository tracks these in
-[DX follow-ups](https://github.com/earonesty/lakeql/blob/main/docs/dx-followups.md).
 
 ## License
 

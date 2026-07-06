@@ -28,6 +28,25 @@ format.
 
 ## Query from JavaScript
 
+Use SQL strings from application code:
+
+```ts
+import { createLake, httpStore } from "lakeql/node";
+
+const lake = createLake({
+  store: httpStore({ baseUrl: "https://example.com/data" }),
+});
+
+const rows = await lake
+  .sql("select store_id, amount from input where amount > $1 limit 100", {
+    path: "sales.parquet",
+    parameters: [100],
+  })
+  .toArray();
+```
+
+Or use the builder API:
+
 ```ts
 import { createLake, gt, httpStore } from "lakeql/node";
 
@@ -89,12 +108,14 @@ projection, and delete files for supported table features.
 
 ## What LakeQL Supports
 
-LakeQL supports SQL through the CLI, a JavaScript query builder, and a JSON query
-format. It can query Parquet paths, prefixes, and globs, including compatible
-multi-file schemas with missing columns filled as `null`.
+LakeQL supports SQL through the CLI and JavaScript, a JavaScript query builder,
+and a JSON query format. It can query Parquet paths, prefixes, and globs,
+including compatible multi-file schemas with missing columns filled as `null`.
 
 The detailed reference pages are still useful when you need exact behavior:
 
+- [Docs index](./docs/README.md)
+- [Examples](./docs/examples.md)
 - [SQL guide](./docs/sql-dialect.md)
 - [Querying Parquet](./docs/querying-parquet.md)
 - [Querying Iceberg](./docs/querying-iceberg.md)
@@ -114,16 +135,8 @@ Most applications should import from `lakeql`, `lakeql/node`, or
 | `lakeql/node` | Node.js apps that need HTTP, S3, or filesystem cache helpers. |
 | `lakeql/cloudflare` | Cloudflare Workers apps that read from R2. |
 
-The repository also contains internal workspace packages such as
-`lakeql-core`, `lakeql-parquet`, `lakeql-iceberg`, and `lakeql-sql`. Use those
-only when you are building adapters, tooling, or lower-level integrations.
-
-## Current DX Gaps
-
-The CLI has a simple SQL path today. JavaScript app code does not yet have a
-single exported helper such as `lake.sql("select ...").toArray()` or
-`querySql(lake, sql)`. See [DX follow-ups](./docs/dx-followups.md) for the API
-gaps that should become product work.
+The repository also contains workspace packages for adapter, format, and parser
+development. Most application code should use the entry points above.
 
 ## Confidence
 

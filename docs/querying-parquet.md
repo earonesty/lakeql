@@ -31,6 +31,33 @@ npx lakeql query \
 
 ## Query from JavaScript
 
+Use `lake.sql(...)` when the query starts as SQL:
+
+```ts
+import { createLake, httpStore } from "lakeql/node";
+
+const lake = createLake({
+  store: httpStore({ baseUrl: "https://example.com/data" }),
+});
+
+const rows = await lake
+  .sql("select store_id, amount from input where region = $1 order by amount desc limit 10", {
+    path: "sales.parquet",
+    parameters: ["west"],
+  })
+  .toArray();
+```
+
+`read_parquet(...)` paths are resolved through the lake's store:
+
+```ts
+const rows = await lake
+  .sql("select store_id, amount from read_parquet('events/*.parquet') limit 10")
+  .toArray();
+```
+
+Use the builder API when you want structured expressions:
+
 ```ts
 import { createLake, eq, httpStore } from "lakeql/node";
 
@@ -59,7 +86,10 @@ Common result methods:
 | `streamJson()` | JSON response bodies. |
 | `streamNdjson()` | Streaming line-delimited JSON. |
 | `streamCsv()` | CSV response bodies. |
-| `explain()` | Planned files, projected columns, and pruning details. |
+| `explain()` | Planned files, projected columns, and pruning details for builder queries. |
+
+`streamCsv({ preventFormulae: true })` prefixes cells that spreadsheet apps may
+interpret as formulae. The default is faithful CSV output for data interchange.
 
 ## Query More Than One File
 
@@ -138,8 +168,15 @@ const rows = await lake
 Use `windowWithState({ spill, spillId })` when a sliced window query needs to
 persist buffered operator state between runs.
 
-## Current JavaScript SQL Gap
+## Named Table Joins From JavaScript
 
-The CLI executes SQL directly. JavaScript application code currently uses the
-builder API for execution. A first-class helper for SQL strings in application
-code is tracked in [DX follow-ups](./dx-followups.md).
+```ts
+const rows = await lake
+  .sql("select s.store_id, d.segment from sales s join stores d using (store_id)", {
+    tables: {
+      sales: "sales.parquet",
+      stores: "stores.parquet",
+    },
+  })
+  .toArray();
+```
