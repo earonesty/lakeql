@@ -6,9 +6,13 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { fixturePath, GEO, H3, ICEBERG, SALES } from "lakeql-fixtures";
 import { describe, expect, it } from "vitest";
+import { queryParquetGlob } from "../../../examples/glob-parquet.js";
 import { queryHttpParquet } from "../../../examples/http-parquet.js";
+import { queryLocalParquetWithBuilder } from "../../../examples/local-js.js";
+import { queryLocalParquetWithSql } from "../../../examples/local-sql.js";
 import { planR2Iceberg } from "../../../examples/r2-iceberg.js";
 import { queryR2Parquet } from "../../../examples/r2-parquet.js";
+import { writeParquetResults } from "../../../examples/write-parquet.js";
 import {
   col,
   createLake,
@@ -143,6 +147,37 @@ describe("docs recipes", () => {
 
     expect(rows).toHaveLength(100);
     expect(rows[0]).toMatchObject({ store_id: "store-000", region: "west" });
+  });
+
+  it("runs first-run local and glob examples against committed fixtures", async () => {
+    await expect(queryLocalParquetWithSql(fixturePath(SALES.file))).resolves.toEqual([
+      { store_id: "store-002", amount: 923.79 },
+      { store_id: "store-003", amount: 924.52 },
+    ]);
+
+    await expect(queryLocalParquetWithBuilder(fixturePath(SALES.file))).resolves.toEqual([
+      { store_id: "store-002", amount: 923.79 },
+      { store_id: "store-003", amount: 924.52 },
+    ]);
+
+    const bytes = await readFile(fixturePath(SALES.file));
+    await expect(
+      queryParquetGlob([
+        { path: "sales/a.parquet", bytes },
+        { path: "sales/b.parquet", bytes },
+      ]),
+    ).resolves.toEqual([
+      { store_id: "store-000", amount: 0 },
+      { store_id: "store-000", amount: 0 },
+      { store_id: "store-005", amount: 34.82 },
+    ]);
+
+    await expect(writeParquetResults()).resolves.toMatchObject({
+      files: [
+        { path: "out/sales/region=east/part-data-00000.parquet", rowCount: 1 },
+        { path: "out/sales/region=west/part-data-00001.parquet", rowCount: 1 },
+      ],
+    });
   });
 
   it("runs the compact recipe against the sales fixture", async () => {

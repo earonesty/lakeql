@@ -1,7 +1,8 @@
 # SQL Guide
 
-LakeQL supports SQL through the `lakeql` CLI. The CLI reads a Parquet file or a
-set of named Parquet tables, runs the SQL query, and writes JSON, NDJSON, or CSV.
+LakeQL supports SQL through the `lakeql` CLI and through JavaScript with
+`lake.sql(...)`. SQL can read one Parquet file, a glob of Parquet files, or a set
+of named Parquet tables.
 
 ## Run a Query
 
@@ -42,19 +43,19 @@ npx lakeql query \
 
 ## SQL in JavaScript
 
-JavaScript application code currently executes queries through the builder API:
+Use `lake.sql(...)` from JavaScript application code:
 
 ```ts
 const rows = await lake
-  .path("sales.parquet")
-  .select(["store_id", "amount"])
-  .limit(10)
+  .sql("select store_id, amount from input where amount > $1 limit 10", {
+    path: "sales.parquet",
+    parameters: [100],
+  })
   .toArray();
 ```
 
-The SQL parser package can parse and format SQL, but the main package does not
-yet expose a one-call SQL execution helper for app code. That API gap is tracked
-in [DX follow-ups](./dx-followups.md).
+Use `querySql(lake, sql, options)` when a standalone helper fits your framework
+better than a method call.
 
 ## Query Examples
 

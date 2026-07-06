@@ -1,5 +1,8 @@
 # Parquet Types
 
+Reference page: use this page when you need exact Parquet decoding and rejection
+rules.
+
 Lakeql delegates physical Parquet decoding to `hyparquet` and has explicit rules
 for nested columns. The rule is: decode correctly or reject before rows are
 returned.

@@ -31,7 +31,18 @@ npx lakeql query \
   --sql "select store_id, amount from input where amount > 100 limit 10"
 ```
 
-Use the JavaScript query builder in applications:
+Use SQL from JavaScript applications:
+
+```ts
+const rows = await lake
+  .sql("select store_id, amount from input where amount > $1 limit 10", {
+    path: "sales.parquet",
+    parameters: [100],
+  })
+  .toArray();
+```
+
+Use the JavaScript query builder when you want structured expressions:
 
 ```ts
 const rows = await lake
@@ -79,17 +90,10 @@ const lake = createLake({ store: r2Store(env.DATA) });
 
 ## Where to Go Next
 
+- [Examples](./examples.md)
 - [Querying Parquet](./querying-parquet.md)
 - [SQL guide](./sql-dialect.md)
 - [Querying Iceberg](./querying-iceberg.md)
 - [Cloudflare Workers](./cloudflare-workers.md)
 - [Writing Parquet](./writing-parquet.md)
 - [Compatibility matrix](./compatibility.md)
-- [DX follow-ups](./dx-followups.md)
-
-## Lower-Level Packages
-
-Most application code should import from `lakeql`, `lakeql/node`, or
-`lakeql/cloudflare`. Use workspace packages such as `lakeql-core`,
-`lakeql-parquet`, `lakeql-iceberg`, and `lakeql-sql` when you are building
-adapters, tooling, or tests that need lower-level APIs.
