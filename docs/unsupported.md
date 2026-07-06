@@ -1,7 +1,7 @@
 # Unsupported But Detected
 
-Lakeql should reject table features that can change query results when it cannot honor them.
-These are stable rejection surfaces callers can catch by `LakeqlError.code`.
+Lakeql rejects table features that can change query results when it cannot honor
+them. Callers can catch these failures by `LakeqlError.code`.
 
 | Feature | Detection point | Error code | Notes |
 | --- | --- | --- | --- |

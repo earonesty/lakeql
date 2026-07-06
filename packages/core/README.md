@@ -1,20 +1,24 @@
 # lakeql-core
 
-Core lakeql types and runtime: expressions, evaluation, planning, streaming query execution, manifests, bookmarks, joins, and sidecar indexes.
+Core runtime package for LakeQL. It contains expression builders, query
+planning, streaming execution, budgets, typed errors, object-store interfaces,
+bookmarks, joins, manifests, and sidecar indexes.
 
-## Ownership
+Most applications should import from `lakeql`, `lakeql/node`, or
+`lakeql/cloudflare`. Use `lakeql-core` when you are building a new storage
+adapter, scan adapter, or lower-level integration.
 
-This package owns the package-neutral query engine and object-store contracts. It does not know how
-to decode Parquet or load Iceberg metadata; adapters implement those pieces.
+## Main Exports
 
-## Public Surface
-
-- Expression builders and types: `col`, `lit`, `eq`, `gt`, `and`, `or`, `not`, `fn`, and related AST types.
-- Query execution: `Lake`, `QueryBuilder`, `ScanAdapter`, `ScanOptions`, `QueryBudget`, and runtime stats.
-- Object storage: `ObjectStore`, `ConditionalObjectStore`, `memoryStore`, and read-control helpers.
-- Resource controls: `maxBytes`, `maxFiles`, `maxRowsDecoded`, `maxRangeRequests`, `maxBufferedRows`, `maxMemoryBytes`, `maxConcurrentReads`, `maxElapsedMs`, and `signal`.
-- Manifests and resumability: output manifests, task checkpoints, bookmarks, and sidecar indexes.
+- Expression builders and types: `col`, `lit`, `eq`, `gt`, `and`, `or`, `not`,
+  `fn`, and related AST types.
+- Query execution: `Lake`, `QueryBuilder`, `ScanAdapter`, `ScanOptions`,
+  `QueryBudget`, and runtime stats.
+- Object storage: `ObjectStore`, `ConditionalObjectStore`, `memoryStore`, and
+  read-control helpers.
+- Resource controls: `maxBytes`, `maxFiles`, `maxRowsDecoded`,
+  `maxRangeRequests`, `maxBufferedRows`, `maxMemoryBytes`,
+  `maxConcurrentReads`, `maxElapsedMs`, and `signal`.
+- Manifests and resumability: output manifests, task checkpoints, bookmarks,
+  and sidecar indexes.
 - Errors: `LakeqlError`, stable error codes, and `isLakeqlError`.
-
-Use this package when building a new storage or scan adapter. Application code usually imports the
-aggregate `lakeql` package unless it needs a lower-level contract.

@@ -1,7 +1,8 @@
 # Parquet Types
 
-Lakeql delegates physical Parquet decoding to `hyparquet` and keeps an explicit support posture for
-nested columns. The rule is: decode correctly or reject before rows are returned.
+Lakeql delegates physical Parquet decoding to `hyparquet` and has explicit rules
+for nested columns. The rule is: decode correctly or reject before rows are
+returned.
 
 ## Supported And Tested
 

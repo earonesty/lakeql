@@ -41,5 +41,5 @@ point/segment/ring distance for supported Point, LineString, Polygon, and BBox g
 ## File pruning
 
 Sidecar bbox indexes prune files for `st_intersects` when a file-level bounding
-box cannot overlap the query bounding box — the same prefilter, applied one
+box cannot overlap the query bounding box. This is the same prefilter, applied one
 level up so non-matching files are never read at all.

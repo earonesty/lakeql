@@ -6,7 +6,7 @@ semantics. Data-file reads still go through the configured `ObjectStore`.
 
 ## Interfaces
 
-`IcebergCatalog` is the full adapter contract for catalogs that can load, list, and commit:
+`IcebergCatalog` is the adapter interface for catalogs that can load, list, and commit:
 
 ```ts
 interface IcebergCatalog {
@@ -16,7 +16,7 @@ interface IcebergCatalog {
 }
 ```
 
-`IcebergCommitCatalog` is the smaller append-only contract accepted by
+`IcebergCommitCatalog` is the smaller append-only interface accepted by
 `IcebergTable.appendFiles()` and `IcebergTable.appendOutputManifest()`:
 
 ```ts
@@ -40,7 +40,7 @@ must implement `conditionalPut`; otherwise Lakeql rejects the append with `LAKEQ
 
 ## REST Catalog
 
-`icebergRestCatalog(options)` implements `IcebergCatalog` for the supported REST surface:
+`icebergRestCatalog(options)` implements `IcebergCatalog` for these REST calls:
 
 - `loadTable(store)` sends `GET /v1/{prefix}/namespaces/{namespace}/tables/{table}` and hydrates the returned metadata.
 - `listTables()` sends `GET /v1/{prefix}/namespaces/{namespace}/tables` and returns table identifiers.
@@ -56,7 +56,7 @@ creation plus table create/list/load against that reference service. REST append
 ## Planned Adapters
 
 `icebergGlueCatalog(options)` and `icebergNessieCatalog(options)` are exported stubs that satisfy
-the `IcebergCatalog` contract and reject `loadTable`, `listTables`, and `commitAppend` with
+the `IcebergCatalog` interface and reject `loadTable`, `listTables`, and `commitAppend` with
 `LAKEQL_CATALOG_ERROR`. They are intentionally explicit placeholders: callers can wire against the
 same interface today, while live Glue and Nessie API implementations remain planned.
 

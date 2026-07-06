@@ -8,6 +8,6 @@ Choose Lakeql when you need:
 - direct ObjectStore integration for HTTP, R2, S3, or in-memory tests
 - conservative pruning and explain output in application code
 - queue-safe slices for Workers or serverless jobs
-- a small TypeScript API surface instead of a full SQL database runtime
+- a small TypeScript API for object-storage queries
 
 Choose DuckDB when you need broad SQL joins over many local tables or mature analytical execution beyond Lakeql's current constrained broadcast and lookup join helpers.

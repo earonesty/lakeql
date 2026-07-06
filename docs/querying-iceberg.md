@@ -58,7 +58,7 @@ const row = table.projectRow({ id: 1, country: "US" }, { select: ["id", "nation"
 
 Strict mode includes supported Iceberg position and equality delete files in the plan and throws `LAKEQL_UNSUPPORTED_DELETE_FILES` for unknown delete formats, including deletion-vector metadata. Use `ignore-deletes` only when raw scans are acceptable; use `ignore-unsupported-deletes` to carry supported delete metadata while dropping unsupported formats.
 
-`planFiles(table, options)` is the standalone planning contract. `IcebergTable.planFiles(options)` remains as a thin alias. Plans report `deleteFilesPlanned` and `deleteFilesIgnored` so callers can audit delete handling without walking every planned file.
+`planFiles(table, options)` is the standalone planning API. `IcebergTable.planFiles(options)` remains as a thin alias. Plans report `deleteFilesPlanned` and `deleteFilesIgnored` so callers can audit delete handling without walking every planned file.
 
 When a reader has decoded delete files, `scanPlannedIcebergRows` applies them while streaming planned data-file batches:
 

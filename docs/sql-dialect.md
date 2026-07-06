@@ -1,6 +1,64 @@
-# SQL Dialect
+# SQL Guide
 
-The SQL parser covers the engine-facing subset used by the CLI:
+LakeQL supports SQL through the `lakeql` CLI. The CLI reads a Parquet file or a
+set of named Parquet tables, runs the SQL query, and writes JSON, NDJSON, or CSV.
+
+## Run a Query
+
+```sh
+npx lakeql query \
+  --path sales.parquet \
+  --sql "select store_id, amount from input where region = 'west' order by amount asc limit 2"
+```
+
+For `--path` queries, the table name is `input`.
+
+```sql
+select store_id, amount
+from input
+where region = 'west'
+order by amount asc
+limit 2
+```
+
+The CLI also accepts omitted `from input` for simple `--path` queries:
+
+```sh
+npx lakeql query \
+  --path sales.parquet \
+  --sql "select store_id, amount where region = 'west' order by amount asc limit 2"
+```
+
+## Query Multiple Tables
+
+Use `--table name=path.parquet` for joins:
+
+```sh
+npx lakeql query \
+  --table sales=sales.parquet \
+  --table stores=stores.parquet \
+  --sql "select s.store_id, d.segment from sales s join stores d using (store_id) limit 10"
+```
+
+## SQL in JavaScript
+
+JavaScript application code currently executes queries through the builder API:
+
+```ts
+const rows = await lake
+  .path("sales.parquet")
+  .select(["store_id", "amount"])
+  .limit(10)
+  .toArray();
+```
+
+The SQL parser package can parse and format SQL, but the main package does not
+yet expose a one-call SQL execution helper for app code. That API gap is tracked
+in [DX follow-ups](./dx-followups.md).
+
+## Query Examples
+
+Basic filtering and sorting:
 
 ```sql
 select store_id, amount
@@ -164,7 +222,7 @@ non-negative `INTERVAL` offsets. Ties under an under-specified window `ORDER BY`
 are broken by stable scan order, so deterministic output for tied rows requires
 a complete ordering key.
 
-The CLI also accepts omitted `from input` and injects the `--path` as the source.
+The CLI accepts omitted `from input` and injects the `--path` as the source.
 
 ```sh
 node packages/cli/dist/bin.js query \
@@ -197,12 +255,10 @@ node packages/cli/dist/bin.js query \
 The parser API exposes metadata statements through `parseSqlStatement(sql)`;
 `parseSql(sql)` remains SELECT-only.
 
-Invalid SQL is rejected with `LAKEQL_PARSE_ERROR`. Valid SQL outside the supported
-execution subset, including broad join forms, unsupported subqueries, nested or
-recursive CTEs, simple `CASE <expr>` forms, and broad SQL execution, is rejected with
-`LAKEQL_SQL_UNSUPPORTED`.
+Invalid SQL is rejected with `LAKEQL_PARSE_ERROR`. SQL outside the supported
+execution subset is rejected with `LAKEQL_SQL_UNSUPPORTED`.
 
-## Feature Matrix
+## Reference Matrix
 
 | Feature | Status | Rejection code | Notes |
 | --- | --- | --- | --- |
@@ -222,4 +278,4 @@ recursive CTEs, simple `CASE <expr>` forms, and broad SQL execution, is rejected
 | Non-recursive single-table CTEs | Supported subset | `LAKEQL_SQL_UNSUPPORTED` | One outer CTE; nested joins/subqueries/CTEs in the CTE body are rejected. |
 | Recursive CTEs and correlated subqueries | Not yet built | `LAKEQL_PARSE_ERROR` / `LAKEQL_SQL_UNSUPPORTED` | Typed error today; no partial execution. |
 | Window functions and explicit frames | Supported | `LAKEQL_SQL_UNSUPPORTED` / `LAKEQL_TYPE_ERROR` | Ranking/value/aggregate windows, explicit `ROWS` / `RANGE` / `GROUPS` frames, `EXCLUDE`, named windows, null-treatment modifiers, `FILTER`, `DISTINCT`, `QUALIFY`, stateful execution, budgets, Workers runtime, and Parquet work-unit fan-out are covered by reference and unit gates. |
-| DDL, DML, multi-statement SQL | Not yet built | `LAKEQL_SQL_UNSUPPORTED` | Typed error today; the SQL surface currently covers querying only. |
+| DDL, DML, multi-statement SQL | Not yet built | `LAKEQL_SQL_UNSUPPORTED` | Typed error today; SQL support currently covers querying only. |

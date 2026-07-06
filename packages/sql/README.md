@@ -1,20 +1,20 @@
 # lakeql-sql
 
-Small SQL dialect parser and formatter for Lakeql query ASTs.
+SQL parser and formatter for LakeQL.
 
-## Ownership
+The main `lakeql` package does not yet expose a one-call SQL execution helper
+for JavaScript app code. The CLI uses this package internally to run SQL, and
+tools can use it directly when they need to parse or format LakeQL SQL.
 
-This package owns Lakeql's intentionally small SQL subset. It converts documented SQL strings into
-core `PathQueryInit` query ASTs and formats those ASTs back to SQL.
+## Main Exports
 
-## Public Surface
-
-- `parseSql(sql)` parses the supported dialect into a `SqlQueryAst`.
-- `parseSqlStatement(sql)` parses SELECT queries plus metadata statements such as `DESCRIBE`.
+- `parseSql(sql)` parses the supported SQL guide into a `SqlQueryAst`.
+- `parseSqlStatement(sql)` parses `SELECT` queries and metadata statements such
+  as `DESCRIBE`.
 - `formatSql(ast)` formats a `SqlQueryAst`.
-- `SqlQueryAst` extends the core path-query shape with optional `groupBy`, aggregates, and `having`.
+- `SqlQueryAst` extends the core path-query shape with optional `groupBy`,
+  aggregates, windows, and `having`.
 
-The parser uses `pgsql-ast-parser`, keeps Lakeql's own size/depth guards, and rejects unsupported
-join forms, complex CTEs, unsupported subqueries, and broader SQL execution with
-`LAKEQL_SQL_UNSUPPORTED`. Invalid SQL still throws `LAKEQL_PARSE_ERROR`. See
-`docs/sql-dialect.md` for the supported syntax.
+Invalid SQL throws `LAKEQL_PARSE_ERROR`. SQL outside the supported execution
+subset throws `LAKEQL_SQL_UNSUPPORTED`. See the
+[SQL guide](../../docs/sql-dialect.md) for examples and supported syntax.

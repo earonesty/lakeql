@@ -1,20 +1,26 @@
 # lakeql-parquet
 
-Parquet integration for Lakeql, including object-store reads, row-group pruning, projection, metadata inspection, and Parquet writes.
+Parquet support for LakeQL. This package reads Parquet files from object stores,
+plans row groups, validates supported schemas, fills missing columns for
+compatible multi-file reads, and writes Parquet output.
 
-## Ownership
+Most applications should import from `lakeql`, `lakeql/node`, or
+`lakeql/cloudflare`. Use `lakeql-parquet` directly when you need lower-level
+Parquet metadata, row-group planning, or writer APIs.
 
-This package owns Parquet file access for Lakeql. It bridges `lakeql-core` object stores to
-`hyparquet`, exposes row-group planning, validates supported schema posture, and writes Parquet
-output through `hyparquet-writer`.
+## Main Exports
 
-## Public Surface
+- `createParquetLake` creates a queryable lake over Parquet files.
+- `parquetScanner` connects Parquet files to the core query engine.
+- `readParquetObjects` and `readParquetObjectBatches` read Parquet rows from an
+  object store.
+- `readParquetMetadata` reads footer metadata through ranged object-store
+  access.
+- `planRowGroups` and `planRowGroupsFromMetadata` expose row-group pruning.
+- `rejectUnsupportedParquetSchema` rejects unsupported nested schema features
+  before rows are returned.
+- `writeParquet`, `writePartitionedParquet`, and task/checkpoint helpers write
+  Parquet output and manifests.
 
-- `readParquetObjects` and `readParquetObjectBatches` read object-store backed Parquet files.
-- `readParquetMetadata` reads footer metadata through ranged object-store access.
-- `planRowGroups` and `planRowGroupsFromMetadata` expose row-group pruning as a first-class plan with selected row-group indexes and byte ranges where footer metadata provides them.
-- `rejectUnsupportedParquetSchema` rejects unsupported nested schema features before rows are returned.
-- `parquetScanner` and `createParquetLake` connect Parquet files to the core query engine.
-- `writeParquet`, `writePartitionedParquet`, and task/checkpoint helpers write Parquet output and manifests.
-
-See `docs/parquet-types.md` in the repository root for the current type and nested-column posture.
+See [Parquet types](../../docs/parquet-types.md) for supported Parquet types and
+nested-column behavior.

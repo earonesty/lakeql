@@ -1,30 +1,11 @@
 # lakeql
 
-LakeQL is a pure JavaScript analytical query engine for Parquet and Iceberg, designed for
-edge runtimes such as Cloudflare Workers. It requires no WASM, no native modules, and
-streams large datasets with low memory usage.
+LakeQL is a JavaScript query engine for Parquet and Iceberg data in object storage.
+It runs in Node.js, browsers, Cloudflare Workers, and other JavaScript runtimes.
 
-LakeQL exists for the places DuckDB-WASM and native analytical engines do not fit well:
-edge functions, serverless jobs, browser-hosted tools, and JavaScript-only deployments.
-It runs anywhere JavaScript runs, reads directly from object storage, and keeps execution
-bounded with streaming HTTP range reads instead of loading whole datasets into memory.
-
-Why care:
-
-- Pure JavaScript: no WASM startup cost, no native modules, no JVM.
-- Edge runtime friendly: works in Cloudflare Workers and other constrained JavaScript runtimes.
-- Low-memory streaming execution: scan Parquet and plan Iceberg tables from object storage.
-- Strict correctness: LakeQL reads supported data correctly or rejects unsupported semantics with typed errors.
-
-Although LakeQL is optimized for portability and memory efficiency rather than raw
-throughput, it is competitive with DuckDB-WASM and is faster on several common workloads.
-Try the live [LakeQL vs DuckDB-WASM browser/R2 comparison](https://lakeql.com/compare.html)
-or read [why not DuckDB-WASM?](./docs/why-not-duckdb-wasm.md).
-
-LakeQL supports SQL, JavaScript builder expressions, and a JSON query API over Parquet and
-Iceberg. Every supported feature, and every feature it detects and refuses, is enumerated
-in the [compatibility matrix](./docs/compatibility.md) and
-[unsupported features](./docs/unsupported.md).
+Use it when you want to query lake data without a database server, native module,
+JVM, or WASM runtime. LakeQL reads with HTTP range requests, streams results, and
+keeps memory use bounded for serverless and edge workloads.
 
 ## Install
 
@@ -32,23 +13,48 @@ in the [compatibility matrix](./docs/compatibility.md) and
 npm install lakeql
 ```
 
-## Use it
+## Query with SQL
 
-Read a Parquet file over HTTP — no credentials, runs in Node or on the edge:
+For local Parquet files, the fastest way to try LakeQL is the CLI:
+
+```sh
+npx lakeql query \
+  --path sales.parquet \
+  --sql "select region, sum(amount) as revenue from input group by region order by revenue desc limit 10"
+```
+
+Use `--format json`, `--format ndjson`, or `--format csv` to choose the output
+format.
+
+## Query from JavaScript
 
 ```ts
-import { createLake, httpStore } from "lakeql/node";
+import { createLake, gt, httpStore } from "lakeql/node";
 
-const lake = createLake({ store: httpStore({ baseUrl: "https://example.com/data" }) });
+const lake = createLake({
+  store: httpStore({ baseUrl: "https://example.com/data" }),
+});
 
 const rows = await lake
   .path("sales.parquet")
-  .select(["id", "amount"])
+  .select(["store_id", "region", "amount"])
+  .where(gt("amount", 100))
+  .orderBy([{ column: "amount", direction: "desc" }])
   .limit(100)
   .toArray();
 ```
 
-Inside a Cloudflare Worker, reading from R2:
+Use globs or prefixes to scan more than one Parquet file:
+
+```ts
+const rows = await lake
+  .hive("events/year=2026/month=*/")
+  .select(["event_id", "year", "month"])
+  .limit(100)
+  .toArray();
+```
+
+Inside a Cloudflare Worker, read from R2:
 
 ```ts
 import { createLake, r2Store } from "lakeql/cloudflare";
@@ -59,13 +65,13 @@ export default {
       store: r2Store(env.DATA),
       budget: { maxOutputRows: 1000, maxConcurrentReads: 4 },
     });
-    const rows = await lake.path("sales.parquet").limit(100).toArray();
-    return Response.json(rows);
+
+    return Response.json(await lake.path("sales.parquet").limit(100).toArray());
   },
 };
 ```
 
-Plan an Iceberg table (snapshot selection, partition + delete-aware file pruning):
+## Query Iceberg
 
 ```ts
 import { eq, loadIcebergTable, r2Store } from "lakeql/cloudflare";
@@ -78,44 +84,59 @@ const table = await loadIcebergTable({
 const plan = table.planFiles({ ref: "main", where: eq("country", "US") });
 ```
 
+The Iceberg reader handles snapshot selection, partition pruning, schema
+projection, and delete files for supported table features.
+
+## What LakeQL Supports
+
+LakeQL supports SQL through the CLI, a JavaScript query builder, and a JSON query
+format. It can query Parquet paths, prefixes, and globs, including compatible
+multi-file schemas with missing columns filled as `null`.
+
+The detailed reference pages are still useful when you need exact behavior:
+
+- [SQL guide](./docs/sql-dialect.md)
+- [Querying Parquet](./docs/querying-parquet.md)
+- [Querying Iceberg](./docs/querying-iceberg.md)
+- [Cloudflare Workers](./docs/cloudflare-workers.md)
+- [Compatibility matrix](./docs/compatibility.md)
+- [Unsupported features](./docs/unsupported.md)
+- [Error codes](./docs/errors.md)
+
 ## Packages
 
-`lakeql` is the published package — one install, with `lakeql`, `lakeql/node`, and
-`lakeql/cloudflare` entry points. It bundles the internal `lakeql-*` modules below, which are
-kept as workspace source (not separately published):
+Most applications should import from `lakeql`, `lakeql/node`, or
+`lakeql/cloudflare`.
 
-| Module | Owns |
+| Import | Use it for |
 | --- | --- |
-| `lakeql` | Aggregate entry points (`lakeql/node`, `lakeql/cloudflare`) and the unified `loadTable`/`planFiles`/`scanRows` contract. |
-| [`lakeql-core`](./packages/core) | Expressions, planning, execution, budgets/limits, manifests, joins, sidecar indexes, object-store interface, typed errors. |
-| [`lakeql-parquet`](./packages/parquet) | Parquet read/write with row-group pruning. |
-| [`lakeql-iceberg`](./packages/iceberg) | Iceberg metadata loading, planning, delete application, and append commits. |
-| [`lakeql-http`](./packages/http), [`lakeql-s3`](./packages/s3), [`lakeql-r2`](./packages/r2) | Object-store adapters (range reads by default). |
-| [`lakeql-sql`](./packages/sql) | Small, bounded SQL parser/formatter (CLI-only). |
-| [`lakeql-geo`](./packages/geo) | Geospatial / H3 expression helpers. |
+| `lakeql` | Query builder, Parquet, Iceberg, in-memory stores, and shared types. |
+| `lakeql/node` | Node.js apps that need HTTP, S3, or filesystem cache helpers. |
+| `lakeql/cloudflare` | Cloudflare Workers apps that read from R2. |
 
-## Documentation
+The repository also contains internal workspace packages such as
+`lakeql-core`, `lakeql-parquet`, `lakeql-iceberg`, and `lakeql-sql`. Use those
+only when you are building adapters, tooling, or lower-level integrations.
 
-- [Introduction](./docs/introduction.md), [query language](./docs/query-language.md), and [JSON query API](./docs/json-query-api.md)
-- Querying: [Parquet](./docs/querying-parquet.md), [Iceberg](./docs/querying-iceberg.md), [partitioning](./docs/partitioning.md)
-- Writing: [Parquet](./docs/writing-parquet.md), [Iceberg (append-only)](./docs/writing-iceberg.md)
-- [Compatibility matrix](./docs/compatibility.md) and [unsupported-but-detected](./docs/unsupported.md)
-- [Iceberg catalogs](./docs/catalogs.md), [Parquet types](./docs/parquet-types.md), [error codes](./docs/errors.md)
-- [Cloudflare Workers](./docs/cloudflare-workers.md), [performance](./docs/performance.md), [caching](./docs/cache.md), [security](./docs/security.md)
-- [SQL dialect](./docs/sql-dialect.md), [CLI](./docs/cli.md), [geospatial](./docs/geospatial.md), [H3](./docs/h3.md)
-- [Recipes](./docs/recipes) and runnable [examples](./examples)
+## Current DX Gaps
 
-## Trust
+The CLI has a simple SQL path today. JavaScript app code does not yet have a
+single exported helper such as `lake.sql("select ...").toArray()` or
+`querySql(lake, sql)`. See [DX follow-ups](./docs/dx-followups.md) for the API
+gaps that should become product work.
 
-lakeql is checked in CI against Spark/PyIceberg reference warehouses, row-for-row comparison against
-DuckDB, S3 (MinIO) and Iceberg REST catalog round-trips, a 90% coverage gate, and a
-[reproducible benchmark report](./bench/REPORT.md). See [conformance](./docs/conformance.md).
+## Confidence
+
+LakeQL is checked in CI against Spark and PyIceberg reference warehouses,
+DuckDB result comparisons, S3 and Iceberg REST catalog round trips, and coverage
+gates. See [conformance](./docs/conformance.md) and the
+[benchmark report](./bench/REPORT.md).
 
 ## Development
 
 ```sh
 pnpm install
-pnpm check   # lint, build, typecheck, tests, conformance, reference, coverage
+pnpm check
 ```
 
 ## License

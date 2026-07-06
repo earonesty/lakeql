@@ -1,19 +1,95 @@
-# lakeql
+# Introduction
 
-lakeql is a TypeScript query engine for Parquet and Iceberg data on object storage. The current implementation focuses on deterministic reads, pruning, resumable slices, writes to Parquet, and runtime adapters for local stores, HTTP, R2, and S3.
+LakeQL queries Parquet and Iceberg data from JavaScript. It is built for object
+storage, edge runtimes, browser tools, and serverless jobs where loading a full
+database runtime is awkward.
 
-Use the umbrella package for application code:
-
-```ts
-import { createLake, eq, memoryStore } from "lakeql";
-```
-
-Use the package-specific entry points when you need lower-level control:
+The main package is `lakeql`:
 
 ```ts
-import { Lake, memoryStore } from "lakeql-core";
-import { createParquetLake } from "lakeql-parquet";
-import { loadIcebergTable } from "lakeql-iceberg";
+import { createLake, gt, httpStore } from "lakeql/node";
+
+const lake = createLake({
+  store: httpStore({ baseUrl: "https://example.com/data" }),
+});
+
+const rows = await lake
+  .path("sales.parquet")
+  .select(["store_id", "amount"])
+  .where(gt("amount", 100))
+  .limit(10)
+  .toArray();
 ```
 
-The fixture suite under `fixtures/data/` is the canonical set for examples and tests.
+## The Three Ways to Query
+
+Use the CLI when you want SQL over local Parquet files:
+
+```sh
+npx lakeql query \
+  --path sales.parquet \
+  --sql "select store_id, amount from input where amount > 100 limit 10"
+```
+
+Use the JavaScript query builder in applications:
+
+```ts
+const rows = await lake
+  .path("sales.parquet")
+  .select(["store_id", "amount"])
+  .where(gt("amount", 100))
+  .limit(10)
+  .toArray();
+```
+
+Use the JSON query API when you need to send a query over the network or store it
+as data:
+
+```ts
+const rows = await lake
+  .query({
+    version: 1,
+    from: "sales.parquet",
+    select: ["store_id", "amount"],
+    where: { gt: ["amount", 100] },
+    limit: 10,
+  })
+  .toArray();
+```
+
+## Reading Data
+
+LakeQL reads from an `ObjectStore`. The main package includes in-memory stores
+for tests, HTTP range reads for public or signed URLs, S3 support for Node.js,
+and R2 support for Cloudflare Workers.
+
+```ts
+import { createLake, httpStore } from "lakeql/node";
+
+const lake = createLake({
+  store: httpStore({ baseUrl: "https://example.com/data" }),
+});
+```
+
+```ts
+import { createLake, r2Store } from "lakeql/cloudflare";
+
+const lake = createLake({ store: r2Store(env.DATA) });
+```
+
+## Where to Go Next
+
+- [Querying Parquet](./querying-parquet.md)
+- [SQL guide](./sql-dialect.md)
+- [Querying Iceberg](./querying-iceberg.md)
+- [Cloudflare Workers](./cloudflare-workers.md)
+- [Writing Parquet](./writing-parquet.md)
+- [Compatibility matrix](./compatibility.md)
+- [DX follow-ups](./dx-followups.md)
+
+## Lower-Level Packages
+
+Most application code should import from `lakeql`, `lakeql/node`, or
+`lakeql/cloudflare`. Use workspace packages such as `lakeql-core`,
+`lakeql-parquet`, `lakeql-iceberg`, and `lakeql-sql` when you are building
+adapters, tooling, or tests that need lower-level APIs.

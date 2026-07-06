@@ -41,5 +41,5 @@ Smoke gate:
 pnpm bench:browser-r2
 ```
 
-That command builds the packages and browser benchmark surface. Timing numbers must be collected in
-the browser page.
+That command builds the packages and browser benchmark page. Timing numbers must
+be collected in the browser page.
