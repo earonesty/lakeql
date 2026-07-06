@@ -355,7 +355,7 @@ it("covers SQL helper defaults, validation, empty results, and CSV escaping", as
   const store = memoryStore();
   await store.put(SALES.file, await readFile(fixturePath(SALES.file)));
   await writePartitionedParquet(store, "sql/quoted", {
-    rows: [{ id: 1, label: 'a,"b"' }],
+    rows: [{ id: 1, label: 'a,"b"', formula: "=sum(A1:A2)", plus: "+1", minus: "-1", at: "@cmd" }],
   });
   const lake = createLake({ store });
 
@@ -445,8 +445,26 @@ it("covers SQL helper defaults, validation, empty results, and CSV escaping", as
   expect(emptyBatches).toEqual([]);
 
   await expect(
-    readStream(lake.sql("select id, label from read_parquet('sql/quoted/*.parquet')").streamCsv()),
-  ).resolves.toBe('id,label\n1,"a,""b"""\n');
+    readStream(
+      lake
+        .sql("select id, label, formula, plus, minus, at from read_parquet('sql/quoted/*.parquet')")
+        .streamCsv(),
+    ),
+  ).resolves.toBe('id,label,formula,plus,minus,at\n1,"a,""b""",=sum(A1:A2),+1,-1,@cmd\n');
+  await expect(
+    readStream(
+      lake
+        .sql("select id, label, formula, plus, minus, at from read_parquet('sql/quoted/*.parquet')")
+        .streamCsv({ preventFormulae: true }),
+    ),
+  ).resolves.toBe('id,label,formula,plus,minus,at\n1,"a,""b""",\'=sum(A1:A2),\'+1,\'-1,\'@cmd\n');
+
+  await writePartitionedParquet(store, "sql/bigint", {
+    rows: [{ id: 1n }, { id: 1n }],
+  });
+  await expect(
+    lake.sql("select distinct id from read_parquet('sql/bigint/*.parquet')").toArray(),
+  ).resolves.toEqual([{ id: 1n }]);
 
   await expect(
     lake
@@ -487,6 +505,14 @@ it("keeps SQL CTE materialization scoped to one query", async () => {
   await expect(lake.sql(sql, { path: SALES.file, parameters: [990] }).toArray()).resolves.toEqual([
     { store_id: "store-004", amount: 997.81 },
   ]);
+  await expect(
+    lake
+      .sql(
+        "with recent as (select store_id, amount from input where amount > 900) select amount, count(*) as rows from recent group by store_id",
+        { path: SALES.file },
+      )
+      .toArray(),
+  ).rejects.toMatchObject({ code: "LAKEQL_SQL_UNSUPPORTED" });
 
   const leakedTempObjects = [];
   for await (const object of store.list("__lakeql_sql_cte/")) leakedTempObjects.push(object.path);

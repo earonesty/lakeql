@@ -19,6 +19,15 @@ export interface SqlQueryOptions {
   joinMaxRightRows?: number;
 }
 
+export interface SqlCsvOptions {
+  /**
+   * Prefix cells that spreadsheet apps may interpret as formulae. Defaults to
+   * false so CSV remains a faithful data export unless a spreadsheet-targeted
+   * response opts in.
+   */
+  preventFormulae?: boolean;
+}
+
 export type SqlLake = ReturnType<typeof createParquetLake> & {
   sql(sql: string, options?: SqlQueryOptions): SqlQueryResult;
 };
@@ -82,8 +91,8 @@ export class SqlQueryResult {
     );
   }
 
-  streamCsv(): ReadableStream<Uint8Array> {
-    return streamText(async () => rowsToCsv(await this.toArray()));
+  streamCsv(options: SqlCsvOptions = {}): ReadableStream<Uint8Array> {
+    return streamText(async () => rowsToCsv(await this.toArray(), options));
   }
 }
 
@@ -740,7 +749,7 @@ function distinctRows(rows: Row[]): Row[] {
   const seen = new Set<string>();
   const out: Row[] = [];
   for (const row of rows) {
-    const key = JSON.stringify(row);
+    const key = jsonStringify(row);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(row);
@@ -770,18 +779,19 @@ function offsetLimitRows(rows: Row[], ast: SqlQueryAst): Row[] {
   return offset > 0 ? rows.slice(offset) : rows;
 }
 
-function rowsToCsv(rows: Row[]): string {
+function rowsToCsv(rows: Row[], options: SqlCsvOptions): string {
   const columns = Object.keys(rows[0] ?? {});
   const lines = [columns.join(",")];
   for (const row of rows) {
-    lines.push(columns.map((column) => csvCell(row[column])).join(","));
+    lines.push(columns.map((column) => csvCell(row[column], options)).join(","));
   }
   return `${lines.join("\n")}\n`;
 }
 
-function csvCell(value: unknown): string {
+function csvCell(value: unknown, options: SqlCsvOptions): string {
   if (value === null || value === undefined) return "";
-  const text = String(value);
+  const raw = String(value);
+  const text = options.preventFormulae === true && /^[=+\-@]/u.test(raw) ? `'${raw}` : raw;
   return /[",\n\r]/u.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 

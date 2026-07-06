@@ -88,6 +88,9 @@ Common result methods:
 | `streamCsv()` | CSV response bodies. |
 | `explain()` | Planned files, projected columns, and pruning details for builder queries. |
 
+`streamCsv({ preventFormulae: true })` prefixes cells that spreadsheet apps may
+interpret as formulae. The default is faithful CSV output for data interchange.
+
 ## Query More Than One File
 
 Use a glob:

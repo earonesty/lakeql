@@ -18,7 +18,10 @@ const rows = await lake
   })
   .toArray();
 
-const rows = await querySql(lake, "select * from read_parquet('events/*.parquet') limit 10");
+const rows = await querySql(
+  lake,
+  "select * from read_parquet('events/*.parquet') limit 10",
+).toArray();
 ```
 
 Implemented behavior:

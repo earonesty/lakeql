@@ -22,4 +22,11 @@ export {
   scanBatches,
   scanRows,
 } from "./engine.js";
-export { createLake, querySql, type SqlLake, type SqlQueryOptions, SqlQueryResult } from "./sql.js";
+export {
+  createLake,
+  querySql,
+  type SqlCsvOptions,
+  type SqlLake,
+  type SqlQueryOptions,
+  SqlQueryResult,
+} from "./sql.js";
