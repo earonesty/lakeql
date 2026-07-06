@@ -27,8 +27,14 @@ type Lake = ReturnType<typeof createParquetLake>;
 
 const DEFAULT_SOURCE_URL =
   "https://pub-9d5bcb33a5384d79875a943eef183b6d.r2.dev/plotly/2015_flights.parquet";
+const SPATIAL_SOURCE_URL =
+  "https://pub-9d5bcb33a5384d79875a943eef183b6d.r2.dev/bench/spatial.parquet";
+const WINDOW_SOURCE_URL =
+  "https://pub-9d5bcb33a5384d79875a943eef183b6d.r2.dev/bench/window-events.parquet";
 const DEFAULT_DATASET_KEY = "2015_flights.parquet";
 const DEFAULT_DATASET_SIZE = 25_238_218;
+const SPATIAL_DATASET_SIZE = 22_342;
+const WINDOW_DATASET_SIZE = 4_854;
 const SCAN_RANGE_CACHE_BYTES = 32 * 1024 * 1024;
 const BYTES_PER_MB = 1024 * 1024;
 const DEFAULT_MEMORY_BUDGET_MB = 256;
@@ -847,9 +853,9 @@ function datasetConfigFromLocation(): DatasetConfig {
   const sourceUrl =
     sourceUrlParam(params.get("source")) ??
     (kind === "spatial"
-      ? new URL("spatial.parquet", window.location.href).href
+      ? SPATIAL_SOURCE_URL
       : kind === "window"
-        ? new URL("window-events.parquet", window.location.href).href
+        ? WINDOW_SOURCE_URL
         : DEFAULT_SOURCE_URL);
   return {
     sourceUrl,
@@ -863,7 +869,11 @@ function datasetConfigFromLocation(): DatasetConfig {
           : DEFAULT_DATASET_KEY),
     size:
       positiveNumberParam(params.get("size")) ??
-      (kind === "tabular" ? DEFAULT_DATASET_SIZE : undefined),
+      (kind === "spatial"
+        ? SPATIAL_DATASET_SIZE
+        : kind === "window"
+          ? WINDOW_DATASET_SIZE
+          : DEFAULT_DATASET_SIZE),
     name:
       nonEmptyParam(params.get("name")) ??
       (kind === "spatial"

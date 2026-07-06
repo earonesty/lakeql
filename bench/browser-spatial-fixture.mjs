@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { writeParquet } from "../packages/parquet/dist/index.js";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
-const outputPath = "site/public/spatial.parquet";
+const outputPath = "bench/generated/browser-r2/spatial.parquet";
 
 const rows = buildRows();
 const store = {

@@ -7,6 +7,7 @@ on:
       - "v*"
     paths:
       - "site/**"
+      - "bench/browser-*-fixture.mjs"
       - "packages/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
@@ -39,6 +40,19 @@ jobs:
 
       # The site bundles the built lakeql-* packages, so build them first.
       - run: pnpm build
+
+      - name: Generate browser R2 benchmark fixtures
+        run: |
+          node bench/browser-spatial-fixture.mjs
+          node bench/browser-window-fixture.mjs
+
+      - name: Upload browser R2 benchmark fixtures
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          command: |
+            r2 object put lakeql-public/bench/spatial.parquet --file bench/generated/browser-r2/spatial.parquet --content-type application/octet-stream --cache-control "public, max-age=31536000, immutable" --remote
+            r2 object put lakeql-public/bench/window-events.parquet --file bench/generated/browser-r2/window-events.parquet --content-type application/octet-stream --cache-control "public, max-age=31536000, immutable" --remote
 
       - run: pnpm --filter lakeql-site build
 

@@ -3,13 +3,17 @@
 This benchmark compares Lakeql and DuckDB-Wasm in the browser against the same remote Parquet
 object. Native DuckDB is not part of the measured lane.
 
-Open `site/compare.html` through the Vite dev server or the built site. The default source is the
-public R2 flights Parquet object used by the existing compare page. A spatial R2 fixture can be
-selected without rebuilding:
+Open `site/compare.html` through the Vite dev server or the built site. The default sources are
+public R2 Parquet objects:
 
 ```text
-compare.html?kind=spatial&source=https%3A%2F%2Fexample.r2.dev%2Fspatial.parquet&key=spatial.parquet&size=123456789
+compare.html
+compare.html?kind=spatial
+compare.html?kind=window
 ```
+
+Custom public HTTPS/R2 objects can still be selected without rebuilding by passing `source`, `key`,
+and `size` query parameters.
 
 Measured lanes:
 
@@ -41,5 +45,6 @@ Smoke gate:
 pnpm bench:browser-r2
 ```
 
-That command builds the packages and browser benchmark page. Timing numbers must
-be collected in the browser page.
+That command builds the packages, regenerates the browser R2 benchmark fixtures under
+`bench/generated/browser-r2/`, and builds the browser benchmark page. Timing numbers must be
+collected in the browser page.

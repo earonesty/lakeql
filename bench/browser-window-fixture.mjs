@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { writeParquet } from "../packages/parquet/dist/index.js";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
-const outputPath = "site/public/window-events.parquet";
+const outputPath = "bench/generated/browser-r2/window-events.parquet";
 
 const rows = buildRows();
 const store = {
