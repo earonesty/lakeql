@@ -66,6 +66,14 @@ function compareNonNullScalars(
       ...(column === undefined ? {} : { column }),
     });
   }
+  if (
+    (typeof left === "number" && !Number.isFinite(left)) ||
+    (typeof right === "number" && !Number.isFinite(right))
+  ) {
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", `${context} numeric values must be finite`, {
+      ...(column === undefined ? {} : { column }),
+    });
+  }
   if (isTimestampValue(left) || isTimestampValue(right)) {
     if (!isTimestampValue(left) || !isTimestampValue(right)) {
       throw new LakeqlError(

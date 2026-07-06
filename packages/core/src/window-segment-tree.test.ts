@@ -171,6 +171,18 @@ describe("window segment tree aggregates", () => {
     expect(() => segmentTreeAggregateValues(intervalMinRows, window({ aggregate: "min" }))).toThrow(
       "aggregate values must be scalar",
     );
+
+    const nanRows = partitionRows(
+      [
+        { id: 1, account: "a", amount: Number.NaN },
+        { id: 2, account: "a", amount: 1 },
+      ],
+      window({ aggregate: "min" }),
+    );
+    sortWindowRows(nanRows, [{ expr: col("id") }]);
+    expect(() => segmentTreeAggregateValues(nanRows, window({ aggregate: "min" }))).toThrow(
+      "aggregate numeric values must be finite",
+    );
   });
 });
 

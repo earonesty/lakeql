@@ -348,6 +348,18 @@ describe("bookmarks and checkpoints", () => {
     await expect(
       verifyPaginationToken(await signPaginationToken(resumableBookmark, "secret"), "secret"),
     ).resolves.toEqual(resumableBookmark);
+    const malformedWindowBookmark = createBookmark({
+      planFingerprint: "fp_bad_window",
+      snapshot: "snapshot_bad_window",
+      query: {
+        source: "data/*.parquet",
+        windows: { rn: { fn: "row_number" } } as never,
+      },
+      position: { fileIndex: 0, rowGroup: 0, rowOffset: 0 },
+    });
+    await expect(
+      verifyPaginationToken(await signPaginationToken(malformedWindowBookmark, "secret"), "secret"),
+    ).rejects.toMatchObject({ code: "LAKEQL_BOOKMARK_INVALID" });
     const operatorBookmark = createBookmark({
       planFingerprint: "fp_operator",
       snapshot: "snapshot_4",

@@ -2,6 +2,7 @@ import { LakeqlError } from "./errors.js";
 import type { TaskInput } from "./query.js";
 import type { ObjectStore } from "./store.js";
 import type { Bookmark, BookmarkQuery } from "./types.js";
+import { isWindowExprSnapshot } from "./window-snapshot.js";
 
 export interface TaskManifestTask {
   id: string;
@@ -853,7 +854,7 @@ function parseBookmarkQuery(value: unknown): BookmarkQuery {
     if (!isRecord(value.windows)) throwInvalidBookmark("Bookmark windows are invalid");
     query.windows = {};
     for (const [key, expr] of Object.entries(value.windows)) {
-      if (typeof key !== "string" || key.length === 0 || !isRecord(expr)) {
+      if (typeof key !== "string" || key.length === 0 || !isWindowExprSnapshot(expr)) {
         throwInvalidBookmark("Bookmark windows are invalid");
       }
       query.windows[key] = expr as unknown as NonNullable<BookmarkQuery["windows"]>[string];
