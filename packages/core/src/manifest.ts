@@ -697,6 +697,7 @@ function normalizeBookmarkOperatorState(
     for (const [key, value] of Object.entries(state.sketches).sort(([a], [b]) =>
       a.localeCompare(b),
     )) {
+      assertSafeRecordKey(key, "Bookmark sketches state is invalid");
       normalized.sketches[key] = cloneBytes(value);
     }
   }
@@ -725,6 +726,9 @@ function normalizeBookmarkQuery(query: BookmarkQuery): BookmarkQuery {
   if (query.distinct !== undefined) normalized.distinct = query.distinct;
   if (query.windows !== undefined) {
     normalized.windows = sortValueRecord(query.windows, "Bookmark windows are invalid");
+    for (const expr of Object.values(normalized.windows)) {
+      if (!isWindowExprSnapshot(expr)) throwInvalidBookmark("Bookmark windows are invalid");
+    }
   }
   if (query.qualify !== undefined) normalized.qualify = query.qualify;
   if (query.orderBy !== undefined) {
@@ -757,9 +761,7 @@ function parseBookmarkOperatorState(value: unknown): NonNullable<Bookmark["opera
     if (!isRecord(value.sketches)) throwInvalidBookmark("Bookmark sketches state is invalid");
     state.sketches = {};
     for (const [key, inner] of Object.entries(value.sketches)) {
-      if (typeof key !== "string" || key.length === 0) {
-        throwInvalidBookmark("Bookmark sketches state is invalid");
-      }
+      assertSafeRecordKey(key, "Bookmark sketches state is invalid");
       state.sketches[key] = parseBase64UrlBytes(inner, "Bookmark sketches state is invalid");
     }
   }

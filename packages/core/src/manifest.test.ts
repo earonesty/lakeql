@@ -348,18 +348,17 @@ describe("bookmarks and checkpoints", () => {
     await expect(
       verifyPaginationToken(await signPaginationToken(resumableBookmark, "secret"), "secret"),
     ).resolves.toEqual(resumableBookmark);
-    const malformedWindowBookmark = createBookmark({
-      planFingerprint: "fp_bad_window",
-      snapshot: "snapshot_bad_window",
-      query: {
-        source: "data/*.parquet",
-        windows: { rn: { fn: "row_number" } } as never,
-      },
-      position: { fileIndex: 0, rowGroup: 0, rowOffset: 0 },
-    });
-    await expect(
-      verifyPaginationToken(await signPaginationToken(malformedWindowBookmark, "secret"), "secret"),
-    ).rejects.toMatchObject({ code: "LAKEQL_BOOKMARK_INVALID" });
+    expect(() =>
+      createBookmark({
+        planFingerprint: "fp_bad_window",
+        snapshot: "snapshot_bad_window",
+        query: {
+          source: "data/*.parquet",
+          windows: { rn: { fn: "row_number" } } as never,
+        },
+        position: { fileIndex: 0, rowGroup: 0, rowOffset: 0 },
+      }),
+    ).toThrow("Bookmark windows are invalid");
     const operatorBookmark = createBookmark({
       planFingerprint: "fp_operator",
       snapshot: "snapshot_4",
@@ -442,6 +441,11 @@ describe("bookmarks and checkpoints", () => {
       value: col("id"),
       enumerable: true,
     });
+    const unsafeSketches = Object.create(null) as Record<string, Uint8Array>;
+    Object.defineProperty(unsafeSketches, "__proto__", {
+      value: new Uint8Array([1]),
+      enumerable: true,
+    });
     expect(() =>
       createBookmark({
         planFingerprint: "fp_bad_projection_key",
@@ -450,10 +454,19 @@ describe("bookmarks and checkpoints", () => {
         position: { fileIndex: 0, rowGroup: 0, rowOffset: 0 },
       }),
     ).toThrow("Bookmark projections are invalid");
+    expect(() =>
+      createBookmark({
+        planFingerprint: "fp_bad_sketch_key",
+        snapshot: "snapshot_bad_sketch_key",
+        operatorState: { sketches: unsafeSketches },
+        position: { fileIndex: 0, rowGroup: 0, rowOffset: 0 },
+      }),
+    ).toThrow("Bookmark sketches state is invalid");
 
     const payloads = [
       `{"version":1,"planFingerprint":"fp","snapshot":"s","position":{"fileIndex":0,"rowGroup":0,"rowOffset":0},"query":{"source":"table","projections":{"__proto__":{"kind":"column","name":"id"}}}}`,
       `{"version":1,"planFingerprint":"fp","snapshot":"s","position":{"fileIndex":0,"rowGroup":0,"rowOffset":0},"query":{"source":"table","windows":{"__proto__":{"fn":"row_number","args":[],"over":{"partitionBy":[],"orderBy":[]}}}}}`,
+      `{"version":1,"planFingerprint":"fp","snapshot":"s","position":{"fileIndex":0,"rowGroup":0,"rowOffset":0},"operatorState":{"sketches":{"__proto__":"AQ"}}}`,
     ];
 
     for (const payload of payloads) {
@@ -663,6 +676,13 @@ describe("bookmarks and checkpoints", () => {
         planFingerprint: "fp",
         snapshot: "s",
         query: { source: "table", hive: "yes" },
+        position: { fileIndex: 0, rowGroup: 0, rowOffset: 0 },
+      },
+      {
+        version: 1,
+        planFingerprint: "fp",
+        snapshot: "s",
+        query: { source: "table", windows: { rn: { fn: "row_number" } } },
         position: { fileIndex: 0, rowGroup: 0, rowOffset: 0 },
       },
     ];
