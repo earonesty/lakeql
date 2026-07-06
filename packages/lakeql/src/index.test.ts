@@ -72,6 +72,39 @@ it("runs SQL through the public lake helper", async () => {
   ).resolves.toEqual({ store_id: "store-000", amount: 0 });
 });
 
+it("formats public SQL helper results", async () => {
+  const store = memoryStore();
+  await store.put(SALES.file, await readFile(fixturePath(SALES.file)));
+  const lake = createLake({ store });
+  const result = lake.sql(
+    "select store_id, region, amount from input where region = $1 order by amount asc limit 2",
+    { path: SALES.file, parameters: ["west"] },
+  );
+
+  await expect(result.count()).resolves.toBe(2);
+  await expect(result.first()).resolves.toEqual({
+    store_id: "store-000",
+    region: "west",
+    amount: 0,
+  });
+  const rows = [];
+  for await (const row of result.rows()) rows.push(row);
+  expect(rows).toEqual([
+    { store_id: "store-000", region: "west", amount: 0 },
+    { store_id: "store-000", region: "west", amount: 36.28 },
+  ]);
+  const batches = [];
+  for await (const batch of result.batches()) batches.push(batch);
+  expect(batches).toEqual([rows]);
+  await expect(readStream(result.streamJson())).resolves.toBe(JSON.stringify(rows));
+  await expect(readStream(result.streamNdjson())).resolves.toBe(
+    '{"store_id":"store-000","region":"west","amount":0}\n{"store_id":"store-000","region":"west","amount":36.28}',
+  );
+  await expect(readStream(result.streamCsv())).resolves.toBe(
+    "store_id,region,amount\nstore-000,west,0\nstore-000,west,36.28\n",
+  );
+});
+
 it("runs SQL over read_parquet globs and named table joins", async () => {
   const store = memoryStore();
   await writePartitionedParquet(store, "sql/sales", {
@@ -113,6 +146,334 @@ it("runs SQL over read_parquet globs and named table joins", async () => {
   ]);
 });
 
+it("runs aggregate, CTE, scalar subquery, and semi-join SQL helpers", async () => {
+  const store = memoryStore();
+  await store.put(SALES.file, await readFile(fixturePath(SALES.file)));
+  await writeStoresFixture(store, "sql/stores");
+  const lake = createLake({ store });
+
+  await expect(
+    lake
+      .sql(
+        "select region, count(*) as rows from input group by region order by region asc limit 1",
+        { path: SALES.file },
+      )
+      .toArray(),
+  ).resolves.toEqual([{ region: "east", rows: 25 }]);
+
+  await expect(
+    lake
+      .sql(
+        "with totals as (select region, count(*) as rows, max(amount) as max_amount from input group by region) select region, rows from totals where max_amount > 990 order by region asc",
+        { path: SALES.file },
+      )
+      .toArray(),
+  ).resolves.toEqual([
+    { region: "east", rows: 25 },
+    { region: "north", rows: 25 },
+    { region: "south", rows: 25 },
+  ]);
+
+  await expect(
+    lake
+      .sql(
+        "select store_id, (select max(amount) as max_amount from input) as max_amount from input order by amount asc limit 1",
+        { path: SALES.file },
+      )
+      .toArray(),
+  ).resolves.toEqual([{ store_id: "store-000", max_amount: 999.27 }]);
+
+  await expect(
+    lake
+      .sql(
+        [
+          "select store_id, amount from input",
+          "where amount between (select min(amount) as min_amount from input) and (select max(amount) as max_amount from input)",
+          "and amount in ((select min(amount) as min_amount from input), (select max(amount) as max_amount from input))",
+          "and not (amount < (select min(amount) as min_amount from input))",
+          "and (select max(amount) as max_amount from input) is not null",
+          "and (select region from input where region = 'west' limit 1) like 'w%'",
+          "and amount + (select min(amount) as min_amount from input) >= 0",
+          "and case when amount >= (select min(amount) as min_amount from input) then (select region from input where region = 'west' limit 1) else 'x' end = 'west'",
+          "order by amount asc",
+        ].join(" "),
+        { path: SALES.file },
+      )
+      .toArray(),
+  ).resolves.toEqual([
+    { store_id: "store-000", amount: 0 },
+    { store_id: "store-006", amount: 999.27 },
+  ]);
+
+  await expect(
+    lake
+      .sql(
+        "select store_id, amount from sales where store_id in (select store_id from stores where segment = 'enterprise') order by amount asc limit 1",
+        { tables: { sales: SALES.file, stores: "sql/stores/*.parquet" } },
+      )
+      .toArray(),
+  ).resolves.toEqual([{ store_id: "store-000", amount: 0 }]);
+});
+
+it("rejects unsupported SQL helper runtime shapes with typed errors", async () => {
+  const store = memoryStore();
+  await store.put(SALES.file, await readFile(fixturePath(SALES.file)));
+  await writeStoresFixture(store, "sql/stores");
+  const lake = createLake({ store });
+
+  const unsupportedQueries = [
+    lake.sql("select count(*) as rows from sales s join stores d on s.store_id = d.store_id", {
+      tables: { sales: SALES.file, stores: "sql/stores/*.parquet" },
+    }),
+    lake.sql("select count(*) as rows from sales where store_id in (select store_id from stores)", {
+      tables: { sales: SALES.file, stores: "sql/stores/*.parquet" },
+    }),
+    lake.sql(
+      "with none as (select store_id from input where amount > 2000) select store_id from none",
+      { path: SALES.file },
+    ),
+    lake.sql("select store_id from input where store_id = (select store_id from input limit 2)", {
+      path: SALES.file,
+    }),
+    lake.sql(
+      "with recent as (select store_id from input) select store_id from input where amount > 0",
+      { path: SALES.file },
+    ),
+    lake.sql(
+      "with recent as (select store_id from input) select i.store_id from input i join recent r on i.store_id = r.store_id",
+      { path: SALES.file },
+    ),
+    lake.sql(
+      "with recent as (select store_id from sales) select r.store_id from recent r join stores d on r.store_id = d.store_id",
+      { tables: { sales: SALES.file, stores: "sql/stores/*.parquet" } },
+    ),
+    lake.sql("delete from input", { path: SALES.file }),
+  ];
+
+  for (const result of unsupportedQueries) {
+    await expect(result.toArray()).rejects.toMatchObject({ code: "LAKEQL_SQL_UNSUPPORTED" });
+  }
+});
+
+it("runs SQL helper join planning, wildcard projection, and null ordering branches", async () => {
+  const store = memoryStore();
+  await writePartitionedParquet(store, "sql/sales", {
+    rows: [
+      { store_id: "s1", region: "west", amount: 10 },
+      { store_id: "s2", region: "east", amount: 20 },
+      { store_id: "s3", region: "west", amount: 30 },
+    ],
+  });
+  await writePartitionedParquet(store, "sql/stores", {
+    rows: [
+      { store_id: "s1", region: "west", segment: "retail" },
+      { store_id: "s3", region: "east", segment: "wrong-region" },
+    ],
+  });
+  const lake = createLake({ store });
+  const tables = { sales: "sql/sales/*.parquet", stores: "sql/stores/*.parquet" };
+
+  await expect(
+    lake
+      .sql(
+        [
+          "select s.store_id as store_id, d.segment as segment from sales s join stores d on s.store_id = d.store_id",
+          "where s.amount between 0 and 25",
+          "and d.segment = 'retail'",
+          "and s.region = d.region",
+          "order by d.segment desc offset 0 limit 1",
+        ].join(" "),
+        { tables },
+      )
+      .toArray(),
+  ).resolves.toEqual([{ store_id: "s1", segment: "retail" }]);
+
+  const wildcardRows = await lake
+    .sql(
+      "select * from sales s left join stores d using (store_id) order by d.segment asc nulls first, s.store_id asc limit 2",
+      { tables },
+    )
+    .toArray();
+  expect(wildcardRows).toEqual([
+    {
+      amount: 20,
+      region: "east",
+      store_id: "s2",
+      "s.amount": 20,
+      "s.region": "east",
+      "s.store_id": "s2",
+      "d.region": null,
+      "d.segment": null,
+      "d.store_id": null,
+    },
+    {
+      amount: 10,
+      region: "west",
+      store_id: "s1",
+      "s.amount": 10,
+      "s.region": "west",
+      "s.store_id": "s1",
+      "d.region": "west",
+      "d.segment": "retail",
+      "d.store_id": "s1",
+    },
+  ]);
+
+  await expect(
+    lake
+      .sql(
+        "select s.store_id as store_id, d.segment as segment from sales s left join stores d using (store_id) order by d.segment asc nulls last, s.store_id asc limit 2",
+        { tables },
+      )
+      .toArray(),
+  ).resolves.toEqual([
+    { store_id: "s1", segment: "retail" },
+    { store_id: "s3", segment: "wrong-region" },
+  ]);
+
+  await expect(
+    readStream(
+      lake
+        .sql(
+          "select s.store_id as store_id, d.segment as segment from sales s left join stores d using (store_id) order by d.segment asc nulls first, s.store_id asc limit 1",
+          { tables },
+        )
+        .streamCsv(),
+    ),
+  ).resolves.toBe("store_id,segment\ns2,\n");
+
+  await expect(
+    lake
+      .sql("select distinct store_id from sales where store_id in (select store_id from stores)", {
+        tables,
+      })
+      .toArray(),
+  ).resolves.toEqual([{ store_id: "s1" }, { store_id: "s3" }]);
+});
+
+it("covers SQL helper defaults, validation, empty results, and CSV escaping", async () => {
+  const store = memoryStore();
+  await store.put(SALES.file, await readFile(fixturePath(SALES.file)));
+  await writePartitionedParquet(store, "sql/quoted", {
+    rows: [{ id: 1, label: 'a,"b"' }],
+  });
+  const lake = createLake({ store });
+
+  await expect(
+    lake
+      .sql("select store_id, amount where region = 'west' order by amount asc offset 1 limit 1", {
+        path: SALES.file,
+      })
+      .toArray(),
+  ).resolves.toEqual([{ store_id: "store-000", amount: 36.28 }]);
+
+  await expect(
+    lake
+      .sql("select store_id as id, amount where region = 'west' order by amount desc limit 1", {
+        path: SALES.file,
+      })
+      .toArray(),
+  ).resolves.toEqual([{ id: "store-003", amount: 960.8 }]);
+
+  await expect(
+    lake
+      .sql("select distinct region from input order by region asc offset 1 limit 2", {
+        path: SALES.file,
+      })
+      .toArray(),
+  ).resolves.toEqual([{ region: "north" }, { region: "south" }]);
+
+  await expect(
+    lake
+      .sql(
+        "select region, max(amount) as max_amount from input where amount >= 0 group by region having max_amount > 0 order by region asc offset 1 limit 2",
+        { path: SALES.file },
+      )
+      .toArray(),
+  ).resolves.toEqual([
+    { region: "north", max_amount: 998.54 },
+    { region: "south", max_amount: 999.27 },
+  ]);
+
+  await expect(
+    lake
+      .sql("select * from input group by region order by region asc limit 1", { path: SALES.file })
+      .toArray(),
+  ).resolves.toEqual([{ region: "east" }]);
+
+  await expect(
+    lake
+      .sql(
+        "select distinct region, max(amount) as max_amount from input group by region order by region asc offset 1 limit 1",
+        { path: SALES.file },
+      )
+      .toArray(),
+  ).resolves.toEqual([{ region: "north", max_amount: 998.54 }]);
+
+  await expect(
+    lake
+      .sql(
+        "select store_id from input where amount = (select amount from input where amount > 2000 limit 1)",
+        { path: SALES.file },
+      )
+      .toArray(),
+  ).resolves.toEqual([]);
+
+  await expect(
+    lake
+      .sql(
+        "select store_id, amount, row_number() over (order by amount asc) as rn from input qualify rn = 1",
+        { path: SALES.file },
+      )
+      .toArray(),
+  ).resolves.toEqual([{ store_id: "store-000", amount: 0, rn: 1 }]);
+
+  await expect(
+    lake
+      .sql("select amount, count(*) as rows from input group by region", { path: SALES.file })
+      .toArray(),
+  ).rejects.toMatchObject({ code: "LAKEQL_SQL_UNSUPPORTED" });
+  await expect(lake.sql("describe input", { path: SALES.file }).toArray()).rejects.toMatchObject({
+    code: "LAKEQL_PARSE_ERROR",
+  });
+
+  const empty = lake.sql("select store_id from input where amount > 2000", { path: SALES.file });
+  await expect(empty.toArray()).resolves.toEqual([]);
+  await expect(readStream(empty.streamCsv())).resolves.toBe("\n");
+  const emptyBatches = [];
+  for await (const batch of empty.batches()) emptyBatches.push(batch);
+  expect(emptyBatches).toEqual([]);
+
+  await expect(
+    readStream(lake.sql("select id, label from read_parquet('sql/quoted/*.parquet')").streamCsv()),
+  ).resolves.toBe('id,label\n1,"a,""b"""\n');
+
+  await expect(
+    lake
+      .sql("select *, amount * 2 as doubled from input order by amount asc limit 1", {
+        path: SALES.file,
+      })
+      .toArray(),
+  ).resolves.toEqual([
+    {
+      amount: 0,
+      doubled: 0,
+    },
+  ]);
+
+  await expect(lake.sql("bogus", { path: SALES.file }).toArray()).rejects.toMatchObject({
+    code: "LAKEQL_PARSE_ERROR",
+  });
+  await expect(
+    lake
+      .sql(
+        "select region, count(*) as rows, row_number() over (order by region) as rn from input group by region",
+        { path: SALES.file },
+      )
+      .toArray(),
+  ).rejects.toMatchObject({ code: "LAKEQL_SQL_UNSUPPORTED" });
+});
+
 it("keeps SQL CTE materialization scoped to one query", async () => {
   const store = memoryStore();
   await store.put(SALES.file, await readFile(fixturePath(SALES.file)));
@@ -131,6 +492,29 @@ it("keeps SQL CTE materialization scoped to one query", async () => {
   for await (const object of store.list("__lakeql_sql_cte/")) leakedTempObjects.push(object.path);
   expect(leakedTempObjects).toEqual([]);
 });
+
+async function writeStoresFixture(store: ReturnType<typeof memoryStore>, prefix: string) {
+  await writePartitionedParquet(store, prefix, {
+    rows: [
+      { store_id: "store-000", region: "west", segment: "enterprise" },
+      { store_id: "store-000", region: "east", segment: "wrong-region" },
+      { store_id: "store-001", region: "east", segment: "retail" },
+    ],
+  });
+}
+
+async function readStream(stream: ReadableStream<Uint8Array>): Promise<string> {
+  const chunks = [];
+  for await (const chunk of stream) chunks.push(chunk);
+  const length = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
+}
 
 it("loads, plans, and scans a Parquet table through the unified engine surface", async () => {
   const store = memoryStore();

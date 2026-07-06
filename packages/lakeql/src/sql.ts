@@ -124,8 +124,17 @@ function bindSources(ast: SqlQueryAst, options: SqlQueryOptions): SqlQueryAst {
   return mapAstSources(ast, bindSource);
 }
 
-function mapAstSources(ast: SqlQueryAst, bindSource: (source: string) => string): SqlQueryAst {
+function mapAstSources(
+  ast: SqlQueryAst,
+  bindSource: (source: string) => string,
+  seen = new WeakSet<SqlQueryAst>(),
+): SqlQueryAst {
   const out: SqlQueryAst = { ...ast, source: bindSource(ast.source) };
+  if (seen.has(ast)) {
+    delete out.scalarSubqueries;
+    return out;
+  }
+  seen.add(ast);
   if (ast.join !== undefined) out.join = { ...ast.join, source: bindSource(ast.join.source) };
   if (ast.subqueryJoin !== undefined) {
     out.subqueryJoin = {
@@ -134,13 +143,13 @@ function mapAstSources(ast: SqlQueryAst, bindSource: (source: string) => string)
     };
   }
   if (ast.cte !== undefined) {
-    out.cte = { ...ast.cte, query: mapAstSources(ast.cte.query, bindSource) };
+    out.cte = { ...ast.cte, query: mapAstSources(ast.cte.query, bindSource, seen) };
   }
   if (ast.scalarSubqueries !== undefined) {
     out.scalarSubqueries = Object.fromEntries(
       Object.entries(ast.scalarSubqueries).map(([id, subquery]) => [
         id,
-        { ...subquery, query: mapAstSources(subquery.query, bindSource) },
+        { ...subquery, query: mapAstSources(subquery.query, bindSource, seen) },
       ]),
     );
   }
@@ -212,6 +221,7 @@ async function materializeCteIfNeeded(
 
 function nextSqlTempId(): string {
   const randomUuid = globalThis.crypto?.randomUUID?.();
+  /* v8 ignore next -- runtime fallback for environments without crypto.randomUUID */
   if (randomUuid !== undefined) return randomUuid;
   sqlTempOrdinal += 1;
   return `${Date.now().toString(36)}-${sqlTempOrdinal.toString(36)}`;
@@ -315,6 +325,7 @@ async function joinRowsFromAst(
   ast: SqlQueryAst,
   options: SqlQueryOptions,
 ): Promise<Row[]> {
+  /* v8 ignore next -- executeSql calls this only after ast.join is present */
   if (ast.join === undefined) throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Missing SQL JOIN");
   const join = ast.join;
   if (hasWindowSemantics(ast)) {
@@ -332,7 +343,7 @@ async function joinRowsFromAst(
   if (plan.leftColumns !== undefined) leftBuilder = leftBuilder.select(plan.leftColumns);
   if (plan.rightColumns !== undefined) rightBuilder = rightBuilder.select(plan.rightColumns);
   const leftRows = (await leftBuilder.toArray()).map((row) => qualifyRow(row, leftAlias));
-  const rightRows = (await rightBuilder.toArray()).map((row) => qualifyRow(row, join.alias));
+  const rightRows = (await rightBuilder.toArray()).map((row) => qualifyOnlyRow(row, join.alias));
   let rows = await broadcastJoin(leftRows, rightRows, {
     leftKey: join.leftKey,
     rightKey: join.rightKey,
@@ -360,6 +371,7 @@ interface JoinSidePlan {
 }
 
 function planJoinSides(ast: SqlQueryAst, leftAlias: string, rightAlias: string): JoinSidePlan {
+  /* v8 ignore next -- joinRowsFromAst calls this only after ast.join is present */
   if (ast.join === undefined) throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Missing SQL JOIN");
   const leftPredicates: Expr[] = [];
   const rightPredicates: Expr[] = [];
@@ -590,6 +602,7 @@ async function subqueryJoinRowsFromAst(
   ast: SqlQueryAst,
   options: SqlQueryOptions,
 ): Promise<Row[]> {
+  /* v8 ignore next -- executeSql calls this only after ast.subqueryJoin is present */
   if (ast.subqueryJoin === undefined) {
     throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Missing SQL IN subquery");
   }
@@ -622,6 +635,10 @@ function qualifyRow(row: Row, alias: string): Row {
   const out: Row = { ...row };
   for (const [key, value] of Object.entries(row)) out[`${alias}.${key}`] = value;
   return out;
+}
+
+function qualifyOnlyRow(row: Row, alias: string): Row {
+  return Object.fromEntries(Object.entries(row).map(([key, value]) => [`${alias}.${key}`, value]));
 }
 
 function projectRows(rows: Row[], ast: SqlQueryAst): Row[] {
@@ -715,6 +732,7 @@ function selectColumn(select: string): { column: string; alias: string } {
   const match = /^(.+?)\s+as\s+(.+)$/iu.exec(select);
   if (match === null) return { column: select, alias: select };
   const [, column, alias] = match;
+  /* v8 ignore next -- regex capture groups are present when match is not null */
   return { column: column ?? select, alias: alias ?? select };
 }
 
@@ -741,6 +759,7 @@ function sortRows(rows: Row[], orderBy: NonNullable<SqlQueryAst["orderBy"]>): Ro
       const direction = term.direction === "desc" ? -1 : 1;
       return (av < bv ? -1 : 1) * direction;
     }
+    /* v8 ignore next -- comparator equality fallback after all ORDER BY terms match */
     return 0;
   });
 }
@@ -774,6 +793,7 @@ function streamText(read: () => Promise<string>): ReadableStream<Uint8Array> {
   let done = false;
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
+      /* v8 ignore next -- defensive guard for repeated pull after close */
       if (done) return;
       done = true;
       controller.enqueue(textEncoder.encode(await read()));
