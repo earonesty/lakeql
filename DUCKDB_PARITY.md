@@ -78,6 +78,9 @@ Current state:
   failure.
 - `GROUP BY` can reference computed projection aliases, with DuckDB reference
   coverage for common aggregate queries.
+- Runtime join and `IN` subquery sorting resolve projected output aliases before
+  falling back to source columns, so `ORDER BY` keeps DuckDB-style alias
+  behavior even on manually planned row paths.
 - Unsupported broad SQL syntax is detected and rejected.
 
 TODO:
@@ -92,8 +95,8 @@ TODO:
   that do not reduce to equality semi/anti joins.
 - Recursive CTEs should remain explicitly rejected until there is a bounded
   execution design.
-- Tighten remaining alias resolution edge cases so `ORDER BY`, `HAVING`, and
-  `QUALIFY` behave the way DuckDB users expect across nested scopes.
+- Tighten remaining alias resolution edge cases so `HAVING` and `QUALIFY`
+  behave the way DuckDB users expect across nested scopes.
 
 Acceptance criteria:
 

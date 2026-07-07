@@ -903,7 +903,7 @@ async function joinRowsFromAst(
     }
   }
   if (ast.where !== undefined) rows = rows.filter((row) => matches(ast.where, row));
-  if (ast.orderBy !== undefined) rows = sortRows(rows, ast.orderBy);
+  if (ast.orderBy !== undefined) rows = sortRows(rows, ast.orderBy, ast);
   rows = projectRows(rows, ast);
   if (ast.distinct === true) rows = distinctRows(rows);
   return offsetLimitRows(rows, ast);
@@ -1142,7 +1142,7 @@ async function subqueryJoinRowsFromAst(
     maxRightRows: options.joinMaxRightRows ?? 100_000,
   });
   if (ast.where !== undefined) rows = rows.filter((row) => matches(ast.where, row));
-  if (ast.orderBy !== undefined) rows = sortRows(rows, ast.orderBy);
+  if (ast.orderBy !== undefined) rows = sortRows(rows, ast.orderBy, ast);
   rows = projectRows(rows, ast);
   if (ast.distinct === true) rows = distinctRows(rows);
   return offsetLimitRows(rows, ast);
@@ -1287,20 +1287,32 @@ function distinctRows(rows: Row[]): Row[] {
   return out;
 }
 
-function sortRows(rows: Row[], orderBy: NonNullable<SqlQueryAst["orderBy"]>): Row[] {
+function sortRows(
+  rows: Row[],
+  orderBy: NonNullable<SqlQueryAst["orderBy"]>,
+  ast?: SqlQueryAst,
+): Row[] {
   return [...rows].sort((a, b) => {
     for (const term of orderBy) {
-      const av = a[term.column] ?? null;
-      const bv = b[term.column] ?? null;
+      const av = sortValue(a, term.column, ast);
+      const bv = sortValue(b, term.column, ast);
       if (av === bv) continue;
-      if (av === null) return term.nulls === "first" ? -1 : 1;
-      if (bv === null) return term.nulls === "first" ? 1 : -1;
+      if (av === null || av === undefined) return term.nulls === "first" ? -1 : 1;
+      if (bv === null || bv === undefined) return term.nulls === "first" ? 1 : -1;
       const direction = term.direction === "desc" ? -1 : 1;
       return (av < bv ? -1 : 1) * direction;
     }
     /* v8 ignore next -- comparator equality fallback after all ORDER BY terms match */
     return 0;
   });
+}
+
+function sortValue(row: Row, column: string, ast?: SqlQueryAst): unknown {
+  const expr = ast?.projections?.[column];
+  if (expr !== undefined) return evaluate(expr, row) ?? null;
+  const select = ast?.select?.find((value) => selectColumn(value).alias === column);
+  if (select !== undefined) return row[selectColumn(select).column] ?? null;
+  return row[column] ?? null;
 }
 
 function offsetLimitRows(rows: Row[], ast: SqlQueryAst): Row[] {

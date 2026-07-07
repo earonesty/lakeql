@@ -649,6 +649,19 @@ it("runs SQL helper join planning, wildcard projection, and null ordering branch
       .toArray(),
   ).resolves.toEqual([{ store_id: "s1", segment: "retail" }]);
 
+  await expect(
+    lake
+      .sql(
+        [
+          "select s.store_id as id, d.segment as segment",
+          "from sales s join stores d on s.store_id = d.store_id",
+          "order by id desc limit 1",
+        ].join(" "),
+        { tables },
+      )
+      .toArray(),
+  ).resolves.toEqual([{ id: "s3", segment: "wrong-region" }]);
+
   const wildcardRows = await lake
     .sql(
       "select * from sales s left join stores d using (store_id) order by d.segment asc nulls first, s.store_id asc limit 2",
