@@ -154,6 +154,23 @@ it("runs SQL over read_parquet globs and named table joins", async () => {
   await expect(
     lake
       .sql(
+        "select d.store_id as store_id, s.amount as amount, d.segment as segment from sales s right join stores d using (store_id) order by d.store_id",
+        {
+          tables: {
+            sales: "sql/sales/*.parquet",
+            stores: "sql/stores/*.parquet",
+          },
+        },
+      )
+      .toArray(),
+  ).resolves.toEqual([
+    { store_id: "s1", amount: 10, segment: "retail" },
+    { store_id: "s3", amount: null, segment: "enterprise" },
+  ]);
+
+  await expect(
+    lake
+      .sql(
         [
           "select s.store_id as store_id, d.segment as segment, r.manager as manager",
           "from sales s",

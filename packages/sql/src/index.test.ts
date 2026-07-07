@@ -453,6 +453,16 @@ describe("parseSql", () => {
       },
     });
 
+    expect(parseSql("select * from sales right join stores using (store_id)")).toMatchObject({
+      join: {
+        source: "stores",
+        alias: "stores",
+        type: "right",
+        leftKey: ["sales.store_id"],
+        rightKey: ["stores.store_id"],
+      },
+    });
+
     expect(parseSql("select * from sales s join stores d using (store_id, region)")).toMatchObject({
       join: {
         source: "stores",
@@ -532,6 +542,9 @@ describe("parseSql", () => {
     expect(parseSql("select * from stores s, regions r")).toMatchObject({
       joins: [{ type: "cross", source: "regions", alias: "r" }],
     });
+    expect(
+      formatSql(parseSql("select * from sales s right join stores d using (store_id)")),
+    ).toContain("right join stores d");
   });
 
   it("compiles IN subqueries as semi and anti joins", () => {
@@ -1133,7 +1146,6 @@ describe("parseSql", () => {
     const unsupported = [
       "with a as (select id from t), b as (select id from t) select id from a",
       "with recent as (select * from orders join customers on orders.customer_id = customers.id) select * from recent",
-      "select * from orders full join customers on orders.customer_id = customers.id",
       "select * from orders join customers on orders.customer_id > customers.id",
       "select id from orders where id in (select order_id from refunds order by order_id)",
     ];

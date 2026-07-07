@@ -47,7 +47,7 @@ export interface SqlJoinAst {
   leftAlias: string;
   source: string;
   alias: string;
-  type: "inner" | "left" | "cross";
+  type: "inner" | "left" | "right" | "cross";
   leftKey: string[];
   rightKey: string[];
 }
@@ -1245,7 +1245,7 @@ function joinToAst(
       },
     };
   }
-  if (joinType !== "INNER JOIN" && joinType !== "LEFT JOIN") {
+  if (joinType !== "INNER JOIN" && joinType !== "LEFT JOIN" && joinType !== "RIGHT JOIN") {
     throwUnsupported(`Unsupported JOIN type ${joinType}`);
   }
   const right = sourceTable({ ...node, join: undefined });
@@ -1261,7 +1261,7 @@ function joinToAst(
         source: right.source,
         leftAlias: left.alias,
         alias: right.alias,
-        type: joinType === "LEFT JOIN" ? "left" : "inner",
+        type: sqlJoinType(joinType),
         leftKey: keys.map((key) => `${left.alias}.${key}`),
         rightKey: keys.map((key) => `${right.alias}.${key}`),
       },
@@ -1275,11 +1275,17 @@ function joinToAst(
       source: right.source,
       leftAlias: left.alias,
       alias: right.alias,
-      type: joinType === "LEFT JOIN" ? "left" : "inner",
+      type: sqlJoinType(joinType),
       leftKey,
       rightKey,
     },
   };
+}
+
+function sqlJoinType(joinType: string): SqlJoinAst["type"] {
+  if (joinType === "LEFT JOIN") return "left";
+  if (joinType === "RIGHT JOIN") return "right";
+  return "inner";
 }
 
 function qualifiedJoinKey(
@@ -1539,7 +1545,7 @@ function formatJoin(leftSource: string, join: SqlJoinAst, includeLeftAlias: bool
     includeLeftAlias && join.leftAlias !== leftSource ? ` ${formatIdentifier(join.leftAlias)}` : "";
   const source = formatIdentifier(join.source);
   const alias = join.alias === join.source ? "" : ` ${formatIdentifier(join.alias)}`;
-  const type = join.type === "left" ? "left join" : "join";
+  const type = join.type === "left" ? "left join" : join.type === "right" ? "right join" : "join";
   if (join.type === "cross") {
     return `${leftAlias} cross join ${source}${alias}`;
   }

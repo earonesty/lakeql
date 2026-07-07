@@ -115,6 +115,32 @@ describe("runCli", () => {
     ]);
   });
 
+  it("executes bounded SQL right joins over named CLI tables", async () => {
+    const rightStoresPath = await rightStoresFixturePath();
+    const result = await runCli([
+      "query",
+      "--table",
+      `sales=${fixturePath(SALES.file)}`,
+      "--table",
+      `stores=${rightStoresPath}`,
+      "--sql",
+      [
+        "select d.store_id as store_id, s.amount as amount, d.segment as segment",
+        "from sales s right join stores d on s.store_id = d.store_id",
+        "order by d.store_id desc, s.amount asc nulls last",
+        "limit 2",
+      ].join(" "),
+      "--format",
+      "json",
+    ]);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    expect(JSON.parse(result.stdout)).toEqual([
+      { store_id: "store-999", amount: null, segment: "unmatched" },
+      { store_id: "store-000", amount: 0, segment: "enterprise" },
+    ]);
+  });
+
   it("executes bounded SQL cross joins over named CLI tables", async () => {
     const storesPath = await storesFixturePath();
     const regionsPath = await regionsFixturePath();
@@ -1257,6 +1283,23 @@ async function storesFixturePath(): Promise<string> {
   });
   const bytes = await store.get(key);
   if (bytes === null) throw new Error("failed to write stores fixture");
+  await writeFile(path, bytes);
+  return path;
+}
+
+async function rightStoresFixturePath(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "lakeql-cli-right-join-"));
+  const path = join(dir, "stores.parquet");
+  const key = "tmp/right-stores.parquet";
+  const store = memoryStore();
+  await writeParquet(store, key, {
+    columnData: [
+      { name: "store_id", data: ["store-000", "store-999"], type: "STRING" },
+      { name: "segment", data: ["enterprise", "unmatched"], type: "STRING" },
+    ],
+  });
+  const bytes = await store.get(key);
+  if (bytes === null) throw new Error("failed to write right stores fixture");
   await writeFile(path, bytes);
   return path;
 }

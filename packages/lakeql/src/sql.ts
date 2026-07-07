@@ -358,20 +358,32 @@ async function joinRowsFromAst(
     const rightRows = (await lake.path(join.source).toArray()).map((row) =>
       qualifyOnlyRow(row, join.alias),
     );
-    rows =
-      join.type === "cross"
-        ? await crossJoin(rows, rightRows, {
-            rightPrefix: `${join.alias}.`,
-            maxRightRows: options.joinMaxRightRows ?? 100_000,
-            maxOutputRows: options.joinMaxOutputRows ?? 100_000,
-          })
-        : await broadcastJoin(rows, rightRows, {
-            leftKey: join.leftKey,
-            rightKey: join.rightKey,
-            type: join.type,
-            rightPrefix: `${join.alias}.`,
-            maxRightRows: options.joinMaxRightRows ?? 100_000,
-          });
+    if (join.type === "right") {
+      const leftRows = rows;
+      rows = await broadcastJoin(rightRows, leftRows, {
+        leftKey: join.rightKey,
+        rightKey: join.leftKey,
+        type: "left",
+        rightPrefix: `${join.leftAlias}.`,
+        maxRightRows: options.joinMaxRightRows ?? 100_000,
+      });
+      rows = fillRightJoinNulls(rows, ast, join.alias, leftRows);
+    } else {
+      rows =
+        join.type === "cross"
+          ? await crossJoin(rows, rightRows, {
+              rightPrefix: `${join.alias}.`,
+              maxRightRows: options.joinMaxRightRows ?? 100_000,
+              maxOutputRows: options.joinMaxOutputRows ?? 100_000,
+            })
+          : await broadcastJoin(rows, rightRows, {
+              leftKey: join.leftKey,
+              rightKey: join.rightKey,
+              type: join.type,
+              rightPrefix: `${join.alias}.`,
+              maxRightRows: options.joinMaxRightRows ?? 100_000,
+            });
+    }
     if (join.type === "left") {
       rows = fillLeftJoinNulls(rows, join.alias, leftJoinRightColumns(ast, join.alias, rightRows));
     }
@@ -485,6 +497,40 @@ function fillLeftJoinNulls(rows: Row[], rightAlias: string, rightColumns: string
     }
     return out ?? row;
   });
+}
+
+function fillRightJoinNulls(
+  rows: Row[],
+  ast: SqlQueryAst,
+  preservedAlias: string,
+  leftRows: Row[],
+): Row[] {
+  const columns = rightJoinLeftColumns(ast, preservedAlias, leftRows);
+  if (columns.length === 0) return rows;
+  return rows.map((row) => {
+    let out: Row | undefined;
+    for (const column of columns) {
+      if (column in row) continue;
+      out ??= { ...row };
+      out[column] = null;
+    }
+    return out ?? row;
+  });
+}
+
+function rightJoinLeftColumns(ast: SqlQueryAst, preservedAlias: string, leftRows: Row[]): string[] {
+  const columns = new Set<string>();
+  if (ast.select?.includes("*") ?? false) {
+    for (const row of leftRows) {
+      for (const column of Object.keys(row)) {
+        if (!isQualifiedBy(column, preservedAlias)) columns.add(column);
+      }
+    }
+  }
+  for (const column of referencedJoinColumns(ast)) {
+    if (!isQualifiedBy(column, preservedAlias)) columns.add(column);
+  }
+  return [...columns];
 }
 
 async function subqueryJoinRowsFromAst(

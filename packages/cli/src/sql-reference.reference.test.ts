@@ -398,6 +398,34 @@ describeReference("SQL CLI DuckDB reference comparisons", () => {
     expect(canonicalRows(lakeqlRows)).toEqual(canonicalRows(referenceRows));
   });
 
+  it("matches DuckDB for bounded right join nulls", async () => {
+    const storesPath = await rightStoresFixturePath();
+    const lakeql =
+      "select d.store_id as store_id, s.amount as amount, d.segment as segment from sales s right join stores d on s.store_id = d.store_id order by d.store_id desc, s.amount asc nulls last limit 2";
+    const duckdb = `select d.store_id as store_id, s.amount as amount, d.segment as segment from read_parquet('${sqlString(
+      fixturePath(SALES.file),
+    )}') s right join read_parquet('${sqlString(
+      storesPath,
+    )}') d on s.store_id = d.store_id order by d.store_id desc, s.amount asc nulls last limit 2`;
+
+    const result = await runCli([
+      "query",
+      "--table",
+      `sales=${fixturePath(SALES.file)}`,
+      "--table",
+      `stores=${storesPath}`,
+      "--sql",
+      lakeql,
+      "--format",
+      "json",
+    ]);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    const lakeqlRows = JSON.parse(result.stdout) as Row[];
+    const referenceRows = await duckDbRows(duckdb);
+    expect(canonicalRows(lakeqlRows)).toEqual(canonicalRows(referenceRows));
+  });
+
   it("matches DuckDB for bounded left join right-side WHERE filters", async () => {
     const storesPath = await storesFixturePath();
     const lakeql =
@@ -603,6 +631,23 @@ async function storesFixturePath(): Promise<string> {
   });
   const bytes = await store.get(key);
   if (bytes === null) throw new Error("failed to write stores fixture");
+  await writeFile(path, bytes);
+  return path;
+}
+
+async function rightStoresFixturePath(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "lakeql-reference-right-join-"));
+  const path = join(dir, "stores.parquet");
+  const key = "tmp/right-stores.parquet";
+  const store = memoryStore();
+  await writeParquet(store, key, {
+    columnData: [
+      { name: "store_id", data: ["store-000", "store-999"], type: "STRING" },
+      { name: "segment", data: ["enterprise", "unmatched"], type: "STRING" },
+    ],
+  });
+  const bytes = await store.get(key);
+  if (bytes === null) throw new Error("failed to write right stores fixture");
   await writeFile(path, bytes);
   return path;
 }
