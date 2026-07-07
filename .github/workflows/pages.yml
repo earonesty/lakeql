@@ -47,12 +47,11 @@ jobs:
           node bench/browser-window-fixture.mjs
 
       - name: Upload browser R2 benchmark fixtures
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: |
-            r2 object put lakeql-public/bench/spatial.parquet --file bench/generated/browser-r2/spatial.parquet --content-type application/octet-stream --cache-control "public, max-age=31536000, immutable" --remote
-            r2 object put lakeql-public/bench/window-events.parquet --file bench/generated/browser-r2/window-events.parquet --content-type application/octet-stream --cache-control "public, max-age=31536000, immutable" --remote
+        run: |
+          pnpm dlx wrangler@4.100.0 r2 object put lakeql-public/bench/spatial.parquet --file bench/generated/browser-r2/spatial.parquet --content-type application/octet-stream --cache-control "public, max-age=31536000, immutable" --remote
+          pnpm dlx wrangler@4.100.0 r2 object put lakeql-public/bench/window-events.parquet --file bench/generated/browser-r2/window-events.parquet --content-type application/octet-stream --cache-control "public, max-age=31536000, immutable" --remote
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
       - run: pnpm --filter lakeql-site build
 
