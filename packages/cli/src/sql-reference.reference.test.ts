@@ -456,6 +456,62 @@ describeReference("SQL CLI DuckDB reference comparisons", () => {
     expect(canonicalRows(lakeqlRows)).toEqual(canonicalRows(referenceRows));
   });
 
+  it("matches DuckDB for bounded right join preserved-side WHERE filters", async () => {
+    const storesPath = await rightStoresFixturePath();
+    const lakeql =
+      "select d.store_id as store_id, s.amount as amount, d.segment as segment from sales s right join stores d on s.store_id = d.store_id where d.segment = 'enterprise' order by d.store_id asc, s.amount asc nulls last limit 3";
+    const duckdb = `select d.store_id as store_id, s.amount as amount, d.segment as segment from read_parquet('${sqlString(
+      fixturePath(SALES.file),
+    )}') s right join read_parquet('${sqlString(
+      storesPath,
+    )}') d on s.store_id = d.store_id where d.segment = 'enterprise' order by d.store_id asc, s.amount asc nulls last limit 3`;
+
+    const result = await runCli([
+      "query",
+      "--table",
+      `sales=${fixturePath(SALES.file)}`,
+      "--table",
+      `stores=${storesPath}`,
+      "--sql",
+      lakeql,
+      "--format",
+      "json",
+    ]);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    const lakeqlRows = JSON.parse(result.stdout) as Row[];
+    const referenceRows = await duckDbRows(duckdb);
+    expect(canonicalRows(lakeqlRows)).toEqual(canonicalRows(referenceRows));
+  });
+
+  it("matches DuckDB for bounded right join nullable-side WHERE filters", async () => {
+    const storesPath = await rightStoresFixturePath();
+    const lakeql =
+      "select d.store_id as store_id, s.amount as amount, d.segment as segment from sales s right join stores d on s.store_id = d.store_id where s.amount > 900 order by d.store_id asc, s.amount asc limit 3";
+    const duckdb = `select d.store_id as store_id, s.amount as amount, d.segment as segment from read_parquet('${sqlString(
+      fixturePath(SALES.file),
+    )}') s right join read_parquet('${sqlString(
+      storesPath,
+    )}') d on s.store_id = d.store_id where s.amount > 900 order by d.store_id asc, s.amount asc limit 3`;
+
+    const result = await runCli([
+      "query",
+      "--table",
+      `sales=${fixturePath(SALES.file)}`,
+      "--table",
+      `stores=${storesPath}`,
+      "--sql",
+      lakeql,
+      "--format",
+      "json",
+    ]);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    const lakeqlRows = JSON.parse(result.stdout) as Row[];
+    const referenceRows = await duckDbRows(duckdb);
+    expect(canonicalRows(lakeqlRows)).toEqual(canonicalRows(referenceRows));
+  });
+
   it("matches DuckDB for bounded full join nulls", async () => {
     const storesPath = await rightStoresFixturePath();
     const lakeql =
@@ -465,6 +521,34 @@ describeReference("SQL CLI DuckDB reference comparisons", () => {
     )}') s full join read_parquet('${sqlString(
       storesPath,
     )}') d on s.store_id = d.store_id where s.store_id = 'store-005' or d.store_id = 'store-999' order by s.store_id asc nulls last, d.store_id asc nulls last`;
+
+    const result = await runCli([
+      "query",
+      "--table",
+      `sales=${fixturePath(SALES.file)}`,
+      "--table",
+      `stores=${storesPath}`,
+      "--sql",
+      lakeql,
+      "--format",
+      "json",
+    ]);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    const lakeqlRows = JSON.parse(result.stdout) as Row[];
+    const referenceRows = await duckDbRows(duckdb);
+    expect(canonicalRows(lakeqlRows)).toEqual(canonicalRows(referenceRows));
+  });
+
+  it("matches DuckDB for bounded full join single-side WHERE filters", async () => {
+    const storesPath = await rightStoresFixturePath();
+    const lakeql =
+      "select distinct s.store_id as sales_store, d.store_id as dim_store, d.segment as segment from sales s full join stores d on s.store_id = d.store_id where d.store_id = 'store-999' order by s.store_id asc nulls last, d.store_id asc nulls last";
+    const duckdb = `select distinct s.store_id as sales_store, d.store_id as dim_store, d.segment as segment from read_parquet('${sqlString(
+      fixturePath(SALES.file),
+    )}') s full join read_parquet('${sqlString(
+      storesPath,
+    )}') d on s.store_id = d.store_id where d.store_id = 'store-999' order by s.store_id asc nulls last, d.store_id asc nulls last`;
 
     const result = await runCli([
       "query",
@@ -707,6 +791,90 @@ describeReference("SQL CLI DuckDB reference comparisons", () => {
     )}') where store_id not in (select store_id from read_parquet('${sqlString(
       storesPath,
     )}')) order by amount asc limit 2`;
+
+    const result = await runCli([
+      "query",
+      "--table",
+      `sales=${fixturePath(SALES.file)}`,
+      "--table",
+      `stores=${storesPath}`,
+      "--sql",
+      lakeql,
+      "--format",
+      "json",
+    ]);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    const lakeqlRows = JSON.parse(result.stdout) as Row[];
+    const referenceRows = await duckDbRows(duckdb);
+    expect(canonicalRows(lakeqlRows)).toEqual(canonicalRows(referenceRows));
+  });
+
+  it("matches DuckDB for grouped aggregate over IN subquery", async () => {
+    const storesPath = await storesFixturePath();
+    const lakeql =
+      "select region, count(*) as rows, max(amount) as max_amount from sales where store_id in (select store_id from stores where segment = 'enterprise') group by region having rows > 0 order by region asc";
+    const duckdb = `select region, count(*) as rows, max(amount) as max_amount from read_parquet('${sqlString(
+      fixturePath(SALES.file),
+    )}') where store_id in (select store_id from read_parquet('${sqlString(
+      storesPath,
+    )}') where segment = 'enterprise') group by region having rows > 0 order by region asc`;
+
+    const result = await runCli([
+      "query",
+      "--table",
+      `sales=${fixturePath(SALES.file)}`,
+      "--table",
+      `stores=${storesPath}`,
+      "--sql",
+      lakeql,
+      "--format",
+      "json",
+    ]);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    const lakeqlRows = JSON.parse(result.stdout) as Row[];
+    const referenceRows = await duckDbRows(duckdb);
+    expect(canonicalRows(lakeqlRows)).toEqual(canonicalRows(referenceRows));
+  });
+
+  it("matches DuckDB for ungrouped aggregate over empty IN subquery", async () => {
+    const storesPath = await storesFixturePath();
+    const lakeql =
+      "select count(*) as rows from sales where store_id in (select store_id from stores where segment = 'missing')";
+    const duckdb = `select count(*) as rows from read_parquet('${sqlString(
+      fixturePath(SALES.file),
+    )}') where store_id in (select store_id from read_parquet('${sqlString(
+      storesPath,
+    )}') where segment = 'missing')`;
+
+    const result = await runCli([
+      "query",
+      "--table",
+      `sales=${fixturePath(SALES.file)}`,
+      "--table",
+      `stores=${storesPath}`,
+      "--sql",
+      lakeql,
+      "--format",
+      "json",
+    ]);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    const lakeqlRows = JSON.parse(result.stdout) as Row[];
+    const referenceRows = await duckDbRows(duckdb);
+    expect(canonicalRows(lakeqlRows)).toEqual(canonicalRows(referenceRows));
+  });
+
+  it("matches DuckDB for grouped aggregate over empty IN subquery", async () => {
+    const storesPath = await storesFixturePath();
+    const lakeql =
+      "select region, count(*) as rows from sales where store_id in (select store_id from stores where segment = 'missing') group by region order by region asc";
+    const duckdb = `select region, count(*) as rows from read_parquet('${sqlString(
+      fixturePath(SALES.file),
+    )}') where store_id in (select store_id from read_parquet('${sqlString(
+      storesPath,
+    )}') where segment = 'missing') group by region order by region asc`;
 
     const result = await runCli([
       "query",

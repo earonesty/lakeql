@@ -756,16 +756,12 @@ describe("runCli", () => {
       "select count(*) as rows from input",
     ]);
 
-    for (const result of [
-      aggregateJoin,
-      aggregateInSubquery,
-      emptyCte,
-      scalarTooManyRows,
-      aggregateExplain,
-    ]) {
+    for (const result of [aggregateJoin, emptyCte, scalarTooManyRows, aggregateExplain]) {
       expect(result).toMatchObject({ exitCode: 1 });
       expect(result.stderr).toContain("LAKEQL_SQL_UNSUPPORTED");
     }
+    expect(aggregateInSubquery).toMatchObject({ exitCode: 0, stderr: "" });
+    expect(JSON.parse(aggregateInSubquery.stdout)).toEqual([{ rows: 30 }]);
   });
 
   it("accepts select-first SQL with FROM while still using the --path source", async () => {

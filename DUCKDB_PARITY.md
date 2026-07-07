@@ -71,7 +71,8 @@ Current state:
 - Scalar subqueries, ordered/limited `IN (select ...)`, grouped `IN`/`EXISTS`
   subqueries with bounded `HAVING` predicates, uncorrelated `EXISTS`,
   correlated equality `IN`/`EXISTS`, bounded non-equality correlated `IN` and
-  `EXISTS`, nested derived tables, and
+  `EXISTS`, multiple predicate subqueries in one `WHERE`, aggregate outer
+  queries over predicate subqueries, nested derived tables, and
   single-binding CTEs used as outer sources, join inputs, or `IN` subquery
   sources compile to existing scalar, semi/anti join, and CTE materialization
   plans. CTE bodies can contain bounded joins, `IN` subquery plans, scalar
@@ -94,7 +95,8 @@ Current state:
   while retaining the residual filter, preserving null-extension semantics.
 - Preserved-side outer join `WHERE` predicates can be removed from the residual
   filter after prefiltering when join-chain alias analysis proves the alias
-  cannot be null-extended at output.
+  cannot be null-extended at output. Right and full join nullable/preserved-side
+  filter semantics are covered against DuckDB reference results.
 - Join row paths push source projections down to each input side when selected
   columns, join keys, predicates, ordering, and computed projections can all be
   proven against qualified input aliases.
@@ -104,11 +106,6 @@ Current state:
 
 TODO:
 
-- Broaden source-specific predicate pushdown across additional nested Iceberg
-  scopes after adding coverage for repeated bindings and residual filter
-  semantics.
-- Revisit outer-join planner optimizations after the bounded execution
-  semantics stay covered by DuckDB reference tests.
 - Broaden remaining subquery support for common analytical correlation forms
   beyond bounded predicate and grouped `IN`/`EXISTS`.
 

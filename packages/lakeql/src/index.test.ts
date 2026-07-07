@@ -737,9 +737,6 @@ it("rejects unsupported SQL helper runtime shapes with typed errors", async () =
     lake.sql("select count(*) as rows from sales s join stores d on s.store_id = d.store_id", {
       tables: { sales: SALES.file, stores: "sql/stores/*.parquet" },
     }),
-    lake.sql("select count(*) as rows from sales where store_id in (select store_id from stores)", {
-      tables: { sales: SALES.file, stores: "sql/stores/*.parquet" },
-    }),
     lake.sql(
       "with none as (select store_id from input where amount > 2000) select store_id from none",
       { path: SALES.file },
@@ -753,6 +750,14 @@ it("rejects unsupported SQL helper runtime shapes with typed errors", async () =
   for (const result of unsupportedQueries) {
     await expect(result.toArray()).rejects.toMatchObject({ code: "LAKEQL_SQL_UNSUPPORTED" });
   }
+
+  await expect(
+    lake
+      .sql("select count(*) as rows from sales where store_id in (select store_id from stores)", {
+        tables: { sales: SALES.file, stores: "sql/stores/*.parquet" },
+      })
+      .toArray(),
+  ).resolves.toEqual([{ rows: 30 }]);
 });
 
 it("runs SQL helper join planning, wildcard projection, and null ordering branches", async () => {

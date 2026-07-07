@@ -1471,10 +1471,7 @@ async function subqueryJoinRowsFromAst(
     throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "Window SQL over IN subquery is not supported");
   }
   if (hasAggregation(ast)) {
-    throw new LakeqlError(
-      "LAKEQL_SQL_UNSUPPORTED",
-      "Aggregate SQL over IN subquery is not supported yet",
-    );
+    return await aggregateSubqueryJoinRowsFromAst(lake, ast, joins, options);
   }
   let rows = await lake.path(ast.source).toArray();
   for (const join of joins) {
@@ -1485,6 +1482,93 @@ async function subqueryJoinRowsFromAst(
   rows = projectRows(rows, ast);
   if (ast.distinct === true) rows = distinctRows(rows);
   return offsetLimitRows(rows, ast);
+}
+
+async function aggregateSubqueryJoinRowsFromAst(
+  lake: ParquetLake,
+  ast: SqlQueryAst,
+  joins: NonNullable<SqlQueryAst["subqueryJoins"]>,
+  options: SqlQueryOptions,
+): Promise<Row[]> {
+  let rows = await lake.path(ast.source).toArray();
+  for (const join of joins) rows = await applySubqueryJoinRows(lake, rows, join, options);
+  if (ast.where !== undefined) rows = rows.filter((row) => matches(ast.where, row));
+  const aggregateAst = subqueryJoinAggregateAst(ast);
+  if (rows.length === 0) {
+    if ((ast.groupBy?.length ?? 0) > 0) return [];
+    return emptyAggregateRowsFromAst(aggregateAst);
+  }
+  const prefix = `__lakeql_sql_subquery/${safeTempName(ast.source)}/${nextSqlTempId()}`;
+  const written = await writePartitionedParquet(lake.store, prefix, {
+    rows,
+    maxRowsPerFile: rows.length,
+  });
+  try {
+    return await aggregateRowsFromAst(lake.path(`${prefix}/*.parquet`), {
+      ...aggregateAst,
+      source: `${prefix}/*.parquet`,
+    });
+  } finally {
+    await Promise.all(written.files.map((file) => lake.store.delete(file.path)));
+  }
+}
+
+function subqueryJoinAggregateAst(ast: SqlQueryAst): SqlQueryAst {
+  const {
+    subqueryJoin: _subqueryJoin,
+    subqueryJoins: _subqueryJoins,
+    where: _where,
+    ...rest
+  } = ast;
+  return rest;
+}
+
+function emptyAggregateRowsFromAst(ast: SqlQueryAst): Row[] {
+  validateAggregateProjection(ast);
+  const hiddenCountAlias = hiddenAggregateAlias(ast);
+  const aggregateSpec: AggregateSpec =
+    ast.aggregates === undefined || Object.keys(ast.aggregates).length === 0
+      ? { [hiddenCountAlias]: { op: "count" } }
+      : ast.aggregates;
+  let rows = [emptyAggregateRow(aggregateSpec)];
+  if (ast.having !== undefined) rows = rows.filter((row) => matches(ast.having as Expr, row));
+  rows = projectAggregateRows(rows, ast, hiddenCountAlias);
+  if (ast.distinct === true) rows = distinctRows(rows);
+  if (ast.orderBy !== undefined) rows = sortRows(rows, ast.orderBy, ast);
+  const offset = ast.offset ?? 0;
+  if (ast.limit !== undefined) rows = rows.slice(offset, offset + ast.limit);
+  else if (offset > 0) rows = rows.slice(offset);
+  return rows;
+}
+
+function emptyAggregateRow(spec: AggregateSpec): Row {
+  return Object.fromEntries(
+    Object.entries(spec).map(([alias, aggregate]) => [alias, emptyAggregateValue(aggregate.op)]),
+  );
+}
+
+function emptyAggregateValue(op: AggregateSpec[string]["op"]): Row[string] {
+  switch (op) {
+    case "count":
+    case "count_distinct":
+    case "approx_count_distinct":
+      return 0;
+    case "sum":
+    case "avg":
+    case "var_samp":
+    case "var_pop":
+    case "stddev_samp":
+    case "stddev_pop":
+    case "median":
+    case "quantile":
+    case "min":
+    case "max":
+    case "mode":
+    case "first":
+    case "last":
+    case "any":
+      return null;
+  }
 }
 
 async function applySubqueryJoinRows(
