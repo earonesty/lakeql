@@ -47,7 +47,7 @@ export interface SqlJoinAst {
   leftAlias: string;
   source: string;
   alias: string;
-  type: "inner" | "left";
+  type: "inner" | "left" | "cross";
   leftKey: string[];
   rightKey: string[];
 }
@@ -1227,8 +1227,24 @@ function joinToAst(
   if (node.type !== "table" && node.type !== "call") {
     throwUnsupported("Only table JOIN sources are supported");
   }
-  const join = asNode(node.join, "JOIN");
-  const joinType = String(join.type).toUpperCase();
+  const join = node.join === undefined ? undefined : asNode(node.join, "JOIN");
+  const joinType = join === undefined ? "" : String(join.type).toUpperCase();
+  if (join === undefined || joinType === "CROSS JOIN") {
+    const right = sourceTable({ ...node, join: undefined });
+    const left = joinedSources[0];
+    if (left === undefined) throwUnsupported("JOIN requires a left source");
+    return {
+      right,
+      join: {
+        source: right.source,
+        leftAlias: left.alias,
+        alias: right.alias,
+        type: "cross",
+        leftKey: [],
+        rightKey: [],
+      },
+    };
+  }
   if (joinType !== "INNER JOIN" && joinType !== "LEFT JOIN") {
     throwUnsupported(`Unsupported JOIN type ${joinType}`);
   }
@@ -1524,6 +1540,9 @@ function formatJoin(leftSource: string, join: SqlJoinAst, includeLeftAlias: bool
   const source = formatIdentifier(join.source);
   const alias = join.alias === join.source ? "" : ` ${formatIdentifier(join.alias)}`;
   const type = join.type === "left" ? "left join" : "join";
+  if (join.type === "cross") {
+    return `${leftAlias} cross join ${source}${alias}`;
+  }
   const on = join.leftKey
     .map((leftKey, index) => {
       const rightKey = join.rightKey[index];

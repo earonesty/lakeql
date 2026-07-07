@@ -515,6 +515,23 @@ describe("parseSql", () => {
     });
     expect(chain.join).toEqual(chain.joins?.[0]);
     expect(parseSql(formatSql(chain))).toEqual(chain);
+
+    const cross = parseSql("select * from stores s cross join regions r");
+    expect(cross).toMatchObject({
+      joins: [
+        {
+          source: "regions",
+          alias: "r",
+          type: "cross",
+          leftKey: [],
+          rightKey: [],
+        },
+      ],
+    });
+    expect(formatSql(cross)).toContain("cross join regions r");
+    expect(parseSql("select * from stores s, regions r")).toMatchObject({
+      joins: [{ type: "cross", source: "regions", alias: "r" }],
+    });
   });
 
   it("compiles IN subqueries as semi and anti joins", () => {
@@ -1117,7 +1134,6 @@ describe("parseSql", () => {
       "with a as (select id from t), b as (select id from t) select id from a",
       "with recent as (select * from orders join customers on orders.customer_id = customers.id) select * from recent",
       "select * from orders full join customers on orders.customer_id = customers.id",
-      "select * from orders cross join customers",
       "select * from orders join customers on orders.customer_id > customers.id",
       "select id from orders where id in (select order_id from refunds order by order_id)",
     ];

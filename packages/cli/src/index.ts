@@ -4,6 +4,7 @@ import {
   type AggregateSpec,
   broadcastJoin,
   createOutputManifest,
+  crossJoin,
   type Expr,
   evaluate,
   fingerprint,
@@ -44,6 +45,7 @@ interface ParsedArgs {
   partitionBy?: string[];
   maxRowsPerFile?: number;
   joinMaxRightRows?: number;
+  joinMaxOutputRows?: number;
   manifest?: string;
   jobId?: string;
   help: boolean;
@@ -86,7 +88,7 @@ export function usage(): string {
     "commands:",
     "  compact --path <file.parquet> --output <prefix> [--max-rows-per-file n]",
     "  query   --path <file.parquet> --sql <query> [--format csv|json|ndjson]",
-    "  query   --table name=file.parquet [--table name=file.parquet ...] --sql <join-query> [--join-max-right-rows n]",
+    "  query   --table name=file.parquet [--table name=file.parquet ...] --sql <join-query> [--join-max-right-rows n] [--join-max-output-rows n]",
     "  explain --path <file.parquet> --sql <query>",
     "  inspect --path <file.parquet>",
     "  write   --path <file.parquet> --sql <query> --output <prefix> [--partition-by a,b] [--max-rows-per-file n] [--manifest <path>] [--job-id id]",
@@ -421,13 +423,20 @@ async function joinRowsFromAst(
     const rightRows = (await lake.path(join.source).toArray()).map((row) =>
       qualifyRow(row, join.alias),
     );
-    rows = await broadcastJoin(rows, rightRows, {
-      leftKey: join.leftKey,
-      rightKey: join.rightKey,
-      type: join.type,
-      rightPrefix: `${join.alias}.`,
-      maxRightRows: args.joinMaxRightRows ?? 100_000,
-    });
+    rows =
+      join.type === "cross"
+        ? await crossJoin(rows, rightRows, {
+            rightPrefix: `${join.alias}.`,
+            maxRightRows: args.joinMaxRightRows ?? 100_000,
+            maxOutputRows: args.joinMaxOutputRows ?? 100_000,
+          })
+        : await broadcastJoin(rows, rightRows, {
+            leftKey: join.leftKey,
+            rightKey: join.rightKey,
+            type: join.type,
+            rightPrefix: `${join.alias}.`,
+            maxRightRows: args.joinMaxRightRows ?? 100_000,
+          });
     if (join.type === "left") {
       rows = fillLeftJoinNulls(rows, join.alias, leftJoinRightColumns(ast, join.alias, rightRows));
     }
@@ -902,6 +911,9 @@ function parseArgs(argv: string[]): ParsedArgs {
     } else if (arg === "--join-max-right-rows") {
       index += 1;
       args.joinMaxRightRows = parsePositiveInt(requireValue(rest, index, arg), arg);
+    } else if (arg === "--join-max-output-rows") {
+      index += 1;
+      args.joinMaxOutputRows = parsePositiveInt(requireValue(rest, index, arg), arg);
     } else if (arg === "--manifest") {
       index += 1;
       args.manifest = requireValue(rest, index, arg);

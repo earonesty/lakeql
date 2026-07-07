@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { broadcastJoin, type LookupJoinFunction, lookupJoin } from "./join.js";
+import { broadcastJoin, crossJoin, type LookupJoinFunction, lookupJoin } from "./join.js";
 import type { Row } from "./types.js";
 
 async function* asyncRows(rows: Row[]): AsyncIterable<Row> {
@@ -157,6 +157,56 @@ describe("broadcastJoin", () => {
         rightKey: "id",
         maxRightRows: 1,
         type: "outer" as never,
+      }),
+    ).rejects.toMatchObject({ code: "LAKEQL_TYPE_ERROR" });
+  });
+});
+
+describe("crossJoin", () => {
+  it("joins every bounded left and right row with collision prefixes", async () => {
+    await expect(
+      crossJoin(
+        [
+          { id: 1, left: "a" },
+          { id: 2, left: "b" },
+        ],
+        [
+          { id: 10, right: "x" },
+          { id: 20, right: "y" },
+        ],
+        { maxRightRows: 2, maxOutputRows: 4, rightPrefix: "r." },
+      ),
+    ).resolves.toEqual([
+      { id: 1, left: "a", "r.id": 10, right: "x" },
+      { id: 1, left: "a", "r.id": 20, right: "y" },
+      { id: 2, left: "b", "r.id": 10, right: "x" },
+      { id: 2, left: "b", "r.id": 20, right: "y" },
+    ]);
+  });
+
+  it("rejects unbounded cross joins with typed errors", async () => {
+    await expect(
+      crossJoin([{ id: 1 }], [{ id: 2 }, { id: 3 }], {
+        maxRightRows: 1,
+        maxOutputRows: 10,
+      }),
+    ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+    await expect(
+      crossJoin([{ id: 1 }, { id: 2 }], [{ id: 3 }, { id: 4 }], {
+        maxRightRows: 2,
+        maxOutputRows: 3,
+      }),
+    ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+    await expect(
+      crossJoin([{ id: 1 }], [{ id: 2 }], {
+        maxRightRows: 0,
+        maxOutputRows: 1,
+      }),
+    ).rejects.toMatchObject({ code: "LAKEQL_TYPE_ERROR" });
+    await expect(
+      crossJoin([{ id: 1 }], [{ id: 2 }], {
+        maxRightRows: 1,
+        maxOutputRows: 0,
       }),
     ).rejects.toMatchObject({ code: "LAKEQL_TYPE_ERROR" });
   });

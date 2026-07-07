@@ -1,6 +1,7 @@
 import {
   type AggregateSpec,
   broadcastJoin,
+  crossJoin,
   type Expr,
   evaluate,
   LakeqlError,
@@ -17,6 +18,7 @@ export interface SqlQueryOptions {
   tables?: Record<string, string>;
   parameters?: readonly SqlParameterValue[];
   joinMaxRightRows?: number;
+  joinMaxOutputRows?: number;
 }
 
 export interface SqlCsvOptions {
@@ -356,13 +358,20 @@ async function joinRowsFromAst(
     const rightRows = (await lake.path(join.source).toArray()).map((row) =>
       qualifyOnlyRow(row, join.alias),
     );
-    rows = await broadcastJoin(rows, rightRows, {
-      leftKey: join.leftKey,
-      rightKey: join.rightKey,
-      type: join.type,
-      rightPrefix: `${join.alias}.`,
-      maxRightRows: options.joinMaxRightRows ?? 100_000,
-    });
+    rows =
+      join.type === "cross"
+        ? await crossJoin(rows, rightRows, {
+            rightPrefix: `${join.alias}.`,
+            maxRightRows: options.joinMaxRightRows ?? 100_000,
+            maxOutputRows: options.joinMaxOutputRows ?? 100_000,
+          })
+        : await broadcastJoin(rows, rightRows, {
+            leftKey: join.leftKey,
+            rightKey: join.rightKey,
+            type: join.type,
+            rightPrefix: `${join.alias}.`,
+            maxRightRows: options.joinMaxRightRows ?? 100_000,
+          });
     if (join.type === "left") {
       rows = fillLeftJoinNulls(rows, join.alias, leftJoinRightColumns(ast, join.alias, rightRows));
     }

@@ -171,6 +171,41 @@ it("runs SQL over read_parquet globs and named table joins", async () => {
       )
       .toArray(),
   ).resolves.toEqual([{ store_id: "s1", segment: "retail", manager: "Ada" }]);
+
+  await expect(
+    lake
+      .sql(
+        [
+          "select s.store_id as store_id, r.manager as manager",
+          "from sales s cross join regions r",
+          "order by s.store_id asc, r.manager asc",
+          "limit 3",
+        ].join(" "),
+        {
+          tables: {
+            sales: "sql/sales/*.parquet",
+            regions: "sql/regions/*.parquet",
+          },
+        },
+      )
+      .toArray(),
+  ).resolves.toEqual([
+    { store_id: "s1", manager: "Ada" },
+    { store_id: "s1", manager: "Grace" },
+    { store_id: "s2", manager: "Ada" },
+  ]);
+
+  await expect(
+    lake
+      .sql("select * from sales cross join regions", {
+        tables: {
+          sales: "sql/sales/*.parquet",
+          regions: "sql/regions/*.parquet",
+        },
+        joinMaxOutputRows: 3,
+      })
+      .toArray(),
+  ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
 });
 
 it("runs aggregate, CTE, scalar subquery, and semi-join SQL helpers", async () => {

@@ -21,6 +21,12 @@ export interface LookupJoinOptions {
   rightPrefix?: string;
 }
 
+export interface CrossJoinOptions {
+  maxRightRows: number;
+  maxOutputRows: number;
+  rightPrefix?: string;
+}
+
 export type LookupJoinFunction = (
   key: string | number | boolean | bigint | null | (string | number | boolean | bigint | null)[],
   leftRow: Row,
@@ -96,6 +102,25 @@ export async function lookupJoin(
   return out;
 }
 
+export async function crossJoin(
+  left: AsyncIterable<Row> | Iterable<Row>,
+  right: AsyncIterable<Row> | Iterable<Row>,
+  options: CrossJoinOptions,
+): Promise<Row[]> {
+  validateCrossJoinOptions(options);
+  const rightRows = await collectRightRows(right, options.maxRightRows);
+  const out: Row[] = [];
+  for await (const leftRow of left) {
+    for (const rightRow of rightRows) {
+      if (out.length >= options.maxOutputRows) {
+        enforceMaxOutputRows(out.length + 1, options.maxOutputRows);
+      }
+      out.push(mergeCrossRows(leftRow, rightRow, options.rightPrefix));
+    }
+  }
+  return out;
+}
+
 async function collectRightRows(
   rows: AsyncIterable<Row> | Iterable<Row>,
   maxRightRows: number,
@@ -108,6 +133,21 @@ async function collectRightRows(
     out.push(row);
   }
   return out;
+}
+
+function validateCrossJoinOptions(options: CrossJoinOptions): void {
+  if (!Number.isInteger(options.maxRightRows) || options.maxRightRows < 1) {
+    throw new LakeqlError(
+      "LAKEQL_TYPE_ERROR",
+      "Cross join maxRightRows must be a positive integer",
+    );
+  }
+  if (!Number.isInteger(options.maxOutputRows) || options.maxOutputRows < 1) {
+    throw new LakeqlError(
+      "LAKEQL_TYPE_ERROR",
+      "Cross join maxOutputRows must be a positive integer",
+    );
+  }
 }
 
 function validateJoinOptions(
@@ -200,11 +240,29 @@ function mergeRows(left: Row, right: Row, options: BroadcastJoinOptions | Lookup
   return out;
 }
 
+function mergeCrossRows(left: Row, right: Row, rightPrefix = "right."): Row {
+  const out: Row = { ...left };
+  for (const [key, value] of Object.entries(right)) {
+    const outKey = key in out ? `${rightPrefix}${key}` : key;
+    out[outKey] = value;
+  }
+  return out;
+}
+
 function enforceMaxRightRows(strategy: string, actual: number, limit: number): void {
   if (actual <= limit) return;
   throw new LakeqlError(
     "LAKEQL_BUDGET_EXCEEDED",
     `${strategy} join exceeded maxRightRows (${actual} > ${limit})`,
     { metric: "maxRightRows", limit, actual },
+  );
+}
+
+function enforceMaxOutputRows(actual: number, limit: number): void {
+  if (actual <= limit) return;
+  throw new LakeqlError(
+    "LAKEQL_BUDGET_EXCEEDED",
+    `Cross join exceeded maxOutputRows (${actual} > ${limit})`,
+    { metric: "maxOutputRows", limit, actual },
   );
 }

@@ -22,7 +22,7 @@ describe("usage", () => {
       commands:
         compact --path <file.parquet> --output <prefix> [--max-rows-per-file n]
         query   --path <file.parquet> --sql <query> [--format csv|json|ndjson]
-        query   --table name=file.parquet [--table name=file.parquet ...] --sql <join-query> [--join-max-right-rows n]
+        query   --table name=file.parquet [--table name=file.parquet ...] --sql <join-query> [--join-max-right-rows n] [--join-max-output-rows n]
         explain --path <file.parquet> --sql <query>
         inspect --path <file.parquet>
         write   --path <file.parquet> --sql <query> --output <prefix> [--partition-by a,b] [--max-rows-per-file n] [--manifest <path>] [--job-id id]
@@ -113,6 +113,51 @@ describe("runCli", () => {
       { store_id: "store-000", segment: "enterprise", manager: "Ada" },
       { store_id: "store-000", segment: "enterprise", manager: "Ada" },
     ]);
+  });
+
+  it("executes bounded SQL cross joins over named CLI tables", async () => {
+    const storesPath = await storesFixturePath();
+    const regionsPath = await regionsFixturePath();
+    const result = await runCli([
+      "query",
+      "--table",
+      `stores=${storesPath}`,
+      "--table",
+      `regions=${regionsPath}`,
+      "--sql",
+      [
+        "select d.store_id as store_id, r.manager as manager",
+        "from stores d cross join regions r",
+        "order by d.store_id asc, r.manager asc",
+        "limit 3",
+      ].join(" "),
+      "--format",
+      "json",
+    ]);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    expect(JSON.parse(result.stdout)).toEqual([
+      { store_id: "store-000", manager: "Ada" },
+      { store_id: "store-000", manager: "Ada" },
+      { store_id: "store-000", manager: "Grace" },
+    ]);
+
+    await expect(
+      runCli([
+        "query",
+        "--table",
+        `stores=${storesPath}`,
+        "--table",
+        `regions=${regionsPath}`,
+        "--sql",
+        "select * from stores cross join regions",
+        "--join-max-output-rows",
+        "5",
+      ]),
+    ).resolves.toMatchObject({
+      exitCode: 1,
+      stderr: expect.stringContaining("maxOutputRows"),
+    });
   });
 
   it("executes bounded SQL joins with side-qualified filters", async () => {
