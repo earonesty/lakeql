@@ -840,12 +840,13 @@ async function joinRowsFromAst(
     throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "Aggregate SQL over JOIN is not supported yet");
   }
   const pushedFilters = pushdownInnerJoinFilters(ast, joins);
-  let leftRows = await lake.path(ast.source).toArray();
+  const readColumns = joinReadColumns(ast, joins);
+  let leftRows = await rowsForJoinAlias(lake.path(ast.source), readColumns, firstJoin.leftAlias);
   const leftFilter = pushedFilters.filters.get(firstJoin.leftAlias);
   if (leftFilter !== undefined) leftRows = leftRows.filter((row) => matches(leftFilter, row));
   let rows = leftRows.map((row) => qualifyRow(row, firstJoin.leftAlias));
   for (const join of joins) {
-    let rawRightRows = await lake.path(join.source).toArray();
+    let rawRightRows = await rowsForJoinAlias(lake.path(join.source), readColumns, join.alias);
     const rightFilter = pushedFilters.filters.get(join.alias);
     if (rightFilter !== undefined)
       rawRightRows = rawRightRows.filter((row) => matches(rightFilter, row));
@@ -1011,6 +1012,96 @@ function pushdownInnerJoinFilters(
   }
   const where = combineAndPredicates(remaining);
   return { filters, ...(where === undefined ? {} : { where }) };
+}
+
+async function rowsForJoinAlias(
+  builder: QueryBuilder,
+  readColumns: Map<string, Set<string>> | undefined,
+  alias: string,
+): Promise<Row[]> {
+  const columns = readColumns?.get(alias);
+  if (columns === undefined || columns.size === 0) return await builder.toArray();
+  return await builder.select([...columns]).toArray();
+}
+
+function joinReadColumns(
+  ast: SqlQueryAst,
+  joins: NonNullable<SqlQueryAst["joins"]>,
+): Map<string, Set<string>> | undefined {
+  const aliases = new Set<string>();
+  const firstJoin = joins[0];
+  if (firstJoin !== undefined) aliases.add(firstJoin.leftAlias);
+  for (const join of joins) aliases.add(join.alias);
+
+  const columns = new Map<string, Set<string>>();
+  for (const select of ast.select ?? []) {
+    const { column } = selectColumn(select);
+    if (!addJoinReadColumn(columns, aliases, column)) return undefined;
+  }
+  for (const expr of Object.values(ast.projections ?? {})) {
+    if (!addJoinReadExpr(columns, aliases, expr)) return undefined;
+  }
+  if (ast.where !== undefined && !addJoinReadExpr(columns, aliases, ast.where)) return undefined;
+  for (const term of ast.orderBy ?? []) {
+    if (!addJoinOrderByReadColumns(columns, aliases, term.column, ast)) return undefined;
+  }
+  for (const join of joins) {
+    for (const column of join.leftKey) {
+      if (!addJoinReadColumn(columns, aliases, column)) return undefined;
+    }
+    for (const column of join.rightKey) {
+      if (!addJoinReadColumn(columns, aliases, column)) return undefined;
+    }
+    if (join.predicate !== undefined && !addJoinReadExpr(columns, aliases, join.predicate)) {
+      return undefined;
+    }
+  }
+  return columns;
+}
+
+function addJoinOrderByReadColumns(
+  columns: Map<string, Set<string>>,
+  aliases: ReadonlySet<string>,
+  column: string,
+  ast: SqlQueryAst,
+): boolean {
+  const projection = ast.projections?.[column];
+  if (projection !== undefined) return addJoinReadExpr(columns, aliases, projection);
+  const select = ast.select?.find((value) => selectColumn(value).alias === column);
+  if (select !== undefined) return addJoinReadColumn(columns, aliases, selectColumn(select).column);
+  return addJoinReadColumn(columns, aliases, column);
+}
+
+function addJoinReadExpr(
+  columns: Map<string, Set<string>>,
+  aliases: ReadonlySet<string>,
+  expr: Expr,
+): boolean {
+  const referenced = new Set<string>();
+  collectExprColumns(expr, referenced);
+  for (const column of referenced) {
+    if (!addJoinReadColumn(columns, aliases, column)) return false;
+  }
+  return true;
+}
+
+function addJoinReadColumn(
+  columns: Map<string, Set<string>>,
+  aliases: ReadonlySet<string>,
+  column: string,
+): boolean {
+  if (column === "*" || column.endsWith(".*")) return false;
+  const dot = column.indexOf(".");
+  if (dot <= 0) return false;
+  const alias = column.slice(0, dot);
+  if (!aliases.has(alias)) return false;
+  let aliasColumns = columns.get(alias);
+  if (aliasColumns === undefined) {
+    aliasColumns = new Set<string>();
+    columns.set(alias, aliasColumns);
+  }
+  aliasColumns.add(column.slice(dot + 1));
+  return true;
 }
 
 function predicateJoinAlias(expr: Expr, aliases: ReadonlySet<string>): string | undefined {
