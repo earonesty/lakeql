@@ -1081,7 +1081,7 @@ function applyDefaultSource(
     const firstJoin = out.joins[0];
     if (firstJoin !== undefined) out.join = firstJoin;
   }
-  if (out.subqueryJoin !== undefined)
+  if (out.subqueryJoin !== undefined && out.subqueryJoins === undefined)
     out.subqueryJoin = { ...out.subqueryJoin, source: defaultSource };
   if (out.subqueryJoins !== undefined) {
     out.subqueryJoins = out.subqueryJoins.map((join) => ({ ...join, source: defaultSource }));

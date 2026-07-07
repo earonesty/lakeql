@@ -2265,13 +2265,55 @@ function projectedIds(fields: IcebergField[], select: string[] | undefined): num
 
 function partitionMayMatch(expr: Expr | undefined, partition: Record<string, string>): boolean {
   if (!expr) return true;
+  const value = partitionEval(expr, partition);
+  return value !== false;
+}
+
+type PartitionEval = boolean | "unknown";
+
+function partitionEval(expr: Expr, partition: Record<string, string>): PartitionEval {
+  switch (expr.kind) {
+    case "literal":
+    case "column":
+      return "unknown";
+    case "compare":
+    case "in":
+    case "between":
+    case "null-check":
+    case "like":
+    case "call":
+    case "arithmetic":
+    case "case":
+      return expressionIsPartitionOnly(expr, partition)
+        ? matchesPartition(expr, partition)
+        : "unknown";
+    case "not": {
+      const value = partitionEval(expr.operand, partition);
+      return value === "unknown" ? "unknown" : !value;
+    }
+    case "logical": {
+      const values = expr.operands.map((operand) => partitionEval(operand, partition));
+      if (expr.op === "and") {
+        if (values.some((value) => value === false)) return false;
+        return values.every((value) => value === true) ? true : "unknown";
+      }
+      if (values.some((value) => value === true)) return true;
+      return values.every((value) => value === false) ? false : "unknown";
+    }
+  }
+}
+
+function expressionIsPartitionOnly(expr: Expr, partition: Record<string, string>): boolean {
   const columns = new Set<string>();
   collectColumns(expr, columns);
-  if (columns.size === 0 || [...columns].some((column) => !(column in partition))) return true;
+  return columns.size > 0 && [...columns].every((column) => column in partition);
+}
+
+function matchesPartition(expr: Expr, partition: Record<string, string>): PartitionEval {
   try {
     return matches(expr, partition);
   } catch (cause) {
-    if (cause instanceof LakeqlError && cause.code === "LAKEQL_TYPE_ERROR") return true;
+    if (cause instanceof LakeqlError && cause.code === "LAKEQL_TYPE_ERROR") return "unknown";
     throw cause;
   }
 }

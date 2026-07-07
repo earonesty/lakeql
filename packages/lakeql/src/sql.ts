@@ -199,7 +199,7 @@ function mapAstSources(
     const firstJoin = out.joins[0];
     if (firstJoin !== undefined) out.join = firstJoin;
   }
-  if (ast.subqueryJoin !== undefined) {
+  if (ast.subqueryJoin !== undefined && ast.subqueryJoins === undefined) {
     out.subqueryJoin = {
       ...ast.subqueryJoin,
       source: bindSource(ast.subqueryJoin.source),
@@ -248,7 +248,7 @@ async function mapAstSourcesAsync(
     const firstJoin = out.joins[0];
     if (firstJoin !== undefined) out.join = firstJoin;
   }
-  if (ast.subqueryJoin !== undefined) {
+  if (ast.subqueryJoin !== undefined && ast.subqueryJoins === undefined) {
     out.subqueryJoin = {
       ...ast.subqueryJoin,
       source: await bindSource(ast.subqueryJoin.source),
@@ -485,7 +485,7 @@ function pushdownIcebergPredicatesFromAst(
     const firstJoin = out.joins[0];
     if (firstJoin !== undefined) out.join = firstJoin;
   }
-  if (ast.subqueryJoin !== undefined) {
+  if (ast.subqueryJoin !== undefined && ast.subqueryJoins === undefined) {
     out.subqueryJoin = {
       ...ast.subqueryJoin,
       source: icebergOccurrenceSource(ast.subqueryJoin.source, context),

@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { fixturePath, ICEBERG, SALES } from "lakeql-fixtures";
 import { expect, it } from "vitest";
+import type { ObjectStore } from "./index.js";
 import {
   and,
   createLake,
@@ -359,6 +360,32 @@ it("runs SQL over named Iceberg table bindings", async () => {
       )
       .toArray(),
   ).resolves.toEqual([{ id: 3, nation: "US" }]);
+
+  const readCounts = new Map<string, number>();
+  const countedLake = createLake({ store: countingObjectStore(store, readCounts) });
+  await expect(
+    countedLake
+      .sql(
+        [
+          "select id",
+          "from places p",
+          "where p.country = 'US'",
+          "and exists (",
+          "select 1 from places q",
+          "where q.country = 'US' and q.id = p.id",
+          ")",
+          "and id = (",
+          "select max(id) as max_id from places s",
+          "where s.country = 'US' and s.id < 10",
+          ")",
+        ].join(" "),
+        { icebergTables },
+      )
+      .toArray(),
+  ).resolves.toEqual([{ id: 3 }]);
+  expect(readCounts.get(ICEBERG.dataFiles[1])).toBeUndefined();
+  expect(readCounts.get(ICEBERG.dataFiles[0])).toBeGreaterThan(0);
+  expect(readCounts.get(ICEBERG.dataFiles[2])).toBeGreaterThan(0);
 
   await expect(
     lake
@@ -1248,6 +1275,28 @@ async function writeIcebergFixture(store: ReturnType<typeof memoryStore>) {
     ICEBERG.positionDeleteFile,
     await readFile(fixturePath(ICEBERG.positionDeleteFile)),
   );
+}
+
+function countingObjectStore(store: ObjectStore, reads: Map<string, number>): ObjectStore {
+  const count = (path: string) => reads.set(path, (reads.get(path) ?? 0) + 1);
+  return {
+    get: async (path) => {
+      count(path);
+      return await store.get(path);
+    },
+    getRange: async (path, range) => {
+      count(path);
+      return await store.getRange(path, range);
+    },
+    put: async (path, body, options) => {
+      await store.put(path, body, options);
+    },
+    delete: async (path) => {
+      await store.delete(path);
+    },
+    list: (prefix, options) => store.list(prefix, options),
+    head: async (path) => await store.head(path),
+  };
 }
 
 async function readStream(stream: ReadableStream<Uint8Array>): Promise<string> {

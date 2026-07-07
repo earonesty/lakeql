@@ -1414,6 +1414,15 @@ describe("loadIcebergTable", () => {
       table.planFiles({ snapshotId: 1, where: eq("amount", 10), readMode: "ignore-deletes" }).files,
     ).toHaveLength(2);
     expect(
+      table
+        .planFiles({
+          snapshotId: 1,
+          where: and(eq("country", "US"), eq("amount", 10)),
+          readMode: "ignore-deletes",
+        })
+        .files.map((file) => file.path),
+    ).toEqual([ICEBERG.dataFiles[0]]);
+    expect(
       table.planFiles({ snapshotId: 1, where: gt("country", 30), readMode: "ignore-deletes" })
         .files,
     ).toHaveLength(2);
