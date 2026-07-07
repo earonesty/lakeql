@@ -72,7 +72,10 @@ Current state:
   sources compile to existing scalar, semi/anti join, and CTE materialization
   plans. CTE bodies can contain bounded joins, `IN` subquery plans, scalar
   subqueries, and nested single-binding CTEs.
-- Searched `CASE` and simple `CASE <expr> WHEN ...` forms are supported.
+- Searched `CASE`, simple `CASE <expr> WHEN ...`, and nested `CASE` forms are
+  supported. Statically obvious mixed literal result types are rejected with a
+  typed diagnostic instead of surfacing later as a generic materialization
+  failure.
 - `GROUP BY` can reference computed projection aliases, with DuckDB reference
   coverage for common aggregate queries.
 - Unsupported broad SQL syntax is detected and rejected.
@@ -89,7 +92,6 @@ TODO:
   that do not reduce to equality semi/anti joins.
 - Recursive CTEs should remain explicitly rejected until there is a bounded
   execution design.
-- Improve nested `CASE` coverage and mixed-type result diagnostics.
 - Tighten remaining alias resolution edge cases so `ORDER BY`, `HAVING`, and
   `QUALIFY` behave the way DuckDB users expect across nested scopes.
 

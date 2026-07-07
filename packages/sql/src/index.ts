@@ -771,7 +771,73 @@ function caseToExpr(
   if (expr.else !== undefined) {
     out.else = exprToLakeql(asNode(expr.else, "CASE ELSE expression"), scope, context);
   }
+  validateCaseResultTypes(out);
   return out;
+}
+
+type StaticScalarType =
+  | "binary"
+  | "bigint"
+  | "boolean"
+  | "interval"
+  | "number"
+  | "string"
+  | "timestamp";
+
+function validateCaseResultTypes(expr: Extract<Expr, { kind: "case" }>): void {
+  const resultTypes = caseResultTypes(expr);
+  if (resultTypes.size <= 1) return;
+  throwType("CASE result branches must have compatible literal types", {
+    types: [...resultTypes].sort(),
+  });
+}
+
+function caseResultTypes(expr: Extract<Expr, { kind: "case" }>): Set<StaticScalarType> {
+  const types = new Set<StaticScalarType>();
+  for (const branch of expr.whens) {
+    const type = staticExprResultType(branch.value);
+    if (type !== undefined) types.add(type);
+  }
+  if (expr.else !== undefined) {
+    const type = staticExprResultType(expr.else);
+    if (type !== undefined) types.add(type);
+  }
+  return types;
+}
+
+function staticExprResultType(expr: Expr): StaticScalarType | undefined {
+  switch (expr.kind) {
+    case "literal":
+      return staticScalarType(expr.value);
+    case "compare":
+    case "between":
+    case "in":
+    case "like":
+    case "logical":
+    case "not":
+    case "null-check":
+      return "boolean";
+    case "arithmetic":
+      return "number";
+    case "case": {
+      const resultTypes = caseResultTypes(expr);
+      return resultTypes.size === 1 ? [...resultTypes][0] : undefined;
+    }
+    case "call":
+    case "column":
+      return undefined;
+  }
+}
+
+function staticScalarType(value: Scalar): StaticScalarType | undefined {
+  if (value === null) return undefined;
+  if (value instanceof Uint8Array) return "binary";
+  if (isTimestampValue(value)) return "timestamp";
+  if (isIntervalValue(value)) return "interval";
+  if (typeof value === "boolean") return "boolean";
+  if (typeof value === "bigint") return "bigint";
+  if (typeof value === "number") return "number";
+  return "string";
 }
 
 function ternaryToExpr(

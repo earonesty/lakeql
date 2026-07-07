@@ -385,6 +385,26 @@ it("runs aggregate, CTE, scalar subquery, and semi-join SQL helpers", async () =
   await expect(
     lake
       .sql(
+        [
+          "select amount, case",
+          "when amount >= 20 then case when amount = 20 then 'exact-large' else 'large' end",
+          "when amount < 2 then 'tiny'",
+          "else 'small'",
+          "end as bucket",
+          "from read_parquet('sql/buckets/*.parquet')",
+          "order by amount asc",
+        ].join(" "),
+      )
+      .toArray(),
+  ).resolves.toEqual([
+    { amount: 1, bucket: "tiny" },
+    { amount: 2, bucket: "small" },
+    { amount: 20, bucket: "exact-large" },
+  ]);
+
+  await expect(
+    lake
+      .sql(
         "with totals as (select region, count(*) as rows, max(amount) as max_amount from input group by region) select region, rows from totals where max_amount > 990 order by region asc",
         { path: SALES.file },
       )

@@ -250,6 +250,44 @@ describe("parseSql", () => {
     });
     expect(parseSql(formatSql(simpleCase))).toEqual(simpleCase);
 
+    const nestedCase = parseSql(`
+      select case
+        when amount > 100 then case status when 'paid' then 'large-paid' else 'large-open' end
+        else 'small'
+      end as bucket
+      from orders
+    `);
+    expect(nestedCase.projections).toMatchObject({
+      bucket: {
+        kind: "case",
+        whens: [
+          {
+            value: {
+              kind: "case",
+              whens: [
+                {
+                  when: {
+                    kind: "compare",
+                    op: "eq",
+                    left: { kind: "column", name: "status" },
+                    right: { kind: "literal", value: "paid" },
+                  },
+                  value: { kind: "literal", value: "large-paid" },
+                },
+              ],
+              else: { kind: "literal", value: "large-open" },
+            },
+          },
+        ],
+        else: { kind: "literal", value: "small" },
+      },
+    });
+    expect(parseSql(formatSql(nestedCase))).toEqual(nestedCase);
+
+    expect(() =>
+      parseSql("select case when amount > 100 then 1 else 'small' end as bucket from orders"),
+    ).toThrow("CASE result branches must have compatible literal types");
+
     expect(
       parseSql(`
         with totals as (
