@@ -1216,6 +1216,42 @@ describe("parseSql", () => {
     });
     expect(parseSql(formatSql(groupedCorrelatedNotExists))).toEqual(groupedCorrelatedNotExists);
 
+    const multipleSubqueries = parseSql(`
+      select id
+      from orders o
+      where exists (
+        select 1
+        from refunds r
+        where r.customer_id = o.customer_id
+        group by reason
+        having count(*) > 1
+      )
+      and not exists (
+        select 1
+        from refunds x
+        where x.order_id = o.id
+      )
+    `);
+    expect(multipleSubqueries).toMatchObject({
+      subqueryJoins: [
+        {
+          source: "refunds",
+          type: "semi",
+          leftKey: ["customer_id"],
+          rightKey: ["customer_id"],
+          groupBy: ["reason", "customer_id"],
+        },
+        {
+          source: "refunds",
+          type: "anti",
+          leftKey: ["id"],
+          rightKey: ["order_id"],
+        },
+      ],
+    });
+    expect(multipleSubqueries.subqueryJoin).toEqual(multipleSubqueries.subqueryJoins?.[0]);
+    expect(parseSql(formatSql(multipleSubqueries))).toEqual(multipleSubqueries);
+
     expect(() =>
       parseSql(`
         select id

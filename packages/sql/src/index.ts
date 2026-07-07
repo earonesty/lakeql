@@ -28,6 +28,7 @@ export interface SqlQueryAst extends PathQueryInit {
   join?: SqlJoinAst;
   joins?: SqlJoinAst[];
   subqueryJoin?: SqlSubqueryJoinAst;
+  subqueryJoins?: SqlSubqueryJoinAst[];
   cte?: SqlCteAst;
   scalarSubqueries?: Record<string, SqlScalarSubqueryAst>;
 }
@@ -168,7 +169,7 @@ export function formatSql(ast: SqlQueryAst): string {
     `select ${ast.distinct === true ? "distinct " : ""}${select.length > 0 ? select.join(", ") : "*"}`,
   ];
   clauses.push(`from ${formatSqlSource(ast)}${formatJoins(ast.source, sqlJoins(ast))}`);
-  const where = formatWhere(ast.where, ast.subqueryJoin, ast);
+  const where = formatWhere(ast.where, sqlSubqueryJoins(ast), ast);
   if (where !== undefined) clauses.push(`where ${where}`);
   if (ast.groupBy && ast.groupBy.length > 0) {
     clauses.push(`group by ${ast.groupBy.map(formatIdentifier).join(", ")}`);
@@ -186,7 +187,7 @@ export function formatSql(ast: SqlQueryAst): string {
 
 function formatSqlSource(ast: SqlQueryAst): string {
   const source = formatIdentifier(ast.source);
-  const alias = ast.subqueryJoin?.predicate === undefined ? undefined : ast.subqueryJoin.leftAlias;
+  const alias = sqlSubqueryJoins(ast).find((join) => join.predicate !== undefined)?.leftAlias;
   return alias === undefined || alias === ast.source
     ? source
     : `${source} ${formatIdentifier(alias)}`;
@@ -338,7 +339,11 @@ function selectStatementToAstInScope(statement: PgNode, context: SqlParseContext
   if (statement.where !== undefined) {
     const where = whereToAst(asNode(statement.where, "WHERE"), scope, context);
     if (where.where !== undefined) ast.where = where.where;
-    if (where.subqueryJoin !== undefined) ast.subqueryJoin = where.subqueryJoin;
+    if (where.subqueryJoins !== undefined) {
+      ast.subqueryJoins = where.subqueryJoins;
+      const firstSubqueryJoin = where.subqueryJoins[0];
+      if (firstSubqueryJoin !== undefined) ast.subqueryJoin = firstSubqueryJoin;
+    }
   }
   if (statement.groupBy !== undefined) {
     ast.groupBy = optionalArray(statement.groupBy).map((expr) =>
@@ -643,9 +648,9 @@ function whereToAst(
   expr: PgNode,
   scope: SqlScope,
   context: SqlParseContext,
-): { where?: Expr; subqueryJoin?: SqlSubqueryJoinAst } {
+): { where?: Expr; subqueryJoins?: SqlSubqueryJoinAst[] } {
   const predicates = flattenWhereConjuncts(expr);
-  let subqueryJoin: SqlSubqueryJoinAst | undefined;
+  const subqueryJoins: SqlSubqueryJoinAst[] = [];
   const residual: PgNode[] = [];
   for (const predicate of predicates) {
     const extracted = maybeSubqueryJoin(predicate, scope, context);
@@ -653,10 +658,9 @@ function whereToAst(
       residual.push(predicate);
       continue;
     }
-    if (subqueryJoin !== undefined) throwUnsupported("Only one IN subquery is supported");
-    subqueryJoin = extracted;
+    subqueryJoins.push(extracted);
   }
-  const out: { where?: Expr; subqueryJoin?: SqlSubqueryJoinAst } = {};
+  const out: { where?: Expr; subqueryJoins?: SqlSubqueryJoinAst[] } = {};
   if (residual.length === 1) out.where = exprToLakeql(residual[0] as PgNode, scope, context);
   else if (residual.length > 1) {
     out.where = {
@@ -665,7 +669,7 @@ function whereToAst(
       operands: residual.map((predicate) => exprToLakeql(predicate, scope, context)),
     };
   }
-  if (subqueryJoin !== undefined) out.subqueryJoin = subqueryJoin;
+  if (subqueryJoins.length > 0) out.subqueryJoins = subqueryJoins;
   return out;
 }
 
@@ -1984,6 +1988,11 @@ function sqlJoins(ast: SqlQueryAst): SqlJoinAst[] {
   return ast.join === undefined ? [] : [ast.join];
 }
 
+function sqlSubqueryJoins(ast: SqlQueryAst): SqlSubqueryJoinAst[] {
+  if (ast.subqueryJoins !== undefined) return ast.subqueryJoins;
+  return ast.subqueryJoin === undefined ? [] : [ast.subqueryJoin];
+}
+
 function formatJoins(leftSource: string, joins: readonly SqlJoinAst[]): string {
   return joins.map((join, index) => formatJoin(leftSource, join, index === 0)).join("");
 }
@@ -2019,12 +2028,12 @@ function formatJoin(leftSource: string, join: SqlJoinAst, includeLeftAlias: bool
 
 function formatWhere(
   where: Expr | undefined,
-  subqueryJoin: SqlSubqueryJoinAst | undefined,
+  subqueryJoins: readonly SqlSubqueryJoinAst[],
   ast?: SqlQueryAst,
 ): string | undefined {
   const parts: string[] = [];
   if (where !== undefined) parts.push(formatExpr(where, ast));
-  if (subqueryJoin !== undefined) parts.push(formatSubqueryJoin(subqueryJoin));
+  for (const subqueryJoin of subqueryJoins) parts.push(formatSubqueryJoin(subqueryJoin));
   return parts.length === 0 ? undefined : parts.map((part) => `(${part})`).join(" and ");
 }
 

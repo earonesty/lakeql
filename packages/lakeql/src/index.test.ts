@@ -508,6 +508,35 @@ it("runs aggregate, CTE, scalar subquery, and semi-join SQL helpers", async () =
     lake
       .sql(
         [
+          "select distinct region from sales s",
+          "where exists (",
+          "select 1 from sales x",
+          "where x.region = s.region",
+          "group by x.store_id",
+          "having count(*) > 1",
+          ")",
+          "and not exists (",
+          "select 1 from sales y",
+          "where y.region = s.region",
+          "group by y.store_id",
+          "having count(*) > 100",
+          ")",
+          "order by region asc",
+        ].join(" "),
+        { tables: { sales: SALES.file } },
+      )
+      .toArray(),
+  ).resolves.toEqual([
+    { region: "east" },
+    { region: "north" },
+    { region: "south" },
+    { region: "west" },
+  ]);
+
+  await expect(
+    lake
+      .sql(
+        [
           "select distinct region from sales",
           "where exists (",
           "select 1 from sales",

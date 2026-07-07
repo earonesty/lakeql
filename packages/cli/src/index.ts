@@ -113,7 +113,7 @@ async function query(args: ParsedArgs): Promise<string> {
   const executableAst = await materializeCteIfNeeded(store, lake, ast);
   const executableLake = createParquetLake({ store });
   const resolvedAst = await resolveScalarSubqueries(executableLake, executableAst);
-  if (resolvedAst.subqueryJoin !== undefined) {
+  if (sqlSubqueryJoins(resolvedAst).length > 0) {
     const rows = await subqueryJoinRowsFromAst(executableLake, resolvedAst, args);
     if (args.format === "json") return `${jsonStringify(rows)}\n`;
     if (args.format === "csv") return rowsToCsv(rows);
@@ -188,7 +188,7 @@ async function write(args: ParsedArgs): Promise<string> {
   const executableLake = createParquetLake({ store });
   const resolvedAst = await resolveScalarSubqueries(executableLake, executableAst);
   const rows =
-    resolvedAst.subqueryJoin !== undefined
+    sqlSubqueryJoins(resolvedAst).length > 0
       ? await subqueryJoinRowsFromAst(executableLake, resolvedAst, args)
       : sqlJoins(resolvedAst).length > 0
         ? await joinRowsFromAst(executableLake, resolvedAst, args)
@@ -290,7 +290,7 @@ async function materializeCteIfNeeded(
       "CTEs are only supported as the outer FROM source",
     );
   }
-  if (sqlJoins(ast).length > 0 || ast.subqueryJoin !== undefined) {
+  if (sqlJoins(ast).length > 0 || sqlSubqueryJoins(ast).length > 0) {
     throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "CTEs inside JOINs are not supported yet");
   }
   const cteRows = hasAggregation(ast.cte.query)
@@ -337,6 +337,27 @@ async function resolveScalarSubqueries(
         replaceScalarSubqueryExpr(expr, values),
       ]),
     );
+  }
+  if (ast.subqueryJoins !== undefined) {
+    out.subqueryJoins = ast.subqueryJoins.map((join) => ({
+      ...join,
+      ...(join.where === undefined ? {} : { where: replaceScalarSubqueryExpr(join.where, values) }),
+      ...(join.predicate === undefined
+        ? {}
+        : { predicate: replaceScalarSubqueryExpr(join.predicate, values) }),
+    }));
+    const firstSubqueryJoin = out.subqueryJoins[0];
+    if (firstSubqueryJoin !== undefined) out.subqueryJoin = firstSubqueryJoin;
+  } else if (ast.subqueryJoin?.where !== undefined || ast.subqueryJoin?.predicate !== undefined) {
+    out.subqueryJoin = {
+      ...ast.subqueryJoin,
+      ...(ast.subqueryJoin.where === undefined
+        ? {}
+        : { where: replaceScalarSubqueryExpr(ast.subqueryJoin.where, values) }),
+      ...(ast.subqueryJoin.predicate === undefined
+        ? {}
+        : { predicate: replaceScalarSubqueryExpr(ast.subqueryJoin.predicate, values) }),
+    };
   }
   delete out.scalarSubqueries;
   return out;
@@ -498,6 +519,13 @@ function sqlJoins(
   return ast.join === undefined ? [] : [ast.join];
 }
 
+function sqlSubqueryJoins(
+  ast: ReturnType<typeof parseSql>,
+): NonNullable<ReturnType<typeof parseSql>["subqueryJoins"]> {
+  if (ast.subqueryJoins !== undefined) return ast.subqueryJoins;
+  return ast.subqueryJoin === undefined ? [] : [ast.subqueryJoin];
+}
+
 function isQualifiedBy(column: string, alias: string): boolean {
   return column.startsWith(`${alias}.`) && column.length > alias.length + 1;
 }
@@ -644,7 +672,8 @@ async function subqueryJoinRowsFromAst(
   ast: ReturnType<typeof parseSql>,
   args: ParsedArgs,
 ): Promise<Row[]> {
-  if (ast.subqueryJoin === undefined) {
+  const joins = sqlSubqueryJoins(ast);
+  if (joins.length === 0) {
     throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Missing SQL IN subquery");
   }
   if (hasWindowSemantics(ast)) {
@@ -656,18 +685,10 @@ async function subqueryJoinRowsFromAst(
       "Aggregate SQL over IN subquery is not supported yet",
     );
   }
-  const join = ast.subqueryJoin;
-  let rightRows = await subqueryJoinRightRows(lake, join);
-  rightRows = offsetLimitSubqueryRows(rightRows, join);
-  let rows =
-    join.predicate === undefined
-      ? await broadcastJoin(await lake.path(ast.source).toArray(), rightRows, {
-          leftKey: join.leftKey,
-          rightKey: join.rightKey,
-          type: join.type,
-          maxRightRows: args.joinMaxRightRows ?? 100_000,
-        })
-      : predicateSubqueryJoinRows(await lake.path(ast.source).toArray(), rightRows, join, args);
+  let rows = await lake.path(ast.source).toArray();
+  for (const join of joins) {
+    rows = await applySubqueryJoinRows(lake, rows, join, args);
+  }
   if (ast.where !== undefined) rows = rows.filter((row) => matches(ast.where, row));
   if (ast.orderBy !== undefined) rows = sortRows(rows, ast.orderBy);
   rows = projectRows(rows, ast);
@@ -676,6 +697,24 @@ async function subqueryJoinRowsFromAst(
   if (ast.limit !== undefined) rows = rows.slice(offset, offset + ast.limit);
   else if (offset > 0) rows = rows.slice(offset);
   return rows;
+}
+
+async function applySubqueryJoinRows(
+  lake: ReturnType<typeof createParquetLake>,
+  leftRows: Row[],
+  join: NonNullable<ReturnType<typeof parseSql>["subqueryJoin"]>,
+  args: ParsedArgs,
+): Promise<Row[]> {
+  let rightRows = await subqueryJoinRightRows(lake, join);
+  rightRows = offsetLimitSubqueryRows(rightRows, join);
+  return join.predicate === undefined
+    ? await broadcastJoin(leftRows, rightRows, {
+        leftKey: join.leftKey,
+        rightKey: join.rightKey,
+        type: join.type,
+        maxRightRows: args.joinMaxRightRows ?? 100_000,
+      })
+    : predicateSubqueryJoinRows(leftRows, rightRows, join, args);
 }
 
 async function subqueryJoinRightRows(
@@ -1044,6 +1083,11 @@ function applyDefaultSource(
   }
   if (out.subqueryJoin !== undefined)
     out.subqueryJoin = { ...out.subqueryJoin, source: defaultSource };
+  if (out.subqueryJoins !== undefined) {
+    out.subqueryJoins = out.subqueryJoins.map((join) => ({ ...join, source: defaultSource }));
+    const firstSubqueryJoin = out.subqueryJoins[0];
+    if (firstSubqueryJoin !== undefined) out.subqueryJoin = firstSubqueryJoin;
+  }
   if (includeScalarSubqueries && out.scalarSubqueries !== undefined) {
     out.scalarSubqueries = Object.fromEntries(
       Object.entries(out.scalarSubqueries).map(([id, subquery]) => [

@@ -140,7 +140,7 @@ async function executeRowsFromAst(
   const materialized = await materializeCteIfNeeded(lake.store, lake, ast, options);
   try {
     const resolved = await resolveScalarSubqueries(lake, materialized.ast);
-    if (resolved.subqueryJoin !== undefined)
+    if (sqlSubqueryJoins(resolved).length > 0)
       return await subqueryJoinRowsFromAst(lake, resolved, options);
     if (sqlJoins(resolved).length > 0) return await joinRowsFromAst(lake, resolved, options);
     if (hasAggregation(resolved))
@@ -205,6 +205,14 @@ function mapAstSources(
       source: bindSource(ast.subqueryJoin.source),
     };
   }
+  if (ast.subqueryJoins !== undefined) {
+    out.subqueryJoins = ast.subqueryJoins.map((join) => ({
+      ...join,
+      source: bindSource(join.source),
+    }));
+    const firstSubqueryJoin = out.subqueryJoins[0];
+    if (firstSubqueryJoin !== undefined) out.subqueryJoin = firstSubqueryJoin;
+  }
   if (ast.cte !== undefined) {
     out.cte = { ...ast.cte, query: mapAstSources(ast.cte.query, bindSource, seen) };
   }
@@ -245,6 +253,13 @@ async function mapAstSourcesAsync(
       ...ast.subqueryJoin,
       source: await bindSource(ast.subqueryJoin.source),
     };
+  }
+  if (ast.subqueryJoins !== undefined) {
+    out.subqueryJoins = await Promise.all(
+      ast.subqueryJoins.map(async (join) => ({ ...join, source: await bindSource(join.source) })),
+    );
+    const firstSubqueryJoin = out.subqueryJoins[0];
+    if (firstSubqueryJoin !== undefined) out.subqueryJoin = firstSubqueryJoin;
   }
   if (ast.cte !== undefined) {
     out.cte = { ...ast.cte, query: await mapAstSourcesAsync(ast.cte.query, bindSource, seen) };
@@ -476,6 +491,14 @@ function pushdownIcebergPredicatesFromAst(
       source: icebergOccurrenceSource(ast.subqueryJoin.source, context),
     };
   }
+  if (ast.subqueryJoins !== undefined) {
+    out.subqueryJoins = ast.subqueryJoins.map((join) => ({
+      ...join,
+      source: icebergOccurrenceSource(join.source, context),
+    }));
+    const firstSubqueryJoin = out.subqueryJoins[0];
+    if (firstSubqueryJoin !== undefined) out.subqueryJoin = firstSubqueryJoin;
+  }
 
   const aliases = sourceAliases(out);
   if (ast.where !== undefined) {
@@ -495,12 +518,14 @@ function pushdownIcebergPredicatesFromAst(
     if (where === undefined) delete out.where;
     else out.where = where;
   }
-  if (ast.subqueryJoin?.where !== undefined) {
-    const source = out.subqueryJoin?.source;
+  const pushedSubqueryJoins = sqlSubqueryJoins(ast).map((join, index) => {
+    const outJoin = sqlSubqueryJoins(out)[index];
+    if (join.where === undefined || outJoin === undefined) return outJoin ?? join;
+    const source = outJoin.source;
     if (source !== undefined && context.sources.has(source)) {
       const subqueryAliases = new Map([[source, source]]);
       const remaining: Expr[] = [];
-      for (const predicate of splitAndPredicates(ast.subqueryJoin.where)) {
+      for (const predicate of splitAndPredicates(join.where)) {
         const predicateTable = predicateSource(predicate, subqueryAliases);
         if (predicateTable === source) {
           addPushdownPredicate(
@@ -512,13 +537,17 @@ function pushdownIcebergPredicatesFromAst(
         remaining.push(predicate);
       }
       const where = combineAndPredicates(remaining);
-      const subqueryJoin = out.subqueryJoin;
-      if (subqueryJoin !== undefined) {
-        out.subqueryJoin = { ...subqueryJoin };
-        if (where === undefined) delete out.subqueryJoin.where;
-        else out.subqueryJoin.where = where;
-      }
+      const next = { ...outJoin };
+      if (where === undefined) delete next.where;
+      else next.where = where;
+      return next;
     }
+    return outJoin;
+  });
+  if (pushedSubqueryJoins.length > 0) {
+    out.subqueryJoins = pushedSubqueryJoins;
+    const firstSubqueryJoin = pushedSubqueryJoins[0];
+    if (firstSubqueryJoin !== undefined) out.subqueryJoin = firstSubqueryJoin;
   }
   if (ast.cte !== undefined) {
     out.cte = {
@@ -699,21 +728,19 @@ function collectSourceColumnsFromAst(
     for (const column of join.rightKey) referenced.add(column);
     if (join.predicate !== undefined) collectExprColumns(join.predicate, referenced);
   }
-  if (ast.subqueryJoin !== undefined) {
-    for (const column of ast.subqueryJoin.leftKey) referenced.add(column);
-    for (const column of ast.subqueryJoin.rightKey) referenced.add(column);
-    for (const column of ast.subqueryJoin.groupBy ?? []) referenced.add(column);
-    for (const aggregate of Object.values(ast.subqueryJoin.aggregates ?? {})) {
+  for (const subqueryJoin of sqlSubqueryJoins(ast)) {
+    for (const column of subqueryJoin.leftKey) referenced.add(column);
+    for (const column of subqueryJoin.rightKey) referenced.add(column);
+    for (const column of subqueryJoin.groupBy ?? []) referenced.add(column);
+    for (const aggregate of Object.values(subqueryJoin.aggregates ?? {})) {
       if (aggregate.column !== undefined) referenced.add(aggregate.column);
       if (aggregate.expr !== undefined) collectExprColumns(aggregate.expr, referenced);
     }
-    if (ast.subqueryJoin.where !== undefined)
-      collectExprColumns(ast.subqueryJoin.where, referenced);
-    if (ast.subqueryJoin.having !== undefined)
-      collectExprColumns(ast.subqueryJoin.having, referenced);
-    if (ast.subqueryJoin.predicate !== undefined)
-      collectExprColumns(ast.subqueryJoin.predicate, referenced);
-    for (const term of ast.subqueryJoin.orderBy ?? []) referenced.add(term.column);
+    if (subqueryJoin.where !== undefined) collectExprColumns(subqueryJoin.where, referenced);
+    if (subqueryJoin.having !== undefined) collectExprColumns(subqueryJoin.having, referenced);
+    if (subqueryJoin.predicate !== undefined)
+      collectExprColumns(subqueryJoin.predicate, referenced);
+    for (const term of subqueryJoin.orderBy ?? []) referenced.add(term.column);
   }
 
   for (const column of referenced) addSourceColumn(columns, aliases, column);
@@ -821,7 +848,17 @@ async function resolveScalarSubqueries(lake: ParquetLake, ast: SqlQueryAst): Pro
   } else if (ast.join?.predicate !== undefined) {
     out.join = { ...ast.join, predicate: replaceScalarSubqueryExpr(ast.join.predicate, values) };
   }
-  if (ast.subqueryJoin?.where !== undefined || ast.subqueryJoin?.predicate !== undefined) {
+  if (ast.subqueryJoins !== undefined) {
+    out.subqueryJoins = ast.subqueryJoins.map((join) => ({
+      ...join,
+      ...(join.where === undefined ? {} : { where: replaceScalarSubqueryExpr(join.where, values) }),
+      ...(join.predicate === undefined
+        ? {}
+        : { predicate: replaceScalarSubqueryExpr(join.predicate, values) }),
+    }));
+    const firstSubqueryJoin = out.subqueryJoins[0];
+    if (firstSubqueryJoin !== undefined) out.subqueryJoin = firstSubqueryJoin;
+  } else if (ast.subqueryJoin?.where !== undefined || ast.subqueryJoin?.predicate !== undefined) {
     out.subqueryJoin = {
       ...ast.subqueryJoin,
       ...(ast.subqueryJoin.where === undefined
@@ -1057,6 +1094,11 @@ function mergePredicateJoinRows(left: Row, right: Row, rightPrefix: string): Row
 function sqlJoins(ast: SqlQueryAst): NonNullable<SqlQueryAst["joins"]> {
   if (ast.joins !== undefined) return ast.joins;
   return ast.join === undefined ? [] : [ast.join];
+}
+
+function sqlSubqueryJoins(ast: SqlQueryAst): NonNullable<SqlQueryAst["subqueryJoins"]> {
+  if (ast.subqueryJoins !== undefined) return ast.subqueryJoins;
+  return ast.subqueryJoin === undefined ? [] : [ast.subqueryJoin];
 }
 
 function pushdownJoinFilters(
@@ -1421,7 +1463,8 @@ async function subqueryJoinRowsFromAst(
   options: SqlQueryOptions,
 ): Promise<Row[]> {
   /* v8 ignore next -- executeSql calls this only after ast.subqueryJoin is present */
-  if (ast.subqueryJoin === undefined) {
+  const joins = sqlSubqueryJoins(ast);
+  if (joins.length === 0) {
     throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Missing SQL IN subquery");
   }
   if (hasWindowSemantics(ast)) {
@@ -1433,23 +1476,33 @@ async function subqueryJoinRowsFromAst(
       "Aggregate SQL over IN subquery is not supported yet",
     );
   }
-  const join = ast.subqueryJoin;
-  let rightRows = await subqueryJoinRightRows(lake, join);
-  rightRows = offsetLimitSubqueryRows(rightRows, join);
-  let rows =
-    join.predicate === undefined
-      ? await broadcastJoin(await lake.path(ast.source).toArray(), rightRows, {
-          leftKey: join.leftKey,
-          rightKey: join.rightKey,
-          type: join.type,
-          maxRightRows: options.joinMaxRightRows ?? 100_000,
-        })
-      : predicateSubqueryJoinRows(await lake.path(ast.source).toArray(), rightRows, join, options);
+  let rows = await lake.path(ast.source).toArray();
+  for (const join of joins) {
+    rows = await applySubqueryJoinRows(lake, rows, join, options);
+  }
   if (ast.where !== undefined) rows = rows.filter((row) => matches(ast.where, row));
   if (ast.orderBy !== undefined) rows = sortRows(rows, ast.orderBy, ast);
   rows = projectRows(rows, ast);
   if (ast.distinct === true) rows = distinctRows(rows);
   return offsetLimitRows(rows, ast);
+}
+
+async function applySubqueryJoinRows(
+  lake: ParquetLake,
+  leftRows: Row[],
+  join: NonNullable<SqlQueryAst["subqueryJoin"]>,
+  options: SqlQueryOptions,
+): Promise<Row[]> {
+  let rightRows = await subqueryJoinRightRows(lake, join);
+  rightRows = offsetLimitSubqueryRows(rightRows, join);
+  return join.predicate === undefined
+    ? await broadcastJoin(leftRows, rightRows, {
+        leftKey: join.leftKey,
+        rightKey: join.rightKey,
+        type: join.type,
+        maxRightRows: options.joinMaxRightRows ?? 100_000,
+      })
+    : predicateSubqueryJoinRows(leftRows, rightRows, join, options);
 }
 
 async function subqueryJoinRightRows(
