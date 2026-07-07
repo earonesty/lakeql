@@ -107,11 +107,14 @@ Current state:
 - Recursive CTEs are explicitly rejected until there is a bounded execution
   design.
 
-TODO:
+Audit result:
 
-- Audit remaining unsupported subquery forms against DuckDB-authored remote
-  Parquet workloads, and keep only the forms that preserve bounded execution as
-  Priority 1 parity requirements.
+- No remaining high-frequency DuckDB-WASM remote-Parquet subquery forms are
+  known to be missing inside the bounded execution contract.
+- Broader DuckDB features such as recursive CTEs, multi-binding CTE graphs,
+  unbounded lateral-style correlation, arbitrary correlated non-aggregate
+  scalar projections, and aggregate SQL over general join chains remain outside
+  Priority 1 until they have a bounded lake-query execution design.
 
 Acceptance criteria:
 
