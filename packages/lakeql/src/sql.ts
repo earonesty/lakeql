@@ -125,16 +125,10 @@ async function executeSql(
     options,
     pushed.predicates,
   );
-  const materialized = await materializeCteIfNeeded(
-    lake.store,
-    lake,
-    materializedIceberg.ast,
-    options,
-  );
   try {
-    return await executeRowsFromAst(lake, materialized.ast, options);
+    return await executeRowsFromAst(lake, materializedIceberg.ast, options);
   } finally {
-    await Promise.all([materialized.cleanup(), materializedIceberg.cleanup()]);
+    await materializedIceberg.cleanup();
   }
 }
 
@@ -143,13 +137,18 @@ async function executeRowsFromAst(
   ast: SqlQueryAst,
   options: SqlQueryOptions,
 ): Promise<Row[]> {
-  const resolved = await resolveScalarSubqueries(lake, ast);
-  if (resolved.subqueryJoin !== undefined)
-    return await subqueryJoinRowsFromAst(lake, resolved, options);
-  if (sqlJoins(resolved).length > 0) return await joinRowsFromAst(lake, resolved, options);
-  if (hasAggregation(resolved))
-    return await aggregateRowsFromAst(lake.path(resolved.source), resolved);
-  return await builderFromAst(lake.path(resolved.source), resolved).toArray();
+  const materialized = await materializeCteIfNeeded(lake.store, lake, ast, options);
+  try {
+    const resolved = await resolveScalarSubqueries(lake, materialized.ast);
+    if (resolved.subqueryJoin !== undefined)
+      return await subqueryJoinRowsFromAst(lake, resolved, options);
+    if (sqlJoins(resolved).length > 0) return await joinRowsFromAst(lake, resolved, options);
+    if (hasAggregation(resolved))
+      return await aggregateRowsFromAst(lake.path(resolved.source), resolved);
+    return await builderFromAst(lake.path(resolved.source), resolved).toArray();
+  } finally {
+    await materialized.cleanup();
+  }
 }
 
 function sqlAst(sql: string, options: SqlQueryOptions): SqlQueryAst {

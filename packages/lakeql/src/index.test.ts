@@ -508,6 +508,54 @@ it("runs aggregate, CTE, scalar subquery, and semi-join SQL helpers", async () =
       )
       .toArray(),
   ).resolves.toEqual([{ store_id: "store-000", max_amount: 999.27 }]);
+
+  await expect(
+    lake
+      .sql(
+        [
+          "select store_id, amount",
+          "from (",
+          "select store_id, amount from (",
+          "select store_id, amount from sales where amount > 900",
+          ") high_sales where amount < 950",
+          ") filtered",
+          "order by amount asc limit 1",
+        ].join(" "),
+        { tables: { sales: SALES.file } },
+      )
+      .toArray(),
+  ).resolves.toEqual([{ store_id: "store-002", amount: 923.79 }]);
+
+  await expect(
+    lake
+      .sql(
+        [
+          "with filtered as (",
+          "select store_id, amount from (",
+          "select store_id, amount from sales where amount > 900",
+          ") high_sales where amount < 950",
+          ")",
+          "select store_id, amount from filtered order by amount asc limit 1",
+        ].join(" "),
+        { tables: { sales: SALES.file } },
+      )
+      .toArray(),
+  ).resolves.toEqual([{ store_id: "store-002", amount: 923.79 }]);
+
+  await expect(
+    lake
+      .sql(
+        [
+          "with filtered as (",
+          "with high_sales as (select store_id, amount from sales where amount > 900)",
+          "select store_id, amount from high_sales where amount < 950",
+          ")",
+          "select store_id, amount from filtered order by amount asc limit 1",
+        ].join(" "),
+        { tables: { sales: SALES.file } },
+      )
+      .toArray(),
+  ).resolves.toEqual([{ store_id: "store-002", amount: 923.79 }]);
 });
 
 it("rejects unsupported SQL helper runtime shapes with typed errors", async () => {

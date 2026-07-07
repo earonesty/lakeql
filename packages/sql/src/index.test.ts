@@ -415,6 +415,40 @@ describe("parseSql", () => {
       offset: 5,
     });
     expect(parseSql(formatSql(ast))).toEqual(ast);
+
+    const nested = parseSql(`
+      select id
+      from (
+        select id, amount
+        from (
+          select id, amount
+          from orders
+          where amount > 10
+        ) inner_filtered
+        where amount < 100
+      ) outer_filtered
+      order by amount asc
+    `);
+
+    expect(nested).toMatchObject({
+      source: "outer_filtered",
+      cte: {
+        name: "outer_filtered",
+        query: {
+          source: "inner_filtered",
+          cte: {
+            name: "inner_filtered",
+            query: {
+              source: "orders",
+              where: { kind: "compare", op: "gt" },
+            },
+          },
+          where: { kind: "compare", op: "lt" },
+        },
+      },
+      orderBy: [{ column: "amount", direction: "asc" }],
+    });
+    expect(parseSql(formatSql(nested))).toEqual(nested);
   });
 
   it("compiles bounded equi-join clauses", () => {
@@ -1216,7 +1250,6 @@ describe("parseSql", () => {
   it("rejects SQL outside the documented subset with typed parse errors", () => {
     const unsupported = [
       "with a as (select id from t), b as (select id from t) select id from a",
-      "with recent as (with nested as (select id from orders) select id from nested) select * from recent",
       "select * from orders left join customers on orders.customer_id > customers.id",
     ];
 

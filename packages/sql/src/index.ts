@@ -175,21 +175,19 @@ function withStatementToAst(statement: PgNode, context: SqlParseContext): SqlQue
   const binding = asNode(bindings[0], "CTE binding");
   const name = nameNodeToString(binding.alias);
   const inner = asNode(binding.statement, "CTE statement");
-  if (inner.type !== "select") throwUnsupported("Only SELECT CTEs are supported");
-  const cteQuery = selectStatementToAst(inner, context);
-  validateCteQuery(cteQuery);
+  if (inner.type !== "select" && inner.type !== "with") {
+    throwUnsupported("Only SELECT CTEs are supported");
+  }
+  const cteQuery =
+    inner.type === "with"
+      ? withStatementToAst(inner, context)
+      : selectStatementToAst(inner, context);
   const outer = asNode(statement.in, "CTE outer query");
   if (outer.type !== "select") throwUnsupported("Only SELECT after WITH is supported");
   const ast = selectStatementToAst(outer, context, context.qualifySql);
   if (ast.cte !== undefined) throwUnsupported("WITH queries cannot also use derived tables");
   ast.cte = { name, query: cteQuery };
   return ast;
-}
-
-function validateCteQuery(ast: SqlQueryAst): void {
-  if (ast.cte !== undefined) {
-    throwUnsupported("Nested CTE WITH clauses are not supported");
-  }
 }
 
 function selectStatementToAst(
@@ -1206,7 +1204,6 @@ function derivedSourceTable(node: PgNode, context: SqlParseContext | undefined):
   const statement = asNode(node.statement, "derived table SELECT");
   if (statement.type !== "select") throwUnsupported("Derived tables must be SELECT statements");
   const query = selectStatementToAst(statement, context);
-  validateCteQuery(query);
   return { source: alias, alias, cte: { name: alias, query } };
 }
 
