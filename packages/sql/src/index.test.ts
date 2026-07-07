@@ -505,6 +505,40 @@ describe("parseSql", () => {
       },
     });
 
+    const nonEqui = parseSql(`
+      select s.store_id, b.bucket
+      from sales s
+      join buckets b on s.amount >= b.min_amount and s.amount < b.max_amount
+      order by s.store_id
+    `);
+    expect(nonEqui).toMatchObject({
+      joins: [
+        {
+          source: "buckets",
+          alias: "b",
+          type: "inner",
+          leftKey: [],
+          rightKey: [],
+          predicate: {
+            kind: "logical",
+            op: "and",
+            operands: [
+              { kind: "compare", op: "gte" },
+              { kind: "compare", op: "lt" },
+            ],
+          },
+        },
+      ],
+    });
+    expect(formatSql(nonEqui)).toContain(
+      "join buckets b on (s.amount >= b.min_amount) and (s.amount < b.max_amount)",
+    );
+    expect(parseSql(formatSql(nonEqui))).toEqual(nonEqui);
+
+    expect(() =>
+      parseSql("select * from sales s left join buckets b on s.amount < b.max_amount"),
+    ).toThrow("Only inner JOIN supports non-equality ON predicates");
+
     const chain = parseSql(`
       select s.store_id, d.segment, r.manager
       from sales s
@@ -1183,7 +1217,7 @@ describe("parseSql", () => {
     const unsupported = [
       "with a as (select id from t), b as (select id from t) select id from a",
       "with recent as (select * from orders join customers on orders.customer_id = customers.id) select * from recent",
-      "select * from orders join customers on orders.customer_id > customers.id",
+      "select * from orders left join customers on orders.customer_id > customers.id",
     ];
 
     for (const sql of unsupported) {

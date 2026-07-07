@@ -50,6 +50,7 @@ export interface SqlJoinAst {
   type: "inner" | "left" | "right" | "full" | "cross";
   leftKey: string[];
   rightKey: string[];
+  predicate?: Expr;
 }
 
 export interface SqlSubqueryJoinAst {
@@ -1283,7 +1284,10 @@ function joinToAst(
     };
   }
   const on = asNode(join.on, "JOIN ON");
-  const { leftKey, rightKey } = joinKeysFromPredicate(on, joinedSources, right);
+  const keys = joinKeysFromPredicate(on, joinedSources, right);
+  if (keys === undefined && joinType !== "INNER JOIN") {
+    throwUnsupported("Only inner JOIN supports non-equality ON predicates");
+  }
   return {
     right,
     join: {
@@ -1291,8 +1295,11 @@ function joinToAst(
       leftAlias: left.alias,
       alias: right.alias,
       type: sqlJoinType(joinType),
-      leftKey,
-      rightKey,
+      leftKey: keys?.leftKey ?? [],
+      rightKey: keys?.rightKey ?? [],
+      ...(keys === undefined
+        ? { predicate: exprToLakeql(on, joinScope(joinedSources, right)) }
+        : {}),
     },
   };
 }
@@ -1304,14 +1311,13 @@ function sqlJoinType(joinType: string): SqlJoinAst["type"] {
   return "inner";
 }
 
-function qualifiedJoinKey(
+function maybeQualifiedJoinKey(
   expr: PgNode,
   joinedSources: readonly SourceTable[],
   right: SourceTable,
-): { side: "left" | "right"; key: string } {
-  if (expr.type !== "ref" || typeof expr.name !== "string" || expr.table === undefined) {
-    throwUnsupported("JOIN keys must be qualified column references");
-  }
+): { side: "left" | "right"; key: string } | undefined {
+  if (expr.type !== "ref" || typeof expr.name !== "string" || expr.table === undefined)
+    return undefined;
   const qualifier = nameNodeToString(expr.table);
   if (qualifier === right.alias || qualifier === right.source) {
     return { side: "right", key: `${right.alias}.${expr.name}` };
@@ -1320,21 +1326,30 @@ function qualifiedJoinKey(
     (source) => qualifier === source.alias || qualifier === source.source,
   );
   if (left !== undefined) return { side: "left", key: `${left.alias}.${expr.name}` };
-  throwUnsupported(`Unknown JOIN qualifier ${qualifier}`);
+  return undefined;
 }
 
 function joinKeysFromPredicate(
   expr: PgNode,
   joinedSources: readonly SourceTable[],
   right: SourceTable,
-): { leftKey: string[]; rightKey: string[] } {
+): { leftKey: string[]; rightKey: string[] } | undefined {
   const conjuncts = flattenJoinConjuncts(expr);
   const leftKey: string[] = [];
   const rightKey: string[] = [];
   for (const conjunct of conjuncts) {
-    if (String(conjunct.op) !== "=") throwUnsupported("Only equi-joins are supported");
-    const first = qualifiedJoinKey(asNode(conjunct.left, "JOIN left key"), joinedSources, right);
-    const second = qualifiedJoinKey(asNode(conjunct.right, "JOIN right key"), joinedSources, right);
+    if (conjunct.type !== "binary" || String(conjunct.op) !== "=") return undefined;
+    const first = maybeQualifiedJoinKey(
+      asNode(conjunct.left, "JOIN left key"),
+      joinedSources,
+      right,
+    );
+    const second = maybeQualifiedJoinKey(
+      asNode(conjunct.right, "JOIN right key"),
+      joinedSources,
+      right,
+    );
+    if (first === undefined || second === undefined) return undefined;
     if (first.side === "left" && second.side === "right") {
       leftKey.push(first.key);
       rightKey.push(second.key);
@@ -1346,6 +1361,13 @@ function joinKeysFromPredicate(
     }
   }
   return { leftKey, rightKey };
+}
+
+function joinScope(joinedSources: readonly SourceTable[], right: SourceTable): SqlScope {
+  const scope = SqlScope.empty();
+  for (const source of joinedSources) scope.add(source);
+  scope.add(right);
+  return scope;
 }
 
 function flattenJoinConjuncts(expr: PgNode): PgNode[] {
@@ -1571,6 +1593,9 @@ function formatJoin(leftSource: string, join: SqlJoinAst, includeLeftAlias: bool
           : "join";
   if (join.type === "cross") {
     return `${leftAlias} cross join ${source}${alias}`;
+  }
+  if (join.predicate !== undefined) {
+    return `${leftAlias} ${type} ${source}${alias} on ${formatExpr(join.predicate)}`;
   }
   const on = join.leftKey
     .map((leftKey, index) => {

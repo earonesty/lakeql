@@ -58,7 +58,8 @@ Current state:
 
 - Window functions and `QUALIFY` are supported and tested.
 - Basic filtering, projection, grouping, sorting, bounded inner/left/right/full
-  equi-join chains, and bounded `CROSS JOIN`/comma join forms exist.
+  equi-join chains, bounded inner non-equality `JOIN ON` predicates, and
+  bounded `CROSS JOIN`/comma join forms exist.
 - `read_parquet('path')` table-function sources map onto normal LakeQL path
   planning.
 - Named Iceberg SQL table bindings can materialize through the unified Iceberg
@@ -83,8 +84,8 @@ TODO:
   semantics stay covered by DuckDB reference tests.
 - Reintroduce safe join-chain predicate/projection pushdown where aliases prove
   a filter or projection belongs to one input side.
-- Add non-equi join support only with explicit bounded planning rules. Do not
-  hide cartesian explosion behind SQL compatibility.
+- Add null-preserving non-equi outer join support only with explicit bounded
+  planning rules. Do not hide cartesian explosion behind SQL compatibility.
 - Broaden remaining subquery support for common analytical shapes: nested
   derived tables and correlation forms that do not reduce to equality semi/anti
   joins.

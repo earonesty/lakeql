@@ -507,8 +507,18 @@ it("runs SQL helper join planning, wildcard projection, and null ordering branch
       { store_id: "s3", region: "east", segment: "wrong-region" },
     ],
   });
+  await writePartitionedParquet(store, "sql/buckets", {
+    rows: [
+      { bucket: "small", min_amount: 0, max_amount: 20 },
+      { bucket: "large", min_amount: 20, max_amount: 100 },
+    ],
+  });
   const lake = createLake({ store });
-  const tables = { sales: "sql/sales/*.parquet", stores: "sql/stores/*.parquet" };
+  const tables = {
+    sales: "sql/sales/*.parquet",
+    stores: "sql/stores/*.parquet",
+    buckets: "sql/buckets/*.parquet",
+  };
 
   await expect(
     lake
@@ -586,6 +596,33 @@ it("runs SQL helper join planning, wildcard projection, and null ordering branch
       })
       .toArray(),
   ).resolves.toEqual([{ store_id: "s1" }, { store_id: "s3" }]);
+
+  await expect(
+    lake
+      .sql(
+        [
+          "select s.store_id as store_id, b.bucket as bucket",
+          "from sales s join buckets b",
+          "on s.amount >= b.min_amount and s.amount < b.max_amount",
+          "order by s.store_id",
+        ].join(" "),
+        { tables },
+      )
+      .toArray(),
+  ).resolves.toEqual([
+    { store_id: "s1", bucket: "small" },
+    { store_id: "s2", bucket: "large" },
+    { store_id: "s3", bucket: "large" },
+  ]);
+
+  await expect(
+    lake
+      .sql("select s.store_id as store_id from sales s join buckets b on s.amount < b.max_amount", {
+        tables,
+        joinMaxOutputRows: 3,
+      })
+      .toArray(),
+  ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
 });
 
 it("covers SQL helper defaults, validation, empty results, and CSV escaping", async () => {

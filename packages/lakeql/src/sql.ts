@@ -636,6 +636,7 @@ function collectSourceColumnsFromAst(
   for (const join of sqlJoins(ast)) {
     for (const column of join.leftKey) referenced.add(column);
     for (const column of join.rightKey) referenced.add(column);
+    if (join.predicate !== undefined) collectExprColumns(join.predicate, referenced);
   }
   if (ast.subqueryJoin !== undefined) {
     for (const column of ast.subqueryJoin.leftKey) referenced.add(column);
@@ -734,6 +735,17 @@ async function resolveScalarSubqueries(lake: ParquetLake, ast: SqlQueryAst): Pro
         replaceScalarSubqueryExpr(expr, values),
       ]),
     );
+  }
+  if (ast.joins !== undefined) {
+    out.joins = ast.joins.map((join) =>
+      join.predicate === undefined
+        ? join
+        : { ...join, predicate: replaceScalarSubqueryExpr(join.predicate, values) },
+    );
+    const firstJoin = out.joins[0];
+    if (firstJoin !== undefined) out.join = firstJoin;
+  } else if (ast.join?.predicate !== undefined) {
+    out.join = { ...ast.join, predicate: replaceScalarSubqueryExpr(ast.join.predicate, values) };
   }
   delete out.scalarSubqueries;
   return out;
@@ -858,20 +870,30 @@ async function joinRowsFromAst(
         ...fillRightJoinNulls(unmatchedRight, ast, join.alias, leftRows),
       ];
     } else {
-      rows =
-        join.type === "cross"
-          ? await crossJoin(rows, rightRows, {
-              rightPrefix: `${join.alias}.`,
-              maxRightRows: options.joinMaxRightRows ?? 100_000,
-              maxOutputRows: options.joinMaxOutputRows ?? 100_000,
-            })
-          : await broadcastJoin(rows, rightRows, {
-              leftKey: join.leftKey,
-              rightKey: join.rightKey,
-              type: join.type,
-              rightPrefix: `${join.alias}.`,
-              maxRightRows: options.joinMaxRightRows ?? 100_000,
-            });
+      if (join.predicate !== undefined) {
+        rows = (
+          await crossJoin(rows, rightRows, {
+            rightPrefix: `${join.alias}.`,
+            maxRightRows: options.joinMaxRightRows ?? 100_000,
+            maxOutputRows: options.joinMaxOutputRows ?? 100_000,
+          })
+        ).filter((row) => matches(join.predicate as Expr, row));
+      } else {
+        rows =
+          join.type === "cross"
+            ? await crossJoin(rows, rightRows, {
+                rightPrefix: `${join.alias}.`,
+                maxRightRows: options.joinMaxRightRows ?? 100_000,
+                maxOutputRows: options.joinMaxOutputRows ?? 100_000,
+              })
+            : await broadcastJoin(rows, rightRows, {
+                leftKey: join.leftKey,
+                rightKey: join.rightKey,
+                type: join.type,
+                rightPrefix: `${join.alias}.`,
+                maxRightRows: options.joinMaxRightRows ?? 100_000,
+              });
+      }
     }
     if (join.type === "left") {
       rows = fillLeftJoinNulls(rows, join.alias, leftJoinRightColumns(ast, join.alias, rightRows));
