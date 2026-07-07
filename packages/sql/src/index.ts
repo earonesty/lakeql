@@ -17,6 +17,7 @@ import {
 } from "lakeql-core";
 import { parse } from "pgsql-ast-parser";
 import { extractTopLevelQualify } from "./qualify-prepass.js";
+import { findTopLevelKeyword } from "./sql-scan.js";
 import { extractWindowFrames, type SqlWindowPrepassFrame } from "./window-prepass.js";
 
 export interface SqlQueryAst extends PathQueryInit {
@@ -95,6 +96,7 @@ export function parseSql(sql: string, options: SqlParseOptions = {}): SqlQueryAs
   if (sql.length > MAX_SQL_LENGTH) {
     throwParse(`SQL input length exceeds ${MAX_SQL_LENGTH}`);
   }
+  rejectRecursiveCte(sql);
   const windowPrepass = extractWindowFrames(sql);
   const prepass = extractTopLevelQualify(windowPrepass.sql);
 
@@ -116,6 +118,16 @@ export function parseSql(sql: string, options: SqlParseOptions = {}): SqlQueryAs
   if (statement.type !== "select") throwUnsupported("Only SELECT statements are supported");
 
   return selectStatementToAst(statement, context, context.qualifySql);
+}
+
+function rejectRecursiveCte(sql: string): void {
+  const withIndex = findTopLevelKeyword(sql, "with", 0);
+  if (withIndex === -1) return;
+  const recursiveIndex = findTopLevelKeyword(sql, "recursive", withIndex + "with".length);
+  if (recursiveIndex === -1) return;
+  const between = sql.slice(withIndex + "with".length, recursiveIndex);
+  if (between.trim().length > 0) return;
+  throwUnsupported("Recursive CTEs are not supported");
 }
 
 export function parseSqlStatement(sql: string, options: SqlParseOptions = {}): SqlStatementAst {

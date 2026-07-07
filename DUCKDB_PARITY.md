@@ -82,6 +82,8 @@ Current state:
   falling back to source columns, so `ORDER BY` keeps DuckDB-style alias
   behavior even on manually planned row paths.
 - Unsupported broad SQL syntax is detected and rejected.
+- Recursive CTEs are explicitly rejected until there is a bounded execution
+  design.
 
 TODO:
 
@@ -93,8 +95,6 @@ TODO:
   a filter or projection belongs to one input side.
 - Broaden remaining subquery support for common analytical correlation forms
   that do not reduce to equality semi/anti joins.
-- Recursive CTEs should remain explicitly rejected until there is a bounded
-  execution design.
 - Tighten remaining alias resolution edge cases so `HAVING` and `QUALIFY`
   behave the way DuckDB users expect across nested scopes.
 

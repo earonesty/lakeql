@@ -799,6 +799,15 @@ describe("parseSql", () => {
     expect(parseSql(formatSql(ast))).toEqual(ast);
   });
 
+  it("rejects recursive CTEs with an explicit SQL error", () => {
+    expect(() =>
+      parseSql("with recursive recent as (select store_id from sales) select store_id from recent"),
+    ).toThrow("Recursive CTEs are not supported");
+    expect(() =>
+      parseSql("with recursive recent as (select store_id from sales) select store_id from recent"),
+    ).toThrowError(expect.objectContaining({ code: "LAKEQL_SQL_UNSUPPORTED" }));
+  });
+
   it("compiles single-source derived tables through CTE materialization", () => {
     const ast = parseSql(`
       select id
