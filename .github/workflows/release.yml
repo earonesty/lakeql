@@ -6,7 +6,7 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 jobs:
@@ -31,8 +31,28 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Verify release tag matches lakeql package version
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          package_version="$(node -p "require('./packages/lakeql/package.json').version")"
+          if [ "$tag_version" != "$package_version" ]; then
+            echo "::error::Release tag ${GITHUB_REF_NAME} does not match packages/lakeql version ${package_version}."
+            echo "::error::Run changeset version so packages/lakeql/package.json is ${tag_version}, or use a tag matching the published package version."
+            exit 1
+          fi
+
       - name: Publish packages
         run: pnpm release
         env:
           NPM_CONFIG_PROVENANCE: "true"
           NPM_CONFIG_ACCESS: public
+
+      - name: Create GitHub release
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "GitHub release ${GITHUB_REF_NAME} already exists."
+            exit 0
+          fi
+          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
+        env:
+          GH_TOKEN: ${{ github.token }}
