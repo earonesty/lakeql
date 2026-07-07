@@ -320,6 +320,19 @@ it("runs SQL over named Iceberg table bindings", async () => {
     lake
       .sql(
         [
+          "select p.id as left_id, q.id as right_id",
+          "from places p join places q on p.id < q.id",
+          "where p.id = 0 and q.id = 2",
+        ].join(" "),
+        { icebergTables },
+      )
+      .toArray(),
+  ).resolves.toEqual([{ left_id: 0, right_id: 2 }]);
+
+  await expect(
+    lake
+      .sql(
+        [
           "select id",
           "from places",
           "where country = 'US'",

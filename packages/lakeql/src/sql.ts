@@ -10,7 +10,7 @@ import {
   type QueryBuilder,
   type Row,
 } from "lakeql-core";
-import type { IcebergReadMode, PlanIcebergFilesOptions } from "lakeql-iceberg";
+import type { IcebergReadMode, IcebergTable, PlanIcebergFilesOptions } from "lakeql-iceberg";
 import { createParquetLake, type ParquetLakeConfig, writePartitionedParquet } from "lakeql-parquet";
 import { parseSql, type SqlParameterValue, type SqlQueryAst } from "lakeql-sql";
 import { loadTable, planFiles, scanRows } from "./engine.js";
@@ -123,7 +123,7 @@ async function executeSql(
     lake.store,
     pushed.ast,
     options,
-    pushed.predicates,
+    pushed,
   );
   try {
     return await executeRowsFromAst(lake, materializedIceberg.ast, options);
@@ -320,15 +320,17 @@ async function materializeIcebergTablesIfNeeded(
   store: ObjectStore,
   ast: SqlQueryAst,
   options: SqlQueryOptions,
-  predicates: Map<string, Expr> = new Map(),
+  pushed: IcebergPushdownResult = emptyIcebergPushdownResult(ast),
 ): Promise<{ ast: SqlQueryAst; cleanup: () => Promise<void> }> {
   const icebergTables = options.icebergTables ?? {};
-  if (Object.keys(icebergTables).length === 0) return { ast, cleanup: async () => {} };
+  if (Object.keys(icebergTables).length === 0 && pushed.sources.size === 0) {
+    return { ast, cleanup: async () => {} };
+  }
 
   const materialized = new Map<string, { path: string; files: string[] }>();
   const requiredColumns = collectSourceColumns(ast);
   const materializeSource = async (source: string): Promise<string> => {
-    const icebergTable = icebergTables[source];
+    const icebergTable = pushed.sources.get(source) ?? icebergTables[source];
     if (icebergTable === undefined) return source;
     const cached = materialized.get(source);
     if (cached !== undefined) return cached.path;
@@ -338,10 +340,14 @@ async function materializeIcebergTablesIfNeeded(
       store,
       metadataPath: icebergTable.metadataPath,
     });
+    if (table.format !== "iceberg") {
+      throw new LakeqlError("LAKEQL_VALIDATION_ERROR", `SQL source "${source}" is not Iceberg`);
+    }
     const planOptions = icebergPlanOptions(icebergTable);
-    const sourceColumns = requiredColumns.get(source);
-    if (sourceColumns !== undefined) planOptions.select = [...sourceColumns];
-    const predicate = predicates.get(source);
+    const sourceColumns = icebergRequiredColumns(requiredColumns, pushed.predicates, source);
+    const selectedColumns = icebergSelectableColumns(table.table, planOptions, sourceColumns);
+    if (selectedColumns !== undefined) planOptions.select = selectedColumns;
+    const predicate = pushed.predicates.get(source);
     if (predicate !== undefined) planOptions.where = predicate;
     const plan = planFiles(table, planOptions);
     const rows: Row[] = [];
@@ -379,83 +385,145 @@ async function materializeIcebergTablesIfNeeded(
   };
 }
 
+function icebergRequiredColumns(
+  requiredColumns: Map<string, Set<string>>,
+  predicates: Map<string, Expr>,
+  source: string,
+): Set<string> | undefined {
+  const columns = new Set(requiredColumns.get(source) ?? []);
+  const predicate = predicates.get(source);
+  if (predicate !== undefined) collectExprColumns(predicate, columns);
+  return columns.size === 0 ? undefined : columns;
+}
+
+function icebergSelectableColumns(
+  table: IcebergTable,
+  planOptions: PlanIcebergFilesOptions,
+  columns: Set<string> | undefined,
+): string[] | undefined {
+  if (columns === undefined) return undefined;
+  const snapshot = table.snapshot(planOptions);
+  const fields = new Set(table.schema(snapshot["schema-id"]).map((field) => field.name));
+  for (const column of columns) {
+    if (!fields.has(column)) return undefined;
+  }
+  return [...columns];
+}
+
+interface IcebergPushdownResult {
+  ast: SqlQueryAst;
+  predicates: Map<string, Expr>;
+  sources: Map<string, SqlIcebergTableOptions>;
+}
+
+interface IcebergPushdownContext {
+  icebergTables: Record<string, SqlIcebergTableOptions>;
+  predicates: Map<string, Expr>;
+  sources: Map<string, SqlIcebergTableOptions>;
+  seen: WeakSet<SqlQueryAst>;
+  nextSourceId: number;
+}
+
+function emptyIcebergPushdownResult(ast: SqlQueryAst): IcebergPushdownResult {
+  return { ast, predicates: new Map(), sources: new Map() };
+}
+
 function pushdownIcebergPredicates(
   ast: SqlQueryAst,
   options: SqlQueryOptions,
-): { ast: SqlQueryAst; predicates: Map<string, Expr> } {
+): IcebergPushdownResult {
   const icebergTables = options.icebergTables ?? {};
-  if (Object.keys(icebergTables).length === 0) return { ast, predicates: new Map() };
-  const sourceCounts = countAstSources(ast);
-  const predicates = new Map<string, Expr>();
+  if (Object.keys(icebergTables).length === 0) return emptyIcebergPushdownResult(ast);
+  const context: IcebergPushdownContext = {
+    icebergTables,
+    predicates: new Map(),
+    sources: new Map(),
+    seen: new WeakSet(),
+    nextSourceId: 0,
+  };
   return {
-    ast: pushdownIcebergPredicatesFromAst(ast, icebergTables, sourceCounts, predicates),
-    predicates,
+    ast: pushdownIcebergPredicatesFromAst(ast, context),
+    predicates: context.predicates,
+    sources: context.sources,
   };
 }
 
 function pushdownIcebergPredicatesFromAst(
   ast: SqlQueryAst,
-  icebergTables: Record<string, SqlIcebergTableOptions>,
-  sourceCounts: Map<string, number>,
-  predicates: Map<string, Expr>,
-  seen = new WeakSet<SqlQueryAst>(),
+  context: IcebergPushdownContext,
 ): SqlQueryAst {
-  if (seen.has(ast)) return ast;
-  seen.add(ast);
+  if (context.seen.has(ast)) return ast;
+  context.seen.add(ast);
 
-  const aliases = sourceAliases(ast);
-  const out: SqlQueryAst = { ...ast };
+  const out: SqlQueryAst = {
+    ...ast,
+    source: icebergOccurrenceSource(ast.source, context),
+  };
+  if (ast.join !== undefined) {
+    out.join = { ...ast.join, source: icebergOccurrenceSource(ast.join.source, context) };
+  }
+  if (ast.joins !== undefined) {
+    out.joins = ast.joins.map((join) => ({
+      ...join,
+      source: icebergOccurrenceSource(join.source, context),
+    }));
+    const firstJoin = out.joins[0];
+    if (firstJoin !== undefined) out.join = firstJoin;
+  }
+  if (ast.subqueryJoin !== undefined) {
+    out.subqueryJoin = {
+      ...ast.subqueryJoin,
+      source: icebergOccurrenceSource(ast.subqueryJoin.source, context),
+    };
+  }
+
+  const aliases = sourceAliases(out);
   if (ast.where !== undefined) {
     const remaining: Expr[] = [];
     for (const predicate of splitAndPredicates(ast.where)) {
       const source = predicateSource(predicate, aliases);
-      if (
-        source !== undefined &&
-        icebergTables[source] !== undefined &&
-        sourceCounts.get(source) === 1
-      ) {
-        addPushdownPredicate(predicates, source, stripExprSource(predicate, aliases, source));
-      } else {
-        remaining.push(predicate);
+      if (source !== undefined && context.sources.has(source)) {
+        addPushdownPredicate(
+          context.predicates,
+          source,
+          stripExprSource(predicate, aliases, source),
+        );
       }
+      remaining.push(predicate);
     }
     const where = combineAndPredicates(remaining);
     if (where === undefined) delete out.where;
     else out.where = where;
   }
   if (ast.subqueryJoin?.where !== undefined) {
-    const source = ast.subqueryJoin.source;
-    if (icebergTables[source] !== undefined && sourceCounts.get(source) === 1) {
+    const source = out.subqueryJoin?.source;
+    if (source !== undefined && context.sources.has(source)) {
       const subqueryAliases = new Map([[source, source]]);
       const remaining: Expr[] = [];
       for (const predicate of splitAndPredicates(ast.subqueryJoin.where)) {
         const predicateTable = predicateSource(predicate, subqueryAliases);
         if (predicateTable === source) {
           addPushdownPredicate(
-            predicates,
+            context.predicates,
             source,
             stripExprSource(predicate, subqueryAliases, source),
           );
-        } else {
-          remaining.push(predicate);
         }
+        remaining.push(predicate);
       }
       const where = combineAndPredicates(remaining);
-      out.subqueryJoin = { ...ast.subqueryJoin };
-      if (where === undefined) delete out.subqueryJoin.where;
-      else out.subqueryJoin.where = where;
+      const subqueryJoin = out.subqueryJoin;
+      if (subqueryJoin !== undefined) {
+        out.subqueryJoin = { ...subqueryJoin };
+        if (where === undefined) delete out.subqueryJoin.where;
+        else out.subqueryJoin.where = where;
+      }
     }
   }
   if (ast.cte !== undefined) {
     out.cte = {
       ...ast.cte,
-      query: pushdownIcebergPredicatesFromAst(
-        ast.cte.query,
-        icebergTables,
-        sourceCounts,
-        predicates,
-        seen,
-      ),
+      query: pushdownIcebergPredicatesFromAst(ast.cte.query, context),
     };
   }
   if (ast.scalarSubqueries !== undefined) {
@@ -464,13 +532,7 @@ function pushdownIcebergPredicatesFromAst(
         id,
         {
           ...subquery,
-          query: pushdownIcebergPredicatesFromAst(
-            subquery.query,
-            icebergTables,
-            sourceCounts,
-            predicates,
-            seen,
-          ),
+          query: pushdownIcebergPredicatesFromAst(subquery.query, context),
         },
       ]),
     );
@@ -478,25 +540,13 @@ function pushdownIcebergPredicatesFromAst(
   return out;
 }
 
-function countAstSources(
-  ast: SqlQueryAst,
-  counts = new Map<string, number>(),
-  seen = new WeakSet<SqlQueryAst>(),
-): Map<string, number> {
-  if (seen.has(ast)) return counts;
-  seen.add(ast);
-  incrementCount(counts, ast.source);
-  for (const join of sqlJoins(ast)) incrementCount(counts, join.source);
-  if (ast.subqueryJoin !== undefined) incrementCount(counts, ast.subqueryJoin.source);
-  if (ast.cte !== undefined) countAstSources(ast.cte.query, counts, seen);
-  for (const subquery of Object.values(ast.scalarSubqueries ?? {})) {
-    countAstSources(subquery.query, counts, seen);
-  }
-  return counts;
-}
-
-function incrementCount(counts: Map<string, number>, source: string): void {
-  counts.set(source, (counts.get(source) ?? 0) + 1);
+function icebergOccurrenceSource(source: string, context: IcebergPushdownContext): string {
+  const table = context.icebergTables[source];
+  if (table === undefined) return source;
+  const occurrence = `__lakeql_sql_iceberg_source_${context.nextSourceId}_${safeTempName(source)}`;
+  context.nextSourceId += 1;
+  context.sources.set(occurrence, table);
+  return occurrence;
 }
 
 function splitAndPredicates(expr: Expr): Expr[] {

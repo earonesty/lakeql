@@ -64,8 +64,9 @@ Current state:
   planning.
 - Named Iceberg SQL table bindings can materialize through the unified Iceberg
   engine scan path, with explicit metadata path, snapshot/ref, and read-mode
-  options. Source-specific conjunctive predicates are pushed into Iceberg
-  planning when the table binding appears once in the SQL AST.
+  options. Source-specific conjunctive predicates are pushed into occurrence-
+  scoped Iceberg planning while staying as residual SQL filters so non-partition
+  predicates cannot turn into file-pruning-only wrong answers.
 - Scalar subqueries, ordered/limited `IN (select ...)`, uncorrelated `EXISTS`,
   correlated equality `IN`/`EXISTS`, bounded non-equality correlated `IN` and
   `EXISTS`, nested derived tables, and
@@ -99,8 +100,9 @@ Current state:
 
 TODO:
 
-- Broaden source-specific predicate pushdown across repeated Iceberg bindings
-  and nested scopes without changing query semantics.
+- Broaden source-specific predicate pushdown across additional nested Iceberg
+  scopes after adding coverage for repeated bindings and residual filter
+  semantics.
 - Revisit outer-join planner optimizations after the bounded execution
   semantics stay covered by DuckDB reference tests.
 - Broaden remaining subquery support for common analytical correlation forms

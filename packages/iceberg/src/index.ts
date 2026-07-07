@@ -256,7 +256,10 @@ export interface IcebergRowBatch {
 
 export interface ScanPlannedIcebergRowsOptions extends ObjectStoreReadControls {
   plan: IcebergPlan | PlannedIcebergFile[];
-  readDataFile(file: PlannedIcebergFile): Promise<Row[] | AsyncIterable<Row[] | IcebergRowBatch>>;
+  readDataFile(
+    file: PlannedIcebergFile,
+    deletes: DecodedIcebergDeletes,
+  ): Promise<Row[] | AsyncIterable<Row[] | IcebergRowBatch>>;
   readDeleteFile(
     deleteFile: IcebergDeleteFile,
     dataFile: PlannedIcebergFile,
@@ -1071,7 +1074,7 @@ export async function* scanPlannedIcebergRows(
     throwIfAborted(signal);
     const deletes = await decodedDeletesForFile(file, options, signal);
     throwIfAborted(signal);
-    const data = await options.readDataFile(file);
+    const data = await options.readDataFile(file, deletes);
     throwIfAborted(signal);
     let rowOffset = 0;
     for await (const batch of rowBatches(data)) {

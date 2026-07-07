@@ -1,5 +1,11 @@
-import type { ObjectStore, ObjectStoreReadControls, Row } from "lakeql-core";
 import {
+  collectExprColumns,
+  type ObjectStore,
+  type ObjectStoreReadControls,
+  type Row,
+} from "lakeql-core";
+import {
+  type DecodedIcebergDeletes,
   type IcebergPlan,
   type IcebergTable,
   type LoadIcebergTableOptions,
@@ -117,7 +123,7 @@ export async function* scanBatches(
   for await (const batch of scanPlannedIcebergRows({
     plan: plan.plan,
     ...options,
-    readDataFile: async (file) =>
+    readDataFile: async (file, deletes) =>
       projectIcebergParquetBatches(
         plan.store,
         plan.table,
@@ -125,6 +131,7 @@ export async function* scanBatches(
         file.partition,
         file.snapshotId,
         plan.options,
+        deletes,
         options,
       ),
     readDeleteFile: async (deleteFile) => readIcebergParquetDeletes(plan.store, deleteFile),
@@ -151,18 +158,37 @@ async function* projectIcebergParquetBatches(
   partition: Record<string, string>,
   snapshotId: number,
   planOptions: PlanIcebergFilesOptions,
+  deletes: DecodedIcebergDeletes,
   scanOptions: ScanEngineOptions,
 ): AsyncIterable<ParquetRowBatch> {
   const readOptions: ReadParquetBatchOptions = {};
   if (scanOptions.batchSize !== undefined) readOptions.batchSize = scanOptions.batchSize;
+  const retainedColumns = retainedFilterColumns(deletes, planOptions);
   for await (const batch of readParquetObjectBatches(store, path, readOptions)) {
     yield {
       rowOffset: batch.rowOffset,
       rows: batch.rows.map((row) => {
+        const sourceRow = { ...partition, ...row };
         const projectOptions: Parameters<IcebergTable["projectRow"]>[1] = { snapshotId };
         if (planOptions.select !== undefined) projectOptions.select = planOptions.select;
-        return table.projectRow({ ...partition, ...row }, projectOptions);
+        const projected = table.projectRow(sourceRow, projectOptions);
+        for (const column of retainedColumns) {
+          if (column in sourceRow && !(column in projected)) projected[column] = sourceRow[column];
+        }
+        return projected;
       }),
     };
   }
+}
+
+function retainedFilterColumns(
+  deletes: DecodedIcebergDeletes,
+  planOptions: PlanIcebergFilesOptions,
+): Set<string> {
+  const columns = new Set<string>();
+  if (planOptions.select === undefined) collectExprColumns(planOptions.where, columns);
+  for (const deletion of deletes.equalityDeletes ?? []) {
+    for (const column of deletion.columns) columns.add(column);
+  }
+  return columns;
 }
