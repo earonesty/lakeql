@@ -804,6 +804,31 @@ describeReference("SQL CLI DuckDB reference comparisons", () => {
     expect(canonicalRows(lakeqlRows)).toEqual(canonicalRows(referenceRows));
   });
 
+  it("matches DuckDB for correlated scalar aggregate projections", async () => {
+    const lakeql =
+      "select store_id, region, (select max(x.amount) as max_amount from sales x where x.region = s.region) as region_max from sales s order by store_id asc, region asc limit 5";
+    const duckdb = `select store_id, region, (select max(x.amount) as max_amount from read_parquet('${sqlString(
+      fixturePath(SALES.file),
+    )}') x where x.region = s.region) as region_max from read_parquet('${sqlString(
+      fixturePath(SALES.file),
+    )}') s order by store_id asc, region asc limit 5`;
+
+    const result = await runCli([
+      "query",
+      "--table",
+      `sales=${fixturePath(SALES.file)}`,
+      "--sql",
+      lakeql,
+      "--format",
+      "json",
+    ]);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    const lakeqlRows = JSON.parse(result.stdout) as Row[];
+    const referenceRows = await duckDbRows(duckdb);
+    expect(canonicalRows(lakeqlRows)).toEqual(canonicalRows(referenceRows));
+  });
+
   it("matches DuckDB for ordered limited IN subquery semi join", async () => {
     const storesPath = await rightStoresFixturePath();
     const lakeql =

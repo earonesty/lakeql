@@ -1130,6 +1130,63 @@ describe("parseSql", () => {
     ).toThrow(/only group by equality correlation keys/u);
   });
 
+  it("compiles correlated scalar aggregate projections as keyed lookups", () => {
+    const ast = parseSql(`
+      select store_id,
+        (select avg(x.amount) as avg_amount from sales x where x.region = s.region) as region_avg
+      from sales s
+      order by store_id
+      limit 3
+    `);
+
+    expect(ast).toMatchObject({
+      source: "sales",
+      select: ["store_id"],
+      projections: {
+        region_avg: {
+          kind: "call",
+          fn: "__lakeql_correlated_scalar_subquery",
+        },
+      },
+      correlatedScalarSubqueries: {
+        correlated_scalar_0: {
+          source: "sales",
+          leftKey: ["region"],
+          rightKey: ["region"],
+          groupBy: ["region"],
+          column: "avg_amount",
+          leftAlias: "s",
+          alias: "x",
+          aggregates: { avg_amount: { op: "avg", column: "amount" } },
+        },
+      },
+    });
+
+    expect(
+      parseSql(`
+        select store_id,
+          (select avg(x.amount) as avg_amount
+           from sales x
+           where x.region = s.region
+           group by x.region
+           having count(*) > 5) as region_avg
+        from sales s
+      `),
+    ).toMatchObject({
+      correlatedScalarSubqueries: {
+        correlated_scalar_0: {
+          groupBy: ["region"],
+          aggregates: {
+            avg_amount: { op: "avg", column: "amount" },
+            __lakeql_having_0: { op: "count" },
+          },
+          hiddenAggregates: ["__lakeql_having_0"],
+          having: { kind: "compare" },
+        },
+      },
+    });
+  });
+
   it("compiles uncorrelated EXISTS subqueries through scalar counts", () => {
     const exists = parseSql(`
       select store_id

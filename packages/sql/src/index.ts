@@ -29,6 +29,7 @@ export interface SqlQueryAst extends PathQueryInit {
   joins?: SqlJoinAst[];
   subqueryJoin?: SqlSubqueryJoinAst;
   subqueryJoins?: SqlSubqueryJoinAst[];
+  correlatedScalarSubqueries?: Record<string, SqlCorrelatedScalarSubqueryAst>;
   cte?: SqlCteAst;
   scalarSubqueries?: Record<string, SqlScalarSubqueryAst>;
 }
@@ -85,6 +86,29 @@ export interface SqlScalarSubqueryAst {
   mode?: "scalar" | "exists";
 }
 
+export interface SqlCorrelatedScalarSubqueryAst {
+  source: string;
+  leftKey: string[];
+  rightKey: string[];
+  groupBy: string[];
+  aggregates: AggregateSpec;
+  column: string;
+  hiddenAggregates?: string[];
+  having?: Expr;
+  leftAlias?: string;
+  alias?: string;
+  where?: Expr;
+}
+
+type CorrelatedSubqueryPlan = {
+  leftKey: string[];
+  rightKey: string[];
+  leftAlias?: string;
+  alias?: string;
+  predicate?: Expr;
+  where?: Expr;
+};
+
 const MAX_SQL_LENGTH = 128_000;
 const MAX_AST_DEPTH = 128;
 const PROTOTYPE_MUTATION_KEYS = new Set(["__proto__", "constructor", "prototype"]);
@@ -93,6 +117,7 @@ type PgNode = Record<string, unknown>;
 
 interface SqlParseContext {
   scalarSubqueries: Record<string, SqlScalarSubqueryAst>;
+  correlatedScalarSubqueries: Record<string, SqlCorrelatedScalarSubqueryAst>;
   nextScalarSubqueryId: number;
   windows: Record<string, WindowExpr>;
   nextWindowId: number;
@@ -383,6 +408,9 @@ function selectStatementToAstInScope(statement: PgNode, context: SqlParseContext
   if (Object.keys(context.scalarSubqueries).length > 0) {
     ast.scalarSubqueries = context.scalarSubqueries;
   }
+  if (Object.keys(context.correlatedScalarSubqueries).length > 0) {
+    ast.correlatedScalarSubqueries = context.correlatedScalarSubqueries;
+  }
 
   return ast;
 }
@@ -514,6 +542,7 @@ function registerHavingAggregate(expr: PgNode, scope: SqlScope, context: SqlPars
 function newSqlParseContext(options: SqlParseOptions = {}): SqlParseContext {
   return {
     scalarSubqueries: {},
+    correlatedScalarSubqueries: {},
     nextScalarSubqueryId: 0,
     windows: {},
     nextWindowId: 0,
@@ -550,7 +579,7 @@ function exprToLakeql(
     case "case":
       return caseToExpr(expr, scope, context);
     case "select":
-      return scalarSubqueryToExpr(expr, context);
+      return scalarSubqueryToExpr(expr, scope, context);
     case "cast":
       return castToExpr(expr, scope, context);
     case "call":
@@ -715,33 +744,75 @@ function scalarAggregatePredicateSubqueryJoinToAst(
         : undefined;
   if (scalarSide === undefined) return undefined;
 
-  const from = optionalArray(scalarSide.subquery.from);
+  const scalar = scalarAggregateSubqueryToAst(scalarSide.subquery, outerScope, context);
+  if (scalar === undefined) return undefined;
+  const subqueryScope = new SqlScope({
+    source: scalar.source,
+    alias: scalar.alias ?? scalar.source,
+  });
+  const aggregate = scalar.aggregates[scalar.column];
+  if (aggregate === undefined) throwUnsupported("Correlated scalar aggregate is missing output");
+  const alias = scalar.alias;
+
+  const out: SqlSubqueryJoinAst = {
+    source: scalar.source,
+    type: "semi",
+    leftKey: scalar.leftKey,
+    rightKey: scalar.rightKey,
+    groupBy: scalar.groupBy,
+    aggregates: scalar.aggregates,
+    ...(scalar.hiddenAggregates === undefined ? {} : { hiddenAggregates: scalar.hiddenAggregates }),
+    ...(scalar.having === undefined ? {} : { having: scalar.having }),
+    ...(scalar.leftAlias === undefined ? {} : { leftAlias: scalar.leftAlias }),
+    ...(alias === undefined ? {} : { alias }),
+    ...(scalar.where === undefined ? {} : { where: scalar.where }),
+  };
+  const aggregateExpr: Expr = {
+    kind: "column",
+    name: alias === undefined ? scalar.column : `${alias}.${scalar.column}`,
+  };
+  const other = exprToLakeql(scalarSide.other, combinedScope(outerScope, subqueryScope), context);
+  out.predicate = {
+    kind: "compare",
+    op: compareOp(op),
+    left: scalarSide.subqueryOnLeft ? aggregateExpr : other,
+    right: scalarSide.subqueryOnLeft ? other : aggregateExpr,
+  };
+  return out;
+}
+
+function scalarAggregateSubqueryToAst(
+  subquery: PgNode,
+  outerScope: SqlScope,
+  context: SqlParseContext,
+): SqlCorrelatedScalarSubqueryAst | undefined {
+  const from = optionalArray(subquery.from);
   if (from.length !== 1) return undefined;
   const source = sourceTable(from[0]);
   const subqueryScope = new SqlScope(source);
-  const aggregate = scalarAggregateSelectItem(scalarSide.subquery, subqueryScope, context);
+  const aggregate = scalarAggregateSelectItem(subquery, subqueryScope, context);
   if (aggregate === undefined) return undefined;
   rejectPresent(
-    scalarSide.subquery,
+    subquery,
     "orderBy",
     "ORDER BY in correlated scalar aggregate subqueries is not supported",
   );
   rejectPresent(
-    scalarSide.subquery,
+    subquery,
     "limit",
     "LIMIT in correlated scalar aggregate subqueries is not supported",
   );
-
-  const out: SqlSubqueryJoinAst = {
+  const out: SqlCorrelatedScalarSubqueryAst & { predicate?: Expr } = {
     source: source.source,
-    type: "semi",
     leftKey: [],
     rightKey: [],
+    groupBy: [],
     aggregates: { [aggregate.alias]: aggregate.spec },
+    column: aggregate.alias,
   };
-  applyCorrelatedSubqueryWhere(out, scalarSide.subquery, outerScope, subqueryScope, context);
+  applyCorrelatedSubqueryWhere(out, subquery, outerScope, subqueryScope, context);
   if (out.leftKey.length === 0) {
-    if (predicateReferencesOuterScope(scalarSide.subquery, outerScope)) {
+    if (predicateReferencesOuterScope(subquery, outerScope)) {
       throwUnsupported("Correlated scalar aggregate subqueries require equality correlation keys");
     }
     return undefined;
@@ -751,8 +822,8 @@ function scalarAggregatePredicateSubqueryJoinToAst(
       "Correlated scalar aggregate subqueries with non-equality predicates are not supported",
     );
   }
-  if (scalarSide.subquery.groupBy !== undefined) {
-    out.groupBy = optionalArray(scalarSide.subquery.groupBy).map((expr) =>
+  if (subquery.groupBy !== undefined) {
+    out.groupBy = optionalArray(subquery.groupBy).map((expr) =>
       subqueryScope.refName(asNode(expr, "scalar aggregate subquery GROUP BY expression")),
     );
     const rightKeys = new Set(out.rightKey);
@@ -763,12 +834,12 @@ function scalarAggregatePredicateSubqueryJoinToAst(
     }
   }
   out.groupBy = appendUnique(out.groupBy ?? [], out.rightKey);
-  if (scalarSide.subquery.having !== undefined) {
+  if (subquery.having !== undefined) {
     const aggregates = out.aggregates ?? {};
     const hiddenAggregates = new Set<string>();
     const outputAliases = new Set<string>([...out.groupBy, aggregate.alias]);
     out.having = havingToExpr(
-      asNode(scalarSide.subquery.having, "scalar aggregate subquery HAVING"),
+      asNode(subquery.having, "scalar aggregate subquery HAVING"),
       subqueryScope,
       context,
       aggregates,
@@ -782,17 +853,6 @@ function scalarAggregatePredicateSubqueryJoinToAst(
   if (leftAlias !== undefined) out.leftAlias = leftAlias;
   const alias = subqueryScope.primaryAlias();
   if (alias !== undefined) out.alias = alias;
-  const aggregateExpr: Expr = {
-    kind: "column",
-    name: out.alias === undefined ? aggregate.alias : `${out.alias}.${aggregate.alias}`,
-  };
-  const other = exprToLakeql(scalarSide.other, combinedScope(outerScope, subqueryScope), context);
-  out.predicate = {
-    kind: "compare",
-    op: compareOp(op),
-    left: scalarSide.subqueryOnLeft ? aggregateExpr : other,
-    right: scalarSide.subqueryOnLeft ? other : aggregateExpr,
-  };
   return out;
 }
 
@@ -969,7 +1029,7 @@ function existsSubquery(expr: PgNode): PgNode {
 }
 
 function applyCorrelatedSubqueryWhere(
-  out: SqlSubqueryJoinAst,
+  out: CorrelatedSubqueryPlan,
   subquery: PgNode,
   outerScope: SqlScope,
   subqueryScope: SqlScope,
@@ -1096,7 +1156,13 @@ function flattenWhereConjuncts(expr: PgNode): PgNode[] {
   return [expr];
 }
 
-function scalarSubqueryToExpr(subquery: PgNode, context: SqlParseContext): Expr {
+function scalarSubqueryToExpr(
+  subquery: PgNode,
+  outerScope: SqlScope,
+  context: SqlParseContext,
+): Expr {
+  const correlated = scalarAggregateSubqueryToAst(subquery, outerScope, context);
+  if (correlated !== undefined) return registerCorrelatedScalarSubquery(correlated, context);
   const query = selectStatementToAst(subquery, context);
   const outputColumns = scalarSubqueryOutputColumns(query);
   if (outputColumns.length !== 1) {
@@ -1177,6 +1243,20 @@ function registerScalarSubquery(
   context.nextScalarSubqueryId += 1;
   context.scalarSubqueries[id] = { query, column };
   return { kind: "call", fn: "__lakeql_scalar_subquery", args: [{ kind: "literal", value: id }] };
+}
+
+function registerCorrelatedScalarSubquery(
+  query: SqlCorrelatedScalarSubqueryAst,
+  context: SqlParseContext,
+): Expr {
+  const id = `correlated_scalar_${context.nextScalarSubqueryId}`;
+  context.nextScalarSubqueryId += 1;
+  context.correlatedScalarSubqueries[id] = query;
+  return {
+    kind: "call",
+    fn: "__lakeql_correlated_scalar_subquery",
+    args: [{ kind: "literal", value: id }],
+  };
 }
 
 function registerExistsSubquery(query: SqlQueryAst, context: SqlParseContext): Expr {

@@ -145,6 +145,8 @@ async function executeRowsFromAst(
     if (sqlJoins(resolved).length > 0) return await joinRowsFromAst(lake, resolved, options);
     if (hasAggregation(resolved))
       return await aggregateRowsFromAst(lake.path(resolved.source), resolved);
+    if (hasCorrelatedScalarSubqueries(resolved))
+      return await correlatedScalarRowsFromAst(lake, resolved);
     return await builderFromAst(lake.path(resolved.source), resolved).toArray();
   } finally {
     await materialized.cleanup();
@@ -224,6 +226,14 @@ function mapAstSources(
       ]),
     );
   }
+  if (ast.correlatedScalarSubqueries !== undefined) {
+    out.correlatedScalarSubqueries = Object.fromEntries(
+      Object.entries(ast.correlatedScalarSubqueries).map(([id, subquery]) => [
+        id,
+        { ...subquery, source: bindSource(subquery.source) },
+      ]),
+    );
+  }
   return out;
 }
 
@@ -270,6 +280,16 @@ async function mapAstSourcesAsync(
         Object.entries(ast.scalarSubqueries).map(async ([id, subquery]) => [
           id,
           { ...subquery, query: await mapAstSourcesAsync(subquery.query, bindSource, seen) },
+        ]),
+      ),
+    );
+  }
+  if (ast.correlatedScalarSubqueries !== undefined) {
+    out.correlatedScalarSubqueries = Object.fromEntries(
+      await Promise.all(
+        Object.entries(ast.correlatedScalarSubqueries).map(async ([id, subquery]) => [
+          id,
+          { ...subquery, source: await bindSource(subquery.source) },
         ]),
       ),
     );
@@ -566,6 +586,14 @@ function pushdownIcebergPredicatesFromAst(
       ]),
     );
   }
+  if (ast.correlatedScalarSubqueries !== undefined) {
+    out.correlatedScalarSubqueries = Object.fromEntries(
+      Object.entries(ast.correlatedScalarSubqueries).map(([id, subquery]) => [
+        id,
+        { ...subquery, source: icebergOccurrenceSource(subquery.source, context) },
+      ]),
+    );
+  }
   return out;
 }
 
@@ -742,6 +770,20 @@ function collectSourceColumnsFromAst(
       collectExprColumns(subqueryJoin.predicate, referenced);
     for (const term of subqueryJoin.orderBy ?? []) referenced.add(term.column);
   }
+  for (const subquery of Object.values(ast.correlatedScalarSubqueries ?? {})) {
+    for (const column of subquery.leftKey) referenced.add(column);
+    for (const column of subquery.rightKey) addColumn(columns, subquery.source, column);
+    for (const column of subquery.groupBy) addColumn(columns, subquery.source, column);
+    for (const aggregate of Object.values(subquery.aggregates)) {
+      if (aggregate.column !== undefined) addColumn(columns, subquery.source, aggregate.column);
+      if (aggregate.expr !== undefined)
+        collectExprColumnsForSource(aggregate.expr, columns, subquery.source);
+    }
+    if (subquery.where !== undefined)
+      collectExprColumnsForSource(subquery.where, columns, subquery.source);
+    if (subquery.having !== undefined)
+      collectExprColumnsForSource(subquery.having, columns, subquery.source);
+  }
 
   for (const column of referenced) addSourceColumn(columns, aliases, column);
   if (ast.cte !== undefined) collectSourceColumnsFromAst(ast.cte.query, columns, seen);
@@ -778,6 +820,16 @@ function addSourceColumn(
   if (aliases.size !== 1) return;
   const source = aliases.values().next().value as string | undefined;
   if (source !== undefined) addColumn(columns, source, column);
+}
+
+function collectExprColumnsForSource(
+  expr: Expr,
+  columns: Map<string, Set<string>>,
+  source: string,
+): void {
+  const referenced = new Set<string>();
+  collectExprColumns(expr, referenced);
+  for (const column of referenced) addColumn(columns, source, column);
 }
 
 function addColumn(columns: Map<string, Set<string>>, source: string, column: string): void {
@@ -1021,7 +1073,7 @@ async function joinRowsFromAst(
   if (pushedFilters.where !== undefined)
     rows = rows.filter((row) => matches(pushedFilters.where, row));
   if (ast.orderBy !== undefined) rows = sortRows(rows, ast.orderBy, ast);
-  rows = projectRows(rows, ast);
+  rows = await projectRows(lake, rows, ast);
   if (ast.distinct === true) rows = distinctRows(rows);
   return offsetLimitRows(rows, ast);
 }
@@ -1479,7 +1531,7 @@ async function subqueryJoinRowsFromAst(
   }
   if (ast.where !== undefined) rows = rows.filter((row) => matches(ast.where, row));
   if (ast.orderBy !== undefined) rows = sortRows(rows, ast.orderBy, ast);
-  rows = projectRows(rows, ast);
+  rows = await projectRows(lake, rows, ast);
   if (ast.distinct === true) rows = distinctRows(rows);
   return offsetLimitRows(rows, ast);
 }
@@ -1700,7 +1752,29 @@ function qualifyOnlyRow(row: Row, alias: string): Row {
   return Object.fromEntries(Object.entries(row).map(([key, value]) => [`${alias}.${key}`, value]));
 }
 
-function projectRows(rows: Row[], ast: SqlQueryAst): Row[] {
+interface CorrelatedScalarLookup {
+  subquery: NonNullable<SqlQueryAst["correlatedScalarSubqueries"]>[string];
+  rows: Map<string, Row>;
+}
+
+async function correlatedScalarRowsFromAst(lake: ParquetLake, ast: SqlQueryAst): Promise<Row[]> {
+  let rows = await lake.path(ast.source).toArray();
+  if (ast.where !== undefined) rows = rows.filter((row) => matches(ast.where as Expr, row));
+  if (ast.orderBy !== undefined) rows = sortRows(rows, ast.orderBy, ast);
+  rows = await projectRows(lake, rows, ast);
+  if (ast.distinct === true) rows = distinctRows(rows);
+  return offsetLimitRows(rows, ast);
+}
+
+function hasCorrelatedScalarSubqueries(ast: SqlQueryAst): boolean {
+  return (
+    ast.correlatedScalarSubqueries !== undefined &&
+    Object.keys(ast.correlatedScalarSubqueries).length > 0
+  );
+}
+
+async function projectRows(lake: ParquetLake, rows: Row[], ast: SqlQueryAst): Promise<Row[]> {
+  const lookups = await correlatedScalarLookups(lake, ast);
   const hasWildcardProjection = ast.select?.includes("*") ?? false;
   return rows.map((row) => {
     if (hasWildcardProjection && ast.projections === undefined) return row;
@@ -1714,10 +1788,148 @@ function projectRows(rows: Row[], ast: SqlQueryAst): Row[] {
       }
     }
     for (const [alias, expr] of Object.entries(ast.projections ?? {})) {
-      out[alias] = evaluate(expr, row);
+      out[alias] = evaluate(resolveCorrelatedScalarExpr(expr, row, lookups), row);
     }
     return out;
   });
+}
+
+async function correlatedScalarLookups(
+  lake: ParquetLake,
+  ast: SqlQueryAst,
+): Promise<Map<string, CorrelatedScalarLookup>> {
+  const lookups = new Map<string, CorrelatedScalarLookup>();
+  for (const [id, subquery] of Object.entries(ast.correlatedScalarSubqueries ?? {})) {
+    const rightRows = await aggregateRowsFromAst(lake.path(subquery.source), {
+      source: subquery.source,
+      select: subquery.rightKey,
+      groupBy: subquery.groupBy,
+      aggregates: subquery.aggregates,
+      ...(subquery.hiddenAggregates === undefined
+        ? {}
+        : { hiddenAggregates: subquery.hiddenAggregates }),
+      ...(subquery.where === undefined ? {} : { where: subquery.where }),
+      ...(subquery.having === undefined ? {} : { having: subquery.having }),
+    });
+    lookups.set(id, {
+      subquery,
+      rows: new Map(rightRows.map((row) => [correlatedScalarRightKey(row, subquery), row])),
+    });
+  }
+  return lookups;
+}
+
+function resolveCorrelatedScalarExpr(
+  expr: Expr,
+  row: Row,
+  lookups: Map<string, CorrelatedScalarLookup>,
+): Expr {
+  switch (expr.kind) {
+    case "call":
+      if (expr.fn === "__lakeql_correlated_scalar_subquery") {
+        return {
+          kind: "literal",
+          value: correlatedScalarValue(expr, row, lookups) as string | number | boolean | null,
+        };
+      }
+      return {
+        ...expr,
+        args: expr.args.map((arg) => resolveCorrelatedScalarExpr(arg, row, lookups)),
+      };
+    case "compare":
+      return {
+        ...expr,
+        left: resolveCorrelatedScalarExpr(expr.left, row, lookups),
+        right: resolveCorrelatedScalarExpr(expr.right, row, lookups),
+      };
+    case "arithmetic":
+      return {
+        ...expr,
+        left: resolveCorrelatedScalarExpr(expr.left, row, lookups),
+        right: resolveCorrelatedScalarExpr(expr.right, row, lookups),
+      };
+    case "case":
+      return {
+        ...expr,
+        whens: expr.whens.map((branch) => ({
+          when: resolveCorrelatedScalarExpr(branch.when, row, lookups),
+          value: resolveCorrelatedScalarExpr(branch.value, row, lookups),
+        })),
+        ...(expr.else === undefined
+          ? {}
+          : { else: resolveCorrelatedScalarExpr(expr.else, row, lookups) }),
+      };
+    case "logical":
+      return {
+        ...expr,
+        operands: expr.operands.map((operand) =>
+          resolveCorrelatedScalarExpr(operand, row, lookups),
+        ),
+      };
+    case "not":
+      return { ...expr, operand: resolveCorrelatedScalarExpr(expr.operand, row, lookups) };
+    case "between":
+      return {
+        ...expr,
+        target: resolveCorrelatedScalarExpr(expr.target, row, lookups),
+        low: resolveCorrelatedScalarExpr(expr.low, row, lookups),
+        high: resolveCorrelatedScalarExpr(expr.high, row, lookups),
+      };
+    case "in":
+      return {
+        ...expr,
+        target: resolveCorrelatedScalarExpr(expr.target, row, lookups),
+        values: expr.values.map((value) => resolveCorrelatedScalarExpr(value, row, lookups)),
+      };
+    case "like":
+      return { ...expr, target: resolveCorrelatedScalarExpr(expr.target, row, lookups) };
+    case "null-check":
+      return { ...expr, target: resolveCorrelatedScalarExpr(expr.target, row, lookups) };
+    case "column":
+    case "literal":
+      return expr;
+  }
+}
+
+function correlatedScalarValue(
+  expr: Extract<Expr, { kind: "call" }>,
+  row: Row,
+  lookups: Map<string, CorrelatedScalarLookup>,
+): Row[string] | null {
+  const id = expr.args[0];
+  if (id?.kind !== "literal" || typeof id.value !== "string") {
+    throw new LakeqlError(
+      "LAKEQL_SQL_UNSUPPORTED",
+      "Invalid correlated scalar subquery placeholder",
+    );
+  }
+  const lookup = lookups.get(id.value);
+  if (lookup === undefined) {
+    throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "Missing correlated scalar subquery metadata");
+  }
+  const key = correlatedScalarLeftKey(row, lookup.subquery);
+  if (key === undefined) return null;
+  return lookup.rows.get(key)?.[lookup.subquery.column] ?? null;
+}
+
+function correlatedScalarLeftKey(
+  row: Row,
+  subquery: NonNullable<SqlQueryAst["correlatedScalarSubqueries"]>[string],
+): string | undefined {
+  const values: Row[string][] = [];
+  for (const key of subquery.leftKey) {
+    const value = row[key];
+    if (value === null || value === undefined) return undefined;
+    values.push(value);
+  }
+  return JSON.stringify(values);
+}
+
+function correlatedScalarRightKey(
+  row: Row,
+  subquery: NonNullable<SqlQueryAst["correlatedScalarSubqueries"]>[string],
+): string {
+  return JSON.stringify(subquery.rightKey.map((key) => row[key]));
 }
 
 async function aggregateRowsFromAst(builder: QueryBuilder, ast: SqlQueryAst): Promise<Row[]> {

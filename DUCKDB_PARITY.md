@@ -71,11 +71,11 @@ Current state:
 - Scalar subqueries, ordered/limited `IN (select ...)`, grouped `IN`/`EXISTS`
   subqueries with bounded `HAVING` predicates, uncorrelated `EXISTS`,
   correlated equality `IN`/`EXISTS`, bounded non-equality correlated `IN` and
-  `EXISTS`, correlated scalar aggregate predicates such as comparing a row to
-  the average of its correlated peer group, including explicit correlation-key
-  `GROUP BY` and bounded `HAVING`, multiple predicate subqueries in one
-  `WHERE`, aggregate outer queries over predicate subqueries, nested derived
-  tables, and
+  `EXISTS`, correlated scalar aggregate predicates and projected correlated
+  aggregate values such as comparing or returning a row's correlated peer-group
+  average, including explicit correlation-key `GROUP BY` and bounded `HAVING`,
+  multiple predicate subqueries in one `WHERE`, aggregate outer queries over
+  predicate subqueries, nested derived tables, and
   single-binding CTEs used as outer sources, join inputs, or `IN` subquery
   sources compile to existing scalar, semi/anti join, and CTE materialization
   plans. CTE bodies can contain bounded joins, `IN` subquery plans, scalar
