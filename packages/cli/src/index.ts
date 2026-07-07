@@ -653,9 +653,7 @@ async function subqueryJoinRowsFromAst(
     );
   }
   const join = ast.subqueryJoin;
-  let rightRows = await lake.path(join.source).toArray();
-  if (join.where !== undefined) rightRows = rightRows.filter((row) => matches(join.where, row));
-  if (join.orderBy !== undefined) rightRows = sortRows(rightRows, join.orderBy);
+  let rightRows = await subqueryJoinRightRows(lake, join);
   rightRows = offsetLimitSubqueryRows(rightRows, join);
   let rows =
     join.predicate === undefined
@@ -674,6 +672,38 @@ async function subqueryJoinRowsFromAst(
   if (ast.limit !== undefined) rows = rows.slice(offset, offset + ast.limit);
   else if (offset > 0) rows = rows.slice(offset);
   return rows;
+}
+
+async function subqueryJoinRightRows(
+  lake: ReturnType<typeof createParquetLake>,
+  join: NonNullable<ReturnType<typeof parseSql>["subqueryJoin"]>,
+): Promise<Row[]> {
+  if (subqueryJoinHasAggregation(join)) {
+    return await aggregateRowsFromAst(lake.path(join.source), {
+      source: join.source,
+      select: join.rightKey,
+      ...(join.where === undefined ? {} : { where: join.where }),
+      ...(join.groupBy === undefined ? {} : { groupBy: join.groupBy }),
+      ...(join.aggregates === undefined ? {} : { aggregates: join.aggregates }),
+      ...(join.hiddenAggregates === undefined ? {} : { hiddenAggregates: join.hiddenAggregates }),
+      ...(join.having === undefined ? {} : { having: join.having }),
+      ...(join.orderBy === undefined ? {} : { orderBy: join.orderBy }),
+    });
+  }
+  let rows = await lake.path(join.source).toArray();
+  if (join.where !== undefined) rows = rows.filter((row) => matches(join.where, row));
+  if (join.orderBy !== undefined) rows = sortRows(rows, join.orderBy);
+  return rows;
+}
+
+function subqueryJoinHasAggregation(
+  join: NonNullable<ReturnType<typeof parseSql>["subqueryJoin"]>,
+): boolean {
+  return (
+    join.aggregates !== undefined ||
+    join.having !== undefined ||
+    (join.groupBy !== undefined && join.groupBy.length > 0)
+  );
 }
 
 function predicateSubqueryJoinRows(

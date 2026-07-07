@@ -702,8 +702,15 @@ function collectSourceColumnsFromAst(
   if (ast.subqueryJoin !== undefined) {
     for (const column of ast.subqueryJoin.leftKey) referenced.add(column);
     for (const column of ast.subqueryJoin.rightKey) referenced.add(column);
+    for (const column of ast.subqueryJoin.groupBy ?? []) referenced.add(column);
+    for (const aggregate of Object.values(ast.subqueryJoin.aggregates ?? {})) {
+      if (aggregate.column !== undefined) referenced.add(aggregate.column);
+      if (aggregate.expr !== undefined) collectExprColumns(aggregate.expr, referenced);
+    }
     if (ast.subqueryJoin.where !== undefined)
       collectExprColumns(ast.subqueryJoin.where, referenced);
+    if (ast.subqueryJoin.having !== undefined)
+      collectExprColumns(ast.subqueryJoin.having, referenced);
     if (ast.subqueryJoin.predicate !== undefined)
       collectExprColumns(ast.subqueryJoin.predicate, referenced);
     for (const term of ast.subqueryJoin.orderBy ?? []) referenced.add(term.column);
@@ -1423,9 +1430,7 @@ async function subqueryJoinRowsFromAst(
     );
   }
   const join = ast.subqueryJoin;
-  let rightRows = await lake.path(join.source).toArray();
-  if (join.where !== undefined) rightRows = rightRows.filter((row) => matches(join.where, row));
-  if (join.orderBy !== undefined) rightRows = sortRows(rightRows, join.orderBy);
+  let rightRows = await subqueryJoinRightRows(lake, join);
   rightRows = offsetLimitSubqueryRows(rightRows, join);
   let rows =
     join.predicate === undefined
@@ -1441,6 +1446,36 @@ async function subqueryJoinRowsFromAst(
   rows = projectRows(rows, ast);
   if (ast.distinct === true) rows = distinctRows(rows);
   return offsetLimitRows(rows, ast);
+}
+
+async function subqueryJoinRightRows(
+  lake: ParquetLake,
+  join: NonNullable<SqlQueryAst["subqueryJoin"]>,
+): Promise<Row[]> {
+  if (subqueryJoinHasAggregation(join)) {
+    return await aggregateRowsFromAst(lake.path(join.source), {
+      source: join.source,
+      select: join.rightKey,
+      ...(join.where === undefined ? {} : { where: join.where }),
+      ...(join.groupBy === undefined ? {} : { groupBy: join.groupBy }),
+      ...(join.aggregates === undefined ? {} : { aggregates: join.aggregates }),
+      ...(join.hiddenAggregates === undefined ? {} : { hiddenAggregates: join.hiddenAggregates }),
+      ...(join.having === undefined ? {} : { having: join.having }),
+      ...(join.orderBy === undefined ? {} : { orderBy: join.orderBy }),
+    });
+  }
+  let rows = await lake.path(join.source).toArray();
+  if (join.where !== undefined) rows = rows.filter((row) => matches(join.where, row));
+  if (join.orderBy !== undefined) rows = sortRows(rows, join.orderBy);
+  return rows;
+}
+
+function subqueryJoinHasAggregation(join: NonNullable<SqlQueryAst["subqueryJoin"]>): boolean {
+  return (
+    join.aggregates !== undefined ||
+    join.having !== undefined ||
+    (join.groupBy !== undefined && join.groupBy.length > 0)
+  );
 }
 
 function predicateSubqueryJoinRows(

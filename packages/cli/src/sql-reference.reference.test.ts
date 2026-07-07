@@ -87,6 +87,12 @@ describeReference("SQL CLI DuckDB reference comparisons", () => {
       duckdb: `select region from read_parquet('${sqlString(fixturePath(SALES.file))}') group by region having count(*) > 20 and max(amount) > 900 order by region asc`,
     },
     {
+      name: "grouped IN subquery semi join",
+      lakeql:
+        "select distinct region from input where region in (select region from input group by region having count(*) > 20 and max(amount) > 900) order by region asc",
+      duckdb: `select distinct region from read_parquet('${sqlString(fixturePath(SALES.file))}') where region in (select region from read_parquet('${sqlString(fixturePath(SALES.file))}') group by region having count(*) > 20 and max(amount) > 900) order by region asc`,
+    },
+    {
       name: "simple filtered CTE",
       lakeql:
         "with recent as (select store_id, amount from input where amount > 900) select store_id, amount from recent order by amount desc limit 2",

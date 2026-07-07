@@ -68,9 +68,10 @@ Current state:
   options. Source-specific conjunctive predicates are pushed into occurrence-
   scoped Iceberg planning while staying as residual SQL filters so non-partition
   predicates cannot turn into file-pruning-only wrong answers.
-- Scalar subqueries, ordered/limited `IN (select ...)`, uncorrelated `EXISTS`,
-  correlated equality `IN`/`EXISTS`, bounded non-equality correlated `IN` and
-  `EXISTS`, nested derived tables, and
+- Scalar subqueries, ordered/limited `IN (select ...)`, grouped `IN` subqueries
+  with bounded `HAVING` predicates, uncorrelated `EXISTS`, correlated equality
+  `IN`/`EXISTS`, bounded non-equality correlated `IN` and `EXISTS`, nested
+  derived tables, and
   single-binding CTEs used as outer sources, join inputs, or `IN` subquery
   sources compile to existing scalar, semi/anti join, and CTE materialization
   plans. CTE bodies can contain bounded joins, `IN` subquery plans, scalar
@@ -109,7 +110,7 @@ TODO:
 - Revisit outer-join planner optimizations after the bounded execution
   semantics stay covered by DuckDB reference tests.
 - Broaden remaining subquery support for common analytical correlation forms
-  beyond bounded predicate `IN`/`EXISTS`.
+  beyond bounded predicate `IN`/`EXISTS` and grouped `IN`.
 
 Acceptance criteria:
 

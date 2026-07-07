@@ -60,6 +60,10 @@ export interface SqlSubqueryJoinAst {
   type: "semi" | "anti";
   leftKey: string[];
   rightKey: string[];
+  groupBy?: string[];
+  aggregates?: AggregateSpec;
+  hiddenAggregates?: string[];
+  having?: Expr;
   leftAlias?: string;
   alias?: string;
   predicate?: Expr;
@@ -694,16 +698,20 @@ function subqueryJoinToAst(
   negated: boolean,
   context: SqlParseContext,
 ): SqlSubqueryJoinAst {
-  rejectPresent(subquery, "groupBy", "Grouped IN subqueries are not supported");
-  rejectPresent(subquery, "having", "HAVING in IN subqueries is not supported");
   const from = optionalArray(subquery.from);
   if (from.length !== 1) throwUnsupported("IN subqueries must select from one table");
   const source = sourceTable(from[0]);
   const subqueryScope = new SqlScope(source);
+  const aggregates: AggregateSpec = {};
+  const hiddenAggregates = new Set<string>();
+  const outputAliases = new Set<string>();
   const leftKey = subqueryLeftKeys(left, outerScope);
+  const directLeftKeyCount = leftKey.length;
   const rightKey = optionalArray(subquery.columns).map((column) => {
     const item = asNode(column, "IN subquery select item");
-    return subqueryScope.refName(asNode(item.expr, "IN subquery key"));
+    const key = subqueryScope.refName(asNode(item.expr, "IN subquery key"));
+    ensureUniqueOutputAlias(aliasName(item.alias) ?? key, outputAliases);
+    return key;
   });
   if (leftKey.length !== rightKey.length || leftKey.length === 0) {
     throwUnsupported("IN subquery key counts must match");
@@ -715,6 +723,29 @@ function subqueryJoinToAst(
     rightKey,
   };
   applyCorrelatedSubqueryWhere(out, subquery, outerScope, subqueryScope, context);
+  if (
+    (subquery.groupBy !== undefined || subquery.having !== undefined) &&
+    (out.predicate !== undefined || out.leftKey.length !== directLeftKeyCount)
+  ) {
+    throwUnsupported("Correlated grouped IN subqueries are not supported");
+  }
+  if (subquery.groupBy !== undefined) {
+    out.groupBy = optionalArray(subquery.groupBy).map((expr) =>
+      subqueryScope.refName(asNode(expr, "IN subquery GROUP BY expression")),
+    );
+  }
+  if (subquery.having !== undefined) {
+    out.having = havingToExpr(
+      asNode(subquery.having, "IN subquery HAVING"),
+      subqueryScope,
+      context,
+      aggregates,
+      hiddenAggregates,
+      outputAliases,
+    );
+  }
+  if (Object.keys(aggregates).length > 0) out.aggregates = aggregates;
+  if (hiddenAggregates.size > 0) out.hiddenAggregates = [...hiddenAggregates];
   if (subquery.orderBy !== undefined) {
     out.orderBy = optionalArray(subquery.orderBy).map((term) => orderByToTerm(term, subqueryScope));
   }
@@ -1936,13 +1967,31 @@ function formatSubqueryJoin(subqueryJoin: SqlSubqueryJoinAst): string {
       ? formatIdentifier(subqueryJoin.rightKey[0] ?? "")
       : subqueryJoin.rightKey.map(formatIdentifier).join(", ");
   const where = subqueryJoin.where === undefined ? "" : ` where ${formatExpr(subqueryJoin.where)}`;
+  const groupBy =
+    subqueryJoin.groupBy === undefined || subqueryJoin.groupBy.length === 0
+      ? ""
+      : ` group by ${subqueryJoin.groupBy.map(formatIdentifier).join(", ")}`;
+  const having =
+    subqueryJoin.having === undefined
+      ? ""
+      : ` having ${formatExpr(subqueryJoin.having, subqueryFormatAst(subqueryJoin))}`;
   const orderBy =
     subqueryJoin.orderBy === undefined || subqueryJoin.orderBy.length === 0
       ? ""
       : ` order by ${subqueryJoin.orderBy.map(formatOrderByTerm).join(", ")}`;
   const limit = subqueryJoin.limit === undefined ? "" : ` limit ${subqueryJoin.limit}`;
   const offset = subqueryJoin.offset === undefined ? "" : ` offset ${subqueryJoin.offset}`;
-  return `${left} ${subqueryJoin.type === "anti" ? "not in" : "in"} (select ${right} from ${formatIdentifier(subqueryJoin.source)}${where}${orderBy}${limit}${offset})`;
+  return `${left} ${subqueryJoin.type === "anti" ? "not in" : "in"} (select ${right} from ${formatIdentifier(subqueryJoin.source)}${where}${groupBy}${having}${orderBy}${limit}${offset})`;
+}
+
+function subqueryFormatAst(subqueryJoin: SqlSubqueryJoinAst): SqlQueryAst {
+  return {
+    source: subqueryJoin.source,
+    ...(subqueryJoin.aggregates === undefined ? {} : { aggregates: subqueryJoin.aggregates }),
+    ...(subqueryJoin.hiddenAggregates === undefined
+      ? {}
+      : { hiddenAggregates: subqueryJoin.hiddenAggregates }),
+  };
 }
 
 function formatSubqueryColumn(column: string, alias: string | undefined): string {

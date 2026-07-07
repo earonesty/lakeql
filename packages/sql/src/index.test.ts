@@ -800,6 +800,42 @@ describe("parseSql", () => {
     });
     expect(parseSql(formatSql(predicateCorrelated))).toEqual(predicateCorrelated);
 
+    const grouped = parseSql(`
+      select store_id
+      from sales
+      where store_id in (
+        select store_id
+        from stores
+        group by store_id
+        having count(*) > 1
+      )
+    `);
+    expect(grouped).toMatchObject({
+      subqueryJoin: {
+        source: "stores",
+        type: "semi",
+        leftKey: ["store_id"],
+        rightKey: ["store_id"],
+        groupBy: ["store_id"],
+        hiddenAggregates: ["__lakeql_having_0"],
+        aggregates: { __lakeql_having_0: { op: "count" } },
+        having: { kind: "compare", left: { kind: "column", name: "__lakeql_having_0" } },
+      },
+    });
+    expect(parseSql(formatSql(grouped))).toEqual(grouped);
+    expect(() =>
+      parseSql(`
+        select id
+        from orders o
+        where id in (
+          select order_id
+          from refunds r
+          where r.customer_id = o.customer_id
+          group by order_id
+        )
+      `),
+    ).toThrow(/Correlated grouped IN/u);
+
     const orderedLimited = parseSql(`
       select store_id
       from sales
