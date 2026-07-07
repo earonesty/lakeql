@@ -510,6 +510,34 @@ describeReference("SQL CLI DuckDB reference comparisons", () => {
     expect(canonicalRows(lakeqlRows)).toEqual(canonicalRows(referenceRows));
   });
 
+  it("matches DuckDB for correlated predicate IN subquery semi join", async () => {
+    const storesPath = await storesFixturePath();
+    const lakeql =
+      "select store_id, region, amount from sales s where s.store_id in (select d.store_id from stores d where d.region <> s.region) order by amount asc limit 3";
+    const duckdb = `select store_id, region, amount from read_parquet('${sqlString(
+      fixturePath(SALES.file),
+    )}') s where s.store_id in (select d.store_id from read_parquet('${sqlString(
+      storesPath,
+    )}') d where d.region <> s.region) order by amount asc limit 3`;
+
+    const result = await runCli([
+      "query",
+      "--table",
+      `sales=${fixturePath(SALES.file)}`,
+      "--table",
+      `stores=${storesPath}`,
+      "--sql",
+      lakeql,
+      "--format",
+      "json",
+    ]);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    const lakeqlRows = JSON.parse(result.stdout) as Row[];
+    const referenceRows = await duckDbRows(duckdb);
+    expect(canonicalRows(lakeqlRows)).toEqual(canonicalRows(referenceRows));
+  });
+
   it("matches DuckDB for ordered limited IN subquery semi join", async () => {
     const storesPath = await rightStoresFixturePath();
     const lakeql =

@@ -657,12 +657,15 @@ async function subqueryJoinRowsFromAst(
   if (join.where !== undefined) rightRows = rightRows.filter((row) => matches(join.where, row));
   if (join.orderBy !== undefined) rightRows = sortRows(rightRows, join.orderBy);
   rightRows = offsetLimitSubqueryRows(rightRows, join);
-  let rows = await broadcastJoin(await lake.path(ast.source).toArray(), rightRows, {
-    leftKey: join.leftKey,
-    rightKey: join.rightKey,
-    type: join.type,
-    maxRightRows: args.joinMaxRightRows ?? 100_000,
-  });
+  let rows =
+    join.predicate === undefined
+      ? await broadcastJoin(await lake.path(ast.source).toArray(), rightRows, {
+          leftKey: join.leftKey,
+          rightKey: join.rightKey,
+          type: join.type,
+          maxRightRows: args.joinMaxRightRows ?? 100_000,
+        })
+      : predicateSubqueryJoinRows(await lake.path(ast.source).toArray(), rightRows, join, args);
   if (ast.where !== undefined) rows = rows.filter((row) => matches(ast.where, row));
   if (ast.orderBy !== undefined) rows = sortRows(rows, ast.orderBy);
   rows = projectRows(rows, ast);
@@ -671,6 +674,67 @@ async function subqueryJoinRowsFromAst(
   if (ast.limit !== undefined) rows = rows.slice(offset, offset + ast.limit);
   else if (offset > 0) rows = rows.slice(offset);
   return rows;
+}
+
+function predicateSubqueryJoinRows(
+  leftRows: Row[],
+  rightRows: Row[],
+  join: NonNullable<ReturnType<typeof parseSql>["subqueryJoin"]>,
+  args: ParsedArgs,
+): Row[] {
+  /* v8 ignore next -- caller only uses this path for predicate subquery joins */
+  if (join.predicate === undefined) return leftRows;
+  const maxRightRows = args.joinMaxRightRows ?? 100_000;
+  if (rightRows.length > maxRightRows) {
+    throw new LakeqlError(
+      "LAKEQL_BUDGET_EXCEEDED",
+      `Predicate subquery join exceeded maxRightRows (${rightRows.length} > ${maxRightRows})`,
+      { metric: "maxRightRows", limit: maxRightRows, actual: rightRows.length },
+    );
+  }
+  const maxOutputRows = args.joinMaxOutputRows ?? 100_000;
+  const out: Row[] = [];
+  const leftAlias = join.leftAlias ?? "";
+  const rightAlias = join.alias ?? join.source;
+  let candidateRows = 0;
+  for (const leftRow of leftRows) {
+    let matched = false;
+    for (const rightRow of rightRows) {
+      candidateRows += 1;
+      if (candidateRows > maxOutputRows) {
+        throw new LakeqlError(
+          "LAKEQL_BUDGET_EXCEEDED",
+          `Predicate subquery join exceeded maxOutputRows (${candidateRows} > ${maxOutputRows})`,
+          { metric: "maxOutputRows", limit: maxOutputRows, actual: candidateRows },
+        );
+      }
+      if (!subqueryKeysMatch(leftRow, rightRow, join)) continue;
+      const row = {
+        ...(leftAlias.length === 0 ? leftRow : qualifyOnlyRow(leftRow, leftAlias)),
+        ...qualifyOnlyRow(rightRow, rightAlias),
+      };
+      if (!matches(join.predicate, row)) continue;
+      matched = true;
+      break;
+    }
+    if ((join.type === "semi" && matched) || (join.type === "anti" && !matched)) out.push(leftRow);
+  }
+  return out;
+}
+
+function subqueryKeysMatch(
+  leftRow: Row,
+  rightRow: Row,
+  join: NonNullable<ReturnType<typeof parseSql>["subqueryJoin"]>,
+): boolean {
+  for (const [index, leftKey] of join.leftKey.entries()) {
+    const rightKey = join.rightKey[index];
+    if (rightKey === undefined) return false;
+    const left = leftRow[leftKey];
+    const right = rightRow[rightKey];
+    if (left === null || right === null || left !== right) return false;
+  }
+  return true;
 }
 
 function offsetLimitSubqueryRows(
@@ -686,6 +750,10 @@ function qualifyRow(row: Row, alias: string): Row {
   const out: Row = { ...row };
   for (const [key, value] of Object.entries(row)) out[`${alias}.${key}`] = value;
   return out;
+}
+
+function qualifyOnlyRow(row: Row, alias: string): Row {
+  return Object.fromEntries(Object.entries(row).map(([key, value]) => [`${alias}.${key}`, value]));
 }
 
 function projectRows(rows: Row[], ast: ReturnType<typeof parseSql>): Row[] {

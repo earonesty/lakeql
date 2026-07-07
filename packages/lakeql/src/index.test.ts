@@ -773,6 +773,23 @@ it("runs SQL helper join planning, wildcard projection, and null ordering branch
     lake
       .sql(
         [
+          "select s.store_id as store_id",
+          "from sales s",
+          "where s.store_id in (",
+          "select d.store_id from stores d",
+          "where d.region <> s.region",
+          ")",
+          "order by s.store_id asc",
+        ].join(" "),
+        { tables },
+      )
+      .toArray(),
+  ).resolves.toEqual([{ store_id: "s3" }]);
+
+  await expect(
+    lake
+      .sql(
+        [
           "select s.store_id as store_id, b.bucket as bucket",
           "from sales s join buckets b",
           "on s.amount >= b.min_amount and s.amount < b.max_amount",

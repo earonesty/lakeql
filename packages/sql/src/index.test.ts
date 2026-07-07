@@ -744,6 +744,35 @@ describe("parseSql", () => {
     });
     expect(parseSql(formatSql(correlated))).toEqual(correlated);
 
+    const predicateCorrelated = parseSql(`
+      select id
+      from orders o
+      where id in (
+        select order_id
+        from refunds r
+        where r.amount > o.amount
+          and r.reason = 'duplicate'
+      )
+    `);
+    expect(predicateCorrelated).toMatchObject({
+      subqueryJoin: {
+        source: "refunds",
+        type: "semi",
+        leftKey: ["id"],
+        rightKey: ["order_id"],
+        leftAlias: "o",
+        alias: "r",
+        predicate: {
+          kind: "compare",
+          op: "gt",
+          left: { kind: "column", name: "r.amount" },
+          right: { kind: "column", name: "o.amount" },
+        },
+        where: { kind: "compare", left: { kind: "column", name: "reason" } },
+      },
+    });
+    expect(parseSql(formatSql(predicateCorrelated))).toEqual(predicateCorrelated);
+
     const orderedLimited = parseSql(`
       select store_id
       from sales
