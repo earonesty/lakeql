@@ -87,6 +87,9 @@ Current state:
   alias, reducing bounded join build/probe work without changing results.
 - Outer join row paths can pre-filter proven single-side `WHERE` predicates
   while retaining the residual filter, preserving null-extension semantics.
+- Preserved-side outer join `WHERE` predicates can be removed from the residual
+  filter after prefiltering when join-chain alias analysis proves the alias
+  cannot be null-extended at output.
 - Join row paths push source projections down to each input side when selected
   columns, join keys, predicates, ordering, and computed projections can all be
   proven against qualified input aliases.
@@ -100,8 +103,6 @@ TODO:
   and nested scopes without changing query semantics.
 - Revisit outer-join planner optimizations after the bounded execution
   semantics stay covered by DuckDB reference tests.
-- Extend outer-join predicate pushdown removal only where null-extension
-  semantics remain proven.
 - Broaden remaining subquery support for common analytical correlation forms
   beyond bounded predicate `EXISTS`.
 - Tighten remaining alias resolution edge cases so `HAVING` and `QUALIFY`

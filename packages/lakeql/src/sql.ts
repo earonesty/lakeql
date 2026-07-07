@@ -1006,9 +1006,7 @@ function pushdownJoinFilters(
   if (ast.where === undefined) {
     return { filters, ...(ast.where === undefined ? {} : { where: ast.where }) };
   }
-  const canRemovePushedPredicates = joins.every(
-    (join) => join.type === "inner" || join.type === "cross",
-  );
+  const removableAliases = nonNullableJoinAliases(joins);
   const aliases = new Set<string>();
   const firstJoin = joins[0];
   if (firstJoin !== undefined) aliases.add(firstJoin.leftAlias);
@@ -1022,10 +1020,34 @@ function pushdownJoinFilters(
       continue;
     }
     addJoinFilter(filters, alias, stripExprJoinAlias(predicate, alias));
-    if (!canRemovePushedPredicates) remaining.push(predicate);
+    if (!removableAliases.has(alias)) remaining.push(predicate);
   }
   const where = combineAndPredicates(remaining);
   return { filters, ...(where === undefined ? {} : { where }) };
+}
+
+function nonNullableJoinAliases(joins: NonNullable<SqlQueryAst["joins"]>): Set<string> {
+  const aliases = new Set<string>();
+  const firstJoin = joins[0];
+  if (firstJoin === undefined) return aliases;
+  aliases.add(firstJoin.leftAlias);
+  for (const join of joins) {
+    switch (join.type) {
+      case "inner":
+      case "cross":
+      case "left":
+        if (join.type !== "left") aliases.add(join.alias);
+        break;
+      case "right":
+        aliases.clear();
+        aliases.add(join.alias);
+        break;
+      case "full":
+        aliases.clear();
+        break;
+    }
+  }
+  return aliases;
 }
 
 async function rowsForJoinAlias(

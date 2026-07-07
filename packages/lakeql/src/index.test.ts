@@ -734,6 +734,23 @@ it("runs SQL helper join planning, wildcard projection, and null ordering branch
   ).resolves.toEqual([{ store_id: "s1", segment: "retail" }]);
 
   await expect(
+    lake
+      .sql(
+        [
+          "select s.store_id as store_id, d.segment as segment",
+          "from sales s left join stores d using (store_id)",
+          "where s.region = 'west'",
+          "order by s.store_id asc",
+        ].join(" "),
+        { tables },
+      )
+      .toArray(),
+  ).resolves.toEqual([
+    { store_id: "s1", segment: "retail" },
+    { store_id: "s3", segment: "wrong-region" },
+  ]);
+
+  await expect(
     readStream(
       lake
         .sql(
@@ -823,6 +840,21 @@ it("runs SQL helper join planning, wildcard projection, and null ordering branch
     { bucket: "large", store_id: null },
     { bucket: "small", store_id: "s1" },
   ]);
+
+  await expect(
+    lake
+      .sql(
+        [
+          "select b.bucket as bucket, s.store_id as store_id",
+          "from sales s right join buckets b",
+          "on s.amount < b.max_amount and b.bucket = 'small'",
+          "where b.bucket = 'small'",
+          "order by b.bucket asc",
+        ].join(" "),
+        { tables },
+      )
+      .toArray(),
+  ).resolves.toEqual([{ bucket: "small", store_id: "s1" }]);
 
   await expect(
     lake
