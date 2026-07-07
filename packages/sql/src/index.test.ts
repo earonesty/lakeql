@@ -521,6 +521,27 @@ describe("parseSql", () => {
         rightKey: ["store_id", "region"],
       },
     });
+
+    const correlated = parseSql(`
+      select id
+      from orders o
+      where id in (
+        select order_id
+        from refunds r
+        where r.customer_id = o.customer_id
+          and r.reason = 'duplicate'
+      )
+    `);
+    expect(correlated).toMatchObject({
+      subqueryJoin: {
+        source: "refunds",
+        type: "semi",
+        leftKey: ["id", "customer_id"],
+        rightKey: ["order_id", "customer_id"],
+        where: { kind: "compare", left: { kind: "column", name: "reason" } },
+      },
+    });
+    expect(parseSql(formatSql(correlated))).toEqual(correlated);
   });
 
   it("compiles simple non-recursive CTEs", () => {
@@ -659,6 +680,50 @@ describe("parseSql", () => {
         op: "gt",
         left: { kind: "call", fn: "__lakeql_scalar_subquery" },
         right: { kind: "literal", value: 0 },
+      },
+    });
+    expect(parseSql(formatSql(notExists))).toEqual(notExists);
+  });
+
+  it("compiles correlated EXISTS subqueries as semi and anti joins", () => {
+    const exists = parseSql(`
+      select id
+      from orders o
+      where exists (
+        select 1
+        from refunds r
+        where r.order_id = o.id
+          and r.reason = 'duplicate'
+      )
+    `);
+
+    expect(exists).toMatchObject({
+      subqueryJoin: {
+        source: "refunds",
+        type: "semi",
+        leftKey: ["id"],
+        rightKey: ["order_id"],
+        where: { kind: "compare", left: { kind: "column", name: "reason" } },
+      },
+    });
+    expect(parseSql(formatSql(exists))).toEqual(exists);
+
+    const notExists = parseSql(`
+      select id
+      from orders o
+      where not exists (
+        select 1
+        from refunds r
+        where r.order_id = o.id
+      )
+    `);
+
+    expect(notExists).toMatchObject({
+      subqueryJoin: {
+        source: "refunds",
+        type: "anti",
+        leftKey: ["id"],
+        rightKey: ["order_id"],
       },
     });
     expect(parseSql(formatSql(notExists))).toEqual(notExists);
@@ -994,8 +1059,6 @@ describe("parseSql", () => {
       "select * from orders join customers on orders.customer_id > customers.id",
       "select id from (select id from orders) orders",
       "select id from orders where id in (select order_id from refunds order by order_id)",
-      "select id from orders o where id in (select order_id from refunds r where r.customer_id = o.customer_id)",
-      "select id from orders o where exists (select 1 from refunds r where r.customer_id = o.customer_id)",
     ];
 
     for (const sql of unsupported) {

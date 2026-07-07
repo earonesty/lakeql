@@ -468,7 +468,7 @@ function whereToAst(
   let subqueryJoin: SqlSubqueryJoinAst | undefined;
   const residual: PgNode[] = [];
   for (const predicate of predicates) {
-    const extracted = maybeSubqueryJoin(predicate, scope);
+    const extracted = maybeSubqueryJoin(predicate, scope, context);
     if (extracted === undefined) {
       residual.push(predicate);
       continue;
@@ -489,13 +489,27 @@ function whereToAst(
   return out;
 }
 
-function maybeSubqueryJoin(expr: PgNode, scope: SqlScope): SqlSubqueryJoinAst | undefined {
-  if (expr.type !== "binary") return undefined;
-  const op = String(expr.op).toUpperCase();
-  if (op !== "IN" && op !== "NOT IN") return undefined;
-  const right = asNode(expr.right, "IN right side");
-  if (right.type !== "select") return undefined;
-  return subqueryJoinToAst(asNode(expr.left, "IN left side"), right, scope, op === "NOT IN");
+function maybeSubqueryJoin(
+  expr: PgNode,
+  scope: SqlScope,
+  context: SqlParseContext,
+): SqlSubqueryJoinAst | undefined {
+  if (expr.type === "binary") {
+    const op = String(expr.op).toUpperCase();
+    if (op !== "IN" && op !== "NOT IN") return undefined;
+    const right = asNode(expr.right, "IN right side");
+    if (right.type !== "select") return undefined;
+    return subqueryJoinToAst(
+      asNode(expr.left, "IN left side"),
+      right,
+      scope,
+      op === "NOT IN",
+      context,
+    );
+  }
+  const exists = existsCallFromPredicate(expr);
+  if (exists === undefined) return undefined;
+  return existsSubqueryJoinToAst(exists.call, scope, exists.negated, context);
 }
 
 function subqueryJoinToAst(
@@ -503,6 +517,7 @@ function subqueryJoinToAst(
   subquery: PgNode,
   outerScope: SqlScope,
   negated: boolean,
+  context: SqlParseContext,
 ): SqlSubqueryJoinAst {
   rejectPresent(subquery, "groupBy", "Grouped IN subqueries are not supported");
   rejectPresent(subquery, "having", "HAVING in IN subqueries is not supported");
@@ -526,10 +541,101 @@ function subqueryJoinToAst(
     leftKey,
     rightKey,
   };
-  if (subquery.where !== undefined) {
-    out.where = exprToLakeql(asNode(subquery.where, "IN subquery WHERE"), subqueryScope);
-  }
+  applyCorrelatedSubqueryWhere(out, subquery, outerScope, subqueryScope, context);
   return out;
+}
+
+function existsCallFromPredicate(expr: PgNode): { call: PgNode; negated: boolean } | undefined {
+  if (expr.type === "call" && functionName(expr.function) === "exists") {
+    return { call: expr, negated: false };
+  }
+  if (expr.type !== "unary" || String(expr.op).toUpperCase() !== "NOT") return undefined;
+  const operand = asNode(expr.operand, "NOT operand");
+  if (operand.type !== "call" || functionName(operand.function) !== "exists") return undefined;
+  return { call: operand, negated: true };
+}
+
+function existsSubqueryJoinToAst(
+  expr: PgNode,
+  outerScope: SqlScope,
+  negated: boolean,
+  context: SqlParseContext,
+): SqlSubqueryJoinAst | undefined {
+  const subquery = existsSubquery(expr);
+  rejectPresent(subquery, "groupBy", "Grouped EXISTS subqueries are not supported");
+  rejectPresent(subquery, "having", "HAVING in EXISTS subqueries is not supported");
+  rejectPresent(subquery, "orderBy", "ORDER BY in EXISTS subqueries is not supported");
+  rejectPresent(subquery, "limit", "LIMIT in EXISTS subqueries is not supported");
+  const from = optionalArray(subquery.from);
+  if (from.length !== 1) throwUnsupported("EXISTS subqueries must select from one table");
+  const source = sourceTable(from[0]);
+  const subqueryScope = new SqlScope(source);
+  const out: SqlSubqueryJoinAst = {
+    source: source.source,
+    type: negated ? "anti" : "semi",
+    leftKey: [],
+    rightKey: [],
+  };
+  applyCorrelatedSubqueryWhere(out, subquery, outerScope, subqueryScope, context);
+  return out.leftKey.length === 0 ? undefined : out;
+}
+
+function existsSubquery(expr: PgNode): PgNode {
+  const args = optionalArray(expr.args);
+  if (args.length !== 1) throwUnsupported("EXISTS requires exactly one subquery");
+  const subquery = asNode(args[0], "EXISTS subquery");
+  if (subquery.type !== "select") throwUnsupported("EXISTS requires a SELECT subquery");
+  return subquery;
+}
+
+function applyCorrelatedSubqueryWhere(
+  out: SqlSubqueryJoinAst,
+  subquery: PgNode,
+  outerScope: SqlScope,
+  subqueryScope: SqlScope,
+  context: SqlParseContext,
+): void {
+  if (subquery.where === undefined) return;
+  const residual: PgNode[] = [];
+  for (const predicate of flattenWhereConjuncts(asNode(subquery.where, "subquery WHERE"))) {
+    const pair = correlatedJoinKeyPair(predicate, outerScope, subqueryScope);
+    if (pair === undefined) {
+      residual.push(predicate);
+      continue;
+    }
+    out.leftKey.push(pair.leftKey);
+    out.rightKey.push(pair.rightKey);
+  }
+  if (residual.length === 1) {
+    out.where = exprToLakeql(residual[0] as PgNode, subqueryScope, context);
+  } else if (residual.length > 1) {
+    out.where = {
+      kind: "logical",
+      op: "and",
+      operands: residual.map((predicate) => exprToLakeql(predicate, subqueryScope, context)),
+    };
+  }
+}
+
+function correlatedJoinKeyPair(
+  predicate: PgNode,
+  outerScope: SqlScope,
+  subqueryScope: SqlScope,
+): { leftKey: string; rightKey: string } | undefined {
+  if (predicate.type !== "binary" || String(predicate.op) !== "=") return undefined;
+  const left = asNode(predicate.left, "correlated left key");
+  const right = asNode(predicate.right, "correlated right key");
+  const leftOuter = outerScope.qualifiedRefName(left);
+  const leftSubquery = subqueryScope.qualifiedRefName(left);
+  const rightOuter = outerScope.qualifiedRefName(right);
+  const rightSubquery = subqueryScope.qualifiedRefName(right);
+  if (leftOuter !== undefined && rightSubquery !== undefined) {
+    return { leftKey: leftOuter, rightKey: rightSubquery };
+  }
+  if (rightOuter !== undefined && leftSubquery !== undefined) {
+    return { leftKey: rightOuter, rightKey: leftSubquery };
+  }
+  return undefined;
 }
 
 function subqueryLeftKeys(expr: PgNode, scope: SqlScope): string[] {
@@ -564,10 +670,7 @@ function scalarSubqueryToExpr(subquery: PgNode, context: SqlParseContext): Expr 
 }
 
 function existsSubqueryToExpr(expr: PgNode, context: SqlParseContext): Expr {
-  const args = optionalArray(expr.args);
-  if (args.length !== 1) throwUnsupported("EXISTS requires exactly one subquery");
-  const subquery = asNode(args[0], "EXISTS subquery");
-  if (subquery.type !== "select") throwUnsupported("EXISTS requires a SELECT subquery");
+  const subquery = existsSubquery(expr);
   rejectPresent(subquery, "groupBy", "Grouped EXISTS subqueries are not supported");
   rejectPresent(subquery, "having", "HAVING in EXISTS subqueries is not supported");
   rejectPresent(subquery, "orderBy", "ORDER BY in EXISTS subqueries is not supported");
@@ -1038,13 +1141,28 @@ class SqlScope {
   }
 
   refName(expr: PgNode): string {
+    const name = this.resolveQualifiedRefName(expr, true);
+    if (name !== undefined) return name;
     if (expr.type !== "ref" || typeof expr.name !== "string") {
       throwUnsupported("Only column references are supported here");
     }
-    if (expr.table === undefined) return expr.name;
+    const qualifier = expr.table === undefined ? "" : nameNodeToString(expr.table);
+    throwUnsupported(`Unknown SQL table qualifier ${qualifier}`);
+  }
+
+  qualifiedRefName(expr: PgNode): string | undefined {
+    if (expr.type !== "ref" || typeof expr.name !== "string") return undefined;
+    return this.resolveQualifiedRefName(expr, false);
+  }
+
+  private resolveQualifiedRefName(expr: PgNode, allowUnqualified: boolean): string | undefined {
+    if (expr.type !== "ref" || typeof expr.name !== "string") {
+      throwUnsupported("Only column references are supported here");
+    }
+    if (expr.table === undefined) return allowUnqualified ? expr.name : undefined;
     const qualifier = nameNodeToString(expr.table);
     const source = this.aliases.get(qualifier);
-    if (source === undefined) throwUnsupported(`Unknown SQL table qualifier ${qualifier}`);
+    if (source === undefined) return undefined;
     if (this.aliases.size <= 2) return expr.name;
     return `${source.alias}.${expr.name}`;
   }
