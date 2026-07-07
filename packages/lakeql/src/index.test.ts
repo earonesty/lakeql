@@ -462,6 +462,37 @@ it("runs aggregate, CTE, scalar subquery, and semi-join SQL helpers", async () =
       )
       .toArray(),
   ).resolves.toEqual([{ store_id: "store-000", amount: 0 }]);
+
+  await expect(
+    lake
+      .sql(
+        [
+          "with matched as (",
+          "select s.store_id as store_id, d.segment as segment",
+          "from sales s join stores d using (store_id)",
+          "where d.segment = 'enterprise'",
+          ")",
+          "select distinct store_id, segment from matched order by store_id",
+        ].join(" "),
+        { tables: { sales: SALES.file, stores: "sql/stores/*.parquet" } },
+      )
+      .toArray(),
+  ).resolves.toEqual([{ store_id: "store-000", segment: "enterprise" }]);
+
+  await expect(
+    lake
+      .sql(
+        [
+          "with matched as (",
+          "select store_id, amount from sales",
+          "where store_id in (select store_id from stores where segment = 'enterprise')",
+          ")",
+          "select store_id, amount from matched order by amount asc limit 1",
+        ].join(" "),
+        { tables: { sales: SALES.file, stores: "sql/stores/*.parquet" } },
+      )
+      .toArray(),
+  ).resolves.toEqual([{ store_id: "store-000", amount: 0 }]);
 });
 
 it("rejects unsupported SQL helper runtime shapes with typed errors", async () => {

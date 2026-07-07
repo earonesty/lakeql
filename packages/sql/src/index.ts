@@ -187,14 +187,8 @@ function withStatementToAst(statement: PgNode, context: SqlParseContext): SqlQue
 }
 
 function validateCteQuery(ast: SqlQueryAst): void {
-  if (
-    ast.join !== undefined ||
-    ast.joins !== undefined ||
-    ast.subqueryJoin !== undefined ||
-    ast.scalarSubqueries !== undefined ||
-    ast.cte !== undefined
-  ) {
-    throwUnsupported("Nested CTE joins and subqueries are not supported");
+  if (ast.scalarSubqueries !== undefined || ast.cte !== undefined) {
+    throwUnsupported("Nested CTE scalar subqueries and WITH clauses are not supported");
   }
 }
 

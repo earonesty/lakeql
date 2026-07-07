@@ -125,18 +125,31 @@ async function executeSql(
     options,
     pushed.predicates,
   );
-  const materialized = await materializeCteIfNeeded(lake.store, lake, materializedIceberg.ast);
+  const materialized = await materializeCteIfNeeded(
+    lake.store,
+    lake,
+    materializedIceberg.ast,
+    options,
+  );
   try {
-    const resolved = await resolveScalarSubqueries(lake, materialized.ast);
-    if (resolved.subqueryJoin !== undefined)
-      return await subqueryJoinRowsFromAst(lake, resolved, options);
-    if (sqlJoins(resolved).length > 0) return await joinRowsFromAst(lake, resolved, options);
-    if (hasAggregation(resolved))
-      return await aggregateRowsFromAst(lake.path(resolved.source), resolved);
-    return await builderFromAst(lake.path(resolved.source), resolved).toArray();
+    return await executeRowsFromAst(lake, materialized.ast, options);
   } finally {
     await Promise.all([materialized.cleanup(), materializedIceberg.cleanup()]);
   }
+}
+
+async function executeRowsFromAst(
+  lake: ParquetLake,
+  ast: SqlQueryAst,
+  options: SqlQueryOptions,
+): Promise<Row[]> {
+  const resolved = await resolveScalarSubqueries(lake, ast);
+  if (resolved.subqueryJoin !== undefined)
+    return await subqueryJoinRowsFromAst(lake, resolved, options);
+  if (sqlJoins(resolved).length > 0) return await joinRowsFromAst(lake, resolved, options);
+  if (hasAggregation(resolved))
+    return await aggregateRowsFromAst(lake.path(resolved.source), resolved);
+  return await builderFromAst(lake.path(resolved.source), resolved).toArray();
 }
 
 function sqlAst(sql: string, options: SqlQueryOptions): SqlQueryAst {
@@ -282,11 +295,10 @@ async function materializeCteIfNeeded(
   store: ObjectStore,
   lake: ParquetLake,
   ast: SqlQueryAst,
+  options: SqlQueryOptions,
 ): Promise<{ ast: SqlQueryAst; cleanup: () => Promise<void> }> {
   if (ast.cte === undefined) return { ast, cleanup: async () => {} };
-  const cteRows = hasAggregation(ast.cte.query)
-    ? await aggregateRowsFromAst(lake.path(ast.cte.query.source), ast.cte.query)
-    : await builderFromAst(lake.path(ast.cte.query.source), ast.cte.query).toArray();
+  const cteRows = await executeRowsFromAst(lake, ast.cte.query, options);
   if (cteRows.length === 0) {
     throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "Empty CTE results are not supported yet");
   }
