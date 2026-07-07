@@ -1,194 +1,345 @@
-# DuckDB-WASM Parity Plan — expand the footprint without bloating core
+# DuckDB-WASM Parity TODO
 
-Goal: grow lakeql's addressable footprint by closing the parity gaps that block the
-**most common duckdb-wasm browser use cases**, while keeping the "dependency-light,
-no-WASM, runtime-agnostic, never-wrong" posture that is our actual advantage.
+This plan is for the users who land on the browser comparison page, point both
+engines at the same public R2/S3/HTTP Parquet data, and ask whether LakeQL is a
+credible replacement for DuckDB-WASM in remote lake workloads.
 
-The bar is *not* "everything DuckDB does." It is: **the browser jobs people
-reach for duckdb-wasm for today should work in lakeql**, and every new dependency
-should be **lazily loaded only when a query needs it** — never in the static
-edge graph.
+The target user is not primarily uploading local files into a browser sandbox.
+They already have data in object storage, or they are building an API/dashboard
+over remote Parquet or Iceberg. The adoption bar is:
 
-> Guiding rule: adopt solved problems, keep correctness and resource limits
-> non-negotiable, and **pay for a module only when you use it**.
+```txt
+Bring your R2/S3/HTTP lake, keep the SQL that matters, avoid the WASM tax.
+```
 
----
+LakeQL should win on startup cost, byte-range behavior, memory ceilings,
+spill/bookmark mechanics, Iceberg awareness, and edge runtime fit. The remaining
+work is about removing the moments where a DuckDB-WASM user sees the performance
+advantage, tries a normal analytical query, and immediately hits an unsupported
+syntax or data-shape wall.
 
-## Why this plan exists — how people actually use duckdb-wasm
+## Product Boundary
 
-Three dominant patterns across the ecosystem:
+Do not chase full DuckDB compatibility. DuckDB is a full embedded analytical
+database. LakeQL is a lake query engine for bounded remote file work.
 
-1. **"Bring your own file" ad-hoc analysis** — upload/drag a CSV/JSON/Parquet,
-   run SQL, no server. Data journalism, SQL teaching, "explore this export."
-2. **Interactive dashboards / BI** — data loaded once as **Apache Arrow**, then
-   queried on every filter change; results flow zero-copy into charting libs
-   (Observable Plot, Perspective, Arquero). Arrow is duckdb-wasm's data protocol
-   for *both* ingest and query results.
-3. **Remote lake querying at the edge** — range-read Parquet on S3/GCS/R2,
-   schema previews, Parquet-inspector extensions.
+The parity work here is intentionally narrower:
 
-**lakeql already wins #3** — and beats duckdb-wasm there: no 4 GB/tab WASM ceiling,
-real spill, resumable bookmarks, Iceberg-native reads. The footprint problem is
-that **#1 and #2 — the majority of browser duckdb-wasm usage — are currently
-impossible in lakeql**: it reads only Parquet + Iceberg and emits only
-rows/NDJSON/CSV/Parquet.
+- Remote Parquet and Iceberg reads over object storage.
+- SQL portability for common analytical queries.
+- Correct nested/logical type handling for common lake files.
+- Fast unknown-file inspection.
+- Browser/Worker cache behavior that makes cold and warm range reads visible.
+- No silent wrong answers.
 
----
+Local file upload, in-memory JS arrays, CSV/JSON playground workflows, and Arrow
+interop are useful, and several are already implemented as opt-in packages. They
+are not the top differentiators for the R2/S3/HTTP comparison path.
 
-## Design principle: smart-load everything optional
+## Non-Negotiables
 
-Today lakeql's loading strategy is **partial and inconsistent**:
+- Unsupported behavior must be detected and rejected with typed `LakeqlError`
+  codes rather than approximated.
+- New physical operators and planner rules should be broadly applicable. Avoid
+  query-specific branches.
+- Operator limits must be expressed as vector-shape or execution capabilities,
+  not product-scope shortcuts.
+- Keep the remote Parquet bundle lean. Optional dependencies belong behind
+  package boundaries or lazy imports.
+- Preserve bounded execution: memory, rows, files, row groups, range requests,
+  spill, and output limits remain part of the contract.
 
-- ✅ Lazy where it counts: `avsc` is `await import()`-ed only when an Iceberg
-  table actually has Avro manifests (`packages/iceberg/src/index.ts`); the
-  Cloudflare driver is dynamically imported in the workerd entry.
-- ✅ Package-level separation: `lakeql-parquet`, `lakeql-iceberg`, `lakeql-sql`
-  are separate packages, so you only bundle what you import.
-- ✅ **Geo is now lazy (was the eager anti-pattern, fixed):** `@turf/*` + `h3-js`
-  used to be statically imported into `lakeql-core`'s evaluator, so **every**
-  consumer bundled turf + h3-js (~7.5 MB) even for a pure `SELECT … FROM parquet`.
-  They now live in `packages/core/src/geo-backend.ts`, reached only via a dynamic
-  `import()` triggered when a query actually uses a spatial function needing exact
-  geometry/H3. Verified: a parquet-only consumer bundle contains zero static
-  turf/h3 references — they sit in a separate async chunk.
+## Priority 1: SQL Portability For Remote Lake Queries
 
-**The principle for all parity work below:** follow the `avsc` precedent, not the
-geo anti-pattern. Every new format reader and every new output encoder is either
-(a) its own package, or (b) behind a dynamic `import()` triggered only by the API
-call / function / format that needs it. The core static graph must not grow.
+This is the largest adoption blocker. If users copy ordinary DuckDB analytical
+SQL and the parser/compiler rejects it, the performance story stops mattering.
 
-### Companion cleanup — de-bundle geo from core ✅ DONE
+Current state:
 
-`@turf/*` + `h3-js` were lifted out of `lakeql-core`'s static graph into a
-dynamically-imported `geo-backend.ts`. The evaluator holds an injectable backend
-slot; the query executor scans each query's expressions and `await import()`s the
-backend only when a backend-requiring spatial function (`st_intersects/disjoint/
-contains/within`, `h3_within/cell/parent`) is present — the `avsc` pattern. Pure
-spatial helpers (`st_point`, `st_bbox`, `st_distance`, `st_area`, `h3_in`, …) need
-no backend and keep working with zero extra deps. Also set `"sideEffects": false`
-on `lakeql-core` + `lakeql` so the umbrella's barrel re-exports tree-shake. This is
-the proof-of-concept for the smart-load principle that the new format/output
-modules below must follow.
+- Window functions and `QUALIFY` are supported and tested.
+- Basic filtering, projection, grouping, sorting, and bounded two-table
+  inner/left equi-joins exist.
+- Unsupported broad SQL syntax is detected and rejected.
 
-(The standalone `lakeql-geo` builder package keeps its own turf import for the
-fluent API; it is not re-exported by the edge `index` entry, so it never enters
-the default bundle.)
+TODO:
 
----
+- Add SQL table functions that map cleanly onto existing planning:
+  `read_parquet(...)` first, then Iceberg table references where the syntax can
+  remain explicit and unsurprising.
+- Support N-way joins over the existing join execution model before adding more
+  exotic join semantics.
+- Expand join forms in order of lake workload value: multi-table inner/left
+  equi-joins, `CROSS JOIN`, then `RIGHT`/`FULL` if there is a clear execution
+  contract.
+- Add non-equi join support only with explicit bounded planning rules. Do not
+  hide cartesian explosion behind SQL compatibility.
+- Broaden subquery support for common analytical shapes: scalar subqueries,
+  `IN (select ...)`, `EXISTS`, and derived tables.
+- Support deeper CTE usage when it compiles to a normal query plan without
+  recursive semantics. Recursive CTEs should remain explicitly rejected until
+  there is a bounded execution design.
+- Improve `CASE` support, especially simple `CASE <expr>` forms and nested cases.
+- Tighten alias resolution so `ORDER BY`, `GROUP BY`, `HAVING`, and `QUALIFY`
+  behave the way DuckDB users expect.
 
-## Top 10 parity gaps, ranked by adoption impact
+Acceptance criteria:
 
-### Tier 1 — table stakes (unlock whole use-case categories; do first)
+- A representative suite of DuckDB-authored remote Parquet queries compiles and
+  matches DuckDB reference results.
+- Unsupported SQL emits an error that points to the unsupported construct and,
+  when possible, the closest supported rewrite.
 
-Each is **independent of the lake engine** and is the highest-ROI work in the repo.
+## Priority 2: Struct And Nested Data Support
 
-1. **Read CSV** — `read_csv`-style with type sniffing, header detection,
-   delimiter/quote options. The #1 browser job. Ship as **`lakeql-csv`**
-   (own package). *Status: ✅ initial opt-in package implemented: headered /
-   headerless CSV, delimiter override/detection, quoted fields, null handling,
-   type sniffing, browser-friendly inputs, query integration, ingest budgets, and
-   typed rejection for malformed/ragged CSV.*
+Remote lake files often contain nested records. Rejecting Parquet structs is a
+clear signal that LakeQL may not handle a real production lake, even when the
+query only touches a subset of fields.
 
-2. **Read JSON / NDJSON** — auto-structure detection, arrays + line-delimited.
-   Second-most-common ingest. Ship as **`lakeql-json`** (own package).
-   *Status: ✅ initial opt-in package implemented: JSON arrays, single objects,
-   NDJSON, browser-friendly inputs, query integration, ingest budgets, nested
-   JSON cell preservation, and typed rejection for malformed or unsupported row
-   shapes.*
+Current state:
 
-3. **Ingest in-memory JS data** — register a JS array / `File` / `Blob` /
-   `ArrayBuffer` / Arrow table as a queryable table (the duckdb-wasm
-   `registerFileBuffer` / `insertJSONFromArray` loop). This is the core browser
-   "bring your own data" interaction. *Status: ✅ row-array ingest implemented
-   via `createInMemoryLake` / `inMemoryRowsScanner`; `File` / `Blob` /
-   `ArrayBuffer` are covered through the CSV/JSON opt-in packages; Arrow table
-   ingest is available through the opt-in `lakeql-arrow` package.*
+- Lists and maps are supported and tested.
+- Struct columns are detected and rejected to avoid silent flattening.
 
-4. **Apache Arrow output** — return results as an Arrow table / IPC stream
-   (`.toArrow()`, `streamArrow()`). Arrow is the interop format: zero-copy into
-   Plot/Perspective/Arquero, Transferable across workers, 10–100× faster than JS
-   objects. **Must be lazy** — `apache-arrow` lives in a separate **`lakeql-arrow`**
-   package, never in core. *Status: ✅ initial opt-in package implemented:
-   row/query/batch conversion to Arrow tables, IPC payloads, and readable IPC
-   streams. `apache-arrow` is scoped to `lakeql-arrow`; core does not import it.*
+TODO:
 
-### Tier 2 — SQL depth (blocks porting real analytical queries)
+- Add a first-class struct vector shape to the execution engine.
+- Preserve struct values through projection, filtering, grouping keys where
+  meaningful, JSON output, and Arrow output where the opt-in Arrow package is
+  used.
+- Support nested field references in SQL and AST paths, such as
+  `payload.user_id` or equivalent quoted-path behavior.
+- Push projection into Parquet reads so selecting one nested field does not
+  require materializing the entire struct when the underlying reader can avoid it.
+- Define equality/order semantics deliberately. Struct ordering should be
+  rejected unless there is a stable SQL-compatible comparison contract.
+- Keep schema mismatch behavior explicit for multi-file scans with nested fields:
+  missing nested fields should produce null only where the schema reconciliation
+  contract says that is valid.
 
-5. **Window functions** — `ROW_NUMBER`, `RANK`, `LAG`/`LEAD`, running sums,
-   `OVER (PARTITION BY … ORDER BY …)`. Core of analytics/dashboards; the most
-   conspicuous absence. *Status: ✅ supported and tested: ranking/value/exact
-   aggregate windows, explicit `ROWS` / `RANGE` / `GROUPS` frames, `EXCLUDE`,
-   named windows, null-treatment modifiers, `FILTER`, `DISTINCT`, `QUALIFY`,
-   stateful execution, Workers runtime, and Parquet work-unit fan-out are covered
-   by DuckDB reference cases, deterministic seeded differential cases, unit tests,
-   bundle checks, and workerd tests.*
+Acceptance criteria:
 
-6. **Broader JOINs** — N-way, `RIGHT` / `FULL` / `CROSS`, non-equi predicates.
-   Real queries join 3+ tables / dimension tables. *Status: ⚠️ bounded two-table
-   inner/left equi-join only.*
+- DuckDB-authored Parquet files with struct columns can be queried for nested
+  fields with reference-result coverage.
+- Unsupported struct operations fail with typed errors rather than falling back
+  to object comparison or lossy flattening.
 
-7. **Richer function library** — regex (`regexp_matches`/`regexp_replace`),
-   statistical aggregates (`stddev`, `var`, `median`, `quantile`, `mode`), more
-   date/string functions, list/struct accessors. A missing function silently
-   breaks a ported query. *Status: ⚠️ regex matches/replace, ~30 other scalar
-   fns, basic aggs, variance/stddev sample/pop aggs, budgeted exact `median`,
-   budgeted exact continuous `quantile_cont`, and budgeted exact `mode`;
-   discrete quantile aliases and list/struct accessors remain future work.*
+## Priority 3: Date And Time Function Coverage
 
-### Tier 3 — ergonomics & retention
+Time columns are central to remote analytics. Users will group by day, truncate
+to hour, extract month, compare intervals, and format timestamps. Missing
+date/time functions make LakeQL feel incomplete even when scans are fast.
 
-8. **Parameterized / prepared statements** — `$1` / named params bound per
-   filter change without string-building SQL. Standard duckdb-wasm dashboard
-   pattern; also the safe one. *Status: ⚠️ positional `$1` SQL parameters can be
-   bound through the parser API and compile to scalar literals before execution;
-   named parameters and reusable prepared statement objects remain future work.*
+Current state:
 
-9. **`DESCRIBE` / `SUMMARIZE` / `SAMPLE` as SQL** — the "preview an unknown file"
-   workflow (Parquet-inspector extensions, first look at any dataset). *Status:
-   ⚠️ partial: CLI `inspect` and `schema` are available, and `DESCRIBE <table>`
-   is exposed through the SQL statement parser / CLI query path; `SUMMARIZE` and
-   SQL `SAMPLE` remain future work.*
+- Date, time, and timestamp logical decoding is supported and tested.
+- Timestamp micros/nanos preserve precision.
+- Window `RANGE` over timestamp intervals works.
 
-10. **OPFS / persistent local cache** — duckdb-wasm persists tables in OPFS so
-    reloads are instant. lakeql's edge cache story is strong but lacks a
-    browser-persistence tier for repeated local querying. Ship as an optional
-    cache adapter (smart-loaded), not core. *Status: ✅ initial opt-in
-    `lakeql-opfs` package implemented: OPFS-backed byte and JSON
-    `CacheAdapter` implementations for browser persistence without adding OPFS
-    APIs to core.*
+TODO:
 
----
+- Add `date_trunc` for timestamp/date values.
+- Add `extract` / `date_part` for year, quarter, month, day, hour, minute,
+  second, day of week, and epoch-derived fields.
+- Add `strftime` or a deliberately scoped formatting function compatible with
+  common DuckDB usage.
+- Add epoch conversion helpers such as `epoch_ms`, `epoch_us`, and `epoch_ns`
+  with clear precision rules.
+- Add interval construction and arithmetic helpers where they compose with the
+  existing timestamp/interval model.
+- Normalize timestamp display across LakeQL and DuckDB-WASM in comparison
+  tooling so equal values are visually equal.
+
+Acceptance criteria:
+
+- Common partition/time-rollup queries can be ported from DuckDB without JS-side
+  timestamp manipulation.
+- Function behavior is covered by DuckDB reference tests for timezone-neutral
+  cases and explicit LakeQL tests for precision-preserving timestamp values.
+
+## Priority 4: Unknown Remote File Inspection
+
+DuckDB-WASM is often used as a quick remote data inspector. LakeQL should make it
+easy to inspect a public Parquet object before running a full query.
+
+Current state:
+
+- CLI schema/inspect paths exist.
+- `DESCRIBE` is partially available through SQL statement parsing and CLI query
+  paths.
+- The compare page exposes fixed benchmark queries but not a general inspector
+  workflow.
+
+TODO:
+
+- Make `DESCRIBE <source>` work consistently in browser, CLI, and API surfaces.
+- Add `SUMMARIZE <source>` for per-column count/null/min/max/basic stats where
+  the values can be computed from metadata or bounded scans.
+- Add SQL `SAMPLE` support with an explicit bounded strategy.
+- Add a remote schema preview API that reports file size, row count, row groups,
+  columns, logical types, and supported/unsupported feature flags.
+- Surface unsupported file features early, before executing a query.
+- Expose the same inspection path in the compare page for custom `source`
+  values.
+
+Acceptance criteria:
+
+- A user can paste a public R2/S3/HTTP Parquet URL and get schema, row-group, and
+  unsupported-feature information without writing code.
+- Inspection has clear byte/range metrics so users see LakeQL's remote-read
+  behavior directly.
+
+## Priority 5: Multi-File And Schema Evolution Polish
+
+DuckDB users commonly point at directories, globs, and partitioned datasets.
+LakeQL has multi-file planning, but this area needs to feel boring and robust.
+
+Current state:
+
+- Multi-file Parquet planning for prefixes/globs exists.
+- Hive partition pruning and missing-column null fill are implemented.
+- Schema compatibility checks exist.
+
+TODO:
+
+- Expand reference coverage for mixed-schema directories generated by DuckDB and
+  Spark.
+- Make schema reconciliation diagnostics more actionable: identify the file,
+  column, physical type, logical type, and accepted alternatives.
+- Ensure partition column typing is predictable across string, numeric, date, and
+  timestamp-looking partition values.
+- Support nested-field schema evolution once struct support lands.
+- Add compare-page or bench coverage for multi-file remote datasets, not only
+  single-object fixtures.
+- Keep file expansion bounded by explicit limits with clear errors when a glob or
+  prefix is too broad.
+
+Acceptance criteria:
+
+- A partitioned remote Parquet dataset can be queried with predictable schema
+  behavior and measured range-read metrics.
+- Schema mismatches fail before partial execution when they cannot be reconciled.
+
+## Priority 6: Join Depth And Physical Join Operators
+
+Joins matter for analytical lake workloads: facts plus dimensions, event data
+plus accounts, geography plus lookup tables. The important gap is not every SQL
+join variant; it is reliable multi-table planning with bounded memory.
+
+Current state:
+
+- Bounded two-table inner/left equi-join support exists.
+
+TODO:
+
+- Generalize join planning to N-way joins with explicit physical operators.
+- Add a broadcast/hash join capability model so small dimension tables can join
+  against larger remote fact scans safely.
+- Add planner rules for join ordering based on available file stats, row counts,
+  limits, and explicit user budgets.
+- Add spill-aware hash table behavior or a typed rejection when join state would
+  exceed the declared budget.
+- Keep non-equi joins behind a separate physical capability rather than
+  overloading the equi-join path.
+
+Acceptance criteria:
+
+- Common star-schema queries can run with multiple dimension tables.
+- Query plans report join strategy, estimated/materialized rows, and memory
+  budget decisions.
+
+## Priority 7: Remote Cache Story
+
+DuckDB-WASM can feel fast after startup because data and metadata may be reused
+inside its runtime. LakeQL's advantage is stronger if users can see cold vs warm
+remote range behavior and persistent browser caching.
+
+Current state:
+
+- Shared bounded scan cache exists.
+- OPFS cache adapters exist as an opt-in package.
+- The compare page reports request and byte counts through the service worker
+  proxy.
+
+TODO:
+
+- Add a persistent-cache mode to the compare page using `lakeql-opfs`.
+- Separate metrics for object bytes, metadata bytes, decoded page/vector cache
+  hits, and service-worker proxy bytes.
+- Show cold, warm-memory, and warm-persistent runs distinctly.
+- Add cache invalidation based on object identity: URL, size, ETag/Last-Modified
+  where available.
+- Document a browser/Worker caching recipe for public R2/S3/HTTP Parquet.
+
+Acceptance criteria:
+
+- The compare page can demonstrate that repeated remote queries avoid redundant
+  range reads without hiding correctness or stale-object assumptions.
+
+## Priority 8: Function Coverage For Analytical Portability
+
+After SQL shape and nested data, missing functions are the next most common
+porting failure. The goal is not a huge standard library; it is the set that
+shows up in object-store analytics.
+
+Current state:
+
+- Regex match/replace, common scalar functions, basic aggregates, variance,
+  standard deviation, median, continuous quantile, and mode have coverage.
+- Discrete quantile aliases and list/struct accessors remain incomplete.
+
+TODO:
+
+- Add list accessors and list transforms needed for nested Parquet values.
+- Add struct accessors alongside struct vector support.
+- Add `quantile_disc` and DuckDB-compatible aliases where semantics are clear.
+- Add histogram-style summaries if they can be implemented with explicit memory
+  bounds.
+- Add more string normalization helpers commonly used on partition and event
+  data.
+- Keep every aggregate state budgeted and serializable where it participates in
+  work-unit fan-out.
+
+Acceptance criteria:
+
+- Function gaps discovered by the reference query corpus become tracked TODO
+  items with tests, not one-off parser exceptions.
+
+## Priority 9: Prepared Query Objects
+
+This is less urgent than SQL/data-shape parity, but it matters for dashboards and
+APIs that rerun the same query with different filters.
+
+Current state:
+
+- Positional SQL parameters can be bound through parser APIs.
+- Named parameters and reusable prepared objects are not a product-level API.
+
+TODO:
+
+- Add a prepared query object that compiles SQL once and binds values repeatedly.
+- Support named parameters with validation.
+- Preserve typed literals for timestamps, decimals, binary, and intervals.
+- Expose plan diagnostics before execution.
+- Ensure prepared plans respect changing budgets and object-store metadata.
+
+Acceptance criteria:
+
+- A dashboard can bind filters without string-building SQL.
+- Parameter binding errors are typed and identify the missing or incompatible
+  parameter.
 
 ## Sequencing
 
-- **Tier 1 (#1–4) + geo de-bundle** is the strategic move: it converts lakeql from
-  "edge lake engine" into "drop-in duckdb-wasm alternative for the browser," and
-  establishes the smart-load principle on a real case (`lakeql-arrow`) before more
-  modules arrive.
-- **After Tier 1, do not drift into SQL bikeshedding by default.** The highest-ROI
-  follow-up work is broader runtime proof and measured performance: portable
-  work-unit fan-out/fan-in across browser/Worker/edge deployments, persistent
-  caches, benchmark lanes, profiling, and planning memoization.
-- **Tier 2 (#5–7)** matters when it blocks real analytical workloads, but it should
-  be pulled by observed query gaps rather than generic DuckDB syntax parity.
-- **Tier 3 (#8–10)** is retention polish. Add ergonomic SQL statements only when
-  they unlock a broader workflow such as unknown-file preview, safe dashboard
-  parameters, or persistent local sessions.
+1. SQL table functions and portability fixes that unblock common remote queries.
+2. Struct vectors and nested field references.
+3. Date/time function coverage.
+4. `DESCRIBE`, `SUMMARIZE`, `SAMPLE`, and remote schema preview.
+5. Multi-file/schema evolution hardening.
+6. N-way joins and explicit join physical operators.
+7. Persistent remote cache story in the compare page.
+8. Function-library gaps pulled from real DuckDB reference queries.
+9. Prepared query objects.
 
-## Confirmed packaging decisions
-
-- Arrow output ships as **`lakeql-arrow`** (separate package; `apache-arrow` never
-  enters the core static graph).
-- Geo de-bundle target is the existing **`lakeql-geo`** package (opt-in function
-  pack; turf + h3-js leave `lakeql-core`).
-
-## Non-negotiables
-
-- **Never silently wrong:** unsupported CSV/JSON shapes, Arrow types we can't map,
-  etc. get a typed `LAKEQL_*` rejection — same discipline as Parquet/Iceberg today.
-- **Resource budgets apply to ingest too:** in-memory + CSV/JSON ingestion must
-  respect `maxBytes` / `maxBufferedRows` / spill, not load unbounded files into a
-  tab.
-- **Core stays lean:** if a feature adds a dependency, it is lazily loaded or in
-  its own package. The edge "query Parquet on R2" bundle must not grow because we
-  added a CSV reader.
+The first four items create the strongest perception shift: LakeQL stops looking
+like a fast narrow benchmark and starts looking like a practical remote-lake
+replacement for DuckDB-WASM.
