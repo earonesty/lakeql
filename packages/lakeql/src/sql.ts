@@ -839,13 +839,17 @@ async function joinRowsFromAst(
   if (hasAggregation(ast)) {
     throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "Aggregate SQL over JOIN is not supported yet");
   }
-  let rows = (await lake.path(ast.source).toArray()).map((row) =>
-    qualifyRow(row, firstJoin.leftAlias),
-  );
+  const pushedFilters = pushdownInnerJoinFilters(ast, joins);
+  let leftRows = await lake.path(ast.source).toArray();
+  const leftFilter = pushedFilters.filters.get(firstJoin.leftAlias);
+  if (leftFilter !== undefined) leftRows = leftRows.filter((row) => matches(leftFilter, row));
+  let rows = leftRows.map((row) => qualifyRow(row, firstJoin.leftAlias));
   for (const join of joins) {
-    const rightRows = (await lake.path(join.source).toArray()).map((row) =>
-      qualifyOnlyRow(row, join.alias),
-    );
+    let rawRightRows = await lake.path(join.source).toArray();
+    const rightFilter = pushedFilters.filters.get(join.alias);
+    if (rightFilter !== undefined)
+      rawRightRows = rawRightRows.filter((row) => matches(rightFilter, row));
+    const rightRows = rawRightRows.map((row) => qualifyOnlyRow(row, join.alias));
     if (join.predicate !== undefined) {
       rows = predicateJoinRows(rows, rightRows, ast, join, options);
     } else if (join.type === "right") {
@@ -902,7 +906,8 @@ async function joinRowsFromAst(
       rows = fillLeftJoinNulls(rows, join.alias, leftJoinRightColumns(ast, join.alias, rightRows));
     }
   }
-  if (ast.where !== undefined) rows = rows.filter((row) => matches(ast.where, row));
+  if (pushedFilters.where !== undefined)
+    rows = rows.filter((row) => matches(pushedFilters.where, row));
   if (ast.orderBy !== undefined) rows = sortRows(rows, ast.orderBy, ast);
   rows = projectRows(rows, ast);
   if (ast.distinct === true) rows = distinctRows(rows);
@@ -977,6 +982,116 @@ function mergePredicateJoinRows(left: Row, right: Row, rightPrefix: string): Row
 function sqlJoins(ast: SqlQueryAst): NonNullable<SqlQueryAst["joins"]> {
   if (ast.joins !== undefined) return ast.joins;
   return ast.join === undefined ? [] : [ast.join];
+}
+
+function pushdownInnerJoinFilters(
+  ast: SqlQueryAst,
+  joins: NonNullable<SqlQueryAst["joins"]>,
+): { filters: Map<string, Expr>; where?: Expr } {
+  const filters = new Map<string, Expr>();
+  if (
+    ast.where === undefined ||
+    joins.some((join) => join.type !== "inner" && join.type !== "cross")
+  ) {
+    return { filters, ...(ast.where === undefined ? {} : { where: ast.where }) };
+  }
+  const aliases = new Set<string>();
+  const firstJoin = joins[0];
+  if (firstJoin !== undefined) aliases.add(firstJoin.leftAlias);
+  for (const join of joins) aliases.add(join.alias);
+
+  const remaining: Expr[] = [];
+  for (const predicate of splitAndPredicates(ast.where)) {
+    const alias = predicateJoinAlias(predicate, aliases);
+    if (alias === undefined) {
+      remaining.push(predicate);
+      continue;
+    }
+    addJoinFilter(filters, alias, stripExprJoinAlias(predicate, alias));
+  }
+  const where = combineAndPredicates(remaining);
+  return { filters, ...(where === undefined ? {} : { where }) };
+}
+
+function predicateJoinAlias(expr: Expr, aliases: ReadonlySet<string>): string | undefined {
+  const columns = new Set<string>();
+  collectExprColumns(expr, columns);
+  let alias: string | undefined;
+  for (const column of columns) {
+    const dot = column.indexOf(".");
+    if (dot <= 0) return undefined;
+    const columnAlias = column.slice(0, dot);
+    if (!aliases.has(columnAlias)) return undefined;
+    if (alias === undefined) alias = columnAlias;
+    else if (alias !== columnAlias) return undefined;
+  }
+  return alias;
+}
+
+function addJoinFilter(filters: Map<string, Expr>, alias: string, predicate: Expr): void {
+  const existing = filters.get(alias);
+  filters.set(
+    alias,
+    existing === undefined
+      ? predicate
+      : { kind: "logical", op: "and", operands: [existing, predicate] },
+  );
+}
+
+function stripExprJoinAlias(expr: Expr, alias: string): Expr {
+  switch (expr.kind) {
+    case "column":
+      return { ...expr, name: stripQualifiedColumn(expr.name, alias) };
+    case "compare":
+      return {
+        ...expr,
+        left: stripExprJoinAlias(expr.left, alias),
+        right: stripExprJoinAlias(expr.right, alias),
+      };
+    case "between":
+      return {
+        ...expr,
+        target: stripExprJoinAlias(expr.target, alias),
+        low: stripExprJoinAlias(expr.low, alias),
+        high: stripExprJoinAlias(expr.high, alias),
+      };
+    case "in":
+      return {
+        ...expr,
+        target: stripExprJoinAlias(expr.target, alias),
+        values: expr.values.map((value) => stripExprJoinAlias(value, alias)),
+      };
+    case "logical":
+      return {
+        ...expr,
+        operands: expr.operands.map((operand) => stripExprJoinAlias(operand, alias)),
+      };
+    case "not":
+      return { ...expr, operand: stripExprJoinAlias(expr.operand, alias) };
+    case "null-check":
+      return { ...expr, target: stripExprJoinAlias(expr.target, alias) };
+    case "like":
+      return { ...expr, target: stripExprJoinAlias(expr.target, alias) };
+    case "call":
+      return { ...expr, args: expr.args.map((arg) => stripExprJoinAlias(arg, alias)) };
+    case "arithmetic":
+      return {
+        ...expr,
+        left: stripExprJoinAlias(expr.left, alias),
+        right: stripExprJoinAlias(expr.right, alias),
+      };
+    case "case":
+      return {
+        ...expr,
+        whens: expr.whens.map((branch) => ({
+          when: stripExprJoinAlias(branch.when, alias),
+          value: stripExprJoinAlias(branch.value, alias),
+        })),
+        ...(expr.else === undefined ? {} : { else: stripExprJoinAlias(expr.else, alias) }),
+      };
+    case "literal":
+      return expr;
+  }
 }
 
 function isQualifiedBy(column: string, alias: string): boolean {

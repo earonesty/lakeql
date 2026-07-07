@@ -81,6 +81,9 @@ Current state:
 - Runtime join and `IN` subquery sorting resolve projected output aliases before
   falling back to source columns, so `ORDER BY` keeps DuckDB-style alias
   behavior even on manually planned row paths.
+- Inner and cross join chains pre-filter conjunctive `WHERE` predicates when
+  all referenced columns prove the predicate belongs to one qualified input
+  alias, reducing bounded join build/probe work without changing results.
 - Unsupported broad SQL syntax is detected and rejected.
 - Recursive CTEs are explicitly rejected until there is a bounded execution
   design.
@@ -91,8 +94,9 @@ TODO:
   and nested scopes without changing query semantics.
 - Revisit outer-join planner optimizations after the bounded execution
   semantics stay covered by DuckDB reference tests.
-- Reintroduce safe join-chain predicate/projection pushdown where aliases prove
-  a filter or projection belongs to one input side.
+- Reintroduce safe join-chain projection pushdown where aliases prove a
+  projection belongs to one input side, and extend predicate pushdown only where
+  outer-join null-extension semantics remain proven.
 - Broaden remaining subquery support for common analytical correlation forms
   that do not reduce to equality semi/anti joins.
 - Tighten remaining alias resolution edge cases so `HAVING` and `QUALIFY`
