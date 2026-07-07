@@ -284,15 +284,6 @@ async function materializeCteIfNeeded(
   ast: SqlQueryAst,
 ): Promise<{ ast: SqlQueryAst; cleanup: () => Promise<void> }> {
   if (ast.cte === undefined) return { ast, cleanup: async () => {} };
-  if (ast.source !== ast.cte.name) {
-    throw new LakeqlError(
-      "LAKEQL_SQL_UNSUPPORTED",
-      "CTEs are only supported as the outer FROM source",
-    );
-  }
-  if (sqlJoins(ast).length > 0 || ast.subqueryJoin !== undefined) {
-    throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "CTEs inside JOINs are not supported yet");
-  }
   const cteRows = hasAggregation(ast.cte.query)
     ? await aggregateRowsFromAst(lake.path(ast.cte.query.source), ast.cte.query)
     : await builderFromAst(lake.path(ast.cte.query.source), ast.cte.query).toArray();
@@ -305,8 +296,9 @@ async function materializeCteIfNeeded(
     maxRowsPerFile: cteRows.length,
   });
   const { cte: _cte, ...rest } = ast;
+  const ctePath = `${prefix}/*.parquet`;
   return {
-    ast: { ...rest, source: `${prefix}/*.parquet` },
+    ast: mapAstSources(rest, (source) => (source === ast.cte?.name ? ctePath : source)),
     cleanup: async () => {
       await Promise.all(written.files.map((file) => store.delete(file.path)));
     },

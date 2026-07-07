@@ -66,8 +66,10 @@ Current state:
   options. Source-specific conjunctive predicates are pushed into Iceberg
   planning when the table binding appears once in the SQL AST.
 - Scalar subqueries, ordered/limited `IN (select ...)`, uncorrelated `EXISTS`,
-  correlated equality `IN`/`EXISTS`, and single-source derived tables compile
-  to existing scalar, semi/anti join, and CTE materialization plans.
+  correlated equality `IN`/`EXISTS`, single-source derived tables, and
+  single-binding CTEs used as outer sources, join inputs, or `IN` subquery
+  sources compile to existing scalar, semi/anti join, and CTE materialization
+  plans.
 - Searched `CASE` and simple `CASE <expr> WHEN ...` forms are supported.
 - `GROUP BY` can reference computed projection aliases, with DuckDB reference
   coverage for common aggregate queries.
@@ -86,9 +88,9 @@ TODO:
 - Broaden remaining subquery support for common analytical shapes: nested
   derived tables and correlation forms that do not reduce to equality semi/anti
   joins.
-- Support deeper CTE usage when it compiles to a normal query plan without
-  recursive semantics. Recursive CTEs should remain explicitly rejected until
-  there is a bounded execution design.
+- Broaden CTE query bodies to include join/subquery plans when they compile to
+  normal bounded query plans. Recursive CTEs should remain explicitly rejected
+  until there is a bounded execution design.
 - Improve nested `CASE` coverage and mixed-type result diagnostics.
 - Tighten remaining alias resolution edge cases so `ORDER BY`, `HAVING`, and
   `QUALIFY` behave the way DuckDB users expect across nested scopes.

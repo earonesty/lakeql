@@ -434,6 +434,34 @@ it("runs aggregate, CTE, scalar subquery, and semi-join SQL helpers", async () =
       )
       .toArray(),
   ).resolves.toEqual([{ store_id: "store-000", amount: 0 }]);
+
+  await expect(
+    lake
+      .sql(
+        [
+          "with west_stores as (select store_id, segment from stores where region = 'west')",
+          "select s.store_id as store_id, w.segment as segment",
+          "from sales s join west_stores w using (store_id)",
+          "order by s.amount asc limit 1",
+        ].join(" "),
+        { tables: { sales: SALES.file, stores: "sql/stores/*.parquet" } },
+      )
+      .toArray(),
+  ).resolves.toEqual([{ store_id: "store-000", segment: "enterprise" }]);
+
+  await expect(
+    lake
+      .sql(
+        [
+          "with enterprise as (select store_id from stores where segment = 'enterprise')",
+          "select store_id, amount from sales",
+          "where store_id in (select store_id from enterprise)",
+          "order by amount asc limit 1",
+        ].join(" "),
+        { tables: { sales: SALES.file, stores: "sql/stores/*.parquet" } },
+      )
+      .toArray(),
+  ).resolves.toEqual([{ store_id: "store-000", amount: 0 }]);
 });
 
 it("rejects unsupported SQL helper runtime shapes with typed errors", async () => {
@@ -456,18 +484,6 @@ it("rejects unsupported SQL helper runtime shapes with typed errors", async () =
     lake.sql("select store_id from input where store_id = (select store_id from input limit 2)", {
       path: SALES.file,
     }),
-    lake.sql(
-      "with recent as (select store_id from input) select store_id from input where amount > 0",
-      { path: SALES.file },
-    ),
-    lake.sql(
-      "with recent as (select store_id from input) select i.store_id from input i join recent r on i.store_id = r.store_id",
-      { path: SALES.file },
-    ),
-    lake.sql(
-      "with recent as (select store_id from sales) select r.store_id from recent r join stores d on r.store_id = d.store_id",
-      { tables: { sales: SALES.file, stores: "sql/stores/*.parquet" } },
-    ),
     lake.sql("delete from input", { path: SALES.file }),
   ];
 
