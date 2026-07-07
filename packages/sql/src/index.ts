@@ -592,13 +592,18 @@ function caseToExpr(
   scope = SqlScope.empty(),
   context: SqlParseContext = newSqlParseContext(),
 ): Expr {
-  if (expr.value !== null && expr.value !== undefined) {
-    throwUnsupported("Simple CASE expressions are not supported yet");
-  }
+  const caseValue =
+    expr.value === null || expr.value === undefined
+      ? undefined
+      : exprToLakeql(asNode(expr.value, "CASE expression"), scope, context);
   const whens = optionalArray(expr.whens).map((branch) => {
     const node = asNode(branch, "CASE branch");
+    const when = exprToLakeql(asNode(node.when, "CASE WHEN expression"), scope, context);
     return {
-      when: exprToLakeql(asNode(node.when, "CASE WHEN expression"), scope, context),
+      when:
+        caseValue === undefined
+          ? when
+          : { kind: "compare", op: "eq", left: caseValue, right: when },
       value: exprToLakeql(asNode(node.value, "CASE THEN expression"), scope, context),
     };
   });

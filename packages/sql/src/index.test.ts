@@ -214,6 +214,42 @@ describe("parseSql", () => {
     });
     expect(parseSql(formatSql(ast))).toEqual(ast);
 
+    const simpleCase = parseSql(`
+      select case status
+        when 'paid' then 1
+        when 'open' then 2
+        else 0
+      end as status_rank
+      from orders
+    `);
+    expect(simpleCase.projections).toMatchObject({
+      status_rank: {
+        kind: "case",
+        whens: [
+          {
+            when: {
+              kind: "compare",
+              op: "eq",
+              left: { kind: "column", name: "status" },
+              right: { kind: "literal", value: "paid" },
+            },
+            value: { kind: "literal", value: 1 },
+          },
+          {
+            when: {
+              kind: "compare",
+              op: "eq",
+              left: { kind: "column", name: "status" },
+              right: { kind: "literal", value: "open" },
+            },
+            value: { kind: "literal", value: 2 },
+          },
+        ],
+        else: { kind: "literal", value: 0 },
+      },
+    });
+    expect(parseSql(formatSql(simpleCase))).toEqual(simpleCase);
+
     expect(
       parseSql(`
         with totals as (
@@ -911,7 +947,6 @@ describe("parseSql", () => {
       "select id from (select id from orders) orders",
       "select id from orders where id in (select order_id from refunds order by order_id)",
       "select id from orders o where id in (select order_id from refunds r where r.customer_id = o.customer_id)",
-      "select case status when 'paid' then 1 else 0 end as paid from orders",
     ];
 
     for (const sql of unsupported) {
