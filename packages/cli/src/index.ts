@@ -117,7 +117,7 @@ async function query(args: ParsedArgs): Promise<string> {
     if (args.format === "csv") return rowsToCsv(rows);
     return rows.map((row) => jsonStringify(row)).join("\n") + (rows.length > 0 ? "\n" : "");
   }
-  if (resolvedAst.join !== undefined) {
+  if (sqlJoins(resolvedAst).length > 0) {
     const rows = await joinRowsFromAst(executableLake, resolvedAst, args);
     if (args.format === "json") return `${jsonStringify(rows)}\n`;
     if (args.format === "csv") return rowsToCsv(rows);
@@ -188,7 +188,7 @@ async function write(args: ParsedArgs): Promise<string> {
   const rows =
     resolvedAst.subqueryJoin !== undefined
       ? await subqueryJoinRowsFromAst(executableLake, resolvedAst, args)
-      : resolvedAst.join !== undefined
+      : sqlJoins(resolvedAst).length > 0
         ? await joinRowsFromAst(executableLake, resolvedAst, args)
         : hasAggregation(resolvedAst)
           ? await aggregateRowsFromAst(executableLake.path(resolvedAst.source), resolvedAst)
@@ -288,7 +288,7 @@ async function materializeCteIfNeeded(
       "CTEs are only supported as the outer FROM source",
     );
   }
-  if (ast.join !== undefined || ast.subqueryJoin !== undefined) {
+  if (sqlJoins(ast).length > 0 || ast.subqueryJoin !== undefined) {
     throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "CTEs inside JOINs are not supported yet");
   }
   const cteRows = hasAggregation(ast.cte.query)
@@ -403,36 +403,36 @@ async function joinRowsFromAst(
   ast: ReturnType<typeof parseSql>,
   args: ParsedArgs,
 ): Promise<Row[]> {
-  if (ast.join === undefined) throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Missing SQL JOIN");
-  const join = ast.join;
+  const joins = sqlJoins(ast);
+  const firstJoin = joins[0];
+  if (firstJoin === undefined) {
+    throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Missing SQL JOIN");
+  }
   if (hasWindowSemantics(ast)) {
     throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "Window SQL over JOIN is not supported");
   }
   if (hasAggregation(ast)) {
     throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "Aggregate SQL over JOIN is not supported yet");
   }
-  const leftAlias = leftJoinAlias(ast);
-  const plan = planJoinSides(ast, leftAlias, join.alias);
-  let leftBuilder = lake.path(ast.source);
-  let rightBuilder = lake.path(join.source);
-  if (plan.leftWhere !== undefined) leftBuilder = leftBuilder.where(plan.leftWhere);
-  if (plan.rightWhere !== undefined) rightBuilder = rightBuilder.where(plan.rightWhere);
-  if (plan.leftColumns !== undefined) leftBuilder = leftBuilder.select(plan.leftColumns);
-  if (plan.rightColumns !== undefined) rightBuilder = rightBuilder.select(plan.rightColumns);
-  const leftRows = (await leftBuilder.toArray()).map((row) => qualifyRow(row, leftAlias));
-  const rightRows = (await rightBuilder.toArray()).map((row) => qualifyRow(row, join.alias));
-  let rows = await broadcastJoin(leftRows, rightRows, {
-    leftKey: join.leftKey,
-    rightKey: join.rightKey,
-    type: join.type,
-    rightPrefix: `${join.alias}.`,
-    maxRightRows: args.joinMaxRightRows ?? 100_000,
-  });
-  if (join.type === "left") {
-    rows = fillLeftJoinNulls(rows, join.alias, leftJoinRightColumns(ast, join.alias, rightRows));
+  let rows = (await lake.path(ast.source).toArray()).map((row) =>
+    qualifyRow(row, firstJoin.leftAlias),
+  );
+  for (const join of joins) {
+    const rightRows = (await lake.path(join.source).toArray()).map((row) =>
+      qualifyRow(row, join.alias),
+    );
+    rows = await broadcastJoin(rows, rightRows, {
+      leftKey: join.leftKey,
+      rightKey: join.rightKey,
+      type: join.type,
+      rightPrefix: `${join.alias}.`,
+      maxRightRows: args.joinMaxRightRows ?? 100_000,
+    });
+    if (join.type === "left") {
+      rows = fillLeftJoinNulls(rows, join.alias, leftJoinRightColumns(ast, join.alias, rightRows));
+    }
   }
-  if (plan.residualWhere !== undefined)
-    rows = rows.filter((row) => matches(plan.residualWhere, row));
+  if (ast.where !== undefined) rows = rows.filter((row) => matches(ast.where, row));
   if (ast.orderBy !== undefined) rows = sortRows(rows, ast.orderBy);
   rows = projectRows(rows, ast);
   if (ast.distinct === true) rows = distinctRows(rows);
@@ -442,62 +442,11 @@ async function joinRowsFromAst(
   return rows;
 }
 
-interface JoinSidePlan {
-  leftWhere?: Expr;
-  rightWhere?: Expr;
-  residualWhere?: Expr;
-  leftColumns?: string[];
-  rightColumns?: string[];
-}
-
-function planJoinSides(
+function sqlJoins(
   ast: ReturnType<typeof parseSql>,
-  leftAlias: string,
-  rightAlias: string,
-): JoinSidePlan {
-  if (ast.join === undefined) throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Missing SQL JOIN");
-  const leftPredicates: Expr[] = [];
-  const rightPredicates: Expr[] = [];
-  const residualPredicates: Expr[] = [];
-  for (const predicate of splitAndPredicate(ast.where)) {
-    const columns = exprColumns(predicate);
-    if (columns.length > 0 && columns.every((column) => isQualifiedBy(column, leftAlias))) {
-      leftPredicates.push(stripQualifiedExpr(predicate, leftAlias));
-    } else if (
-      ast.join.type === "inner" &&
-      columns.length > 0 &&
-      columns.every((column) => isQualifiedBy(column, rightAlias))
-    ) {
-      rightPredicates.push(stripQualifiedExpr(predicate, rightAlias));
-    } else {
-      residualPredicates.push(predicate);
-    }
-  }
-
-  const plan: JoinSidePlan = {};
-  const leftWhere = combineAndPredicate(leftPredicates);
-  const rightWhere = combineAndPredicate(rightPredicates);
-  const residualWhere = combineAndPredicate(residualPredicates);
-  if (leftWhere !== undefined) plan.leftWhere = leftWhere;
-  if (rightWhere !== undefined) plan.rightWhere = rightWhere;
-  if (residualWhere !== undefined) plan.residualWhere = residualWhere;
-  if (canProjectJoinSides(ast, leftAlias, rightAlias)) {
-    plan.leftColumns = joinSideColumns(ast, leftAlias, ast.join.leftKey);
-    plan.rightColumns = joinSideColumns(ast, rightAlias, ast.join.rightKey);
-  }
-  return plan;
-}
-
-function splitAndPredicate(expr: Expr | undefined): Expr[] {
-  if (expr === undefined) return [];
-  if (expr.kind === "logical" && expr.op === "and") return expr.operands.flatMap(splitAndPredicate);
-  return [expr];
-}
-
-function combineAndPredicate(predicates: Expr[]): Expr | undefined {
-  if (predicates.length === 0) return undefined;
-  if (predicates.length === 1) return predicates[0];
-  return { kind: "logical", op: "and", operands: predicates };
+): NonNullable<ReturnType<typeof parseSql>["joins"]> {
+  if (ast.joins !== undefined) return ast.joins;
+  return ast.join === undefined ? [] : [ast.join];
 }
 
 function isQualifiedBy(column: string, alias: string): boolean {
@@ -506,68 +455,6 @@ function isQualifiedBy(column: string, alias: string): boolean {
 
 function stripQualifiedColumn(column: string, alias: string): string {
   return isQualifiedBy(column, alias) ? column.slice(alias.length + 1) : column;
-}
-
-function stripQualifiedExpr(expr: Expr, alias: string): Expr {
-  switch (expr.kind) {
-    case "column":
-      return { ...expr, name: stripQualifiedColumn(expr.name, alias) };
-    case "compare":
-      return {
-        ...expr,
-        left: stripQualifiedExpr(expr.left, alias),
-        right: stripQualifiedExpr(expr.right, alias),
-      };
-    case "between":
-      return {
-        ...expr,
-        target: stripQualifiedExpr(expr.target, alias),
-        low: stripQualifiedExpr(expr.low, alias),
-        high: stripQualifiedExpr(expr.high, alias),
-      };
-    case "in":
-      return {
-        ...expr,
-        target: stripQualifiedExpr(expr.target, alias),
-        values: expr.values.map((value) => stripQualifiedExpr(value, alias)),
-      };
-    case "logical":
-      return {
-        ...expr,
-        operands: expr.operands.map((operand) => stripQualifiedExpr(operand, alias)),
-      };
-    case "not":
-      return { ...expr, operand: stripQualifiedExpr(expr.operand, alias) };
-    case "null-check":
-      return { ...expr, target: stripQualifiedExpr(expr.target, alias) };
-    case "like":
-      return { ...expr, target: stripQualifiedExpr(expr.target, alias) };
-    case "call":
-      return { ...expr, args: expr.args.map((arg) => stripQualifiedExpr(arg, alias)) };
-    case "arithmetic":
-      return {
-        ...expr,
-        left: stripQualifiedExpr(expr.left, alias),
-        right: stripQualifiedExpr(expr.right, alias),
-      };
-    case "case":
-      return {
-        ...expr,
-        whens: expr.whens.map((branch) => ({
-          when: stripQualifiedExpr(branch.when, alias),
-          value: stripQualifiedExpr(branch.value, alias),
-        })),
-        ...(expr.else === undefined ? {} : { else: stripQualifiedExpr(expr.else, alias) }),
-      };
-    case "literal":
-      return expr;
-  }
-}
-
-function exprColumns(expr: Expr): string[] {
-  const columns = new Set<string>();
-  collectExprColumns(expr, columns);
-  return [...columns];
 }
 
 function collectExprColumns(expr: Expr, columns: Set<string>): void {
@@ -619,17 +506,6 @@ function collectExprColumns(expr: Expr, columns: Set<string>): void {
   }
 }
 
-function canProjectJoinSides(
-  ast: ReturnType<typeof parseSql>,
-  leftAlias: string,
-  rightAlias: string,
-): boolean {
-  if (ast.select?.includes("*") ?? false) return false;
-  return referencedJoinColumns(ast).every(
-    (column) => isQualifiedBy(column, leftAlias) || isQualifiedBy(column, rightAlias),
-  );
-}
-
 function referencedJoinColumns(ast: ReturnType<typeof parseSql>): string[] {
   const columns = new Set<string>();
   for (const select of ast.select ?? []) {
@@ -640,22 +516,6 @@ function referencedJoinColumns(ast: ReturnType<typeof parseSql>): string[] {
   if (ast.where !== undefined) collectExprColumns(ast.where, columns);
   for (const term of ast.orderBy ?? []) columns.add(term.column);
   return [...columns].filter((column) => column !== "*");
-}
-
-function joinSideColumns(
-  ast: ReturnType<typeof parseSql>,
-  alias: string,
-  joinKey: string | string[],
-): string[] {
-  const columns = new Set(
-    (Array.isArray(joinKey) ? joinKey : [joinKey]).map((column) =>
-      stripQualifiedColumn(column, alias),
-    ),
-  );
-  for (const column of referencedJoinColumns(ast)) {
-    if (isQualifiedBy(column, alias)) columns.add(stripQualifiedColumn(column, alias));
-  }
-  return [...columns];
 }
 
 function leftJoinRightColumns(
@@ -726,11 +586,6 @@ async function subqueryJoinRowsFromAst(
   if (ast.limit !== undefined) rows = rows.slice(offset, offset + ast.limit);
   else if (offset > 0) rows = rows.slice(offset);
   return rows;
-}
-
-function leftJoinAlias(ast: ReturnType<typeof parseSql>): string {
-  if (ast.join === undefined) return ast.source;
-  return ast.join.leftAlias;
 }
 
 function qualifyRow(row: Row, alias: string): Row {
@@ -961,6 +816,12 @@ function applyDefaultSource(
     };
   } else {
     out.source = defaultSource;
+  }
+  if (out.join !== undefined) out.join = { ...out.join, source: defaultSource };
+  if (out.joins !== undefined) {
+    out.joins = out.joins.map((join) => ({ ...join, source: defaultSource }));
+    const firstJoin = out.joins[0];
+    if (firstJoin !== undefined) out.join = firstJoin;
   }
   if (out.subqueryJoin !== undefined)
     out.subqueryJoin = { ...out.subqueryJoin, source: defaultSource };

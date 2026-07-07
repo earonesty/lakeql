@@ -115,8 +115,14 @@ it("runs SQL over read_parquet globs and named table joins", async () => {
   });
   await writePartitionedParquet(store, "sql/stores", {
     rows: [
-      { store_id: "s1", segment: "retail" },
-      { store_id: "s3", segment: "enterprise" },
+      { store_id: "s1", segment: "retail", region: "west" },
+      { store_id: "s3", segment: "enterprise", region: "east" },
+    ],
+  });
+  await writePartitionedParquet(store, "sql/regions", {
+    rows: [
+      { region: "west", manager: "Ada" },
+      { region: "east", manager: "Grace" },
     ],
   });
   const lake = createLake({ store });
@@ -144,6 +150,27 @@ it("runs SQL over read_parquet globs and named table joins", async () => {
     { store_id: "s1", segment: "retail" },
     { store_id: "s2", segment: null },
   ]);
+
+  await expect(
+    lake
+      .sql(
+        [
+          "select s.store_id as store_id, d.segment as segment, r.manager as manager",
+          "from sales s",
+          "join stores d on s.store_id = d.store_id",
+          "join regions r on d.region = r.region",
+          "order by s.store_id",
+        ].join(" "),
+        {
+          tables: {
+            sales: "sql/sales/*.parquet",
+            stores: "sql/stores/*.parquet",
+            regions: "sql/regions/*.parquet",
+          },
+        },
+      )
+      .toArray(),
+  ).resolves.toEqual([{ store_id: "s1", segment: "retail", manager: "Ada" }]);
 });
 
 it("runs aggregate, CTE, scalar subquery, and semi-join SQL helpers", async () => {

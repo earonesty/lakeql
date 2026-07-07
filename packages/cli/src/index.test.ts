@@ -83,6 +83,38 @@ describe("runCli", () => {
     ]);
   });
 
+  it("executes bounded SQL join chains over named CLI tables", async () => {
+    const storesPath = await storesFixturePath();
+    const regionsPath = await regionsFixturePath();
+    const result = await runCli([
+      "query",
+      "--table",
+      `sales=${fixturePath(SALES.file)}`,
+      "--table",
+      `stores=${storesPath}`,
+      "--table",
+      `regions=${regionsPath}`,
+      "--sql",
+      [
+        "select s.store_id as store_id, d.segment as segment, r.manager as manager",
+        "from sales s",
+        "join stores d on s.store_id = d.store_id",
+        "join regions r on d.region = r.region",
+        "where s.amount < 40 and d.segment = 'enterprise'",
+        "order by s.amount asc",
+        "limit 2",
+      ].join(" "),
+      "--format",
+      "json",
+    ]);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    expect(JSON.parse(result.stdout)).toEqual([
+      { store_id: "store-000", segment: "enterprise", manager: "Ada" },
+      { store_id: "store-000", segment: "enterprise", manager: "Ada" },
+    ]);
+  });
+
   it("executes bounded SQL joins with side-qualified filters", async () => {
     const storesPath = await storesFixturePath();
     const result = await runCli([
@@ -1156,6 +1188,23 @@ async function storesFixturePath(): Promise<string> {
   });
   const bytes = await store.get(key);
   if (bytes === null) throw new Error("failed to write stores fixture");
+  await writeFile(path, bytes);
+  return path;
+}
+
+async function regionsFixturePath(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "lakeql-cli-region-"));
+  const path = join(dir, "regions.parquet");
+  const key = "tmp/regions.parquet";
+  const store = memoryStore();
+  await writeParquet(store, key, {
+    columnData: [
+      { name: "region", data: ["west", "east"], type: "STRING" },
+      { name: "manager", data: ["Ada", "Grace"], type: "STRING" },
+    ],
+  });
+  const bytes = await store.get(key);
+  if (bytes === null) throw new Error("failed to write regions fixture");
   await writeFile(path, bytes);
   return path;
 }

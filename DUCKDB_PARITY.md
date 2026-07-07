@@ -57,8 +57,8 @@ SQL and the parser/compiler rejects it, the performance story stops mattering.
 Current state:
 
 - Window functions and `QUALIFY` are supported and tested.
-- Basic filtering, projection, grouping, sorting, and bounded two-table
-  inner/left equi-joins exist.
+- Basic filtering, projection, grouping, sorting, and bounded inner/left
+  equi-join chains exist.
 - `read_parquet('path')` table-function sources map onto normal LakeQL path
   planning.
 - Scalar subqueries, `IN (select ...)`, uncorrelated `EXISTS`, correlated
@@ -71,11 +71,10 @@ TODO:
 
 - Add Iceberg table references where the syntax can remain explicit and
   unsurprising.
-- Support N-way joins over the existing join execution model before adding more
-  exotic join semantics.
-- Expand join forms in order of lake workload value: multi-table inner/left
-  equi-joins, `CROSS JOIN`, then `RIGHT`/`FULL` if there is a clear execution
-  contract.
+- Expand join forms in order of lake workload value: `CROSS JOIN`, then
+  `RIGHT`/`FULL` if there is a clear execution contract.
+- Reintroduce safe join-chain predicate/projection pushdown where aliases prove
+  a filter or projection belongs to one input side.
 - Add non-equi join support only with explicit bounded planning rules. Do not
   hide cartesian explosion behind SQL compatibility.
 - Broaden remaining subquery support for common analytical shapes: nested

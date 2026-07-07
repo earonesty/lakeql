@@ -484,6 +484,37 @@ describe("parseSql", () => {
         rightKey: ["d.store_id"],
       },
     });
+
+    const chain = parseSql(`
+      select s.store_id, d.segment, r.manager
+      from sales s
+      join stores d on s.store_id = d.store_id
+      left join regions r on d.region = r.region
+      where r.manager is not null
+      order by s.store_id
+    `);
+    expect(chain).toMatchObject({
+      joins: [
+        {
+          source: "stores",
+          alias: "d",
+          type: "inner",
+          leftKey: ["s.store_id"],
+          rightKey: ["d.store_id"],
+        },
+        {
+          source: "regions",
+          alias: "r",
+          type: "left",
+          leftKey: ["d.region"],
+          rightKey: ["r.region"],
+        },
+      ],
+      select: ["s.store_id", "d.segment", "r.manager"],
+      where: { kind: "null-check", negated: true, target: { kind: "column", name: "r.manager" } },
+    });
+    expect(chain.join).toEqual(chain.joins?.[0]);
+    expect(parseSql(formatSql(chain))).toEqual(chain);
   });
 
   it("compiles IN subqueries as semi and anti joins", () => {
@@ -1055,7 +1086,7 @@ describe("parseSql", () => {
     expect(() => parseSql("select id from t; select id from t")).toThrow(/one SELECT/u);
     expect(() => parseSql("delete from t")).toThrowError(LakeqlError);
     expect(() => parseSql("select from t")).toThrowError(LakeqlError);
-    expect(() => parseSql("select id")).toThrow(/exactly one FROM/u);
+    expect(() => parseSql("select id")).toThrow(/FROM table/u);
     expect(() => parseSql("from a select id from b")).toThrowError(LakeqlError);
     expect(() => parseSql("select * as all_rows from t")).toThrow(/Aliases on SELECT \*/u);
     expect(() => parseSql("select id from t where id in 1")).toThrow(/IN subqueries/u);

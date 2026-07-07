@@ -24,6 +24,7 @@ export interface SqlQueryAst extends PathQueryInit {
   aggregates?: AggregateSpec;
   having?: Expr;
   join?: SqlJoinAst;
+  joins?: SqlJoinAst[];
   subqueryJoin?: SqlSubqueryJoinAst;
   cte?: SqlCteAst;
   scalarSubqueries?: Record<string, SqlScalarSubqueryAst>;
@@ -131,7 +132,7 @@ export function formatSql(ast: SqlQueryAst): string {
   const clauses = [
     `select ${ast.distinct === true ? "distinct " : ""}${select.length > 0 ? select.join(", ") : "*"}`,
   ];
-  clauses.push(`from ${formatIdentifier(ast.source)}${formatJoin(ast.source, ast.join)}`);
+  clauses.push(`from ${formatIdentifier(ast.source)}${formatJoins(ast.source, sqlJoins(ast))}`);
   const where = formatWhere(ast.where, ast.subqueryJoin, ast);
   if (where !== undefined) clauses.push(`where ${where}`);
   if (ast.groupBy && ast.groupBy.length > 0) {
@@ -184,6 +185,7 @@ function withStatementToAst(statement: PgNode, context: SqlParseContext): SqlQue
 function validateCteQuery(ast: SqlQueryAst): void {
   if (
     ast.join !== undefined ||
+    ast.joins !== undefined ||
     ast.subqueryJoin !== undefined ||
     ast.scalarSubqueries !== undefined ||
     ast.cte !== undefined
@@ -217,17 +219,26 @@ function selectStatementToAstInScope(statement: PgNode, context: SqlParseContext
   rejectPresent(statement, "windows", "Window functions are not supported");
 
   const from = optionalArray(statement.from);
-  if (from.length !== 1 && from.length !== 2) {
-    throwUnsupported("SELECT must have exactly one FROM table or one bounded JOIN");
+  if (from.length < 1) {
+    throwUnsupported("SELECT must have a FROM table");
   }
   const leftSource = sourceTable(from[0], context);
   const ast: SqlQueryAst = { source: leftSource.source };
   if (leftSource.cte !== undefined) ast.cte = leftSource.cte;
   const scope = new SqlScope(leftSource);
-  if (from.length === 2) {
-    const join = joinToAst(from[1], leftSource);
-    ast.join = join;
-    scope.add({ source: join.source, alias: join.alias });
+  const joinedSources = [leftSource];
+  const joins: SqlJoinAst[] = [];
+  for (const source of from.slice(1)) {
+    const { join, right } = joinToAst(source, joinedSources);
+    joins.push(join);
+    joinedSources.push(right);
+    scope.add(right);
+  }
+  if (joins.length > 0) {
+    const firstJoin = joins[0];
+    if (firstJoin === undefined) throwUnsupported("JOIN chain must contain at least one join");
+    ast.join = firstJoin;
+    ast.joins = joins;
   }
   if (statement.distinct !== undefined) {
     if (statement.distinct !== "distinct") {
@@ -1208,7 +1219,10 @@ function readParquetSourceTable(node: PgNode): SourceTable {
   return { source: arg.value, alias: aliasName(node.alias) ?? arg.value };
 }
 
-function joinToAst(value: unknown, left: SourceTable): SqlJoinAst {
+function joinToAst(
+  value: unknown,
+  joinedSources: readonly SourceTable[],
+): { join: SqlJoinAst; right: SourceTable } {
   const node = asNode(value, "JOIN source");
   if (node.type !== "table" && node.type !== "call") {
     throwUnsupported("Only table JOIN sources are supported");
@@ -1219,44 +1233,61 @@ function joinToAst(value: unknown, left: SourceTable): SqlJoinAst {
     throwUnsupported(`Unsupported JOIN type ${joinType}`);
   }
   const right = sourceTable({ ...node, join: undefined });
+  const left = joinedSources[0];
+  if (left === undefined) throwUnsupported("JOIN requires a left source");
   if (join.using !== undefined) {
     const using = optionalArray(join.using);
     if (using.length === 0) throwUnsupported("JOIN USING requires at least one column");
     const keys = using.map(nameNodeToString);
     return {
+      right,
+      join: {
+        source: right.source,
+        leftAlias: left.alias,
+        alias: right.alias,
+        type: joinType === "LEFT JOIN" ? "left" : "inner",
+        leftKey: keys.map((key) => `${left.alias}.${key}`),
+        rightKey: keys.map((key) => `${right.alias}.${key}`),
+      },
+    };
+  }
+  const on = asNode(join.on, "JOIN ON");
+  const { leftKey, rightKey } = joinKeysFromPredicate(on, joinedSources, right);
+  return {
+    right,
+    join: {
       source: right.source,
       leftAlias: left.alias,
       alias: right.alias,
       type: joinType === "LEFT JOIN" ? "left" : "inner",
-      leftKey: keys.map((key) => `${left.alias}.${key}`),
-      rightKey: keys.map((key) => `${right.alias}.${key}`),
-    };
-  }
-  const on = asNode(join.on, "JOIN ON");
-  const { leftKey, rightKey } = joinKeysFromPredicate(on, left, right);
-  return {
-    source: right.source,
-    leftAlias: left.alias,
-    alias: right.alias,
-    type: joinType === "LEFT JOIN" ? "left" : "inner",
-    leftKey,
-    rightKey,
+      leftKey,
+      rightKey,
+    },
   };
 }
 
-function qualifiedJoinKey(expr: PgNode, left: SourceTable, right: SourceTable): string {
+function qualifiedJoinKey(
+  expr: PgNode,
+  joinedSources: readonly SourceTable[],
+  right: SourceTable,
+): { side: "left" | "right"; key: string } {
   if (expr.type !== "ref" || typeof expr.name !== "string" || expr.table === undefined) {
     throwUnsupported("JOIN keys must be qualified column references");
   }
   const qualifier = nameNodeToString(expr.table);
-  if (qualifier === left.alias || qualifier === left.source) return `${left.alias}.${expr.name}`;
-  if (qualifier === right.alias || qualifier === right.source) return `${right.alias}.${expr.name}`;
+  if (qualifier === right.alias || qualifier === right.source) {
+    return { side: "right", key: `${right.alias}.${expr.name}` };
+  }
+  const left = joinedSources.find(
+    (source) => qualifier === source.alias || qualifier === source.source,
+  );
+  if (left !== undefined) return { side: "left", key: `${left.alias}.${expr.name}` };
   throwUnsupported(`Unknown JOIN qualifier ${qualifier}`);
 }
 
 function joinKeysFromPredicate(
   expr: PgNode,
-  left: SourceTable,
+  joinedSources: readonly SourceTable[],
   right: SourceTable,
 ): { leftKey: string[]; rightKey: string[] } {
   const conjuncts = flattenJoinConjuncts(expr);
@@ -1264,14 +1295,14 @@ function joinKeysFromPredicate(
   const rightKey: string[] = [];
   for (const conjunct of conjuncts) {
     if (String(conjunct.op) !== "=") throwUnsupported("Only equi-joins are supported");
-    const first = qualifiedJoinKey(asNode(conjunct.left, "JOIN left key"), left, right);
-    const second = qualifiedJoinKey(asNode(conjunct.right, "JOIN right key"), left, right);
-    if (first.startsWith(`${left.alias}.`) && second.startsWith(`${right.alias}.`)) {
-      leftKey.push(first);
-      rightKey.push(second);
-    } else if (second.startsWith(`${left.alias}.`) && first.startsWith(`${right.alias}.`)) {
-      leftKey.push(second);
-      rightKey.push(first);
+    const first = qualifiedJoinKey(asNode(conjunct.left, "JOIN left key"), joinedSources, right);
+    const second = qualifiedJoinKey(asNode(conjunct.right, "JOIN right key"), joinedSources, right);
+    if (first.side === "left" && second.side === "right") {
+      leftKey.push(first.key);
+      rightKey.push(second.key);
+    } else if (second.side === "left" && first.side === "right") {
+      leftKey.push(second.key);
+      rightKey.push(first.key);
     } else {
       throwUnsupported("JOIN ON must compare left table key to right table key");
     }
@@ -1478,9 +1509,18 @@ function formatOrderByTerm(term: OrderByTerm): string {
   return parts.join(" ");
 }
 
-function formatJoin(leftSource: string, join: SqlJoinAst | undefined): string {
-  if (join === undefined) return "";
-  const leftAlias = join.leftAlias === leftSource ? "" : ` ${formatIdentifier(join.leftAlias)}`;
+function sqlJoins(ast: SqlQueryAst): SqlJoinAst[] {
+  if (ast.joins !== undefined) return ast.joins;
+  return ast.join === undefined ? [] : [ast.join];
+}
+
+function formatJoins(leftSource: string, joins: readonly SqlJoinAst[]): string {
+  return joins.map((join, index) => formatJoin(leftSource, join, index === 0)).join("");
+}
+
+function formatJoin(leftSource: string, join: SqlJoinAst, includeLeftAlias: boolean): string {
+  const leftAlias =
+    includeLeftAlias && join.leftAlias !== leftSource ? ` ${formatIdentifier(join.leftAlias)}` : "";
   const source = formatIdentifier(join.source);
   const alias = join.alias === join.source ? "" : ` ${formatIdentifier(join.alias)}`;
   const type = join.type === "left" ? "left join" : "join";
