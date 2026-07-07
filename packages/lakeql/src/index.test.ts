@@ -348,6 +348,20 @@ it("runs SQL over named Iceberg table bindings", async () => {
 
   await expect(
     lake
+      .sql(
+        [
+          "select id, nation",
+          "from places",
+          "where country = 'US'",
+          "and id = (select max(id) as max_id from places where country = 'US' and id < 10)",
+        ].join(" "),
+        { icebergTables },
+      )
+      .toArray(),
+  ).resolves.toEqual([{ id: 3, nation: "US" }]);
+
+  await expect(
+    lake
       .sql("select id from places", {
         tables: { places: "sql/labels/*.parquet" },
         icebergTables,
