@@ -1,8 +1,15 @@
 import { LakeqlError } from "./errors.js";
 import type { Expr } from "./expr.js";
 import { col, eq, gt, gte, isIn, isNotNull, isNull, lt, lte, ne, notIn } from "./expr.js";
-import type { JsonExpr, OrderByTerm, PathQueryInit } from "./query.js";
+import type { AggregateOp, JsonExpr, OrderByTerm, PathQueryInit } from "./query.js";
 import { normalizeOrderBy } from "./query-sort.js";
+import type {
+  WindowExpr,
+  WindowFn,
+  WindowFrame,
+  WindowFrameBound,
+  WindowOrderTerm,
+} from "./window.js";
 
 export function parseJsonQuery(input: unknown): PathQueryInit {
   if (!isRecord(input)) throwParse("JSON query must be an object");
@@ -16,6 +23,8 @@ export function parseJsonQuery(input: unknown): PathQueryInit {
     init.select = input.select;
   }
   if (input.where !== undefined) init.where = parseJsonExpr(input.where);
+  if (input.windows !== undefined) init.windows = parseJsonWindows(input.windows);
+  if (input.qualify !== undefined) init.qualify = parseJsonExpr(input.qualify);
   if (input.distinct !== undefined) {
     if (typeof input.distinct !== "boolean") throwParse("JSON query distinct must be a boolean");
     init.distinct = input.distinct;
@@ -50,6 +59,7 @@ function parseJsonOrderByTerm(input: unknown): OrderByTerm {
 
 function parseJsonExpr(input: unknown): Expr {
   if (!isRecord(input)) throwParse("JSON expression must be an object");
+  if (typeof input.kind === "string") return parseJsonExprAst(input);
   const entries = Object.entries(input);
   if (entries.length !== 1) throwParse("JSON expression must have exactly one operator");
   const [op, value] = entries[0] as [keyof JsonExpr, unknown];
@@ -98,6 +108,211 @@ function parseJsonExpr(input: unknown): Expr {
     default:
       throwParse(`Unsupported JSON expression operator ${op}`);
   }
+}
+
+function parseJsonExprAst(input: Record<string, unknown>): Expr {
+  switch (input.kind) {
+    case "literal":
+      return { kind: "literal", value: requireScalar(input.value, "literal") };
+    case "column":
+      if (typeof input.name !== "string") throwParse("column expression name must be a string");
+      return { kind: "column", name: input.name };
+    case "compare": {
+      if (!isCompareOp(input.op))
+        throwParse("compare expression op must be eq, ne, lt, lte, gt, or gte");
+      return {
+        kind: "compare",
+        op: input.op,
+        left: parseJsonExpr(input.left),
+        right: parseJsonExpr(input.right),
+      };
+    }
+    case "in": {
+      if (typeof input.negated !== "boolean") throwParse("in expression negated must be a boolean");
+      if (!Array.isArray(input.values)) throwParse("in expression values must be an array");
+      return {
+        kind: "in",
+        negated: input.negated,
+        target: parseJsonExpr(input.target),
+        values: input.values.map(parseJsonExpr),
+      };
+    }
+    case "between":
+      return {
+        kind: "between",
+        target: parseJsonExpr(input.target),
+        low: parseJsonExpr(input.low),
+        high: parseJsonExpr(input.high),
+      };
+    case "null-check":
+      if (typeof input.negated !== "boolean") {
+        throwParse("null-check expression negated must be a boolean");
+      }
+      return { kind: "null-check", negated: input.negated, target: parseJsonExpr(input.target) };
+    case "logical": {
+      if (input.op !== "and" && input.op !== "or") {
+        throwParse("logical expression op must be and or or");
+      }
+      if (!Array.isArray(input.operands))
+        throwParse("logical expression operands must be an array");
+      if (input.operands.length < 2) {
+        throwParse("logical expression operands must include at least two expressions");
+      }
+      return { kind: "logical", op: input.op, operands: input.operands.map(parseJsonExpr) };
+    }
+    case "not":
+      return { kind: "not", operand: parseJsonExpr(input.operand) };
+    case "like":
+      if (typeof input.caseInsensitive !== "boolean") {
+        throwParse("like expression caseInsensitive must be a boolean");
+      }
+      if (typeof input.pattern !== "string") throwParse("like expression pattern must be a string");
+      return {
+        kind: "like",
+        caseInsensitive: input.caseInsensitive,
+        target: parseJsonExpr(input.target),
+        pattern: input.pattern,
+      };
+    case "call":
+      if (typeof input.fn !== "string") throwParse("call expression fn must be a string");
+      if (!Array.isArray(input.args)) throwParse("call expression args must be an array");
+      return { kind: "call", fn: input.fn, args: input.args.map(parseJsonExpr) };
+    case "arithmetic":
+      if (!isArithmeticOp(input.op)) throwParse("arithmetic expression op is invalid");
+      return {
+        kind: "arithmetic",
+        op: input.op,
+        left: parseJsonExpr(input.left),
+        right: parseJsonExpr(input.right),
+      };
+    case "case": {
+      if (!Array.isArray(input.whens)) throwParse("case expression whens must be an array");
+      return {
+        kind: "case",
+        whens: input.whens.map((when) => {
+          if (!isRecord(when)) throwParse("case expression whens must be objects");
+          return { when: parseJsonExpr(when.when), value: parseJsonExpr(when.value) };
+        }),
+        ...(input.else === undefined ? {} : { else: parseJsonExpr(input.else) }),
+      };
+    }
+    default:
+      throwParse(`Unsupported JSON expression kind ${String(input.kind)}`);
+  }
+}
+
+function parseJsonWindows(input: unknown): Record<string, WindowExpr> {
+  if (!isRecord(input)) throwParse("JSON query windows must be an object");
+  const windows: Record<string, WindowExpr> = {};
+  for (const [alias, value] of Object.entries(input)) {
+    if (alias.length === 0 || isPrototypeMutationKey(alias)) {
+      throwParse("JSON query window aliases must be valid object keys");
+    }
+    windows[alias] = parseJsonWindowExpr(value);
+  }
+  return windows;
+}
+
+function parseJsonWindowExpr(input: unknown): WindowExpr {
+  if (!isRecord(input)) throwParse("JSON window expression must be an object");
+  const over = input.over;
+  if (!isRecord(over)) throwParse("JSON window expression over must be an object");
+  if (!Array.isArray(input.args)) throwParse("JSON window expression args must be an array");
+  const expr: WindowExpr = {
+    fn: parseJsonWindowFn(input.fn),
+    args: input.args.map(parseJsonExpr),
+    over: {
+      partitionBy: parseExprArray(over.partitionBy, "JSON window partitionBy"),
+      orderBy: parseJsonWindowOrderBy(over.orderBy),
+      ...(over.frame === undefined ? {} : { frame: parseJsonWindowFrame(over.frame) }),
+    },
+  };
+  if (input.filter !== undefined) expr.filter = parseJsonExpr(input.filter);
+  if (input.ignoreNulls !== undefined) {
+    if (typeof input.ignoreNulls !== "boolean") {
+      throwParse("JSON window expression ignoreNulls must be a boolean");
+    }
+    expr.ignoreNulls = input.ignoreNulls;
+  }
+  if (input.distinct !== undefined) {
+    if (typeof input.distinct !== "boolean") {
+      throwParse("JSON window expression distinct must be a boolean");
+    }
+    expr.distinct = input.distinct;
+  }
+  return expr;
+}
+
+function parseJsonWindowFn(input: unknown): WindowFn {
+  if (isWindowFnName(input)) return input;
+  if (isRecord(input) && isAggregateOp(input.aggregate)) return { aggregate: input.aggregate };
+  throwParse("JSON window function is invalid");
+}
+
+function parseJsonWindowOrderBy(input: unknown): WindowOrderTerm[] {
+  if (input === undefined) return [];
+  if (!Array.isArray(input)) throwParse("JSON window orderBy must be an array");
+  return input.map((term) => {
+    if (!isRecord(term)) throwParse("JSON window orderBy terms must be objects");
+    const out: WindowOrderTerm = { expr: parseJsonExpr(term.expr) };
+    if (term.direction !== undefined) {
+      if (term.direction !== "asc" && term.direction !== "desc") {
+        throwParse("JSON window orderBy direction must be asc or desc");
+      }
+      out.direction = term.direction;
+    }
+    if (term.nulls !== undefined) {
+      if (term.nulls !== "first" && term.nulls !== "last") {
+        throwParse("JSON window orderBy nulls must be first or last");
+      }
+      out.nulls = term.nulls;
+    }
+    return out;
+  });
+}
+
+function parseJsonWindowFrame(input: unknown): WindowFrame {
+  if (!isRecord(input)) throwParse("JSON window frame must be an object");
+  if (input.mode !== "rows" && input.mode !== "range" && input.mode !== "groups") {
+    throwParse("JSON window frame mode must be rows, range, or groups");
+  }
+  if (
+    input.exclude !== "no-others" &&
+    input.exclude !== "current-row" &&
+    input.exclude !== "group" &&
+    input.exclude !== "ties"
+  ) {
+    throwParse("JSON window frame exclude is invalid");
+  }
+  return {
+    mode: input.mode,
+    start: parseJsonWindowFrameBound(input.start),
+    end: parseJsonWindowFrameBound(input.end),
+    exclude: input.exclude,
+  };
+}
+
+function parseJsonWindowFrameBound(input: unknown): WindowFrameBound {
+  if (!isRecord(input)) throwParse("JSON window frame bound must be an object");
+  if (
+    input.kind !== "unbounded-preceding" &&
+    input.kind !== "preceding" &&
+    input.kind !== "current-row" &&
+    input.kind !== "following" &&
+    input.kind !== "unbounded-following"
+  ) {
+    throwParse("JSON window frame bound kind is invalid");
+  }
+  return {
+    kind: input.kind,
+    ...(input.offset === undefined ? {} : { offset: parseJsonExpr(input.offset) }),
+  };
+}
+
+function parseExprArray(input: unknown, field: string): Expr[] {
+  if (input === undefined) return [];
+  if (!Array.isArray(input)) throwParse(`${field} must be an array`);
+  return input.map(parseJsonExpr);
 }
 
 function tuple2(
@@ -156,6 +371,68 @@ function requireScalar(value: unknown, op: string): string | number | boolean | 
     return value;
   }
   throwParse(`${op} value must be a scalar`);
+}
+
+function isCompareOp(
+  value: unknown,
+): value is Expr extends { kind: "compare"; op: infer Op } ? Op : never {
+  return (
+    value === "eq" ||
+    value === "ne" ||
+    value === "lt" ||
+    value === "lte" ||
+    value === "gt" ||
+    value === "gte"
+  );
+}
+
+function isArithmeticOp(
+  value: unknown,
+): value is Expr extends { kind: "arithmetic"; op: infer Op } ? Op : never {
+  return (
+    value === "add" || value === "sub" || value === "mul" || value === "div" || value === "mod"
+  );
+}
+
+function isAggregateOp(value: unknown): value is AggregateOp {
+  return (
+    value === "count" ||
+    value === "sum" ||
+    value === "avg" ||
+    value === "var_samp" ||
+    value === "var_pop" ||
+    value === "stddev_samp" ||
+    value === "stddev_pop" ||
+    value === "median" ||
+    value === "quantile" ||
+    value === "min" ||
+    value === "max" ||
+    value === "count_distinct" ||
+    value === "approx_count_distinct" ||
+    value === "mode" ||
+    value === "first" ||
+    value === "last"
+  );
+}
+
+function isWindowFnName(value: unknown): value is Exclude<WindowFn, { aggregate: AggregateOp }> {
+  return (
+    value === "row_number" ||
+    value === "rank" ||
+    value === "dense_rank" ||
+    value === "percent_rank" ||
+    value === "cume_dist" ||
+    value === "ntile" ||
+    value === "lag" ||
+    value === "lead" ||
+    value === "first_value" ||
+    value === "last_value" ||
+    value === "nth_value"
+  );
+}
+
+function isPrototypeMutationKey(value: string): boolean {
+  return value === "__proto__" || value === "prototype" || value === "constructor";
 }
 
 function parseNonNegativeInt(value: unknown, field: string): number {

@@ -671,6 +671,55 @@ describe("Lake query runtime", () => {
     expect(rows).toEqual([{ id: 1 }, { id: 2 }]);
   });
 
+  it("parses JSON query v1 windows and qualify expressions", async () => {
+    const { lake } = await makeLake({
+      rowsByPath: {
+        table: [
+          { region: "west", store_id: "a", amount: 10 },
+          { region: "west", store_id: "b", amount: 30 },
+          { region: "west", store_id: "c", amount: 20 },
+          { region: "east", store_id: "d", amount: 40 },
+          { region: "east", store_id: "e", amount: 5 },
+        ],
+      },
+    });
+
+    const rows = await lake
+      .query({
+        version: 1,
+        from: "table",
+        select: ["region", "store_id", "rank_in_region"],
+        windows: {
+          rank_in_region: {
+            fn: "row_number",
+            args: [],
+            over: {
+              partitionBy: [{ kind: "column", name: "region" }],
+              orderBy: [
+                { expr: { kind: "column", name: "amount" }, direction: "desc" },
+                { expr: { kind: "column", name: "store_id" }, direction: "asc" },
+              ],
+            },
+          },
+        },
+        qualify: {
+          kind: "compare",
+          op: "lte",
+          left: { kind: "column", name: "rank_in_region" },
+          right: { kind: "literal", value: 2 },
+        },
+        orderBy: [{ column: "region" }, { column: "rank_in_region" }],
+      })
+      .toArray();
+
+    expect(rows).toEqual([
+      { region: "east", store_id: "d", rank_in_region: 1 },
+      { region: "east", store_id: "e", rank_in_region: 2 },
+      { region: "west", store_id: "b", rank_in_region: 1 },
+      { region: "west", store_id: "c", rank_in_region: 2 },
+    ]);
+  });
+
   it("collects predicate columns from every expression family for scanner projection", async () => {
     const { lake, scanner } = await makeLake({
       rowsByPath: {
@@ -939,6 +988,27 @@ describe("Lake query runtime", () => {
     expect(() => parseJsonQuery({ version: 1, from: "t", where: { eq: ["a", {}] } })).toThrow(
       /scalar/u,
     );
+    expect(() =>
+      parseJsonQuery({
+        version: 1,
+        from: "t",
+        qualify: {
+          kind: "compare",
+          op: "bad",
+          left: { kind: "column", name: "a" },
+          right: { kind: "literal", value: 1 },
+        },
+      }),
+    ).toThrow(/compare expression op/u);
+    expect(() =>
+      parseJsonQuery({
+        version: 1,
+        from: "t",
+        windows: {
+          constructor: { fn: "row_number", args: [], over: { partitionBy: [], orderBy: [] } },
+        },
+      }),
+    ).toThrow(/window aliases/u);
 
     const { lake } = await makeLake({ rowsByPath: { table: [{ id: 1 }] } });
     expect(() => lake.path("table").limit(-1).run()).toThrow(/limit/u);

@@ -946,11 +946,11 @@ function duckSqlForDataset(sqlText: string, fileName: string): string {
     .replace(new RegExp(`\\bfrom\\s+${escapeRegExp(dataset.key)}\\b`, "giu"), `from '${escaped}'`);
   if (dataset.kind === "spatial") {
     out = out
-      .replace(/\bst_dwithin\s*\(\s*geometry\s*,/giu, "ST_DWithin(ST_GeomFromWKB(geometry),")
-      .replace(/\bst_intersects\s*\(\s*geometry\s*,/giu, "ST_Intersects(ST_GeomFromWKB(geometry),")
-      .replace(/\bst_within\s*\(\s*geometry\s*,/giu, "ST_Within(ST_GeomFromWKB(geometry),")
+      .replace(/\bst_dwithin\s*\(\s*geometry\s*,/giu, "ST_DWithin(geometry,")
+      .replace(/\bst_intersects\s*\(\s*geometry\s*,/giu, "ST_Intersects(geometry,")
+      .replace(/\bst_within\s*\(\s*geometry\s*,/giu, "ST_Within(geometry,")
       .replace(/\bst_contains\s*\(/giu, "ST_Contains(")
-      .replace(/,\s*geometry\s*\)/giu, ", ST_GeomFromWKB(geometry))")
+      .replace(/,\s*geometry\s*\)/giu, ", geometry)")
       .replace(
         /\bst_point\s*\(\s*([+-]?(?:\d+\.?\d*|\.\d+))\s*,\s*([+-]?(?:\d+\.?\d*|\.\d+))\s*\)/giu,
         "ST_GeomFromText('POINT($1 $2)')",
@@ -959,6 +959,9 @@ function duckSqlForDataset(sqlText: string, fileName: string): string {
         /\bst_bbox\s*\(\s*([^,\s]+)\s*,\s*([^,\s]+)\s*,\s*([^,\s]+)\s*,\s*([^)]+?)\s*\)/giu,
         "ST_GeomFromText('POLYGON((' || $1 || ' ' || $2 || ',' || $3 || ' ' || $2 || ',' || $3 || ' ' || $4 || ',' || $1 || ' ' || $4 || ',' || $1 || ' ' || $2 || '))')",
       );
+  }
+  if (dataset.kind === "window") {
+    out = out.replace(/\border\s+by\s+event_ts\b/giu, "order by CAST(event_ts AS TIMESTAMP)");
   }
   return out;
 }
