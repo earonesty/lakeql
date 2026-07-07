@@ -10,12 +10,24 @@ import {
   type QueryBuilder,
   type Row,
 } from "lakeql-core";
+import type { IcebergReadMode, PlanIcebergFilesOptions } from "lakeql-iceberg";
 import { createParquetLake, type ParquetLakeConfig, writePartitionedParquet } from "lakeql-parquet";
 import { parseSql, type SqlParameterValue, type SqlQueryAst } from "lakeql-sql";
+import { loadTable, planFiles, scanRows } from "./engine.js";
+
+export interface SqlIcebergTableOptions {
+  metadataPath: string;
+  snapshotId?: number;
+  asOfTimestampMs?: number;
+  ref?: string;
+  readMode?: IcebergReadMode;
+  maxRowsPerFile?: number;
+}
 
 export interface SqlQueryOptions {
   path?: string;
   tables?: Record<string, string>;
+  icebergTables?: Record<string, SqlIcebergTableOptions>;
   parameters?: readonly SqlParameterValue[];
   joinMaxRightRows?: number;
   joinMaxOutputRows?: number;
@@ -104,17 +116,20 @@ async function executeSql(
   options: SqlQueryOptions,
 ): Promise<Row[]> {
   const ast = sqlAst(sql, options);
+  validateSourceBindings(options);
   const bound = bindSources(ast, options);
-  const materialized = await materializeCteIfNeeded(lake.store, lake, bound);
+  const materializedIceberg = await materializeIcebergTablesIfNeeded(lake.store, bound, options);
+  const materialized = await materializeCteIfNeeded(lake.store, lake, materializedIceberg.ast);
   try {
     const resolved = await resolveScalarSubqueries(lake, materialized.ast);
     if (resolved.subqueryJoin !== undefined)
-      return subqueryJoinRowsFromAst(lake, resolved, options);
-    if (sqlJoins(resolved).length > 0) return joinRowsFromAst(lake, resolved, options);
-    if (hasAggregation(resolved)) return aggregateRowsFromAst(lake.path(resolved.source), resolved);
+      return await subqueryJoinRowsFromAst(lake, resolved, options);
+    if (sqlJoins(resolved).length > 0) return await joinRowsFromAst(lake, resolved, options);
+    if (hasAggregation(resolved))
+      return await aggregateRowsFromAst(lake.path(resolved.source), resolved);
     return await builderFromAst(lake.path(resolved.source), resolved).toArray();
   } finally {
-    await materialized.cleanup();
+    await Promise.all([materialized.cleanup(), materializedIceberg.cleanup()]);
   }
 }
 
@@ -128,11 +143,25 @@ function sqlAst(sql: string, options: SqlQueryOptions): SqlQueryAst {
 
 function bindSources(ast: SqlQueryAst, options: SqlQueryOptions): SqlQueryAst {
   const tables = options.tables ?? {};
+  const icebergTables = options.icebergTables ?? {};
   const bindSource = (source: string): string => {
     if (source === "input" && options.path !== undefined) return options.path;
+    if (icebergTables[source] !== undefined) return source;
     return tables[source] ?? source;
   };
   return mapAstSources(ast, bindSource);
+}
+
+function validateSourceBindings(options: SqlQueryOptions): void {
+  const tables = options.tables ?? {};
+  const icebergTables = options.icebergTables ?? {};
+  for (const name of Object.keys(icebergTables)) {
+    if (tables[name] === undefined) continue;
+    throw new LakeqlError(
+      "LAKEQL_VALIDATION_ERROR",
+      `SQL source "${name}" is bound as both Parquet and Iceberg`,
+    );
+  }
 }
 
 function mapAstSources(
@@ -167,6 +196,49 @@ function mapAstSources(
         id,
         { ...subquery, query: mapAstSources(subquery.query, bindSource, seen) },
       ]),
+    );
+  }
+  return out;
+}
+
+async function mapAstSourcesAsync(
+  ast: SqlQueryAst,
+  bindSource: (source: string) => Promise<string>,
+  seen = new WeakSet<SqlQueryAst>(),
+): Promise<SqlQueryAst> {
+  const out: SqlQueryAst = { ...ast, source: await bindSource(ast.source) };
+  if (seen.has(ast)) {
+    delete out.scalarSubqueries;
+    return out;
+  }
+  seen.add(ast);
+  if (ast.join !== undefined) {
+    out.join = { ...ast.join, source: await bindSource(ast.join.source) };
+  }
+  if (ast.joins !== undefined) {
+    out.joins = await Promise.all(
+      ast.joins.map(async (join) => ({ ...join, source: await bindSource(join.source) })),
+    );
+    const firstJoin = out.joins[0];
+    if (firstJoin !== undefined) out.join = firstJoin;
+  }
+  if (ast.subqueryJoin !== undefined) {
+    out.subqueryJoin = {
+      ...ast.subqueryJoin,
+      source: await bindSource(ast.subqueryJoin.source),
+    };
+  }
+  if (ast.cte !== undefined) {
+    out.cte = { ...ast.cte, query: await mapAstSourcesAsync(ast.cte.query, bindSource, seen) };
+  }
+  if (ast.scalarSubqueries !== undefined) {
+    out.scalarSubqueries = Object.fromEntries(
+      await Promise.all(
+        Object.entries(ast.scalarSubqueries).map(async ([id, subquery]) => [
+          id,
+          { ...subquery, query: await mapAstSourcesAsync(subquery.query, bindSource, seen) },
+        ]),
+      ),
     );
   }
   return out;
@@ -233,6 +305,170 @@ async function materializeCteIfNeeded(
       await Promise.all(written.files.map((file) => store.delete(file.path)));
     },
   };
+}
+
+async function materializeIcebergTablesIfNeeded(
+  store: ObjectStore,
+  ast: SqlQueryAst,
+  options: SqlQueryOptions,
+): Promise<{ ast: SqlQueryAst; cleanup: () => Promise<void> }> {
+  const icebergTables = options.icebergTables ?? {};
+  if (Object.keys(icebergTables).length === 0) return { ast, cleanup: async () => {} };
+
+  const materialized = new Map<string, { path: string; files: string[] }>();
+  const requiredColumns = collectSourceColumns(ast);
+  const materializeSource = async (source: string): Promise<string> => {
+    const icebergTable = icebergTables[source];
+    if (icebergTable === undefined) return source;
+    const cached = materialized.get(source);
+    if (cached !== undefined) return cached.path;
+
+    const table = await loadTable({
+      format: "iceberg",
+      store,
+      metadataPath: icebergTable.metadataPath,
+    });
+    const planOptions = icebergPlanOptions(icebergTable);
+    const sourceColumns = requiredColumns.get(source);
+    if (sourceColumns !== undefined) planOptions.select = [...sourceColumns];
+    const plan = planFiles(table, planOptions);
+    const rows: Row[] = [];
+    for await (const row of scanRows(plan)) rows.push(row);
+    if (rows.length === 0) {
+      throw new LakeqlError(
+        "LAKEQL_SQL_UNSUPPORTED",
+        `Iceberg SQL source "${source}" produced no rows`,
+      );
+    }
+
+    const prefix = `__lakeql_sql_iceberg/${safeTempName(source)}/${nextSqlTempId()}`;
+    const written = await writePartitionedParquet(store, prefix, {
+      rows,
+      maxRowsPerFile: icebergTable.maxRowsPerFile ?? rows.length,
+    });
+    const result = {
+      path: `${prefix}/*.parquet`,
+      files: written.files.map((file) => file.path),
+    };
+    materialized.set(source, result);
+    return result.path;
+  };
+
+  const mapped = await mapAstSourcesAsync(ast, materializeSource);
+  return {
+    ast: mapped,
+    cleanup: async () => {
+      await Promise.all(
+        [...materialized.values()]
+          .flatMap((table) => table.files)
+          .map((path) => store.delete(path)),
+      );
+    },
+  };
+}
+
+function collectSourceColumns(ast: SqlQueryAst): Map<string, Set<string>> {
+  const columns = new Map<string, Set<string>>();
+  collectSourceColumnsFromAst(ast, columns);
+  return columns;
+}
+
+function collectSourceColumnsFromAst(
+  ast: SqlQueryAst,
+  columns: Map<string, Set<string>>,
+  seen = new WeakSet<SqlQueryAst>(),
+): void {
+  if (seen.has(ast)) return;
+  seen.add(ast);
+
+  const aliases = sourceAliases(ast);
+  const referenced = new Set<string>();
+  for (const select of ast.select ?? []) referenced.add(select);
+  for (const expr of Object.values(ast.projections ?? {})) collectExprColumns(expr, referenced);
+  for (const aggregate of Object.values(ast.aggregates ?? {})) {
+    if (aggregate.column !== undefined) referenced.add(aggregate.column);
+    if (aggregate.expr !== undefined) collectExprColumns(aggregate.expr, referenced);
+  }
+  for (const column of ast.groupBy ?? []) referenced.add(column);
+  for (const term of ast.orderBy ?? []) referenced.add(term.column);
+  if (ast.where !== undefined) collectExprColumns(ast.where, referenced);
+  if (ast.having !== undefined) collectExprColumns(ast.having, referenced);
+  if (ast.qualify !== undefined) collectExprColumns(ast.qualify, referenced);
+  for (const window of Object.values(ast.windows ?? {})) {
+    for (const expr of window.args) collectExprColumns(expr, referenced);
+    for (const expr of window.over.partitionBy) collectExprColumns(expr, referenced);
+    for (const term of window.over.orderBy) collectExprColumns(term.expr, referenced);
+    if (window.over.frame?.start.offset !== undefined)
+      collectExprColumns(window.over.frame.start.offset, referenced);
+    if (window.over.frame?.end.offset !== undefined)
+      collectExprColumns(window.over.frame.end.offset, referenced);
+    if (window.filter !== undefined) collectExprColumns(window.filter, referenced);
+  }
+  for (const join of sqlJoins(ast)) {
+    for (const column of join.leftKey) referenced.add(column);
+    for (const column of join.rightKey) referenced.add(column);
+  }
+  if (ast.subqueryJoin !== undefined) {
+    for (const column of ast.subqueryJoin.leftKey) referenced.add(column);
+    for (const column of ast.subqueryJoin.rightKey) referenced.add(column);
+    if (ast.subqueryJoin.where !== undefined)
+      collectExprColumns(ast.subqueryJoin.where, referenced);
+    for (const term of ast.subqueryJoin.orderBy ?? []) referenced.add(term.column);
+  }
+
+  for (const column of referenced) addSourceColumn(columns, aliases, column);
+  if (ast.cte !== undefined) collectSourceColumnsFromAst(ast.cte.query, columns, seen);
+  for (const subquery of Object.values(ast.scalarSubqueries ?? {})) {
+    collectSourceColumnsFromAst(subquery.query, columns, seen);
+  }
+}
+
+function sourceAliases(ast: SqlQueryAst): Map<string, string> {
+  const aliases = new Map<string, string>([[ast.source, ast.source]]);
+  const joins = sqlJoins(ast);
+  const firstJoin = joins[0];
+  if (firstJoin !== undefined) aliases.set(firstJoin.leftAlias, ast.source);
+  for (const join of joins) {
+    aliases.set(join.source, join.source);
+    aliases.set(join.alias, join.source);
+  }
+  return aliases;
+}
+
+function addSourceColumn(
+  columns: Map<string, Set<string>>,
+  aliases: Map<string, string>,
+  column: string,
+): void {
+  if (column === "*" || column.endsWith(".*")) return;
+  const dot = column.indexOf(".");
+  if (dot > 0) {
+    const source = aliases.get(column.slice(0, dot));
+    if (source === undefined) return;
+    addColumn(columns, source, column.slice(dot + 1));
+    return;
+  }
+  if (aliases.size !== 1) return;
+  const source = aliases.values().next().value as string | undefined;
+  if (source !== undefined) addColumn(columns, source, column);
+}
+
+function addColumn(columns: Map<string, Set<string>>, source: string, column: string): void {
+  let sourceColumns = columns.get(source);
+  if (sourceColumns === undefined) {
+    sourceColumns = new Set<string>();
+    columns.set(source, sourceColumns);
+  }
+  sourceColumns.add(column);
+}
+
+function icebergPlanOptions(table: SqlIcebergTableOptions): PlanIcebergFilesOptions {
+  const options: PlanIcebergFilesOptions = {};
+  if (table.snapshotId !== undefined) options.snapshotId = table.snapshotId;
+  if (table.asOfTimestampMs !== undefined) options.asOfTimestampMs = table.asOfTimestampMs;
+  if (table.ref !== undefined) options.ref = table.ref;
+  if (table.readMode !== undefined) options.readMode = table.readMode;
+  return options;
 }
 
 function nextSqlTempId(): string {

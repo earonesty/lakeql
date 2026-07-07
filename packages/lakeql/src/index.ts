@@ -25,6 +25,7 @@ export {
   createLake,
   querySql,
   type SqlCsvOptions,
+  type SqlIcebergTableOptions,
   type SqlLake,
   type SqlQueryOptions,
   SqlQueryResult,

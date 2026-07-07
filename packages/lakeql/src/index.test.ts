@@ -265,6 +265,90 @@ it("runs SQL over read_parquet globs and named table joins", async () => {
   ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
 });
 
+it("runs SQL over named Iceberg table bindings", async () => {
+  const store = memoryStore();
+  await writeIcebergFixture(store);
+  await writePartitionedParquet(store, "sql/labels", {
+    rows: [
+      { id: 0, label: "zero" },
+      { id: 2, label: "two" },
+      { id: 300, label: "filtered" },
+    ],
+  });
+  const lake = createLake({ store });
+  const icebergTables = {
+    places: {
+      metadataPath: ICEBERG.metadataFile,
+      readMode: "ignore-deletes",
+    },
+  };
+
+  await expect(
+    lake
+      .sql("select id, nation from places where nation = 'US' order by id", { icebergTables })
+      .toArray(),
+  ).resolves.toEqual([
+    { id: 0, nation: "US" },
+    { id: 1, nation: "US" },
+    { id: 2, nation: "US" },
+    { id: 3, nation: "US" },
+    { id: 200, nation: "US" },
+    { id: 201, nation: "US" },
+    { id: 202, nation: "US" },
+    { id: 203, nation: "US" },
+  ]);
+
+  await expect(
+    lake
+      .sql(
+        [
+          "select p.id as id, p.nation as nation, l.label as label",
+          "from places p join labels l using (id)",
+          "where p.nation = 'US'",
+          "order by p.id",
+        ].join(" "),
+        {
+          icebergTables,
+          tables: { labels: "sql/labels/*.parquet" },
+        },
+      )
+      .toArray(),
+  ).resolves.toEqual([
+    { id: 0, nation: "US", label: "zero" },
+    { id: 2, nation: "US", label: "two" },
+  ]);
+
+  await expect(
+    lake
+      .sql(
+        [
+          "select id",
+          "from places",
+          "where id in (select id from labels order by id desc limit 1)",
+        ].join(" "),
+        {
+          icebergTables,
+          tables: { labels: "sql/labels/*.parquet" },
+        },
+      )
+      .toArray(),
+  ).resolves.toEqual([]);
+
+  await expect(
+    lake
+      .sql("select id from places", {
+        tables: { places: "sql/labels/*.parquet" },
+        icebergTables,
+      })
+      .toArray(),
+  ).rejects.toMatchObject({ code: "LAKEQL_VALIDATION_ERROR" });
+
+  const leakedTempObjects = [];
+  for await (const object of store.list("__lakeql_sql_iceberg/"))
+    leakedTempObjects.push(object.path);
+  expect(leakedTempObjects).toEqual([]);
+});
+
 it("runs aggregate, CTE, scalar subquery, and semi-join SQL helpers", async () => {
   const store = memoryStore();
   await store.put(SALES.file, await readFile(fixturePath(SALES.file)));
@@ -667,6 +751,25 @@ async function writeStoresFixture(store: ReturnType<typeof memoryStore>, prefix:
   });
 }
 
+async function writeIcebergFixture(store: ReturnType<typeof memoryStore>) {
+  await store.put(ICEBERG.metadataFile, await readFile(fixturePath(ICEBERG.metadataFile)));
+  await store.put(ICEBERG.manifestListFile, await readFile(fixturePath(ICEBERG.manifestListFile)));
+  for (const manifestFile of ICEBERG.manifestFiles) {
+    await store.put(manifestFile, await readFile(fixturePath(manifestFile)));
+  }
+  for (const dataFile of ICEBERG.dataFiles) {
+    await store.put(dataFile, await readFile(fixturePath(dataFile)));
+  }
+  await store.put(
+    ICEBERG.equalityDeleteFile,
+    await readFile(fixturePath(ICEBERG.equalityDeleteFile)),
+  );
+  await store.put(
+    ICEBERG.positionDeleteFile,
+    await readFile(fixturePath(ICEBERG.positionDeleteFile)),
+  );
+}
+
 async function readStream(stream: ReadableStream<Uint8Array>): Promise<string> {
   const chunks = [];
   for await (const chunk of stream) chunks.push(chunk);
@@ -703,22 +806,7 @@ it("loads, plans, and scans a Parquet table through the unified engine surface",
 
 it("loads, plans, and scans an Iceberg table through the unified engine surface", async () => {
   const store = memoryStore();
-  await store.put(ICEBERG.metadataFile, await readFile(fixturePath(ICEBERG.metadataFile)));
-  await store.put(ICEBERG.manifestListFile, await readFile(fixturePath(ICEBERG.manifestListFile)));
-  for (const manifestFile of ICEBERG.manifestFiles) {
-    await store.put(manifestFile, await readFile(fixturePath(manifestFile)));
-  }
-  for (const dataFile of ICEBERG.dataFiles) {
-    await store.put(dataFile, await readFile(fixturePath(dataFile)));
-  }
-  await store.put(
-    ICEBERG.equalityDeleteFile,
-    await readFile(fixturePath(ICEBERG.equalityDeleteFile)),
-  );
-  await store.put(
-    ICEBERG.positionDeleteFile,
-    await readFile(fixturePath(ICEBERG.positionDeleteFile)),
-  );
+  await writeIcebergFixture(store);
 
   const table = await loadTable({
     format: "iceberg",
