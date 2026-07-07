@@ -368,6 +368,33 @@ describe("parseSql", () => {
       orderBy: [{ column: "n", direction: "desc" }],
     });
 
+    const directHaving = parseSql(`
+      select region
+      from events
+      group by region
+      having count(*) > 2 and max(amount) > 10
+      order by region
+    `);
+    expect(directHaving).toMatchObject({
+      source: "events",
+      select: ["region"],
+      groupBy: ["region"],
+      hiddenAggregates: ["__lakeql_having_0", "__lakeql_having_1"],
+      aggregates: {
+        __lakeql_having_0: { op: "count" },
+        __lakeql_having_1: { op: "max", column: "amount" },
+      },
+      having: {
+        kind: "logical",
+        op: "and",
+        operands: [
+          { kind: "compare", left: { kind: "column", name: "__lakeql_having_0" } },
+          { kind: "compare", left: { kind: "column", name: "__lakeql_having_1" } },
+        ],
+      },
+    });
+    expect(parseSql(formatSql(directHaving))).toEqual(directHaving);
+
     const expressionAggregates = parseSql(`
       select region, sum(amount * 2) as doubled_total,
         count(distinct user_id) as users,

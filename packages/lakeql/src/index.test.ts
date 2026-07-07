@@ -961,6 +961,20 @@ it("covers SQL helper defaults, validation, empty results, and CSV escaping", as
 
   await expect(
     lake
+      .sql(
+        "select region from input group by region having count(*) > 20 and max(amount) > 900 order by region asc",
+        { path: SALES.file },
+      )
+      .toArray(),
+  ).resolves.toEqual([
+    { region: "east" },
+    { region: "north" },
+    { region: "south" },
+    { region: "west" },
+  ]);
+
+  await expect(
+    lake
       .sql("select * from input group by region order by region asc limit 1", { path: SALES.file })
       .toArray(),
   ).resolves.toEqual([{ region: "east" }]);

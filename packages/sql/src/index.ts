@@ -23,6 +23,7 @@ import { extractWindowFrames, type SqlWindowPrepassFrame } from "./window-prepas
 export interface SqlQueryAst extends PathQueryInit {
   groupBy?: string[];
   aggregates?: AggregateSpec;
+  hiddenAggregates?: string[];
   having?: Expr;
   join?: SqlJoinAst;
   joins?: SqlJoinAst[];
@@ -89,10 +90,18 @@ interface SqlParseContext {
   nextScalarSubqueryId: number;
   windows: Record<string, WindowExpr>;
   nextWindowId: number;
+  nextHavingAggregateId: number;
+  havingAggregates?: HavingAggregateContext;
   windowFrames: (SqlWindowPrepassFrame | undefined)[];
   nextWindowFrameId: number;
   qualifySql?: string;
   parameters?: readonly SqlParameterValue[];
+}
+
+interface HavingAggregateContext {
+  aggregates: AggregateSpec;
+  hiddenAggregates: Set<string>;
+  outputAliases: Set<string>;
 }
 
 export function parseSql(sql: string, options: SqlParseOptions = {}): SqlQueryAst {
@@ -144,7 +153,9 @@ export function formatSql(ast: SqlQueryAst): string {
   for (const [alias, expr] of Object.entries(ast.projections ?? {})) {
     select.push(`${formatExpr(expr, ast)} as ${formatIdentifier(alias)}`);
   }
+  const hiddenAggregates = new Set(ast.hiddenAggregates ?? []);
   for (const [alias, aggregate] of Object.entries(ast.aggregates ?? {})) {
+    if (hiddenAggregates.has(alias)) continue;
     select.push(`${formatAggregate(aggregate)} as ${formatIdentifier(alias)}`);
   }
 
@@ -220,14 +231,17 @@ function selectStatementToAst(
 ): SqlQueryAst {
   const previousWindows = context.windows;
   const previousNextWindowId = context.nextWindowId;
+  const previousNextHavingAggregateId = context.nextHavingAggregateId;
   const previousQualifySql = context.qualifySql;
   context.windows = {};
   context.nextWindowId = 0;
+  context.nextHavingAggregateId = 0;
   if (qualifySql === undefined) delete context.qualifySql;
   else context.qualifySql = qualifySql;
   const ast = selectStatementToAstInScope(statement, context);
   context.windows = previousWindows;
   context.nextWindowId = previousNextWindowId;
+  context.nextHavingAggregateId = previousNextHavingAggregateId;
   if (previousQualifySql === undefined) delete context.qualifySql;
   else context.qualifySql = previousQualifySql;
   return ast;
@@ -272,6 +286,7 @@ function selectStatementToAstInScope(statement: PgNode, context: SqlParseContext
   const projections: Record<string, Expr> = {};
   const aggregates: AggregateSpec = {};
   const outputAliases = new Set<string>();
+  const hiddenAggregates = new Set<string>();
 
   for (const column of columns) {
     const item = asNode(column, "select item");
@@ -326,7 +341,16 @@ function selectStatementToAstInScope(statement: PgNode, context: SqlParseContext
     );
   }
   if (statement.having !== undefined) {
-    ast.having = exprToLakeql(asNode(statement.having, "HAVING"), scope, context);
+    ast.having = havingToExpr(
+      asNode(statement.having, "HAVING"),
+      scope,
+      context,
+      aggregates,
+      hiddenAggregates,
+      outputAliases,
+    );
+    if (Object.keys(aggregates).length > 0) ast.aggregates = aggregates;
+    if (hiddenAggregates.size > 0) ast.hiddenAggregates = [...hiddenAggregates];
   }
   if (context.qualifySql !== undefined) {
     ast.qualify = qualifyToExpr(context.qualifySql, scope, context);
@@ -362,12 +386,52 @@ function qualifyToExpr(sql: string, scope: SqlScope, context: SqlParseContext): 
   return exprToLakeql(where, scope, context);
 }
 
+function havingToExpr(
+  expr: PgNode,
+  scope: SqlScope,
+  context: SqlParseContext,
+  aggregates: AggregateSpec,
+  hiddenAggregates: Set<string>,
+  outputAliases: Set<string>,
+): Expr {
+  const previous = context.havingAggregates;
+  context.havingAggregates = { aggregates, hiddenAggregates, outputAliases };
+  try {
+    return exprToLakeql(expr, scope, context);
+  } finally {
+    if (previous === undefined) delete context.havingAggregates;
+    else context.havingAggregates = previous;
+  }
+}
+
+function registerHavingAggregate(expr: PgNode, scope: SqlScope, context: SqlParseContext): string {
+  const havingAggregates = context.havingAggregates;
+  if (havingAggregates === undefined) throwUnsupported("HAVING aggregate context is missing");
+  const spec = aggregateCallToSpec(expr, scope, context);
+  for (const [alias, aggregate] of Object.entries(havingAggregates.aggregates)) {
+    if (JSON.stringify(aggregate) === JSON.stringify(spec)) return alias;
+  }
+  let alias = `__lakeql_having_${context.nextHavingAggregateId}`;
+  context.nextHavingAggregateId += 1;
+  while (
+    havingAggregates.outputAliases.has(alias) ||
+    havingAggregates.aggregates[alias] !== undefined
+  ) {
+    alias = `__lakeql_having_${context.nextHavingAggregateId}`;
+    context.nextHavingAggregateId += 1;
+  }
+  havingAggregates.aggregates[alias] = spec;
+  havingAggregates.hiddenAggregates.add(alias);
+  return alias;
+}
+
 function newSqlParseContext(options: SqlParseOptions = {}): SqlParseContext {
   return {
     scalarSubqueries: {},
     nextScalarSubqueryId: 0,
     windows: {},
     nextWindowId: 0,
+    nextHavingAggregateId: 0,
     windowFrames: [],
     nextWindowFrameId: 0,
     ...(options.parameters === undefined ? {} : { parameters: options.parameters }),
@@ -404,6 +468,9 @@ function exprToLakeql(
     case "cast":
       return castToExpr(expr, scope, context);
     case "call":
+      if (context.havingAggregates !== undefined && isAggregateCall(expr)) {
+        return { kind: "column", name: registerHavingAggregate(expr, scope, context) };
+      }
       if ("over" in expr && expr.over !== undefined) {
         return { kind: "column", name: registerSyntheticWindow(expr, scope, context) };
       }
@@ -1664,6 +1731,10 @@ function formatExpr(expr: Expr, ast?: SqlQueryAst): string {
     case "literal":
       return formatLiteral(expr.value);
     case "column":
+      if (ast?.hiddenAggregates?.includes(expr.name) === true) {
+        const aggregate = ast.aggregates?.[expr.name];
+        if (aggregate !== undefined) return formatAggregate(aggregate);
+      }
       return formatIdentifier(expr.name);
     case "compare":
       return `${formatExpr(expr.left, ast)} ${formatCompareOp(expr.op)} ${formatExpr(expr.right, ast)}`;

@@ -79,7 +79,9 @@ Current state:
   typed diagnostic instead of surfacing later as a generic materialization
   failure.
 - `GROUP BY` can reference computed projection aliases, with DuckDB reference
-  coverage for common aggregate queries.
+  coverage for common aggregate queries. `HAVING` can reference SELECT
+  aggregate aliases or direct aggregate calls such as `count(*)` and
+  `max(amount)` without leaking hidden aggregate values into output rows.
 - Runtime join and `IN` subquery sorting resolve projected output aliases before
   falling back to source columns, so `ORDER BY` keeps DuckDB-style alias
   behavior even on manually planned row paths.
@@ -107,8 +109,8 @@ TODO:
   semantics stay covered by DuckDB reference tests.
 - Broaden remaining subquery support for common analytical correlation forms
   beyond bounded predicate `IN`/`EXISTS`.
-- Tighten remaining alias resolution edge cases so `HAVING` and `QUALIFY`
-  behave the way DuckDB users expect across nested scopes.
+- Tighten remaining alias resolution edge cases so `QUALIFY` behaves the way
+  DuckDB users expect across nested scopes.
 
 Acceptance criteria:
 

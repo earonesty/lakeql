@@ -828,12 +828,13 @@ function projectAggregateRows(
   hiddenCountAlias: string,
 ): Row[] {
   const aggregates = Object.entries(ast.aggregates ?? {});
+  const hiddenAggregates = new Set(ast.hiddenAggregates ?? []);
   const hasWildcardProjection = ast.select?.includes("*") ?? false;
   return rows.map((row) => {
     const out: Row = {};
     if (hasWildcardProjection) {
       for (const [column, value] of Object.entries(row)) {
-        if (column !== hiddenCountAlias) out[column] = value;
+        if (column !== hiddenCountAlias && !hiddenAggregates.has(column)) out[column] = value;
       }
     } else if (ast.select !== undefined) {
       for (const select of ast.select ?? []) {
@@ -841,7 +842,9 @@ function projectAggregateRows(
         out[alias] = row[column];
       }
     }
-    for (const [alias] of aggregates) out[alias] = row[alias];
+    for (const [alias] of aggregates) {
+      if (!hiddenAggregates.has(alias)) out[alias] = row[alias];
+    }
     for (const [alias, expr] of Object.entries(ast.projections ?? {})) {
       out[alias] = aggregateProjectionValue(alias, expr, row, ast);
     }

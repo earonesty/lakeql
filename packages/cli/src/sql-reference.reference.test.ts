@@ -81,6 +81,12 @@ describeReference("SQL CLI DuckDB reference comparisons", () => {
       duckdb: `select region, count(*) as rows, max(amount) as max_amount from read_parquet('${sqlString(fixturePath(SALES.file))}') group by region having max_amount > 980 order by region asc limit 2`,
     },
     {
+      name: "grouped aggregate direct having",
+      lakeql:
+        "select region from input group by region having count(*) > 20 and max(amount) > 900 order by region asc",
+      duckdb: `select region from read_parquet('${sqlString(fixturePath(SALES.file))}') group by region having count(*) > 20 and max(amount) > 900 order by region asc`,
+    },
+    {
       name: "simple filtered CTE",
       lakeql:
         "with recent as (select store_id, amount from input where amount > 900) select store_id, amount from recent order by amount desc limit 2",
