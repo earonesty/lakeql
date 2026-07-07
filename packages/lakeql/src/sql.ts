@@ -852,7 +852,7 @@ async function joinRowsFromAst(
   if (hasAggregation(ast)) {
     throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "Aggregate SQL over JOIN is not supported yet");
   }
-  const pushedFilters = pushdownInnerJoinFilters(ast, joins);
+  const pushedFilters = pushdownJoinFilters(ast, joins);
   const readColumns = joinReadColumns(ast, joins);
   let leftRows = await rowsForJoinAlias(lake.path(ast.source), readColumns, firstJoin.leftAlias);
   const leftFilter = pushedFilters.filters.get(firstJoin.leftAlias);
@@ -998,17 +998,17 @@ function sqlJoins(ast: SqlQueryAst): NonNullable<SqlQueryAst["joins"]> {
   return ast.join === undefined ? [] : [ast.join];
 }
 
-function pushdownInnerJoinFilters(
+function pushdownJoinFilters(
   ast: SqlQueryAst,
   joins: NonNullable<SqlQueryAst["joins"]>,
 ): { filters: Map<string, Expr>; where?: Expr } {
   const filters = new Map<string, Expr>();
-  if (
-    ast.where === undefined ||
-    joins.some((join) => join.type !== "inner" && join.type !== "cross")
-  ) {
+  if (ast.where === undefined) {
     return { filters, ...(ast.where === undefined ? {} : { where: ast.where }) };
   }
+  const canRemovePushedPredicates = joins.every(
+    (join) => join.type === "inner" || join.type === "cross",
+  );
   const aliases = new Set<string>();
   const firstJoin = joins[0];
   if (firstJoin !== undefined) aliases.add(firstJoin.leftAlias);
@@ -1022,6 +1022,7 @@ function pushdownInnerJoinFilters(
       continue;
     }
     addJoinFilter(filters, alias, stripExprJoinAlias(predicate, alias));
+    if (!canRemovePushedPredicates) remaining.push(predicate);
   }
   const where = combineAndPredicates(remaining);
   return { filters, ...(where === undefined ? {} : { where }) };

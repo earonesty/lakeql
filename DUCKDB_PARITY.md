@@ -85,6 +85,8 @@ Current state:
 - Inner and cross join chains pre-filter conjunctive `WHERE` predicates when
   all referenced columns prove the predicate belongs to one qualified input
   alias, reducing bounded join build/probe work without changing results.
+- Outer join row paths can pre-filter proven single-side `WHERE` predicates
+  while retaining the residual filter, preserving null-extension semantics.
 - Join row paths push source projections down to each input side when selected
   columns, join keys, predicates, ordering, and computed projections can all be
   proven against qualified input aliases.
@@ -98,7 +100,7 @@ TODO:
   and nested scopes without changing query semantics.
 - Revisit outer-join planner optimizations after the bounded execution
   semantics stay covered by DuckDB reference tests.
-- Extend join-chain predicate pushdown only where outer-join null-extension
+- Extend outer-join predicate pushdown removal only where null-extension
   semantics remain proven.
 - Broaden remaining subquery support for common analytical correlation forms
   beyond bounded predicate `EXISTS`.

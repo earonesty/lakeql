@@ -720,6 +720,20 @@ it("runs SQL helper join planning, wildcard projection, and null ordering branch
   ]);
 
   await expect(
+    lake
+      .sql(
+        [
+          "select s.store_id as store_id, d.segment as segment",
+          "from sales s left join stores d using (store_id)",
+          "where d.segment = 'retail'",
+          "order by s.store_id asc",
+        ].join(" "),
+        { tables, joinMaxRightRows: 1 },
+      )
+      .toArray(),
+  ).resolves.toEqual([{ store_id: "s1", segment: "retail" }]);
+
+  await expect(
     readStream(
       lake
         .sql(
