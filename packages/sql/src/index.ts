@@ -176,6 +176,7 @@ function withStatementToAst(statement: PgNode, context: SqlParseContext): SqlQue
   const outer = asNode(statement.in, "CTE outer query");
   if (outer.type !== "select") throwUnsupported("Only SELECT after WITH is supported");
   const ast = selectStatementToAst(outer, context, context.qualifySql);
+  if (ast.cte !== undefined) throwUnsupported("WITH queries cannot also use derived tables");
   ast.cte = { name, query: cteQuery };
   return ast;
 }
@@ -219,8 +220,9 @@ function selectStatementToAstInScope(statement: PgNode, context: SqlParseContext
   if (from.length !== 1 && from.length !== 2) {
     throwUnsupported("SELECT must have exactly one FROM table or one bounded JOIN");
   }
-  const leftSource = sourceTable(from[0]);
+  const leftSource = sourceTable(from[0], context);
   const ast: SqlQueryAst = { source: leftSource.source };
+  if (leftSource.cte !== undefined) ast.cte = leftSource.cte;
   const scope = new SqlScope(leftSource);
   if (from.length === 2) {
     const join = joinToAst(from[1], leftSource);
@@ -1122,6 +1124,7 @@ function orderByToTerm(value: unknown, scope = SqlScope.empty()): OrderByTerm {
 interface SourceTable {
   source: string;
   alias: string;
+  cte?: SqlCteAst;
 }
 
 class SqlScope {
@@ -1168,13 +1171,25 @@ class SqlScope {
   }
 }
 
-function sourceTable(value: unknown): SourceTable {
+function sourceTable(value: unknown, context?: SqlParseContext): SourceTable {
   const node = asNode(value, "FROM item");
   if (node.type === "call") return readParquetSourceTable(node);
+  if (node.type === "statement") return derivedSourceTable(node, context);
   if (node.type !== "table") throwUnsupported("Only table FROM sources are supported");
   if (node.join !== undefined) throwUnsupported("Unexpected JOIN position");
   const source = nameNodeToString(node.name);
   return { source, alias: aliasName(node.name) ?? source };
+}
+
+function derivedSourceTable(node: PgNode, context: SqlParseContext | undefined): SourceTable {
+  if (context === undefined) throwUnsupported("Derived tables are not supported here");
+  const alias = aliasName(node.alias);
+  if (alias === undefined) throwUnsupported("Derived tables require an alias");
+  const statement = asNode(node.statement, "derived table SELECT");
+  if (statement.type !== "select") throwUnsupported("Derived tables must be SELECT statements");
+  const query = selectStatementToAst(statement, context);
+  validateCteQuery(query);
+  return { source: alias, alias, cte: { name: alias, query } };
 }
 
 function readParquetSourceTable(node: PgNode): SourceTable {

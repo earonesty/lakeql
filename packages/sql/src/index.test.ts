@@ -574,6 +574,37 @@ describe("parseSql", () => {
     expect(parseSql(formatSql(ast))).toEqual(ast);
   });
 
+  it("compiles single-source derived tables through CTE materialization", () => {
+    const ast = parseSql(`
+      select id
+      from (
+        select id, amount
+        from orders
+        where amount > 10
+      ) filtered
+      where id > 1
+      order by amount desc
+      limit 5
+    `);
+
+    expect(ast).toMatchObject({
+      source: "filtered",
+      cte: {
+        name: "filtered",
+        query: {
+          source: "orders",
+          select: ["id", "amount"],
+          where: { kind: "compare", op: "gt" },
+        },
+      },
+      select: ["id"],
+      where: { kind: "compare", left: { kind: "column", name: "id" } },
+      orderBy: [{ column: "amount", direction: "desc" }],
+      limit: 5,
+    });
+    expect(parseSql(formatSql(ast))).toEqual(ast);
+  });
+
   it("compiles scalar subqueries in WHERE expressions", () => {
     const aggregateScalar = parseSql(`
       select store_id
@@ -1057,7 +1088,6 @@ describe("parseSql", () => {
       "select * from orders full join customers on orders.customer_id = customers.id",
       "select * from orders cross join customers",
       "select * from orders join customers on orders.customer_id > customers.id",
-      "select id from (select id from orders) orders",
       "select id from orders where id in (select order_id from refunds order by order_id)",
     ];
 
