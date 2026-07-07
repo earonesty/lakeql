@@ -61,9 +61,9 @@ Current state:
   equi-join chains, and bounded `CROSS JOIN`/comma join forms exist.
 - `read_parquet('path')` table-function sources map onto normal LakeQL path
   planning.
-- Scalar subqueries, `IN (select ...)`, uncorrelated `EXISTS`, correlated
-  equality `IN`/`EXISTS`, and single-source derived tables compile to existing
-  scalar, semi/anti join, and CTE materialization plans.
+- Scalar subqueries, ordered/limited `IN (select ...)`, uncorrelated `EXISTS`,
+  correlated equality `IN`/`EXISTS`, and single-source derived tables compile
+  to existing scalar, semi/anti join, and CTE materialization plans.
 - Searched `CASE` and simple `CASE <expr> WHEN ...` forms are supported.
 - `GROUP BY` can reference computed projection aliases, with DuckDB reference
   coverage for common aggregate queries.
@@ -80,8 +80,8 @@ TODO:
 - Add non-equi join support only with explicit bounded planning rules. Do not
   hide cartesian explosion behind SQL compatibility.
 - Broaden remaining subquery support for common analytical shapes: nested
-  derived tables, subqueries with ordering/limits where SQL semantics matter,
-  and correlation forms that do not reduce to equality semi/anti joins.
+  derived tables and correlation forms that do not reduce to equality semi/anti
+  joins.
 - Support deeper CTE usage when it compiles to a normal query plan without
   recursive semantics. Recursive CTEs should remain explicitly rejected until
   there is a bounded execution design.

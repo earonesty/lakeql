@@ -215,6 +215,24 @@ it("runs SQL over read_parquet globs and named table joins", async () => {
     lake
       .sql(
         [
+          "select store_id",
+          "from sales",
+          "where store_id in (select store_id from stores order by store_id asc limit 1)",
+        ].join(" "),
+        {
+          tables: {
+            sales: "sql/sales/*.parquet",
+            stores: "sql/stores/*.parquet",
+          },
+        },
+      )
+      .toArray(),
+  ).resolves.toEqual([{ store_id: "s1" }]);
+
+  await expect(
+    lake
+      .sql(
+        [
           "select s.store_id as store_id, r.manager as manager",
           "from sales s cross join regions r",
           "order by s.store_id asc, r.manager asc",

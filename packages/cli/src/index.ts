@@ -655,6 +655,8 @@ async function subqueryJoinRowsFromAst(
   const join = ast.subqueryJoin;
   let rightRows = await lake.path(join.source).toArray();
   if (join.where !== undefined) rightRows = rightRows.filter((row) => matches(join.where, row));
+  if (join.orderBy !== undefined) rightRows = sortRows(rightRows, join.orderBy);
+  rightRows = offsetLimitSubqueryRows(rightRows, join);
   let rows = await broadcastJoin(await lake.path(ast.source).toArray(), rightRows, {
     leftKey: join.leftKey,
     rightKey: join.rightKey,
@@ -669,6 +671,15 @@ async function subqueryJoinRowsFromAst(
   if (ast.limit !== undefined) rows = rows.slice(offset, offset + ast.limit);
   else if (offset > 0) rows = rows.slice(offset);
   return rows;
+}
+
+function offsetLimitSubqueryRows(
+  rows: Row[],
+  subquery: Pick<NonNullable<ReturnType<typeof parseSql>["subqueryJoin"]>, "limit" | "offset">,
+): Row[] {
+  const offset = subquery.offset ?? 0;
+  if (subquery.limit !== undefined) return rows.slice(offset, offset + subquery.limit);
+  return offset > 0 ? rows.slice(offset) : rows;
 }
 
 function qualifyRow(row: Row, alias: string): Row {

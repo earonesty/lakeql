@@ -58,6 +58,9 @@ export interface SqlSubqueryJoinAst {
   leftKey: string[];
   rightKey: string[];
   where?: Expr;
+  orderBy?: OrderByTerm[];
+  limit?: number;
+  offset?: number;
 }
 
 export interface SqlCteAst {
@@ -534,8 +537,6 @@ function subqueryJoinToAst(
 ): SqlSubqueryJoinAst {
   rejectPresent(subquery, "groupBy", "Grouped IN subqueries are not supported");
   rejectPresent(subquery, "having", "HAVING in IN subqueries is not supported");
-  rejectPresent(subquery, "orderBy", "ORDER BY in IN subqueries is not supported");
-  rejectPresent(subquery, "limit", "LIMIT in IN subqueries is not supported");
   const from = optionalArray(subquery.from);
   if (from.length !== 1) throwUnsupported("IN subqueries must select from one table");
   const source = sourceTable(from[0]);
@@ -555,6 +556,15 @@ function subqueryJoinToAst(
     rightKey,
   };
   applyCorrelatedSubqueryWhere(out, subquery, outerScope, subqueryScope, context);
+  if (subquery.orderBy !== undefined) {
+    out.orderBy = optionalArray(subquery.orderBy).map((term) => orderByToTerm(term, subqueryScope));
+  }
+  const limit = subquery.limit;
+  if (limit !== undefined) {
+    const node = asNode(limit, "IN subquery LIMIT");
+    if (node.limit !== undefined) out.limit = nonNegativeInteger(node.limit, "LIMIT", context);
+    if (node.offset !== undefined) out.offset = nonNegativeInteger(node.offset, "OFFSET", context);
+  }
   return out;
 }
 
@@ -1593,7 +1603,13 @@ function formatSubqueryJoin(subqueryJoin: SqlSubqueryJoinAst): string {
       ? formatIdentifier(subqueryJoin.rightKey[0] ?? "")
       : subqueryJoin.rightKey.map(formatIdentifier).join(", ");
   const where = subqueryJoin.where === undefined ? "" : ` where ${formatExpr(subqueryJoin.where)}`;
-  return `${left} ${subqueryJoin.type === "anti" ? "not in" : "in"} (select ${right} from ${formatIdentifier(subqueryJoin.source)}${where})`;
+  const orderBy =
+    subqueryJoin.orderBy === undefined || subqueryJoin.orderBy.length === 0
+      ? ""
+      : ` order by ${subqueryJoin.orderBy.map(formatOrderByTerm).join(", ")}`;
+  const limit = subqueryJoin.limit === undefined ? "" : ` limit ${subqueryJoin.limit}`;
+  const offset = subqueryJoin.offset === undefined ? "" : ` offset ${subqueryJoin.offset}`;
+  return `${left} ${subqueryJoin.type === "anti" ? "not in" : "in"} (select ${right} from ${formatIdentifier(subqueryJoin.source)}${where}${orderBy}${limit}${offset})`;
 }
 
 function formatAggregate(aggregate: AggregateSpec[string]): string {

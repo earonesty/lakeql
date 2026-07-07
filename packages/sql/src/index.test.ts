@@ -616,6 +616,30 @@ describe("parseSql", () => {
       },
     });
     expect(parseSql(formatSql(correlated))).toEqual(correlated);
+
+    const orderedLimited = parseSql(`
+      select store_id
+      from sales
+      where store_id in (
+        select store_id
+        from stores
+        order by store_id asc
+        limit 2
+        offset 1
+      )
+    `);
+    expect(orderedLimited).toMatchObject({
+      subqueryJoin: {
+        source: "stores",
+        type: "semi",
+        leftKey: ["store_id"],
+        rightKey: ["store_id"],
+        orderBy: [{ column: "store_id", direction: "asc" }],
+        limit: 2,
+        offset: 1,
+      },
+    });
+    expect(parseSql(formatSql(orderedLimited))).toEqual(orderedLimited);
   });
 
   it("compiles simple non-recursive CTEs", () => {
@@ -1160,7 +1184,6 @@ describe("parseSql", () => {
       "with a as (select id from t), b as (select id from t) select id from a",
       "with recent as (select * from orders join customers on orders.customer_id = customers.id) select * from recent",
       "select * from orders join customers on orders.customer_id > customers.id",
-      "select id from orders where id in (select order_id from refunds order by order_id)",
     ];
 
     for (const sql of unsupported) {

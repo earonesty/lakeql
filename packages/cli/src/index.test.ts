@@ -415,6 +415,29 @@ describe("runCli", () => {
     ]);
   });
 
+  it("executes ordered and limited IN subqueries before semi joins", async () => {
+    const rightStoresPath = await rightStoresFixturePath();
+    const result = await runCli([
+      "query",
+      "--table",
+      `sales=${fixturePath(SALES.file)}`,
+      "--table",
+      `stores=${rightStoresPath}`,
+      "--sql",
+      [
+        "select distinct store_id",
+        "from sales",
+        "where store_id in (select store_id from stores order by store_id asc limit 1)",
+        "order by store_id",
+      ].join(" "),
+      "--format",
+      "json",
+    ]);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    expect(JSON.parse(result.stdout)).toEqual([{ store_id: "store-000" }]);
+  });
+
   it("executes NOT IN subqueries as bounded anti joins", async () => {
     const storesPath = await storesFixturePath();
     const result = await runCli([
