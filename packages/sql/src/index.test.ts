@@ -616,6 +616,54 @@ describe("parseSql", () => {
     expect(parseSql(formatSql(projectionScalar))).toEqual(projectionScalar);
   });
 
+  it("compiles uncorrelated EXISTS subqueries through scalar counts", () => {
+    const exists = parseSql(`
+      select store_id
+      from sales
+      where exists (
+        select 1
+        from stores
+        where segment = 'enterprise'
+      )
+    `);
+
+    expect(exists).toMatchObject({
+      where: {
+        kind: "compare",
+        op: "gt",
+        left: { kind: "call", fn: "__lakeql_scalar_subquery" },
+        right: { kind: "literal", value: 0 },
+      },
+      scalarSubqueries: {
+        scalar_0: {
+          column: "__lakeql_exists_count",
+          query: {
+            source: "stores",
+            aggregates: { __lakeql_exists_count: { op: "count" } },
+            where: { kind: "compare", left: { kind: "column", name: "segment" } },
+          },
+        },
+      },
+    });
+    expect(parseSql(formatSql(exists))).toEqual(exists);
+
+    const notExists = parseSql(`
+      select store_id
+      from sales
+      where not exists (select 1 from stores)
+    `);
+    expect(notExists.where).toMatchObject({
+      kind: "not",
+      operand: {
+        kind: "compare",
+        op: "gt",
+        left: { kind: "call", fn: "__lakeql_scalar_subquery" },
+        right: { kind: "literal", value: 0 },
+      },
+    });
+    expect(parseSql(formatSql(notExists))).toEqual(notExists);
+  });
+
   it("compiles additional VISION geospatial and H3 SQL examples", () => {
     expect(
       parseSql(`
@@ -947,6 +995,7 @@ describe("parseSql", () => {
       "select id from (select id from orders) orders",
       "select id from orders where id in (select order_id from refunds order by order_id)",
       "select id from orders o where id in (select order_id from refunds r where r.customer_id = o.customer_id)",
+      "select id from orders o where exists (select 1 from refunds r where r.customer_id = o.customer_id)",
     ];
 
     for (const sql of unsupported) {

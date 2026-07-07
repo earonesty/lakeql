@@ -375,6 +375,9 @@ function exprToLakeql(
       if ("over" in expr && expr.over !== undefined) {
         return { kind: "column", name: registerSyntheticWindow(expr, scope, context) };
       }
+      if (functionName(expr.function) === "exists") {
+        return existsSubqueryToExpr(expr, context);
+      }
       return {
         kind: "call",
         fn: functionName(expr.function),
@@ -557,9 +560,45 @@ function scalarSubqueryToExpr(subquery: PgNode, context: SqlParseContext): Expr 
   if (query.aggregates === undefined && query.limit !== 1) {
     throwUnsupported("Scalar subqueries must be aggregate queries or use LIMIT 1");
   }
+  return registerScalarSubquery(query, outputColumns[0] as string, context);
+}
+
+function existsSubqueryToExpr(expr: PgNode, context: SqlParseContext): Expr {
+  const args = optionalArray(expr.args);
+  if (args.length !== 1) throwUnsupported("EXISTS requires exactly one subquery");
+  const subquery = asNode(args[0], "EXISTS subquery");
+  if (subquery.type !== "select") throwUnsupported("EXISTS requires a SELECT subquery");
+  rejectPresent(subquery, "groupBy", "Grouped EXISTS subqueries are not supported");
+  rejectPresent(subquery, "having", "HAVING in EXISTS subqueries is not supported");
+  rejectPresent(subquery, "orderBy", "ORDER BY in EXISTS subqueries is not supported");
+  rejectPresent(subquery, "limit", "LIMIT in EXISTS subqueries is not supported");
+  rejectPresent(subquery, "windows", "Window functions in EXISTS subqueries are not supported");
+  const from = optionalArray(subquery.from);
+  if (from.length !== 1) throwUnsupported("EXISTS subqueries must select from one table");
+  const source = sourceTable(from[0]);
+  const query: SqlQueryAst = {
+    source: source.source,
+    aggregates: { __lakeql_exists_count: { op: "count" } },
+  };
+  if (subquery.where !== undefined) {
+    query.where = exprToLakeql(
+      asNode(subquery.where, "EXISTS subquery WHERE"),
+      new SqlScope(source),
+      context,
+    );
+  }
+  const count = registerScalarSubquery(query, "__lakeql_exists_count", context);
+  return { kind: "compare", op: "gt", left: count, right: literal(0) };
+}
+
+function registerScalarSubquery(
+  query: SqlQueryAst,
+  column: string,
+  context: SqlParseContext,
+): Expr {
   const id = `scalar_${context.nextScalarSubqueryId}`;
   context.nextScalarSubqueryId += 1;
-  context.scalarSubqueries[id] = { query, column: outputColumns[0] as string };
+  context.scalarSubqueries[id] = { query, column };
   return { kind: "call", fn: "__lakeql_scalar_subquery", args: [{ kind: "literal", value: id }] };
 }
 
