@@ -1216,7 +1216,7 @@ describe("parseSql", () => {
   it("rejects SQL outside the documented subset with typed parse errors", () => {
     const unsupported = [
       "with a as (select id from t), b as (select id from t) select id from a",
-      "with recent as (select id, (select max(id) as max_id from orders) as max_id from orders) select * from recent",
+      "with recent as (with nested as (select id from orders) select id from nested) select * from recent",
       "select * from orders left join customers on orders.customer_id > customers.id",
     ];
 

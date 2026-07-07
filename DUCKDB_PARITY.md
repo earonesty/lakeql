@@ -70,7 +70,8 @@ Current state:
   correlated equality `IN`/`EXISTS`, single-source derived tables, and
   single-binding CTEs used as outer sources, join inputs, or `IN` subquery
   sources compile to existing scalar, semi/anti join, and CTE materialization
-  plans. CTE bodies can contain bounded joins and `IN` subquery plans.
+  plans. CTE bodies can contain bounded joins, `IN` subquery plans, and scalar
+  subqueries.
 - Searched `CASE` and simple `CASE <expr> WHEN ...` forms are supported.
 - `GROUP BY` can reference computed projection aliases, with DuckDB reference
   coverage for common aggregate queries.
@@ -89,9 +90,9 @@ TODO:
 - Broaden remaining subquery support for common analytical shapes: nested
   derived tables and correlation forms that do not reduce to equality semi/anti
   joins.
-- Broaden CTE query bodies to scalar-subquery and nested CTE forms when they
-  compile to normal bounded query plans. Recursive CTEs should remain explicitly
-  rejected until there is a bounded execution design.
+- Broaden CTE query bodies to nested CTE forms when they compile to normal
+  bounded query plans. Recursive CTEs should remain explicitly rejected until
+  there is a bounded execution design.
 - Improve nested `CASE` coverage and mixed-type result diagnostics.
 - Tighten remaining alias resolution edge cases so `ORDER BY`, `HAVING`, and
   `QUALIFY` behave the way DuckDB users expect across nested scopes.

@@ -493,6 +493,21 @@ it("runs aggregate, CTE, scalar subquery, and semi-join SQL helpers", async () =
       )
       .toArray(),
   ).resolves.toEqual([{ store_id: "store-000", amount: 0 }]);
+
+  await expect(
+    lake
+      .sql(
+        [
+          "with enriched as (",
+          "select store_id, amount, (select max(amount) as max_amount from sales) as max_amount",
+          "from sales",
+          ")",
+          "select store_id, max_amount from enriched order by amount asc limit 1",
+        ].join(" "),
+        { tables: { sales: SALES.file } },
+      )
+      .toArray(),
+  ).resolves.toEqual([{ store_id: "store-000", max_amount: 999.27 }]);
 });
 
 it("rejects unsupported SQL helper runtime shapes with typed errors", async () => {
