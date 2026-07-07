@@ -11,6 +11,49 @@ import type {
   WindowOrderTerm,
 } from "./window.js";
 
+const COMPARE_OPS = ["eq", "ne", "lt", "lte", "gt", "gte"] as const;
+const ARITHMETIC_OPS = ["add", "sub", "mul", "div", "mod"] as const;
+const AGGREGATE_OPS = [
+  "count",
+  "sum",
+  "avg",
+  "var_samp",
+  "var_pop",
+  "stddev_samp",
+  "stddev_pop",
+  "median",
+  "quantile",
+  "min",
+  "max",
+  "count_distinct",
+  "approx_count_distinct",
+  "mode",
+  "first",
+  "last",
+] as const;
+const WINDOW_FN_NAMES = [
+  "row_number",
+  "rank",
+  "dense_rank",
+  "percent_rank",
+  "cume_dist",
+  "ntile",
+  "lag",
+  "lead",
+  "first_value",
+  "last_value",
+  "nth_value",
+] as const;
+const WINDOW_FRAME_MODES = ["rows", "range", "groups"] as const;
+const WINDOW_FRAME_EXCLUDES = ["no-others", "current-row", "group", "ties"] as const;
+const WINDOW_FRAME_BOUND_KINDS = [
+  "unbounded-preceding",
+  "preceding",
+  "current-row",
+  "following",
+  "unbounded-following",
+] as const;
+
 export function parseJsonQuery(input: unknown): PathQueryInit {
   if (!isRecord(input)) throwParse("JSON query must be an object");
   if (input.version !== 1) throwParse("JSON query version must be 1");
@@ -273,17 +316,11 @@ function parseJsonWindowOrderBy(input: unknown): WindowOrderTerm[] {
 
 function parseJsonWindowFrame(input: unknown): WindowFrame {
   if (!isRecord(input)) throwParse("JSON window frame must be an object");
-  if (input.mode !== "rows" && input.mode !== "range" && input.mode !== "groups") {
+  if (!isOneOf(WINDOW_FRAME_MODES, input.mode)) {
     throwParse("JSON window frame mode must be rows, range, or groups");
   }
-  if (
-    input.exclude !== "no-others" &&
-    input.exclude !== "current-row" &&
-    input.exclude !== "group" &&
-    input.exclude !== "ties"
-  ) {
+  if (!isOneOf(WINDOW_FRAME_EXCLUDES, input.exclude))
     throwParse("JSON window frame exclude is invalid");
-  }
   return {
     mode: input.mode,
     start: parseJsonWindowFrameBound(input.start),
@@ -294,15 +331,8 @@ function parseJsonWindowFrame(input: unknown): WindowFrame {
 
 function parseJsonWindowFrameBound(input: unknown): WindowFrameBound {
   if (!isRecord(input)) throwParse("JSON window frame bound must be an object");
-  if (
-    input.kind !== "unbounded-preceding" &&
-    input.kind !== "preceding" &&
-    input.kind !== "current-row" &&
-    input.kind !== "following" &&
-    input.kind !== "unbounded-following"
-  ) {
+  if (!isOneOf(WINDOW_FRAME_BOUND_KINDS, input.kind))
     throwParse("JSON window frame bound kind is invalid");
-  }
   return {
     kind: input.kind,
     ...(input.offset === undefined ? {} : { offset: parseJsonExpr(input.offset) }),
@@ -376,63 +406,32 @@ function requireScalar(value: unknown, op: string): string | number | boolean | 
 function isCompareOp(
   value: unknown,
 ): value is Expr extends { kind: "compare"; op: infer Op } ? Op : never {
-  return (
-    value === "eq" ||
-    value === "ne" ||
-    value === "lt" ||
-    value === "lte" ||
-    value === "gt" ||
-    value === "gte"
-  );
+  return isOneOf(COMPARE_OPS, value);
 }
 
 function isArithmeticOp(
   value: unknown,
 ): value is Expr extends { kind: "arithmetic"; op: infer Op } ? Op : never {
-  return (
-    value === "add" || value === "sub" || value === "mul" || value === "div" || value === "mod"
-  );
+  return isOneOf(ARITHMETIC_OPS, value);
 }
 
 function isAggregateOp(value: unknown): value is AggregateOp {
-  return (
-    value === "count" ||
-    value === "sum" ||
-    value === "avg" ||
-    value === "var_samp" ||
-    value === "var_pop" ||
-    value === "stddev_samp" ||
-    value === "stddev_pop" ||
-    value === "median" ||
-    value === "quantile" ||
-    value === "min" ||
-    value === "max" ||
-    value === "count_distinct" ||
-    value === "approx_count_distinct" ||
-    value === "mode" ||
-    value === "first" ||
-    value === "last"
-  );
+  return isOneOf(AGGREGATE_OPS, value);
 }
 
 function isWindowFnName(value: unknown): value is Exclude<WindowFn, { aggregate: AggregateOp }> {
-  return (
-    value === "row_number" ||
-    value === "rank" ||
-    value === "dense_rank" ||
-    value === "percent_rank" ||
-    value === "cume_dist" ||
-    value === "ntile" ||
-    value === "lag" ||
-    value === "lead" ||
-    value === "first_value" ||
-    value === "last_value" ||
-    value === "nth_value"
-  );
+  return isOneOf(WINDOW_FN_NAMES, value);
 }
 
 function isPrototypeMutationKey(value: string): boolean {
   return value === "__proto__" || value === "prototype" || value === "constructor";
+}
+
+function isOneOf<const Values extends readonly string[]>(
+  values: Values,
+  value: unknown,
+): value is Values[number] {
+  return typeof value === "string" && values.includes(value);
 }
 
 function parseNonNegativeInt(value: unknown, field: string): number {

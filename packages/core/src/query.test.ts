@@ -720,6 +720,105 @@ describe("Lake query runtime", () => {
     ]);
   });
 
+  it("parses JSON expression AST families and complete window options", () => {
+    const parsed = parseJsonQuery({
+      version: 1,
+      from: "table",
+      where: {
+        kind: "logical",
+        op: "and",
+        operands: [
+          {
+            kind: "in",
+            negated: false,
+            target: { kind: "column", name: "region" },
+            values: [
+              { kind: "literal", value: "west" },
+              { kind: "literal", value: "east" },
+            ],
+          },
+          {
+            kind: "between",
+            target: {
+              kind: "arithmetic",
+              op: "add",
+              left: { kind: "column", name: "amount" },
+              right: { kind: "literal", value: 1 },
+            },
+            low: { kind: "literal", value: 10 },
+            high: { kind: "literal", value: 100 },
+          },
+          { kind: "null-check", negated: true, target: { kind: "column", name: "store_id" } },
+          {
+            kind: "not",
+            operand: {
+              kind: "like",
+              caseInsensitive: true,
+              target: { kind: "column", name: "region" },
+              pattern: "x%",
+            },
+          },
+          {
+            kind: "case",
+            whens: [
+              {
+                when: {
+                  kind: "compare",
+                  op: "gt",
+                  left: { kind: "column", name: "amount" },
+                  right: { kind: "literal", value: 50 },
+                },
+                value: { kind: "call", fn: "lower", args: [{ kind: "column", name: "region" }] },
+              },
+            ],
+            else: { kind: "literal", value: "small" },
+          },
+        ],
+      },
+      windows: {
+        running_amount: {
+          fn: { aggregate: "sum" },
+          args: [{ kind: "column", name: "amount" }],
+          filter: {
+            kind: "compare",
+            op: "gte",
+            left: { kind: "column", name: "amount" },
+            right: { kind: "literal", value: 10 },
+          },
+          ignoreNulls: true,
+          distinct: false,
+          over: {
+            partitionBy: [{ kind: "column", name: "region" }],
+            orderBy: [
+              { expr: { kind: "column", name: "amount" }, direction: "desc", nulls: "last" },
+            ],
+            frame: {
+              mode: "rows",
+              start: { kind: "preceding", offset: { kind: "literal", value: 2 } },
+              end: { kind: "current-row" },
+              exclude: "no-others",
+            },
+          },
+        },
+      },
+      qualify: {
+        kind: "compare",
+        op: "ne",
+        left: { kind: "column", name: "running_amount" },
+        right: { kind: "literal", value: null },
+      },
+    });
+
+    expect(parsed.where).toMatchObject({ kind: "logical", operands: expect.any(Array) });
+    expect(parsed.windows?.running_amount).toMatchObject({
+      fn: { aggregate: "sum" },
+      filter: { kind: "compare" },
+      ignoreNulls: true,
+      over: { frame: { mode: "rows", exclude: "no-others" } },
+    });
+    expect(parsed.qualify).toMatchObject({ kind: "compare", op: "ne" });
+  });
+
   it("collects predicate columns from every expression family for scanner projection", async () => {
     const { lake, scanner } = await makeLake({
       rowsByPath: {
@@ -973,6 +1072,17 @@ describe("Lake query runtime", () => {
     expect(() => parseJsonQuery({ version: 1, from: "t", limit: -1 })).toThrow(/limit/u);
     expect(() => parseJsonQuery({ version: 1, from: "t", offset: 1.5 })).toThrow(/offset/u);
     expect(() => parseJsonQuery({ version: 1, from: "t", distinct: "yes" })).toThrow(/distinct/u);
+    expect(() => parseJsonQuery({ version: 1, from: "t", orderBy: "bad" })).toThrow(/orderBy/u);
+    expect(() => parseJsonQuery({ version: 1, from: "t", orderBy: ["bad"] })).toThrow(/terms/u);
+    expect(() => parseJsonQuery({ version: 1, from: "t", orderBy: [{ column: 1 }] })).toThrow(
+      /column/u,
+    );
+    expect(() =>
+      parseJsonQuery({ version: 1, from: "t", orderBy: [{ column: "a", direction: "bad" }] }),
+    ).toThrow(/direction/u);
+    expect(() =>
+      parseJsonQuery({ version: 1, from: "t", orderBy: [{ column: "a", nulls: "bad" }] }),
+    ).toThrow(/nulls/u);
     expect(() => parseJsonQuery({ version: 1, from: "t", where: { nope: 1 } })).toThrow(
       /Unsupported/u,
     );
@@ -1009,6 +1119,206 @@ describe("Lake query runtime", () => {
         },
       }),
     ).toThrow(/window aliases/u);
+    expect(() => parseJsonQuery({ version: 1, from: "t", windows: [] })).toThrow(/windows/u);
+    expect(() => parseJsonQuery({ version: 1, from: "t", windows: { rn: [] } })).toThrow(
+      /window expression/u,
+    );
+    expect(() =>
+      parseJsonQuery({ version: 1, from: "t", windows: { rn: { fn: "row_number", args: [] } } }),
+    ).toThrow(/over/u);
+    expect(() =>
+      parseJsonQuery({
+        version: 1,
+        from: "t",
+        windows: { rn: { fn: "row_number", args: "bad", over: { partitionBy: [], orderBy: [] } } },
+      }),
+    ).toThrow(/args/u);
+    expect(
+      parseJsonQuery({
+        version: 1,
+        from: "t",
+        windows: { rn: { fn: "row_number", args: [], over: {} } },
+      }).windows?.rn.over,
+    ).toEqual({ partitionBy: [], orderBy: [] });
+    expect(() =>
+      parseJsonQuery({ version: 1, from: "t", qualify: { kind: "literal", value: {} } }),
+    ).toThrow(/scalar/u);
+    expect(() =>
+      parseJsonQuery({
+        version: 1,
+        from: "t",
+        qualify: { kind: "logical", op: "xor", operands: [] },
+      }),
+    ).toThrow(/logical expression op/u);
+    expect(() =>
+      parseJsonQuery({
+        version: 1,
+        from: "t",
+        qualify: { kind: "logical", op: "and", operands: [] },
+      }),
+    ).toThrow(/at least two/u);
+    expect(() =>
+      parseJsonQuery({
+        version: 1,
+        from: "t",
+        windows: { rn: { fn: "nope", args: [], over: { partitionBy: [], orderBy: [] } } },
+      }),
+    ).toThrow(/window function/u);
+    expect(() =>
+      parseJsonQuery({
+        version: 1,
+        from: "t",
+        windows: { rn: { fn: "row_number", args: [], over: { partitionBy: "bad", orderBy: [] } } },
+      }),
+    ).toThrow(/partitionBy/u);
+    expect(() =>
+      parseJsonQuery({
+        version: 1,
+        from: "t",
+        windows: {
+          rn: {
+            fn: "row_number",
+            args: [],
+            over: {
+              partitionBy: [],
+              orderBy: [{ expr: { kind: "column", name: "a" }, direction: "bad" }],
+            },
+          },
+        },
+      }),
+    ).toThrow(/direction/u);
+    expect(() =>
+      parseJsonQuery({
+        version: 1,
+        from: "t",
+        windows: {
+          rn: {
+            fn: "row_number",
+            args: [],
+            ignoreNulls: "yes",
+            over: { partitionBy: [], orderBy: [] },
+          },
+        },
+      }),
+    ).toThrow(/ignoreNulls/u);
+    expect(() =>
+      parseJsonQuery({
+        version: 1,
+        from: "t",
+        windows: {
+          rn: {
+            fn: "row_number",
+            args: [],
+            distinct: "yes",
+            over: { partitionBy: [], orderBy: [] },
+          },
+        },
+      }),
+    ).toThrow(/distinct/u);
+    expect(() =>
+      parseJsonQuery({
+        version: 1,
+        from: "t",
+        windows: {
+          rn: {
+            fn: "row_number",
+            args: [],
+            over: {
+              partitionBy: [],
+              orderBy: [{ expr: { kind: "column", name: "a" }, nulls: "bad" }],
+            },
+          },
+        },
+      }),
+    ).toThrow(/nulls/u);
+    expect(() =>
+      parseJsonQuery({
+        version: 1,
+        from: "t",
+        windows: {
+          rn: {
+            fn: "row_number",
+            args: [],
+            over: {
+              partitionBy: [],
+              orderBy: [],
+              frame: {
+                mode: "bad",
+                start: { kind: "current-row" },
+                end: { kind: "current-row" },
+                exclude: "no-others",
+              },
+            },
+          },
+        },
+      }),
+    ).toThrow(/frame mode/u);
+    expect(() =>
+      parseJsonQuery({
+        version: 1,
+        from: "t",
+        windows: {
+          rn: {
+            fn: "row_number",
+            args: [],
+            over: {
+              partitionBy: [],
+              orderBy: [],
+              frame: {
+                mode: "rows",
+                start: { kind: "current-row" },
+                end: { kind: "current-row" },
+                exclude: "bad",
+              },
+            },
+          },
+        },
+      }),
+    ).toThrow(/exclude/u);
+    expect(() =>
+      parseJsonQuery({
+        version: 1,
+        from: "t",
+        windows: {
+          rn: {
+            fn: "row_number",
+            args: [],
+            over: {
+              partitionBy: [],
+              orderBy: [],
+              frame: {
+                mode: "rows",
+                start: "bad",
+                end: { kind: "current-row" },
+                exclude: "no-others",
+              },
+            },
+          },
+        },
+      }),
+    ).toThrow(/frame bound/u);
+    expect(() =>
+      parseJsonQuery({
+        version: 1,
+        from: "t",
+        windows: {
+          rn: {
+            fn: "row_number",
+            args: [],
+            over: {
+              partitionBy: [],
+              orderBy: [],
+              frame: {
+                mode: "rows",
+                start: { kind: "bad" },
+                end: { kind: "current-row" },
+                exclude: "no-others",
+              },
+            },
+          },
+        },
+      }),
+    ).toThrow(/bound kind/u);
 
     const { lake } = await makeLake({ rowsByPath: { table: [{ id: 1 }] } });
     expect(() => lake.path("table").limit(-1).run()).toThrow(/limit/u);
