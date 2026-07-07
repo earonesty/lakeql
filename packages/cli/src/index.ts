@@ -867,7 +867,8 @@ function predicateSubqueryJoinRows(
       }
       if (!subqueryKeysMatch(leftRow, rightRow, join)) continue;
       const row = {
-        ...(leftAlias.length === 0 ? leftRow : qualifyOnlyRow(leftRow, leftAlias)),
+        ...leftRow,
+        ...(leftAlias.length === 0 ? {} : qualifyOnlyRow(leftRow, leftAlias)),
         ...qualifyOnlyRow(rightRow, rightAlias),
       };
       if (!matches(join.predicate, row)) continue;

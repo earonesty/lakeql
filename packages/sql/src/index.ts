@@ -679,6 +679,8 @@ function maybeSubqueryJoin(
   context: SqlParseContext,
 ): SqlSubqueryJoinAst | undefined {
   if (expr.type === "binary") {
+    const scalarAggregateJoin = scalarAggregatePredicateSubqueryJoinToAst(expr, scope, context);
+    if (scalarAggregateJoin !== undefined) return scalarAggregateJoin;
     const op = String(expr.op).toUpperCase();
     if (op !== "IN" && op !== "NOT IN") return undefined;
     const right = asNode(expr.right, "IN right side");
@@ -694,6 +696,106 @@ function maybeSubqueryJoin(
   const exists = existsCallFromPredicate(expr);
   if (exists === undefined) return undefined;
   return existsSubqueryJoinToAst(exists.call, scope, exists.negated, context);
+}
+
+function scalarAggregatePredicateSubqueryJoinToAst(
+  expr: PgNode,
+  outerScope: SqlScope,
+  context: SqlParseContext,
+): SqlSubqueryJoinAst | undefined {
+  const op = String(expr.op).toUpperCase();
+  if (!["=", "!=", "<>", "<", "<=", ">", ">="].includes(op)) return undefined;
+  const left = asNode(expr.left, "scalar aggregate predicate left side");
+  const right = asNode(expr.right, "scalar aggregate predicate right side");
+  const scalarSide =
+    left.type === "select" && right.type !== "select"
+      ? { subquery: left, other: right, subqueryOnLeft: true }
+      : right.type === "select" && left.type !== "select"
+        ? { subquery: right, other: left, subqueryOnLeft: false }
+        : undefined;
+  if (scalarSide === undefined) return undefined;
+
+  const from = optionalArray(scalarSide.subquery.from);
+  if (from.length !== 1) return undefined;
+  const source = sourceTable(from[0]);
+  const subqueryScope = new SqlScope(source);
+  const aggregate = scalarAggregateSelectItem(scalarSide.subquery, subqueryScope, context);
+  if (aggregate === undefined) return undefined;
+  rejectPresent(
+    scalarSide.subquery,
+    "groupBy",
+    "Correlated scalar aggregate subqueries with explicit GROUP BY are not supported",
+  );
+  rejectPresent(
+    scalarSide.subquery,
+    "having",
+    "Correlated scalar aggregate subqueries with HAVING are not supported",
+  );
+  rejectPresent(
+    scalarSide.subquery,
+    "orderBy",
+    "ORDER BY in correlated scalar aggregate subqueries is not supported",
+  );
+  rejectPresent(
+    scalarSide.subquery,
+    "limit",
+    "LIMIT in correlated scalar aggregate subqueries is not supported",
+  );
+
+  const out: SqlSubqueryJoinAst = {
+    source: source.source,
+    type: "semi",
+    leftKey: [],
+    rightKey: [],
+    aggregates: { [aggregate.alias]: aggregate.spec },
+  };
+  applyCorrelatedSubqueryWhere(out, scalarSide.subquery, outerScope, subqueryScope, context);
+  if (out.leftKey.length === 0) {
+    if (predicateReferencesOuterScope(scalarSide.subquery, outerScope)) {
+      throwUnsupported("Correlated scalar aggregate subqueries require equality correlation keys");
+    }
+    return undefined;
+  }
+  if (out.predicate !== undefined) {
+    throwUnsupported(
+      "Correlated scalar aggregate subqueries with non-equality predicates are not supported",
+    );
+  }
+  out.groupBy = appendUnique(out.groupBy ?? [], out.rightKey);
+  const leftAlias = outerScope.primaryAlias();
+  if (leftAlias !== undefined) out.leftAlias = leftAlias;
+  const alias = subqueryScope.primaryAlias();
+  if (alias !== undefined) out.alias = alias;
+  const aggregateExpr: Expr = {
+    kind: "column",
+    name: out.alias === undefined ? aggregate.alias : `${out.alias}.${aggregate.alias}`,
+  };
+  const other = exprToLakeql(scalarSide.other, combinedScope(outerScope, subqueryScope), context);
+  out.predicate = {
+    kind: "compare",
+    op: compareOp(op),
+    left: scalarSide.subqueryOnLeft ? aggregateExpr : other,
+    right: scalarSide.subqueryOnLeft ? other : aggregateExpr,
+  };
+  return out;
+}
+
+function scalarAggregateSelectItem(
+  subquery: PgNode,
+  scope: SqlScope,
+  context: SqlParseContext,
+): { alias: string; spec: AggregateSpec[string] } | undefined {
+  const columns = optionalArray(subquery.columns);
+  if (columns.length !== 1) {
+    throwUnsupported("Scalar aggregate subqueries must return exactly one column");
+  }
+  const item = asNode(columns[0], "scalar aggregate subquery select item");
+  const expr = asNode(item.expr, "scalar aggregate subquery select expression");
+  if (expr.type !== "call" || !isAggregateCall(expr)) return undefined;
+  return {
+    alias: aliasName(item.alias) ?? functionName(expr.function),
+    spec: aggregateCallToSpec(expr, scope, context),
+  };
 }
 
 function subqueryJoinToAst(

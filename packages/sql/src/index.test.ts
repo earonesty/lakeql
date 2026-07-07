@@ -1018,6 +1018,76 @@ describe("parseSql", () => {
     expect(parseSql(formatSql(projectionScalar))).toEqual(projectionScalar);
   });
 
+  it("compiles correlated scalar aggregate predicates as grouped semi joins", () => {
+    const ast = parseSql(`
+      select store_id
+      from sales s
+      where amount > (
+        select avg(x.amount) as avg_amount
+        from sales x
+        where x.region = s.region
+      )
+    `);
+
+    expect(ast).toMatchObject({
+      source: "sales",
+      select: ["store_id"],
+      subqueryJoin: {
+        source: "sales",
+        type: "semi",
+        leftKey: ["region"],
+        rightKey: ["region"],
+        groupBy: ["region"],
+        leftAlias: "s",
+        alias: "x",
+        aggregates: { avg_amount: { op: "avg", column: "amount" } },
+        predicate: {
+          kind: "compare",
+          op: "gt",
+          left: { kind: "column", name: "amount" },
+          right: { kind: "column", name: "x.avg_amount" },
+        },
+      },
+    });
+
+    expect(
+      parseSql(`
+        select store_id
+        from sales s
+        where (
+          select max(x.amount) as max_amount
+          from sales x
+          where x.region = s.region
+        ) >= amount
+      `),
+    ).toMatchObject({
+      subqueryJoin: {
+        leftKey: ["region"],
+        rightKey: ["region"],
+        groupBy: ["region"],
+        aggregates: { max_amount: { op: "max", column: "amount" } },
+        predicate: {
+          kind: "compare",
+          op: "gte",
+          left: { kind: "column", name: "x.max_amount" },
+          right: { kind: "column", name: "amount" },
+        },
+      },
+    });
+
+    expect(() =>
+      parseSql(`
+        select store_id
+        from sales s
+        where amount > (
+          select avg(x.amount) as avg_amount
+          from sales x
+          where x.amount < s.amount
+        )
+      `),
+    ).toThrow(/require equality correlation keys/u);
+  });
+
   it("compiles uncorrelated EXISTS subqueries through scalar counts", () => {
     const exists = parseSql(`
       select store_id

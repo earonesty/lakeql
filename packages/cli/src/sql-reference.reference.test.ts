@@ -754,6 +754,31 @@ describeReference("SQL CLI DuckDB reference comparisons", () => {
     expect(canonicalRows(lakeqlRows)).toEqual(canonicalRows(referenceRows));
   });
 
+  it("matches DuckDB for correlated scalar aggregate predicates", async () => {
+    const lakeql =
+      "select store_id, region, amount from sales s where amount > (select avg(x.amount) as avg_amount from sales x where x.region = s.region) order by amount asc limit 5";
+    const duckdb = `select store_id, region, amount from read_parquet('${sqlString(
+      fixturePath(SALES.file),
+    )}') s where amount > (select avg(x.amount) as avg_amount from read_parquet('${sqlString(
+      fixturePath(SALES.file),
+    )}') x where x.region = s.region) order by amount asc limit 5`;
+
+    const result = await runCli([
+      "query",
+      "--table",
+      `sales=${fixturePath(SALES.file)}`,
+      "--sql",
+      lakeql,
+      "--format",
+      "json",
+    ]);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    const lakeqlRows = JSON.parse(result.stdout) as Row[];
+    const referenceRows = await duckDbRows(duckdb);
+    expect(canonicalRows(lakeqlRows)).toEqual(canonicalRows(referenceRows));
+  });
+
   it("matches DuckDB for ordered limited IN subquery semi join", async () => {
     const storesPath = await rightStoresFixturePath();
     const lakeql =

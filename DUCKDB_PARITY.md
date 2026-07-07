@@ -71,8 +71,10 @@ Current state:
 - Scalar subqueries, ordered/limited `IN (select ...)`, grouped `IN`/`EXISTS`
   subqueries with bounded `HAVING` predicates, uncorrelated `EXISTS`,
   correlated equality `IN`/`EXISTS`, bounded non-equality correlated `IN` and
-  `EXISTS`, multiple predicate subqueries in one `WHERE`, aggregate outer
-  queries over predicate subqueries, nested derived tables, and
+  `EXISTS`, correlated scalar aggregate predicates such as comparing a row to
+  the average of its correlated peer group, multiple predicate subqueries in one
+  `WHERE`, aggregate outer queries over predicate subqueries, nested derived
+  tables, and
   single-binding CTEs used as outer sources, join inputs, or `IN` subquery
   sources compile to existing scalar, semi/anti join, and CTE materialization
   plans. CTE bodies can contain bounded joins, `IN` subquery plans, scalar
@@ -106,8 +108,9 @@ Current state:
 
 TODO:
 
-- Broaden remaining subquery support for common analytical correlation forms
-  beyond bounded predicate and grouped `IN`/`EXISTS`.
+- Audit remaining unsupported subquery forms against DuckDB-authored remote
+  Parquet workloads, and keep only the forms that preserve bounded execution as
+  Priority 1 parity requirements.
 
 Acceptance criteria:
 
