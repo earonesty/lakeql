@@ -72,7 +72,8 @@ Current state:
   subqueries with bounded `HAVING` predicates, uncorrelated `EXISTS`,
   correlated equality `IN`/`EXISTS`, bounded non-equality correlated `IN` and
   `EXISTS`, correlated scalar aggregate predicates such as comparing a row to
-  the average of its correlated peer group, multiple predicate subqueries in one
+  the average of its correlated peer group, including explicit correlation-key
+  `GROUP BY` and bounded `HAVING`, multiple predicate subqueries in one
   `WHERE`, aggregate outer queries over predicate subqueries, nested derived
   tables, and
   single-binding CTEs used as outer sources, join inputs, or `IN` subquery

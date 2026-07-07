@@ -1075,6 +1075,35 @@ describe("parseSql", () => {
       },
     });
 
+    expect(
+      parseSql(`
+        select store_id
+        from sales s
+        where amount > (
+          select avg(x.amount) as avg_amount
+          from sales x
+          where x.region = s.region
+          group by x.region
+          having count(*) > 5
+        )
+      `),
+    ).toMatchObject({
+      subqueryJoin: {
+        leftKey: ["region"],
+        rightKey: ["region"],
+        groupBy: ["region"],
+        aggregates: {
+          avg_amount: { op: "avg", column: "amount" },
+          __lakeql_having_0: { op: "count" },
+        },
+        hiddenAggregates: ["__lakeql_having_0"],
+        having: {
+          kind: "compare",
+          left: { kind: "column", name: "__lakeql_having_0" },
+        },
+      },
+    });
+
     expect(() =>
       parseSql(`
         select store_id
@@ -1086,6 +1115,19 @@ describe("parseSql", () => {
         )
       `),
     ).toThrow(/require equality correlation keys/u);
+
+    expect(() =>
+      parseSql(`
+        select store_id
+        from sales s
+        where amount > (
+          select avg(x.amount) as avg_amount
+          from sales x
+          where x.region = s.region
+          group by x.store_id
+        )
+      `),
+    ).toThrow(/only group by equality correlation keys/u);
   });
 
   it("compiles uncorrelated EXISTS subqueries through scalar counts", () => {

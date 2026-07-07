@@ -723,16 +723,6 @@ function scalarAggregatePredicateSubqueryJoinToAst(
   if (aggregate === undefined) return undefined;
   rejectPresent(
     scalarSide.subquery,
-    "groupBy",
-    "Correlated scalar aggregate subqueries with explicit GROUP BY are not supported",
-  );
-  rejectPresent(
-    scalarSide.subquery,
-    "having",
-    "Correlated scalar aggregate subqueries with HAVING are not supported",
-  );
-  rejectPresent(
-    scalarSide.subquery,
     "orderBy",
     "ORDER BY in correlated scalar aggregate subqueries is not supported",
   );
@@ -761,7 +751,33 @@ function scalarAggregatePredicateSubqueryJoinToAst(
       "Correlated scalar aggregate subqueries with non-equality predicates are not supported",
     );
   }
+  if (scalarSide.subquery.groupBy !== undefined) {
+    out.groupBy = optionalArray(scalarSide.subquery.groupBy).map((expr) =>
+      subqueryScope.refName(asNode(expr, "scalar aggregate subquery GROUP BY expression")),
+    );
+    const rightKeys = new Set(out.rightKey);
+    if (out.groupBy.some((column) => !rightKeys.has(column))) {
+      throwUnsupported(
+        "Correlated scalar aggregate subqueries can only group by equality correlation keys",
+      );
+    }
+  }
   out.groupBy = appendUnique(out.groupBy ?? [], out.rightKey);
+  if (scalarSide.subquery.having !== undefined) {
+    const aggregates = out.aggregates ?? {};
+    const hiddenAggregates = new Set<string>();
+    const outputAliases = new Set<string>([...out.groupBy, aggregate.alias]);
+    out.having = havingToExpr(
+      asNode(scalarSide.subquery.having, "scalar aggregate subquery HAVING"),
+      subqueryScope,
+      context,
+      aggregates,
+      hiddenAggregates,
+      outputAliases,
+    );
+    if (Object.keys(aggregates).length > 0) out.aggregates = aggregates;
+    if (hiddenAggregates.size > 0) out.hiddenAggregates = [...hiddenAggregates];
+  }
   const leftAlias = outerScope.primaryAlias();
   if (leftAlias !== undefined) out.leftAlias = leftAlias;
   const alias = subqueryScope.primaryAlias();
