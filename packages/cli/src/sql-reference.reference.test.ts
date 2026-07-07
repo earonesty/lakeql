@@ -568,6 +568,81 @@ describeReference("SQL CLI DuckDB reference comparisons", () => {
     expect(canonicalRows(lakeqlRows)).toEqual(canonicalRows(referenceRows));
   });
 
+  it("matches DuckDB for correlated grouped IN subquery semi join", async () => {
+    const lakeql =
+      "select distinct store_id, region from sales s where s.store_id in (select x.store_id from sales x where x.region = s.region group by x.store_id having count(*) > 5) order by store_id asc limit 5";
+    const duckdb = `select distinct store_id, region from read_parquet('${sqlString(
+      fixturePath(SALES.file),
+    )}') s where s.store_id in (select x.store_id from read_parquet('${sqlString(
+      fixturePath(SALES.file),
+    )}') x where x.region = s.region group by x.store_id having count(*) > 5) order by store_id asc limit 5`;
+
+    const result = await runCli([
+      "query",
+      "--table",
+      `sales=${fixturePath(SALES.file)}`,
+      "--sql",
+      lakeql,
+      "--format",
+      "json",
+    ]);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    const lakeqlRows = JSON.parse(result.stdout) as Row[];
+    const referenceRows = await duckDbRows(duckdb);
+    expect(canonicalRows(lakeqlRows)).toEqual(canonicalRows(referenceRows));
+  });
+
+  it("matches DuckDB for correlated grouped EXISTS subquery semi join", async () => {
+    const lakeql =
+      "select distinct region from sales s where exists (select 1 from sales x where x.region = s.region group by x.store_id having count(*) > 5) order by region asc";
+    const duckdb = `select distinct region from read_parquet('${sqlString(
+      fixturePath(SALES.file),
+    )}') s where exists (select 1 from read_parquet('${sqlString(
+      fixturePath(SALES.file),
+    )}') x where x.region = s.region group by x.store_id having count(*) > 5) order by region asc`;
+
+    const result = await runCli([
+      "query",
+      "--table",
+      `sales=${fixturePath(SALES.file)}`,
+      "--sql",
+      lakeql,
+      "--format",
+      "json",
+    ]);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    const lakeqlRows = JSON.parse(result.stdout) as Row[];
+    const referenceRows = await duckDbRows(duckdb);
+    expect(canonicalRows(lakeqlRows)).toEqual(canonicalRows(referenceRows));
+  });
+
+  it("matches DuckDB for correlated grouped NOT EXISTS subquery anti join", async () => {
+    const lakeql =
+      "select distinct region from sales s where not exists (select 1 from sales y where y.region = s.region group by y.store_id having count(*) > 100) order by region asc";
+    const duckdb = `select distinct region from read_parquet('${sqlString(
+      fixturePath(SALES.file),
+    )}') s where not exists (select 1 from read_parquet('${sqlString(
+      fixturePath(SALES.file),
+    )}') y where y.region = s.region group by y.store_id having count(*) > 100) order by region asc`;
+
+    const result = await runCli([
+      "query",
+      "--table",
+      `sales=${fixturePath(SALES.file)}`,
+      "--sql",
+      lakeql,
+      "--format",
+      "json",
+    ]);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    const lakeqlRows = JSON.parse(result.stdout) as Row[];
+    const referenceRows = await duckDbRows(duckdb);
+    expect(canonicalRows(lakeqlRows)).toEqual(canonicalRows(referenceRows));
+  });
+
   it("matches DuckDB for ordered limited IN subquery semi join", async () => {
     const storesPath = await rightStoresFixturePath();
     const lakeql =

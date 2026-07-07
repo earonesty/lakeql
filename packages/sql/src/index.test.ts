@@ -823,6 +823,30 @@ describe("parseSql", () => {
       },
     });
     expect(parseSql(formatSql(grouped))).toEqual(grouped);
+    const correlatedGrouped = parseSql(`
+      select id
+      from orders o
+      where id in (
+        select order_id
+        from refunds r
+        where r.customer_id = o.customer_id
+        group by order_id
+        having count(*) > 1
+      )
+    `);
+    expect(correlatedGrouped).toMatchObject({
+      subqueryJoin: {
+        source: "refunds",
+        type: "semi",
+        leftKey: ["id", "customer_id"],
+        rightKey: ["order_id", "customer_id"],
+        groupBy: ["order_id", "customer_id"],
+        hiddenAggregates: ["__lakeql_having_0"],
+        aggregates: { __lakeql_having_0: { op: "count" } },
+        having: { kind: "compare", left: { kind: "column", name: "__lakeql_having_0" } },
+      },
+    });
+    expect(parseSql(formatSql(correlatedGrouped))).toEqual(correlatedGrouped);
     expect(() =>
       parseSql(`
         select id
@@ -830,11 +854,11 @@ describe("parseSql", () => {
         where id in (
           select order_id
           from refunds r
-          where r.customer_id = o.customer_id
+          where r.amount > o.amount
           group by order_id
         )
       `),
-    ).toThrow(/Correlated grouped IN/u);
+    ).toThrow(/Correlated grouped IN subqueries with non-equality predicates/u);
 
     const orderedLimited = parseSql(`
       select store_id
@@ -1144,6 +1168,54 @@ describe("parseSql", () => {
     });
     expect(parseSql(formatSql(predicateExists))).toEqual(predicateExists);
 
+    const groupedCorrelatedExists = parseSql(`
+      select id
+      from orders o
+      where exists (
+        select 1
+        from refunds r
+        where r.customer_id = o.customer_id
+        group by reason
+        having count(*) > 1
+      )
+    `);
+
+    expect(groupedCorrelatedExists).toMatchObject({
+      subqueryJoin: {
+        source: "refunds",
+        type: "semi",
+        leftKey: ["customer_id"],
+        rightKey: ["customer_id"],
+        groupBy: ["reason", "customer_id"],
+        aggregates: { __lakeql_having_0: { op: "count" } },
+        hiddenAggregates: ["__lakeql_having_0"],
+        having: { kind: "compare", left: { kind: "column", name: "__lakeql_having_0" } },
+      },
+    });
+    expect(parseSql(formatSql(groupedCorrelatedExists))).toEqual(groupedCorrelatedExists);
+
+    const groupedCorrelatedNotExists = parseSql(`
+      select id
+      from orders o
+      where not exists (
+        select 1
+        from refunds r
+        where r.customer_id = o.customer_id
+        group by reason
+        having count(*) > 100
+      )
+    `);
+    expect(groupedCorrelatedNotExists).toMatchObject({
+      subqueryJoin: {
+        source: "refunds",
+        type: "anti",
+        leftKey: ["customer_id"],
+        rightKey: ["customer_id"],
+        groupBy: ["reason", "customer_id"],
+      },
+    });
+    expect(parseSql(formatSql(groupedCorrelatedNotExists))).toEqual(groupedCorrelatedNotExists);
+
     expect(() =>
       parseSql(`
         select id
@@ -1151,11 +1223,11 @@ describe("parseSql", () => {
         where exists (
           select 1
           from refunds r
-          where r.customer_id = o.customer_id
+          where r.amount > o.amount
           group by reason
         )
       `),
-    ).toThrow(/Correlated grouped EXISTS/u);
+    ).toThrow(/Correlated grouped EXISTS subqueries with non-equality predicates/u);
   });
 
   it("compiles additional VISION geospatial and H3 SQL examples", () => {

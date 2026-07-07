@@ -726,14 +726,19 @@ function subqueryJoinToAst(
   applyCorrelatedSubqueryWhere(out, subquery, outerScope, subqueryScope, context);
   if (
     (subquery.groupBy !== undefined || subquery.having !== undefined) &&
-    (out.predicate !== undefined || out.leftKey.length !== directLeftKeyCount)
+    out.predicate !== undefined
   ) {
-    throwUnsupported("Correlated grouped IN subqueries are not supported");
+    throwUnsupported(
+      "Correlated grouped IN subqueries with non-equality predicates are not supported",
+    );
   }
   if (subquery.groupBy !== undefined) {
     out.groupBy = optionalArray(subquery.groupBy).map((expr) =>
       subqueryScope.refName(asNode(expr, "IN subquery GROUP BY expression")),
     );
+  }
+  if (subquery.groupBy !== undefined || subquery.having !== undefined) {
+    out.groupBy = appendUnique(out.groupBy ?? [], out.rightKey.slice(directLeftKeyCount));
   }
   if (subquery.having !== undefined) {
     out.having = havingToExpr(
@@ -782,15 +787,9 @@ function existsSubqueryJoinToAst(
   if (from.length !== 1) throwUnsupported("EXISTS subqueries must select from one table");
   const source = sourceTable(from[0]);
   const subqueryScope = new SqlScope(source);
-  if (subquery.groupBy !== undefined || subquery.having !== undefined) {
-    if (
-      subquery.where !== undefined &&
-      predicateReferencesOuterScope(asNode(subquery.where, "EXISTS subquery WHERE"), outerScope)
-    ) {
-      throwUnsupported("Correlated grouped EXISTS subqueries are not supported");
-    }
-    return undefined;
-  }
+  const aggregates: AggregateSpec = {};
+  const hiddenAggregates = new Set<string>();
+  const outputAliases = new Set<string>();
   const out: SqlSubqueryJoinAst = {
     source: source.source,
     type: negated ? "anti" : "semi",
@@ -798,7 +797,45 @@ function existsSubqueryJoinToAst(
     rightKey: [],
   };
   applyCorrelatedSubqueryWhere(out, subquery, outerScope, subqueryScope, context);
+  if (subquery.groupBy !== undefined || subquery.having !== undefined) {
+    if (out.predicate !== undefined) {
+      throwUnsupported(
+        "Correlated grouped EXISTS subqueries with non-equality predicates are not supported",
+      );
+    }
+    if (out.leftKey.length === 0) return undefined;
+    if (subquery.groupBy !== undefined) {
+      out.groupBy = optionalArray(subquery.groupBy).map((expr) =>
+        subqueryScope.refName(asNode(expr, "EXISTS subquery GROUP BY expression")),
+      );
+    }
+    out.groupBy = appendUnique(out.groupBy ?? [], out.rightKey);
+    if (subquery.having !== undefined) {
+      out.having = havingToExpr(
+        asNode(subquery.having, "EXISTS subquery HAVING"),
+        subqueryScope,
+        context,
+        aggregates,
+        hiddenAggregates,
+        outputAliases,
+      );
+    }
+    if (Object.keys(aggregates).length > 0) out.aggregates = aggregates;
+    if (hiddenAggregates.size > 0) out.hiddenAggregates = [...hiddenAggregates];
+    return out;
+  }
   return out.leftKey.length === 0 && out.predicate === undefined ? undefined : out;
+}
+
+function appendUnique(values: string[], additions: string[]): string[] {
+  const out = [...values];
+  const seen = new Set(out);
+  for (const value of additions) {
+    if (seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
 }
 
 function existsSubquery(expr: PgNode): PgNode {
