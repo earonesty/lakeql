@@ -59,13 +59,18 @@ Current state:
 - Window functions and `QUALIFY` are supported and tested.
 - Basic filtering, projection, grouping, sorting, and bounded two-table
   inner/left equi-joins exist.
+- `read_parquet('path')` table-function sources map onto normal LakeQL path
+  planning.
+- Scalar subqueries, `IN (select ...)`, uncorrelated `EXISTS`, correlated
+  equality `IN`/`EXISTS`, and single-source derived tables compile to existing
+  scalar, semi/anti join, and CTE materialization plans.
+- Searched `CASE` and simple `CASE <expr> WHEN ...` forms are supported.
 - Unsupported broad SQL syntax is detected and rejected.
 
 TODO:
 
-- Add SQL table functions that map cleanly onto existing planning:
-  `read_parquet(...)` first, then Iceberg table references where the syntax can
-  remain explicit and unsurprising.
+- Add Iceberg table references where the syntax can remain explicit and
+  unsurprising.
 - Support N-way joins over the existing join execution model before adding more
   exotic join semantics.
 - Expand join forms in order of lake workload value: multi-table inner/left
@@ -73,12 +78,13 @@ TODO:
   contract.
 - Add non-equi join support only with explicit bounded planning rules. Do not
   hide cartesian explosion behind SQL compatibility.
-- Broaden subquery support for common analytical shapes: scalar subqueries,
-  `IN (select ...)`, `EXISTS`, and derived tables.
+- Broaden remaining subquery support for common analytical shapes: nested
+  derived tables, subqueries with ordering/limits where SQL semantics matter,
+  and correlation forms that do not reduce to equality semi/anti joins.
 - Support deeper CTE usage when it compiles to a normal query plan without
   recursive semantics. Recursive CTEs should remain explicitly rejected until
   there is a bounded execution design.
-- Improve `CASE` support, especially simple `CASE <expr>` forms and nested cases.
+- Improve nested `CASE` coverage and mixed-type result diagnostics.
 - Tighten alias resolution so `ORDER BY`, `GROUP BY`, `HAVING`, and `QUALIFY`
   behave the way DuckDB users expect.
 
