@@ -711,6 +711,60 @@ it("runs SQL helper join planning, wildcard projection, and null ordering branch
 
   await expect(
     lake
+      .sql(
+        [
+          "select s.store_id as store_id, b.bucket as bucket",
+          "from sales s left join buckets b",
+          "on s.amount < b.max_amount and b.bucket = 'small'",
+          "order by s.store_id asc",
+        ].join(" "),
+        { tables },
+      )
+      .toArray(),
+  ).resolves.toEqual([
+    { store_id: "s1", bucket: "small" },
+    { store_id: "s2", bucket: null },
+    { store_id: "s3", bucket: null },
+  ]);
+
+  await expect(
+    lake
+      .sql(
+        [
+          "select b.bucket as bucket, s.store_id as store_id",
+          "from sales s right join buckets b",
+          "on s.amount < b.max_amount and b.bucket = 'small'",
+          "order by b.bucket asc",
+        ].join(" "),
+        { tables },
+      )
+      .toArray(),
+  ).resolves.toEqual([
+    { bucket: "large", store_id: null },
+    { bucket: "small", store_id: "s1" },
+  ]);
+
+  await expect(
+    lake
+      .sql(
+        [
+          "select s.store_id as store_id, b.bucket as bucket",
+          "from sales s full join buckets b",
+          "on s.amount < b.max_amount and b.bucket = 'small'",
+          "order by s.store_id asc nulls last, b.bucket asc nulls last",
+        ].join(" "),
+        { tables },
+      )
+      .toArray(),
+  ).resolves.toEqual([
+    { store_id: "s1", bucket: "small" },
+    { store_id: "s2", bucket: null },
+    { store_id: "s3", bucket: null },
+    { store_id: null, bucket: "large" },
+  ]);
+
+  await expect(
+    lake
       .sql("select s.store_id as store_id from sales s join buckets b on s.amount < b.max_amount", {
         tables,
         joinMaxOutputRows: 3,

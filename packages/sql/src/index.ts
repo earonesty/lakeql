@@ -1276,9 +1276,6 @@ function joinToAst(
   }
   const on = asNode(join.on, "JOIN ON");
   const keys = joinKeysFromPredicate(on, joinedSources, right);
-  if (keys === undefined && joinType !== "INNER JOIN") {
-    throwUnsupported("Only inner JOIN supports non-equality ON predicates");
-  }
   return {
     right,
     join: {

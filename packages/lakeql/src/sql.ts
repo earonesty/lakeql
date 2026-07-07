@@ -846,7 +846,9 @@ async function joinRowsFromAst(
     const rightRows = (await lake.path(join.source).toArray()).map((row) =>
       qualifyOnlyRow(row, join.alias),
     );
-    if (join.type === "right") {
+    if (join.predicate !== undefined) {
+      rows = predicateJoinRows(rows, rightRows, ast, join, options);
+    } else if (join.type === "right") {
       const leftRows = rows;
       rows = await broadcastJoin(rightRows, leftRows, {
         leftKey: join.rightKey,
@@ -881,30 +883,20 @@ async function joinRowsFromAst(
         ...fillRightJoinNulls(unmatchedRight, ast, join.alias, leftRows),
       ];
     } else {
-      if (join.predicate !== undefined) {
-        rows = (
-          await crossJoin(rows, rightRows, {
-            rightPrefix: `${join.alias}.`,
-            maxRightRows: options.joinMaxRightRows ?? 100_000,
-            maxOutputRows: options.joinMaxOutputRows ?? 100_000,
-          })
-        ).filter((row) => matches(join.predicate as Expr, row));
-      } else {
-        rows =
-          join.type === "cross"
-            ? await crossJoin(rows, rightRows, {
-                rightPrefix: `${join.alias}.`,
-                maxRightRows: options.joinMaxRightRows ?? 100_000,
-                maxOutputRows: options.joinMaxOutputRows ?? 100_000,
-              })
-            : await broadcastJoin(rows, rightRows, {
-                leftKey: join.leftKey,
-                rightKey: join.rightKey,
-                type: join.type,
-                rightPrefix: `${join.alias}.`,
-                maxRightRows: options.joinMaxRightRows ?? 100_000,
-              });
-      }
+      rows =
+        join.type === "cross"
+          ? await crossJoin(rows, rightRows, {
+              rightPrefix: `${join.alias}.`,
+              maxRightRows: options.joinMaxRightRows ?? 100_000,
+              maxOutputRows: options.joinMaxOutputRows ?? 100_000,
+            })
+          : await broadcastJoin(rows, rightRows, {
+              leftKey: join.leftKey,
+              rightKey: join.rightKey,
+              type: join.type,
+              rightPrefix: `${join.alias}.`,
+              maxRightRows: options.joinMaxRightRows ?? 100_000,
+            });
     }
     if (join.type === "left") {
       rows = fillLeftJoinNulls(rows, join.alias, leftJoinRightColumns(ast, join.alias, rightRows));
@@ -915,6 +907,71 @@ async function joinRowsFromAst(
   rows = projectRows(rows, ast);
   if (ast.distinct === true) rows = distinctRows(rows);
   return offsetLimitRows(rows, ast);
+}
+
+function predicateJoinRows(
+  leftRows: Row[],
+  rightRows: Row[],
+  ast: SqlQueryAst,
+  join: NonNullable<SqlQueryAst["joins"]>[number],
+  options: SqlQueryOptions,
+): Row[] {
+  /* v8 ignore next -- caller only uses this path for predicate joins */
+  if (join.predicate === undefined) return leftRows;
+  const maxRightRows = options.joinMaxRightRows ?? 100_000;
+  if (rightRows.length > maxRightRows) {
+    throw new LakeqlError(
+      "LAKEQL_BUDGET_EXCEEDED",
+      `Predicate join exceeded maxRightRows (${rightRows.length} > ${maxRightRows})`,
+      { metric: "maxRightRows", limit: maxRightRows, actual: rightRows.length },
+    );
+  }
+  const maxOutputRows = options.joinMaxOutputRows ?? 100_000;
+  const matchedLeft = new Set<number>();
+  const matchedRight = new Set<number>();
+  const out: Row[] = [];
+  let candidateRows = 0;
+  for (const [leftIndex, leftRow] of leftRows.entries()) {
+    for (const [rightIndex, rightRow] of rightRows.entries()) {
+      candidateRows += 1;
+      if (candidateRows > maxOutputRows) {
+        throw new LakeqlError(
+          "LAKEQL_BUDGET_EXCEEDED",
+          `Predicate join exceeded maxOutputRows (${candidateRows} > ${maxOutputRows})`,
+          { metric: "maxOutputRows", limit: maxOutputRows, actual: candidateRows },
+        );
+      }
+      const joined = mergePredicateJoinRows(leftRow, rightRow, `${join.alias}.`);
+      if (!matches(join.predicate, joined)) continue;
+      matchedLeft.add(leftIndex);
+      matchedRight.add(rightIndex);
+      out.push(joined);
+    }
+  }
+  if (join.type === "left" || join.type === "full") {
+    const unmatchedLeft = leftRows.filter((_row, index) => !matchedLeft.has(index));
+    out.push(
+      ...fillLeftJoinNulls(
+        unmatchedLeft,
+        join.alias,
+        leftJoinRightColumns(ast, join.alias, rightRows),
+      ),
+    );
+  }
+  if (join.type === "right" || join.type === "full") {
+    const unmatchedRight = rightRows.filter((_row, index) => !matchedRight.has(index));
+    out.push(...fillRightJoinNulls(unmatchedRight, ast, join.alias, leftRows));
+  }
+  return out;
+}
+
+function mergePredicateJoinRows(left: Row, right: Row, rightPrefix: string): Row {
+  const out: Row = { ...left };
+  for (const [key, value] of Object.entries(right)) {
+    const outKey = key in out ? `${rightPrefix}${key}` : key;
+    out[outKey] = value;
+  }
+  return out;
 }
 
 function sqlJoins(ast: SqlQueryAst): NonNullable<SqlQueryAst["joins"]> {

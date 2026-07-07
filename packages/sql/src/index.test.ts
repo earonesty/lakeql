@@ -569,9 +569,30 @@ describe("parseSql", () => {
     );
     expect(parseSql(formatSql(nonEqui))).toEqual(nonEqui);
 
-    expect(() =>
+    expect(
       parseSql("select * from sales s left join buckets b on s.amount < b.max_amount"),
-    ).toThrow("Only inner JOIN supports non-equality ON predicates");
+    ).toMatchObject({
+      join: {
+        type: "left",
+        predicate: { kind: "compare", op: "lt" },
+      },
+    });
+    expect(
+      parseSql("select * from sales s right join buckets b on s.amount < b.max_amount"),
+    ).toMatchObject({
+      join: {
+        type: "right",
+        predicate: { kind: "compare", op: "lt" },
+      },
+    });
+    expect(
+      parseSql("select * from sales s full join buckets b on s.amount < b.max_amount"),
+    ).toMatchObject({
+      join: {
+        type: "full",
+        predicate: { kind: "compare", op: "lt" },
+      },
+    });
 
     const chain = parseSql(`
       select s.store_id, d.segment, r.manager
@@ -1248,10 +1269,7 @@ describe("parseSql", () => {
   });
 
   it("rejects SQL outside the documented subset with typed parse errors", () => {
-    const unsupported = [
-      "with a as (select id from t), b as (select id from t) select id from a",
-      "select * from orders left join customers on orders.customer_id > customers.id",
-    ];
+    const unsupported = ["with a as (select id from t), b as (select id from t) select id from a"];
 
     for (const sql of unsupported) {
       expect(() => parseSql(sql)).toThrowError(LakeqlError);
