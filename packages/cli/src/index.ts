@@ -433,6 +433,30 @@ async function joinRowsFromAst(
         maxRightRows: args.joinMaxRightRows ?? 100_000,
       });
       rows = fillRightJoinNulls(rows, ast, join.alias, leftRows);
+    } else if (join.type === "full") {
+      const leftRows = rows;
+      const leftJoined = await broadcastJoin(leftRows, rightRows, {
+        leftKey: join.leftKey,
+        rightKey: join.rightKey,
+        type: "left",
+        rightPrefix: `${join.alias}.`,
+        maxRightRows: args.joinMaxRightRows ?? 100_000,
+      });
+      const unmatchedRight = await broadcastJoin(rightRows, leftRows, {
+        leftKey: join.rightKey,
+        rightKey: join.leftKey,
+        type: "anti",
+        rightPrefix: `${join.leftAlias}.`,
+        maxRightRows: args.joinMaxRightRows ?? 100_000,
+      });
+      rows = [
+        ...fillLeftJoinNulls(
+          leftJoined,
+          join.alias,
+          leftJoinRightColumns(ast, join.alias, rightRows),
+        ),
+        ...fillRightJoinNulls(unmatchedRight, ast, join.alias, leftRows),
+      ];
     } else {
       rows =
         join.type === "cross"

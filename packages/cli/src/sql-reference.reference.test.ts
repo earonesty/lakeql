@@ -426,6 +426,34 @@ describeReference("SQL CLI DuckDB reference comparisons", () => {
     expect(canonicalRows(lakeqlRows)).toEqual(canonicalRows(referenceRows));
   });
 
+  it("matches DuckDB for bounded full join nulls", async () => {
+    const storesPath = await rightStoresFixturePath();
+    const lakeql =
+      "select distinct s.store_id as sales_store, d.store_id as dim_store, d.segment as segment from sales s full join stores d on s.store_id = d.store_id where s.store_id = 'store-005' or d.store_id = 'store-999' order by s.store_id asc nulls last, d.store_id asc nulls last";
+    const duckdb = `select distinct s.store_id as sales_store, d.store_id as dim_store, d.segment as segment from read_parquet('${sqlString(
+      fixturePath(SALES.file),
+    )}') s full join read_parquet('${sqlString(
+      storesPath,
+    )}') d on s.store_id = d.store_id where s.store_id = 'store-005' or d.store_id = 'store-999' order by s.store_id asc nulls last, d.store_id asc nulls last`;
+
+    const result = await runCli([
+      "query",
+      "--table",
+      `sales=${fixturePath(SALES.file)}`,
+      "--table",
+      `stores=${storesPath}`,
+      "--sql",
+      lakeql,
+      "--format",
+      "json",
+    ]);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    const lakeqlRows = JSON.parse(result.stdout) as Row[];
+    const referenceRows = await duckDbRows(duckdb);
+    expect(canonicalRows(lakeqlRows)).toEqual(canonicalRows(referenceRows));
+  });
+
   it("matches DuckDB for bounded left join right-side WHERE filters", async () => {
     const storesPath = await storesFixturePath();
     const lakeql =

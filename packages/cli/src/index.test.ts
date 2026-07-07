@@ -141,6 +141,32 @@ describe("runCli", () => {
     ]);
   });
 
+  it("executes bounded SQL full joins over named CLI tables", async () => {
+    const rightStoresPath = await rightStoresFixturePath();
+    const result = await runCli([
+      "query",
+      "--table",
+      `sales=${fixturePath(SALES.file)}`,
+      "--table",
+      `stores=${rightStoresPath}`,
+      "--sql",
+      [
+        "select distinct s.store_id as sales_store, d.store_id as dim_store, d.segment as segment",
+        "from sales s full join stores d on s.store_id = d.store_id",
+        "where s.store_id = 'store-005' or d.store_id = 'store-999'",
+        "order by s.store_id asc nulls last, d.store_id asc nulls last",
+      ].join(" "),
+      "--format",
+      "json",
+    ]);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    expect(JSON.parse(result.stdout)).toEqual([
+      { sales_store: "store-005", dim_store: null, segment: null },
+      { sales_store: null, dim_store: "store-999", segment: "unmatched" },
+    ]);
+  });
+
   it("executes bounded SQL cross joins over named CLI tables", async () => {
     const storesPath = await storesFixturePath();
     const regionsPath = await regionsFixturePath();

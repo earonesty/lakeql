@@ -172,6 +172,28 @@ it("runs SQL over read_parquet globs and named table joins", async () => {
     lake
       .sql(
         [
+          "select s.store_id as sales_store, d.store_id as dim_store, s.amount as amount, d.segment as segment",
+          "from sales s full join stores d using (store_id)",
+          "order by s.store_id asc nulls last, d.store_id asc nulls last",
+        ].join(" "),
+        {
+          tables: {
+            sales: "sql/sales/*.parquet",
+            stores: "sql/stores/*.parquet",
+          },
+        },
+      )
+      .toArray(),
+  ).resolves.toEqual([
+    { sales_store: "s1", dim_store: "s1", amount: 10, segment: "retail" },
+    { sales_store: "s2", dim_store: null, amount: 20, segment: null },
+    { sales_store: null, dim_store: "s3", amount: null, segment: "enterprise" },
+  ]);
+
+  await expect(
+    lake
+      .sql(
+        [
           "select s.store_id as store_id, d.segment as segment, r.manager as manager",
           "from sales s",
           "join stores d on s.store_id = d.store_id",

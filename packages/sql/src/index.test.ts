@@ -463,6 +463,16 @@ describe("parseSql", () => {
       },
     });
 
+    expect(parseSql("select * from sales full join stores using (store_id)")).toMatchObject({
+      join: {
+        source: "stores",
+        alias: "stores",
+        type: "full",
+        leftKey: ["sales.store_id"],
+        rightKey: ["stores.store_id"],
+      },
+    });
+
     expect(parseSql("select * from sales s join stores d using (store_id, region)")).toMatchObject({
       join: {
         source: "stores",
@@ -545,6 +555,9 @@ describe("parseSql", () => {
     expect(
       formatSql(parseSql("select * from sales s right join stores d using (store_id)")),
     ).toContain("right join stores d");
+    expect(
+      formatSql(parseSql("select * from sales s full join stores d using (store_id)")),
+    ).toContain("full join stores d");
   });
 
   it("compiles IN subqueries as semi and anti joins", () => {

@@ -57,7 +57,7 @@ SQL and the parser/compiler rejects it, the performance story stops mattering.
 Current state:
 
 - Window functions and `QUALIFY` are supported and tested.
-- Basic filtering, projection, grouping, sorting, bounded inner/left/right
+- Basic filtering, projection, grouping, sorting, bounded inner/left/right/full
   equi-join chains, and bounded `CROSS JOIN`/comma join forms exist.
 - `read_parquet('path')` table-function sources map onto normal LakeQL path
   planning.
@@ -73,7 +73,8 @@ TODO:
 
 - Add Iceberg table references where the syntax can remain explicit and
   unsurprising.
-- Add `FULL` joins only if there is a clear bounded execution contract.
+- Revisit outer-join planner optimizations after the bounded execution
+  semantics stay covered by DuckDB reference tests.
 - Reintroduce safe join-chain predicate/projection pushdown where aliases prove
   a filter or projection belongs to one input side.
 - Add non-equi join support only with explicit bounded planning rules. Do not
