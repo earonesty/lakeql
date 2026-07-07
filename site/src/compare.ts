@@ -9,7 +9,7 @@ import duckdbWasmEh from "@duckdb/duckdb-wasm/dist/duckdb-eh.wasm?url";
 import duckdbWasmMvp from "@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm?url";
 import { tags } from "@lezer/highlight";
 import { basicSetup } from "codemirror";
-import type { ObjectStore, QueryBudget, QueryStats } from "lakeql-core";
+import { isTimestampValue, type ObjectStore, type QueryBudget, type QueryStats } from "lakeql-core";
 import { httpStore } from "lakeql-http";
 import { createParquetLake } from "lakeql-parquet";
 import { parseSql } from "lakeql-sql";
@@ -703,7 +703,8 @@ function renderResult(rows: Row[]): void {
       const cells = cols
         .map((c) => {
           const v = r[c];
-          const numeric = typeof v === "number" || typeof v === "bigint";
+          const numeric =
+            (typeof v === "number" && !isEpochMillisTimestampColumn(c, v)) || typeof v === "bigint";
           return `<td class="${numeric ? "num" : ""}">${escapeHtml(formatCell(c, v))}</td>`;
         })
         .join("");
@@ -716,11 +717,28 @@ function renderResult(rows: Row[]): void {
 function formatCell(column: string, v: unknown): string {
   if (v === null || v === undefined) return ".";
   if (typeof v === "bigint") return v.toString();
-  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  if (isTimestampValue(v)) return v.toJSON();
+  if (v instanceof Date) return v.toISOString();
   if (column === "FL_DATE" && typeof v === "number") return new Date(v).toISOString().slice(0, 10);
+  if (typeof v === "number" && isEpochMillisTimestampColumn(column, v)) {
+    return new Date(v).toISOString();
+  }
   if (typeof v === "number") return Number.isInteger(v) ? String(v) : v.toFixed(2);
   if (typeof v === "object") return JSON.stringify(v);
   return String(v);
+}
+
+function isEpochMillisTimestampColumn(column: string, value: number): boolean {
+  if (!Number.isInteger(value) || !Number.isFinite(value)) return false;
+  if (value < -8_640_000_000_000_000 || value > 8_640_000_000_000_000) return false;
+  const normalized = column.toLowerCase();
+  return (
+    normalized === "timestamp" ||
+    normalized.endsWith("_ts") ||
+    normalized.endsWith("_time") ||
+    normalized.endsWith("_at") ||
+    normalized.includes("timestamp")
+  );
 }
 
 function formatBytes(n: number): string {
