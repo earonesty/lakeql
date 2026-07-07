@@ -1,5 +1,15 @@
 # lakeql
 
+## 0.5.1
+
+### Minor Changes
+
+- Publish the public `lakeql` package with the product release line that includes
+  multi-file Parquet planning, SQL `read_parquet(...)` sources, JavaScript SQL
+  helpers, window function execution, JSON window/QUALIFY queries, browser
+  compare-page fixes for DuckDB-WASM spatial and timestamp examples, and the
+  priority-1 DuckDB-WASM parity work for common subquery forms.
+
 ## 0.2.0
 
 ### Minor Changes
