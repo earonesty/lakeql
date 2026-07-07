@@ -1470,6 +1470,27 @@ describe("parseSql", () => {
     });
   });
 
+  it("keeps SELECT aliases visible to QUALIFY predicates", () => {
+    expect(
+      parseSql(`
+        select amount * 2 as doubled,
+          row_number() over (order by amount) as rn
+        from orders
+        qualify doubled > 100 and rn <= 3
+      `),
+    ).toMatchObject({
+      projections: { doubled: { kind: "arithmetic", op: "mul" } },
+      windows: { rn: { fn: "row_number" } },
+      qualify: {
+        kind: "logical",
+        operands: [
+          { kind: "compare", left: { kind: "arithmetic", op: "mul" } },
+          { kind: "compare", left: { kind: "column", name: "rn" } },
+        ],
+      },
+    });
+  });
+
   it("uses unique synthetic aliases for unaliased window projections", () => {
     const ast = parseSql(
       "select row_number() over (order by a), row_number() over (order by b desc) from t",

@@ -353,7 +353,11 @@ function selectStatementToAstInScope(statement: PgNode, context: SqlParseContext
     if (hiddenAggregates.size > 0) ast.hiddenAggregates = [...hiddenAggregates];
   }
   if (context.qualifySql !== undefined) {
-    ast.qualify = qualifyToExpr(context.qualifySql, scope, context);
+    ast.qualify = expandProjectionAliasesInExpr(
+      qualifyToExpr(context.qualifySql, scope, context),
+      projections,
+      context.windows,
+    );
   }
   if (Object.keys(context.windows).length > 0) ast.windows = context.windows;
   if (statement.orderBy !== undefined) {
@@ -384,6 +388,78 @@ function qualifyToExpr(sql: string, scope: SqlScope, context: SqlParseContext): 
   const statement = asNode(statements[0], "QUALIFY wrapper");
   const where = asNode(statement.where, "QUALIFY predicate");
   return exprToLakeql(where, scope, context);
+}
+
+function expandProjectionAliasesInExpr(
+  expr: Expr,
+  projections: Record<string, Expr>,
+  windows: Record<string, WindowExpr>,
+): Expr {
+  switch (expr.kind) {
+    case "column":
+      return expr.name in windows ? expr : (projections[expr.name] ?? expr);
+    case "compare":
+      return {
+        ...expr,
+        left: expandProjectionAliasesInExpr(expr.left, projections, windows),
+        right: expandProjectionAliasesInExpr(expr.right, projections, windows),
+      };
+    case "between":
+      return {
+        ...expr,
+        target: expandProjectionAliasesInExpr(expr.target, projections, windows),
+        low: expandProjectionAliasesInExpr(expr.low, projections, windows),
+        high: expandProjectionAliasesInExpr(expr.high, projections, windows),
+      };
+    case "in":
+      return {
+        ...expr,
+        target: expandProjectionAliasesInExpr(expr.target, projections, windows),
+        values: expr.values.map((value) =>
+          expandProjectionAliasesInExpr(value, projections, windows),
+        ),
+      };
+    case "null-check":
+      return { ...expr, target: expandProjectionAliasesInExpr(expr.target, projections, windows) };
+    case "logical":
+      return {
+        ...expr,
+        operands: expr.operands.map((operand) =>
+          expandProjectionAliasesInExpr(operand, projections, windows),
+        ),
+      };
+    case "not":
+      return {
+        ...expr,
+        operand: expandProjectionAliasesInExpr(expr.operand, projections, windows),
+      };
+    case "like":
+      return { ...expr, target: expandProjectionAliasesInExpr(expr.target, projections, windows) };
+    case "call":
+      return {
+        ...expr,
+        args: expr.args.map((arg) => expandProjectionAliasesInExpr(arg, projections, windows)),
+      };
+    case "arithmetic":
+      return {
+        ...expr,
+        left: expandProjectionAliasesInExpr(expr.left, projections, windows),
+        right: expandProjectionAliasesInExpr(expr.right, projections, windows),
+      };
+    case "case":
+      return {
+        ...expr,
+        whens: expr.whens.map((branch) => ({
+          when: expandProjectionAliasesInExpr(branch.when, projections, windows),
+          value: expandProjectionAliasesInExpr(branch.value, projections, windows),
+        })),
+        ...(expr.else === undefined
+          ? {}
+          : { else: expandProjectionAliasesInExpr(expr.else, projections, windows) }),
+      };
+    case "literal":
+      return expr;
+  }
 }
 
 function havingToExpr(

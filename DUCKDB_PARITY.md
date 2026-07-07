@@ -56,7 +56,8 @@ SQL and the parser/compiler rejects it, the performance story stops mattering.
 
 Current state:
 
-- Window functions and `QUALIFY` are supported and tested.
+- Window functions and `QUALIFY` are supported and tested, including `QUALIFY`
+  predicates that reference computed SELECT aliases.
 - Basic filtering, projection, grouping, sorting, bounded inner/left/right/full
   equi-join chains, bounded inner/left/right/full non-equality `JOIN ON`
   predicates, and bounded `CROSS JOIN`/comma join forms exist.
@@ -109,8 +110,6 @@ TODO:
   semantics stay covered by DuckDB reference tests.
 - Broaden remaining subquery support for common analytical correlation forms
   beyond bounded predicate `IN`/`EXISTS`.
-- Tighten remaining alias resolution edge cases so `QUALIFY` behaves the way
-  DuckDB users expect across nested scopes.
 
 Acceptance criteria:
 

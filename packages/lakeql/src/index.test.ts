@@ -1008,6 +1008,21 @@ it("covers SQL helper defaults, validation, empty results, and CSV escaping", as
 
   await expect(
     lake
+      .sql(
+        "select store_id, amount, amount * 2 as doubled, row_number() over (order by amount asc) as rn from input qualify doubled > 100 and rn <= 10 order by amount asc",
+        { path: SALES.file },
+      )
+      .toArray(),
+  ).resolves.toEqual([
+    { store_id: "store-006", amount: 71.83, doubled: 143.66, rn: 6 },
+    { store_id: "store-000", amount: 72.56, doubled: 145.12, rn: 7 },
+    { store_id: "store-001", amount: 73.29, doubled: 146.58, rn: 8 },
+    { store_id: "store-002", amount: 74.02, doubled: 148.04, rn: 9 },
+    { store_id: "store-000", amount: 108.84, doubled: 217.68, rn: 10 },
+  ]);
+
+  await expect(
+    lake
       .sql("select amount, count(*) as rows from input group by region", { path: SALES.file })
       .toArray(),
   ).rejects.toMatchObject({ code: "LAKEQL_SQL_UNSUPPORTED" });

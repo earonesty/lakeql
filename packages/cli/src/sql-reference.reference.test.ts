@@ -129,6 +129,12 @@ describeReference("SQL CLI DuckDB reference comparisons", () => {
       duckdb: `select region, store_id, amount from read_parquet('${sqlString(fixturePath(SALES.file))}') qualify row_number() over (partition by region order by amount desc, store_id asc) <= 2 order by region asc, amount desc, store_id asc`,
     },
     {
+      name: "qualify computed select alias",
+      lakeql:
+        "select store_id, amount, amount * 2 as doubled, row_number() over (order by amount asc) as rn from input qualify doubled > 100 and rn <= 10 order by amount asc",
+      duckdb: `select store_id, amount, amount * 2 as doubled, row_number() over (order by amount asc) as rn from read_parquet('${sqlString(fixturePath(SALES.file))}') qualify doubled > 100 and rn <= 10 order by amount asc`,
+    },
+    {
       name: "rows frame moving aggregate window",
       lakeql:
         "select region, store_id, amount, sum(amount) over (partition by region order by amount asc, store_id asc rows between 1 preceding and current row) as moving_amount from input order by region asc, amount asc, store_id asc limit 12",
