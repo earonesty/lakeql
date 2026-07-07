@@ -494,6 +494,50 @@ it("runs aggregate, CTE, scalar subquery, and semi-join SQL helpers", async () =
     lake
       .sql(
         [
+          "select distinct region from sales",
+          "where exists (",
+          "select 1 from sales",
+          "group by region",
+          "having count(*) > 20 and max(amount) > 900",
+          ")",
+          "order by region asc",
+        ].join(" "),
+        { tables: { sales: SALES.file } },
+      )
+      .toArray(),
+  ).resolves.toEqual([
+    { region: "east" },
+    { region: "north" },
+    { region: "south" },
+    { region: "west" },
+  ]);
+
+  await expect(
+    lake
+      .sql(
+        [
+          "select distinct region from sales",
+          "where not exists (",
+          "select 1 from sales",
+          "group by region",
+          "having count(*) > 200",
+          ")",
+          "order by region asc",
+        ].join(" "),
+        { tables: { sales: SALES.file } },
+      )
+      .toArray(),
+  ).resolves.toEqual([
+    { region: "east" },
+    { region: "north" },
+    { region: "south" },
+    { region: "west" },
+  ]);
+
+  await expect(
+    lake
+      .sql(
+        [
           "with west_stores as (select store_id, segment from stores where region = 'west')",
           "select s.store_id as store_id, w.segment as segment",
           "from sales s join west_stores w using (store_id)",

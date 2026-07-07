@@ -1040,6 +1040,35 @@ describe("parseSql", () => {
       },
     });
     expect(parseSql(formatSql(notExists))).toEqual(notExists);
+
+    const groupedExists = parseSql(`
+      select store_id
+      from sales
+      where exists (
+        select 1
+        from stores
+        group by region
+        having count(*) > 1
+      )
+    `);
+    expect(groupedExists).toMatchObject({
+      where: { kind: "call", fn: "__lakeql_scalar_subquery" },
+      scalarSubqueries: {
+        scalar_0: {
+          column: "__lakeql_exists",
+          mode: "exists",
+          query: {
+            source: "stores",
+            select: ["region"],
+            groupBy: ["region"],
+            aggregates: { __lakeql_having_0: { op: "count" } },
+            hiddenAggregates: ["__lakeql_having_0"],
+            having: { kind: "compare", left: { kind: "column", name: "__lakeql_having_0" } },
+          },
+        },
+      },
+    });
+    expect(parseSql(formatSql(groupedExists))).toEqual(groupedExists);
   });
 
   it("compiles correlated EXISTS subqueries as semi and anti joins", () => {
@@ -1114,6 +1143,19 @@ describe("parseSql", () => {
       },
     });
     expect(parseSql(formatSql(predicateExists))).toEqual(predicateExists);
+
+    expect(() =>
+      parseSql(`
+        select id
+        from orders o
+        where exists (
+          select 1
+          from refunds r
+          where r.customer_id = o.customer_id
+          group by reason
+        )
+      `),
+    ).toThrow(/Correlated grouped EXISTS/u);
   });
 
   it("compiles additional VISION geospatial and H3 SQL examples", () => {

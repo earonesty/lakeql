@@ -81,6 +81,7 @@ export interface SqlCteAst {
 export interface SqlScalarSubqueryAst {
   query: SqlQueryAst;
   column: string;
+  mode?: "scalar" | "exists";
 }
 
 const MAX_SQL_LENGTH = 128_000;
@@ -775,14 +776,21 @@ function existsSubqueryJoinToAst(
   context: SqlParseContext,
 ): SqlSubqueryJoinAst | undefined {
   const subquery = existsSubquery(expr);
-  rejectPresent(subquery, "groupBy", "Grouped EXISTS subqueries are not supported");
-  rejectPresent(subquery, "having", "HAVING in EXISTS subqueries is not supported");
   rejectPresent(subquery, "orderBy", "ORDER BY in EXISTS subqueries is not supported");
   rejectPresent(subquery, "limit", "LIMIT in EXISTS subqueries is not supported");
   const from = optionalArray(subquery.from);
   if (from.length !== 1) throwUnsupported("EXISTS subqueries must select from one table");
   const source = sourceTable(from[0]);
   const subqueryScope = new SqlScope(source);
+  if (subquery.groupBy !== undefined || subquery.having !== undefined) {
+    if (
+      subquery.where !== undefined &&
+      predicateReferencesOuterScope(asNode(subquery.where, "EXISTS subquery WHERE"), outerScope)
+    ) {
+      throwUnsupported("Correlated grouped EXISTS subqueries are not supported");
+    }
+    return undefined;
+  }
   const out: SqlSubqueryJoinAst = {
     source: source.source,
     type: negated ? "anti" : "semi",
@@ -943,14 +951,15 @@ function scalarSubqueryToExpr(subquery: PgNode, context: SqlParseContext): Expr 
 
 function existsSubqueryToExpr(expr: PgNode, context: SqlParseContext): Expr {
   const subquery = existsSubquery(expr);
-  rejectPresent(subquery, "groupBy", "Grouped EXISTS subqueries are not supported");
-  rejectPresent(subquery, "having", "HAVING in EXISTS subqueries is not supported");
   rejectPresent(subquery, "orderBy", "ORDER BY in EXISTS subqueries is not supported");
   rejectPresent(subquery, "limit", "LIMIT in EXISTS subqueries is not supported");
   rejectPresent(subquery, "windows", "Window functions in EXISTS subqueries are not supported");
   const from = optionalArray(subquery.from);
   if (from.length !== 1) throwUnsupported("EXISTS subqueries must select from one table");
   const source = sourceTable(from[0]);
+  if (subquery.groupBy !== undefined || subquery.having !== undefined) {
+    return registerExistsSubquery(groupedExistsSubqueryToAst(subquery, source, context), context);
+  }
   const query: SqlQueryAst = {
     source: source.source,
     aggregates: { __lakeql_exists_count: { op: "count" } },
@@ -966,6 +975,40 @@ function existsSubqueryToExpr(expr: PgNode, context: SqlParseContext): Expr {
   return { kind: "compare", op: "gt", left: count, right: literal(0) };
 }
 
+function groupedExistsSubqueryToAst(
+  subquery: PgNode,
+  source: SourceTable,
+  context: SqlParseContext,
+): SqlQueryAst {
+  const scope = new SqlScope(source);
+  const query: SqlQueryAst = { source: source.source };
+  if (subquery.where !== undefined) {
+    query.where = exprToLakeql(asNode(subquery.where, "EXISTS subquery WHERE"), scope, context);
+  }
+  if (subquery.groupBy !== undefined) {
+    query.groupBy = optionalArray(subquery.groupBy).map((expr) =>
+      scope.refName(asNode(expr, "EXISTS subquery GROUP BY expression")),
+    );
+    query.select = query.groupBy;
+  }
+  const aggregates: AggregateSpec = {};
+  const hiddenAggregates = new Set<string>();
+  const outputAliases = new Set<string>(query.select ?? []);
+  if (subquery.having !== undefined) {
+    query.having = havingToExpr(
+      asNode(subquery.having, "EXISTS subquery HAVING"),
+      scope,
+      context,
+      aggregates,
+      hiddenAggregates,
+      outputAliases,
+    );
+  }
+  if (Object.keys(aggregates).length > 0) query.aggregates = aggregates;
+  if (hiddenAggregates.size > 0) query.hiddenAggregates = [...hiddenAggregates];
+  return query;
+}
+
 function registerScalarSubquery(
   query: SqlQueryAst,
   column: string,
@@ -974,6 +1017,13 @@ function registerScalarSubquery(
   const id = `scalar_${context.nextScalarSubqueryId}`;
   context.nextScalarSubqueryId += 1;
   context.scalarSubqueries[id] = { query, column };
+  return { kind: "call", fn: "__lakeql_scalar_subquery", args: [{ kind: "literal", value: id }] };
+}
+
+function registerExistsSubquery(query: SqlQueryAst, context: SqlParseContext): Expr {
+  const id = `scalar_${context.nextScalarSubqueryId}`;
+  context.nextScalarSubqueryId += 1;
+  context.scalarSubqueries[id] = { query, column: "__lakeql_exists", mode: "exists" };
   return { kind: "call", fn: "__lakeql_scalar_subquery", args: [{ kind: "literal", value: id }] };
 }
 
@@ -1881,6 +1931,7 @@ function formatScalarSubqueryExpr(
   }
   const subquery = ast?.scalarSubqueries?.[id.value];
   if (subquery === undefined) throwUnsupported("Missing scalar subquery metadata");
+  if (subquery.mode === "exists") return `exists (${formatSql(subquery.query)})`;
   return `(${formatSql(subquery.query)})`;
 }
 

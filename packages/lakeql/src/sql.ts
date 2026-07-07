@@ -790,6 +790,10 @@ async function resolveScalarSubqueries(lake: ParquetLake, ast: SqlQueryAst): Pro
     const rows = hasAggregation(subquery.query)
       ? await aggregateRowsFromAst(lake.path(subquery.query.source), subquery.query)
       : await builderFromAst(lake.path(subquery.query.source), subquery.query).toArray();
+    if (subquery.mode === "exists") {
+      values.set(id, rows.length > 0);
+      continue;
+    }
     if (rows.length > 1) {
       throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "Scalar subquery returned more than one row");
     }
