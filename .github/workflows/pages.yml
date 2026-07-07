@@ -48,6 +48,10 @@ jobs:
 
       - name: Upload browser R2 benchmark fixtures
         run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::warning::CLOUDFLARE_API_TOKEN is not available; skipping R2 fixture upload and using the currently published benchmark objects."
+            exit 0
+          fi
           pnpm dlx wrangler@4.100.0 r2 object put lakeql-public/bench/spatial.parquet --file bench/generated/browser-r2/spatial.parquet --content-type application/octet-stream --cache-control "public, max-age=31536000, immutable" --remote
           pnpm dlx wrangler@4.100.0 r2 object put lakeql-public/bench/window-events.parquet --file bench/generated/browser-r2/window-events.parquet --content-type application/octet-stream --cache-control "public, max-age=31536000, immutable" --remote
         env:
