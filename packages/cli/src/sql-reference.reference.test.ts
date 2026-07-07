@@ -36,6 +36,12 @@ describeReference("SQL CLI DuckDB reference comparisons", () => {
       duckdb: `select region, count(*) as rows, max(amount) as max_amount from read_parquet('${sqlString(fixturePath(SALES.file))}') group by region order by region asc`,
     },
     {
+      name: "grouped aggregate over computed alias",
+      lakeql:
+        "select case when amount < 500 then 'small' else 'large' end as bucket, count(*) as rows from input group by bucket order by bucket asc",
+      duckdb: `select case when amount < 500 then 'small' else 'large' end as bucket, count(*) as rows from read_parquet('${sqlString(fixturePath(SALES.file))}') group by bucket order by bucket asc`,
+    },
+    {
       name: "grouped aggregate expression and count distinct",
       lakeql:
         "select region, max(amount * 2) as max_doubled, count(distinct store_id) as stores from input group by region order by region asc",

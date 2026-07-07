@@ -212,6 +212,9 @@ it("runs aggregate, CTE, scalar subquery, and semi-join SQL helpers", async () =
   const store = memoryStore();
   await store.put(SALES.file, await readFile(fixturePath(SALES.file)));
   await writeStoresFixture(store, "sql/stores");
+  await writePartitionedParquet(store, "sql/buckets", {
+    rows: [{ amount: 1 }, { amount: 2 }, { amount: 20 }],
+  });
   const lake = createLake({ store });
 
   await expect(
@@ -222,6 +225,22 @@ it("runs aggregate, CTE, scalar subquery, and semi-join SQL helpers", async () =
       )
       .toArray(),
   ).resolves.toEqual([{ region: "east", rows: 25 }]);
+
+  await expect(
+    lake
+      .sql(
+        [
+          "select case when amount < 10 then 'small' else 'large' end as bucket, count(*) as rows",
+          "from read_parquet('sql/buckets/*.parquet')",
+          "group by bucket",
+          "order by bucket asc",
+        ].join(" "),
+      )
+      .toArray(),
+  ).resolves.toEqual([
+    { bucket: "large", rows: 1 },
+    { bucket: "small", rows: 2 },
+  ]);
 
   await expect(
     lake

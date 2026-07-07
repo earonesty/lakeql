@@ -765,6 +765,30 @@ describe("runCli", () => {
     ]);
   });
 
+  it("executes grouped aggregate SQL over computed aliases", async () => {
+    const bucketsPath = await bucketsFixturePath();
+    const result = await runCli([
+      "query",
+      "--path",
+      bucketsPath,
+      "--sql",
+      [
+        "select case when amount < 10 then 'small' else 'large' end as bucket, count(*) as rows",
+        "from input",
+        "group by bucket",
+        "order by bucket asc",
+      ].join(" "),
+      "--format",
+      "json",
+    ]);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    expect(JSON.parse(result.stdout)).toEqual([
+      { bucket: "large", rows: 1 },
+      { bucket: "small", rows: 2 },
+    ]);
+  });
+
   it("executes grouped aggregate expressions and COUNT DISTINCT SQL", async () => {
     const result = await runCli([
       "query",
@@ -1250,6 +1274,20 @@ async function regionsFixturePath(): Promise<string> {
   });
   const bytes = await store.get(key);
   if (bytes === null) throw new Error("failed to write regions fixture");
+  await writeFile(path, bytes);
+  return path;
+}
+
+async function bucketsFixturePath(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "lakeql-cli-buckets-"));
+  const path = join(dir, "buckets.parquet");
+  const key = "tmp/buckets.parquet";
+  const store = memoryStore();
+  await writeParquet(store, key, {
+    columnData: [{ name: "amount", data: [1, 2, 20], type: "DOUBLE" }],
+  });
+  const bytes = await store.get(key);
+  if (bytes === null) throw new Error("failed to write buckets fixture");
   await writeFile(path, bytes);
   return path;
 }

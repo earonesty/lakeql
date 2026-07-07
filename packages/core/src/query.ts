@@ -1232,7 +1232,7 @@ export class QueryResult {
     if (config.scanner.scanColumns === undefined) return undefined;
     const state = createVectorGroupByState(groupColumns, spec);
     for await (const batch of this.columnBatches(
-      aggregateReadColumns(groupColumns, spec, config.where),
+      aggregateReadColumns(groupColumns, spec, config.where, config.projections),
       startedAt,
       columnarBatchSize(config.batchSize),
     )) {
@@ -1423,9 +1423,16 @@ export class QueryResult {
     ]);
     const groups = await aggregateGroupsFromState(groupColumns, spec, options);
     const startedAt = this.config.now();
-    const readColumns = aggregateReadColumns(groupColumns, spec, this.config.where);
+    const readColumns = aggregateReadColumns(
+      groupColumns,
+      spec,
+      this.config.where,
+      this.config.projections,
+    );
     for await (const row of this.matchedRows(startedAt, readColumns)) {
-      const keyValues = groupColumns.map((column) => valueForColumn(row, column));
+      const aggregateRow =
+        this.config.projections === undefined ? row : project(row, ["*"], this.config.projections);
+      const keyValues = groupColumns.map((column) => valueForColumn(aggregateRow, column));
       const key = stableStringify(keyValues);
       let group = groups.get(key);
       if (!group) {
@@ -1439,7 +1446,7 @@ export class QueryResult {
         group = createAggregateGroup(groupColumns, keyValues, spec);
         groups.set(key, group);
       }
-      group.add(row);
+      group.add(aggregateRow);
       enforceBufferedRowsBudget(this.config.budget, estimateAggregateBufferedRows(groups));
       enforceOperatorMemoryBudget(
         this.config.budget,
@@ -3341,9 +3348,14 @@ function aggregateReadColumns(
   groupColumns: string[],
   spec: AggregateSpec,
   where: Expr | undefined,
+  projections: Record<string, Expr> | undefined,
 ): string[] | undefined {
   const columns = new Set<string>();
-  for (const column of groupColumns) columns.add(column);
+  for (const column of groupColumns) {
+    const projection = projections?.[column];
+    if (projection === undefined) columns.add(column);
+    else collectExprColumns(projection, columns);
+  }
   for (const aggregate of Object.values(spec)) {
     if (aggregate.column !== undefined) columns.add(aggregate.column);
     if (aggregate.expr !== undefined) collectExprColumns(aggregate.expr, columns);

@@ -65,6 +65,8 @@ Current state:
   equality `IN`/`EXISTS`, and single-source derived tables compile to existing
   scalar, semi/anti join, and CTE materialization plans.
 - Searched `CASE` and simple `CASE <expr> WHEN ...` forms are supported.
+- `GROUP BY` can reference computed projection aliases, with DuckDB reference
+  coverage for common aggregate queries.
 - Unsupported broad SQL syntax is detected and rejected.
 
 TODO:
@@ -83,8 +85,8 @@ TODO:
   recursive semantics. Recursive CTEs should remain explicitly rejected until
   there is a bounded execution design.
 - Improve nested `CASE` coverage and mixed-type result diagnostics.
-- Tighten alias resolution so `ORDER BY`, `GROUP BY`, `HAVING`, and `QUALIFY`
-  behave the way DuckDB users expect.
+- Tighten remaining alias resolution edge cases so `ORDER BY`, `HAVING`, and
+  `QUALIFY` behave the way DuckDB users expect across nested scopes.
 
 Acceptance criteria:
 

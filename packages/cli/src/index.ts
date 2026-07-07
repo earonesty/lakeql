@@ -633,6 +633,8 @@ async function aggregateRowsFromAst(
   validateAggregateProjection(ast);
   let next = builder;
   if (ast.where) next = next.where(ast.where);
+  const preProjections = aggregatePreProjections(ast);
+  if (preProjections !== undefined) next = next.select(["*"]).project(preProjections);
   const aggregates = ast.aggregates ?? {};
   const hiddenCountAlias = hiddenAggregateAlias(ast);
   const aggregateSpec: AggregateSpec =
@@ -688,10 +690,28 @@ function projectAggregateRows(
     }
     for (const [alias] of aggregates) out[alias] = row[alias];
     for (const [alias, expr] of Object.entries(ast.projections ?? {})) {
-      out[alias] = evaluate(expr, row);
+      out[alias] = aggregateProjectionValue(alias, expr, row, ast);
     }
     return out;
   });
+}
+
+function aggregatePreProjections(
+  ast: ReturnType<typeof parseSql>,
+): Record<string, Expr> | undefined {
+  const groupBy = new Set(ast.groupBy ?? []);
+  const entries = Object.entries(ast.projections ?? {}).filter(([alias]) => groupBy.has(alias));
+  return entries.length === 0 ? undefined : Object.fromEntries(entries);
+}
+
+function aggregateProjectionValue(
+  alias: string,
+  expr: Expr,
+  row: Row,
+  ast: ReturnType<typeof parseSql>,
+): unknown {
+  if (ast.groupBy?.includes(alias) && alias in row) return row[alias];
+  return evaluate(expr, row);
 }
 
 function hiddenAggregateAlias(ast: ReturnType<typeof parseSql>): string {
