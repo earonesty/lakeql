@@ -118,7 +118,13 @@ async function executeSql(
   const ast = sqlAst(sql, options);
   validateSourceBindings(options);
   const bound = bindSources(ast, options);
-  const materializedIceberg = await materializeIcebergTablesIfNeeded(lake.store, bound, options);
+  const pushed = pushdownIcebergPredicates(bound, options);
+  const materializedIceberg = await materializeIcebergTablesIfNeeded(
+    lake.store,
+    pushed.ast,
+    options,
+    pushed.predicates,
+  );
   const materialized = await materializeCteIfNeeded(lake.store, lake, materializedIceberg.ast);
   try {
     const resolved = await resolveScalarSubqueries(lake, materialized.ast);
@@ -311,6 +317,7 @@ async function materializeIcebergTablesIfNeeded(
   store: ObjectStore,
   ast: SqlQueryAst,
   options: SqlQueryOptions,
+  predicates: Map<string, Expr> = new Map(),
 ): Promise<{ ast: SqlQueryAst; cleanup: () => Promise<void> }> {
   const icebergTables = options.icebergTables ?? {};
   if (Object.keys(icebergTables).length === 0) return { ast, cleanup: async () => {} };
@@ -331,6 +338,8 @@ async function materializeIcebergTablesIfNeeded(
     const planOptions = icebergPlanOptions(icebergTable);
     const sourceColumns = requiredColumns.get(source);
     if (sourceColumns !== undefined) planOptions.select = [...sourceColumns];
+    const predicate = predicates.get(source);
+    if (predicate !== undefined) planOptions.where = predicate;
     const plan = planFiles(table, planOptions);
     const rows: Row[] = [];
     for await (const row of scanRows(plan)) rows.push(row);
@@ -365,6 +374,234 @@ async function materializeIcebergTablesIfNeeded(
       );
     },
   };
+}
+
+function pushdownIcebergPredicates(
+  ast: SqlQueryAst,
+  options: SqlQueryOptions,
+): { ast: SqlQueryAst; predicates: Map<string, Expr> } {
+  const icebergTables = options.icebergTables ?? {};
+  if (Object.keys(icebergTables).length === 0) return { ast, predicates: new Map() };
+  const sourceCounts = countAstSources(ast);
+  const predicates = new Map<string, Expr>();
+  return {
+    ast: pushdownIcebergPredicatesFromAst(ast, icebergTables, sourceCounts, predicates),
+    predicates,
+  };
+}
+
+function pushdownIcebergPredicatesFromAst(
+  ast: SqlQueryAst,
+  icebergTables: Record<string, SqlIcebergTableOptions>,
+  sourceCounts: Map<string, number>,
+  predicates: Map<string, Expr>,
+  seen = new WeakSet<SqlQueryAst>(),
+): SqlQueryAst {
+  if (seen.has(ast)) return ast;
+  seen.add(ast);
+
+  const aliases = sourceAliases(ast);
+  const out: SqlQueryAst = { ...ast };
+  if (ast.where !== undefined) {
+    const remaining: Expr[] = [];
+    for (const predicate of splitAndPredicates(ast.where)) {
+      const source = predicateSource(predicate, aliases);
+      if (
+        source !== undefined &&
+        icebergTables[source] !== undefined &&
+        sourceCounts.get(source) === 1
+      ) {
+        addPushdownPredicate(predicates, source, stripExprSource(predicate, aliases, source));
+      } else {
+        remaining.push(predicate);
+      }
+    }
+    const where = combineAndPredicates(remaining);
+    if (where === undefined) delete out.where;
+    else out.where = where;
+  }
+  if (ast.subqueryJoin?.where !== undefined) {
+    const source = ast.subqueryJoin.source;
+    if (icebergTables[source] !== undefined && sourceCounts.get(source) === 1) {
+      const subqueryAliases = new Map([[source, source]]);
+      const remaining: Expr[] = [];
+      for (const predicate of splitAndPredicates(ast.subqueryJoin.where)) {
+        const predicateTable = predicateSource(predicate, subqueryAliases);
+        if (predicateTable === source) {
+          addPushdownPredicate(
+            predicates,
+            source,
+            stripExprSource(predicate, subqueryAliases, source),
+          );
+        } else {
+          remaining.push(predicate);
+        }
+      }
+      const where = combineAndPredicates(remaining);
+      out.subqueryJoin = { ...ast.subqueryJoin };
+      if (where === undefined) delete out.subqueryJoin.where;
+      else out.subqueryJoin.where = where;
+    }
+  }
+  if (ast.cte !== undefined) {
+    out.cte = {
+      ...ast.cte,
+      query: pushdownIcebergPredicatesFromAst(
+        ast.cte.query,
+        icebergTables,
+        sourceCounts,
+        predicates,
+        seen,
+      ),
+    };
+  }
+  if (ast.scalarSubqueries !== undefined) {
+    out.scalarSubqueries = Object.fromEntries(
+      Object.entries(ast.scalarSubqueries).map(([id, subquery]) => [
+        id,
+        {
+          ...subquery,
+          query: pushdownIcebergPredicatesFromAst(
+            subquery.query,
+            icebergTables,
+            sourceCounts,
+            predicates,
+            seen,
+          ),
+        },
+      ]),
+    );
+  }
+  return out;
+}
+
+function countAstSources(
+  ast: SqlQueryAst,
+  counts = new Map<string, number>(),
+  seen = new WeakSet<SqlQueryAst>(),
+): Map<string, number> {
+  if (seen.has(ast)) return counts;
+  seen.add(ast);
+  incrementCount(counts, ast.source);
+  for (const join of sqlJoins(ast)) incrementCount(counts, join.source);
+  if (ast.subqueryJoin !== undefined) incrementCount(counts, ast.subqueryJoin.source);
+  if (ast.cte !== undefined) countAstSources(ast.cte.query, counts, seen);
+  for (const subquery of Object.values(ast.scalarSubqueries ?? {})) {
+    countAstSources(subquery.query, counts, seen);
+  }
+  return counts;
+}
+
+function incrementCount(counts: Map<string, number>, source: string): void {
+  counts.set(source, (counts.get(source) ?? 0) + 1);
+}
+
+function splitAndPredicates(expr: Expr): Expr[] {
+  if (expr.kind !== "logical" || expr.op !== "and") return [expr];
+  return expr.operands.flatMap(splitAndPredicates);
+}
+
+function combineAndPredicates(predicates: readonly Expr[]): Expr | undefined {
+  if (predicates.length === 0) return undefined;
+  if (predicates.length === 1) return predicates[0];
+  return { kind: "logical", op: "and", operands: [...predicates] };
+}
+
+function addPushdownPredicate(
+  predicates: Map<string, Expr>,
+  source: string,
+  predicate: Expr,
+): void {
+  const existing = predicates.get(source);
+  predicates.set(
+    source,
+    existing === undefined
+      ? predicate
+      : { kind: "logical", op: "and", operands: [existing, predicate] },
+  );
+}
+
+function predicateSource(expr: Expr, aliases: Map<string, string>): string | undefined {
+  const columns = new Set<string>();
+  collectExprColumns(expr, columns);
+  let source: string | undefined;
+  for (const column of columns) {
+    const columnSource = columnSourceName(column, aliases);
+    if (columnSource === undefined) return undefined;
+    if (source === undefined) source = columnSource;
+    else if (source !== columnSource) return undefined;
+  }
+  return source;
+}
+
+function columnSourceName(column: string, aliases: Map<string, string>): string | undefined {
+  const dot = column.indexOf(".");
+  if (dot > 0) return aliases.get(column.slice(0, dot));
+  if (aliases.size !== 1) return undefined;
+  return aliases.values().next().value as string | undefined;
+}
+
+function stripExprSource(expr: Expr, aliases: Map<string, string>, source: string): Expr {
+  switch (expr.kind) {
+    case "column":
+      return { ...expr, name: stripSourceColumn(expr.name, aliases, source) };
+    case "compare":
+      return {
+        ...expr,
+        left: stripExprSource(expr.left, aliases, source),
+        right: stripExprSource(expr.right, aliases, source),
+      };
+    case "between":
+      return {
+        ...expr,
+        target: stripExprSource(expr.target, aliases, source),
+        low: stripExprSource(expr.low, aliases, source),
+        high: stripExprSource(expr.high, aliases, source),
+      };
+    case "in":
+      return {
+        ...expr,
+        target: stripExprSource(expr.target, aliases, source),
+        values: expr.values.map((value) => stripExprSource(value, aliases, source)),
+      };
+    case "logical":
+      return {
+        ...expr,
+        operands: expr.operands.map((operand) => stripExprSource(operand, aliases, source)),
+      };
+    case "not":
+      return { ...expr, operand: stripExprSource(expr.operand, aliases, source) };
+    case "null-check":
+      return { ...expr, target: stripExprSource(expr.target, aliases, source) };
+    case "like":
+      return { ...expr, target: stripExprSource(expr.target, aliases, source) };
+    case "call":
+      return { ...expr, args: expr.args.map((arg) => stripExprSource(arg, aliases, source)) };
+    case "arithmetic":
+      return {
+        ...expr,
+        left: stripExprSource(expr.left, aliases, source),
+        right: stripExprSource(expr.right, aliases, source),
+      };
+    case "case":
+      return {
+        ...expr,
+        whens: expr.whens.map((branch) => ({
+          when: stripExprSource(branch.when, aliases, source),
+          value: stripExprSource(branch.value, aliases, source),
+        })),
+        ...(expr.else === undefined ? {} : { else: stripExprSource(expr.else, aliases, source) }),
+      };
+    case "literal":
+      return expr;
+  }
+}
+
+function stripSourceColumn(column: string, aliases: Map<string, string>, source: string): string {
+  const dot = column.indexOf(".");
+  if (dot <= 0) return column;
+  const qualifier = column.slice(0, dot);
+  return aliases.get(qualifier) === source ? column.slice(dot + 1) : column;
 }
 
 function collectSourceColumns(ast: SqlQueryAst): Map<string, Set<string>> {

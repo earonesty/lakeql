@@ -279,17 +279,15 @@ it("runs SQL over named Iceberg table bindings", async () => {
   const icebergTables = {
     places: {
       metadataPath: ICEBERG.metadataFile,
-      readMode: "ignore-deletes",
     },
   };
 
   await expect(
     lake
-      .sql("select id, nation from places where nation = 'US' order by id", { icebergTables })
+      .sql("select id, nation from places where country = 'US' order by id", { icebergTables })
       .toArray(),
   ).resolves.toEqual([
     { id: 0, nation: "US" },
-    { id: 1, nation: "US" },
     { id: 2, nation: "US" },
     { id: 3, nation: "US" },
     { id: 200, nation: "US" },
@@ -304,7 +302,7 @@ it("runs SQL over named Iceberg table bindings", async () => {
         [
           "select p.id as id, p.nation as nation, l.label as label",
           "from places p join labels l using (id)",
-          "where p.nation = 'US'",
+          "where p.country = 'US'",
           "order by p.id",
         ].join(" "),
         {
@@ -324,7 +322,8 @@ it("runs SQL over named Iceberg table bindings", async () => {
         [
           "select id",
           "from places",
-          "where id in (select id from labels order by id desc limit 1)",
+          "where country = 'US'",
+          "and id in (select id from labels order by id desc limit 1)",
         ].join(" "),
         {
           icebergTables,

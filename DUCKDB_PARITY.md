@@ -63,7 +63,8 @@ Current state:
   planning.
 - Named Iceberg SQL table bindings can materialize through the unified Iceberg
   engine scan path, with explicit metadata path, snapshot/ref, and read-mode
-  options.
+  options. Source-specific conjunctive predicates are pushed into Iceberg
+  planning when the table binding appears once in the SQL AST.
 - Scalar subqueries, ordered/limited `IN (select ...)`, uncorrelated `EXISTS`,
   correlated equality `IN`/`EXISTS`, and single-source derived tables compile
   to existing scalar, semi/anti join, and CTE materialization plans.
@@ -74,9 +75,8 @@ Current state:
 
 TODO:
 
-- Push source-specific predicates into named Iceberg SQL table bindings where an
-  expression is proven to belong to one Iceberg source, including schema-evolved
-  delete-column planning.
+- Broaden source-specific predicate pushdown across repeated Iceberg bindings
+  and nested scopes without changing query semantics.
 - Revisit outer-join planner optimizations after the bounded execution
   semantics stay covered by DuckDB reference tests.
 - Reintroduce safe join-chain predicate/projection pushdown where aliases prove
