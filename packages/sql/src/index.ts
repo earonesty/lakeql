@@ -740,18 +740,20 @@ function caseToExpr(
     expr.value === null || expr.value === undefined
       ? undefined
       : exprToLakeql(asNode(expr.value, "CASE expression"), scope, context);
-  const whens = optionalArray(expr.whens).map((branch) => {
-    const node = asNode(branch, "CASE branch");
-    const when = exprToLakeql(asNode(node.when, "CASE WHEN expression"), scope, context);
-    return {
-      when:
-        caseValue === undefined
-          ? when
-          : { kind: "compare", op: "eq", left: caseValue, right: when },
-      value: exprToLakeql(asNode(node.value, "CASE THEN expression"), scope, context),
-    };
-  });
-  const out: Expr = { kind: "case", whens };
+  const whens: Extract<Expr, { kind: "case" }>["whens"] = optionalArray(expr.whens).map(
+    (branch) => {
+      const node = asNode(branch, "CASE branch");
+      const when = exprToLakeql(asNode(node.when, "CASE WHEN expression"), scope, context);
+      return {
+        when:
+          caseValue === undefined
+            ? when
+            : { kind: "compare", op: "eq", left: caseValue, right: when },
+        value: exprToLakeql(asNode(node.value, "CASE THEN expression"), scope, context),
+      };
+    },
+  );
+  const out: Extract<Expr, { kind: "case" }> = { kind: "case", whens };
   if (expr.else !== undefined) {
     out.else = exprToLakeql(asNode(expr.else, "CASE ELSE expression"), scope, context);
   }
