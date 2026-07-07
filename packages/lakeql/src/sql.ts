@@ -654,6 +654,8 @@ function collectSourceColumnsFromAst(
     for (const column of ast.subqueryJoin.rightKey) referenced.add(column);
     if (ast.subqueryJoin.where !== undefined)
       collectExprColumns(ast.subqueryJoin.where, referenced);
+    if (ast.subqueryJoin.predicate !== undefined)
+      collectExprColumns(ast.subqueryJoin.predicate, referenced);
     for (const term of ast.subqueryJoin.orderBy ?? []) referenced.add(term.column);
   }
 
@@ -757,6 +759,17 @@ async function resolveScalarSubqueries(lake: ParquetLake, ast: SqlQueryAst): Pro
     if (firstJoin !== undefined) out.join = firstJoin;
   } else if (ast.join?.predicate !== undefined) {
     out.join = { ...ast.join, predicate: replaceScalarSubqueryExpr(ast.join.predicate, values) };
+  }
+  if (ast.subqueryJoin?.where !== undefined || ast.subqueryJoin?.predicate !== undefined) {
+    out.subqueryJoin = {
+      ...ast.subqueryJoin,
+      ...(ast.subqueryJoin.where === undefined
+        ? {}
+        : { where: replaceScalarSubqueryExpr(ast.subqueryJoin.where, values) }),
+      ...(ast.subqueryJoin.predicate === undefined
+        ? {}
+        : { predicate: replaceScalarSubqueryExpr(ast.subqueryJoin.predicate, values) }),
+    };
   }
   delete out.scalarSubqueries;
   return out;
@@ -1341,17 +1354,81 @@ async function subqueryJoinRowsFromAst(
   if (join.where !== undefined) rightRows = rightRows.filter((row) => matches(join.where, row));
   if (join.orderBy !== undefined) rightRows = sortRows(rightRows, join.orderBy);
   rightRows = offsetLimitSubqueryRows(rightRows, join);
-  let rows = await broadcastJoin(await lake.path(ast.source).toArray(), rightRows, {
-    leftKey: join.leftKey,
-    rightKey: join.rightKey,
-    type: join.type,
-    maxRightRows: options.joinMaxRightRows ?? 100_000,
-  });
+  let rows =
+    join.predicate === undefined
+      ? await broadcastJoin(await lake.path(ast.source).toArray(), rightRows, {
+          leftKey: join.leftKey,
+          rightKey: join.rightKey,
+          type: join.type,
+          maxRightRows: options.joinMaxRightRows ?? 100_000,
+        })
+      : predicateSubqueryJoinRows(await lake.path(ast.source).toArray(), rightRows, join, options);
   if (ast.where !== undefined) rows = rows.filter((row) => matches(ast.where, row));
   if (ast.orderBy !== undefined) rows = sortRows(rows, ast.orderBy, ast);
   rows = projectRows(rows, ast);
   if (ast.distinct === true) rows = distinctRows(rows);
   return offsetLimitRows(rows, ast);
+}
+
+function predicateSubqueryJoinRows(
+  leftRows: Row[],
+  rightRows: Row[],
+  join: NonNullable<SqlQueryAst["subqueryJoin"]>,
+  options: SqlQueryOptions,
+): Row[] {
+  /* v8 ignore next -- caller only uses this path for predicate subquery joins */
+  if (join.predicate === undefined) return leftRows;
+  const maxRightRows = options.joinMaxRightRows ?? 100_000;
+  if (rightRows.length > maxRightRows) {
+    throw new LakeqlError(
+      "LAKEQL_BUDGET_EXCEEDED",
+      `Predicate subquery join exceeded maxRightRows (${rightRows.length} > ${maxRightRows})`,
+      { metric: "maxRightRows", limit: maxRightRows, actual: rightRows.length },
+    );
+  }
+  const maxOutputRows = options.joinMaxOutputRows ?? 100_000;
+  const out: Row[] = [];
+  const leftAlias = join.leftAlias ?? "";
+  const rightAlias = join.alias ?? join.source;
+  let candidateRows = 0;
+  for (const leftRow of leftRows) {
+    let matched = false;
+    for (const rightRow of rightRows) {
+      candidateRows += 1;
+      if (candidateRows > maxOutputRows) {
+        throw new LakeqlError(
+          "LAKEQL_BUDGET_EXCEEDED",
+          `Predicate subquery join exceeded maxOutputRows (${candidateRows} > ${maxOutputRows})`,
+          { metric: "maxOutputRows", limit: maxOutputRows, actual: candidateRows },
+        );
+      }
+      if (!subqueryKeysMatch(leftRow, rightRow, join)) continue;
+      const row = {
+        ...(leftAlias.length === 0 ? leftRow : qualifyOnlyRow(leftRow, leftAlias)),
+        ...qualifyOnlyRow(rightRow, rightAlias),
+      };
+      if (!matches(join.predicate, row)) continue;
+      matched = true;
+      break;
+    }
+    if ((join.type === "semi" && matched) || (join.type === "anti" && !matched)) out.push(leftRow);
+  }
+  return out;
+}
+
+function subqueryKeysMatch(
+  leftRow: Row,
+  rightRow: Row,
+  join: NonNullable<SqlQueryAst["subqueryJoin"]>,
+): boolean {
+  for (const [index, leftKey] of join.leftKey.entries()) {
+    const rightKey = join.rightKey[index];
+    if (rightKey === undefined) return false;
+    const left = leftRow[leftKey];
+    const right = rightRow[rightKey];
+    if (left === null || right === null || left !== right) return false;
+  }
+  return true;
 }
 
 function offsetLimitSubqueryRows(

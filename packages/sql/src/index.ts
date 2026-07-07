@@ -59,6 +59,9 @@ export interface SqlSubqueryJoinAst {
   type: "semi" | "anti";
   leftKey: string[];
   rightKey: string[];
+  leftAlias?: string;
+  alias?: string;
+  predicate?: Expr;
   where?: Expr;
   orderBy?: OrderByTerm[];
   limit?: number;
@@ -148,7 +151,7 @@ export function formatSql(ast: SqlQueryAst): string {
   const clauses = [
     `select ${ast.distinct === true ? "distinct " : ""}${select.length > 0 ? select.join(", ") : "*"}`,
   ];
-  clauses.push(`from ${formatIdentifier(ast.source)}${formatJoins(ast.source, sqlJoins(ast))}`);
+  clauses.push(`from ${formatSqlSource(ast)}${formatJoins(ast.source, sqlJoins(ast))}`);
   const where = formatWhere(ast.where, ast.subqueryJoin, ast);
   if (where !== undefined) clauses.push(`where ${where}`);
   if (ast.groupBy && ast.groupBy.length > 0) {
@@ -163,6 +166,14 @@ export function formatSql(ast: SqlQueryAst): string {
   const sql = clauses.join("\n");
   if (ast.cte === undefined) return sql;
   return `with ${formatIdentifier(ast.cte.name)} as (${formatSql(ast.cte.query)})\n${sql}`;
+}
+
+function formatSqlSource(ast: SqlQueryAst): string {
+  const source = formatIdentifier(ast.source);
+  const alias = ast.subqueryJoin?.predicate === undefined ? undefined : ast.subqueryJoin.leftAlias;
+  return alias === undefined || alias === ast.source
+    ? source
+    : `${source} ${formatIdentifier(alias)}`;
 }
 
 function parseDescribeStatement(sql: string): SqlDescribeAst | undefined {
@@ -605,7 +616,7 @@ function existsSubqueryJoinToAst(
     rightKey: [],
   };
   applyCorrelatedSubqueryWhere(out, subquery, outerScope, subqueryScope, context);
-  return out.leftKey.length === 0 ? undefined : out;
+  return out.leftKey.length === 0 && out.predicate === undefined ? undefined : out;
 }
 
 function existsSubquery(expr: PgNode): PgNode {
@@ -625,14 +636,42 @@ function applyCorrelatedSubqueryWhere(
 ): void {
   if (subquery.where === undefined) return;
   const residual: PgNode[] = [];
+  const correlated: PgNode[] = [];
   for (const predicate of flattenWhereConjuncts(asNode(subquery.where, "subquery WHERE"))) {
     const pair = correlatedJoinKeyPair(predicate, outerScope, subqueryScope);
     if (pair === undefined) {
+      if (predicateReferencesOuterScope(predicate, outerScope)) {
+        correlated.push(predicate);
+        continue;
+      }
       residual.push(predicate);
       continue;
     }
     out.leftKey.push(pair.leftKey);
     out.rightKey.push(pair.rightKey);
+  }
+  if (correlated.length === 1) {
+    const leftAlias = outerScope.primaryAlias();
+    if (leftAlias !== undefined) out.leftAlias = leftAlias;
+    const alias = subqueryScope.primaryAlias();
+    if (alias !== undefined) out.alias = alias;
+    out.predicate = exprToLakeql(
+      correlated[0] as PgNode,
+      combinedScope(outerScope, subqueryScope),
+      context,
+    );
+  } else if (correlated.length > 1) {
+    const leftAlias = outerScope.primaryAlias();
+    if (leftAlias !== undefined) out.leftAlias = leftAlias;
+    const alias = subqueryScope.primaryAlias();
+    if (alias !== undefined) out.alias = alias;
+    out.predicate = {
+      kind: "logical",
+      op: "and",
+      operands: correlated.map((predicate) =>
+        exprToLakeql(predicate, combinedScope(outerScope, subqueryScope), context),
+      ),
+    };
   }
   if (residual.length === 1) {
     out.where = exprToLakeql(residual[0] as PgNode, subqueryScope, context);
@@ -643,6 +682,37 @@ function applyCorrelatedSubqueryWhere(
       operands: residual.map((predicate) => exprToLakeql(predicate, subqueryScope, context)),
     };
   }
+}
+
+function combinedScope(left: SqlScope, right: SqlScope): SqlScope {
+  const scope = SqlScope.empty();
+  for (const source of left.sources()) scope.add(source);
+  for (const source of right.sources()) scope.add(source);
+  return scope;
+}
+
+function predicateReferencesOuterScope(predicate: PgNode, outerScope: SqlScope): boolean {
+  let found = false;
+  visitPgRefs(predicate, (ref) => {
+    if (outerScope.qualifiedRefName(ref) !== undefined) found = true;
+  });
+  return found;
+}
+
+function visitPgRefs(value: unknown, visit: (ref: PgNode) => void): void {
+  if (!isRecord(value)) return;
+  if (value.type === "ref") visit(value as PgNode);
+  for (const child of Object.values(value)) {
+    if (Array.isArray(child)) {
+      for (const item of child) visitPgRefs(item, visit);
+    } else {
+      visitPgRefs(child, visit);
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function correlatedJoinKeyPair(
@@ -1237,6 +1307,14 @@ class SqlScope {
     this.aliases.set(source.alias, source);
   }
 
+  sources(): SourceTable[] {
+    return [...new Set(this.aliases.values())];
+  }
+
+  primaryAlias(): string | undefined {
+    return this.sources()[0]?.alias;
+  }
+
   refName(expr: PgNode): string {
     const name = this.resolveQualifiedRefName(expr, true);
     if (name !== undefined) return name;
@@ -1272,7 +1350,7 @@ function sourceTable(value: unknown, context?: SqlParseContext): SourceTable {
   if (node.type !== "table") throwUnsupported("Only table FROM sources are supported");
   if (node.join !== undefined) throwUnsupported("Unexpected JOIN position");
   const source = nameNodeToString(node.name);
-  return { source, alias: aliasName(node.name) ?? source };
+  return { source, alias: aliasName(node.alias) ?? aliasName(node.name) ?? source };
 }
 
 function derivedSourceTable(node: PgNode, context: SqlParseContext | undefined): SourceTable {
@@ -1685,6 +1763,23 @@ function formatWhere(
 }
 
 function formatSubqueryJoin(subqueryJoin: SqlSubqueryJoinAst): string {
+  if (subqueryJoin.predicate !== undefined) {
+    const existsWhere = [
+      ...subqueryJoin.leftKey.map((leftKey, index) => {
+        const rightKey = subqueryJoin.rightKey[index];
+        if (rightKey === undefined) throwUnsupported("IN subquery key counts must match");
+        return `${formatSubqueryColumn(rightKey, subqueryJoin.alias)} = ${formatSubqueryColumn(leftKey, subqueryJoin.leftAlias)}`;
+      }),
+      formatExpr(subqueryJoin.predicate),
+      ...(subqueryJoin.where === undefined ? [] : [formatExpr(subqueryJoin.where)]),
+    ].join(" and ");
+    const where = existsWhere.length === 0 ? "" : ` where ${existsWhere}`;
+    const source =
+      subqueryJoin.alias === undefined || subqueryJoin.alias === subqueryJoin.source
+        ? formatIdentifier(subqueryJoin.source)
+        : `${formatIdentifier(subqueryJoin.source)} ${formatIdentifier(subqueryJoin.alias)}`;
+    return `${subqueryJoin.type === "anti" ? "not " : ""}exists (select 1 from ${source}${where})`;
+  }
   const left =
     subqueryJoin.leftKey.length === 1
       ? formatIdentifier(subqueryJoin.leftKey[0] ?? "")
@@ -1701,6 +1796,12 @@ function formatSubqueryJoin(subqueryJoin: SqlSubqueryJoinAst): string {
   const limit = subqueryJoin.limit === undefined ? "" : ` limit ${subqueryJoin.limit}`;
   const offset = subqueryJoin.offset === undefined ? "" : ` offset ${subqueryJoin.offset}`;
   return `${left} ${subqueryJoin.type === "anti" ? "not in" : "in"} (select ${right} from ${formatIdentifier(subqueryJoin.source)}${where}${orderBy}${limit}${offset})`;
+}
+
+function formatSubqueryColumn(column: string, alias: string | undefined): string {
+  return alias === undefined
+    ? formatIdentifier(column)
+    : `${formatIdentifier(alias)}.${formatIdentifier(column)}`;
 }
 
 function formatAggregate(aggregate: AggregateSpec[string]): string {

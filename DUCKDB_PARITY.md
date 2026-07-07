@@ -67,7 +67,8 @@ Current state:
   options. Source-specific conjunctive predicates are pushed into Iceberg
   planning when the table binding appears once in the SQL AST.
 - Scalar subqueries, ordered/limited `IN (select ...)`, uncorrelated `EXISTS`,
-  correlated equality `IN`/`EXISTS`, nested derived tables, and
+  correlated equality `IN`/`EXISTS`, bounded non-equality correlated
+  `EXISTS`, nested derived tables, and
   single-binding CTEs used as outer sources, join inputs, or `IN` subquery
   sources compile to existing scalar, semi/anti join, and CTE materialization
   plans. CTE bodies can contain bounded joins, `IN` subquery plans, scalar
@@ -100,7 +101,7 @@ TODO:
 - Extend join-chain predicate pushdown only where outer-join null-extension
   semantics remain proven.
 - Broaden remaining subquery support for common analytical correlation forms
-  that do not reduce to equality semi/anti joins.
+  beyond bounded predicate `EXISTS`.
 - Tighten remaining alias resolution edge cases so `HAVING` and `QUALIFY`
   behave the way DuckDB users expect across nested scopes.
 

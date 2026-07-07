@@ -992,6 +992,36 @@ describe("parseSql", () => {
       },
     });
     expect(parseSql(formatSql(notExists))).toEqual(notExists);
+
+    const predicateExists = parseSql(`
+      select id
+      from orders o
+      where exists (
+        select 1
+        from refunds r
+        where r.amount > o.amount
+          and r.reason = 'duplicate'
+      )
+    `);
+
+    expect(predicateExists).toMatchObject({
+      subqueryJoin: {
+        source: "refunds",
+        type: "semi",
+        leftAlias: "o",
+        alias: "r",
+        leftKey: [],
+        rightKey: [],
+        predicate: {
+          kind: "compare",
+          op: "gt",
+          left: { kind: "column", name: "r.amount" },
+          right: { kind: "column", name: "o.amount" },
+        },
+        where: { kind: "compare", left: { kind: "column", name: "reason" } },
+      },
+    });
+    expect(parseSql(formatSql(predicateExists))).toEqual(predicateExists);
   });
 
   it("compiles additional VISION geospatial and H3 SQL examples", () => {
