@@ -1,5 +1,12 @@
 # lakeql
 
+## 0.5.2
+
+### Patch Changes
+
+- Include the Parquet scan range coalescing release, reducing object-store range
+  request counts for selective Parquet scans over R2/S3/HTTP stores.
+
 ## 0.5.1
 
 ### Minor Changes

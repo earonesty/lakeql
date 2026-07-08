@@ -1,5 +1,13 @@
 # lakeql-parquet
 
+## 0.3.1
+
+### Patch Changes
+
+- Coalesce adjacent Parquet scan range reads into bounded cached windows and
+  share in-flight window reads across scan phases, reducing object-store request
+  counts for page-heavy selective scans.
+
 ## 0.3.0
 
 ### Minor Changes
