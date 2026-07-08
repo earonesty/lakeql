@@ -2,10 +2,16 @@ import type { CachePolicy, ObjectStoreCacheOptions, SharedMemoryCache } from "la
 import type { StoreAsyncBuffer } from "./types.js";
 
 const DEFAULT_MAX_ENTRY_BYTES = 16 * 1024 * 1024;
+const DEFAULT_COALESCE_BYTES = 256 * 1024;
 
 export interface RangeCacheOptions {
   maxBytes: number;
   maxEntryBytes?: number;
+  /**
+   * Fetch small adjacent slices through aligned windows of this size. This turns
+   * Parquet page-header/page-body read pairs into one object-store range read.
+   */
+  coalesceBytes?: number;
   sharedCache?: SharedMemoryCache;
   cacheOptions?: ObjectStoreCacheOptions;
 }
@@ -13,6 +19,8 @@ export interface RangeCacheOptions {
 interface RangeCacheEntry {
   bytes: ArrayBuffer;
   byteLength: number;
+  start: number;
+  end: number;
 }
 
 export function cachedRangeBuffer(
@@ -22,6 +30,7 @@ export function cachedRangeBuffer(
 ): StoreAsyncBuffer {
   const maxBytes = options.maxBytes;
   const maxEntryBytes = options.maxEntryBytes ?? DEFAULT_MAX_ENTRY_BYTES;
+  const coalesceBytes = options.coalesceBytes ?? DEFAULT_COALESCE_BYTES;
   if (maxBytes <= 0 || maxEntryBytes <= 0) return file;
   if (options.sharedCache !== undefined) {
     return sharedCachedRangeBuffer(
@@ -32,10 +41,12 @@ export function cachedRangeBuffer(
       {
         maxBytes,
         maxEntryBytes,
+        coalesceBytes,
       },
     );
   }
   const cache = new Map<string, RangeCacheEntry>();
+  const pending = new Map<string, Promise<RangeCacheEntry>>();
   let cachedBytes = 0;
 
   return {
@@ -43,19 +54,35 @@ export function cachedRangeBuffer(
     ...(file.etag === undefined ? {} : { etag: file.etag }),
     async slice(start, end) {
       const normalizedEnd = end ?? file.byteLength;
-      const key = `${start}:${normalizedEnd}`;
+      const request = coalescedRange(file.byteLength, start, normalizedEnd, coalesceBytes);
+      const key = `${request.start}:${request.end}`;
       const cached = cache.get(key);
       if (cached !== undefined) {
         cache.delete(key);
         cache.set(key, cached);
-        return cached.bytes;
+        return sliceEntry(cached, start, normalizedEnd);
+      }
+      const inflight = pending.get(key);
+      if (inflight !== undefined) {
+        return sliceEntry(await inflight, start, normalizedEnd);
       }
 
-      const bytes = await file.slice(start, end);
-      const byteLength = bytes.byteLength;
-      if (byteLength <= maxEntryBytes && byteLength <= maxBytes) {
-        cache.set(key, { bytes, byteLength });
-        cachedBytes += byteLength;
+      const read = file.slice(request.start, request.end).then((bytes) => ({
+        bytes,
+        byteLength: bytes.byteLength,
+        start: request.start,
+        end: request.end,
+      }));
+      pending.set(key, read);
+      let entry: RangeCacheEntry;
+      try {
+        entry = await read;
+      } finally {
+        pending.delete(key);
+      }
+      if (entry.byteLength <= maxEntryBytes && entry.byteLength <= maxBytes) {
+        cache.set(key, entry);
+        cachedBytes += entry.byteLength;
         while (cachedBytes > maxBytes) {
           const oldestKey = cache.keys().next().value;
           if (oldestKey === undefined) break;
@@ -64,7 +91,7 @@ export function cachedRangeBuffer(
           cachedBytes -= oldest?.byteLength ?? 0;
         }
       }
-      return bytes;
+      return sliceEntry(entry, start, normalizedEnd);
     },
   };
 }
@@ -74,25 +101,66 @@ function sharedCachedRangeBuffer(
   cacheKey: string,
   cache: SharedMemoryCache,
   cacheOptions: ObjectStoreCacheOptions,
-  options: { maxBytes: number; maxEntryBytes: number },
+  options: { maxBytes: number; maxEntryBytes: number; coalesceBytes: number },
 ): StoreAsyncBuffer {
+  const pending = new Map<string, Promise<ArrayBuffer>>();
   return {
     byteLength: file.byteLength,
     ...(file.etag === undefined ? {} : { etag: file.etag }),
     async slice(start, end) {
       const normalizedEnd = end ?? file.byteLength;
-      const key = sharedRangeKey(file, cacheKey, start, normalizedEnd);
+      const request = coalescedRange(file.byteLength, start, normalizedEnd, options.coalesceBytes);
+      const key = sharedRangeKey(file, cacheKey, request.start, request.end);
       const cached = cache.get<ArrayBuffer>(key);
-      if (cached !== undefined) return cached.value;
-      const bytes = await file.slice(start, end);
+      if (cached !== undefined) {
+        return sliceBuffer(cached.value, start - request.start, normalizedEnd - request.start);
+      }
+      const inflight = pending.get(key);
+      if (inflight !== undefined) {
+        const bytes = await inflight;
+        return sliceBuffer(bytes, start - request.start, normalizedEnd - request.start);
+      }
+      const read = file.slice(request.start, request.end);
+      pending.set(key, read);
+      let bytes: ArrayBuffer;
+      try {
+        bytes = await read;
+      } finally {
+        pending.delete(key);
+      }
       if (bytes.byteLength <= options.maxEntryBytes && bytes.byteLength <= options.maxBytes) {
         cache.set(key, bytes, bytes.byteLength, {
           priority: scanRangePriority(cacheOptions.policy ?? "balanced"),
         });
       }
-      return bytes;
+      return sliceBuffer(bytes, start - request.start, normalizedEnd - request.start);
     },
   };
+}
+
+function coalescedRange(
+  fileLength: number,
+  start: number,
+  end: number,
+  coalesceBytes: number,
+): { start: number; end: number } {
+  const normalizedStart = Math.max(0, start);
+  const normalizedEnd = Math.min(fileLength, Math.max(normalizedStart, end));
+  if (coalesceBytes <= 0 || normalizedEnd - normalizedStart >= coalesceBytes) {
+    return { start: normalizedStart, end: normalizedEnd };
+  }
+  const coalescedStart = Math.floor(normalizedStart / coalesceBytes) * coalesceBytes;
+  const coalescedEnd = Math.min(fileLength, coalescedStart + coalesceBytes);
+  if (normalizedEnd <= coalescedEnd) return { start: coalescedStart, end: coalescedEnd };
+  return { start: normalizedStart, end: normalizedEnd };
+}
+
+function sliceEntry(entry: RangeCacheEntry, start: number, end: number): ArrayBuffer {
+  return sliceBuffer(entry.bytes, start - entry.start, end - entry.start);
+}
+
+function sliceBuffer(bytes: ArrayBuffer, start: number, end: number): ArrayBuffer {
+  return bytes.slice(start, end);
 }
 
 function sharedRangeKey(

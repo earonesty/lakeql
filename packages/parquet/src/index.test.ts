@@ -2176,6 +2176,25 @@ describe("createParquetLake", () => {
     expect(taskStore.counters.getRange).toBeGreaterThan(0);
   });
 
+  it("preserves an explicit scan range shared cache", async () => {
+    const taskStore = countingObjectStore(store);
+    const scanSharedCache = new SharedMemoryCache({ maxBytes: 1024 * 1024 });
+    const lake = createParquetLake({
+      store: taskStore,
+      cache: { maxBytes: 1, policy: "io" },
+      scanRangeCache: { maxBytes: 1024 * 1024, sharedCache: scanSharedCache },
+    });
+
+    const first = lake.path(`data/${STATS.file}`).select(["metric"]).limit(2).run();
+    await expect(first.toArray()).resolves.toHaveLength(2);
+    expect(taskStore.counters.getRange).toBeGreaterThan(0);
+
+    taskStore.resetCounters();
+    const second = lake.path(`data/${STATS.file}`).select(["metric"]).limit(2).run();
+    await expect(second.toArray()).resolves.toHaveLength(2);
+    expect(taskStore.counters.getRange).toBe(0);
+  });
+
   it("invalidates cached Parquet footer metadata when object etag changes", async () => {
     const metadataCache = memoryCache<ParquetMetadata>();
     const etagStore = memoryStore();
@@ -2310,8 +2329,9 @@ describe("createParquetLake", () => {
 
     const fullScan = lake.hive("data/hive/**/*.parquet").select(["id", "country"]).run();
     await fullScan.toArray();
-    expect(result.stats.bytesRequested).toBeLessThan(fullScan.stats.bytesRequested);
-    expect(result.stats.rangeRequests).toBeLessThan(fullScan.stats.rangeRequests);
+    expect(result.stats.filesRead).toBeLessThan(fullScan.stats.filesRead);
+    expect(result.stats.rowGroupsRead).toBeLessThan(fullScan.stats.rowGroupsRead);
+    expect(result.stats.rowsDecoded).toBeLessThan(fullScan.stats.rowsDecoded);
 
     const explain = await lake
       .hive("data/hive/**/*.parquet")

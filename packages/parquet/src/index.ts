@@ -178,6 +178,11 @@ export interface ParquetLakeConfig extends Omit<LakeConfig, "scanner"> {
   scanRangeCache?: RangeCacheOptions;
 }
 
+const DEFAULT_SCAN_RANGE_CACHE: RangeCacheOptions = {
+  maxBytes: 16 * 1024 * 1024,
+  coalesceBytes: 256 * 1024,
+};
+
 export async function readParquetObjects(
   store: ObjectStore,
   path: string,
@@ -1035,12 +1040,15 @@ export function createParquetLake(config: ParquetLakeConfig): Lake {
     scanRangeCache?: RangeCacheOptions;
   } = {};
   if (config.batchSize !== undefined) scannerOptions.batchSize = config.batchSize;
-  if (config.scanRangeCache !== undefined) {
-    scannerOptions.scanRangeCache =
-      config.cache !== undefined && sharedCache !== undefined
-        ? { ...config.scanRangeCache, sharedCache, cacheOptions: config.cache }
-        : config.scanRangeCache;
-  }
+  const scanRangeCache = config.scanRangeCache ?? DEFAULT_SCAN_RANGE_CACHE;
+  const scanRangeSharedCache =
+    scanRangeCache.sharedCache ??
+    sharedCache ??
+    new SharedMemoryCache({ maxBytes: scanRangeCache.maxBytes });
+  scannerOptions.scanRangeCache =
+    config.cache !== undefined
+      ? { ...scanRangeCache, sharedCache: scanRangeSharedCache, cacheOptions: config.cache }
+      : { ...scanRangeCache, sharedCache: scanRangeSharedCache };
   if (config.metadataCache !== undefined) scannerOptions.metadataCache = config.metadataCache;
   else if (config.cache !== undefined)
     scannerOptions.metadataCache = memoryCache<ParquetMetadata>();

@@ -14,13 +14,57 @@ describe("cachedRangeBuffer", () => {
         return source.buffer.slice(start, end);
       },
     };
-    const cached = cachedRangeBuffer(file, { maxBytes: 6 }, "local");
+    const cached = cachedRangeBuffer(file, { maxBytes: 6, coalesceBytes: 0 }, "local");
 
     await expect(bytes(cached.slice(1, 4))).resolves.toEqual([2, 3, 4]);
     await expect(bytes(cached.slice(1, 4))).resolves.toEqual([2, 3, 4]);
     await expect(bytes(cached.slice(2, 5))).resolves.toEqual([3, 4, 5]);
 
     expect(slices).toBe(2);
+  });
+
+  it("coalesces adjacent small ranges into one cached window", async () => {
+    let slices = 0;
+    const source = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
+    const file: StoreAsyncBuffer = {
+      byteLength: source.byteLength,
+      async slice(start, end) {
+        slices += 1;
+        return source.buffer.slice(start, end);
+      },
+    };
+    const cached = cachedRangeBuffer(file, { maxBytes: 8, coalesceBytes: 4 }, "local");
+
+    await expect(bytes(cached.slice(1, 2))).resolves.toEqual([2]);
+    await expect(bytes(cached.slice(2, 4))).resolves.toEqual([3, 4]);
+    await expect(bytes(cached.slice(5, 6))).resolves.toEqual([6]);
+
+    expect(slices).toBe(2);
+  });
+
+  it("shares an in-flight coalesced range read", async () => {
+    let slices = 0;
+    const source = new Uint8Array([1, 2, 3, 4]);
+    let resolveRead: (() => void) | undefined;
+    const file: StoreAsyncBuffer = {
+      byteLength: source.byteLength,
+      async slice(start, end) {
+        slices += 1;
+        await new Promise<void>((resolve) => {
+          resolveRead = resolve;
+        });
+        return source.buffer.slice(start, end);
+      },
+    };
+    const cached = cachedRangeBuffer(file, { maxBytes: 4, coalesceBytes: 4 }, "local");
+
+    const first = bytes(cached.slice(0, 1));
+    const second = bytes(cached.slice(1, 3));
+    resolveRead?.();
+
+    await expect(first).resolves.toEqual([1]);
+    await expect(second).resolves.toEqual([2, 3]);
+    expect(slices).toBe(1);
   });
 
   it("does not cache ranges larger than the entry budget", async () => {
@@ -65,9 +109,17 @@ describe("cachedRangeBuffer", () => {
     });
     file.etag = "etag-a";
     const sharedCache = new SharedMemoryCache({ maxBytes: 8 });
-    const first = cachedRangeBuffer(file, { maxBytes: 8, sharedCache }, "path-a");
-    const sameIdentity = cachedRangeBuffer(file, { maxBytes: 8, sharedCache }, "path-a");
-    const otherPath = cachedRangeBuffer(file, { maxBytes: 8, sharedCache }, "path-b");
+    const first = cachedRangeBuffer(file, { maxBytes: 8, sharedCache, coalesceBytes: 0 }, "path-a");
+    const sameIdentity = cachedRangeBuffer(
+      file,
+      { maxBytes: 8, sharedCache, coalesceBytes: 0 },
+      "path-a",
+    );
+    const otherPath = cachedRangeBuffer(
+      file,
+      { maxBytes: 8, sharedCache, coalesceBytes: 0 },
+      "path-b",
+    );
 
     await expect(bytes(first.slice(1))).resolves.toEqual([2, 3, 4]);
     await expect(bytes(sameIdentity.slice(1, 4))).resolves.toEqual([2, 3, 4]);
@@ -81,7 +133,7 @@ describe("cachedRangeBuffer", () => {
     const ioShared = new SharedMemoryCache({ maxBytes: 4 });
     const ioCached = cachedRangeBuffer(
       ioFile,
-      { maxBytes: 4, sharedCache: ioShared, cacheOptions: { policy: "io" } },
+      { maxBytes: 4, sharedCache: ioShared, cacheOptions: { policy: "io" }, coalesceBytes: 0 },
       "io",
     );
     await ioCached.slice(0, 2);
@@ -93,7 +145,12 @@ describe("cachedRangeBuffer", () => {
     const latencyShared = new SharedMemoryCache({ maxBytes: 4 });
     const latencyCached = cachedRangeBuffer(
       latencyFile,
-      { maxBytes: 4, sharedCache: latencyShared, cacheOptions: { policy: "latency" } },
+      {
+        maxBytes: 4,
+        sharedCache: latencyShared,
+        cacheOptions: { policy: "latency" },
+        coalesceBytes: 0,
+      },
       "latency",
     );
     await latencyCached.slice(0, 2);
