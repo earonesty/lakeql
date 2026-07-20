@@ -1,9 +1,9 @@
 {
   "format-version" : 2,
-  "table-uuid" : "a81ff96b-d9e0-4fb0-8207-849aa8ca9093",
+  "table-uuid" : "f3dbcb51-9833-4f88-b391-f2d2c0e91107",
   "location" : "warehouse/db/places",
   "last-sequence-number" : 3,
-  "last-updated-ms" : 1781570804365,
+  "last-updated-ms" : 1784550204267,
   "last-column-id" : 2,
   "current-schema-id" : 0,
   "schemas" : [ {
@@ -38,23 +38,23 @@
     "fields" : [ ]
   } ],
   "properties" : {
-    "owner" : "erik",
+    "owner" : "root",
     "write.parquet.compression-codec" : "zstd"
   },
-  "current-snapshot-id" : 8848689001401024531,
+  "current-snapshot-id" : 8043331606580496446,
   "refs" : {
     "main" : {
-      "snapshot-id" : 8848689001401024531,
+      "snapshot-id" : 8043331606580496446,
       "type" : "branch"
     }
   },
   "snapshots" : [ {
     "sequence-number" : 1,
-    "snapshot-id" : 975447343658292706,
-    "timestamp-ms" : 1781570803828,
+    "snapshot-id" : 9119478726936768567,
+    "timestamp-ms" : 1784550203840,
     "summary" : {
       "operation" : "append",
-      "spark.app.id" : "local-1781570799768",
+      "spark.app.id" : "local-1784550200463",
       "added-data-files" : "2",
       "added-records" : "2",
       "added-files-size" : "1226",
@@ -66,16 +66,16 @@
       "total-position-deletes" : "0",
       "total-equality-deletes" : "0"
     },
-    "manifest-list" : "warehouse/db/places/metadata/snap-975447343658292706-1-c248f2a3-2136-47df-b01c-8489b4776236.avro",
+    "manifest-list" : "warehouse/db/places/metadata/snap-9119478726936768567-1-0bdba4e5-3fd6-482c-b9e7-fd5053cc9995.avro",
     "schema-id" : 0
   }, {
     "sequence-number" : 2,
-    "snapshot-id" : 3475546814160140934,
-    "parent-snapshot-id" : 975447343658292706,
-    "timestamp-ms" : 1781570804136,
+    "snapshot-id" : 8370602184564873747,
+    "parent-snapshot-id" : 9119478726936768567,
+    "timestamp-ms" : 1784550204083,
     "summary" : {
       "operation" : "append",
-      "spark.app.id" : "local-1781570799768",
+      "spark.app.id" : "local-1784550200463",
       "added-data-files" : "1",
       "added-records" : "1",
       "added-files-size" : "612",
@@ -87,16 +87,16 @@
       "total-position-deletes" : "0",
       "total-equality-deletes" : "0"
     },
-    "manifest-list" : "warehouse/db/places/metadata/snap-3475546814160140934-1-2a5b31aa-fc8b-44db-ba97-678ea88a0ba9.avro",
+    "manifest-list" : "warehouse/db/places/metadata/snap-8370602184564873747-1-a080c92b-b203-4381-bd19-8a71d52b1e6a.avro",
     "schema-id" : 0
   }, {
     "sequence-number" : 3,
-    "snapshot-id" : 8848689001401024531,
-    "parent-snapshot-id" : 3475546814160140934,
-    "timestamp-ms" : 1781570804365,
+    "snapshot-id" : 8043331606580496446,
+    "parent-snapshot-id" : 8370602184564873747,
+    "timestamp-ms" : 1784550204267,
     "summary" : {
       "operation" : "append",
-      "spark.app.id" : "local-1781570799768",
+      "spark.app.id" : "local-1784550200463",
       "added-data-files" : "1",
       "added-records" : "1",
       "added-files-size" : "613",
@@ -108,26 +108,26 @@
       "total-position-deletes" : "0",
       "total-equality-deletes" : "0"
     },
-    "manifest-list" : "warehouse/db/places/metadata/snap-8848689001401024531-1-06d0cd4a-0cfd-415f-95ab-c8921681ec57.avro",
+    "manifest-list" : "warehouse/db/places/metadata/snap-8043331606580496446-1-a7008f41-65e0-40de-a25e-9e8dcbcdb8a3.avro",
     "schema-id" : 0
   } ],
   "statistics" : [ ],
   "partition-statistics" : [ ],
   "snapshot-log" : [ {
-    "timestamp-ms" : 1781570803828,
-    "snapshot-id" : 975447343658292706
+    "timestamp-ms" : 1784550203840,
+    "snapshot-id" : 9119478726936768567
   }, {
-    "timestamp-ms" : 1781570804136,
-    "snapshot-id" : 3475546814160140934
+    "timestamp-ms" : 1784550204083,
+    "snapshot-id" : 8370602184564873747
   }, {
-    "timestamp-ms" : 1781570804365,
-    "snapshot-id" : 8848689001401024531
+    "timestamp-ms" : 1784550204267,
+    "snapshot-id" : 8043331606580496446
   } ],
   "metadata-log" : [ {
-    "timestamp-ms" : 1781570803828,
+    "timestamp-ms" : 1784550203840,
     "metadata-file" : "warehouse/db/places/metadata/v1.metadata.json"
   }, {
-    "timestamp-ms" : 1781570804136,
+    "timestamp-ms" : 1784550204083,
     "metadata-file" : "warehouse/db/places/metadata/v2.metadata.json"
   } ]
 }
