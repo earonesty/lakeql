@@ -2,7 +2,7 @@
 // specifications in lance-format/lance v8.0.0. This deliberately decodes only
 // table/file structures needed by the supported read-only storage 2.0 contract.
 
-import { LakeqlError } from "lakeql-core";
+import { LakeqlError } from "lakeql";
 
 export interface LanceField {
   id: number;

@@ -1,4 +1,4 @@
-import type { PhysicalFragment, PhysicalVectorMetric } from "lakeql-core";
+import type { PhysicalFragment, PhysicalVectorMetric } from "lakeql";
 
 export interface CompiledWebGpuVectorTopK {
   readonly kind: "vector-top-k";

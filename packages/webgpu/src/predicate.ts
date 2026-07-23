@@ -1,4 +1,4 @@
-import type { Expr, PhysicalColumnShape, PhysicalFragment, PhysicalVectorShape } from "lakeql-core";
+import type { Expr, PhysicalColumnShape, PhysicalFragment, PhysicalVectorShape } from "lakeql";
 
 export interface WebGpuPredicateColumn {
   readonly name: string;

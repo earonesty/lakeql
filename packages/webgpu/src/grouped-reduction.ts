@@ -1,4 +1,4 @@
-import { lit, type PhysicalFragment } from "lakeql-core";
+import { lit, type PhysicalFragment } from "lakeql";
 import {
   type CompiledWebGpuPredicateExpression,
   compileWebGpuPredicateExpression,

@@ -1,4 +1,4 @@
-import { LakeqlError } from "lakeql-core";
+import { LakeqlError } from "lakeql";
 import type { LanceRowIdSegment } from "./proto.js";
 
 export interface ResolvedRowAddress {

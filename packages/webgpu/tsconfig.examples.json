@@ -4,6 +4,7 @@
     "composite": false,
     "noEmit": true,
     "paths": {
+      "lakeql": ["../core/src/index.ts"],
       "lakeql/fetch": ["../lakeql/src/fetch.ts"],
       "lakeql-webgpu": ["./src/index.ts"],
       "lakeql-webgpu/browser": ["./src/browser.ts"]

@@ -1,5 +1,26 @@
 # lakeql-lance
 
+## 0.2.0
+
+### Minor Changes
+
+- f7e1c58: Add snapshot-safe projected materialization for stable Lance row IDs through bounded
+  object-store range reads, a broad scalar/binary/date/timestamp type matrix, sparse
+  deletion vectors, bounded official BTree exact-key and range lookup, and typed Lance
+  compatibility and snapshot errors. Add bounded IVF_FLAT vector search for L2,
+  cosine, and dot metrics with explicit dimension, partition, and candidate limits.
+  Support Lance dictionary-encoded UTF-8 projections and add a reproducible public
+  USPTO scattered-row HTTP range benchmark with physical I/O reporting.
+
+### Patch Changes
+
+- Depend on the public `lakeql` host package instead of the private, unpublished
+  `lakeql-core` workspace so the Lance and WebGPU plugins install from npm with a
+  single compatible LakeQL runtime.
+- Updated dependencies [f7e1c58]
+- Updated dependencies [f8a4d39]
+  - lakeql@0.8.0
+
 ## 0.1.0
 
 ### Minor Changes

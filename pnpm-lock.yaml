@@ -209,10 +209,13 @@ importers:
       fzstd:
         specifier: ^0.1.1
         version: 0.1.1
+      lakeql:
+        specifier: workspace:^
+        version: link:../lakeql
+    devDependencies:
       lakeql-core:
         specifier: workspace:*
         version: link:../core
-    devDependencies:
       lakeql-http:
         specifier: workspace:*
         version: link:../http
@@ -274,6 +277,10 @@ importers:
 
   packages/webgpu:
     dependencies:
+      lakeql:
+        specifier: workspace:^
+        version: link:../lakeql
+    devDependencies:
       lakeql-core:
         specifier: workspace:*
         version: link:../core
