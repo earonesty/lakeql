@@ -1,4 +1,18 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+
+const root = new URL("../", import.meta.url);
+const readme = readFileSync(new URL("packages/webgpu/README.md", root), "utf8");
+const example = readFileSync(new URL("packages/webgpu/examples/browser.ts", root), "utf8").trim();
+const readmeExample = readme.match(
+  /<!-- source: examples\/browser\.ts -->\s*```ts\n([\s\S]*?)\n```/,
+)?.[1];
+if (readmeExample !== example) {
+  console.error(
+    "packages/webgpu/README.md must embed packages/webgpu/examples/browser.ts verbatim",
+  );
+  process.exit(1);
+}
 
 const projects = [
   "packages/core",
@@ -12,6 +26,7 @@ const projects = [
   "packages/cli",
   "packages/lakeql",
   "packages/webgpu",
+  "packages/webgpu/tsconfig.examples.json",
   "fixtures",
 ];
 

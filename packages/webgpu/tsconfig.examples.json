@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": true,
+    "paths": {
+      "lakeql/fetch": ["../lakeql/src/fetch.ts"],
+      "lakeql-webgpu": ["./src/index.ts"],
+      "lakeql-webgpu/browser": ["./src/browser.ts"]
+    },
+    "types": ["@webgpu/types"]
+  },
+  "include": ["examples"]
+}

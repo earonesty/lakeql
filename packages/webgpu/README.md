@@ -15,27 +15,37 @@ CPU-equivalent precision, packs input columns into a fixed binding layout,
 enforces accelerator budgets, caches compiled pipelines by device generation,
 and destroys transient GPU resources deterministically.
 
+<!-- source: examples/browser.ts -->
 ```ts
-import { gt, query } from "lakeql";
-import { browserWebGpuRuntime } from "lakeql-webgpu/browser";
+import { createLake, gt, httpStore } from "lakeql/fetch";
 import { WebGpuPhysicalBackend } from "lakeql-webgpu";
+import { browserWebGpuRuntime } from "lakeql-webgpu/browser";
 
-const runtime = browserWebGpuRuntime(
-  navigator,
-  { GPUBufferUsage, GPUMapMode },
-);
-const webgpu = new WebGpuPhysicalBackend(() => runtime);
+export async function queryScores() {
+  if (navigator.gpu === undefined) {
+    throw new Error("This browser does not expose WebGPU");
+  }
+  const runtime = browserWebGpuRuntime(navigator, { GPUBufferUsage, GPUMapMode });
+  const webgpu = new WebGpuPhysicalBackend(() => runtime);
+  const lake = createLake({
+    store: httpStore({ baseUrl: "https://example.com/data/" }),
+    physicalExecution: {
+      backends: [webgpu],
+      acceleratorPolicy: "auto",
+      replayOnCpu: true,
+    },
+  });
 
-const rows = await query(source, {
-  where: gt("score", 0.5),
-  physicalExecution: {
-    backends: [webgpu],
-    policy: "auto",
-    replayOnCpu: true,
-  },
-});
-
-webgpu.close();
+  try {
+    return await lake
+      .path("scores.parquet")
+      .select(["item_id", "score"])
+      .where(gt("score", 0.5))
+      .toArray();
+  } finally {
+    webgpu.close();
+  }
+}
 ```
 
 Repeated vector queries can keep an immutable candidate block on the device.
@@ -97,3 +107,9 @@ exact-vector blocks are supported. Multi-key and dictionary-key grouped
 reductions, general resident columns, and quantized vector encodings remain
 governed by the generic physical contract and are added as backend capabilities
 as their semantic and resource contracts are implemented.
+
+Row-producing queries place the selection fragment independently, then perform
+projected row materialization on the host. Accelerator upload, readback, and
+dispatch limits are spent across the complete query rather than reset for each
+decoded batch. If unpublished work replays on CPU, explain statistics retain
+the failed accelerator backend and its completed transfer stages.

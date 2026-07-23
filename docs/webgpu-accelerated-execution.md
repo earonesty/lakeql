@@ -11,8 +11,8 @@ the optional `lakeql-webgpu` package:
 
 - accelerator-neutral physical fragments, structural capabilities, cost-based
   placement, accelerator budgets, explain statistics, and bounded CPU replay;
-- physical lowering for projected scans, aggregate and grouped-aggregate work,
-  top-k, and exact-vector candidate scoring;
+- physical lowering for selection before host-side row projection, aggregate
+  and grouped-aggregate work, top-k, and exact-vector candidate scoring;
 - type-preserving `bool`, `u8`, `i32`, `u32`, `u64`, and `f32` vectors, with
   `u64` retained on CPU unless a backend advertises an exact representation;
 - injected browser/Worker-compatible WebGPU runtime ownership with Dawn used
@@ -47,12 +47,17 @@ or hardware acceleration claims.
 
 | Fragment | Rows / shape | CPU warm median | WebGPU warm median | WebGPU transfer |
 | --- | ---: | ---: | ---: | ---: |
-| selection + count/min/max | 1,000,000 rows | 46.7 ms | 30.9 ms | 16.0 MB upload, 35.2 KB readback |
-| selection + 16-group count/min/max | 1,000,000 rows | 77.1 ms | 65.2 ms | 24.0 MB upload, 574.5 KB readback |
-| resident dot + top-16 | 100,000 × 128 | 33.9 ms | 54.0 ms | 536 B query upload, 125.1 KB readback |
+| selection + count/min/max | 1,000,000 rows | 48.0 ms | 29.1 ms | 16.0 MB upload, 35.2 KB readback |
+| selection + 16-group count/min/max | 1,000,000 rows | 87.9 ms | 65.4 ms | 24.0 MB upload, 574.5 KB readback |
+| resident dot + top-16 | 100,000 × 128 | 37.2 ms | 54.7 ms | 536 B query upload, 125.1 KB readback |
 
-The resident vector lane separately paid about 31.9 ms to upload and retain
-52.4 MB; the equivalent non-resident cold query took about 138.8 ms. The
+The same benchmark now runs default `auto` planning before direct backend
+timing. The recorded relational estimates were 50.0 ms for CPU and 32.4 ms for
+WebGPU; grouped estimates were 71.4 ms and 48.9 ms. Both beneficial shapes
+selected WebGPU. This planner assertion is part of the benchmark gate.
+
+The resident vector lane separately paid about 34.5 ms to upload and retain
+52.4 MB; the equivalent non-resident cold query took about 150.8 ms. The
 resident Dawn lane remains slower than CPU on this host, which is why automatic
 placement retains the end-to-end cost decision rather than assuming WebGPU is
 faster.
