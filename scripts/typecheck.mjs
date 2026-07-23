@@ -11,6 +11,7 @@ const projects = [
   "packages/sql",
   "packages/cli",
   "packages/lakeql",
+  "packages/webgpu",
   "fixtures",
 ];
 

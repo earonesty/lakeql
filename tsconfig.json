@@ -9,6 +9,7 @@
     { "path": "packages/parquet" },
     { "path": "packages/iceberg" },
     { "path": "packages/lance" },
+    { "path": "packages/webgpu" },
     { "path": "packages/http" },
     { "path": "packages/r2" },
     { "path": "packages/s3" },

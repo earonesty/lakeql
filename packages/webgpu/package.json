@@ -1,0 +1,50 @@
+{
+  "name": "lakeql-webgpu",
+  "sideEffects": false,
+  "version": "0.1.0",
+  "description": "WebGPU physical execution backend for LakeQL",
+  "keywords": [
+    "lakeql",
+    "webgpu",
+    "gpu",
+    "query-engine",
+    "browser"
+  ],
+  "author": "Erik Aronesty",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "default": "./dist/browser.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "prepack": "pnpm -w build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/earonesty/lakeql.git",
+    "directory": "packages/webgpu"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "lakeql-core": "workspace:*"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
