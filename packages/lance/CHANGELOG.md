@@ -13,3 +13,6 @@
   matched stable IDs with projected row materialization.
 - Read inclusive, exclusive, and one-sided BTree ranges in index order with
   pre-materialization output-budget enforcement.
+- Search official vector-index V3 IVF_FLAT layouts with bounded centroid
+  selection and chunked L2, cosine, or dot scoring, then materialize projected
+  rows in distance order.

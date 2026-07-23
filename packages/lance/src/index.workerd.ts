@@ -152,6 +152,42 @@ describe("lakeql-lance workerd runtime", () => {
         { label: "indexed-13" },
       ],
     });
+
+    const vectors = await openLanceDataset({
+      store,
+      path: "fixtures/vector-ivf-flat-v2.0.lance",
+      budget: {
+        maxBytes: 128_000,
+        maxRangeRequests: 256,
+        maxMemoryBytes: 64_000,
+        maxRowsDecoded: 512,
+        maxOutputRows: 8,
+        maxConcurrentReads: 2,
+        maxElapsedMs: 3_000,
+      },
+      vectorLimits: {
+        maxDimension: 4,
+        maxPartitionsSearched: 4,
+        maxCandidatesScored: 256,
+      },
+    });
+    await expect(
+      vectors.nearest({
+        snapshotId: vectors.snapshotId,
+        index: "vector_ivf_flat_l2",
+        vector: [1, 2, 3, 4],
+        k: 2,
+        nprobes: 4,
+        select: ["id", "label"],
+      }),
+    ).resolves.toMatchObject({
+      metric: "l2",
+      matches: [
+        { rowId: "53", distance: 27, row: { id: 53, label: "vector-53" } },
+        { rowId: "122", distance: 29, row: { id: 122, label: "vector-122" } },
+      ],
+      candidatesScored: 256,
+    });
   });
 });
 

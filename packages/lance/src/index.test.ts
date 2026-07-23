@@ -19,6 +19,8 @@ const SCALAR_MULTIPAGE_FIXTURE_ROOT = resolve(
   "../fixtures/scalar-btree-multipage-v2.0.lance",
 );
 const SCALAR_MULTIPAGE_DATASET_PATH = "fixtures/scalar-btree-multipage-v2.0.lance";
+const VECTOR_FIXTURE_ROOT = resolve(import.meta.dirname, "../fixtures/vector-ivf-flat-v2.0.lance");
+const VECTOR_DATASET_PATH = "fixtures/vector-ivf-flat-v2.0.lance";
 const servers: { close(): Promise<void> }[] = [];
 
 afterEach(async () => {
@@ -480,6 +482,305 @@ describe("lakeql-lance takeRows", () => {
       budget: generousBudget(),
     });
     await expect(unindexed.scalarIndexes()).resolves.toEqual([]);
+  });
+
+  it("matches official IVF_FLAT results and materializes projections in distance order", async () => {
+    const fixture = await fixtureStore(VECTOR_FIXTURE_ROOT, VECTOR_DATASET_PATH);
+    const observed = recordingStore(fixture.store);
+    const expected = JSON.parse(
+      await readFile(resolve(VECTOR_FIXTURE_ROOT, "expected.json"), "utf8"),
+    ) as {
+      indices: { name: string; uuid: string; version: number }[];
+      query: number[];
+      k: number;
+      nprobes: number;
+      expected: Record<string, { id: number; label: string; distance: number }[]>;
+    };
+    const dataset = await openLanceDataset({
+      store: observed.store,
+      path: VECTOR_DATASET_PATH,
+      budget: {
+        ...generousBudget(),
+        maxBytes: 128_000,
+        maxRangeRequests: 256,
+        maxRowsDecoded: 512,
+        maxOutputRows: expected.k,
+      },
+      vectorLimits: {
+        maxDimension: 16,
+        maxPartitionsSearched: 4,
+        maxCandidatesScored: 256,
+      },
+    });
+
+    const indexes = await dataset.vectorIndexes();
+    expect(indexes).toHaveLength(3);
+    expect(indexes.map(({ metric }) => metric).sort()).toEqual(["cosine", "dot", "l2"]);
+    expect(indexes).toEqual(
+      expect.arrayContaining(
+        expected.indices.map((index) =>
+          expect.objectContaining({
+            name: index.name,
+            uuid: index.uuid,
+            column: "vector",
+            type: "IVF_FLAT",
+            dimension: 4,
+            partitions: 4,
+          }),
+        ),
+      ),
+    );
+    for (const metric of ["l2", "cosine", "dot"] as const) {
+      const result = await dataset.nearest({
+        snapshotId: dataset.snapshotId,
+        index: `vector_ivf_flat_${metric}`,
+        vector: expected.query,
+        k: expected.k,
+        nprobes: expected.nprobes,
+        select: ["id", "label"],
+      });
+      const groundTruth = expected.expected[metric] ?? [];
+      expect(result.matches.map(({ rowId, row }) => ({ rowId, row }))).toEqual(
+        groundTruth.map((match) => ({
+          rowId: String(match.id),
+          row: { id: match.id, label: match.label },
+        })),
+      );
+      for (const [index, match] of result.matches.entries()) {
+        expect(match.distance).toBeCloseTo(groundTruth[index]?.distance ?? Number.NaN, 5);
+      }
+      expect(result.metric).toBe(metric);
+      expect(result.partitionsSearched).toHaveLength(4);
+      expect(result.candidatesScored).toBeGreaterThanOrEqual(255);
+      expect(result.candidatesScored).toBeLessThanOrEqual(256);
+      expect(result.stats.rowsDecoded).toBe(result.candidatesScored + expected.k);
+    }
+    await expect(
+      dataset.takeRows({
+        snapshotId: dataset.snapshotId,
+        rowIds: [0],
+        select: ["vector"],
+      }),
+    ).resolves.toMatchObject({
+      rows: [{ vector: Float32Array.of(0, 0, 0, 0) }],
+    });
+    expect(observed.fullDataGets).toBe(0);
+    expect(observed.dataRanges.every((range) => range.length < range.fileSize)).toBe(true);
+  });
+
+  it("bounds IVF_FLAT partitions, candidates, vector shape, and result buffering", async () => {
+    const fixture = await fixtureStore(VECTOR_FIXTURE_ROOT, VECTOR_DATASET_PATH);
+    const dataset = await openLanceDataset({
+      store: fixture.store,
+      path: VECTOR_DATASET_PATH,
+      budget: { ...generousBudget(), maxRowsDecoded: 128 },
+      vectorLimits: {
+        maxDimension: 4,
+        maxPartitionsSearched: 1,
+        maxCandidatesScored: 128,
+      },
+    });
+    const result = await dataset.nearest({
+      snapshotId: dataset.snapshotId,
+      index: "vector_ivf_flat_l2",
+      vector: [0, 0, 0, 0],
+      k: 4,
+      nprobes: 1,
+      select: ["id"],
+    });
+    expect(result.partitionsSearched).toHaveLength(1);
+    expect(result.candidatesScored).toBeLessThanOrEqual(128);
+    expect(result.matches).toHaveLength(4);
+
+    for (const options of [
+      { vector: [], k: 1, nprobes: 1 },
+      { vector: [0, 0, 0], k: 1, nprobes: 1 },
+      { vector: [0, 0, 0, Number.NaN], k: 1, nprobes: 1 },
+      { vector: [0, 0, 0, 0], k: 0, nprobes: 1 },
+      { vector: [0, 0, 0, 0], k: 1.5, nprobes: 1 },
+      { vector: [0, 0, 0, 0], k: 1, nprobes: 0 },
+      { vector: [0, 0, 0, 0], k: 1, nprobes: 1.5 },
+      { vector: [0, 0, 0, 0], k: 1, nprobes: 2 },
+    ]) {
+      await expect(
+        dataset.nearest({
+          snapshotId: dataset.snapshotId,
+          index: "vector_ivf_flat_l2",
+          ...options,
+          select: ["id"],
+        }),
+      ).rejects.toMatchObject({
+        code: options.nprobes === 2 ? "LAKEQL_BUDGET_EXCEEDED" : "LAKEQL_VALIDATION_ERROR",
+      });
+    }
+
+    await expect(
+      dataset.nearest({
+        snapshotId: `${dataset.snapshotId}-stale`,
+        index: "vector_ivf_flat_l2",
+        vector: [0, 0, 0, 0],
+        k: 1,
+        nprobes: 1,
+        select: ["id"],
+      }),
+    ).rejects.toMatchObject({ code: "LAKEQL_LANCE_SNAPSHOT_MISMATCH" });
+    await expect(
+      dataset.nearest({
+        snapshotId: dataset.snapshotId,
+        index: "absent",
+        vector: [0, 0, 0, 0],
+        k: 1,
+        nprobes: 1,
+        select: ["id"],
+      }),
+    ).rejects.toMatchObject({ code: "LAKEQL_OBJECT_NOT_FOUND" });
+
+    const broader = await openLanceDataset({
+      store: fixture.store,
+      path: VECTOR_DATASET_PATH,
+      budget: { ...generousBudget(), maxBufferedRows: 1, maxRowsDecoded: 512 },
+      vectorLimits: {
+        maxDimension: 4,
+        maxPartitionsSearched: 4,
+        maxCandidatesScored: 256,
+      },
+    });
+    await expect(
+      broader.nearest({
+        snapshotId: broader.snapshotId,
+        index: "vector_ivf_flat_l2",
+        vector: [0, 0, 0, 0],
+        k: 2,
+        nprobes: 1,
+        select: ["id"],
+      }),
+    ).rejects.toMatchObject({
+      code: "LAKEQL_BUDGET_EXCEEDED",
+      details: { metric: "vector result rows" },
+    });
+    await expect(
+      broader.nearest({
+        snapshotId: broader.snapshotId,
+        index: "vector_ivf_flat_l2",
+        vector: [0, 0, 0, 0],
+        k: 1,
+        nprobes: 5,
+        select: ["id"],
+      }),
+    ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+    await expect(
+      broader.nearest({
+        snapshotId: broader.snapshotId,
+        index: "vector_ivf_flat_cosine",
+        vector: [0, 0, 0, 0],
+        k: 1,
+        nprobes: 4,
+        select: ["id"],
+      }),
+    ).resolves.toMatchObject({
+      metric: "cosine",
+      matches: [{ distance: 1 }],
+    });
+
+    const partitionValidated = await openLanceDataset({
+      store: fixture.store,
+      path: VECTOR_DATASET_PATH,
+      budget: { ...generousBudget(), maxRowsDecoded: 512 },
+      vectorLimits: {
+        maxDimension: 4,
+        maxPartitionsSearched: 8,
+        maxCandidatesScored: 256,
+      },
+    });
+    await expect(
+      partitionValidated.nearest({
+        snapshotId: partitionValidated.snapshotId,
+        index: "vector_ivf_flat_l2",
+        vector: [0, 0, 0, 0],
+        k: 1,
+        nprobes: 5,
+        select: ["id"],
+      }),
+    ).rejects.toMatchObject({ code: "LAKEQL_VALIDATION_ERROR" });
+
+    const dimensionBounded = await openLanceDataset({
+      store: fixture.store,
+      path: VECTOR_DATASET_PATH,
+      vectorLimits: { maxDimension: 3 },
+    });
+    await expect(dimensionBounded.vectorIndexes()).rejects.toMatchObject({
+      code: "LAKEQL_BUDGET_EXCEEDED",
+      details: { metric: "vector dimension" },
+    });
+    const unindexed = await openLanceDataset({
+      store: (await fixtureStore()).store,
+      path: DATASET_PATH,
+    });
+    await expect(unindexed.vectorIndexes()).resolves.toEqual([]);
+
+    const candidateBounded = await openLanceDataset({
+      store: fixture.store,
+      path: VECTOR_DATASET_PATH,
+      budget: { ...generousBudget(), maxRowsDecoded: 512 },
+      vectorLimits: {
+        maxDimension: 4,
+        maxPartitionsSearched: 4,
+        maxCandidatesScored: 1,
+      },
+    });
+    await expect(
+      candidateBounded.nearest({
+        snapshotId: candidateBounded.snapshotId,
+        index: "vector_ivf_flat_l2",
+        vector: [0, 0, 0, 0],
+        k: 1,
+        nprobes: 1,
+        select: ["id"],
+      }),
+    ).rejects.toMatchObject({
+      code: "LAKEQL_BUDGET_EXCEEDED",
+      details: { metric: "vector candidates" },
+    });
+
+    const defaultMemory = await openLanceDataset({
+      store: fixture.store,
+      path: VECTOR_DATASET_PATH,
+      budget: {
+        maxBytes: 128_000,
+        maxRangeRequests: 256,
+        maxRowsDecoded: 128,
+        maxOutputRows: 1,
+      },
+      vectorLimits: {
+        maxDimension: 4,
+        maxPartitionsSearched: 1,
+        maxCandidatesScored: 128,
+      },
+    });
+    await expect(
+      defaultMemory.nearest({
+        snapshotId: defaultMemory.snapshotId,
+        index: "vector_ivf_flat_l2",
+        vector: [0, 0, 0, 0],
+        k: 1,
+        nprobes: 1,
+        select: ["id"],
+      }),
+    ).resolves.toMatchObject({ matches: [{ rowId: "0" }] });
+
+    for (const vectorLimits of [
+      { maxDimension: 0 },
+      { maxPartitionsSearched: 0.5 },
+      { maxCandidatesScored: -1 },
+    ]) {
+      await expect(
+        openLanceDataset({
+          store: fixture.store,
+          path: VECTOR_DATASET_PATH,
+          vectorLimits,
+        }),
+      ).rejects.toMatchObject({ code: "LAKEQL_VALIDATION_ERROR" });
+    }
   });
 
   it("materializes 32 scattered rows with bounded reads and concurrency", async () => {

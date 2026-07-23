@@ -3,6 +3,7 @@ import {
   parseColumnMetadata,
   parseFileDescriptor,
   parseIndexSection,
+  parseIvfMetadata,
   parseManifest,
   parseRowIdSequence,
 } from "./proto.js";
@@ -258,7 +259,11 @@ describe("Lance protobuf compatibility decoder", () => {
       message(bytesField(1, flatEncoding(64, 0)), bytesField(2, flatEncoding(8, 1)), scalar(3, 9)),
     );
     const constant = arrayEncoding(13, bytesField(1, Uint8Array.of(9, 8)));
-    const encodings = [flat, noNulls, someNulls, allNulls, binary, constant];
+    const fixedSizeList = arrayEncoding(
+      3,
+      message(scalar(1, 4), bytesField(2, flatEncoding(32, 0)), scalar(3, 0)),
+    );
+    const encodings = [flat, noNulls, someNulls, allNulls, binary, constant, fixedSizeList];
     const pages = encodings.map((encoding, index) =>
       bytesField(
         2,
@@ -305,7 +310,78 @@ describe("Lance protobuf compatibility decoder", () => {
         nullAdjustment: 9n,
       },
       { kind: "constant", value: Uint8Array.of(9, 8) },
+      {
+        kind: "fixed_size_list",
+        dimension: 4,
+        hasValidity: false,
+        items: { kind: "flat", bitsPerValue: 32, bufferIndex: 0, bufferType: 1 },
+      },
     ]);
+  });
+
+  it("decodes IVF centroid tensors and auxiliary-only partition tables", () => {
+    const tensor = message(
+      scalar(1, 2),
+      packed(2, [2, 2]),
+      bytesField(3, float32Bytes([1, 2, 3, 4])),
+    );
+    expect(
+      parseIvfMetadata(
+        message(packed(2, [0, 3]), packed(3, [3, 1]), bytesField(4, tensor), scalar(99, 1)),
+      ),
+    ).toEqual({
+      offsets: [0, 3],
+      lengths: [3, 1],
+      centroids: Float32Array.of(1, 2, 3, 4),
+      numPartitions: 2,
+      dimension: 2,
+    });
+    expect(parseIvfMetadata(message(packed(2, [0, 3]), packed(3, [3, 1])))).toEqual({
+      offsets: [0, 3],
+      lengths: [3, 1],
+      centroids: new Float32Array(),
+      numPartitions: 2,
+      dimension: 0,
+    });
+  });
+
+  it("rejects inconsistent IVF metadata and incomplete fixed-size-list encodings", () => {
+    expect(() => parseIvfMetadata(message(packed(2, [0]), packed(3, [])))).toThrowError(
+      expect.objectContaining({ code: "LAKEQL_LANCE_READ_ERROR" }),
+    );
+    const invalidList = arrayEncoding(3, message(scalar(1, 0)));
+    expect(() =>
+      parseColumnMetadata(
+        message(
+          bytesField(
+            2,
+            message(
+              packed(1, [0]),
+              packed(2, [1]),
+              scalar(3, 1),
+              bytesField(4, fileEncoding(invalidList)),
+            ),
+          ),
+        ),
+      ),
+    ).toThrowError(expect.objectContaining({ code: "LAKEQL_LANCE_READ_ERROR" }));
+
+    for (const tensor of [
+      message(scalar(1, 1), packed(2, [1, 1]), bytesField(3, float32Bytes([1]))),
+      message(scalar(1, 2), packed(2, [1]), bytesField(3, float32Bytes([1]))),
+    ]) {
+      expect(() =>
+        parseIvfMetadata(message(packed(2, [0]), packed(3, [1]), bytesField(4, tensor))),
+      ).toThrowError(expect.objectContaining({ code: "LAKEQL_UNSUPPORTED_LANCE_FEATURE" }));
+    }
+    for (const tensor of [
+      message(scalar(1, 2), packed(2, [1, 2]), bytesField(3, float32Bytes([1]))),
+      message(scalar(1, 2), packed(2, [2, 1]), bytesField(3, float32Bytes([1, 2]))),
+    ]) {
+      expect(() =>
+        parseIvfMetadata(message(packed(2, [0]), packed(3, [1]), bytesField(4, tensor))),
+      ).toThrowError(expect.objectContaining({ code: "LAKEQL_LANCE_READ_ERROR" }));
+    }
   });
 
   it.each([
@@ -452,6 +528,15 @@ function littleEndian(values: readonly number[], width: 2 | 4 | 8): Uint8Array {
     if (width === 2) view.setUint16(index * width, value, true);
     else if (width === 4) view.setUint32(index * width, value, true);
     else view.setBigUint64(index * width, BigInt(value), true);
+  });
+  return bytes;
+}
+
+function float32Bytes(values: readonly number[]): Uint8Array {
+  const bytes = new Uint8Array(values.length * 4);
+  const view = new DataView(bytes.buffer);
+  values.forEach((value, index) => {
+    view.setFloat32(index * 4, value, true);
   });
   return bytes;
 }

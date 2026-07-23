@@ -1,0 +1,187 @@
+{
+  "datasetVersion": 4,
+  "dimension": 4,
+  "expected": {
+    "cosine": [
+      {
+        "distance": 0.002567470073699951,
+        "id": 42,
+        "label": "vector-42"
+      },
+      {
+        "distance": 0.0031746625900268555,
+        "id": 55,
+        "label": "vector-55"
+      },
+      {
+        "distance": 0.003638923168182373,
+        "id": 226,
+        "label": "vector-226"
+      },
+      {
+        "distance": 0.004884958267211914,
+        "id": 213,
+        "label": "vector-213"
+      },
+      {
+        "distance": 0.010291039943695068,
+        "id": 105,
+        "label": "vector-105"
+      },
+      {
+        "distance": 0.010774731636047363,
+        "id": 41,
+        "label": "vector-41"
+      },
+      {
+        "distance": 0.010965883731842041,
+        "id": 123,
+        "label": "vector-123"
+      },
+      {
+        "distance": 0.01113194227218628,
+        "id": 54,
+        "label": "vector-54"
+      }
+    ],
+    "dot": [
+      {
+        "distance": -194.0,
+        "id": 200,
+        "label": "vector-200"
+      },
+      {
+        "distance": -193.0,
+        "id": 42,
+        "label": "vector-42"
+      },
+      {
+        "distance": -190.0,
+        "id": 118,
+        "label": "vector-118"
+      },
+      {
+        "distance": -190.0,
+        "id": 187,
+        "label": "vector-187"
+      },
+      {
+        "distance": -188.0,
+        "id": 13,
+        "label": "vector-13"
+      },
+      {
+        "distance": -188.0,
+        "id": 150,
+        "label": "vector-150"
+      },
+      {
+        "distance": -186.0,
+        "id": 105,
+        "label": "vector-105"
+      },
+      {
+        "distance": -184.0,
+        "id": 137,
+        "label": "vector-137"
+      }
+    ],
+    "l2": [
+      {
+        "distance": 27.0,
+        "id": 53,
+        "label": "vector-53"
+      },
+      {
+        "distance": 29.0,
+        "id": 122,
+        "label": "vector-122"
+      },
+      {
+        "distance": 30.0,
+        "id": 0,
+        "label": "vector-0"
+      },
+      {
+        "distance": 36.0,
+        "id": 172,
+        "label": "vector-172"
+      },
+      {
+        "distance": 38.0,
+        "id": 103,
+        "label": "vector-103"
+      },
+      {
+        "distance": 43.0,
+        "id": 40,
+        "label": "vector-40"
+      },
+      {
+        "distance": 55.0,
+        "id": 204,
+        "label": "vector-204"
+      },
+      {
+        "distance": 56.0,
+        "id": 90,
+        "label": "vector-90"
+      }
+    ]
+  },
+  "indices": [
+    {
+      "name": "vector_ivf_flat_cosine",
+      "type": "IVF_FLAT",
+      "uuid": "92a44ba0-b59f-4027-a61e-76d3c1e3bf70",
+      "version": 2
+    },
+    {
+      "name": "vector_ivf_flat_dot",
+      "type": "IVF_FLAT",
+      "uuid": "d30dab93-ca34-4a2c-9849-7a7f6e659854",
+      "version": 3
+    },
+    {
+      "name": "vector_ivf_flat_l2",
+      "type": "IVF_FLAT",
+      "uuid": "daa29749-e9a8-4399-b6d0-a59184196d4d",
+      "version": 1
+    }
+  ],
+  "k": 8,
+  "nprobes": 4,
+  "producer": {
+    "package": "pylance",
+    "version": "8.0.0"
+  },
+  "query": [
+    1.0,
+    2.0,
+    3.0,
+    4.0
+  ],
+  "rowCount": 256,
+  "sha256": {
+    "_indices/92a44ba0-b59f-4027-a61e-76d3c1e3bf70/auxiliary.idx": "02a913a13499c279a67f5a88a968453947f705654513a7eaae9319a913502713",
+    "_indices/92a44ba0-b59f-4027-a61e-76d3c1e3bf70/index.idx": "1756c3e15c5130917b393c31278df472285edfd9352ed7be9db635ed1bb18c5d",
+    "_indices/d30dab93-ca34-4a2c-9849-7a7f6e659854/auxiliary.idx": "10c85ed4906b8a61aa05974bc3a97cc8e4e1d36a0e58b4327f11d4c60c615ae8",
+    "_indices/d30dab93-ca34-4a2c-9849-7a7f6e659854/index.idx": "f6ddcde42fa31c4c962252257081cd1b2b639cc0a0baa31b4d3d3e1d427091c6",
+    "_indices/daa29749-e9a8-4399-b6d0-a59184196d4d/auxiliary.idx": "68f236ebc9aa99f7cf4ce8f3c8dffada708457ffe5c52a498389d7848ebfa43e",
+    "_indices/daa29749-e9a8-4399-b6d0-a59184196d4d/index.idx": "3f66b5a7205b09aebf6bf133fbb7cb871744779b8063c47ecc403ceb48d882a3",
+    "_transactions/0-55f6ec2f-d4d6-4750-ae21-b8d3895bab0f.txn": "1faddd8b31d88e9a397046fcdc47b4072764880da24ad9c77295df60d76b46c2",
+    "_transactions/1-805dbf31-b99b-4cfb-a64a-20ddf364637d.txn": "1b3ed59122d993e6595431576a9c919899120e1622516250a803ac77f4166148",
+    "_transactions/2-59cbafea-c3f0-4f23-b4f9-5e3a5ba77a13.txn": "2b36eba54a5a1b5c01eb5ad78ea745c9e6ac9fe72c0eef9da56c5943ec257976",
+    "_transactions/3-ae24a4fd-2c7b-443f-b3b5-8bc40dd8a739.txn": "654275588d3906ba01e82ef8cffb60618b9a6e0eb888501dccf5be6b92cfa35b",
+    "_versions/18446744073709551611.manifest": "56158b37c6ad61ca6faa4445bd4561ffdc7ac4c7a27103a75b5ba7250aa06ef4",
+    "_versions/18446744073709551612.manifest": "d5125cda217fd1798cd0a718c67d1b12c9fe87802ceaaded5efdf823a05bd1f5",
+    "_versions/18446744073709551613.manifest": "e9db1a674a0202858911c418e79630348c92c866408b98eb73cea847f8468a39",
+    "_versions/18446744073709551614.manifest": "1d7b4fe36d4b2a96d510d108527056eddc49a6cd5e3aecd0e7e94424d59d5942",
+    "_versions/latest_version_hint.json": "99fd67c89da37e7ca5f6d62c8c814dbb3dae1ba7e760c3e8ff804a45590680b2",
+    "data/0010111111101101110011014c0a744438bc0aebbac0152ddc.lance": "11a07e623eceed902a505004e2f86332dd52629adb224f0d0186250d3087bb10",
+    "data/010000000101101101101011e0c4754e1ba98a03699061a8ba.lance": "915aec674fcf32bd4277b494b75be57c31be5ca7d76f704407ae67ac7ec6413c",
+    "data/101011000000100011101100dfbc1d49cb8d366913b8a6cb60.lance": "8d094c05a6fb5099dcbb410048a5972587ffaf96220f09d50497d9c662ae3e81",
+    "data/101111101110000001110010748c0b49c196a7c4fe881a679e.lance": "ed0302be6e6c4e92f1073bc47c4b729562cc81a4a468fd67d20db96a9b074aae"
+  },
+  "storageVersion": "2.0"
+}

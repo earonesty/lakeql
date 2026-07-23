@@ -28,6 +28,13 @@ import {
   lookupScalarRowIds,
   rangeScalarRowIds,
 } from "./scalar.js";
+import {
+  type LanceVectorIndexInfo,
+  type LanceVectorLimits,
+  type LanceVectorMetric,
+  loadVectorIndexes,
+  searchVectorIndex,
+} from "./vector.js";
 
 export const PACKAGE = "lakeql-lance" as const;
 export const SUPPORTED_LANCE_STORAGE_VERSION = "2.0" as const;
@@ -52,6 +59,7 @@ export interface OpenLanceDatasetOptions {
   coalesceGapBytes?: number;
   maxCoalescedRangeBytes?: number;
   now?: () => number;
+  vectorLimits?: Partial<LanceVectorLimits>;
 }
 
 export interface TakeLanceRowsOptions {
@@ -105,7 +113,38 @@ export interface LanceScalarRangeResult {
   stats: LanceReadStats;
 }
 
-export type { LanceScalarIndexInfo, LanceScalarRange, LanceScalarValue };
+export interface NearestLanceRowsOptions {
+  snapshotId: string;
+  index: string;
+  vector: readonly number[];
+  k: number;
+  nprobes: number;
+  select: readonly string[];
+}
+
+export interface LanceVectorMatch {
+  rowId: string;
+  distance: number;
+  row: Row;
+}
+
+export interface LanceVectorSearchResult {
+  index: LanceVectorIndexInfo;
+  metric: LanceVectorMetric;
+  matches: LanceVectorMatch[];
+  partitionsSearched: number[];
+  candidatesScored: number;
+  stats: LanceReadStats;
+}
+
+export type {
+  LanceScalarIndexInfo,
+  LanceScalarRange,
+  LanceScalarValue,
+  LanceVectorIndexInfo,
+  LanceVectorLimits,
+  LanceVectorMetric,
+};
 
 export interface LanceReadStats {
   snapshotId: string;
@@ -147,6 +186,7 @@ export class LanceDataset {
       planning: LanceRangePlanningOptions;
       openStats: MutableLanceReadStats;
       metadataMs: number;
+      vectorLimits: LanceVectorLimits;
     },
   ) {
     this.snapshotId = options.snapshotId;
@@ -258,6 +298,67 @@ export class LanceDataset {
       index: lookup.index,
       rowIds: retained.map(({ rowId }) => rowId),
       rows: retained.map(({ row }) => row),
+      stats: materialized.stats,
+    };
+  }
+
+  async vectorIndexes(): Promise<LanceVectorIndexInfo[]> {
+    const stats = cloneStats(this.options.openStats);
+    return await loadVectorIndexes({
+      context: this.context(stats),
+      root: this.options.root,
+      manifestPath: this.options.manifestPath,
+      manifestFileSize: this.options.manifestFileSize,
+      manifest: this.options.manifest,
+      limits: this.options.vectorLimits,
+    });
+  }
+
+  async nearest(options: NearestLanceRowsOptions): Promise<LanceVectorSearchResult> {
+    if (options.snapshotId !== this.snapshotId) {
+      snapshotMismatch(options.snapshotId, this.snapshotId, this.version);
+    }
+    const stats = cloneStats(this.options.openStats);
+    const search = await searchVectorIndex({
+      context: this.context(stats),
+      root: this.options.root,
+      manifestPath: this.options.manifestPath,
+      manifestFileSize: this.options.manifestFileSize,
+      manifest: this.options.manifest,
+      indexName: options.index,
+      vector: options.vector,
+      k: options.k,
+      nprobes: options.nprobes,
+      budget: this.options.budget,
+      limits: this.options.vectorLimits,
+    });
+    const materialized = await this.takeRowsWithStats(
+      {
+        snapshotId: this.snapshotId,
+        rowIds: search.candidates.map(({ rowId }) => rowId),
+        select: options.select,
+        onMissing: "null",
+      },
+      stats,
+    );
+    const matches = materialized.rows.flatMap((row, index) => {
+      const candidate = search.candidates[index];
+      return row === null || candidate === undefined
+        ? []
+        : [
+            {
+              rowId: candidate.rowId.toString(),
+              distance: candidate.distance,
+              row,
+            },
+          ];
+    });
+    return {
+      index: search.index,
+      metric: search.index.metric,
+      matches,
+      partitionsSearched: search.partitions,
+      candidatesScored: search.candidatesScored,
       stats: materialized.stats,
     };
   }
@@ -381,6 +482,7 @@ export async function openLanceDataset(options: OpenLanceDatasetOptions): Promis
   const startedAt = now();
   const stats = emptyStats();
   const planning = validatedPlanning(options);
+  const vectorLimits = validatedVectorLimits(options.vectorLimits);
   const context = new LanceReadContext(options.store, budget, stats, startedAt, now, planning);
   const version =
     options.version === undefined
@@ -421,7 +523,25 @@ export async function openLanceDataset(options: OpenLanceDatasetOptions): Promis
     planning,
     openStats: stats,
     metadataMs: now() - startedAt,
+    vectorLimits,
   });
+}
+
+function validatedVectorLimits(limits: Partial<LanceVectorLimits> | undefined): LanceVectorLimits {
+  const resolved = {
+    maxDimension: limits?.maxDimension ?? 4_096,
+    maxPartitionsSearched: limits?.maxPartitionsSearched ?? 64,
+    maxCandidatesScored: limits?.maxCandidatesScored ?? 100_000,
+  };
+  for (const [name, value] of Object.entries(resolved)) {
+    if (!Number.isSafeInteger(value) || value <= 0) {
+      throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Invalid Lance vector limit", {
+        limit: name,
+        value,
+      });
+    }
+  }
+  return resolved;
 }
 
 async function readLatestVersion(context: LanceReadContext, root: string): Promise<bigint> {

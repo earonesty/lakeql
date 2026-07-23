@@ -39,6 +39,42 @@ export async function loadScalarIndexes(options: {
   manifestFileSize: number;
   manifest: LanceManifest;
 }): Promise<{ metadata: LanceIndexMetadata; info: LanceScalarIndexInfo }[]> {
+  const indices = await loadLanceIndexMetadata(options);
+  const fieldById = new Map(options.manifest.fields.map((field) => [field.id, field]));
+  return indices.flatMap((metadata) => {
+    if (metadata.detailsTypeUrl.toLowerCase() !== "/lance.table.btreeindexdetails") return [];
+    if (metadata.fields.length !== 1) {
+      corrupt("Lance BTree index must address exactly one field", {
+        index: metadata.name,
+        fields: metadata.fields,
+      });
+    }
+    const field = fieldById.get(metadata.fields[0] as number);
+    if (field === undefined) {
+      corrupt("Lance BTree index references an unknown field", {
+        index: metadata.name,
+      });
+    }
+    return [
+      {
+        metadata,
+        info: {
+          name: metadata.name,
+          uuid: metadata.uuid,
+          column: field.name,
+          ...(metadata.indexVersion === undefined ? {} : { indexVersion: metadata.indexVersion }),
+        },
+      },
+    ];
+  });
+}
+
+export async function loadLanceIndexMetadata(options: {
+  context: LanceReadContext;
+  manifestPath: string;
+  manifestFileSize: number;
+  manifest: LanceManifest;
+}): Promise<LanceIndexMetadata[]> {
   const offset = options.manifest.indexSectionOffset;
   if (offset === undefined) return [];
   if (offset < 0 || offset + 4 > options.manifestFileSize) {
@@ -72,33 +108,7 @@ export async function loadScalarIndexes(options: {
   } finally {
     sectionLease.release();
   }
-  const fieldById = new Map(options.manifest.fields.map((field) => [field.id, field]));
-  return indices.flatMap((metadata) => {
-    if (metadata.detailsTypeUrl.toLowerCase() !== "/lance.table.btreeindexdetails") return [];
-    if (metadata.fields.length !== 1) {
-      corrupt("Lance BTree index must address exactly one field", {
-        index: metadata.name,
-        fields: metadata.fields,
-      });
-    }
-    const field = fieldById.get(metadata.fields[0] as number);
-    if (field === undefined) {
-      corrupt("Lance BTree index references an unknown field", {
-        index: metadata.name,
-      });
-    }
-    return [
-      {
-        metadata,
-        info: {
-          name: metadata.name,
-          uuid: metadata.uuid,
-          column: field.name,
-          ...(metadata.indexVersion === undefined ? {} : { indexVersion: metadata.indexVersion }),
-        },
-      },
-    ];
-  });
+  return indices;
 }
 
 export async function lookupScalarRowIds(options: {

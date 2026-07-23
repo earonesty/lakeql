@@ -10,6 +10,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 import lance
+import numpy as np
 import pyarrow as pa
 
 
@@ -19,6 +20,7 @@ TYPE_FIXTURE = ROOT / "fixtures" / "types-v2.0.lance"
 DELETION_FIXTURE = ROOT / "fixtures" / "deletions-v2.0.lance"
 SCALAR_FIXTURE = ROOT / "fixtures" / "scalar-btree-v2.0.lance"
 SCALAR_MULTIPAGE_FIXTURE = ROOT / "fixtures" / "scalar-btree-multipage-v2.0.lance"
+VECTOR_FLAT_FIXTURE = ROOT / "fixtures" / "vector-ivf-flat-v2.0.lance"
 WORKERD_MODULE = ROOT / "src" / "fixture.generated.ts"
 
 
@@ -99,6 +101,7 @@ def main() -> None:
     write_deletion_fixture()
     write_scalar_fixture()
     write_scalar_multipage_fixture()
+    write_vector_flat_fixture()
     write_workerd_module()
 
 
@@ -339,12 +342,110 @@ def write_scalar_multipage_fixture() -> None:
     )
 
 
+def write_vector_flat_fixture() -> None:
+    if VECTOR_FLAT_FIXTURE.exists():
+        shutil.rmtree(VECTOR_FLAT_FIXTURE)
+    dimension = 4
+    vector_rows = [
+        [
+            float(index % 17),
+            float((index * 3) % 19),
+            float((index * 7) % 23),
+            float((index * 11) % 29),
+        ]
+        for index in range(256)
+    ]
+    vectors = np.asarray(vector_rows, dtype=np.float32)
+    table = pa.table(
+        {
+            "id": pa.array(range(len(vector_rows)), type=pa.int64()),
+            "vector": pa.FixedSizeListArray.from_arrays(
+                pa.array(vectors.reshape(-1)),
+                dimension,
+            ),
+            "label": pa.array([f"vector-{index}" for index in range(len(vector_rows))]),
+        }
+    )
+    dataset = lance.write_dataset(
+        table,
+        VECTOR_FLAT_FIXTURE,
+        mode="create",
+        data_storage_version="2.0",
+        enable_stable_row_ids=True,
+        enable_v2_manifest_paths=True,
+        max_rows_per_file=64,
+        max_rows_per_group=32,
+    )
+    for metric in ["L2", "cosine", "dot"]:
+        dataset.create_index(
+            "vector",
+            "IVF_FLAT",
+            name=f"vector_ivf_flat_{metric.lower()}",
+            metric=metric,
+            num_partitions=4,
+        )
+    indices = sorted(dataset.list_indices(), key=lambda value: value["name"])
+    query = np.asarray([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
+    expected_searches = {}
+    for metric in ["l2", "cosine", "dot"]:
+        result = dataset.to_table(
+            columns=["id", "label", "_distance"],
+            nearest={
+                "column": "vector",
+                "q": query,
+                "k": 8,
+                "nprobes": 4,
+                "use_index": True,
+                "metric": metric,
+            },
+        )
+        expected_searches[metric] = [
+            {
+                "id": row["id"],
+                "label": row["label"],
+                "distance": row["_distance"],
+            }
+            for row in result.to_pylist()
+        ]
+    expected = {
+        "producer": {"package": "pylance", "version": lance.__version__},
+        "storageVersion": dataset.data_storage_version,
+        "datasetVersion": dataset.version,
+        "rowCount": len(vector_rows),
+        "dimension": dimension,
+        "indices": [
+            {
+                "name": index["name"],
+                "type": index["type"],
+                "uuid": index["uuid"],
+                "version": index["version"],
+            }
+            for index in indices
+        ],
+        "query": query.tolist(),
+        "k": 8,
+        "nprobes": 4,
+        "expected": expected_searches,
+    }
+    expected["sha256"] = fixture_hashes(VECTOR_FLAT_FIXTURE)
+    (VECTOR_FLAT_FIXTURE / "expected.json").write_text(
+        json.dumps(expected, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
 def write_workerd_module() -> None:
     files = {
         f"fixtures/{root.name}/{path.relative_to(root)}": b64encode(path.read_bytes()).decode(
             "ascii"
         )
-        for root in [FIXTURE, TYPE_FIXTURE, DELETION_FIXTURE, SCALAR_FIXTURE]
+        for root in [
+            FIXTURE,
+            TYPE_FIXTURE,
+            DELETION_FIXTURE,
+            SCALAR_FIXTURE,
+            VECTOR_FLAT_FIXTURE,
+        ]
         for path in sorted(root.rglob("*"))
         if path.is_file() and path.name != "expected.json"
     }

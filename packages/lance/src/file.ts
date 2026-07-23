@@ -26,6 +26,7 @@ export interface InspectedLanceFile {
   fileSize: number;
   fields: LanceField[];
   schemaMetadata: Record<string, Uint8Array>;
+  globalBuffers: ByteRange[];
   columns: LanceColumnMetadata[];
   rowCount: number;
 }
@@ -53,15 +54,18 @@ export async function inspectLanceFile(
   if (footer.numGlobalBuffers < 1) {
     corrupt("Self-describing Lance file has no descriptor buffer", { path });
   }
-  const tableRanges: ByteRange[] = [
-    { offset: footer.globalBufferOffsets, length: 16 },
-    ...Array.from({ length: footer.numColumns }, (_value, index) => ({
-      offset: footer.columnMetadataOffsets + index * 16,
-      length: 16,
-    })),
-  ];
+  const globalTableRanges = Array.from({ length: footer.numGlobalBuffers }, (_value, index) => ({
+    offset: footer.globalBufferOffsets + index * 16,
+    length: 16,
+  }));
+  const columnTableRanges = Array.from({ length: footer.numColumns }, (_value, index) => ({
+    offset: footer.columnMetadataOffsets + index * 16,
+    length: 16,
+  }));
+  const tableRanges: ByteRange[] = [...globalTableRanges, ...columnTableRanges];
   const tableLease = await context.readRanges(path, tableRanges, "file_metadata", fileSize);
   let descriptorRange: ByteRange;
+  const globalBuffers: ByteRange[] = [];
   const columnRanges: ByteRange[] = [];
   try {
     descriptorRange = readTableRange(
@@ -70,11 +74,21 @@ export async function inspectLanceFile(
       footer.columnMetadataStart,
       path,
     );
+    for (let index = 1; index < footer.numGlobalBuffers; index += 1) {
+      globalBuffers.push(
+        readTableRange(
+          tableLease,
+          globalTableRanges[index] as ByteRange,
+          footer.columnMetadataStart,
+          path,
+        ),
+      );
+    }
     for (let index = 0; index < footer.numColumns; index += 1) {
       columnRanges.push(
         readTableRange(
           tableLease,
-          tableRanges[index + 1] as ByteRange,
+          columnTableRanges[index] as ByteRange,
           footer.columnMetadataOffsets,
           path,
         ),
@@ -109,11 +123,33 @@ export async function inspectLanceFile(
       fileSize,
       fields: descriptor.fields,
       schemaMetadata: descriptor.metadata,
+      globalBuffers,
       columns,
       rowCount,
     };
   } finally {
     metadataLease.release();
+  }
+}
+
+export async function readInspectedGlobalBuffer(
+  context: LanceReadContext,
+  file: InspectedLanceFile,
+  index: number,
+): Promise<Uint8Array> {
+  const range = file.globalBuffers[index];
+  if (range === undefined) {
+    corrupt("Selected Lance global buffer is absent", {
+      path: file.path,
+      index,
+      globalBuffers: file.globalBuffers.length,
+    });
+  }
+  const lease = await context.readRange(file.path, range, "file_metadata", file.fileSize);
+  try {
+    return lease.slice(range).slice();
+  } finally {
+    lease.release();
   }
 }
 
@@ -321,6 +357,13 @@ interface BinaryCellPlan extends CellPlan {
   nullAdjustment: bigint;
 }
 
+interface FixedListCellPlan extends CellPlan {
+  flat: LanceFlatEncoding;
+  dimension: number;
+  itemLogicalType: "float" | "double";
+  validity?: LanceFlatEncoding;
+}
+
 async function executeCellPlans(
   context: LanceReadContext,
   path: string,
@@ -329,6 +372,7 @@ async function executeCellPlans(
 ): Promise<Map<number, Row>> {
   const output = new Map<number, Row>();
   const fixed: FixedCellPlan[] = [];
+  const fixedLists: FixedListCellPlan[] = [];
   const binary: BinaryCellPlan[] = [];
   const phaseOneRanges: ByteRange[] = [];
   for (const plan of cellPlans) {
@@ -346,6 +390,37 @@ async function executeCellPlans(
       };
       fixed.push(fixedPlan);
       phaseOneRanges.push(flatRange(plan.page, resolved.flat, plan.rowInPage));
+      if (resolved.validity !== undefined) {
+        validateValidity(resolved.validity, plan.page);
+        phaseOneRanges.push(flatRange(plan.page, resolved.validity, plan.rowInPage));
+      }
+      continue;
+    }
+    if (resolved.kind === "fixed_list") {
+      const listType = parseFixedSizeListType(plan.field.logicalType);
+      if (listType === undefined || listType.dimension !== resolved.dimension) {
+        unsupported("Unsupported Lance fixed-size-list logical type", {
+          logicalType: plan.field.logicalType,
+          encodedDimension: resolved.dimension,
+        });
+      }
+      validateFlat(resolved.flat, plan.page, listType.itemLogicalType);
+      const fixedListPlan: FixedListCellPlan = {
+        ...plan,
+        flat: resolved.flat,
+        dimension: resolved.dimension,
+        itemLogicalType: listType.itemLogicalType,
+        ...(resolved.validity === undefined ? {} : { validity: resolved.validity }),
+      };
+      fixedLists.push(fixedListPlan);
+      phaseOneRanges.push(
+        flatRangeSpan(
+          plan.page,
+          resolved.flat,
+          plan.rowInPage * resolved.dimension,
+          resolved.dimension,
+        ),
+      );
       if (resolved.validity !== undefined) {
         validateValidity(resolved.validity, plan.page);
         phaseOneRanges.push(flatRange(plan.page, resolved.validity, plan.rowInPage));
@@ -399,6 +474,35 @@ async function executeCellPlans(
           plan.field.logicalType,
         ),
       );
+    }
+    for (const plan of fixedLists) {
+      if (
+        plan.validity !== undefined &&
+        !readBit(phaseOne, flatRange(plan.page, plan.validity, plan.rowInPage), plan.rowInPage)
+      ) {
+        assignCell(output, plan.rowOffset, plan.field.name, null);
+        continue;
+      }
+      const range = flatRangeSpan(
+        plan.page,
+        plan.flat,
+        plan.rowInPage * plan.dimension,
+        plan.dimension,
+      );
+      const bytes = phaseOne.slice(range);
+      const values =
+        plan.itemLogicalType === "float"
+          ? new Float32Array(plan.dimension)
+          : new Float64Array(plan.dimension);
+      const view = dataView(bytes);
+      for (let index = 0; index < plan.dimension; index += 1) {
+        values[index] =
+          plan.itemLogicalType === "float"
+            ? view.getFloat32(index * 4, true)
+            : view.getFloat64(index * 8, true);
+      }
+      context.accountDecodedMemory(values.byteLength);
+      assignCell(output, plan.rowOffset, plan.field.name, values);
     }
     for (const plan of binary) {
       const endRaw = readFlatU64(phaseOne, plan.page, plan.indices, plan.rowInPage);
@@ -470,6 +574,12 @@ type ResolvedCellEncoding =
   | { kind: "all_nulls" }
   | { kind: "fixed"; flat: LanceFlatEncoding; validity?: LanceFlatEncoding }
   | {
+      kind: "fixed_list";
+      flat: LanceFlatEncoding;
+      dimension: number;
+      validity?: LanceFlatEncoding;
+    }
+  | {
       kind: "binary";
       indices: LanceFlatEncoding;
       bytes: LanceFlatEncoding;
@@ -490,6 +600,18 @@ function resolveCellEncoding(
     return {
       kind: "fixed",
       flat: encoding,
+      ...(validity === undefined ? {} : { validity }),
+    };
+  }
+  if (encoding.kind === "fixed_size_list") {
+    if (encoding.hasValidity) {
+      unsupported("Inline Lance fixed-size-list validity is not supported");
+    }
+    const flat = requireFlat(unwrapNoNulls(encoding.items), "fixed-size-list items");
+    return {
+      kind: "fixed_list",
+      flat,
+      dimension: encoding.dimension,
       ...(validity === undefined ? {} : { validity }),
     };
   }
@@ -554,19 +676,39 @@ function validateValidity(flat: LanceFlatEncoding, page: LancePage): void {
 }
 
 function flatRange(page: LancePage, flat: LanceFlatEncoding, rowInPage: number): ByteRange {
+  return flatRangeSpan(page, flat, rowInPage, 1);
+}
+
+function flatRangeSpan(
+  page: LancePage,
+  flat: LanceFlatEncoding,
+  firstValue: number,
+  valueCount: number,
+): ByteRange {
   const buffer = pageBuffer(page, flat);
-  const bitOffset = rowInPage * flat.bitsPerValue;
+  const bitOffset = firstValue * flat.bitsPerValue;
   if (!Number.isSafeInteger(bitOffset)) corrupt("Lance flat value offset is too large");
   const firstByte = Math.floor(bitOffset / 8);
-  const lastByte = Math.ceil((bitOffset + flat.bitsPerValue) / 8);
+  const lastByte = Math.ceil((bitOffset + flat.bitsPerValue * valueCount) / 8);
   if (lastByte > buffer.length) {
     corrupt("Lance flat value exceeds its page buffer", {
-      rowInPage,
+      firstValue,
+      valueCount,
       bitsPerValue: flat.bitsPerValue,
       bufferLength: buffer.length,
     });
   }
   return { offset: buffer.offset + firstByte, length: lastByte - firstByte };
+}
+
+function parseFixedSizeListType(
+  logicalType: string,
+): { itemLogicalType: "float" | "double"; dimension: number } | undefined {
+  const match = /^fixed_size_list:(float|double):(\d+)$/u.exec(logicalType);
+  if (match === null) return undefined;
+  const dimension = Number(match[2]);
+  if (!Number.isSafeInteger(dimension) || dimension <= 0) return undefined;
+  return { itemLogicalType: match[1] as "float" | "double", dimension };
 }
 
 function pageBuffer(page: LancePage, flat: LanceFlatEncoding): ByteRange {

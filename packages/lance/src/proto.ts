@@ -66,6 +66,7 @@ export interface LanceIndexMetadata {
   name: string;
   datasetVersion: bigint;
   detailsTypeUrl: string;
+  details?: Uint8Array;
   indexVersion?: number;
   files: LanceIndexFile[];
 }
@@ -74,6 +75,14 @@ export interface LanceFileDescriptor {
   fields: LanceField[];
   metadata: Record<string, Uint8Array>;
   length: number;
+}
+
+export interface LanceIvfMetadata {
+  offsets: number[];
+  lengths: number[];
+  centroids: Float32Array;
+  numPartitions: number;
+  dimension: number;
 }
 
 export interface LancePage {
@@ -93,6 +102,7 @@ export interface LanceColumnMetadata {
 export type LanceArrayEncoding =
   | LanceFlatEncoding
   | LanceNullableEncoding
+  | LanceFixedSizeListEncoding
   | LanceBinaryEncoding
   | LanceConstantEncoding;
 
@@ -120,6 +130,13 @@ export type LanceNullableEncoding =
       kind: "nullable";
       mode: "all_nulls";
     };
+
+export interface LanceFixedSizeListEncoding {
+  kind: "fixed_size_list";
+  dimension: number;
+  hasValidity: boolean;
+  items: LanceArrayEncoding;
+}
 
 export interface LanceBinaryEncoding {
   kind: "binary";
@@ -231,6 +248,76 @@ export function parseFileDescriptor(bytes: Uint8Array): LanceFileDescriptor {
   return { fields, metadata, length };
 }
 
+export function parseIvfMetadata(bytes: Uint8Array): LanceIvfMetadata {
+  const reader = new ProtoReader(bytes);
+  const offsets: number[] = [];
+  const lengths: number[] = [];
+  let tensor: { dataType: number; shape: number[]; data: Uint8Array } | undefined;
+  while (!reader.done) {
+    const key = reader.key();
+    if (key.field === 2) offsets.push(...reader.packedSafeIntegers(key.wire, "IVF offset"));
+    else if (key.field === 3) lengths.push(...reader.packedSafeIntegers(key.wire, "IVF length"));
+    else if (key.field === 4) tensor = parseTensor(reader.message(key.wire));
+    else reader.skip(key.wire);
+  }
+  if (offsets.length === 0 || offsets.length !== lengths.length) {
+    corrupt("Lance IVF partition tables are empty or inconsistent", {
+      offsets: offsets.length,
+      lengths: lengths.length,
+    });
+  }
+  if (tensor === undefined) {
+    return {
+      offsets,
+      lengths,
+      centroids: new Float32Array(),
+      numPartitions: offsets.length,
+      dimension: 0,
+    };
+  }
+  if (tensor.dataType !== 2 || tensor.shape.length !== 2) {
+    unsupported("Unsupported Lance IVF centroid tensor");
+  }
+  const numPartitions = tensor.shape[0] as number;
+  const dimension = tensor.shape[1] as number;
+  if (
+    numPartitions !== offsets.length ||
+    dimension <= 0 ||
+    tensor.data.byteLength !== numPartitions * dimension * 4
+  ) {
+    corrupt("Lance IVF centroid tensor shape is inconsistent", {
+      numPartitions,
+      dimension,
+      bytes: tensor.data.byteLength,
+    });
+  }
+  const centroids = new Float32Array(numPartitions * dimension);
+  const view = dataView(tensor.data);
+  for (let index = 0; index < centroids.length; index += 1) {
+    centroids[index] = view.getFloat32(index * 4, true);
+  }
+  return { offsets, lengths, centroids, numPartitions, dimension };
+}
+
+function parseTensor(bytes: Uint8Array): {
+  dataType: number;
+  shape: number[];
+  data: Uint8Array;
+} {
+  const reader = new ProtoReader(bytes);
+  let dataType = 0;
+  const shape: number[] = [];
+  let data: Uint8Array<ArrayBufferLike> = new Uint8Array();
+  while (!reader.done) {
+    const key = reader.key();
+    if (key.field === 1) dataType = reader.safeInteger(key.wire, "tensor data type");
+    else if (key.field === 2) shape.push(...reader.packedSafeIntegers(key.wire, "tensor shape"));
+    else if (key.field === 3) data = reader.bytesValue(key.wire);
+    else reader.skip(key.wire);
+  }
+  return { dataType, shape, data };
+}
+
 export function parseRowIdSequence(bytes: Uint8Array): LanceRowIdSegment[] {
   const reader = new ProtoReader(bytes);
   const segments: LanceRowIdSegment[] = [];
@@ -279,6 +366,7 @@ function parseIndexMetadata(bytes: Uint8Array): LanceIndexMetadata {
   let name = "";
   let datasetVersion = 0n;
   let detailsTypeUrl = "";
+  let details: Uint8Array | undefined;
   let indexVersion: number | undefined;
   const files: LanceIndexFile[] = [];
   while (!reader.done) {
@@ -297,7 +385,7 @@ function parseIndexMetadata(bytes: Uint8Array): LanceIndexMetadata {
         datasetVersion = reader.varint(key.wire);
         break;
       case 6:
-        detailsTypeUrl = parseAnyTypeUrl(reader.message(key.wire));
+        ({ typeUrl: detailsTypeUrl, value: details } = parseAny(reader.message(key.wire)));
         break;
       case 7:
         indexVersion = reader.int32(key.wire);
@@ -315,6 +403,7 @@ function parseIndexMetadata(bytes: Uint8Array): LanceIndexMetadata {
     name,
     datasetVersion,
     detailsTypeUrl,
+    ...(details === undefined ? {} : { details }),
     ...(indexVersion === undefined ? {} : { indexVersion }),
     files,
   };
@@ -336,15 +425,17 @@ function parseUuid(bytes: Uint8Array): string {
   )}-${hex.slice(20)}`;
 }
 
-function parseAnyTypeUrl(bytes: Uint8Array): string {
+function parseAny(bytes: Uint8Array): { typeUrl: string; value?: Uint8Array } {
   const reader = new ProtoReader(bytes);
   let typeUrl = "";
+  let value: Uint8Array | undefined;
   while (!reader.done) {
     const key = reader.key();
     if (key.field === 1) typeUrl = reader.string(key.wire);
+    else if (key.field === 2) value = reader.bytesValue(key.wire);
     else reader.skip(key.wire);
   }
-  return typeUrl;
+  return { typeUrl, ...(value === undefined ? {} : { value }) };
 }
 
 function parseIndexFile(bytes: Uint8Array): LanceIndexFile {
@@ -683,6 +774,9 @@ function parseArrayEncoding(bytes: Uint8Array): LanceArrayEncoding {
       case 2:
         encoding = parseNullable(reader.message(key.wire));
         break;
+      case 3:
+        encoding = parseFixedSizeList(reader.message(key.wire));
+        break;
       case 6:
         encoding = parseBinary(reader.message(key.wire));
         break;
@@ -695,6 +789,24 @@ function parseArrayEncoding(bytes: Uint8Array): LanceArrayEncoding {
   }
   if (encoding === undefined) corrupt("Lance ArrayEncoding is empty");
   return encoding;
+}
+
+function parseFixedSizeList(bytes: Uint8Array): LanceFixedSizeListEncoding {
+  const reader = new ProtoReader(bytes);
+  let dimension = 0;
+  let hasValidity = false;
+  let items: LanceArrayEncoding | undefined;
+  while (!reader.done) {
+    const key = reader.key();
+    if (key.field === 1) dimension = reader.safeInteger(key.wire, "fixed-size-list dimension");
+    else if (key.field === 2) items = parseArrayEncoding(reader.message(key.wire));
+    else if (key.field === 3) hasValidity = reader.varint(key.wire) !== 0n;
+    else reader.skip(key.wire);
+  }
+  if (dimension <= 0 || items === undefined) {
+    corrupt("Lance fixed-size-list encoding is incomplete", { dimension });
+  }
+  return { kind: "fixed_size_list", dimension, hasValidity, items };
 }
 
 function parseFlat(bytes: Uint8Array): LanceFlatEncoding {

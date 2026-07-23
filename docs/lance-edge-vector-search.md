@@ -525,6 +525,14 @@ milestone, not scan fallbacks.
 - Cosine, dot-product, and L2 approximate scoring.
 - IVF-flat reference scoring for correctness comparisons.
 
+The first vector slice implements the IVF-flat reference path against official
+vector-index V3 files. It discovers index segments from the immutable manifest,
+loads centroid and auxiliary partition metadata from Lance global buffers, reads
+only selected partitions, scores L2, cosine, and dot candidates in bounded chunks,
+and feeds stable IDs into projected materialization. Searching all partitions is
+an exact reference; lower `nprobes` values exercise the same bounded approximate
+partition-selection contract that IVF-PQ will use.
+
 ### Complete vector search result
 
 - Exact-vector refinement.

@@ -65,6 +65,36 @@ const result = await dataset.rangeRows({
 Either bound may be omitted. Results remain in BTree order and output-row budgets are checked from
 the binary-search bounds before stable IDs or projected data are fetched.
 
+Official Lance IVF_FLAT indexes support bounded vector search without native bindings:
+
+```ts
+const dataset = await openLanceDataset({
+  store,
+  path: "catalog.lance",
+  budget,
+  vectorLimits: {
+    maxDimension: 1_536,
+    maxPartitionsSearched: 16,
+    maxCandidatesScored: 50_000,
+  },
+});
+
+const result = await dataset.nearest({
+  snapshotId: dataset.snapshotId,
+  index: "embedding_ivf_flat",
+  vector: queryEmbedding,
+  k: 20,
+  nprobes: 8,
+  select: ["title", "url"],
+});
+```
+
+The reader selects IVF partitions from the official centroid tensor, reads only their auxiliary
+vector and stable-ID rows, scores candidates in memory-bounded chunks, retains a deterministic
+top-k, and materializes projected fields in distance order. L2, cosine, and Lance dot-distance
+semantics are supported. `nprobes` is explicit: searching every partition is exact, while fewer
+partitions trades recall for object-storage I/O.
+
 Store `dataset.snapshotId` with every external index generation. `takeRows` requires it and returns
 a typed `LAKEQL_LANCE_SNAPSHOT_MISMATCH` error before reading data if it does not match. Duplicate
 IDs and caller order are preserved. Missing and snapshot-deleted IDs throw by default; use
@@ -84,6 +114,10 @@ Official version-0 BTree indexes over the supported scalar key types are support
 equality and bounded range lookup. Null-key lookup, bitmap/label-list index variants, and index
 versions other than 0 remain explicit unsupported boundaries.
 
+Official vector index format V3 IVF_FLAT indexes (`index_version` 1) are supported for float32
+fixed-size-list columns. IVF_PQ, IVF_SQ, IVF_RQ, and HNSW layouts remain explicit unsupported
+boundaries; there is no brute-force dataset fallback when an unsupported index is selected.
+
 The reader deliberately rejects unsupported storage versions, compressed data pages, nested
 fields, Roaring-bitmap deletion files, and unknown encodings. It never silently scans a column,
 index, file, or dataset, and it rejects a data range that would read an entire Lance data file.
@@ -91,7 +125,8 @@ index, file, or dataset, and it rejects a data range that would read an entire L
 All metadata and data access flows through LakeQL's `ObjectStore`, cancellation, concurrency,
 cache, and query-budget contracts. The result reports snapshot/data metadata bytes, logical and
 physical bytes, range requests, fragments/pages touched, cache activity, requested, decoded, and
-materialized row counts, peak memory, and elapsed time.
+materialized row counts, peak memory, and elapsed time. Vector results additionally report selected
+partition IDs and candidates scored.
 
 ## Reproducing the fixture
 
@@ -104,4 +139,4 @@ python packages/lance/scripts/generate_fixture.py
 The generator records producer and storage versions, expected projections, stable row IDs, and
 SHA-256 hashes in each fixture's `expected.json`. The generated suite includes single- and
 multi-page BTree datasets so compatibility tests exercise page boundaries and bounded logarithmic
-reads.
+reads, plus L2, cosine, and dot IVF_FLAT indexes checked against official Lance ground truth.

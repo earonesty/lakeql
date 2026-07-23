@@ -2,7 +2,7 @@
   "name": "lakeql-lance",
   "sideEffects": false,
   "version": "0.1.0",
-  "description": "Bounded random-access Lance reader for JavaScript runtimes",
+  "description": "Bounded random-access and indexed Lance reader for JavaScript runtimes",
   "keywords": [
     "lance",
     "lakehouse",
