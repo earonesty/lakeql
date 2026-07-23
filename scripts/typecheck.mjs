@@ -37,3 +37,9 @@ for (const project of projects) {
   });
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
+
+const workerdResult = spawnSync("pnpm", ["exec", "tsc", "-p", "tsconfig.workerd.json"], {
+  stdio: "inherit",
+  shell: process.platform === "win32",
+});
+if (workerdResult.status !== 0) process.exit(workerdResult.status ?? 1);

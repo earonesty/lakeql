@@ -690,7 +690,7 @@ canonical embedding Parquet. Text, image, and blended-concept queries retrieve
 nearby works while scalar filters constrain period, medium, country, and
 collection.
 
-The cold accelerated path performs IVF candidate planning on the CPU, range-reads
+The cold-accelerated path performs IVF candidate planning on the CPU, range-reads
 packed PQ codes for selected partitions, evaluates asymmetric distance and top-k
 on WebGPU, optionally refines retained candidates against exact vectors, then
 materializes only selected records. The warm path may keep all compact codes and
