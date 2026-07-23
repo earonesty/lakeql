@@ -254,11 +254,43 @@ function gatherVector(vector: Vector, indices: readonly number[]): Vector {
   switch (vector.type) {
     case "null":
       return { type: "null", length: indices.length };
+    case "f32":
+      return optionalValidity(
+        {
+          type: vector.type,
+          values: Float32Array.from(indices, (index) => vector.values[index] ?? 0),
+        },
+        valid,
+      );
     case "f64":
       return optionalValidity(
         {
           type: vector.type,
           values: Float64Array.from(indices, (index) => vector.values[index] ?? 0),
+        },
+        valid,
+      );
+    case "i32":
+      return optionalValidity(
+        {
+          type: vector.type,
+          values: Int32Array.from(indices, (index) => vector.values[index] ?? 0),
+        },
+        valid,
+      );
+    case "u32":
+      return optionalValidity(
+        {
+          type: vector.type,
+          values: Uint32Array.from(indices, (index) => vector.values[index] ?? 0),
+        },
+        valid,
+      );
+    case "u8":
+      return optionalValidity(
+        {
+          type: vector.type,
+          values: Uint8Array.from(indices, (index) => vector.values[index] ?? 0),
         },
         valid,
       );
@@ -340,12 +372,52 @@ function concatVectors(name: string, vectors: readonly Vector[]): Vector {
         type: "null",
         length: vectors.reduce((sum, vector) => sum + vectorLength(vector), 0),
       };
+    case "f32":
+      return optionalValidity(
+        {
+          type: first.type,
+          values: concatTypedArrays(
+            vectors.map((vector) => requireVectorType(vector, "f32").values),
+          ),
+        },
+        valid,
+      );
     case "f64":
       return optionalValidity(
         {
           type: first.type,
           values: concatTypedArrays(
             vectors.map((vector) => requireVectorType(vector, "f64").values),
+          ),
+        },
+        valid,
+      );
+    case "i32":
+      return optionalValidity(
+        {
+          type: first.type,
+          values: concatTypedArrays(
+            vectors.map((vector) => requireVectorType(vector, "i32").values),
+          ),
+        },
+        valid,
+      );
+    case "u32":
+      return optionalValidity(
+        {
+          type: first.type,
+          values: concatTypedArrays(
+            vectors.map((vector) => requireVectorType(vector, "u32").values),
+          ),
+        },
+        valid,
+      );
+    case "u8":
+      return optionalValidity(
+        {
+          type: first.type,
+          values: concatTypedArrays(
+            vectors.map((vector) => requireVectorType(vector, "u8").values),
           ),
         },
         valid,
@@ -462,9 +534,9 @@ function requireVectorType<T extends Vector["type"]>(
   return vector as Extract<Vector, { type: T }>;
 }
 
-function concatTypedArrays<T extends Float64Array | Uint8Array | Uint32Array>(
-  arrays: readonly T[],
-): T {
+function concatTypedArrays<
+  T extends Float32Array | Float64Array | Int32Array | Uint8Array | Uint32Array,
+>(arrays: readonly T[]): T {
   const length = arrays.reduce((sum, array) => sum + array.length, 0);
   const first = arrays[0];
   if (first === undefined) {

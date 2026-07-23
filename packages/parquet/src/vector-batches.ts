@@ -889,9 +889,29 @@ function sliceVector(vector: Vector, start: number, end: number): Vector {
   switch (vector.type) {
     case "null":
       return { type: "null", length: end - start };
+    case "f32":
+      return optionalVectorValidity(
+        { type: "f32", values: vector.values.subarray(start, end) },
+        valid,
+      );
     case "f64":
       return optionalVectorValidity(
         { type: "f64", values: vector.values.subarray(start, end) },
+        valid,
+      );
+    case "i32":
+      return optionalVectorValidity(
+        { type: "i32", values: vector.values.subarray(start, end) },
+        valid,
+      );
+    case "u32":
+      return optionalVectorValidity(
+        { type: "u32", values: vector.values.subarray(start, end) },
+        valid,
+      );
+    case "u8":
+      return optionalVectorValidity(
+        { type: "u8", values: vector.values.subarray(start, end) },
         valid,
       );
     case "i64":
@@ -969,20 +989,10 @@ function dictionaryPageVector(
 function nonNullFlatVector(values: DecodedArray, start: number, end: number): Vector {
   const length = end - start;
   if (values instanceof Float64Array) return { type: "f64", values: values.subarray(start, end) };
-  if (values instanceof Float32Array) {
-    const out = new Float64Array(length);
-    for (let index = 0; index < length; index += 1) out[index] = values[start + index] ?? 0;
-    return { type: "f64", values: out };
-  }
-  if (
-    values instanceof Int32Array ||
-    values instanceof Uint32Array ||
-    values instanceof Uint8Array
-  ) {
-    const out = new Float64Array(length);
-    for (let index = 0; index < length; index += 1) out[index] = values[start + index] ?? 0;
-    return { type: "f64", values: out };
-  }
+  if (values instanceof Float32Array) return { type: "f32", values: values.subarray(start, end) };
+  if (values instanceof Int32Array) return { type: "i32", values: values.subarray(start, end) };
+  if (values instanceof Uint32Array) return { type: "u32", values: values.subarray(start, end) };
+  if (values instanceof Uint8Array) return { type: "u8", values: values.subarray(start, end) };
   if (values instanceof BigInt64Array) return { type: "i64", values: values.subarray(start, end) };
   if (values instanceof BigUint64Array) {
     const out = new BigInt64Array(length);
@@ -1001,18 +1011,40 @@ function nullableFlatVector(
 ): Vector {
   const length = end - start;
   const valid = new Uint8Array(length);
-  if (
-    values instanceof Float64Array ||
-    values instanceof Float32Array ||
-    values instanceof Int32Array ||
-    values instanceof Uint32Array ||
-    values instanceof Uint8Array
-  ) {
+  if (values instanceof Float64Array) {
     const out = new Float64Array(length);
     copyNullableValues(definitionLevels, start, end, valid, (outIndex, valueIndex) => {
       out[outIndex] = Number(values[valueIndex] ?? 0);
     });
     return optionalVectorValidity({ type: "f64", values: out }, valid);
+  }
+  if (values instanceof Float32Array) {
+    const out = new Float32Array(length);
+    copyNullableValues(definitionLevels, start, end, valid, (outIndex, valueIndex) => {
+      out[outIndex] = values[valueIndex] ?? 0;
+    });
+    return optionalVectorValidity({ type: "f32", values: out }, valid);
+  }
+  if (values instanceof Int32Array) {
+    const out = new Int32Array(length);
+    copyNullableValues(definitionLevels, start, end, valid, (outIndex, valueIndex) => {
+      out[outIndex] = values[valueIndex] ?? 0;
+    });
+    return optionalVectorValidity({ type: "i32", values: out }, valid);
+  }
+  if (values instanceof Uint32Array) {
+    const out = new Uint32Array(length);
+    copyNullableValues(definitionLevels, start, end, valid, (outIndex, valueIndex) => {
+      out[outIndex] = values[valueIndex] ?? 0;
+    });
+    return optionalVectorValidity({ type: "u32", values: out }, valid);
+  }
+  if (values instanceof Uint8Array) {
+    const out = new Uint8Array(length);
+    copyNullableValues(definitionLevels, start, end, valid, (outIndex, valueIndex) => {
+      out[outIndex] = values[valueIndex] ?? 0;
+    });
+    return optionalVectorValidity({ type: "u8", values: out }, valid);
   }
   if (values instanceof BigInt64Array || values instanceof BigUint64Array) {
     const out = new BigInt64Array(length);

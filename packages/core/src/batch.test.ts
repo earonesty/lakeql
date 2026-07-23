@@ -68,6 +68,9 @@ describe("column batches", () => {
   it("rejects ragged columns and mixed primitive types", () => {
     expect(() => batchFromColumns({ a: [1], b: [1, 2] })).toThrowError(LakeqlError);
     expect(() => batchFromColumns({ a: [1, "two"] })).toThrowError(LakeqlError);
+    expect(() =>
+      batchFromColumns({ occurredAt: [timestampFromEpoch(1n, "millis", true), 2] }),
+    ).toThrowError(LakeqlError);
     expect(() => batchFromColumns({ a: [Symbol("x")] })).toThrowError(
       expect.objectContaining({
         code: "LAKEQL_TYPE_ERROR",
@@ -264,7 +267,11 @@ describe("column batches", () => {
     const dictionary = batchFromColumns({ value: ["a", "b"] }).columns.value;
     if (dictionary === undefined) throw new Error("missing dictionary vector");
     const batch = batchFromVectors({
+      f32: { type: "f32", values: new Float32Array([1.5, 2.5, 3.5]) },
       f64: { type: "f64", values: new Float64Array([1, 2, 3]), valid: new Uint8Array([1, 0, 1]) },
+      i32: { type: "i32", values: new Int32Array([-2, 0, 2]) },
+      u32: { type: "u32", values: new Uint32Array([0, 2 ** 31, 2 ** 32 - 1]) },
+      u8: { type: "u8", values: new Uint8Array([0, 127, 255]) },
       i64: { type: "i64", values: new BigInt64Array([1n, 2n, 3n]) },
       bool: { type: "bool", values: new Uint8Array([1, 0, 1]) },
       utf8: { type: "utf8", values: ["a", "b", "c"] },
@@ -276,25 +283,59 @@ describe("column batches", () => {
         unit: "millis",
         isAdjustedToUTC: true,
       },
+      loaded_micros: {
+        type: "timestamp",
+        values: new BigInt64Array([1_000_001n, 1_000_002n, 1_000_003n]),
+        unit: "micros",
+        isAdjustedToUTC: true,
+      },
+      loaded_nanos: {
+        type: "timestamp",
+        values: new BigInt64Array([1_000_000_001n, 1_000_000_002n, 1_000_000_003n]),
+        unit: "nanos",
+        isAdjustedToUTC: true,
+      },
     });
 
     expect(vectorValue(batch.columns.f64 ?? { type: "null", length: 0 }, 1)).toBeNull();
+    expect(vectorValue(batch.columns.f32 ?? { type: "null", length: 0 }, 2)).toBe(3.5);
+    expect(vectorValue(batch.columns.i32 ?? { type: "null", length: 0 }, 0)).toBe(-2);
+    expect(vectorValue(batch.columns.u32 ?? { type: "null", length: 0 }, 2)).toBe(2 ** 32 - 1);
+    expect(vectorValue(batch.columns.u8 ?? { type: "null", length: 0 }, 2)).toBe(255);
     expect(vectorValue(batch.columns.i64 ?? { type: "null", length: 0 }, 2)).toBe(3n);
     expect(vectorValue(batch.columns.bool ?? { type: "null", length: 0 }, 1)).toBe(false);
     expect(vectorValue(batch.columns.utf8 ?? { type: "null", length: 0 }, 2)).toBe("c");
     expect(vectorValue(batch.columns.dict ?? { type: "null", length: 0 }, 1)).toBe("b");
     expect(vectorValue(batch.columns.nulls ?? { type: "null", length: 0 }, 0)).toBeNull();
+    expect(
+      vectorValue(batch.columns.loaded_micros ?? { type: "null", length: 0 }, 0),
+    ).toMatchObject({ epochNanoseconds: 1_000_001_000n, unit: "micros" });
+    expect(vectorValue(batch.columns.loaded_nanos ?? { type: "null", length: 0 }, 0)).toMatchObject(
+      {
+        epochNanoseconds: 1_000_000_001n,
+        unit: "nanos",
+      },
+    );
     expect(() => vectorValue(batch.columns.f64 ?? { type: "null", length: 0 }, -1)).toThrowError(
       LakeqlError,
     );
 
     const predicates = [
       [eq("f64", 3), [2]],
+      [gt("f32", 2), [1, 2]],
+      [lt("i32", 0), [0]],
+      [gte("u32", 2 ** 31), [1, 2]],
+      [lte("u8", 127), [0, 1]],
       [ne("utf8", "b"), [0, 2]],
       [lt("i64", 3), [0, 1]],
       [lte("i64", 2n), [0, 1]],
       [gte("i64", 2), [1, 2]],
       [gt(lit(2), col("f64")), [0]],
+      [gte(lit(3), col("f32")), [0, 1]],
+      [lt(lit(2), col("i32")), []],
+      [lte(lit(2 ** 31), col("u32")), [1, 2]],
+      [eq(lit(127), col("u8")), [1]],
+      [ne(lit(127), col("u8")), [0, 2]],
       [eq("dict", "a"), [0, 2]],
       [notIn("utf8", ["a", lit(null)]), []],
       [gt("loaded_at", "2023-11-14T22:13:20.500Z"), [2]],
@@ -305,6 +346,9 @@ describe("column batches", () => {
         expectedRows.map((index) => materializeBatchRows(batch)[index]),
       );
     }
+    expect(() => predicateSelection(batch, gt("loaded_at", 2))).toThrowError(
+      expect.objectContaining({ code: "LAKEQL_TYPE_ERROR" }),
+    );
   });
 
   it("evaluates every arithmetic vector expression operator and preserves null semantics", () => {

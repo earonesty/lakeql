@@ -13,7 +13,11 @@ import type { Row } from "./types.js";
 
 export type Vector =
   | { type: "null"; length: number }
+  | { type: "f32"; values: Float32Array; valid?: Uint8Array }
   | { type: "f64"; values: Float64Array; valid?: Uint8Array }
+  | { type: "i32"; values: Int32Array; valid?: Uint8Array }
+  | { type: "u32"; values: Uint32Array; valid?: Uint8Array }
+  | { type: "u8"; values: Uint8Array; valid?: Uint8Array }
   | { type: "i64"; values: BigInt64Array; valid?: Uint8Array }
   | {
       type: "timestamp";
@@ -38,7 +42,7 @@ export interface Batch {
 export type Selection = Uint8Array;
 
 type VectorValue = unknown;
-type VectorShape = Exclude<Vector["type"], "dict">;
+type VectorShape = Exclude<Vector["type"], "dict" | "f32" | "i32" | "u32" | "u8">;
 
 export function batchFromColumns(columns: Record<string, ArrayLike<VectorValue>>): Batch {
   let rowCount: number | undefined;
@@ -198,7 +202,11 @@ export function vectorValue(
   switch (vector.type) {
     case "null":
       return null;
+    case "f32":
     case "f64":
+    case "i32":
+    case "u32":
+    case "u8":
       return vector.values[index] ?? 0;
     case "i64":
       return vector.values[index] ?? 0n;
@@ -255,6 +263,10 @@ export function vectorLength(vector: Vector): number {
     case "map":
       return Math.max(0, vector.offsets.length - 1);
     case "f64":
+    case "f32":
+    case "i32":
+    case "u32":
+    case "u8":
     case "i64":
     case "timestamp":
     case "bool":
@@ -630,7 +642,11 @@ export function scalarVectorValue(vector: Vector, index: number): Scalar {
   switch (vector.type) {
     case "null":
       return null;
+    case "f32":
     case "f64":
+    case "i32":
+    case "u32":
+    case "u8":
       return vector.values[index] ?? 0;
     case "i64":
       return vector.values[index] ?? 0n;
@@ -707,8 +723,8 @@ function compareVectorLiteralMasks(
 ): Uint8Array | undefined {
   if (literal === null) return nullCompareMask(vectorLength(vector));
   if (vector.type === "dict") return compareDictLiteralMasks(op, vector, literal);
-  if (vector.type === "f64" && typeof literal === "number") {
-    return compareF64LiteralMasks(op, vector, literal);
+  if (isNumberVector(vector) && typeof literal === "number") {
+    return compareNumberLiteralMasks(op, vector, literal);
   }
   if (vector.type === "i64" && typeof literal === "bigint") {
     return compareI64LiteralMasks(op, vector, literal);
@@ -742,9 +758,21 @@ function compareDictLiteralMasks(
   return mask;
 }
 
-function compareF64LiteralMasks(
+type NumberVector = Extract<Vector, { type: "f32" | "f64" | "i32" | "u32" | "u8" }>;
+
+function isNumberVector(vector: Vector): vector is NumberVector {
+  return (
+    vector.type === "f32" ||
+    vector.type === "f64" ||
+    vector.type === "i32" ||
+    vector.type === "u32" ||
+    vector.type === "u8"
+  );
+}
+
+function compareNumberLiteralMasks(
   op: CompareOp,
-  vector: Extract<Vector, { type: "f64" }>,
+  vector: NumberVector,
   literal: number,
 ): Uint8Array {
   const mask = new Uint8Array(vector.values.length);

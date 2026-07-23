@@ -200,7 +200,11 @@ function createGroupKeyEncoder(keys: readonly string[], batch: Batch): GroupKeyE
 function canEncodeScalarVector(vector: Vector): boolean {
   switch (vector.type) {
     case "null":
+    case "f32":
     case "f64":
+    case "i32":
+    case "u32":
+    case "u8":
     case "i64":
     case "timestamp":
     case "bool":
@@ -363,7 +367,11 @@ function vectorGroupKeyPart(vector: Vector, index: number): string {
   switch (vector.type) {
     case "null":
       return scalarGroupKeyPart(null);
+    case "f32":
     case "f64":
+    case "i32":
+    case "u32":
+    case "u8":
       return scalarGroupKeyPart(vector.values[index] ?? 0);
     case "i64":
       return scalarGroupKeyPart(vector.values[index] ?? 0n);
@@ -534,15 +542,26 @@ function directAggregateInput(
       column: aggregate.column,
     });
   }
-  if (aggregate.op === "sum" && vector.type === "f64") return directF64SumInput(alias, vector);
-  if (aggregate.op === "avg" && vector.type === "f64") return directF64AvgInput(alias, vector);
+  if (aggregate.op === "sum" && isDirectNumberVector(vector))
+    return directNumberSumInput(alias, vector);
+  if (aggregate.op === "avg" && isDirectNumberVector(vector))
+    return directNumberAvgInput(alias, vector);
   return undefined;
 }
 
-function directF64SumInput(
-  alias: string,
-  vector: Extract<Vector, { type: "f64" }>,
-): AggregateInput {
+type DirectNumberVector = Extract<Vector, { type: "f32" | "f64" | "i32" | "u32" | "u8" }>;
+
+function isDirectNumberVector(vector: Vector): vector is DirectNumberVector {
+  return (
+    vector.type === "f32" ||
+    vector.type === "f64" ||
+    vector.type === "i32" ||
+    vector.type === "u32" ||
+    vector.type === "u8"
+  );
+}
+
+function directNumberSumInput(alias: string, vector: DirectNumberVector): AggregateInput {
   const values = vector.values;
   const valid = vector.valid;
   return {
@@ -557,10 +576,7 @@ function directF64SumInput(
   };
 }
 
-function directF64AvgInput(
-  alias: string,
-  vector: Extract<Vector, { type: "f64" }>,
-): AggregateInput {
+function directNumberAvgInput(alias: string, vector: DirectNumberVector): AggregateInput {
   const values = vector.values;
   const valid = vector.valid;
   return {
