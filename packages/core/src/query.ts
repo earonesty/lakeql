@@ -4009,6 +4009,10 @@ function estimatePhysicalOutputBytes(
         ? Math.max(16, Object.keys(reduce.aggregates).length * 32)
         : 32;
     }
+    case "vector-candidates": {
+      const topK = operators.at(-1);
+      return topK?.kind === "bounded-top-k" ? topK.limit * 16 : batch.rowCount * 16;
+    }
     case "grouped-aggregate-snapshot":
     case "batch":
     case "resident":

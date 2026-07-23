@@ -34,6 +34,7 @@ export function compileWebGpuReduction(fragment: PhysicalFragment): WebGpuReduct
   if (
     reduce?.kind !== "reduce" ||
     fragment.output.kind !== "aggregate-snapshot" ||
+    fragment.input.kind !== "batch" ||
     prefix.some((operator) => operator.kind !== "select") ||
     prefix.length > 1
   ) {

@@ -20,6 +20,7 @@ export * from "./store.js";
 export * from "./timestamp.js";
 export * from "./types.js";
 export * from "./vector-aggregate.js";
+export * from "./vector-candidate.js";
 export * from "./vector-group-by.js";
 export * from "./vector-join.js";
 export * from "./vector-project.js";

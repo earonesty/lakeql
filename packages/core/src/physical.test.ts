@@ -157,6 +157,110 @@ describe("physical execution", () => {
     ]);
   });
 
+  it("executes exact vector distance and bounded top-k through the generic backend", async () => {
+    const block = {
+      rowCount: 4,
+      dimensions: 2,
+      vectors: Float32Array.of(1, 0, 0, 1, 1, 1, -1, 0),
+      rowIdsLow: Uint32Array.of(10, 11, 12, 13),
+      rowIdsHigh: Uint32Array.of(2, 2, 2, 2),
+    };
+    const fragment: PhysicalFragment = {
+      id: "vector-candidates",
+      input: {
+        kind: "vector-candidates",
+        rowCount: 4,
+        dimensions: 2,
+        encoding: "f32",
+        sourceIdentity: "vectors:etag",
+      },
+      operators: [
+        { kind: "vector-distance", query: [1, 0], metric: "dot" },
+        { kind: "bounded-top-k", limit: 2 },
+      ],
+      output: { kind: "vector-candidates" },
+      estimates: {
+        rowCount: 4,
+        inputBytes: 64,
+        outputBytes: 32,
+        dispatchCount: 1,
+      },
+    };
+    const backend = new CpuPhysicalBackend();
+    const result = await backend.execute(
+      await backend.compile(fragment),
+      { kind: "vector-candidates", block, sourceIdentity: "vectors:etag" },
+      {},
+    );
+    expect(result.output).toEqual({
+      kind: "vector-candidates",
+      candidates: {
+        rowIdsLow: Uint32Array.of(10, 12),
+        rowIdsHigh: Uint32Array.of(2, 2),
+        scores: Float32Array.of(1, 1),
+        sourceIndices: Uint32Array.of(0, 2),
+      },
+    });
+    expect(result.metrics).toMatchObject({
+      inputRows: 4,
+      selectedRows: 4,
+      outputRows: 2,
+      dispatches: 0,
+    });
+
+    for (const invalid of [
+      {
+        ...fragment,
+        operators: [
+          { kind: "vector-distance" as const, query: [0.1, 0], metric: "dot" as const },
+          { kind: "bounded-top-k" as const, limit: 2 },
+        ],
+      },
+      {
+        ...fragment,
+        operators: [
+          { kind: "vector-distance" as const, query: [1, 0], metric: "dot" as const },
+          { kind: "bounded-top-k" as const, limit: -1 },
+        ],
+      },
+      {
+        ...fragment,
+        operators: [{ kind: "bounded-top-k" as const, limit: 2 }],
+      },
+    ]) {
+      expect(backend.assess(invalid, {}).supported).toBe(false);
+    }
+    const compiled = await backend.compile(fragment);
+    await expect(
+      backend.execute(
+        compiled,
+        {
+          kind: "vector-candidates",
+          block: { ...block, dimensions: 1 },
+          sourceIdentity: "vectors:etag",
+        },
+        {},
+      ),
+    ).rejects.toMatchObject({ code: "LAKEQL_TYPE_ERROR" });
+    await expect(
+      backend.execute(compiled, { kind: "vector-candidates", block, sourceIdentity: "wrong" }, {}),
+    ).rejects.toMatchObject({ code: "LAKEQL_VALIDATION_ERROR" });
+    await expect(
+      backend.execute(
+        compiled,
+        { kind: "vector-candidates", block, sourceIdentity: "vectors:etag" },
+        { budget: { maxOutputRows: 1 } },
+      ),
+    ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+    await expect(
+      backend.execute(
+        compiled,
+        { kind: "vector-candidates", block, sourceIdentity: "vectors:etag" },
+        { budget: { maxElapsedMs: 0 }, now: clock() },
+      ),
+    ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  });
+
   it("executes stable order, top-k, selection, and index outputs", async () => {
     const batch = batchFromColumns({
       id: [1, 2, 3, 4],

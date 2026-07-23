@@ -18,6 +18,14 @@ import {
   type VectorAggregateStateSnapshots,
 } from "./vector-aggregate.js";
 import {
+  type PhysicalScoredCandidates,
+  type PhysicalVectorCandidateBlock,
+  type PhysicalVectorMetric,
+  physicalVectorCandidateBytes,
+  scorePhysicalVectorCandidates,
+  validatePhysicalVectorCandidateBlock,
+} from "./vector-candidate.js";
+import {
   createVectorGroupByState,
   restoreVectorGroupByState,
   snapshotVectorGroupByState,
@@ -53,7 +61,18 @@ export interface PhysicalResidentInput extends PhysicalInputBase {
   cacheKey: string;
 }
 
-export type PhysicalInput = PhysicalBatchInput | PhysicalResidentInput;
+export interface PhysicalVectorCandidateInput {
+  kind: "vector-candidates";
+  rowCount: number;
+  dimensions: number;
+  encoding: "f32";
+  sourceIdentity?: string;
+}
+
+export type PhysicalInput =
+  | PhysicalBatchInput
+  | PhysicalResidentInput
+  | PhysicalVectorCandidateInput;
 
 export interface PhysicalSelect {
   kind: "select";
@@ -90,13 +109,26 @@ export interface PhysicalTopK {
   offset?: number;
 }
 
+export interface PhysicalVectorDistance {
+  kind: "vector-distance";
+  query: readonly number[];
+  metric: PhysicalVectorMetric;
+}
+
+export interface PhysicalBoundedTopK {
+  kind: "bounded-top-k";
+  limit: number;
+}
+
 export type PhysicalOperator =
   | PhysicalSelect
   | PhysicalProject
   | PhysicalReduce
   | PhysicalGroupedReduce
   | PhysicalOrder
-  | PhysicalTopK;
+  | PhysicalTopK
+  | PhysicalVectorDistance
+  | PhysicalBoundedTopK;
 
 export type PhysicalOperatorKind = PhysicalOperator["kind"];
 
@@ -106,6 +138,7 @@ export type PhysicalOutput =
   | { kind: "indices" }
   | { kind: "aggregate-snapshot" }
   | { kind: "grouped-aggregate-snapshot" }
+  | { kind: "vector-candidates" }
   | { kind: "resident"; representation: string };
 
 export interface PhysicalEstimates {
@@ -234,6 +267,11 @@ export type PhysicalFragmentInput =
       cacheKey: string;
       rowCount: number;
       handle: unknown;
+    }
+  | {
+      kind: "vector-candidates";
+      block: PhysicalVectorCandidateBlock;
+      sourceIdentity?: string;
     };
 
 export type PhysicalOutputValue =
@@ -242,6 +280,7 @@ export type PhysicalOutputValue =
   | { kind: "indices"; indices: Uint32Array }
   | { kind: "aggregate-snapshot"; snapshot: VectorAggregateStateSnapshots }
   | { kind: "grouped-aggregate-snapshot"; snapshot: VectorGroupByStateSnapshot }
+  | { kind: "vector-candidates"; candidates: PhysicalScoredCandidates }
   | { kind: "resident"; representation: string; handle: unknown };
 
 export interface PhysicalExecutionMetrics {
@@ -333,6 +372,8 @@ const CPU_OPERATOR_KINDS: readonly PhysicalOperatorKind[] = [
   "grouped-reduce",
   "order",
   "top-k",
+  "vector-distance",
+  "bounded-top-k",
 ];
 
 const CPU_CAPABILITIES: PhysicalCapabilities = {
@@ -349,6 +390,7 @@ const CPU_CAPABILITIES: PhysicalCapabilities = {
     ["select", "project", "grouped-reduce"],
     ["select", "order", "project"],
     ["select", "top-k", "project"],
+    ["vector-distance", "bounded-top-k"],
   ],
   vectorShapes: CPU_VECTOR_SHAPES,
   semantics: {
@@ -402,6 +444,9 @@ export class CpuPhysicalBackend implements PhysicalExecutionBackend {
         { replayable: false, details: { compiledBackendId: compiled.backendId } },
       );
     }
+    if (input.kind === "vector-candidates") {
+      return executeCpuVectorFragment(this.id, compiled.fragment, input, context);
+    }
     if (input.kind !== "batch") {
       throw new PhysicalBackendExecutionError(this.id, "CPU backend requires a batch input", {
         replayable: false,
@@ -413,6 +458,12 @@ export class CpuPhysicalBackend implements PhysicalExecutionBackend {
     const budget = context.budget;
     const aggregateOptions = budget === undefined ? {} : { budget };
     throwIfAborted(budget?.signal);
+    if (compiled.fragment.input.kind !== "batch") {
+      throw new LakeqlError(
+        "LAKEQL_TYPE_ERROR",
+        "Physical batch input does not match the compiled fragment",
+      );
+    }
     validateRuntimeInput(compiled.fragment.input, input);
 
     let batch = input.batch;
@@ -774,6 +825,33 @@ export function validatePhysicalFragment(fragment: PhysicalFragment): BackendRej
       });
     }
     if (
+      operator.kind === "bounded-top-k" &&
+      (!nonNegativeInteger(operator.limit) || operator.limit > 0xffff_ffff)
+    ) {
+      reasons.push({
+        code: "limit",
+        message: "Physical bounded top-k limit must fit an unsigned 32-bit integer",
+        operatorIndex,
+        details: { limit: operator.limit },
+      });
+    }
+    if (operator.kind === "vector-distance") {
+      const dimensions =
+        fragment.input.kind === "vector-candidates" ? fragment.input.dimensions : undefined;
+      if (
+        dimensions === undefined ||
+        operator.query.length !== dimensions ||
+        operator.query.some((value) => !Number.isFinite(value) || Math.fround(value) !== value)
+      ) {
+        reasons.push({
+          code: "input-shape",
+          message: "Physical vector query must contain finite f32 values matching input dimensions",
+          operatorIndex,
+          details: { expectedDimensions: dimensions, actualDimensions: operator.query.length },
+        });
+      }
+    }
+    if (
       operator.kind === "grouped-reduce" &&
       operator.maxGroups !== undefined &&
       !nonNegativeInteger(operator.maxGroups)
@@ -787,6 +865,26 @@ export function validatePhysicalFragment(fragment: PhysicalFragment): BackendRej
     }
   });
   const last = fragment.operators.at(-1);
+  const vectorDistance = fragment.operators.findIndex(
+    (operator) => operator.kind === "vector-distance",
+  );
+  const boundedTopK = fragment.operators.findIndex((operator) => operator.kind === "bounded-top-k");
+  if (
+    (vectorDistance >= 0 || boundedTopK >= 0 || fragment.output.kind === "vector-candidates") &&
+    !(
+      fragment.input.kind === "vector-candidates" &&
+      vectorDistance === 0 &&
+      boundedTopK === 1 &&
+      fragment.operators.length === 2 &&
+      fragment.output.kind === "vector-candidates"
+    )
+  ) {
+    reasons.push({
+      code: "sequence",
+      message:
+        "Vector candidate fragments require vector-candidates input, vector-distance -> bounded-top-k, and vector-candidates output",
+    });
+  }
   if (fragment.output.kind === "aggregate-snapshot" && last?.kind !== "reduce") {
     reasons.push({
       code: "output",
@@ -813,8 +911,11 @@ export function validatePhysicalFragment(fragment: PhysicalFragment): BackendRej
 
 function validateCpuPlacement(fragment: PhysicalFragment): BackendRejection[] {
   const reasons: BackendRejection[] = [];
-  if (fragment.input.kind !== "batch") {
-    reasons.push({ code: "input-shape", message: "CPU backend requires decoded batch input" });
+  if (fragment.input.kind !== "batch" && fragment.input.kind !== "vector-candidates") {
+    reasons.push({
+      code: "input-shape",
+      message: "CPU backend requires decoded batch or vector candidate input",
+    });
   }
   if (fragment.output.kind === "resident") {
     reasons.push({ code: "output", message: "CPU backend cannot produce resident output" });
@@ -835,7 +936,7 @@ function unsupportedBackend(
 }
 
 function validateRuntimeInput(
-  expected: PhysicalInput,
+  expected: PhysicalBatchInput,
   actual: Extract<PhysicalFragmentInput, { kind: "batch" }>,
 ): void {
   if (expected.rowCount !== actual.batch.rowCount) {
@@ -870,6 +971,109 @@ function validateRuntimeInput(
       actual: actual.sourceIdentity,
     });
   }
+}
+
+function executeCpuVectorFragment(
+  backendId: string,
+  fragment: PhysicalFragment,
+  input: Extract<PhysicalFragmentInput, { kind: "vector-candidates" }>,
+  context: BackendExecutionContext,
+): PhysicalFragmentResult {
+  const now = context.now ?? (() => Date.now());
+  const startedAt = now();
+  throwIfAborted(context.budget?.signal);
+  if (fragment.input.kind !== "vector-candidates") {
+    throw new LakeqlError(
+      "LAKEQL_TYPE_ERROR",
+      "Physical vector input does not match the compiled fragment",
+    );
+  }
+  validatePhysicalVectorCandidateBlock(input.block);
+  if (
+    input.block.rowCount !== fragment.input.rowCount ||
+    input.block.dimensions !== fragment.input.dimensions
+  ) {
+    throw new LakeqlError(
+      "LAKEQL_TYPE_ERROR",
+      "Physical vector candidate shape changed after planning",
+      {
+        expectedRows: fragment.input.rowCount,
+        actualRows: input.block.rowCount,
+        expectedDimensions: fragment.input.dimensions,
+        actualDimensions: input.block.dimensions,
+      },
+    );
+  }
+  if (
+    fragment.input.sourceIdentity !== undefined &&
+    fragment.input.sourceIdentity !== input.sourceIdentity
+  ) {
+    throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Physical input source identity changed", {
+      expected: fragment.input.sourceIdentity,
+      actual: input.sourceIdentity,
+    });
+  }
+  const distance = fragment.operators[0];
+  const topK = fragment.operators[1];
+  if (distance?.kind !== "vector-distance" || topK?.kind !== "bounded-top-k") {
+    throw new LakeqlError(
+      "LAKEQL_PHYSICAL_BACKEND_UNSUPPORTED",
+      "CPU vector execution requires vector-distance followed by bounded-top-k",
+    );
+  }
+  const candidates = scorePhysicalVectorCandidates(input.block, {
+    query: distance.query,
+    metric: distance.metric,
+    limit: topK.limit,
+  });
+  const finishedAt = now();
+  const elapsedMs = finishedAt - startedAt;
+  const budgetElapsedMs = finishedAt - (context.queryStartedAt ?? startedAt);
+  if (
+    context.enforceOutputRows !== false &&
+    context.budget?.maxOutputRows !== undefined &&
+    candidates.scores.length > context.budget.maxOutputRows
+  ) {
+    throw new LakeqlError(
+      "LAKEQL_BUDGET_EXCEEDED",
+      `Query exceeded output rows budget (${candidates.scores.length} > ${context.budget.maxOutputRows})`,
+      {
+        resource: "output rows",
+        limit: context.budget.maxOutputRows,
+        actual: candidates.scores.length,
+        fragmentId: fragment.id,
+      },
+    );
+  }
+  if (context.budget?.maxElapsedMs !== undefined && budgetElapsedMs > context.budget.maxElapsedMs) {
+    throw new LakeqlError(
+      "LAKEQL_BUDGET_EXCEEDED",
+      `Query exceeded elapsed milliseconds budget (${budgetElapsedMs} > ${context.budget.maxElapsedMs})`,
+      {
+        resource: "elapsed milliseconds",
+        limit: context.budget.maxElapsedMs,
+        actual: budgetElapsedMs,
+        fragmentId: fragment.id,
+      },
+    );
+  }
+  return {
+    output: { kind: "vector-candidates", candidates },
+    metrics: {
+      backendId,
+      elapsedMs,
+      inputRows: input.block.rowCount,
+      selectedRows:
+        input.block.valid?.reduce((count, valid) => count + (valid === 1 ? 1 : 0), 0) ??
+        input.block.rowCount,
+      outputRows: candidates.scores.length,
+      inputBytes: physicalVectorCandidateBytes(input.block),
+      uploadBytes: 0,
+      readbackBytes: 0,
+      dispatches: 0,
+      replayed: false,
+    },
+  };
 }
 
 function physicalColumnShape(vector: Vector): PhysicalColumnShape {
@@ -985,6 +1189,7 @@ function cpuOutput(
     }
     case "aggregate-snapshot":
     case "grouped-aggregate-snapshot":
+    case "vector-candidates":
       throw new LakeqlError("LAKEQL_TYPE_ERROR", `Physical output ${expected.kind} is missing`);
     case "resident":
       throw new LakeqlError(
@@ -1006,6 +1211,8 @@ function physicalOutputRows(output: PhysicalOutputValue): number | undefined {
       return 1;
     case "grouped-aggregate-snapshot":
       return output.snapshot.groups.length;
+    case "vector-candidates":
+      return output.candidates.scores.length;
     case "resident":
       return undefined;
   }

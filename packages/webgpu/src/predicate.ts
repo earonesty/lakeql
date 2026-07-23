@@ -40,7 +40,8 @@ export function compileWebGpuPredicate(fragment: PhysicalFragment): WebGpuPredic
   if (
     fragment.operators.length !== 1 ||
     fragment.operators[0]?.kind !== "select" ||
-    fragment.output.kind !== "selection"
+    fragment.output.kind !== "selection" ||
+    fragment.input.kind !== "batch"
   ) {
     return {
       supported: false,
