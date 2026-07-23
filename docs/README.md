@@ -10,12 +10,15 @@ pages when you need exact behavior.
   examples.
 - [Querying Parquet](./querying-parquet.md): query one file, many files, or
   named tables.
+- [Querying Lance](./querying-lance.md): materialize stable row IDs and use
+  supported scalar or vector indexes without native bindings.
 - [SQL guide](./sql-dialect.md): supported SQL syntax and result helpers.
 
 ## Guides
 
 - [Cloudflare Workers](./cloudflare-workers.md)
 - [Querying Iceberg](./querying-iceberg.md)
+- [WebGPU execution](./webgpu.md)
 - [Writing Parquet](./writing-parquet.md)
 - [Writing Iceberg](./writing-iceberg.md)
 - [Partitioning](./partitioning.md)
@@ -34,6 +37,7 @@ pages when you need exact behavior.
 - [JSON query API](./json-query-api.md)
 - [Query language objects](./query-language.md)
 - [Conformance](./conformance.md)
+- [Lance benchmark](./lance-random-read-benchmark.md)
 
 ## Recipes
 
@@ -53,5 +57,5 @@ Plans and follow-up trackers are contributor notes. They describe design work
 that may already be implemented, superseded, or awaiting another pass.
 
 - [DX follow-ups](./dx-followups.md)
-- [Lance vector search at the edge](./lance-edge-vector-search.md)
-- [WebGPU-accelerated execution](./webgpu-accelerated-execution.md)
+- [Lance vector search contributor plan](./lance-edge-vector-search.md)
+- [WebGPU-accelerated execution contributor plan](./webgpu-accelerated-execution.md)
