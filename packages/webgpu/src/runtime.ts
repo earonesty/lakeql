@@ -6,6 +6,7 @@ export interface WebGpuConstants {
     readonly COPY_SRC: GPUBufferUsageFlags;
     readonly COPY_DST: GPUBufferUsageFlags;
     readonly STORAGE: GPUBufferUsageFlags;
+    readonly UNIFORM: GPUBufferUsageFlags;
   };
   readonly mapMode: {
     readonly READ: GPUMapModeFlags;

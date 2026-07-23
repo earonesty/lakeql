@@ -4,12 +4,13 @@
 physical execution contract. It has no native runtime dependency and does not
 read or mutate browser globals.
 
-The current backend executes bounded selection fragments over `bool`, `u8`,
-`i32`, `u32`, and `f32` vectors. It preserves LakeQL null semantics, rejects
-numeric literals that WebGPU cannot compare with CPU-equivalent precision,
-packs input columns into a fixed three-binding layout, enforces accelerator
-budgets, caches compiled pipelines by device generation, and destroys transient
-GPU resources deterministically.
+The current backend executes bounded selection and fused reduction fragments
+over `bool`, `u8`, `i32`, `u32`, and `f32` vectors. Reductions support exact
+counts and order-preserving `min`/`max` partials. It preserves LakeQL null
+semantics, rejects numeric literals that WebGPU cannot compare with
+CPU-equivalent precision, packs input columns into a fixed binding layout,
+enforces accelerator budgets, caches compiled pipelines by device generation,
+and destroys transient GPU resources deterministically.
 
 ```ts
 import { gt, query } from "lakeql";
@@ -54,8 +55,8 @@ dependency of this package and is never loaded by query-time code.
   synchronization, and before publishing mapped results.
 - `close()` destroys the active device and clears compilation state.
 
-Only decoded batch input and CPU selection-mask output are supported by this
-package version. Aggregates, grouped reductions, resident columns, vector
+Only decoded batch input, CPU selection-mask output, and aggregate snapshots are
+supported by this package version. Grouped reductions, resident columns, vector
 distance, and top-k remain governed by the generic physical contract and are
 added as backend capabilities as their semantic and resource contracts are
 implemented.

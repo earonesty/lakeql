@@ -449,6 +449,16 @@ describe("Lake query runtime", () => {
     await expect(
       lake
         .path("table")
+        .where(gt("amount", 10))
+        .groupBy([])
+        .aggregate({
+          rows: { op: "count" },
+          high: { op: "max", column: "amount" },
+        }),
+    ).resolves.toEqual([{ rows: 3, high: 30 }]);
+    await expect(
+      lake
+        .path("table")
         .select(["id", "amount"])
         .where(gt("amount", 5))
         .orderBy([{ column: "id", direction: "desc" }])
@@ -463,6 +473,7 @@ describe("Lake query runtime", () => {
       expect.arrayContaining([
         ["select", "project"],
         ["select", "grouped-reduce"],
+        ["select", "reduce"],
         ["select", "top-k"],
       ]),
     );

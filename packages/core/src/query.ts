@@ -64,7 +64,13 @@ import type {
 import { pruneFilesWithIndex, type SidecarFileIndex } from "./sidecar-index.js";
 import type { ObjectInfo, ObjectStore } from "./store.js";
 import type { Bookmark, BookmarkQuery, QueryStats, Row, SliceResult } from "./types.js";
-import type { VectorAggregateValue } from "./vector-aggregate.js";
+import {
+  createVectorAggregateStates,
+  finalizeVectorAggregateStates,
+  restoreVectorAggregateStates,
+  type VectorAggregateStateSnapshots,
+  type VectorAggregateValue,
+} from "./vector-aggregate.js";
 import {
   createVectorGroupByState,
   enforceVectorGroupByBudget,
@@ -1037,7 +1043,7 @@ export class QueryResult {
       estimates: {
         rowCount: batch.rowCount,
         inputBytes: estimateBatchBytes(batch),
-        outputBytes: estimateBatchBytes(batch),
+        outputBytes: estimatePhysicalOutputBytes(batch, operators, output),
         dispatchCount: Math.max(1, operators.length),
       },
     };
@@ -1421,6 +1427,9 @@ export class QueryResult {
         : await this.tryLateMaterializedAggregateRows(groupColumns, spec, options, startedAt);
     if (adaptiveRows !== undefined) return adaptiveRows;
     if (config.scanner.scanColumns === undefined) return undefined;
+    if (groupColumns.length === 0) {
+      return this.columnarUngroupedAggregateRows(spec, options, startedAt);
+    }
     let aggregateSnapshot: VectorGroupByStateSnapshot | undefined;
     for await (const { batch, sourceIdentity } of this.columnBatches(
       aggregateReadColumns(groupColumns, spec, config.where, config.projections),
@@ -1466,6 +1475,56 @@ export class QueryResult {
             ...(options.maxGroups === undefined ? {} : { maxGroups: options.maxGroups }),
           });
     const rows = applyAggregateResultOptions(finalizeVectorGroupByRows(state), options);
+    for (const _row of rows) {
+      this.stats.rowsReturned += 1;
+      enforceBudget(config.budget, this.stats, config.now, startedAt);
+    }
+    this.stats.elapsedMs = config.now() - startedAt;
+    return rows;
+  }
+
+  private async columnarUngroupedAggregateRows(
+    spec: AggregateSpec,
+    options: AggregateOptions,
+    startedAt: number,
+  ): Promise<Row[]> {
+    const config = this.config;
+    let aggregateSnapshot: VectorAggregateStateSnapshots | undefined;
+    for await (const { batch, sourceIdentity } of this.columnBatches(
+      aggregateReadColumns([], spec, config.where, config.projections),
+      startedAt,
+      columnarBatchSize(config.batchSize),
+    )) {
+      const operators: PhysicalOperator[] = [];
+      if (config.where !== undefined) {
+        operators.push({ kind: "select", predicate: config.where });
+      }
+      operators.push({ kind: "reduce", aggregates: spec });
+      const physical = await this.executePhysicalBatch(
+        batch,
+        operators,
+        { kind: "aggregate-snapshot" },
+        sourceIdentity,
+        startedAt,
+        aggregateSnapshot === undefined
+          ? undefined
+          : { kind: "aggregate-snapshot", snapshot: aggregateSnapshot },
+      );
+      if (physical.output.kind !== "aggregate-snapshot") {
+        throw new LakeqlError(
+          "LAKEQL_PHYSICAL_BACKEND_FAILURE",
+          "Ungrouped physical fragment did not return an aggregate snapshot",
+          { actual: physical.output.kind },
+        );
+      }
+      this.stats.rowsMatched += physical.metrics.selectedRows ?? batch.rowCount;
+      aggregateSnapshot = physical.output.snapshot;
+    }
+    const state =
+      aggregateSnapshot === undefined
+        ? createVectorAggregateStates(spec, { budget: config.budget })
+        : restoreVectorAggregateStates(aggregateSnapshot, { budget: config.budget });
+    const rows = applyAggregateResultOptions([finalizeVectorAggregateStates(state)], options);
     for (const _row of rows) {
       this.stats.rowsReturned += 1;
       enforceBudget(config.budget, this.stats, config.now, startedAt);
@@ -3932,6 +3991,29 @@ function aggregateSpecVectorSupported(spec: AggregateSpec): boolean {
   return Object.values(spec).every(
     (aggregate) => aggregate.expr === undefined || vectorExprSupported(aggregate.expr),
   );
+}
+
+function estimatePhysicalOutputBytes(
+  batch: Batch,
+  operators: readonly PhysicalOperator[],
+  output: PhysicalOutput,
+): number {
+  switch (output.kind) {
+    case "selection":
+      return batch.rowCount;
+    case "indices":
+      return batch.rowCount * 4;
+    case "aggregate-snapshot": {
+      const reduce = operators.at(-1);
+      return reduce?.kind === "reduce"
+        ? Math.max(16, Object.keys(reduce.aggregates).length * 32)
+        : 32;
+    }
+    case "grouped-aggregate-snapshot":
+    case "batch":
+    case "resident":
+      return estimateBatchBytes(batch);
+  }
 }
 
 function project(

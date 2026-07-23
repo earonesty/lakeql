@@ -22,6 +22,7 @@ describe("browserWebGpuRuntime", () => {
           COPY_SRC: 2,
           COPY_DST: 4,
           STORAGE: 8,
+          UNIFORM: 16,
         } as typeof GPUBufferUsage,
         GPUMapMode: { READ: 1 } as typeof GPUMapMode,
       },

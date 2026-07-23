@@ -7,10 +7,13 @@ export interface WebGpuPredicateColumn {
 }
 
 export interface CompiledWebGpuPredicate {
+  readonly kind: "selection";
   readonly columns: readonly WebGpuPredicateColumn[];
   readonly outputBinding: number;
   readonly wgsl: string;
   readonly cacheKey: string;
+  readonly valueExpression: string;
+  readonly validExpression: string;
 }
 
 export type WebGpuPredicateCompilation =
@@ -45,8 +48,12 @@ export function compileWebGpuPredicate(fragment: PhysicalFragment): WebGpuPredic
     };
   }
   try {
-    const compiler = new PredicateCompiler(fragment.input.columns);
-    return { supported: true, compiled: compiler.compile(fragment.operators[0].predicate) };
+    const expression = compileWebGpuPredicateExpression(
+      fragment.operators[0].predicate,
+      fragment.input.columns,
+    );
+    if (!expression.supported) return expression;
+    return { supported: true, compiled: selectionKernel(expression.compiled) };
   } catch (error) {
     return {
       supported: false,
@@ -55,19 +62,37 @@ export function compileWebGpuPredicate(fragment: PhysicalFragment): WebGpuPredic
   }
 }
 
-class PredicateCompiler {
-  readonly #shapes: Record<string, PhysicalColumnShape>;
-  readonly #columns: WebGpuPredicateColumn[] = [];
-  readonly #columnByName = new Map<string, WebGpuPredicateColumn>();
+export interface CompiledWebGpuPredicateExpression {
+  readonly columns: readonly WebGpuPredicateColumn[];
+  readonly valueExpression: string;
+  readonly validExpression: string;
+}
 
-  constructor(shapes: Record<string, PhysicalColumnShape>) {
-    this.#shapes = shapes;
+export type WebGpuPredicateExpressionCompilation =
+  | { supported: true; compiled: CompiledWebGpuPredicateExpression }
+  | { supported: false; reason: string };
+
+export function compileWebGpuPredicateExpression(
+  expr: Expr,
+  columns: Record<string, PhysicalColumnShape>,
+  requiredColumns: readonly string[] = [],
+): WebGpuPredicateExpressionCompilation {
+  try {
+    const compiler = new PredicateCompiler(columns);
+    const compiled = compiler.compile(expr);
+    for (const name of requiredColumns) compiler.includeColumn(name);
+    return { supported: true, compiled };
+  } catch (error) {
+    return {
+      supported: false,
+      reason: error instanceof Error ? error.message : "Unsupported WebGPU predicate",
+    };
   }
+}
 
-  compile(expr: Expr): CompiledWebGpuPredicate {
-    const predicate = this.#bool(expr);
-    const outputBinding = 2;
-    const wgsl = `struct SqlBool {
+function selectionKernel(expression: CompiledWebGpuPredicateExpression): CompiledWebGpuPredicate {
+  const outputBinding = 2;
+  const wgsl = `struct SqlBool {
   value: bool,
   valid: bool,
 }
@@ -82,18 +107,44 @@ var<storage, read_write> selection: array<u32>;
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   let row = id.x;
-  if (row >= arrayLength(&selection)) {
+  let row_count = arrayLength(&selection);
+  if (row >= row_count) {
     return;
   }
-  let predicate = SqlBool(${predicate.value}, ${predicate.valid});
+  let predicate = SqlBool(${expression.valueExpression}, ${expression.validExpression});
   selection[row] = select(0u, 1u, predicate.valid && predicate.value);
 }`;
+  return {
+    kind: "selection",
+    columns: expression.columns,
+    outputBinding,
+    wgsl,
+    cacheKey: wgsl,
+    valueExpression: expression.valueExpression,
+    validExpression: expression.validExpression,
+  };
+}
+
+class PredicateCompiler {
+  readonly #shapes: Record<string, PhysicalColumnShape>;
+  readonly #columns: WebGpuPredicateColumn[] = [];
+  readonly #columnByName = new Map<string, WebGpuPredicateColumn>();
+
+  constructor(shapes: Record<string, PhysicalColumnShape>) {
+    this.#shapes = shapes;
+  }
+
+  compile(expr: Expr): CompiledWebGpuPredicateExpression {
+    const predicate = this.#bool(expr);
     return {
       columns: this.#columns,
-      outputBinding,
-      wgsl,
-      cacheKey: wgsl,
+      valueExpression: predicate.value,
+      validExpression: predicate.valid,
     };
+  }
+
+  includeColumn(name: string): void {
+    this.#column(name);
   }
 
   #bool(expr: Expr): BoolCode {
@@ -246,7 +297,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   }
 
   #columnIndex(column: WebGpuPredicateColumn): string {
-    return `(${column.ordinal}u * arrayLength(&selection) + row)`;
+    return `(${column.ordinal}u * row_count + row)`;
   }
 
   #columnValue(column: WebGpuPredicateColumn): string {

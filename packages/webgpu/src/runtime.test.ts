@@ -110,6 +110,7 @@ function fakeRuntime(scopeErrors: Array<GPUError | null> = [null, null, null]) {
         COPY_SRC: 2,
         COPY_DST: 4,
         STORAGE: 8,
+        UNIFORM: 16,
       },
       mapMode: { READ: 1 },
     },

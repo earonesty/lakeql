@@ -4,6 +4,7 @@ import {
   type BackendPlanningContext,
   type BackendRejection,
   type CompiledPhysicalFragment,
+  createVectorAggregateStates,
   estimateBatchBytes,
   LakeqlError,
   type PhysicalCapabilities,
@@ -11,9 +12,13 @@ import {
   type PhysicalFragment,
   type PhysicalFragmentInput,
   type PhysicalFragmentResult,
+  restoreVectorAggregateStates,
   selectedRowCount,
+  snapshotVectorAggregateStates,
   throwIfAborted,
+  updateVectorAggregateStateValue,
   type Vector,
+  type VectorAggregateStates,
   validatePhysicalFragment,
 } from "lakeql-core";
 import {
@@ -21,6 +26,11 @@ import {
   compileWebGpuPredicate,
   type WebGpuPredicateColumn,
 } from "./predicate.js";
+import {
+  type CompiledWebGpuReduction,
+  compileWebGpuReduction,
+  type WebGpuReductionAggregate,
+} from "./reduction.js";
 import {
   WebGpuDeviceManager,
   type WebGpuDeviceOptions,
@@ -44,8 +54,10 @@ export interface WebGpuCostModel {
 }
 
 interface WebGpuCompiledState {
-  readonly predicate: CompiledWebGpuPredicate;
+  readonly kernel: CompiledWebGpuPredicate | CompiledWebGpuReduction;
 }
+
+type WebGpuKernel = WebGpuCompiledState["kernel"];
 
 const DEFAULT_COST: WebGpuCostModel = {
   fixedMs: 0.12,
@@ -56,6 +68,17 @@ const DEFAULT_COST: WebGpuCostModel = {
 };
 
 const SUPPORTED_SHAPES = ["bool", "f32", "i32", "u32", "u8"] as const;
+
+function compileWebGpuKernel(fragment: PhysicalFragment) {
+  const selection = compileWebGpuPredicate(fragment);
+  if (selection.supported) return selection;
+  const reduction = compileWebGpuReduction(fragment);
+  if (reduction.supported) return reduction;
+  return {
+    supported: false as const,
+    reason: `${selection.reason}; ${reduction.reason}`,
+  };
+}
 
 export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
   readonly id: string;
@@ -111,8 +134,16 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
           supportsDictionary: false,
           notes: ["Three-valued predicates produce a CPU selection mask"],
         },
+        {
+          kind: "reduce",
+          inputShapes: SUPPORTED_SHAPES,
+          outputShapes: ["u32", "i32", "f32", "bool"],
+          supportsNulls: true,
+          supportsDictionary: false,
+          notes: ["Exact count and order-preserving min/max partial snapshots"],
+        },
       ],
-      fusedSequences: [],
+      fusedSequences: [["select", "reduce"]],
       vectorShapes: SUPPORTED_SHAPES,
       semantics: {
         nulls: "lakeql",
@@ -132,7 +163,7 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
   }
 
   assess(fragment: PhysicalFragment, context: BackendPlanningContext): BackendAssessment {
-    const compilation = compileWebGpuPredicate(fragment);
+    const compilation = compileWebGpuKernel(fragment);
     const reasons: BackendRejection[] = [...validatePhysicalFragment(fragment)];
     if (!compilation.supported) {
       reasons.push({ code: "operator", message: compilation.reason });
@@ -200,14 +231,14 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
         { backendId: this.id, fragmentId: fragment.id, reasons: assessment.reasons },
       );
     }
-    const compilation = compileWebGpuPredicate(fragment);
+    const compilation = compileWebGpuKernel(fragment);
     if (!compilation.supported) {
       throw new LakeqlError("LAKEQL_PHYSICAL_BACKEND_UNSUPPORTED", compilation.reason);
     }
     return {
       backendId: this.id,
       fragment,
-      backendState: { predicate: compilation.compiled } satisfies WebGpuCompiledState,
+      backendState: { kernel: compilation.compiled } satisfies WebGpuCompiledState,
     };
   }
 
@@ -232,8 +263,12 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
     const signal = context.budget?.signal;
     const now = context.now ?? (() => Date.now());
     const startedAt = now();
-    const predicate = compiled.backendState.predicate;
-    const transfer = physicalTransferBytes(compiled.fragment, predicate);
+    const kernel = compiled.backendState.kernel;
+    if (kernel.kind === "reduction") {
+      return this.#executeReduction(compiled.fragment, kernel, input, context);
+    }
+    const predicate = kernel;
+    const transfer = physicalTransferBytes(compiled.fragment, kernel);
     enforceRuntimeBudget(compiled.fragment.id, context, transfer);
     const selection = await this.#devices.scoped(
       this.id,
@@ -370,6 +405,176 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
     };
   }
 
+  async #executeReduction(
+    fragment: PhysicalFragment,
+    reduction: CompiledWebGpuReduction,
+    input: Extract<PhysicalFragmentInput, { kind: "batch" }>,
+    context: BackendExecutionContext,
+  ): Promise<PhysicalFragmentResult> {
+    if (context.priorOutput !== undefined && context.priorOutput.kind !== "aggregate-snapshot") {
+      throw new LakeqlError(
+        "LAKEQL_TYPE_ERROR",
+        `Physical prior output ${context.priorOutput.kind} does not match aggregate-snapshot`,
+      );
+    }
+    const signal = context.budget?.signal;
+    const now = context.now ?? (() => Date.now());
+    const startedAt = now();
+    const transfer = physicalTransferBytes(fragment, reduction);
+    enforceRuntimeBudget(fragment.id, context, transfer);
+    const tileCount = Math.ceil(input.batch.rowCount / reduction.tileRows);
+    const partials = await this.#devices.scoped(
+      this.id,
+      async (lease) => {
+        const deviceLimit = Math.min(
+          lease.device.limits.maxBufferSize,
+          lease.device.limits.maxStorageBufferBindingSize,
+        );
+        if (transfer.largestBufferBytes > deviceLimit) {
+          throw new LakeqlError(
+            "LAKEQL_PHYSICAL_BACKEND_UNSUPPORTED",
+            "Fragment exceeds the acquired WebGPU device buffer limit",
+            {
+              fragmentId: fragment.id,
+              actual: transfer.largestBufferBytes,
+              limit: deviceLimit,
+            },
+          );
+        }
+        const buffers: GPUBuffer[] = [];
+        try {
+          const values = uploadValues(input.batch.columns, reduction.columns, input.batch.rowCount);
+          const valueBuffer = createUploadBuffer(
+            lease.device,
+            lease.runtime.constants.bufferUsage,
+            values,
+            `lakeql:${fragment.id}:values`,
+          );
+          const validity = uploadValidity(
+            input.batch.columns,
+            reduction.columns,
+            input.batch.rowCount,
+          );
+          const validityBuffer = createUploadBuffer(
+            lease.device,
+            lease.runtime.constants.bufferUsage,
+            validity,
+            `lakeql:${fragment.id}:validity`,
+          );
+          const paramsBuffer = createUploadBuffer(
+            lease.device,
+            lease.runtime.constants.bufferUsage,
+            Uint32Array.of(input.batch.rowCount, tileCount),
+            `lakeql:${fragment.id}:params`,
+            lease.runtime.constants.bufferUsage.UNIFORM,
+          );
+          const outputBytes = transfer.outputBytes;
+          const output = lease.device.createBuffer({
+            label: `lakeql:${fragment.id}:partials`,
+            size: outputBytes,
+            usage:
+              lease.runtime.constants.bufferUsage.STORAGE |
+              lease.runtime.constants.bufferUsage.COPY_SRC,
+          });
+          const readback = lease.device.createBuffer({
+            label: `lakeql:${fragment.id}:readback`,
+            size: outputBytes,
+            usage:
+              lease.runtime.constants.bufferUsage.MAP_READ |
+              lease.runtime.constants.bufferUsage.COPY_DST,
+          });
+          buffers.push(valueBuffer, validityBuffer, paramsBuffer, output, readback);
+          const pipeline = await this.#pipeline(lease.device, lease.generation, reduction);
+          throwIfAborted(signal);
+          const bindGroup = lease.device.createBindGroup({
+            layout: pipeline.getBindGroupLayout(0),
+            entries: [
+              { binding: 0, resource: { buffer: valueBuffer } },
+              { binding: 1, resource: { buffer: validityBuffer } },
+              { binding: 2, resource: { buffer: paramsBuffer } },
+              { binding: reduction.outputBinding, resource: { buffer: output } },
+            ],
+          });
+          const encoder = lease.device.createCommandEncoder({ label: `lakeql:${fragment.id}` });
+          if (tileCount > 0) {
+            const pass = encoder.beginComputePass();
+            pass.setPipeline(pipeline);
+            pass.setBindGroup(0, bindGroup);
+            pass.dispatchWorkgroups(tileCount);
+            pass.end();
+          }
+          encoder.copyBufferToBuffer(output, 0, readback, 0, outputBytes);
+          lease.device.queue.submit([encoder.finish()]);
+          await lease.device.queue.onSubmittedWorkDone();
+          throwIfAborted(signal);
+          await readback.mapAsync(lease.runtime.constants.mapMode.READ, 0, outputBytes);
+          try {
+            return Uint32Array.from(new Uint32Array(readback.getMappedRange(0, outputBytes)));
+          } finally {
+            readback.unmap();
+          }
+        } finally {
+          for (const buffer of buffers) buffer.destroy();
+        }
+      },
+      signal,
+    );
+    const states =
+      context.priorOutput?.kind === "aggregate-snapshot"
+        ? restoreVectorAggregateStates(context.priorOutput.snapshot, {
+            ...(context.budget === undefined ? {} : { budget: context.budget }),
+          })
+        : createVectorAggregateStates(
+            Object.fromEntries(
+              reduction.aggregates.map((aggregate) => [
+                aggregate.alias,
+                {
+                  op: aggregate.op,
+                  ...(aggregate.column === undefined ? {} : { column: aggregate.column.name }),
+                },
+              ]),
+            ),
+            context.budget === undefined ? {} : { budget: context.budget },
+          );
+    const selectedRows = mergeReductionPartials(states, reduction, partials, tileCount);
+    const elapsedMs = now() - startedAt;
+    enforceElapsedBudget(fragment.id, context, elapsedMs, now);
+    if (
+      context.enforceOutputRows !== false &&
+      context.budget?.maxOutputRows !== undefined &&
+      context.budget.maxOutputRows < 1
+    ) {
+      throw new LakeqlError(
+        "LAKEQL_BUDGET_EXCEEDED",
+        `Query exceeded output rows budget (1 > ${context.budget.maxOutputRows})`,
+        {
+          resource: "output rows",
+          actual: 1,
+          limit: context.budget.maxOutputRows,
+          fragmentId: fragment.id,
+        },
+      );
+    }
+    return {
+      output: {
+        kind: "aggregate-snapshot",
+        snapshot: snapshotVectorAggregateStates(states),
+      },
+      metrics: {
+        backendId: this.id,
+        elapsedMs,
+        inputRows: input.batch.rowCount,
+        selectedRows,
+        outputRows: 1,
+        inputBytes: estimateBatchBytes(input.batch),
+        uploadBytes: transfer.uploadBytes,
+        readbackBytes: transfer.outputBytes,
+        dispatches: tileCount === 0 ? 0 : 1,
+        replayed: false,
+      },
+    };
+  }
+
   close(): void {
     this.#pipelines.clear();
     this.#devices.close();
@@ -378,16 +583,19 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
   async #pipeline(
     device: GPUDevice,
     generation: number,
-    predicate: CompiledWebGpuPredicate,
+    predicate: WebGpuKernel,
   ): Promise<GPUComputePipeline> {
     const key = this.#pipelineKey(predicate, generation);
     let pipeline = this.#pipelines.get(key);
     if (pipeline === undefined) {
       pipeline = device.createComputePipelineAsync({
-        label: "lakeql:selection",
+        label: `lakeql:${predicate.kind}`,
         layout: "auto",
         compute: {
-          module: device.createShaderModule({ label: "lakeql:selection", code: predicate.wgsl }),
+          module: device.createShaderModule({
+            label: `lakeql:${predicate.kind}`,
+            code: predicate.wgsl,
+          }),
           entryPoint: "main",
         },
       });
@@ -397,7 +605,7 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
     return pipeline;
   }
 
-  #pipelineKey(predicate: CompiledWebGpuPredicate, generation = this.#devices.generation): string {
+  #pipelineKey(predicate: WebGpuKernel, generation = this.#devices.generation): string {
     return `${generation}\u0000${predicate.cacheKey}`;
   }
 }
@@ -411,14 +619,22 @@ interface PhysicalTransfer {
 
 function physicalTransferBytes(
   fragment: PhysicalFragment,
-  predicate: CompiledWebGpuPredicate,
+  predicate: WebGpuKernel,
 ): PhysicalTransfer {
   const bufferBytes = alignedBufferBytes(fragment.input.rowCount * 4);
-  const outputBytes = bufferBytes;
+  const outputBytes =
+    predicate.kind === "selection"
+      ? bufferBytes
+      : alignedBufferBytes(
+          Math.ceil(fragment.input.rowCount / predicate.tileRows) *
+            predicate.outputWordsPerTile *
+            4,
+        );
   const packedInputBytes = alignedBufferBytes(
     predicate.columns.length * fragment.input.rowCount * 4,
   );
-  const uploadBytes = packedInputBytes * 2;
+  const parameterBytes = predicate.kind === "reduction" ? 8 : 0;
+  const uploadBytes = packedInputBytes * 2 + parameterBytes;
   return {
     uploadBytes,
     outputBytes,
@@ -429,7 +645,7 @@ function physicalTransferBytes(
 
 function webGpuCost(
   fragment: PhysicalFragment,
-  predicate: CompiledWebGpuPredicate | undefined,
+  predicate: WebGpuKernel | undefined,
   compiledResident: boolean,
   model: WebGpuCostModel,
 ) {
@@ -459,12 +675,13 @@ function createUploadBuffer(
   usage: WebGpuRuntimeBufferUsage,
   data: ArrayBufferView,
   label: string,
+  bindingUsage: GPUBufferUsageFlags = usage.STORAGE,
 ): GPUBuffer {
   const size = alignedBufferBytes(data.byteLength);
   const buffer = device.createBuffer({
     label,
     size,
-    usage: usage.STORAGE | usage.COPY_DST,
+    usage: bindingUsage | usage.COPY_DST,
   });
   if (data.byteLength > 0) {
     device.queue.writeBuffer(buffer, 0, data.buffer, data.byteOffset, data.byteLength);
@@ -475,7 +692,69 @@ function createUploadBuffer(
 type WebGpuRuntimeBufferUsage = {
   readonly COPY_DST: GPUBufferUsageFlags;
   readonly STORAGE: GPUBufferUsageFlags;
+  readonly UNIFORM: GPUBufferUsageFlags;
 };
+
+function mergeReductionPartials(
+  states: VectorAggregateStates,
+  reduction: CompiledWebGpuReduction,
+  partials: Uint32Array,
+  tileCount: number,
+): number {
+  let selectedRows = 0;
+  for (let tile = 0; tile < tileCount; tile += 1) {
+    const offset = tile * reduction.outputWordsPerTile;
+    selectedRows += partials[offset] ?? 0;
+    for (let index = 0; index < reduction.aggregates.length; index += 1) {
+      const aggregate = reduction.aggregates[index];
+      if (aggregate === undefined) continue;
+      const state = states[aggregate.alias];
+      if (state === undefined) {
+        throw new LakeqlError(
+          "LAKEQL_TYPE_ERROR",
+          `Missing WebGPU aggregate state ${aggregate.alias}`,
+        );
+      }
+      const valueOffset = offset + 1 + index * 2;
+      const valid = partials[valueOffset] === 1;
+      const bits = partials[valueOffset + 1] ?? 0;
+      if (aggregate.op === "count") {
+        if (state.op !== "count") {
+          throw new LakeqlError(
+            "LAKEQL_TYPE_ERROR",
+            `WebGPU aggregate state ${aggregate.alias} is not count`,
+          );
+        }
+        state.count += bits;
+      } else if (valid) {
+        updateVectorAggregateStateValue(state, reductionValue(aggregate, bits));
+      }
+    }
+  }
+  return selectedRows;
+}
+
+function reductionValue(aggregate: WebGpuReductionAggregate, bits: number): number | boolean {
+  const column = aggregate.column;
+  if (column === undefined) {
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", `Aggregate ${aggregate.alias} has no column`);
+  }
+  switch (column.shape) {
+    case "f32": {
+      const words = Uint32Array.of(bits);
+      return new Float32Array(words.buffer)[0] ?? 0;
+    }
+    case "i32": {
+      const words = Uint32Array.of(bits);
+      return new Int32Array(words.buffer)[0] ?? 0;
+    }
+    case "bool":
+      return bits !== 0;
+    case "u32":
+    case "u8":
+      return bits;
+  }
+}
 
 function uploadValues(
   vectors: Record<string, Vector>,
@@ -641,8 +920,8 @@ function isCompiledState(value: unknown): value is WebGpuCompiledState {
   return (
     typeof value === "object" &&
     value !== null &&
-    "predicate" in value &&
-    typeof value.predicate === "object" &&
-    value.predicate !== null
+    "kernel" in value &&
+    typeof value.kernel === "object" &&
+    value.kernel !== null
   );
 }
