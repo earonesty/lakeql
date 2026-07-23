@@ -2,16 +2,22 @@ import {
   and,
   batchFromVectors,
   between,
+  CpuPhysicalBackend,
   type Expr,
   eq,
   gt,
+  gte,
   isIn,
   isNull,
+  Lake,
   type LakeqlError,
+  memoryStore,
   or,
   type PhysicalFragment,
   physicalInputFromBatch,
+  planPhysicalFragment,
   predicateSelection,
+  type ScanAdapter,
 } from "lakeql-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { create, globals } from "webgpu";
@@ -72,6 +78,45 @@ describe.runIf(await dawnAdapterAvailable())("WebGpuPhysicalBackend with Dawn", 
       dispatches: 1,
       replayed: false,
     });
+  });
+
+  it("executes an ordinary Lake row query through WebGPU selection and host projection", async () => {
+    const store = memoryStore();
+    await store.put("scores.parquet", Uint8Array.of(1));
+    const batch = batchFromVectors({
+      id: { type: "u32", values: Uint32Array.of(1, 2, 3) },
+      score: { type: "f32", values: Float32Array.of(0.25, 0.75, 1) },
+    });
+    const scanner: ScanAdapter = {
+      async *scan() {
+        yield [];
+      },
+      async *scanVectorBatches() {
+        yield { rowOffset: 0, batch };
+      },
+    };
+    const lake = new Lake({
+      store,
+      scanner,
+      physicalExecution: {
+        backends: [backend],
+        acceleratorPolicy: "required",
+      },
+    });
+
+    const result = lake.path("scores.parquet").select(["id"]).where(gt("score", 0.5)).run();
+    await expect(result.toArray()).resolves.toEqual([{ id: 2 }, { id: 3 }]);
+    expect(result.stats).toMatchObject({
+      acceleratorFragments: 1,
+      acceleratorDispatches: 1,
+    });
+    expect((await result.explain()).json.physicalFragments).toEqual([
+      expect.objectContaining({
+        backendId: "webgpu",
+        operators: ["select"],
+        output: "selection",
+      }),
+    ]);
   });
 
   it("dispatches more than one workgroup and reuses the compiled pipeline", async () => {
@@ -190,6 +235,58 @@ describe("WebGpuPhysicalBackend validation", () => {
     backend.close();
   });
 
+  it("calibrates auto placement against the recorded fused-reduction benchmark shape", () => {
+    const backend = new WebGpuPhysicalBackend(provider);
+    const rowCount = 1_000_000;
+    const target: PhysicalFragment = {
+      id: "recorded-relational-benchmark",
+      input: {
+        kind: "batch",
+        rowCount,
+        columns: {
+          id: { shape: "u32", nullable: false },
+          score: { shape: "f32", nullable: true },
+        },
+      },
+      operators: [
+        { kind: "select", predicate: gte("score", 0.5) },
+        {
+          kind: "reduce",
+          aggregates: {
+            rows: { op: "count" },
+            values: { op: "count", column: "score" },
+            firstId: { op: "min", column: "id" },
+            highScore: { op: "max", column: "score" },
+          },
+        },
+      ],
+      output: { kind: "aggregate-snapshot" },
+      estimates: {
+        rowCount,
+        inputBytes: 9_000_000,
+        outputBytes: 128,
+        dispatchCount: 1,
+      },
+    };
+
+    const plan = planPhysicalFragment(target, [new CpuPhysicalBackend(), backend]);
+    expect(plan.backendId).toBe("webgpu");
+    const candidate = plan.candidates.find(({ backendId }) => backendId === "webgpu");
+    if (candidate === undefined) throw new Error("missing WebGPU candidate");
+    const cost = candidate.assessment.cost;
+    expect(cost.totalMs).toBeCloseTo(
+      cost.inputConversionMs +
+        cost.uploadMs +
+        cost.compileMs +
+        cost.computeMs +
+        cost.synchronizationMs +
+        cost.readbackMs +
+        cost.outputConversionMs,
+      10,
+    );
+    backend.close();
+  });
+
   it("requires immutable residency identities and rejects caching after close", async () => {
     const backend = new WebGpuPhysicalBackend(provider, { maxResidentBytes: 64 });
     const block = {
@@ -208,6 +305,27 @@ describe("WebGpuPhysicalBackend validation", () => {
     ).rejects.toMatchObject<LakeqlError>({
       code: "LAKEQL_PHYSICAL_BACKEND_UNAVAILABLE",
     });
+  });
+
+  it("attaches completed transfer stages to replayable backend failures", async () => {
+    const backend = new WebGpuPhysicalBackend(failingPipelineRuntime);
+    const batch = batchFromVectors({
+      value: { type: "u32", values: Uint32Array.of(1, 2, 3, 4) },
+    });
+    const target = fragment(batch, gt("value", 1));
+
+    await expect(
+      backend.execute(await backend.compile(target), { kind: "batch", batch }, {}),
+    ).rejects.toMatchObject({
+      code: "LAKEQL_PHYSICAL_BACKEND_FAILURE",
+      attemptedMetrics: {
+        backendId: "webgpu",
+        uploadBytes: 32,
+        readbackBytes: 0,
+        dispatches: 0,
+      },
+    });
+    backend.close();
   });
 });
 
@@ -248,4 +366,60 @@ function fragment(
 
 function sum(total: number, value: number): number {
   return total + value;
+}
+
+function failingPipelineRuntime(): WebGpuRuntime {
+  const device = {
+    limits: {
+      maxBufferSize: 1024 * 1024,
+      maxStorageBufferBindingSize: 1024 * 1024,
+    },
+    lost: new Promise<GPUDeviceLostInfo>(() => {}),
+    queue: {
+      writeBuffer() {},
+    },
+    destroy() {},
+    pushErrorScope() {},
+    async popErrorScope() {
+      return null;
+    },
+    createBuffer(descriptor: GPUBufferDescriptor) {
+      const contents = new ArrayBuffer(Number(descriptor.size));
+      return {
+        destroy() {},
+        getMappedRange() {
+          return contents;
+        },
+        unmap() {},
+      } as unknown as GPUBuffer;
+    },
+    createShaderModule() {
+      return {} as GPUShaderModule;
+    },
+    async createComputePipelineAsync() {
+      throw new Error("device lost while compiling pipeline");
+    },
+  } as unknown as GPUDevice;
+  const adapter = {
+    async requestDevice() {
+      return device;
+    },
+  } as unknown as GPUAdapter;
+  return {
+    gpu: {
+      async requestAdapter() {
+        return adapter;
+      },
+    } as unknown as GPU,
+    constants: {
+      bufferUsage: {
+        MAP_READ: 1,
+        COPY_SRC: 2,
+        COPY_DST: 4,
+        STORAGE: 8,
+        UNIFORM: 16,
+      },
+      mapMode: { READ: 1 },
+    },
+  };
 }

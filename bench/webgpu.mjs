@@ -4,6 +4,7 @@ import {
   CpuPhysicalBackend,
   gte,
   physicalInputFromBatch,
+  planPhysicalFragment,
 } from "../packages/core/dist/index.js";
 import { WebGpuPhysicalBackend } from "../packages/webgpu/dist/index.js";
 
@@ -81,6 +82,15 @@ const runtime = {
 };
 const webgpu = new WebGpuPhysicalBackend(() => runtime);
 const cpu = new CpuPhysicalBackend();
+const automaticPlan = planPhysicalFragment(fragment, [cpu, webgpu], { policy: "auto" });
+const automaticGroupedPlan = planPhysicalFragment(groupedFragment, [cpu, webgpu], {
+  policy: "auto",
+});
+if (automaticPlan.backendId !== webgpu.id || automaticGroupedPlan.backendId !== webgpu.id) {
+  throw new Error(
+    `Default auto placement did not select WebGPU: ${automaticPlan.backendId}, ${automaticGroupedPlan.backendId}`,
+  );
+}
 
 try {
   const cpuCompiled = await cpu.compile(fragment);
@@ -113,6 +123,10 @@ try {
         rows,
         warmRuns,
         note: "Dawn results validate kernels and cost shape; they are not browser performance claims.",
+        planner: {
+          relational: plannerSummary(automaticPlan),
+          grouped: plannerSummary(automaticGroupedPlan),
+        },
         cpu: {
           coldMs: cpuCold.elapsedMs,
           warmMedianMs: median(cpuWarm.times),
@@ -184,4 +198,15 @@ function positiveInteger(value, fallback) {
     throw new Error(`Expected a positive integer, received ${value}`);
   }
   return parsed;
+}
+
+function plannerSummary(plan) {
+  return {
+    selectedBackend: plan.backendId,
+    candidates: plan.candidates.map((candidate) => ({
+      backendId: candidate.backendId,
+      supported: candidate.assessment.supported,
+      totalMs: candidate.assessment.cost.totalMs,
+    })),
+  };
 }

@@ -40,6 +40,7 @@ export class WebGpuDeviceManager {
   #generation = 0;
   #closed = false;
   #invalidators = new Set<(generation: number) => void>();
+  #scopeTail: Promise<void> = Promise.resolve();
 
   constructor(provider: WebGpuRuntimeProvider, options: WebGpuDeviceOptions = {}) {
     this.#provider = provider;
@@ -76,44 +77,49 @@ export class WebGpuDeviceManager {
     operation: (lease: WebGpuDeviceLease) => Promise<T>,
     signal?: AbortSignal,
   ): Promise<T> {
-    const lease = await this.acquire(signal);
-    lease.device.pushErrorScope("internal");
-    lease.device.pushErrorScope("out-of-memory");
-    lease.device.pushErrorScope("validation");
-    let value: T | undefined;
-    let failure: unknown;
+    const release = await this.#acquireScope(signal);
     try {
-      value = await operation(lease);
-      throwIfAborted(signal);
-    } catch (error) {
-      failure = error;
-    }
-    const errors: GPUError[] = [];
-    for (let index = 0; index < 3; index += 1) {
+      const lease = await this.acquire(signal);
+      lease.device.pushErrorScope("internal");
+      lease.device.pushErrorScope("out-of-memory");
+      lease.device.pushErrorScope("validation");
+      let value: T | undefined;
+      let failure: unknown;
       try {
-        const error = await lease.device.popErrorScope();
-        if (error !== null) errors.push(error);
+        value = await operation(lease);
+        throwIfAborted(signal);
       } catch (error) {
-        failure ??= error;
+        failure = error;
       }
-    }
-    if (failure !== undefined || errors.length > 0) {
-      if (errors.length === 0 && failure instanceof LakeqlError) throw failure;
-      throw new PhysicalBackendExecutionError(
-        backendId,
-        errors.map((error) => error.message).join("; ") || errorMessage(failure),
-        {
-          replayable: lease.generation !== this.#generation || isDeviceLoss(failure),
-          cause: failure,
-          details: {
-            deviceGeneration: lease.generation,
-            currentDeviceGeneration: this.#generation,
-            gpuErrors: errors.map((error) => error.message),
+      const errors: GPUError[] = [];
+      for (let index = 0; index < 3; index += 1) {
+        try {
+          const error = await lease.device.popErrorScope();
+          if (error !== null) errors.push(error);
+        } catch (error) {
+          failure ??= error;
+        }
+      }
+      if (failure !== undefined || errors.length > 0) {
+        if (errors.length === 0 && failure instanceof LakeqlError) throw failure;
+        throw new PhysicalBackendExecutionError(
+          backendId,
+          errors.map((error) => error.message).join("; ") || errorMessage(failure),
+          {
+            replayable: lease.generation !== this.#generation || isDeviceLoss(failure),
+            cause: failure,
+            details: {
+              deviceGeneration: lease.generation,
+              currentDeviceGeneration: this.#generation,
+              gpuErrors: errors.map((error) => error.message),
+            },
           },
-        },
-      );
+        );
+      }
+      return value as T;
+    } finally {
+      release();
     }
-    return value as T;
   }
 
   close(): void {
@@ -158,6 +164,43 @@ export class WebGpuDeviceManager {
     this.#generation += 1;
     for (const listener of this.#invalidators) listener(this.#generation);
   }
+
+  async #acquireScope(signal?: AbortSignal): Promise<() => void> {
+    const previous = this.#scopeTail;
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.#scopeTail = previous.then(() => current);
+    try {
+      await waitForScope(previous, signal);
+      throwIfAborted(signal);
+      return release;
+    } catch (error) {
+      void previous.then(release);
+      throw error;
+    }
+  }
+}
+
+function waitForScope(previous: Promise<void>, signal?: AbortSignal): Promise<void> {
+  if (signal === undefined) return previous;
+  throwIfAborted(signal);
+  return new Promise<void>((resolve, reject) => {
+    const aborted = () => {
+      signal.removeEventListener("abort", aborted);
+      try {
+        throwIfAborted(signal);
+      } catch (error) {
+        reject(error);
+      }
+    };
+    signal.addEventListener("abort", aborted, { once: true });
+    void previous.then(() => {
+      signal.removeEventListener("abort", aborted);
+      resolve();
+    });
+  });
 }
 
 function isDeviceLoss(value: unknown): boolean {

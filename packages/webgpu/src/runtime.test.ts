@@ -36,6 +36,69 @@ describe("WebGpuDeviceManager", () => {
     manager.close();
   });
 
+  it("serializes complete scoped operations on a shared device", async () => {
+    const fixture = fakeRuntime();
+    const manager = new WebGpuDeviceManager(() => fixture.runtime);
+    const firstGate = deferred<void>();
+    const firstStarted = deferred<void>();
+    const events: string[] = [];
+
+    const first = manager.scoped("gpu", async () => {
+      events.push("first:start");
+      firstStarted.resolve();
+      await firstGate.promise;
+      events.push("first:end");
+      return 1;
+    });
+    await firstStarted.promise;
+    const second = manager.scoped("gpu", async () => {
+      events.push("second:start");
+      events.push("second:end");
+      return 2;
+    });
+
+    await Promise.resolve();
+    expect(events).toEqual(["first:start"]);
+    expect(fixture.pushErrorScope).toHaveBeenCalledTimes(3);
+
+    firstGate.resolve();
+    await expect(Promise.all([first, second])).resolves.toEqual([1, 2]);
+    expect(events).toEqual(["first:start", "first:end", "second:start", "second:end"]);
+    expect(fixture.pushErrorScope).toHaveBeenCalledTimes(6);
+    expect(fixture.popErrorScope).toHaveBeenCalledTimes(6);
+    manager.close();
+  });
+
+  it("cancels a queued scope without allowing later work to bypass the active scope", async () => {
+    const fixture = fakeRuntime();
+    const manager = new WebGpuDeviceManager(() => fixture.runtime);
+    const firstGate = deferred<void>();
+    const firstStarted = deferred<void>();
+    let thirdStarted = false;
+
+    const first = manager.scoped("gpu", async () => {
+      firstStarted.resolve();
+      await firstGate.promise;
+    });
+    await firstStarted.promise;
+
+    const controller = new AbortController();
+    const second = manager.scoped("gpu", async () => "unreachable", controller.signal);
+    controller.abort("stop");
+    await expect(second).rejects.toMatchObject<LakeqlError>({ code: "LAKEQL_ABORTED" });
+
+    const third = manager.scoped("gpu", async () => {
+      thirdStarted = true;
+    });
+    await Promise.resolve();
+    expect(thirdStarted).toBe(false);
+
+    firstGate.resolve();
+    await Promise.all([first, third]);
+    expect(thirdStarted).toBe(true);
+    manager.close();
+  });
+
   it("turns validation scope errors into non-replayable backend failures", async () => {
     const fixture = fakeRuntime([{ message: "invalid binding" } as GPUError, null, null]);
     const manager = new WebGpuDeviceManager(() => fixture.runtime);
@@ -126,4 +189,12 @@ function fakeRuntime(scopeErrors: Array<GPUError | null> = [null, null, null]) {
       loseDevice?.({ reason: "unknown", message: "lost" } as GPUDeviceLostInfo);
     },
   };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
 }

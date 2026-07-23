@@ -11,7 +11,9 @@ import {
   getOrCreateVectorGroupByValues,
   LakeqlError,
   mergePhysicalScoredCandidates,
+  PhysicalBackendExecutionError,
   type PhysicalCapabilities,
+  type PhysicalExecutionAttemptMetrics,
   type PhysicalExecutionBackend,
   type PhysicalFragment,
   type PhysicalFragmentInput,
@@ -78,6 +80,7 @@ export interface WebGpuCostModel {
   fixedMs: number;
   uploadBytesPerMs: number;
   computeRowsPerMs: number;
+  vectorValuesPerMs: number;
   readbackBytesPerMs: number;
   coldCompileMs: number;
 }
@@ -122,8 +125,9 @@ type VectorFragmentInput =
 
 const DEFAULT_COST: WebGpuCostModel = {
   fixedMs: 0.12,
-  uploadBytesPerMs: 2_000_000,
+  uploadBytesPerMs: 500_000,
   computeRowsPerMs: 10_000_000,
+  vectorValuesPerMs: 250_000,
   readbackBytesPerMs: 1_000_000,
   coldCompileMs: 0.08,
 };
@@ -602,7 +606,8 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
     const predicate = kernel;
     const transfer = physicalTransferBytes(compiled.fragment, kernel);
     enforceRuntimeBudget(compiled.fragment.id, context, transfer);
-    const selection = await this.#devices.scoped(
+    const attempt = physicalAttempt(this.id);
+    const selectionAttempt = this.#devices.scoped(
       this.id,
       async (lease) => {
         const deviceLimit = Math.min(
@@ -641,6 +646,7 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
             `lakeql:${compiled.fragment.id}:validity`,
           );
           buffers.push(valueBuffer, validityBuffer);
+          attempt.uploadBytes = transfer.uploadBytes;
           const entries: GPUBindGroupEntry[] = [
             { binding: 0, resource: { buffer: valueBuffer } },
             { binding: 1, resource: { buffer: validityBuffer } },
@@ -682,6 +688,8 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
           }
           encoder.copyBufferToBuffer(output, 0, readback, 0, outputBytes);
           lease.device.queue.submit([encoder.finish()]);
+          attempt.dispatches = input.batch.rowCount === 0 ? 0 : 1;
+          attempt.readbackBytes = transfer.outputBytes;
           await lease.device.queue.onSubmittedWorkDone();
           throwIfAborted(signal);
           await readback.mapAsync(lease.runtime.constants.mapMode.READ, 0, outputBytes);
@@ -701,6 +709,7 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
       },
       signal,
     );
+    const selection = await capturePhysicalAttempt(selectionAttempt, attempt, now, startedAt);
     const elapsedMs = now() - startedAt;
     enforceElapsedBudget(compiled.fragment.id, context, elapsedMs, now);
     const selectedRows = selectedRowCount(selection.length, selection);
@@ -757,7 +766,8 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
     const transfer = physicalTransferBytes(fragment, reduction);
     enforceRuntimeBudget(fragment.id, context, transfer);
     const tileCount = Math.ceil(input.batch.rowCount / reduction.tileRows);
-    const partials = await this.#devices.scoped(
+    const attempt = physicalAttempt(this.id);
+    const partialAttempt = this.#devices.scoped(
       this.id,
       async (lease) => {
         const deviceLimit = Math.min(
@@ -803,6 +813,7 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
             lease.runtime.constants.bufferUsage.UNIFORM,
           );
           const outputBytes = transfer.outputBytes;
+          attempt.uploadBytes = transfer.uploadBytes;
           const output = lease.device.createBuffer({
             label: `lakeql:${fragment.id}:partials`,
             size: outputBytes,
@@ -839,6 +850,8 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
           }
           encoder.copyBufferToBuffer(output, 0, readback, 0, outputBytes);
           lease.device.queue.submit([encoder.finish()]);
+          attempt.dispatches = tileCount === 0 ? 0 : 1;
+          attempt.readbackBytes = transfer.outputBytes;
           await lease.device.queue.onSubmittedWorkDone();
           throwIfAborted(signal);
           await readback.mapAsync(lease.runtime.constants.mapMode.READ, 0, outputBytes);
@@ -853,6 +866,7 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
       },
       signal,
     );
+    const partials = await capturePhysicalAttempt(partialAttempt, attempt, now, startedAt);
     if (reduction.kind === "grouped-reduction") {
       const grouped = fragment.operators.at(-1);
       if (grouped?.kind !== "grouped-reduce") {
@@ -1032,7 +1046,8 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
     const transfer = physicalTransferBytes(fragment, vector);
     enforceRuntimeBudget(fragment.id, context, transfer);
     const tileCount = Math.ceil(rowCount / vector.tileRows);
-    const outputWords = await this.#devices.scoped(
+    const attempt = physicalAttempt(this.id);
+    const outputAttempt = this.#devices.scoped(
       this.id,
       async (lease) => {
         const deviceLimit = Math.min(
@@ -1131,6 +1146,7 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
               lease.runtime.constants.bufferUsage.COPY_DST,
           });
           buffers.push(queryBuffer, paramsBuffer, output, readback);
+          attempt.uploadBytes = transfer.uploadBytes;
           const pipeline = await this.#pipeline(lease.device, lease.generation, vector);
           throwIfAborted(signal);
           const bindGroup = lease.device.createBindGroup({
@@ -1155,6 +1171,8 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
           }
           encoder.copyBufferToBuffer(output, 0, readback, 0, transfer.outputBytes);
           lease.device.queue.submit([encoder.finish()]);
+          attempt.dispatches = tileCount > 0 && vector.limit > 0 ? 1 : 0;
+          attempt.readbackBytes = transfer.outputBytes;
           await lease.device.queue.onSubmittedWorkDone();
           throwIfAborted(signal);
           await readback.mapAsync(lease.runtime.constants.mapMode.READ, 0, transfer.outputBytes);
@@ -1171,6 +1189,7 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
       },
       signal,
     );
+    const outputWords = await capturePhysicalAttempt(outputAttempt, attempt, now, startedAt);
     const candidates = mergeVectorTileOutputs(vector, outputWords, tileCount);
     const elapsedMs = now() - startedAt;
     enforceElapsedBudget(fragment.id, context, elapsedMs, now);
@@ -1315,6 +1334,39 @@ interface PhysicalTransfer {
   readonly largestBufferBytes: number;
 }
 
+function physicalAttempt(backendId: string): PhysicalExecutionAttemptMetrics {
+  return {
+    backendId,
+    elapsedMs: 0,
+    uploadBytes: 0,
+    readbackBytes: 0,
+    dispatches: 0,
+  };
+}
+
+async function capturePhysicalAttempt<T>(
+  operation: Promise<T>,
+  attempt: PhysicalExecutionAttemptMetrics,
+  now: () => number,
+  startedAt: number,
+): Promise<T> {
+  try {
+    return await operation;
+  } catch (error) {
+    if (!(error instanceof PhysicalBackendExecutionError)) throw error;
+    const attemptedMetrics = {
+      ...attempt,
+      elapsedMs: Math.max(0, now() - startedAt),
+    };
+    throw new PhysicalBackendExecutionError(error.backendId, error.message, {
+      replayable: error.replayable,
+      cause: error,
+      attemptedMetrics,
+      details: { attemptedMetrics },
+    });
+  }
+}
+
 function physicalTransferBytes(
   fragment: PhysicalFragment,
   predicate: WebGpuKernel,
@@ -1388,25 +1440,28 @@ function webGpuCost(
       ? { uploadBytes: fragment.estimates.inputBytes, outputBytes: fragment.estimates.outputBytes }
       : physicalTransferBytes(fragment, predicate);
   const uploadMs = transfer.uploadBytes / model.uploadBytesPerMs;
-  const computeUnits =
+  const vectorValues =
     predicate?.kind === "vector-top-k" &&
     (fragment.input.kind === "vector-candidates" ||
       fragment.input.kind === "resident-vector-candidates")
-      ? (fragment.input.rowCount * fragment.input.dimensions) / 16
-      : fragment.input.rowCount;
-  const computeMs = computeUnits / model.computeRowsPerMs;
+      ? fragment.input.rowCount * fragment.input.dimensions
+      : undefined;
+  const computeUnits = vectorValues ?? fragment.input.rowCount;
+  const computeMs =
+    computeUnits / (vectorValues === undefined ? model.computeRowsPerMs : model.vectorValuesPerMs);
   const readbackMs = transfer.outputBytes / model.readbackBytesPerMs;
   const compileMs = compiledResident ? 0 : model.coldCompileMs;
   const synchronizationMs = model.fixedMs;
+  const outputConversionMs = fragment.input.rowCount / 20_000_000;
   return {
-    totalMs: uploadMs + computeMs + readbackMs + compileMs + synchronizationMs,
+    totalMs: uploadMs + computeMs + readbackMs + compileMs + synchronizationMs + outputConversionMs,
     inputConversionMs: 0,
     uploadMs,
     compileMs,
     computeMs,
     synchronizationMs,
     readbackMs,
-    outputConversionMs: fragment.input.rowCount / 20_000_000,
+    outputConversionMs,
   };
 }
 
