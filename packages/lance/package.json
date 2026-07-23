@@ -38,6 +38,9 @@
     "node": ">=22"
   },
   "dependencies": {
+    "apache-arrow": "19.0.1",
+    "flatbuffers": "^24.3.25",
+    "fzstd": "^0.1.1",
     "lakeql-core": "workspace:*"
   },
   "devDependencies": {

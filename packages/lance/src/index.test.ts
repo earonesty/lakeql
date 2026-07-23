@@ -8,6 +8,10 @@ import { openLanceDataset } from "./index.js";
 
 const FIXTURE_ROOT = resolve(import.meta.dirname, "../fixtures/take-v2.0.lance");
 const DATASET_PATH = "fixtures/take-v2.0.lance";
+const TYPE_FIXTURE_ROOT = resolve(import.meta.dirname, "../fixtures/types-v2.0.lance");
+const TYPE_DATASET_PATH = "fixtures/types-v2.0.lance";
+const DELETION_FIXTURE_ROOT = resolve(import.meta.dirname, "../fixtures/deletions-v2.0.lance");
+const DELETION_DATASET_PATH = "fixtures/deletions-v2.0.lance";
 const servers: { close(): Promise<void> }[] = [];
 
 afterEach(async () => {
@@ -67,6 +71,113 @@ describe("lakeql-lance takeRows", () => {
     expect(result.stats.rowsRequested).toBe(5);
     expect(result.stats.rowsMaterialized).toBe(5);
     expect(result.stats.fragmentsTouched).toBe(3);
+  });
+
+  it("materializes the supported scalar, binary, date, and timestamp type matrix", async () => {
+    const fixture = await fixtureStore(TYPE_FIXTURE_ROOT, TYPE_DATASET_PATH);
+    const dataset = await openLanceDataset({
+      store: fixture.store,
+      path: TYPE_DATASET_PATH,
+      budget: generousBudget(),
+    });
+    const result = await dataset.takeRows({
+      snapshotId: dataset.snapshotId,
+      rowIds: [1, 2],
+      select: [
+        "i8",
+        "u8",
+        "i16",
+        "u16",
+        "i32",
+        "u32",
+        "i64",
+        "u64",
+        "f32",
+        "f64",
+        "flag",
+        "plain_text",
+        "payload",
+        "event_date",
+        "utc_millis",
+        "local_micros",
+        "maybe_i32",
+      ],
+    });
+
+    expect(result.rows[0]).toMatchObject({
+      i8: -7,
+      u8: 249,
+      i16: -1_599,
+      u16: 64_999,
+      i32: -1_999_999,
+      u32: 4_000_000_001,
+      i64: -9_007_199_254_740_992n,
+      u64: 18_000_000_000_000_000_001n,
+      f32: 2.25,
+      f64: -4.5,
+      flag: false,
+      plain_text: "plain-1",
+      payload: Uint8Array.of(0, 254, 1),
+      event_date: new Date("2026-07-24T00:00:00.000Z"),
+      utc_millis: {
+        epochNanoseconds: 1_784_768_523_457_000_000n,
+        unit: "millis",
+        isAdjustedToUTC: true,
+      },
+      local_micros: {
+        epochNanoseconds: 1_784_768_523_456_790_000n,
+        unit: "micros",
+        isAdjustedToUTC: false,
+      },
+      maybe_i32: null,
+    });
+    expect(result.rows[1]).toMatchObject({
+      i8: -6,
+      plain_text: "plain-2",
+      payload: Uint8Array.of(0, 253, 2),
+      event_date: new Date("2026-07-25T00:00:00.000Z"),
+      maybe_i32: 2,
+    });
+  });
+
+  it("treats snapshot deletions as explicit missing rows without hiding live rows", async () => {
+    const fixture = await fixtureStore(DELETION_FIXTURE_ROOT, DELETION_DATASET_PATH);
+    const expected = JSON.parse(
+      await readFile(resolve(DELETION_FIXTURE_ROOT, "expected.json"), "utf8"),
+    ) as { originalRowIds: string[]; deletedRowIds: string[] };
+    const dataset = await openLanceDataset({
+      store: fixture.store,
+      path: DELETION_DATASET_PATH,
+      budget: generousBudget(),
+    });
+    const requested = [2, 3, 7, 13].map((offset) => expected.originalRowIds[offset] ?? "");
+
+    await expect(
+      dataset.takeRows({
+        snapshotId: dataset.snapshotId,
+        rowIds: requested,
+        select: ["serial", "label"],
+      }),
+    ).rejects.toMatchObject({
+      code: "LAKEQL_OBJECT_NOT_FOUND",
+      details: {
+        missingRowIds: expected.deletedRowIds,
+        deletedRowIds: expected.deletedRowIds,
+      },
+    });
+
+    await expect(
+      dataset.takeRows({
+        snapshotId: dataset.snapshotId,
+        rowIds: requested,
+        select: ["serial", "label"],
+        onMissing: "null",
+      }),
+    ).resolves.toMatchObject({
+      rows: [null, { serial: 103, label: "row-3" }, null, null],
+      missingRowIds: expected.deletedRowIds,
+      deletedRowIds: expected.deletedRowIds,
+    });
   });
 
   it("materializes 32 scattered rows with bounded reads and concurrency", async () => {
@@ -439,16 +550,19 @@ function generousBudget() {
   };
 }
 
-async function fixtureStore(): Promise<{
+async function fixtureStore(
+  root = FIXTURE_ROOT,
+  datasetPath = DATASET_PATH,
+): Promise<{
   store: ObjectStore;
   files: Map<string, Uint8Array>;
 }> {
   const store = memoryStore();
   const files = new Map<string, Uint8Array>();
-  for (const relative of await fixtureFiles(FIXTURE_ROOT)) {
+  for (const relative of await fixtureFiles(root)) {
     if (relative === "expected.json") continue;
-    const bytes = new Uint8Array(await readFile(resolve(FIXTURE_ROOT, relative)));
-    const path = `${DATASET_PATH}/${relative}`;
+    const bytes = new Uint8Array(await readFile(resolve(root, relative)));
+    const path = `${datasetPath}/${relative}`;
     files.set(path, bytes);
     await store.put(path, bytes);
   }

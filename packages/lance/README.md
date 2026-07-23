@@ -30,19 +30,22 @@ const result = await dataset.takeRows({
 
 Store `dataset.snapshotId` with every external index generation. `takeRows` requires it and returns
 a typed `LAKEQL_LANCE_SNAPSHOT_MISMATCH` error before reading data if it does not match. Duplicate
-IDs and caller order are preserved. Missing IDs throw by default; use `onMissing: "null"` to retain
-their position as `null`.
+IDs and caller order are preserved. Missing and snapshot-deleted IDs throw by default; use
+`onMissing: "null"` to retain their position as `null`. `deletedRowIds` distinguishes deleted IDs
+from IDs that never belonged to the snapshot.
 
 ## Compatibility
 
 The current reader supports stable-row-ID datasets written with Lance storage version 2.0 and V2
-manifest paths. The checked-in compatibility fixture was produced by the official `pylance 8.0.0`
-writer. Supported projected leaf types are UTF-8 strings, binary values, booleans, signed and
-unsigned integers, and 32/64-bit floats using uncompressed flat and nullable encodings.
+manifest paths. The checked-in compatibility fixtures were produced by the official
+`pylance 8.0.0` writer. Supported projected leaf types are UTF-8 strings, binary values, booleans,
+signed and unsigned integers, 32/64-bit floats, dates, and second/millisecond/microsecond/nanosecond
+timestamps using uncompressed flat and nullable encodings. Sparse Arrow-array deletion files are
+supported, including Zstandard-compressed buffers.
 
-The reader deliberately rejects unsupported storage versions, compression, nested fields,
-deletion files, external row-ID sequences, and unknown encodings. It never silently scans a
-column, file, or dataset, and it rejects a data range that would read an entire Lance data file.
+The reader deliberately rejects unsupported storage versions, compressed data pages, nested
+fields, Roaring-bitmap deletion files, and unknown encodings. It never silently scans a column,
+file, or dataset, and it rejects a data range that would read an entire Lance data file.
 
 All metadata and data access flows through LakeQL's `ObjectStore`, cancellation, concurrency,
 cache, and query-budget contracts. The result reports snapshot/data metadata bytes, logical and

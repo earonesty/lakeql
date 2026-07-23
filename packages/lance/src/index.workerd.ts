@@ -44,6 +44,65 @@ describe("lakeql-lance workerd runtime", () => {
       selectedColumns: ["serial", "mark_text", "active"],
     });
     expect(result.stats.physicalBytesRequested).toBeLessThan(16_000);
+
+    const typed = await openLanceDataset({
+      store,
+      path: "fixtures/types-v2.0.lance",
+      budget: {
+        maxBytes: 32_000,
+        maxRangeRequests: 64,
+        maxMemoryBytes: 32_000,
+        maxOutputRows: 4,
+        maxConcurrentReads: 2,
+        maxElapsedMs: 3_000,
+      },
+    });
+    await expect(
+      typed.takeRows({
+        snapshotId: typed.snapshotId,
+        rowIds: [1n],
+        select: ["i8", "u64", "plain_text", "payload", "event_date", "utc_millis"],
+      }),
+    ).resolves.toMatchObject({
+      rows: [
+        {
+          i8: -7,
+          u64: 18_000_000_000_000_000_001n,
+          plain_text: "plain-1",
+          payload: Uint8Array.of(0, 254, 1),
+          event_date: new Date("2026-07-24T00:00:00.000Z"),
+          utc_millis: {
+            epochNanoseconds: 1_784_768_523_457_000_000n,
+            unit: "millis",
+            isAdjustedToUTC: true,
+          },
+        },
+      ],
+    });
+
+    const deleted = await openLanceDataset({
+      store,
+      path: "fixtures/deletions-v2.0.lance",
+      budget: {
+        maxBytes: 32_000,
+        maxRangeRequests: 64,
+        maxMemoryBytes: 32_000,
+        maxOutputRows: 4,
+        maxConcurrentReads: 2,
+        maxElapsedMs: 3_000,
+      },
+    });
+    await expect(
+      deleted.takeRows({
+        snapshotId: deleted.snapshotId,
+        rowIds: [2n, 3n],
+        select: ["serial", "label"],
+        onMissing: "null",
+      }),
+    ).resolves.toMatchObject({
+      rows: [null, { serial: 103, label: "row-3" }],
+      deletedRowIds: ["2"],
+    });
   });
 });
 

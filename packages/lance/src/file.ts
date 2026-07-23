@@ -1,4 +1,10 @@
-import { LakeqlError, type ObjectHead, type Row } from "lakeql-core";
+import {
+  LakeqlError,
+  type ObjectHead,
+  type Row,
+  type TimestampUnit,
+  timestampFromEpoch,
+} from "lakeql-core";
 import type { ByteRange, LanceReadContext, RangeLease } from "./io.js";
 import {
   type LanceArrayEncoding,
@@ -24,16 +30,6 @@ export async function materializeFragmentRows(options: {
   rowOffsets: readonly number[];
 }): Promise<Map<number, Row>> {
   const { context, fragment, fragmentIndex, rowOffsets } = options;
-  if (fragment.deletionFile !== undefined) {
-    throw new LakeqlError(
-      "LAKEQL_UNSUPPORTED_LANCE_FEATURE",
-      "Lance snapshots with deletion files are not supported by projected row materialization",
-      {
-        fragmentId: fragment.id.toString(),
-        deletedRows: fragment.deletionFile.numDeletedRows.toString(),
-      },
-    );
-  }
   context.stats.fragments.add(fragmentIndex);
   const rows = new Map<number, Row>(rowOffsets.map((offset) => [offset, {}]));
   const fieldByName = new Map(options.fields.map((field) => [field.name, field]));
@@ -276,8 +272,10 @@ async function executeCellPlans(
       const start =
         plan.rowInPage === 0
           ? 0n
-          : readFlatU64(phaseOne, plan.page, plan.indices, plan.rowInPage - 1) %
-            plan.nullAdjustment;
+          : binaryOffset(
+              readFlatU64(phaseOne, plan.page, plan.indices, plan.rowInPage - 1),
+              plan.nullAdjustment,
+            );
       if (end < start) corrupt("Lance binary offsets are not monotonic", { path });
       const valueBuffer = pageBuffer(plan.page, plan.bytes);
       const startNumber = safeU64(start, "binary value start");
@@ -473,6 +471,16 @@ function decodeFixedValue(
     return ((bytes[0] ?? 0) & (1 << (rowInPage % 8))) !== 0;
   }
   const view = dataView(bytes);
+  const temporal = parseTemporalType(logicalType);
+  if (temporal?.kind === "date32") {
+    return new Date(view.getInt32(0, true) * 86_400_000);
+  }
+  if (temporal?.kind === "timestamp") {
+    const raw = view.getBigInt64(0, true);
+    const value = temporal.unit === "seconds" ? raw * 1_000n : raw;
+    const unit: TimestampUnit = temporal.unit === "seconds" ? "millis" : temporal.unit;
+    return timestampFromEpoch(value, unit, temporal.isAdjustedToUTC);
+  }
   switch (logicalType) {
     case "int8":
       return view.getInt8(0);
@@ -503,6 +511,9 @@ function decodeFixedValue(
 }
 
 function bitsForLogicalType(logicalType: string): number | undefined {
+  const temporal = parseTemporalType(logicalType);
+  if (temporal?.kind === "date32") return 32;
+  if (temporal?.kind === "timestamp") return 64;
   switch (logicalType) {
     case "bool":
       return 1;
@@ -528,6 +539,29 @@ function bitsForLogicalType(logicalType: string): number | undefined {
     default:
       unsupported("Unsupported projected Lance logical type", { logicalType });
   }
+}
+
+function parseTemporalType(logicalType: string):
+  | { kind: "date32" }
+  | {
+      kind: "timestamp";
+      unit: "seconds" | TimestampUnit;
+      isAdjustedToUTC: boolean;
+    }
+  | undefined {
+  if (logicalType === "date32:day") return { kind: "date32" };
+  const match = /^timestamp:(s|ms|us|ns):(.+)$/u.exec(logicalType);
+  if (match === null) return undefined;
+  const unit = match[1];
+  return {
+    kind: "timestamp",
+    unit: unit === "s" ? "seconds" : unit === "ms" ? "millis" : unit === "us" ? "micros" : "nanos",
+    isAdjustedToUTC: match[2] !== "-",
+  };
+}
+
+function binaryOffset(value: bigint, nullAdjustment: bigint): bigint {
+  return nullAdjustment > 0n ? value % nullAdjustment : value;
 }
 
 function findPage(

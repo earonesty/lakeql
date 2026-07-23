@@ -6,6 +6,7 @@ import {
   type QueryBudget,
   type Row,
 } from "lakeql-core";
+import { readDeletedRowOffsets } from "./deletions.js";
 import { materializeFragmentRows } from "./file.js";
 import {
   type LanceRangePlanningOptions,
@@ -59,6 +60,7 @@ export interface TakeLanceRowsOptions {
 export interface LanceTakeRowsResult {
   rows: (Row | null)[];
   missingRowIds: string[];
+  deletedRowIds: string[];
   stats: LanceReadStats;
 }
 
@@ -131,15 +133,23 @@ export class LanceDataset {
     );
     context.check();
     const uniqueRowIds = [...new Map(rowIds.map((rowId) => [rowId.toString(), rowId])).values()];
-    const sequences = await Promise.all(
+    const fragments = await Promise.all(
       this.options.manifest.fragments.map(async (fragment) => ({
         physicalRows: fragment.physicalRows,
         segments: parseRowIdSequence(
           await readFragmentRowIds(context, this.options.root, fragment),
         ),
+        deletedOffsets: await readDeletedRowOffsets(context, this.options.root, fragment),
       })),
     );
-    const addresses = resolveRequestedRowIds(uniqueRowIds, sequences);
+    const addresses = resolveRequestedRowIds(uniqueRowIds, fragments);
+    const deletedRowIds: string[] = [];
+    for (const [rowId, address] of addresses) {
+      if (fragments[address.fragmentIndex]?.deletedOffsets.has(address.rowOffset)) {
+        deletedRowIds.push(rowId);
+        addresses.delete(rowId);
+      }
+    }
     const missingRowIds = uniqueRowIds
       .filter((rowId) => !addresses.has(rowId.toString()))
       .map(String);
@@ -150,6 +160,7 @@ export class LanceDataset {
         {
           snapshotId: this.snapshotId,
           missingRowIds,
+          deletedRowIds,
         },
       );
     }
@@ -194,6 +205,7 @@ export class LanceDataset {
     return {
       rows,
       missingRowIds,
+      deletedRowIds,
       stats: finalizeStats({
         mutable: stats,
         snapshotId: this.snapshotId,

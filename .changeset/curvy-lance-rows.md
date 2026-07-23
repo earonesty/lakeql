@@ -4,4 +4,5 @@
 ---
 
 Add snapshot-safe projected materialization for stable Lance row IDs through bounded
-object-store range reads, plus typed Lance compatibility and snapshot errors.
+object-store range reads, a broad scalar/binary/date/timestamp type matrix, sparse
+deletion vectors, and typed Lance compatibility and snapshot errors.
