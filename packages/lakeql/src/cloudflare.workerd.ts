@@ -84,6 +84,8 @@ describe("lakeql/cloudflare", () => {
 
     expect(cloudflare.createLake).toBeTypeOf("function");
     expect(cloudflare.r2Store).toBeTypeOf("function");
+    expect(cloudflare.httpStore).toBeTypeOf("function");
+    expect(cloudflare.s3Store).toBeTypeOf("function");
     expect(cloudflare.memoryStore).toBeTypeOf("function");
   });
 

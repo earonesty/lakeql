@@ -7,6 +7,7 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: {
     index: "src/index.ts",
+    fetch: "src/fetch.ts",
     node: "src/node.ts",
     cloudflare: "src/cloudflare.ts",
     // The CLI lives in the lakeql-cli workspace source and is bundled in so a
@@ -21,6 +22,7 @@ export default defineConfig({
     resolve: true,
     entry: {
       index: "src/index.ts",
+      fetch: "src/fetch.ts",
       node: "src/node.ts",
       cloudflare: "src/cloudflare.ts",
     },

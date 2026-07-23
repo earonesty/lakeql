@@ -1,5 +1,14 @@
 # lakeql
 
+## 0.7.0
+
+### Minor Changes
+
+- Add a portable Fetch-runtime entry point for HTTP and S3-compatible storage,
+  and expose those adapters through the Node.js and Cloudflare runtime entry
+  points. Document the correct imports for Web Workers, edge functions, AWS
+  Lambda, and Cloudflare Workers.
+
 ## 0.6.0
 
 ### Minor Changes
