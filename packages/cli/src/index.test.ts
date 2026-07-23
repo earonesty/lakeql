@@ -1102,6 +1102,7 @@ describe("runCli", () => {
       "files planned: 1
       files skipped: 0
       projected columns: amount, store_id
+      physical fragments: 0
       "
     `);
     expect(inspect).toMatchInlineSnapshot(`

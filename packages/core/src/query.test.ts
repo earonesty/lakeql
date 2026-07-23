@@ -5,6 +5,18 @@ import { add, and, between, col, eq, fn, gt, isIn, isNull, like, lit, not, or } 
 import { createBookmark } from "./manifest.js";
 import { memoryStore } from "./memory-store.js";
 import {
+  type BackendAssessment,
+  type BackendExecutionContext,
+  type BackendPlanningContext,
+  type CompiledPhysicalFragment,
+  CpuPhysicalBackend,
+  type PhysicalCapabilities,
+  type PhysicalExecutionBackend,
+  type PhysicalFragment,
+  type PhysicalFragmentInput,
+  type PhysicalFragmentResult,
+} from "./physical.js";
+import {
   type AggregateSpec,
   deserializeAggregateOperatorState,
   deserializeSortOperatorState,
@@ -29,6 +41,61 @@ import type { ObjectInfo } from "./store.js";
 import { timestampValueFromIso } from "./timestamp.js";
 import type { Bookmark, Row } from "./types.js";
 
+class RecordingPhysicalBackend implements PhysicalExecutionBackend {
+  readonly id = "recording-accelerator";
+  readonly compiledOperators: PhysicalFragment["operators"][number]["kind"][][] = [];
+  private readonly cpu = new CpuPhysicalBackend("recording-cpu-delegate");
+
+  capabilities(): PhysicalCapabilities {
+    return {
+      ...this.cpu.capabilities(),
+      backendKind: "accelerator",
+      supportsResidentInput: false,
+      supportsResidentOutput: false,
+    };
+  }
+
+  assess(fragment: PhysicalFragment, context: BackendPlanningContext): BackendAssessment {
+    const assessment = this.cpu.assess(fragment, context);
+    return {
+      ...assessment,
+      cost: {
+        ...assessment.cost,
+        totalMs: 0,
+        computeMs: 0,
+      },
+    };
+  }
+
+  async compile(fragment: PhysicalFragment): Promise<CompiledPhysicalFragment> {
+    this.compiledOperators.push(fragment.operators.map((operator) => operator.kind));
+    await this.cpu.compile(fragment);
+    return { backendId: this.id, fragment };
+  }
+
+  async execute(
+    compiled: CompiledPhysicalFragment,
+    input: PhysicalFragmentInput,
+    context: BackendExecutionContext,
+  ): Promise<PhysicalFragmentResult> {
+    const delegated = await this.cpu.execute(
+      { backendId: this.cpu.id, fragment: compiled.fragment },
+      input,
+      context,
+    );
+    return {
+      ...delegated,
+      metrics: {
+        ...delegated.metrics,
+        backendId: this.id,
+        uploadBytes: compiled.fragment.estimates.inputBytes,
+        readbackBytes: compiled.fragment.estimates.outputBytes,
+        dispatches: 1,
+      },
+    };
+  }
+}
+
 class FakeScanner implements ScanAdapter {
   readonly requestedColumns: (string[] | undefined)[] = [];
   readonly requestedColumnBatchColumns: (string[] | undefined)[] = [];
@@ -38,12 +105,14 @@ class FakeScanner implements ScanAdapter {
   readonly requestedBatchSizes: number[] = [];
   readonly requestedPaths: string[] = [];
   readonly requestedWindowTasks: TaskInput[][] = [];
+  readonly scanColumns?: ScanAdapter["scanColumns"];
   readonly scanVectorBatches?: ScanAdapter["scanVectorBatches"];
   readonly executeWindowTasks?: ScanAdapter["executeWindowTasks"];
 
   constructor(
     private readonly rowsByPath: Record<string, Row[]>,
     enableVectorBatches = false,
+    enableColumnBatches = false,
     windowTaskRows?: Row[],
   ) {
     if (windowTaskRows !== undefined) {
@@ -80,6 +149,23 @@ class FakeScanner implements ScanAdapter {
             ]),
           );
           yield { rowOffset: offset, batch: batchFromColumns(columns) };
+        }
+      };
+    }
+    if (enableColumnBatches) {
+      this.scanColumns = async function* (this: FakeScanner, path: string, options: ScanOptions) {
+        this.requestedPaths.push(path);
+        this.requestedColumnBatchColumns.push(options.columns);
+        const rows = this.rowsByPath[path] ?? [];
+        for (let offset = 0; offset < rows.length; offset += options.batchSize) {
+          const slice = rows.slice(offset, offset + options.batchSize);
+          const columns = Object.fromEntries(
+            (options.columns ?? Object.keys(slice[0] ?? {})).map((column) => [
+              column,
+              slice.map((row) => row[column]),
+            ]),
+          );
+          yield batchFromColumns(columns);
         }
       };
     }
@@ -134,13 +220,20 @@ async function makeLake(config: {
   policy?: ConstructorParameters<typeof Lake>[0]["policy"];
   now?: () => number;
   vectorBatches?: boolean;
+  columnBatches?: boolean;
   windowTaskRows?: Row[];
+  physicalExecution?: ConstructorParameters<typeof Lake>[0]["physicalExecution"];
 }) {
   const store = memoryStore();
   for (const path of Object.keys(config.rowsByPath)) {
     await store.put(path, new Uint8Array([1, 2, 3]));
   }
-  const scanner = new FakeScanner(config.rowsByPath, config.vectorBatches, config.windowTaskRows);
+  const scanner = new FakeScanner(
+    config.rowsByPath,
+    config.vectorBatches,
+    config.columnBatches,
+    config.windowTaskRows,
+  );
   const lake = new Lake({
     store,
     scanner,
@@ -150,6 +243,7 @@ async function makeLake(config: {
     policy: config.policy,
     now: config.now,
     queryId: () => "q_test",
+    physicalExecution: config.physicalExecution,
   });
   return { lake, scanner, store };
 }
@@ -300,6 +394,101 @@ describe("Lake query runtime", () => {
     expect(scanner.requestedColumns).toEqual([]);
     expect(scanner.requestedVectorBatchColumns).toEqual([["amount", "region"], ["id"]]);
     expect(scanner.requestedVectorBatchWindows).toEqual([{}, { rowStart: 3, rowEnd: 4 }]);
+  });
+
+  it("places projected, grouped-reduce, and top-k fragments on an installed backend", async () => {
+    const accelerator = new RecordingPhysicalBackend();
+    const { lake } = await makeLake({
+      vectorBatches: true,
+      columnBatches: true,
+      physicalExecution: {
+        backends: [accelerator],
+        acceleratorPolicy: "required",
+      },
+      rowsByPath: {
+        table: [
+          { id: 1, amount: 5, region: "west" },
+          { id: 2, amount: 12, region: "east" },
+          { id: 3, amount: 20, region: "west" },
+          { id: 4, amount: 30, region: "east" },
+        ],
+      },
+    });
+
+    const projected = lake.path("table").select(["id"]).where(gt("amount", 10)).batchSize(2).run();
+    await expect(projected.toArray()).resolves.toEqual([{ id: 2 }, { id: 3 }, { id: 4 }]);
+    const projectedExplain = await projected.explain();
+    expect(projectedExplain.json.physicalFragments).toEqual([
+      expect.objectContaining({
+        backendId: "recording-accelerator",
+        operators: ["select", "project"],
+        executions: 2,
+        inputRows: 4,
+        selectedRows: 3,
+        outputRows: 3,
+        dispatches: 2,
+      }),
+    ]);
+    expect(projectedExplain.text).toContain("select -> project on recording-accelerator");
+    expect(projected.stats).toMatchObject({
+      physicalFragments: 2,
+      acceleratorFragments: 2,
+      acceleratorDispatches: 2,
+    });
+
+    await expect(
+      lake
+        .path("table")
+        .where(gt("amount", 10))
+        .groupBy(["region"])
+        .aggregate({ total: { op: "sum", column: "amount" } }),
+    ).resolves.toEqual([
+      { region: "east", total: 42 },
+      { region: "west", total: 20 },
+    ]);
+    await expect(
+      lake
+        .path("table")
+        .select(["id", "amount"])
+        .where(gt("amount", 5))
+        .orderBy([{ column: "id", direction: "desc" }])
+        .limit(2)
+        .toArray(),
+    ).resolves.toEqual([
+      { id: 4, amount: 30 },
+      { id: 3, amount: 20 },
+    ]);
+
+    expect(accelerator.compiledOperators).toEqual(
+      expect.arrayContaining([
+        ["select", "project"],
+        ["select", "grouped-reduce"],
+        ["select", "top-k"],
+      ]),
+    );
+  });
+
+  it("does not silently bypass required physical placement", async () => {
+    const accelerator = new RecordingPhysicalBackend();
+    const { lake } = await makeLake({
+      physicalExecution: {
+        backends: [accelerator],
+        acceleratorPolicy: "required",
+      },
+      rowsByPath: { table: [{ id: 1 }, { id: 2 }] },
+    });
+
+    await expect(lake.path("table").select(["id"]).toArray()).rejects.toMatchObject({
+      code: "LAKEQL_PHYSICAL_BACKEND_UNAVAILABLE",
+    });
+    await expect(
+      lake
+        .path("table")
+        .groupBy([])
+        .aggregate({ rows: { op: "count" } }),
+    ).rejects.toMatchObject({
+      code: "LAKEQL_PHYSICAL_BACKEND_UNAVAILABLE",
+    });
   });
 
   it("pushes simple vector projection limits into scan windows", async () => {

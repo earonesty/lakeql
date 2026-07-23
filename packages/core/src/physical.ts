@@ -12,12 +12,14 @@ import type { AggregateSpec, OrderByTerm, QueryBudget } from "./query.js";
 import { throwIfAborted } from "./store.js";
 import {
   createVectorAggregateStates,
+  restoreVectorAggregateStates,
   snapshotVectorAggregateStates,
   updateVectorAggregateStates,
   type VectorAggregateStateSnapshots,
 } from "./vector-aggregate.js";
 import {
   createVectorGroupByState,
+  restoreVectorGroupByState,
   snapshotVectorGroupByState,
   updateVectorGroupByState,
   type VectorGroupByStateSnapshot,
@@ -208,6 +210,12 @@ export interface BackendPlanningContext {
 export interface BackendExecutionContext {
   budget?: QueryBudget;
   now?: () => number;
+  queryStartedAt?: number;
+  enforceOutputRows?: boolean;
+  priorOutput?: Extract<
+    PhysicalOutputValue,
+    { kind: "aggregate-snapshot" | "grouped-aggregate-snapshot" }
+  >;
 }
 
 export interface CompiledPhysicalFragment {
@@ -240,6 +248,7 @@ export interface PhysicalExecutionMetrics {
   backendId: string;
   elapsedMs: number;
   inputRows: number;
+  selectedRows?: number;
   outputRows?: number;
   inputBytes: number;
   uploadBytes: number;
@@ -408,6 +417,7 @@ export class CpuPhysicalBackend implements PhysicalExecutionBackend {
 
     let batch = input.batch;
     let selection: Selection | undefined;
+    let matchedRows = batch.rowCount;
     let terminal:
       | Extract<PhysicalOutputValue, { kind: "aggregate-snapshot" | "grouped-aggregate-snapshot" }>
       | undefined;
@@ -425,13 +435,23 @@ export class CpuPhysicalBackend implements PhysicalExecutionBackend {
         case "select": {
           const next = predicateSelection(batch, operator.predicate);
           selection = selection === undefined ? next : intersectSelections(selection, next);
+          matchedRows = selectedRowCount(batch.rowCount, selection);
           break;
         }
         case "project":
           batch = vectorProjectBatch(batch, operator.select, operator.projections);
           break;
         case "reduce": {
-          const states = createVectorAggregateStates(operator.aggregates, aggregateOptions);
+          if (
+            context.priorOutput !== undefined &&
+            context.priorOutput.kind !== "aggregate-snapshot"
+          ) {
+            throw priorOutputMismatch("aggregate-snapshot", context.priorOutput.kind);
+          }
+          const states =
+            context.priorOutput?.kind === "aggregate-snapshot"
+              ? restoreVectorAggregateStates(context.priorOutput.snapshot, aggregateOptions)
+              : createVectorAggregateStates(operator.aggregates, aggregateOptions);
           updateVectorAggregateStates(
             states,
             operator.aggregates,
@@ -446,10 +466,27 @@ export class CpuPhysicalBackend implements PhysicalExecutionBackend {
           break;
         }
         case "grouped-reduce": {
-          const state = createVectorGroupByState(operator.keys, operator.aggregates);
-          updateVectorGroupByState(state, batch, selection, {
+          if (
+            context.priorOutput !== undefined &&
+            context.priorOutput.kind !== "grouped-aggregate-snapshot"
+          ) {
+            throw priorOutputMismatch("grouped-aggregate-snapshot", context.priorOutput.kind);
+          }
+          const groupOptions = {
             ...aggregateOptions,
             ...(operator.maxGroups === undefined ? {} : { maxGroups: operator.maxGroups }),
+          };
+          const state =
+            context.priorOutput?.kind === "grouped-aggregate-snapshot"
+              ? restoreVectorGroupByState(
+                  operator.keys,
+                  operator.aggregates,
+                  context.priorOutput.snapshot,
+                  groupOptions,
+                )
+              : createVectorGroupByState(operator.keys, operator.aggregates);
+          updateVectorGroupByState(state, batch, selection, {
+            ...groupOptions,
           });
           terminal = {
             kind: "grouped-aggregate-snapshot",
@@ -490,9 +527,12 @@ export class CpuPhysicalBackend implements PhysicalExecutionBackend {
     }
 
     const output = cpuOutput(compiled.fragment.output, batch, selection, terminal);
-    const elapsedMs = now() - startedAt;
+    const finishedAt = now();
+    const elapsedMs = finishedAt - startedAt;
+    const budgetElapsedMs = finishedAt - (context.queryStartedAt ?? startedAt);
     const outputRows = physicalOutputRows(output);
     if (
+      context.enforceOutputRows !== false &&
       outputRows !== undefined &&
       budget?.maxOutputRows !== undefined &&
       outputRows > budget.maxOutputRows
@@ -508,14 +548,14 @@ export class CpuPhysicalBackend implements PhysicalExecutionBackend {
         },
       );
     }
-    if (budget?.maxElapsedMs !== undefined && elapsedMs > budget.maxElapsedMs) {
+    if (budget?.maxElapsedMs !== undefined && budgetElapsedMs > budget.maxElapsedMs) {
       throw new LakeqlError(
         "LAKEQL_BUDGET_EXCEEDED",
-        `Query exceeded elapsed milliseconds budget (${elapsedMs} > ${budget.maxElapsedMs})`,
+        `Query exceeded elapsed milliseconds budget (${budgetElapsedMs} > ${budget.maxElapsedMs})`,
         {
           resource: "elapsed milliseconds",
           limit: budget.maxElapsedMs,
-          actual: elapsedMs,
+          actual: budgetElapsedMs,
           fragmentId: compiled.fragment.id,
         },
       );
@@ -526,6 +566,7 @@ export class CpuPhysicalBackend implements PhysicalExecutionBackend {
         backendId: this.id,
         elapsedMs,
         inputRows: input.batch.rowCount,
+        selectedRows: matchedRows,
         ...(outputRows === undefined ? {} : { outputRows }),
         inputBytes: estimateBatchBytes(input.batch),
         uploadBytes: 0,
@@ -1092,4 +1133,12 @@ function invalidCostReasons(cost: PhysicalCostEstimate): BackendRejection[] {
 function errorMessage(error: unknown): string | undefined {
   if (error === undefined) return undefined;
   return error instanceof Error ? error.message : String(error);
+}
+
+function priorOutputMismatch(expected: string, actual: string): LakeqlError {
+  return new LakeqlError(
+    "LAKEQL_TYPE_ERROR",
+    `Prior physical output ${actual} cannot seed ${expected}`,
+    { expected, actual },
+  );
 }
