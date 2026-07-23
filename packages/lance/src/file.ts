@@ -506,17 +506,14 @@ async function executeCellPlans(
         continue;
       }
       const range = flatRange(plan.page, plan.flat, plan.rowInPage);
-      assignCell(
-        output,
-        plan.rowOffset,
-        plan.field.name,
-        decodeFixedValue(
-          phaseOne.slice(range),
-          plan.flat.bitsPerValue,
-          plan.rowInPage,
-          plan.field.logicalType,
-        ),
+      const decoded = decodeFixedValue(
+        phaseOne.slice(range),
+        plan.flat.bitsPerValue,
+        plan.rowInPage,
+        plan.field.logicalType,
       );
+      context.accountDecodedMemory(estimateDecodedValueBytes(decoded));
+      assignCell(output, plan.rowOffset, plan.field.name, decoded);
     }
     for (const plan of fixedLists) {
       if (
@@ -533,6 +530,12 @@ async function executeCellPlans(
         plan.dimension,
       );
       const bytes = phaseOne.slice(range);
+      const valueBytes =
+        plan.dimension *
+        (plan.itemLogicalType === "float"
+          ? Float32Array.BYTES_PER_ELEMENT
+          : Float64Array.BYTES_PER_ELEMENT);
+      context.accountDecodedMemory(valueBytes);
       const values =
         plan.itemLogicalType === "float"
           ? new Float32Array(plan.dimension)
@@ -544,7 +547,6 @@ async function executeCellPlans(
             ? view.getFloat32(index * 4, true)
             : view.getFloat64(index * 8, true);
       }
-      context.accountDecodedMemory(values.byteLength);
       assignCell(output, plan.rowOffset, plan.field.name, values);
     }
     for (const plan of dictionaries) {
@@ -624,16 +626,12 @@ async function executeCellPlans(
       } else {
         const bytes = value.range === undefined ? new Uint8Array() : phaseTwo?.slice(value.range);
         if (bytes === undefined) corrupt("Missing Lance binary value bytes");
+        context.accountDecodedMemory(bytes.byteLength);
         const decoded =
           value.plan.field.logicalType === "string" ||
           value.plan.field.logicalType === "large_string"
             ? decodeUtf8(bytes)
             : copyBytes(bytes);
-        context.accountDecodedMemory(
-          typeof decoded === "string"
-            ? new TextEncoder().encode(decoded).byteLength
-            : decoded.byteLength,
-        );
         assignCell(output, value.plan.rowOffset, value.plan.field.name, decoded);
       }
     }
@@ -695,8 +693,9 @@ async function executeCellPlans(
   try {
     for (const { value, range } of dictionaryData) {
       if (dictionaryBytes === undefined) corrupt("Missing Lance dictionary value bytes");
-      const decoded = decodeUtf8(dictionaryBytes.slice(range));
-      context.accountDecodedMemory(new TextEncoder().encode(decoded).byteLength);
+      const encoded = dictionaryBytes.slice(range);
+      context.accountDecodedMemory(encoded.byteLength);
+      const decoded = decodeUtf8(encoded);
       assignCell(output, value.plan.rowOffset, value.plan.field.name, decoded);
     }
   } finally {
@@ -1151,6 +1150,21 @@ function assignCell(
   const row = output.get(rowOffset) ?? {};
   row[column] = value;
   output.set(rowOffset, row);
+}
+
+function estimateDecodedValueBytes(value: unknown): number {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === "boolean") return 1;
+  if (typeof value === "number" || typeof value === "bigint" || value instanceof Date) {
+    return 8;
+  }
+  if (typeof value === "object") {
+    return Object.values(value).reduce(
+      (total, child) => total + estimateDecodedValueBytes(child),
+      0,
+    );
+  }
+  return 0;
 }
 
 function joinObjectPath(...parts: string[]): string {

@@ -35,6 +35,7 @@ export interface LanceRangePlanningOptions {
 export class LanceReadContext {
   readonly store: ObjectStore;
   private memoryBytes = 0;
+  private decodedMemoryBytes = 0;
 
   constructor(
     store: ObjectStore,
@@ -151,7 +152,17 @@ export class LanceReadContext {
 
   accountDecodedMemory(bytes: number): void {
     this.reserveMemory(bytes);
-    this.releaseMemory(bytes);
+    this.decodedMemoryBytes += bytes;
+  }
+
+  leaseDecodedMemory(bytes: number): MemoryLease {
+    this.reserveMemory(bytes);
+    return new MemoryLease(() => this.releaseMemory(bytes));
+  }
+
+  releaseDecodedMemory(): void {
+    this.releaseMemory(this.decodedMemoryBytes);
+    this.decodedMemoryBytes = 0;
   }
 
   private reserveReads(requests: number, physicalBytes: number, logicalBytes: number): void {
@@ -169,6 +180,11 @@ export class LanceReadContext {
   }
 
   private reserveMemory(bytes: number): void {
+    if (!Number.isSafeInteger(bytes) || bytes < 0) {
+      throw new LakeqlError("LAKEQL_LANCE_READ_ERROR", "Invalid Lance memory reservation", {
+        bytes,
+      });
+    }
     const next = this.memoryBytes + bytes;
     if (this.budget.maxMemoryBytes !== undefined && next > this.budget.maxMemoryBytes) {
       budgetExceeded("memory bytes", this.budget.maxMemoryBytes, next, this.stats);
@@ -179,6 +195,18 @@ export class LanceReadContext {
 
   private releaseMemory(bytes: number): void {
     this.memoryBytes = Math.max(0, this.memoryBytes - bytes);
+  }
+}
+
+export class MemoryLease {
+  private released = false;
+
+  constructor(private readonly onRelease: () => void) {}
+
+  release(): void {
+    if (this.released) return;
+    this.released = true;
+    this.onRelease();
   }
 }
 

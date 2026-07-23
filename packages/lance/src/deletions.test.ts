@@ -116,24 +116,99 @@ describe("Lance Arrow deletion vectors", () => {
       files: [],
       physicalRows: 16,
     } satisfies LanceFragment;
-    await expect(readDeletedRowOffsets(context, "root", fragment)).resolves.toEqual(new Set());
+    await expect(readDeletedRowOffsets(context, "root", fragment, new Set([2]))).resolves.toEqual(
+      new Set(),
+    );
     await expect(
-      readDeletedRowOffsets(context, "root", {
-        ...fragment,
-        deletionFile: { fileType: 1, readVersion: 2n, id: 3n, numDeletedRows: 1n },
-      }),
+      readDeletedRowOffsets(
+        context,
+        "root",
+        {
+          ...fragment,
+          deletionFile: { fileType: 1, readVersion: 2n, id: 3n, numDeletedRows: 1n },
+        },
+        new Set([2]),
+      ),
     ).rejects.toMatchObject({ code: "LAKEQL_UNSUPPORTED_LANCE_FEATURE" });
     const sparse = {
       ...fragment,
       deletionFile: { fileType: 0, readVersion: 2n, id: 3n, numDeletedRows: 1n },
     };
-    await expect(readDeletedRowOffsets(context, "root", sparse)).rejects.toMatchObject({
+    await expect(
+      readDeletedRowOffsets(context, "root", sparse, new Set([2])),
+    ).rejects.toMatchObject({
       code: "LAKEQL_OBJECT_NOT_FOUND",
     });
     await store.put("root/_deletions/4-2-3.arrow", new Uint8Array());
-    await expect(readDeletedRowOffsets(context, "root", sparse)).rejects.toMatchObject({
+    await expect(
+      readDeletedRowOffsets(context, "root", sparse, new Set([2])),
+    ).rejects.toMatchObject({
       code: "LAKEQL_LANCE_READ_ERROR",
     });
+    await store.put("root/_deletions/4-2-3.arrow", new Uint8Array(17));
+    await expect(
+      readDeletedRowOffsets(context, "root", sparse, new Set([2])),
+    ).rejects.toMatchObject({
+      code: "LAKEQL_LANCE_READ_ERROR",
+    });
+    await store.put("root/_deletions/4-2-3.arrow", fixture);
+    await expect(
+      readDeletedRowOffsets(
+        context,
+        "root",
+        {
+          ...sparse,
+          deletionFile: {
+            ...sparse.deletionFile,
+            numDeletedRows: 17n,
+          },
+        },
+        new Set([2]),
+      ),
+    ).rejects.toMatchObject({
+      code: "LAKEQL_LANCE_READ_ERROR",
+    });
+  });
+
+  it("range-reads metadata and returns only requested deleted offsets", async () => {
+    const store = memoryStore();
+    const path = "root/_deletions/0-1-2929236741175439801.arrow";
+    await store.put(path, fixture);
+    const ranges: { offset: number; length: number }[] = [];
+    const observed = {
+      get: (objectPath: string) => store.get(objectPath),
+      async getRange(objectPath: string, range: { offset: number; length: number }) {
+        ranges.push(range);
+        return await store.getRange(objectPath, range);
+      },
+      put: (objectPath: string, body: Uint8Array) => store.put(objectPath, body),
+      delete: (objectPath: string) => store.delete(objectPath),
+      list: (prefix: string) => store.list(prefix),
+      head: (objectPath: string) => store.head(objectPath),
+    };
+    const context = new LanceReadContext(observed, {}, emptyStats(), 0, () => 0, {
+      coalesceGapBytes: 0,
+      maxCoalescedRangeBytes: 1024,
+    });
+    const fragment = {
+      id: 0n,
+      files: [],
+      physicalRows: 16,
+      deletionFile: {
+        fileType: 0,
+        readVersion: 1n,
+        id: 2_929_236_741_175_439_801n,
+        numDeletedRows: 3n,
+      },
+    } satisfies LanceFragment;
+
+    await expect(
+      readDeletedRowOffsets(context, "root", fragment, new Set([2, 3, 13])),
+    ).resolves.toEqual(new Set([2, 13]));
+    expect(ranges.length).toBeGreaterThan(2);
+    expect(ranges.every(({ offset, length }) => offset !== 0 || length < fixture.byteLength)).toBe(
+      true,
+    );
   });
 });
 

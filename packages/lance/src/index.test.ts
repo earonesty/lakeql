@@ -622,6 +622,7 @@ describe("lakeql-lance takeRows", () => {
       { vector: [], k: 1, nprobes: 1 },
       { vector: [0, 0, 0], k: 1, nprobes: 1 },
       { vector: [0, 0, 0, Number.NaN], k: 1, nprobes: 1 },
+      { vector: [0, 0, 0, 1e100], k: 1, nprobes: 1 },
       { vector: [0, 0, 0, 0], k: 0, nprobes: 1 },
       { vector: [0, 0, 0, 0], k: 1.5, nprobes: 1 },
       { vector: [0, 0, 0, 0], k: 1, nprobes: 0 },
@@ -971,8 +972,56 @@ describe("lakeql-lance takeRows", () => {
         rowIds: [0],
         select: ["serial"],
       }),
-    ).rejects.toMatchObject({ code: "LAKEQL_LANCE_SNAPSHOT_MISMATCH" });
+    ).rejects.toMatchObject({
+      code: "LAKEQL_LANCE_SNAPSHOT_MISMATCH",
+      details: {
+        expectedSnapshotId: dataset.snapshotId,
+        actualSnapshotId: `${dataset.snapshotId}-stale`,
+      },
+    });
     expect(observed.rangeRequests).toBe(requestsAfterOpen);
+  });
+
+  it("starts a fresh elapsed-time budget for each dataset operation", async () => {
+    const fixture = await fixtureStore();
+    let now = 0;
+    let advanceDuringReads = false;
+    const store = wrapStore(fixture.store, {
+      async getRange(path, range) {
+        if (advanceDuringReads) now += 2;
+        return await fixture.store.getRange(path, range);
+      },
+    });
+    const dataset = await openLanceDataset({
+      store,
+      path: DATASET_PATH,
+      budget: { ...generousBudget(), maxElapsedMs: 1 },
+      now: () => now,
+    });
+
+    now = 10_000;
+    await expect(
+      dataset.takeRows({
+        snapshotId: dataset.snapshotId,
+        rowIds: [0],
+        select: ["serial"],
+      }),
+    ).resolves.toMatchObject({
+      rows: [{ serial: 10_000_000 }],
+      stats: { totalElapsedMs: 0 },
+    });
+
+    advanceDuringReads = true;
+    await expect(
+      dataset.takeRows({
+        snapshotId: dataset.snapshotId,
+        rowIds: [0],
+        select: ["serial"],
+      }),
+    ).rejects.toMatchObject({
+      code: "LAKEQL_BUDGET_EXCEEDED",
+      details: { metric: "elapsed milliseconds" },
+    });
   });
 
   it("uses a byte metadata cache without weakening snapshot identity", async () => {

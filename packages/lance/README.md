@@ -121,13 +121,20 @@ boundaries; there is no brute-force dataset fallback when an unsupported index i
 
 The reader deliberately rejects unsupported storage versions, compressed data pages, nested
 fields, Roaring-bitmap deletion files, and unknown encodings. It never silently scans a column,
-index, file, or dataset, and it rejects a data range that would read an entire Lance data file.
+index, Lance data file, or dataset, and it rejects a data range that would read an entire Lance
+data file. Arrow deletion vectors are resolved only for fragments containing requested row IDs;
+the reader range-loads their footer, record-batch metadata, and value buffer without downloading
+the complete deletion object. Because the official Arrow-array producer writes deletion offsets
+in hash-set order, membership requires checking that touched fragment's value buffer. Its encoded
+and decoded bytes remain subject to the same request, byte, elapsed-time, and memory budgets.
 
 All metadata and data access flows through LakeQL's `ObjectStore`, cancellation, concurrency,
 cache, and query-budget contracts. The result reports snapshot/data metadata bytes, logical and
 physical bytes, range requests, fragments/pages touched, cache activity, requested, decoded, and
 materialized row counts, peak memory, and elapsed time. Vector results additionally report selected
-partition IDs and candidates scored.
+partition IDs and candidates scored. Opening and each public dataset operation receive independent
+elapsed-time windows, while compound index lookup and row materialization share one operation
+window.
 
 ## Reproducing the fixture
 

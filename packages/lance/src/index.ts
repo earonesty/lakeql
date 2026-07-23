@@ -181,7 +181,6 @@ export class LanceDataset {
       manifestFileSize: number;
       snapshotId: string;
       budget: QueryBudget;
-      startedAt: number;
       now: () => number;
       planning: LanceRangePlanningOptions;
       openStats: MutableLanceReadStats;
@@ -194,206 +193,271 @@ export class LanceDataset {
   }
 
   async takeRows(options: TakeLanceRowsOptions): Promise<LanceTakeRowsResult> {
-    return await this.takeRowsWithStats(options, cloneStats(this.options.openStats));
+    const stats = cloneStats(this.options.openStats);
+    const startedAt = this.options.now();
+    const context = this.context(stats, startedAt);
+    try {
+      return await this.takeRowsWithStats(options, stats, context, startedAt);
+    } finally {
+      context.releaseDecodedMemory();
+    }
   }
 
   async scalarIndexes(): Promise<LanceScalarIndexInfo[]> {
     const stats = cloneStats(this.options.openStats);
-    const context = this.context(stats);
-    return (
-      await loadScalarIndexes({
-        context,
-        manifestPath: this.options.manifestPath,
-        manifestFileSize: this.options.manifestFileSize,
-        manifest: this.options.manifest,
-      })
-    ).map(({ info }) => info);
+    const context = this.context(stats, this.options.now());
+    try {
+      return (
+        await loadScalarIndexes({
+          context,
+          manifestPath: this.options.manifestPath,
+          manifestFileSize: this.options.manifestFileSize,
+          manifest: this.options.manifest,
+        })
+      ).map(({ info }) => info);
+    } finally {
+      context.releaseDecodedMemory();
+    }
   }
 
   async lookupRows(options: LookupLanceRowsOptions): Promise<LanceScalarLookupResult> {
     if (options.snapshotId !== this.snapshotId) {
-      snapshotMismatch(options.snapshotId, this.snapshotId, this.version);
+      snapshotMismatch(this.snapshotId, options.snapshotId, this.version);
     }
     const stats = cloneStats(this.options.openStats);
-    const context = this.context(stats);
-    const lookup = await lookupScalarRowIds({
-      context,
-      root: this.options.root,
-      manifestPath: this.options.manifestPath,
-      manifestFileSize: this.options.manifestFileSize,
-      manifest: this.options.manifest,
-      indexName: options.index,
-      values: options.values,
-      budget: this.options.budget,
-    });
-    const rowIds = lookup.matches.flatMap((match) => match.rowIds);
-    const materialized = await this.takeRowsWithStats(
-      {
-        snapshotId: this.snapshotId,
-        rowIds,
-        select: options.select,
-        onMissing: "null",
-      },
-      stats,
-    );
-    let offset = 0;
-    const groups = lookup.matches.map((match) => {
-      const rows = materialized.rows.slice(offset, offset + match.rowIds.length);
-      offset += match.rowIds.length;
-      const retained = rows.flatMap((row, index) =>
+    const startedAt = this.options.now();
+    const context = this.context(stats, startedAt);
+    try {
+      const lookup = await lookupScalarRowIds({
+        context,
+        root: this.options.root,
+        manifestPath: this.options.manifestPath,
+        manifestFileSize: this.options.manifestFileSize,
+        manifest: this.options.manifest,
+        indexName: options.index,
+        values: options.values,
+        budget: this.options.budget,
+      });
+      const rowIds = lookup.matches.flatMap((match) => match.rowIds);
+      const materialized = await this.takeRowsWithStats(
+        {
+          snapshotId: this.snapshotId,
+          rowIds,
+          select: options.select,
+          onMissing: "null",
+        },
+        stats,
+        context,
+        startedAt,
+      );
+      let offset = 0;
+      const groups = lookup.matches.map((match) => {
+        const rows = materialized.rows.slice(offset, offset + match.rowIds.length);
+        offset += match.rowIds.length;
+        const retained = rows.flatMap((row, index) =>
+          row === null
+            ? []
+            : [
+                {
+                  row,
+                  rowId: (match.rowIds[index] as bigint).toString(),
+                },
+              ],
+        );
+        return {
+          value: match.value,
+          rowIds: retained.map(({ rowId }) => rowId),
+          rows: retained.map(({ row }) => row),
+        };
+      });
+      return { index: lookup.index, groups, stats: materialized.stats };
+    } finally {
+      context.releaseDecodedMemory();
+    }
+  }
+
+  async rangeRows(options: RangeLanceRowsOptions): Promise<LanceScalarRangeResult> {
+    if (options.snapshotId !== this.snapshotId) {
+      snapshotMismatch(this.snapshotId, options.snapshotId, this.version);
+    }
+    const stats = cloneStats(this.options.openStats);
+    const startedAt = this.options.now();
+    const context = this.context(stats, startedAt);
+    try {
+      const lookup = await rangeScalarRowIds({
+        context,
+        root: this.options.root,
+        manifestPath: this.options.manifestPath,
+        manifestFileSize: this.options.manifestFileSize,
+        manifest: this.options.manifest,
+        indexName: options.index,
+        range: options.range,
+        budget: this.options.budget,
+      });
+      const materialized = await this.takeRowsWithStats(
+        {
+          snapshotId: this.snapshotId,
+          rowIds: lookup.rowIds,
+          select: options.select,
+          onMissing: "null",
+        },
+        stats,
+        context,
+        startedAt,
+      );
+      const retained = materialized.rows.flatMap((row, index) =>
         row === null
           ? []
           : [
               {
                 row,
-                rowId: (match.rowIds[index] as bigint).toString(),
+                rowId: (lookup.rowIds[index] as bigint).toString(),
               },
             ],
       );
       return {
-        value: match.value,
+        index: lookup.index,
         rowIds: retained.map(({ rowId }) => rowId),
         rows: retained.map(({ row }) => row),
+        stats: materialized.stats,
       };
-    });
-    return { index: lookup.index, groups, stats: materialized.stats };
-  }
-
-  async rangeRows(options: RangeLanceRowsOptions): Promise<LanceScalarRangeResult> {
-    if (options.snapshotId !== this.snapshotId) {
-      snapshotMismatch(options.snapshotId, this.snapshotId, this.version);
+    } finally {
+      context.releaseDecodedMemory();
     }
-    const stats = cloneStats(this.options.openStats);
-    const context = this.context(stats);
-    const lookup = await rangeScalarRowIds({
-      context,
-      root: this.options.root,
-      manifestPath: this.options.manifestPath,
-      manifestFileSize: this.options.manifestFileSize,
-      manifest: this.options.manifest,
-      indexName: options.index,
-      range: options.range,
-      budget: this.options.budget,
-    });
-    const materialized = await this.takeRowsWithStats(
-      {
-        snapshotId: this.snapshotId,
-        rowIds: lookup.rowIds,
-        select: options.select,
-        onMissing: "null",
-      },
-      stats,
-    );
-    const retained = materialized.rows.flatMap((row, index) =>
-      row === null
-        ? []
-        : [
-            {
-              row,
-              rowId: (lookup.rowIds[index] as bigint).toString(),
-            },
-          ],
-    );
-    return {
-      index: lookup.index,
-      rowIds: retained.map(({ rowId }) => rowId),
-      rows: retained.map(({ row }) => row),
-      stats: materialized.stats,
-    };
   }
 
   async vectorIndexes(): Promise<LanceVectorIndexInfo[]> {
     const stats = cloneStats(this.options.openStats);
-    return await loadVectorIndexes({
-      context: this.context(stats),
-      root: this.options.root,
-      manifestPath: this.options.manifestPath,
-      manifestFileSize: this.options.manifestFileSize,
-      manifest: this.options.manifest,
-      limits: this.options.vectorLimits,
-    });
+    const context = this.context(stats, this.options.now());
+    try {
+      return await loadVectorIndexes({
+        context,
+        root: this.options.root,
+        manifestPath: this.options.manifestPath,
+        manifestFileSize: this.options.manifestFileSize,
+        manifest: this.options.manifest,
+        limits: this.options.vectorLimits,
+      });
+    } finally {
+      context.releaseDecodedMemory();
+    }
   }
 
   async nearest(options: NearestLanceRowsOptions): Promise<LanceVectorSearchResult> {
     if (options.snapshotId !== this.snapshotId) {
-      snapshotMismatch(options.snapshotId, this.snapshotId, this.version);
+      snapshotMismatch(this.snapshotId, options.snapshotId, this.version);
     }
     const stats = cloneStats(this.options.openStats);
-    const search = await searchVectorIndex({
-      context: this.context(stats),
-      root: this.options.root,
-      manifestPath: this.options.manifestPath,
-      manifestFileSize: this.options.manifestFileSize,
-      manifest: this.options.manifest,
-      indexName: options.index,
-      vector: options.vector,
-      k: options.k,
-      nprobes: options.nprobes,
-      budget: this.options.budget,
-      limits: this.options.vectorLimits,
-    });
-    const materialized = await this.takeRowsWithStats(
-      {
-        snapshotId: this.snapshotId,
-        rowIds: search.candidates.map(({ rowId }) => rowId),
-        select: options.select,
-        onMissing: "null",
-      },
-      stats,
-    );
-    const matches = materialized.rows.flatMap((row, index) => {
-      const candidate = search.candidates[index];
-      return row === null || candidate === undefined
-        ? []
-        : [
-            {
-              rowId: candidate.rowId.toString(),
-              distance: candidate.distance,
-              row,
-            },
-          ];
-    });
-    return {
-      index: search.index,
-      metric: search.index.metric,
-      matches,
-      partitionsSearched: search.partitions,
-      candidatesScored: search.candidatesScored,
-      stats: materialized.stats,
-    };
+    const startedAt = this.options.now();
+    const context = this.context(stats, startedAt);
+    try {
+      const search = await searchVectorIndex({
+        context,
+        root: this.options.root,
+        manifestPath: this.options.manifestPath,
+        manifestFileSize: this.options.manifestFileSize,
+        manifest: this.options.manifest,
+        indexName: options.index,
+        vector: options.vector,
+        k: options.k,
+        nprobes: options.nprobes,
+        budget: this.options.budget,
+        limits: this.options.vectorLimits,
+      });
+      const materialized = await this.takeRowsWithStats(
+        {
+          snapshotId: this.snapshotId,
+          rowIds: search.candidates.map(({ rowId }) => rowId),
+          select: options.select,
+          onMissing: "null",
+        },
+        stats,
+        context,
+        startedAt,
+      );
+      const matches = materialized.rows.flatMap((row, index) => {
+        const candidate = search.candidates[index];
+        return row === null || candidate === undefined
+          ? []
+          : [
+              {
+                rowId: candidate.rowId.toString(),
+                distance: candidate.distance,
+                row,
+              },
+            ];
+      });
+      return {
+        index: search.index,
+        metric: search.index.metric,
+        matches,
+        partitionsSearched: search.partitions,
+        candidatesScored: search.candidatesScored,
+        stats: materialized.stats,
+      };
+    } finally {
+      context.releaseDecodedMemory();
+    }
   }
 
   private async takeRowsWithStats(
     options: TakeLanceRowsOptions,
     stats: MutableLanceReadStats,
+    context: LanceReadContext,
+    startedAt: number,
   ): Promise<LanceTakeRowsResult> {
     if (options.snapshotId !== this.snapshotId) {
-      snapshotMismatch(options.snapshotId, this.snapshotId, this.version);
+      snapshotMismatch(this.snapshotId, options.snapshotId, this.version);
     }
     const rowIds = options.rowIds.map(normalizeRowId);
     const select = validatedProjection(options.select);
     enforceRowShapeBudget(this.options.budget, rowIds);
-    const context = this.context(stats);
     context.check();
     const uniqueRowIds = [...new Map(rowIds.map((rowId) => [rowId.toString(), rowId])).values()];
     context.reserveDecodedRows(uniqueRowIds.length);
-    const fragments = await Promise.all(
-      this.options.manifest.fragments.map(async (fragment) => ({
-        physicalRows: fragment.physicalRows,
-        segments: parseRowIdSequence(
-          await readFragmentRowIds(context, this.options.root, fragment),
-        ),
-        deletedOffsets: await readDeletedRowOffsets(context, this.options.root, fragment),
-      })),
+    const addresses = new Map<string, { fragmentIndex: number; rowOffset: number }>();
+    let unresolved = uniqueRowIds;
+    for (const [fragmentIndex, fragment] of this.options.manifest.fragments.entries()) {
+      if (unresolved.length === 0) break;
+      const resolved = resolveRequestedRowIds(unresolved, [
+        {
+          physicalRows: fragment.physicalRows,
+          segments: parseRowIdSequence(
+            await readFragmentRowIds(context, this.options.root, fragment),
+          ),
+        },
+      ]);
+      for (const [rowId, address] of resolved) {
+        addresses.set(rowId, { fragmentIndex, rowOffset: address.rowOffset });
+      }
+      unresolved = unresolved.filter((rowId) => !resolved.has(rowId.toString()));
+    }
+    const candidateOffsets = new Map<number, Set<number>>();
+    for (const address of addresses.values()) {
+      const offsets = candidateOffsets.get(address.fragmentIndex) ?? new Set<number>();
+      offsets.add(address.rowOffset);
+      candidateOffsets.set(address.fragmentIndex, offsets);
+    }
+    const deletedOffsetsByFragment = new Map<number, Set<number>>(
+      await Promise.all(
+        [...candidateOffsets].map(async ([fragmentIndex, offsets]) => {
+          const fragment = this.options.manifest.fragments[fragmentIndex];
+          if (fragment === undefined) corrupt("Resolved Lance row references a missing fragment");
+          return [
+            fragmentIndex,
+            await readDeletedRowOffsets(context, this.options.root, fragment, offsets),
+          ] as const;
+        }),
+      ),
     );
-    const addresses = resolveRequestedRowIds(uniqueRowIds, fragments);
-    const deletedRowIds: string[] = [];
+    const deleted = new Set<string>();
     for (const [rowId, address] of addresses) {
-      if (fragments[address.fragmentIndex]?.deletedOffsets.has(address.rowOffset)) {
-        deletedRowIds.push(rowId);
+      if (deletedOffsetsByFragment.get(address.fragmentIndex)?.has(address.rowOffset)) {
+        deleted.add(rowId);
         addresses.delete(rowId);
       }
     }
+    const deletedRowIds = uniqueRowIds.filter((rowId) => deleted.has(rowId.toString())).map(String);
     const missingRowIds = uniqueRowIds
       .filter((rowId) => !addresses.has(rowId.toString()))
       .map(String);
@@ -443,8 +507,6 @@ export class LanceDataset {
       }),
     );
     const rows = rowIds.map((rowId) => materialized.get(rowId.toString()) ?? null);
-    const decodedBytes = rows.reduce((total, row) => total + estimateValueBytes(row), 0);
-    context.accountDecodedMemory(decodedBytes);
     context.check();
     return {
       rows,
@@ -458,17 +520,17 @@ export class LanceDataset {
         rowsRequested: rowIds.length,
         rowsMaterialized: rows.filter((row) => row !== null).length,
         selectedColumns: select,
-        totalElapsedMs: this.options.now() - this.options.startedAt,
+        totalElapsedMs: this.options.now() - startedAt,
       }),
     };
   }
 
-  private context(stats: MutableLanceReadStats): LanceReadContext {
+  private context(stats: MutableLanceReadStats, startedAt: number): LanceReadContext {
     return new LanceReadContext(
       this.options.store,
       this.options.budget,
       stats,
-      this.options.startedAt,
+      startedAt,
       this.options.now,
       this.options.planning,
     );
@@ -503,14 +565,14 @@ export async function openLanceDataset(options: OpenLanceDatasetOptions): Promis
   } else {
     stats.cacheHits += 1;
     manifestBytes = cached.value;
-    context.accountDecodedMemory(manifestBytes.byteLength);
   }
+  context.accountDecodedMemory(manifestBytes.byteLength);
   const manifest = parseManifest(manifestBytes);
   validateManifest(manifest, version);
   const digest = await sha256(manifestBytes);
   const snapshotId = `lance:${manifest.version}:sha256:${digest}`;
   context.check();
-  return new LanceDataset({
+  const dataset = new LanceDataset({
     store: options.store,
     root,
     manifest,
@@ -518,13 +580,14 @@ export async function openLanceDataset(options: OpenLanceDatasetOptions): Promis
     manifestFileSize: manifestHead.size,
     snapshotId,
     budget,
-    startedAt,
     now,
     planning,
     openStats: stats,
     metadataMs: now() - startedAt,
     vectorLimits,
   });
+  context.releaseDecodedMemory();
+  return dataset;
 }
 
 function validatedVectorLimits(limits: Partial<LanceVectorLimits> | undefined): LanceVectorLimits {
@@ -653,6 +716,7 @@ async function readFragmentRowIds(
   const range = { offset: external.offset, length: external.size };
   const lease = await context.readRange(path, range, "snapshot");
   try {
+    context.accountDecodedMemory(range.length);
     return copyBytes(lease.slice(range));
   } finally {
     lease.release();
@@ -882,21 +946,6 @@ function finalizeStats(options: {
     peakMemoryBytes: options.mutable.peakMemoryBytes,
     totalElapsedMs: options.totalElapsedMs,
   };
-}
-
-function estimateValueBytes(value: unknown): number {
-  if (value === null || value === undefined) return 0;
-  if (typeof value === "string") return new TextEncoder().encode(value).byteLength;
-  if (typeof value === "number" || typeof value === "bigint") return 8;
-  if (typeof value === "boolean") return 1;
-  if (value instanceof Uint8Array) return value.byteLength;
-  if (Array.isArray(value)) {
-    return value.reduce((total, item) => total + estimateValueBytes(item), 0);
-  }
-  if (typeof value === "object") {
-    return Object.values(value).reduce((total, item) => total + estimateValueBytes(item), 0);
-  }
-  return 0;
 }
 
 function safeU64(value: bigint, label: string): number {

@@ -290,7 +290,7 @@ function validateSearchShape(options: {
   if (
     options.vector.length === 0 ||
     options.vector.length > options.limits.maxDimension ||
-    options.vector.some((value) => !Number.isFinite(value))
+    options.vector.some((value) => !Number.isFinite(value) || !Number.isFinite(Math.fround(value)))
   ) {
     throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Invalid Lance query vector");
   }

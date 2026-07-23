@@ -132,6 +132,35 @@ describe("Lance physical range planning", () => {
       );
     }
   });
+
+  it("retains decoded-memory reservations until the operation releases them", () => {
+    const stats = emptyStats();
+    const context = new LanceReadContext(memoryStore(), { maxMemoryBytes: 6 }, stats, 0, () => 0, {
+      coalesceGapBytes: 0,
+      maxCoalescedRangeBytes: 100,
+    });
+
+    context.accountDecodedMemory(4);
+    expect(stats.peakMemoryBytes).toBe(4);
+    const temporary = context.leaseDecodedMemory(2);
+    expect(stats.peakMemoryBytes).toBe(6);
+    expect(() => context.accountDecodedMemory(1)).toThrowError(
+      expect.objectContaining({
+        code: "LAKEQL_BUDGET_EXCEEDED",
+        details: expect.objectContaining({ metric: "memory bytes" }),
+      }),
+    );
+    temporary.release();
+    temporary.release();
+    context.accountDecodedMemory(2);
+    context.releaseDecodedMemory();
+    context.accountDecodedMemory(6);
+    context.releaseDecodedMemory();
+    expect(stats.peakMemoryBytes).toBe(6);
+    expect(() => context.accountDecodedMemory(-1)).toThrowError(
+      expect.objectContaining({ code: "LAKEQL_LANCE_READ_ERROR" }),
+    );
+  });
 });
 
 function emptyStats(): MutableLanceReadStats {
