@@ -21,6 +21,7 @@ DELETION_FIXTURE = ROOT / "fixtures" / "deletions-v2.0.lance"
 SCALAR_FIXTURE = ROOT / "fixtures" / "scalar-btree-v2.0.lance"
 SCALAR_MULTIPAGE_FIXTURE = ROOT / "fixtures" / "scalar-btree-multipage-v2.0.lance"
 VECTOR_FLAT_FIXTURE = ROOT / "fixtures" / "vector-ivf-flat-v2.0.lance"
+DICTIONARY_FIXTURE = ROOT / "fixtures" / "dictionary-v2.0.lance"
 WORKERD_MODULE = ROOT / "src" / "fixture.generated.ts"
 
 
@@ -102,6 +103,7 @@ def main() -> None:
     write_scalar_fixture()
     write_scalar_multipage_fixture()
     write_vector_flat_fixture()
+    write_dictionary_fixture()
     write_workerd_module()
 
 
@@ -188,6 +190,49 @@ def fixture_hashes(root: Path) -> dict[str, str]:
         for path in sorted(root.rglob("*"))
         if path.is_file() and path.name != "expected.json"
     }
+
+
+def write_dictionary_fixture() -> None:
+    if DICTIONARY_FIXTURE.exists():
+        shutil.rmtree(DICTIONARY_FIXTURE)
+    statuses = [None, "LIVE", "PENDING", "DEAD"]
+    row_count = 4_096
+    table = pa.table(
+        {
+            "serial": pa.array(range(row_count), type=pa.int64()),
+            "status": pa.array(
+                [statuses[index % len(statuses)] for index in range(row_count)],
+                type=pa.string(),
+            ),
+        }
+    )
+    dataset = lance.write_dataset(
+        table,
+        DICTIONARY_FIXTURE,
+        mode="create",
+        data_storage_version="2.0",
+        enable_stable_row_ids=True,
+        enable_v2_manifest_paths=True,
+        max_rows_per_group=1_024,
+    )
+    expected = {
+        "producer": {"package": "pylance", "version": lance.__version__},
+        "storageVersion": dataset.data_storage_version,
+        "datasetVersion": dataset.version,
+        "rowCount": row_count,
+        "sampleProjection": {
+            "rowIds": ["0", "1", "2", "3", "4095", "1"],
+            "rows": [
+                {"serial": index, "status": statuses[index % len(statuses)]}
+                for index in [0, 1, 2, 3, 4095, 1]
+            ],
+        },
+    }
+    expected["sha256"] = fixture_hashes(DICTIONARY_FIXTURE)
+    (DICTIONARY_FIXTURE / "expected.json").write_text(
+        json.dumps(expected, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 def write_deletion_fixture() -> None:
@@ -445,6 +490,7 @@ def write_workerd_module() -> None:
             DELETION_FIXTURE,
             SCALAR_FIXTURE,
             VECTOR_FLAT_FIXTURE,
+            DICTIONARY_FIXTURE,
         ]
         for path in sorted(root.rglob("*"))
         if path.is_file() and path.name != "expected.json"

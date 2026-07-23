@@ -16,3 +16,7 @@
 - Search official vector-index V3 IVF_FLAT layouts with bounded centroid
   selection and chunked L2, cosine, or dot scoring, then materialize projected
   rows in distance order.
+- Materialize low-cardinality UTF-8 columns stored with Lance dictionary encoding,
+  including null sentinels, with official Node and workerd fixtures.
+- Add a reproducible public-USPTO conversion and scattered-row HTTP range benchmark
+  with physical I/O statistics and full-object-read enforcement.

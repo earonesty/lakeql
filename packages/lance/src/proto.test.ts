@@ -130,9 +130,10 @@ describe("Lance protobuf compatibility decoder", () => {
       scalar(4, 2),
       scalar(5, 0),
       scalar(6, 4_096),
+      scalar(99, 1),
     );
-    const deletion = message(scalar(1, 2), scalar(2, 4), scalar(3, 9), scalar(4, 3));
-    const external = message(text(1, "_rowids/a"), scalar(2, 12), scalar(3, 88));
+    const deletion = message(scalar(1, 2), scalar(2, 4), scalar(3, 9), scalar(4, 3), scalar(99, 1));
+    const external = message(text(1, "_rowids/a"), scalar(2, 12), scalar(3, 88), scalar(99, 1));
     const fragment = message(
       scalar(1, 11),
       bytesField(2, dataFile),
@@ -239,31 +240,52 @@ describe("Lance protobuf compatibility decoder", () => {
     ]);
   });
 
-  it("decodes flat, nullable, binary, constant, and compressed page encodings", () => {
+  it("decodes flat, nullable, binary, dictionary, constant, and compressed page encodings", () => {
     const flat = arrayEncoding(
       1,
       message(
         scalar(1, 64),
-        bytesField(2, message(scalar(1, 2), scalar(2, 1))),
-        bytesField(3, message(text(1, "zstd"))),
+        bytesField(2, message(scalar(1, 2), scalar(2, 1), scalar(99, 1))),
+        bytesField(3, message(text(1, "zstd"), scalar(99, 1))),
+        scalar(99, 1),
       ),
     );
-    const noNulls = arrayEncoding(2, bytesField(1, bytesField(1, flatEncoding(32, 0))));
+    const noNulls = arrayEncoding(
+      2,
+      bytesField(1, message(bytesField(1, flatEncoding(32, 0)), scalar(99, 1))),
+    );
     const someNulls = arrayEncoding(
       2,
-      bytesField(2, message(bytesField(1, flatEncoding(1, 0)), bytesField(2, flatEncoding(16, 1)))),
+      bytesField(
+        2,
+        message(
+          bytesField(1, flatEncoding(1, 0)),
+          bytesField(2, flatEncoding(16, 1)),
+          scalar(99, 1),
+        ),
+      ),
     );
     const allNulls = arrayEncoding(2, bytesField(3, new Uint8Array()));
-    const binary = arrayEncoding(
-      6,
-      message(bytesField(1, flatEncoding(64, 0)), bytesField(2, flatEncoding(8, 1)), scalar(3, 9)),
+    const binary = binaryEncoding();
+    const dictionary = arrayEncoding(
+      7,
+      message(bytesField(1, noNulls), bytesField(2, binary), scalar(3, 3), scalar(99, 1)),
     );
-    const constant = arrayEncoding(13, bytesField(1, Uint8Array.of(9, 8)));
+    const constant = arrayEncoding(13, message(bytesField(1, Uint8Array.of(9, 8)), scalar(99, 1)));
     const fixedSizeList = arrayEncoding(
       3,
-      message(scalar(1, 4), bytesField(2, flatEncoding(32, 0)), scalar(3, 0)),
+      message(scalar(1, 4), bytesField(2, flatEncoding(32, 0)), scalar(3, 0), scalar(99, 1)),
     );
-    const encodings = [flat, noNulls, someNulls, allNulls, binary, constant, fixedSizeList];
+    const encodings = [
+      flat,
+      noNulls,
+      someNulls,
+      allNulls,
+      binary,
+      dictionary,
+      constant,
+      fixedSizeList,
+    ];
     const pages = encodings.map((encoding, index) =>
       bytesField(
         2,
@@ -308,6 +330,21 @@ describe("Lance protobuf compatibility decoder", () => {
         indices: { kind: "flat", bitsPerValue: 64, bufferIndex: 0, bufferType: 1 },
         bytes: { kind: "flat", bitsPerValue: 8, bufferIndex: 1, bufferType: 1 },
         nullAdjustment: 9n,
+      },
+      {
+        kind: "dictionary",
+        indices: {
+          kind: "nullable",
+          mode: "no_nulls",
+          values: { kind: "flat", bitsPerValue: 32, bufferIndex: 0, bufferType: 1 },
+        },
+        items: {
+          kind: "binary",
+          indices: { kind: "flat", bitsPerValue: 64, bufferIndex: 0, bufferType: 1 },
+          bytes: { kind: "flat", bitsPerValue: 8, bufferIndex: 1, bufferType: 1 },
+          nullAdjustment: 9n,
+        },
+        numItems: 3,
       },
       { kind: "constant", value: Uint8Array.of(9, 8) },
       {
@@ -432,6 +469,29 @@ describe("Lance protobuf compatibility decoder", () => {
       bytes: pageMetadata(fileEncoding(arrayEncoding(2, new Uint8Array()))),
       code: "LAKEQL_LANCE_READ_ERROR",
     },
+    {
+      name: "dictionary without indices",
+      bytes: pageMetadata(
+        fileEncoding(arrayEncoding(7, message(bytesField(2, binaryEncoding()), scalar(3, 1)))),
+      ),
+      code: "LAKEQL_LANCE_READ_ERROR",
+    },
+    {
+      name: "dictionary without items",
+      bytes: pageMetadata(
+        fileEncoding(arrayEncoding(7, message(bytesField(1, flatEncoding()), scalar(3, 1)))),
+      ),
+      code: "LAKEQL_LANCE_READ_ERROR",
+    },
+    {
+      name: "dictionary without items count",
+      bytes: pageMetadata(
+        fileEncoding(
+          arrayEncoding(7, message(bytesField(1, flatEncoding()), bytesField(2, binaryEncoding()))),
+        ),
+      ),
+      code: "LAKEQL_LANCE_READ_ERROR",
+    },
   ])("rejects $name", ({ bytes, code }) => {
     expect(() => parseColumnMetadata(bytes)).toThrowError(expect.objectContaining({ code }));
   });
@@ -469,7 +529,23 @@ function pageMetadata(encoding: Uint8Array): Uint8Array {
 function flatEncoding(bits = 8, bufferIndex = 0): Uint8Array {
   return arrayEncoding(
     1,
-    message(scalar(1, bits), bytesField(2, message(scalar(1, bufferIndex), scalar(2, 1)))),
+    message(
+      scalar(1, bits),
+      bytesField(2, message(scalar(1, bufferIndex), scalar(2, 1), scalar(99, 1))),
+      scalar(99, 1),
+    ),
+  );
+}
+
+function binaryEncoding(): Uint8Array {
+  return arrayEncoding(
+    6,
+    message(
+      bytesField(1, flatEncoding(64, 0)),
+      bytesField(2, flatEncoding(8, 1)),
+      scalar(3, 9),
+      scalar(99, 1),
+    ),
   );
 }
 

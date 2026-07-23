@@ -104,6 +104,7 @@ export type LanceArrayEncoding =
   | LanceNullableEncoding
   | LanceFixedSizeListEncoding
   | LanceBinaryEncoding
+  | LanceDictionaryEncoding
   | LanceConstantEncoding;
 
 export interface LanceFlatEncoding {
@@ -143,6 +144,13 @@ export interface LanceBinaryEncoding {
   indices: LanceArrayEncoding;
   bytes: LanceArrayEncoding;
   nullAdjustment: bigint;
+}
+
+export interface LanceDictionaryEncoding {
+  kind: "dictionary";
+  indices: LanceArrayEncoding;
+  items: LanceArrayEncoding;
+  numItems: number;
 }
 
 export interface LanceConstantEncoding {
@@ -780,6 +788,9 @@ function parseArrayEncoding(bytes: Uint8Array): LanceArrayEncoding {
       case 6:
         encoding = parseBinary(reader.message(key.wire));
         break;
+      case 7:
+        encoding = parseDictionary(reader.message(key.wire));
+        break;
       case 13:
         encoding = parseConstant(reader.message(key.wire));
         break;
@@ -807,6 +818,24 @@ function parseFixedSizeList(bytes: Uint8Array): LanceFixedSizeListEncoding {
     corrupt("Lance fixed-size-list encoding is incomplete", { dimension });
   }
   return { kind: "fixed_size_list", dimension, hasValidity, items };
+}
+
+function parseDictionary(bytes: Uint8Array): LanceDictionaryEncoding {
+  const reader = new ProtoReader(bytes);
+  let indices: LanceArrayEncoding | undefined;
+  let items: LanceArrayEncoding | undefined;
+  let numItems = 0;
+  while (!reader.done) {
+    const key = reader.key();
+    if (key.field === 1) indices = parseArrayEncoding(reader.message(key.wire));
+    else if (key.field === 2) items = parseArrayEncoding(reader.message(key.wire));
+    else if (key.field === 3) numItems = reader.safeInteger(key.wire, "dictionary item count");
+    else reader.skip(key.wire);
+  }
+  if (indices === undefined || items === undefined || numItems <= 0) {
+    corrupt("Lance dictionary encoding is incomplete", { numItems });
+  }
+  return { kind: "dictionary", indices, items, numItems };
 }
 
 function parseFlat(bytes: Uint8Array): LanceFlatEncoding {

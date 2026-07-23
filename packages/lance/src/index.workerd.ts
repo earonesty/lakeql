@@ -80,6 +80,35 @@ describe("lakeql-lance workerd runtime", () => {
       ],
     });
 
+    const dictionary = await openLanceDataset({
+      store,
+      path: "fixtures/dictionary-v2.0.lance",
+      budget: {
+        maxBytes: 32_000,
+        maxRangeRequests: 64,
+        maxMemoryBytes: 32_000,
+        maxOutputRows: 8,
+        maxConcurrentReads: 2,
+        maxElapsedMs: 3_000,
+      },
+    });
+    await expect(
+      dictionary.takeRows({
+        snapshotId: dictionary.snapshotId,
+        rowIds: [0n, 1n, 2n, 3n, 4095n, 1n],
+        select: ["serial", "status"],
+      }),
+    ).resolves.toMatchObject({
+      rows: [
+        { serial: 0, status: null },
+        { serial: 1, status: "LIVE" },
+        { serial: 2, status: "PENDING" },
+        { serial: 3, status: "DEAD" },
+        { serial: 4095, status: "DEAD" },
+        { serial: 1, status: "LIVE" },
+      ],
+    });
+
     const deleted = await openLanceDataset({
       store,
       path: "fixtures/deletions-v2.0.lance",

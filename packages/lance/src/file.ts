@@ -364,6 +364,15 @@ interface FixedListCellPlan extends CellPlan {
   validity?: LanceFlatEncoding;
 }
 
+interface DictionaryCellPlan extends CellPlan {
+  indices: LanceFlatEncoding;
+  itemIndices: LanceFlatEncoding;
+  itemBytes: LanceFlatEncoding;
+  nullAdjustment: bigint;
+  numItems: number;
+  validity?: LanceFlatEncoding;
+}
+
 async function executeCellPlans(
   context: LanceReadContext,
   path: string,
@@ -374,6 +383,7 @@ async function executeCellPlans(
   const fixed: FixedCellPlan[] = [];
   const fixedLists: FixedListCellPlan[] = [];
   const binary: BinaryCellPlan[] = [];
+  const dictionaries: DictionaryCellPlan[] = [];
   const phaseOneRanges: ByteRange[] = [];
   for (const plan of cellPlans) {
     const resolved = resolveCellEncoding(plan.page.encoding);
@@ -427,6 +437,38 @@ async function executeCellPlans(
       }
       continue;
     }
+    if (resolved.kind === "dictionary") {
+      if (plan.field.logicalType !== "string" && plan.field.logicalType !== "large_string") {
+        unsupported("Lance dictionary projection is only supported for UTF-8 strings", {
+          logicalType: plan.field.logicalType,
+        });
+      }
+      const indexType = unsignedTypeForBits(resolved.indices.bitsPerValue);
+      if (indexType === undefined) {
+        unsupported("Unsupported Lance dictionary index width", {
+          bitsPerValue: resolved.indices.bitsPerValue,
+        });
+      }
+      validateFlat(resolved.indices, plan.page, indexType);
+      validateFlat(resolved.itemIndices, plan.page, "uint64");
+      validateFlat(resolved.itemBytes, plan.page, "uint8");
+      const dictionaryPlan: DictionaryCellPlan = {
+        ...plan,
+        indices: resolved.indices,
+        itemIndices: resolved.itemIndices,
+        itemBytes: resolved.itemBytes,
+        nullAdjustment: resolved.nullAdjustment,
+        numItems: resolved.numItems,
+        ...(resolved.validity === undefined ? {} : { validity: resolved.validity }),
+      };
+      dictionaries.push(dictionaryPlan);
+      phaseOneRanges.push(flatRange(plan.page, resolved.indices, plan.rowInPage));
+      if (resolved.validity !== undefined) {
+        validateValidity(resolved.validity, plan.page);
+        phaseOneRanges.push(flatRange(plan.page, resolved.validity, plan.rowInPage));
+      }
+      continue;
+    }
     validateFlat(resolved.indices, plan.page, "uint64");
     validateFlat(resolved.bytes, plan.page, "uint8");
     if (resolved.indices.bitsPerValue !== 64 || resolved.bytes.bitsPerValue !== 8) {
@@ -453,6 +495,7 @@ async function executeCellPlans(
     range?: ByteRange;
     isNull: boolean;
   }[] = [];
+  const dictionaryValues: { plan: DictionaryCellPlan; index: number }[] = [];
   try {
     for (const plan of fixed) {
       if (
@@ -503,6 +546,36 @@ async function executeCellPlans(
       }
       context.accountDecodedMemory(values.byteLength);
       assignCell(output, plan.rowOffset, plan.field.name, values);
+    }
+    for (const plan of dictionaries) {
+      if (
+        plan.validity !== undefined &&
+        !readBit(phaseOne, flatRange(plan.page, plan.validity, plan.rowInPage), plan.rowInPage)
+      ) {
+        assignCell(output, plan.rowOffset, plan.field.name, null);
+        continue;
+      }
+      const type = unsignedTypeForBits(plan.indices.bitsPerValue);
+      if (type === undefined) corrupt("Validated Lance dictionary index width changed");
+      const decodedIndex = decodeFixedValue(
+        phaseOne.slice(flatRange(plan.page, plan.indices, plan.rowInPage)),
+        plan.indices.bitsPerValue,
+        plan.rowInPage,
+        type,
+      );
+      const storedIndex =
+        typeof decodedIndex === "bigint" ? safeU64(decodedIndex, "dictionary index") : decodedIndex;
+      if (typeof storedIndex !== "number" || storedIndex < 0 || storedIndex > plan.numItems) {
+        corrupt("Lance dictionary index is out of bounds", {
+          index: storedIndex,
+          numItems: plan.numItems,
+        });
+      }
+      if (storedIndex === 0) {
+        assignCell(output, plan.rowOffset, plan.field.name, null);
+      } else {
+        dictionaryValues.push({ plan, index: storedIndex - 1 });
+      }
     }
     for (const plan of binary) {
       const endRaw = readFlatU64(phaseOne, plan.page, plan.indices, plan.rowInPage);
@@ -567,6 +640,68 @@ async function executeCellPlans(
   } finally {
     phaseTwo?.release();
   }
+  const dictionaryOffsetRanges = dictionaryValues.flatMap(({ plan, index }) => [
+    flatRange(plan.page, plan.itemIndices, index),
+    ...(index === 0 ? [] : [flatRange(plan.page, plan.itemIndices, index - 1)]),
+  ]);
+  const dictionaryOffsets =
+    dictionaryOffsetRanges.length === 0
+      ? undefined
+      : await context.readRanges(path, dictionaryOffsetRanges, "data", fileSize);
+  const dictionaryData: { value: (typeof dictionaryValues)[number]; range: ByteRange }[] = [];
+  try {
+    for (const value of dictionaryValues) {
+      if (dictionaryOffsets === undefined) corrupt("Missing Lance dictionary offsets");
+      const end = binaryOffset(
+        readFlatU64(dictionaryOffsets, value.plan.page, value.plan.itemIndices, value.index),
+        value.plan.nullAdjustment,
+      );
+      const start =
+        value.index === 0
+          ? 0n
+          : binaryOffset(
+              readFlatU64(
+                dictionaryOffsets,
+                value.plan.page,
+                value.plan.itemIndices,
+                value.index - 1,
+              ),
+              value.plan.nullAdjustment,
+            );
+      if (end < start) corrupt("Lance dictionary offsets are not monotonic");
+      const buffer = pageBuffer(value.plan.page, value.plan.itemBytes);
+      const offset = safeU64(start, "dictionary value start");
+      const length = safeU64(end - start, "dictionary value length");
+      if (offset + length > buffer.length) {
+        corrupt("Lance dictionary value exceeds its page buffer");
+      }
+      dictionaryData.push({
+        value,
+        range: { offset: buffer.offset + offset, length },
+      });
+    }
+  } finally {
+    dictionaryOffsets?.release();
+  }
+  const dictionaryBytes =
+    dictionaryData.length === 0
+      ? undefined
+      : await context.readRanges(
+          path,
+          dictionaryData.map(({ range }) => range),
+          "data",
+          fileSize,
+        );
+  try {
+    for (const { value, range } of dictionaryData) {
+      if (dictionaryBytes === undefined) corrupt("Missing Lance dictionary value bytes");
+      const decoded = decodeUtf8(dictionaryBytes.slice(range));
+      context.accountDecodedMemory(new TextEncoder().encode(decoded).byteLength);
+      assignCell(output, value.plan.rowOffset, value.plan.field.name, decoded);
+    }
+  } finally {
+    dictionaryBytes?.release();
+  }
   return output;
 }
 
@@ -577,6 +712,15 @@ type ResolvedCellEncoding =
       kind: "fixed_list";
       flat: LanceFlatEncoding;
       dimension: number;
+      validity?: LanceFlatEncoding;
+    }
+  | {
+      kind: "dictionary";
+      indices: LanceFlatEncoding;
+      itemIndices: LanceFlatEncoding;
+      itemBytes: LanceFlatEncoding;
+      nullAdjustment: bigint;
+      numItems: number;
       validity?: LanceFlatEncoding;
     }
   | {
@@ -612,6 +756,21 @@ function resolveCellEncoding(
       kind: "fixed_list",
       flat,
       dimension: encoding.dimension,
+      ...(validity === undefined ? {} : { validity }),
+    };
+  }
+  if (encoding.kind === "dictionary") {
+    const items = resolveCellEncoding(encoding.items);
+    if (items.kind !== "binary") {
+      unsupported("Lance dictionary items must use binary encoding");
+    }
+    return {
+      kind: "dictionary",
+      indices: requireFlat(unwrapNoNulls(encoding.indices), "dictionary indices"),
+      itemIndices: items.indices,
+      itemBytes: items.bytes,
+      nullAdjustment: items.nullAdjustment,
+      numItems: encoding.numItems,
       ...(validity === undefined ? {} : { validity }),
     };
   }
@@ -709,6 +868,14 @@ function parseFixedSizeListType(
   const dimension = Number(match[2]);
   if (!Number.isSafeInteger(dimension) || dimension <= 0) return undefined;
   return { itemLogicalType: match[1] as "float" | "double", dimension };
+}
+
+function unsignedTypeForBits(bits: number): "uint8" | "uint16" | "uint32" | "uint64" | undefined {
+  if (bits === 8) return "uint8";
+  if (bits === 16) return "uint16";
+  if (bits === 32) return "uint32";
+  if (bits === 64) return "uint64";
+  return undefined;
 }
 
 function pageBuffer(page: LancePage, flat: LanceFlatEncoding): ByteRange {

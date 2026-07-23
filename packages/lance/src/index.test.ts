@@ -21,6 +21,8 @@ const SCALAR_MULTIPAGE_FIXTURE_ROOT = resolve(
 const SCALAR_MULTIPAGE_DATASET_PATH = "fixtures/scalar-btree-multipage-v2.0.lance";
 const VECTOR_FIXTURE_ROOT = resolve(import.meta.dirname, "../fixtures/vector-ivf-flat-v2.0.lance");
 const VECTOR_DATASET_PATH = "fixtures/vector-ivf-flat-v2.0.lance";
+const DICTIONARY_FIXTURE_ROOT = resolve(import.meta.dirname, "../fixtures/dictionary-v2.0.lance");
+const DICTIONARY_DATASET_PATH = "fixtures/dictionary-v2.0.lance";
 const servers: { close(): Promise<void> }[] = [];
 
 afterEach(async () => {
@@ -147,6 +149,30 @@ describe("lakeql-lance takeRows", () => {
       event_date: new Date("2026-07-25T00:00:00.000Z"),
       maybe_i32: 2,
     });
+  });
+
+  it("materializes optimized string dictionaries with nulls and duplicate row IDs", async () => {
+    const fixture = await fixtureStore(DICTIONARY_FIXTURE_ROOT, DICTIONARY_DATASET_PATH);
+    const expected = JSON.parse(
+      await readFile(resolve(DICTIONARY_FIXTURE_ROOT, "expected.json"), "utf8"),
+    ).sampleProjection as {
+      rowIds: string[];
+      rows: Record<string, unknown>[];
+    };
+    const dataset = await openLanceDataset({
+      store: fixture.store,
+      path: DICTIONARY_DATASET_PATH,
+      budget: generousBudget(),
+    });
+
+    const result = await dataset.takeRows({
+      snapshotId: dataset.snapshotId,
+      rowIds: expected.rowIds,
+      select: ["serial", "status"],
+    });
+
+    expect(result.rows).toEqual(expected.rows);
+    expect(result.stats.rowsMaterialized).toBe(expected.rows.length);
   });
 
   it("treats snapshot deletions as explicit missing rows without hiding live rows", async () => {

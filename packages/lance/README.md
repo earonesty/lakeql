@@ -107,8 +107,9 @@ The current reader supports stable-row-ID datasets written with Lance storage ve
 manifest paths. The checked-in compatibility fixtures were produced by the official
 `pylance 8.0.0` writer. Supported projected leaf types are UTF-8 strings, binary values, booleans,
 signed and unsigned integers, 32/64-bit floats, dates, and second/millisecond/microsecond/nanosecond
-timestamps using uncompressed flat and nullable encodings. Sparse Arrow-array deletion files are
-supported, including Zstandard-compressed buffers.
+timestamps using uncompressed flat and nullable encodings. Low-cardinality UTF-8 columns using
+Lance's dictionary encoding are supported, including its null sentinel. Sparse Arrow-array
+deletion files are supported, including Zstandard-compressed buffers.
 
 Official version-0 BTree indexes over the supported scalar key types are supported for exact
 equality and bounded range lookup. Null-key lookup, bitmap/label-list index variants, and index
@@ -139,4 +140,22 @@ python packages/lance/scripts/generate_fixture.py
 The generator records producer and storage versions, expected projections, stable row IDs, and
 SHA-256 hashes in each fixture's `expected.json`. The generated suite includes single- and
 multi-page BTree datasets so compatibility tests exercise page boundaries and bounded logarithmic
-reads, plus L2, cosine, and dot IVF_FLAT indexes checked against official Lance ground truth.
+reads, a dictionary-encoded UTF-8 dataset, plus L2, cosine, and dot IVF_FLAT indexes checked
+against official Lance ground truth.
+
+## Reproducing the public-data benchmark
+
+Convert the public MarkWatch USPTO Parquet fixture with official Lance tooling, then exercise 32
+scattered stable row IDs through HTTP ranges:
+
+```sh
+uv run --with pylance==8.0.0 --with pyarrow --with numpy \
+  python bench/lance-prepare-uspto.py --output /tmp/uspto.lance
+pnpm bench:lance -- --dataset /tmp/uspto.lance --trials 3
+```
+
+The converter records source and dataset hashes, producer/storage versions, stable IDs, and
+expected projections in `benchmark.json`. The runner also accepts `--base-url`, `--path`, and
+`--manifest` for a dataset hosted on R2 or another HTTP range server. See
+[`docs/lance-random-read-benchmark.md`](../../docs/lance-random-read-benchmark.md) for the recorded
+results and interpretation.
