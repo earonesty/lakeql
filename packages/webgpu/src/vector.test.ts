@@ -8,11 +8,12 @@ import {
 } from "lakeql-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { create, globals } from "webgpu";
+import { dawnAdapterAvailable } from "../test/dawn.js";
 import { WebGpuPhysicalBackend } from "./backend.js";
 import type { WebGpuRuntime } from "./runtime.js";
 import { compileWebGpuVectorTopK, webGpuVectorMetricCode } from "./vector.js";
 
-describe("WebGPU bounded vector top-k with Dawn", () => {
+describe.runIf(await dawnAdapterAvailable())("WebGPU bounded vector top-k with Dawn", () => {
   let backend: WebGpuPhysicalBackend;
   let gpu: GPU;
 

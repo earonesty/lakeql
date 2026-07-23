@@ -11,11 +11,12 @@ import {
 } from "lakeql-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { create, globals } from "webgpu";
+import { dawnAdapterAvailable } from "../test/dawn.js";
 import { WebGpuPhysicalBackend } from "./backend.js";
 import { compileWebGpuReduction } from "./reduction.js";
 import type { WebGpuRuntime } from "./runtime.js";
 
-describe("WebGPU reductions with Dawn", () => {
+describe.runIf(await dawnAdapterAvailable())("WebGPU reductions with Dawn", () => {
   let backend: WebGpuPhysicalBackend;
   let gpu: GPU;
 
