@@ -167,6 +167,7 @@ describe("WebGpuPhysicalBackend validation", () => {
   it.each([
     [{ maxInputRows: 0 }, "row and storage limits"],
     [{ maxStorageBufferBytes: -1 }, "row and storage limits"],
+    [{ maxResidentBytes: -1 }, "resident byte capacity"],
     [{ workgroupSize: 64 }, "workgroup size"],
     [{ cost: { fixedMs: 0 } }, "cost parameter fixedMs"],
   ])("rejects invalid options %j", (options, message) => {
@@ -186,6 +187,26 @@ describe("WebGpuPhysicalBackend validation", () => {
       code: "LAKEQL_PHYSICAL_BACKEND_UNSUPPORTED",
     });
     backend.close();
+  });
+
+  it("requires immutable residency identities and rejects caching after close", async () => {
+    const backend = new WebGpuPhysicalBackend(provider, { maxResidentBytes: 64 });
+    const block = {
+      rowCount: 1,
+      dimensions: 1,
+      vectors: Float32Array.of(1),
+      rowIdsLow: Uint32Array.of(1),
+      rowIdsHigh: Uint32Array.of(0),
+    };
+    await expect(
+      backend.cacheVectorCandidates("vectors", block, { sourceIdentity: "" }),
+    ).rejects.toMatchObject<LakeqlError>({ code: "LAKEQL_VALIDATION_ERROR" });
+    backend.close();
+    await expect(
+      backend.cacheVectorCandidates("vectors", block, { sourceIdentity: "snapshot:a" }),
+    ).rejects.toMatchObject<LakeqlError>({
+      code: "LAKEQL_PHYSICAL_BACKEND_UNAVAILABLE",
+    });
   });
 });
 

@@ -69,10 +69,23 @@ export interface PhysicalVectorCandidateInput {
   sourceIdentity?: string;
 }
 
+export interface PhysicalResidentVectorCandidateInput {
+  kind: "resident-vector-candidates";
+  rowCount: number;
+  dimensions: number;
+  encoding: "f32";
+  backendId: string;
+  deviceGeneration: number;
+  representation: "vector-candidates-f32";
+  cacheKey: string;
+  sourceIdentity: string;
+}
+
 export type PhysicalInput =
   | PhysicalBatchInput
   | PhysicalResidentInput
-  | PhysicalVectorCandidateInput;
+  | PhysicalVectorCandidateInput
+  | PhysicalResidentVectorCandidateInput;
 
 export interface PhysicalSelect {
   kind: "select";
@@ -272,6 +285,17 @@ export type PhysicalFragmentInput =
       kind: "vector-candidates";
       block: PhysicalVectorCandidateBlock;
       sourceIdentity?: string;
+    }
+  | {
+      kind: "resident-vector-candidates";
+      backendId: string;
+      deviceGeneration: number;
+      representation: "vector-candidates-f32";
+      cacheKey: string;
+      rowCount: number;
+      dimensions: number;
+      handle: unknown;
+      sourceIdentity: string;
     };
 
 export type PhysicalOutputValue =
@@ -837,7 +861,10 @@ export function validatePhysicalFragment(fragment: PhysicalFragment): BackendRej
     }
     if (operator.kind === "vector-distance") {
       const dimensions =
-        fragment.input.kind === "vector-candidates" ? fragment.input.dimensions : undefined;
+        fragment.input.kind === "vector-candidates" ||
+        fragment.input.kind === "resident-vector-candidates"
+          ? fragment.input.dimensions
+          : undefined;
       if (
         dimensions === undefined ||
         operator.query.length !== dimensions ||
@@ -872,7 +899,8 @@ export function validatePhysicalFragment(fragment: PhysicalFragment): BackendRej
   if (
     (vectorDistance >= 0 || boundedTopK >= 0 || fragment.output.kind === "vector-candidates") &&
     !(
-      fragment.input.kind === "vector-candidates" &&
+      (fragment.input.kind === "vector-candidates" ||
+        fragment.input.kind === "resident-vector-candidates") &&
       vectorDistance === 0 &&
       boundedTopK === 1 &&
       fragment.operators.length === 2 &&
@@ -1261,7 +1289,7 @@ function acceleratorBudgetReasons(
       resource: "accelerator memory bytes",
       limit: budget.maxAcceleratorMemoryBytes,
       actual:
-        fragment.estimates.inputBytes +
+        (inputResident ? 0 : fragment.estimates.inputBytes) +
         fragment.estimates.outputBytes +
         (fragment.estimates.retainedStateBytes ?? 0),
     },

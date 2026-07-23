@@ -54,18 +54,33 @@ const runtime = {
     mapMode: globals.GPUMapMode,
   },
 };
-const webgpu = new WebGpuPhysicalBackend(() => runtime);
+const residentBytes =
+  vectors.byteLength + rowIdsLow.byteLength + rowIdsHigh.byteLength + rowIdsLow.byteLength;
+const webgpu = new WebGpuPhysicalBackend(() => runtime, {
+  maxResidentBytes: residentBytes,
+});
 const cpu = new CpuPhysicalBackend();
+let resident;
 
 try {
   const input = { kind: "vector-candidates", block, sourceIdentity: "benchmark:v1" };
   const cpuCompiled = await cpu.compile(fragment);
   const gpuCompiled = await webgpu.compile(fragment);
   const cpuCold = await timed(() => cpu.execute(cpuCompiled, input, {}));
-  const gpuCold = await timed(() => webgpu.execute(gpuCompiled, input, {}));
-  assertSameOutput(cpuCold.value.output, gpuCold.value.output);
+  const gpuRawCold = await timed(() => webgpu.execute(gpuCompiled, input, {}));
+  assertSameOutput(cpuCold.value.output, gpuRawCold.value.output);
+  const residency = await timed(() =>
+    webgpu.cacheVectorCandidates("benchmark:vectors", block, {
+      sourceIdentity: "benchmark:v1",
+    }),
+  );
+  resident = residency.value;
+  const residentFragment = { ...fragment, input: resident.descriptor };
+  const residentCompiled = await webgpu.compile(residentFragment);
   const cpuWarm = await repeated(warmRuns, () => cpu.execute(cpuCompiled, input, {}));
-  const gpuWarm = await repeated(warmRuns, () => webgpu.execute(gpuCompiled, input, {}));
+  const gpuWarm = await repeated(warmRuns, () =>
+    webgpu.execute(residentCompiled, resident.input, {}),
+  );
   assertSameOutput(cpuWarm.last.output, gpuWarm.last.output);
   console.log(
     JSON.stringify(
@@ -83,9 +98,11 @@ try {
           metrics: cpuWarm.last.metrics,
         },
         webgpu: {
-          coldMs: gpuCold.elapsedMs,
-          warmMedianMs: median(gpuWarm.times),
-          metrics: gpuWarm.last.metrics,
+          rawColdMs: gpuRawCold.elapsedMs,
+          residencyUploadMs: residency.elapsedMs,
+          residentWarmMedianMs: median(gpuWarm.times),
+          residentQueryMetrics: gpuWarm.last.metrics,
+          residentBytes,
         },
       },
       null,
@@ -93,6 +110,7 @@ try {
     ),
   );
 } finally {
+  resident?.release();
   webgpu.close();
 }
 

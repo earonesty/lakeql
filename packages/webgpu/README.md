@@ -37,6 +37,39 @@ const rows = await query(source, {
 webgpu.close();
 ```
 
+Repeated vector queries can keep an immutable candidate block on the device.
+The cache has an explicit byte capacity, uses reference-counted leases and LRU
+eviction, and binds every descriptor to both an immutable source identity and
+the current device generation:
+
+```ts
+const webgpu = new WebGpuPhysicalBackend(() => runtime, {
+  maxResidentBytes: 256 * 1024 * 1024,
+});
+const resident = await webgpu.cacheVectorCandidates("catalog-embeddings", block, {
+  sourceIdentity: snapshotId,
+});
+
+try {
+  const fragment = {
+    ...vectorFragment,
+    input: resident.descriptor,
+  };
+  const result = await webgpu.execute(
+    await webgpu.compile(fragment),
+    resident.input,
+  );
+} finally {
+  resident.release();
+}
+```
+
+Reusing a cache key with a different snapshot identity or shape is a validation
+error. Released entries remain reusable until the bounded cache needs space;
+active leases are never evicted. Device loss invalidates descriptors, so stale
+handles fail with a typed backend-unavailable error instead of reading unrelated
+buffers.
+
 The browser adapter takes `navigator`, `GPUBufferUsage`, and `GPUMapMode`
 explicitly. A Worker or another WebGPU host can instead provide the same
 `WebGpuRuntime` contract directly.
@@ -57,8 +90,9 @@ dependency of this package and is never loaded by query-time code.
   synchronization, and before publishing mapped results.
 - `close()` destroys the active device and clears compilation state.
 
-Decoded batch input, CPU selection-mask output, aggregate snapshots, and
-format-neutral exact-vector candidate blocks are supported. Grouped reductions,
-resident columns, and quantized vector encodings remain governed by the generic
-physical contract and are added as backend capabilities as their semantic and
-resource contracts are implemented.
+Decoded batch input, CPU selection-mask output, aggregate snapshots,
+format-neutral exact-vector candidate blocks, and bounded resident exact-vector
+blocks are supported. Grouped reductions, general resident columns, and
+quantized vector encodings remain governed by the generic physical contract and
+are added as backend capabilities as their semantic and resource contracts are
+implemented.

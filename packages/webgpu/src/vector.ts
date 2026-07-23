@@ -25,7 +25,8 @@ export function compileWebGpuVectorTopK(fragment: PhysicalFragment): WebGpuVecto
   const distance = fragment.operators[0];
   const topK = fragment.operators[1];
   if (
-    fragment.input.kind !== "vector-candidates" ||
+    (fragment.input.kind !== "vector-candidates" &&
+      fragment.input.kind !== "resident-vector-candidates") ||
     distance?.kind !== "vector-distance" ||
     topK?.kind !== "bounded-top-k" ||
     fragment.operators.length !== 2 ||

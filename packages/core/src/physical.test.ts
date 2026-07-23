@@ -423,7 +423,10 @@ describe("physical execution", () => {
     expect(
       planPhysicalFragment(fragment, [cpu, accelerator], {
         policy: "required",
-        budget: { maxAcceleratorUploadBytes: 0 },
+        budget: {
+          maxAcceleratorUploadBytes: 0,
+          maxAcceleratorMemoryBytes: fragment.estimates.outputBytes,
+        },
         inputResidencyKeys: new Set([fragment.input.sourceIdentity ?? fragment.id]),
       }).backendId,
     ).toBe("gpu");

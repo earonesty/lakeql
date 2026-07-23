@@ -13,6 +13,8 @@ import {
   type PhysicalFragment,
   type PhysicalFragmentInput,
   type PhysicalFragmentResult,
+  type PhysicalResidentVectorCandidateInput,
+  type PhysicalVectorCandidateBlock,
   physicalVectorCandidateBytes,
   restoreVectorAggregateStates,
   selectedRowCount,
@@ -50,7 +52,14 @@ export interface WebGpuBackendOptions extends WebGpuDeviceOptions {
   maxInputRows?: number;
   maxStorageBufferBytes?: number;
   workgroupSize?: number;
+  maxResidentBytes?: number;
   cost?: Partial<WebGpuCostModel>;
+}
+
+export interface WebGpuResidentVectorCandidates {
+  readonly descriptor: PhysicalResidentVectorCandidateInput;
+  readonly input: Extract<PhysicalFragmentInput, { kind: "resident-vector-candidates" }>;
+  release(): void;
 }
 
 export interface WebGpuCostModel {
@@ -66,6 +75,34 @@ interface WebGpuCompiledState {
 }
 
 type WebGpuKernel = WebGpuCompiledState["kernel"];
+
+interface ResidentVectorEntry {
+  readonly cacheKey: string;
+  readonly sourceIdentity: string;
+  readonly generation: number;
+  readonly rowCount: number;
+  readonly dimensions: number;
+  readonly values: GPUBuffer;
+  readonly rowIdsLow: GPUBuffer;
+  readonly rowIdsHigh: GPUBuffer;
+  readonly validity: GPUBuffer;
+  readonly byteSize: number;
+  readonly logicalBytes: number;
+  readonly validRows: number;
+  references: number;
+  lastUsed: number;
+}
+
+interface ResidentVectorOpening {
+  readonly sourceIdentity: string;
+  readonly rowCount: number;
+  readonly dimensions: number;
+  readonly promise: Promise<ResidentVectorEntry>;
+}
+
+type VectorFragmentInput =
+  | Extract<PhysicalFragmentInput, { kind: "vector-candidates" }>
+  | Extract<PhysicalFragmentInput, { kind: "resident-vector-candidates" }>;
 
 const DEFAULT_COST: WebGpuCostModel = {
   fixedMs: 0.12,
@@ -96,18 +133,32 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
   readonly #maxInputRows: number;
   readonly #maxStorageBufferBytes: number;
   readonly #workgroupSize: number;
+  readonly #maxResidentBytes: number;
   readonly #cost: WebGpuCostModel;
   readonly #pipelines = new Map<string, Promise<GPUComputePipeline>>();
+  readonly #residentVectors = new Map<string, ResidentVectorEntry>();
+  readonly #residentOpenings = new Map<string, ResidentVectorOpening>();
+  #residentBytes = 0;
+  #residentReservedBytes = 0;
+  #residentClock = 0;
+  #closed = false;
 
   constructor(provider: WebGpuRuntimeProvider, options: WebGpuBackendOptions = {}) {
     this.id = options.id ?? "webgpu";
     this.#maxInputRows = options.maxInputRows ?? 16_777_216;
     this.#maxStorageBufferBytes = options.maxStorageBufferBytes ?? 128 * 1024 * 1024;
     this.#workgroupSize = options.workgroupSize ?? 256;
+    this.#maxResidentBytes = options.maxResidentBytes ?? 0;
     if (!positiveInteger(this.#maxInputRows) || !positiveInteger(this.#maxStorageBufferBytes)) {
       throw new LakeqlError(
         "LAKEQL_VALIDATION_ERROR",
         "WebGPU row and storage limits must be positive integers",
+      );
+    }
+    if (!Number.isInteger(this.#maxResidentBytes) || this.#maxResidentBytes < 0) {
+      throw new LakeqlError(
+        "LAKEQL_VALIDATION_ERROR",
+        "WebGPU resident byte capacity must be a non-negative integer",
       );
     }
     if (this.#workgroupSize !== 256) {
@@ -129,7 +180,11 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
       ...(options.adapter === undefined ? {} : { adapter: options.adapter }),
       ...(options.device === undefined ? {} : { device: options.device }),
     });
-    this.#devices.onInvalidated(() => this.#pipelines.clear());
+    this.#devices.onInvalidated(() => {
+      this.#pipelines.clear();
+      this.#residentVectors.clear();
+      this.#residentBytes = 0;
+    });
   }
 
   capabilities(): PhysicalCapabilities {
@@ -186,14 +241,223 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
         maxOutputBytes: this.#maxStorageBufferBytes,
         maxDispatches: 1,
       },
-      supportsResidentInput: false,
+      supportsResidentInput: true,
       supportsResidentOutput: false,
     };
+  }
+
+  async cacheVectorCandidates(
+    cacheKey: string,
+    block: PhysicalVectorCandidateBlock,
+    options: { sourceIdentity: string; signal?: AbortSignal },
+  ): Promise<WebGpuResidentVectorCandidates> {
+    if (this.#closed) {
+      throw new LakeqlError("LAKEQL_PHYSICAL_BACKEND_UNAVAILABLE", "WebGPU backend is closed");
+    }
+    if (cacheKey.trim().length === 0) {
+      throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Resident vector cache key is required");
+    }
+    if (options.sourceIdentity.trim().length === 0) {
+      throw new LakeqlError(
+        "LAKEQL_VALIDATION_ERROR",
+        "Resident vector source identity is required",
+      );
+    }
+    if (this.#maxResidentBytes === 0) {
+      throw new LakeqlError(
+        "LAKEQL_BUDGET_EXCEEDED",
+        "WebGPU resident vector capacity is disabled",
+        { resource: "resident accelerator bytes", limit: 0 },
+      );
+    }
+    validatePhysicalVectorCandidateBlock(block);
+    throwIfAborted(options.signal);
+    const existing = this.#residentVectors.get(cacheKey);
+    if (existing !== undefined) {
+      if (
+        existing.rowCount !== block.rowCount ||
+        existing.dimensions !== block.dimensions ||
+        existing.sourceIdentity !== options.sourceIdentity
+      ) {
+        throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Resident vector cache identity changed", {
+          cacheKey,
+        });
+      }
+      existing.references += 1;
+      existing.lastUsed = ++this.#residentClock;
+      return this.#residentLease(existing);
+    }
+    const opening = this.#residentOpenings.get(cacheKey);
+    if (opening !== undefined) {
+      if (
+        opening.rowCount !== block.rowCount ||
+        opening.dimensions !== block.dimensions ||
+        opening.sourceIdentity !== options.sourceIdentity
+      ) {
+        throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Resident vector cache identity changed", {
+          cacheKey,
+        });
+      }
+      const entry = await opening.promise;
+      throwIfAborted(options.signal);
+      entry.references += 1;
+      entry.lastUsed = ++this.#residentClock;
+      return this.#residentLease(entry);
+    }
+    const byteSize =
+      alignedBufferBytes(block.vectors.byteLength) +
+      alignedBufferBytes(block.rowIdsLow.byteLength) +
+      alignedBufferBytes(block.rowIdsHigh.byteLength) +
+      alignedBufferBytes(block.rowCount * 4);
+    this.#evictResidentVectors(byteSize);
+    if (this.#residentBytes + this.#residentReservedBytes + byteSize > this.#maxResidentBytes) {
+      throw new LakeqlError(
+        "LAKEQL_BUDGET_EXCEEDED",
+        "WebGPU resident vector capacity cannot fit the requested block",
+        {
+          resource: "resident accelerator bytes",
+          actual: this.#residentBytes + this.#residentReservedBytes + byteSize,
+          limit: this.#maxResidentBytes,
+          cacheKey,
+        },
+      );
+    }
+    this.#residentReservedBytes += byteSize;
+    const promise = this.#devices
+      .scoped(
+        this.id,
+        async (lease) => {
+          const largest = Math.max(
+            alignedBufferBytes(block.vectors.byteLength),
+            alignedBufferBytes(block.rowIdsLow.byteLength),
+            alignedBufferBytes(block.rowIdsHigh.byteLength),
+            alignedBufferBytes(block.rowCount * 4),
+          );
+          const deviceLimit = Math.min(
+            lease.device.limits.maxBufferSize,
+            lease.device.limits.maxStorageBufferBindingSize,
+            this.#maxStorageBufferBytes,
+          );
+          if (largest > deviceLimit) {
+            throw new LakeqlError(
+              "LAKEQL_PHYSICAL_BACKEND_UNSUPPORTED",
+              "Resident vector block exceeds the acquired WebGPU device buffer limit",
+              { actual: largest, limit: deviceLimit, cacheKey },
+            );
+          }
+          const created: GPUBuffer[] = [];
+          try {
+            const values = createUploadBuffer(
+              lease.device,
+              lease.runtime.constants.bufferUsage,
+              block.vectors,
+              `lakeql:resident:${cacheKey}:vectors`,
+            );
+            const rowIdsLow = createUploadBuffer(
+              lease.device,
+              lease.runtime.constants.bufferUsage,
+              block.rowIdsLow,
+              `lakeql:resident:${cacheKey}:row-ids-low`,
+            );
+            const rowIdsHigh = createUploadBuffer(
+              lease.device,
+              lease.runtime.constants.bufferUsage,
+              block.rowIdsHigh,
+              `lakeql:resident:${cacheKey}:row-ids-high`,
+            );
+            const validity = new Uint32Array(block.rowCount);
+            if (block.valid === undefined) validity.fill(1);
+            else validity.set(block.valid);
+            const validityBuffer = createUploadBuffer(
+              lease.device,
+              lease.runtime.constants.bufferUsage,
+              validity,
+              `lakeql:resident:${cacheKey}:validity`,
+            );
+            created.push(values, rowIdsLow, rowIdsHigh, validityBuffer);
+            const resident: ResidentVectorEntry = {
+              cacheKey,
+              sourceIdentity: options.sourceIdentity,
+              generation: lease.generation,
+              rowCount: block.rowCount,
+              dimensions: block.dimensions,
+              values,
+              rowIdsLow,
+              rowIdsHigh,
+              validity: validityBuffer,
+              byteSize,
+              logicalBytes: physicalVectorCandidateBytes(block),
+              validRows:
+                block.valid?.reduce((count, valid) => count + (valid === 1 ? 1 : 0), 0) ??
+                block.rowCount,
+              references: 0,
+              lastUsed: ++this.#residentClock,
+            };
+            created.length = 0;
+            return resident;
+          } finally {
+            for (const buffer of created) buffer.destroy();
+          }
+        },
+        undefined,
+      )
+      .then((entry) => {
+        if (this.#closed || entry.generation !== this.#devices.generation) {
+          destroyResidentEntry(entry);
+          throw new LakeqlError(
+            "LAKEQL_PHYSICAL_BACKEND_UNAVAILABLE",
+            "WebGPU device changed while caching resident vectors",
+            { cacheKey, deviceGeneration: entry.generation },
+          );
+        }
+        this.#residentVectors.set(cacheKey, entry);
+        this.#residentBytes += entry.byteSize;
+        return entry;
+      });
+    this.#residentOpenings.set(cacheKey, {
+      sourceIdentity: options.sourceIdentity,
+      rowCount: block.rowCount,
+      dimensions: block.dimensions,
+      promise,
+    });
+    let entry: ResidentVectorEntry;
+    try {
+      entry = await promise;
+    } finally {
+      this.#residentOpenings.delete(cacheKey);
+      this.#residentReservedBytes -= byteSize;
+    }
+    throwIfAborted(options.signal);
+    entry.references += 1;
+    entry.lastUsed = ++this.#residentClock;
+    return this.#residentLease(entry);
   }
 
   assess(fragment: PhysicalFragment, context: BackendPlanningContext): BackendAssessment {
     const compilation = compileWebGpuKernel(fragment);
     const reasons: BackendRejection[] = [...validatePhysicalFragment(fragment)];
+    const inputResident = fragment.input.kind === "resident-vector-candidates";
+    if (fragment.input.kind === "resident-vector-candidates") {
+      const entry = this.#residentVectors.get(fragment.input.cacheKey);
+      if (
+        fragment.input.backendId !== this.id ||
+        entry === undefined ||
+        entry.generation !== fragment.input.deviceGeneration ||
+        entry.generation !== this.#devices.generation ||
+        entry.rowCount !== fragment.input.rowCount ||
+        entry.dimensions !== fragment.input.dimensions ||
+        entry.sourceIdentity !== fragment.input.sourceIdentity
+      ) {
+        reasons.push({
+          code: "unavailable",
+          message: "Resident WebGPU vector input is stale or unavailable",
+          details: {
+            cacheKey: fragment.input.cacheKey,
+            deviceGeneration: fragment.input.deviceGeneration,
+          },
+        });
+      }
+    }
     if (!compilation.supported) {
       reasons.push({ code: "operator", message: compilation.reason });
     } else {
@@ -246,7 +510,7 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
       supported: reasons.length === 0,
       reasons,
       cost,
-      inputResident: false,
+      inputResident,
       compiledResident,
     };
   }
@@ -284,7 +548,7 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
     }
     const kernel = compiled.backendState.kernel;
     if (kernel.kind === "vector-top-k") {
-      if (input.kind !== "vector-candidates") {
+      if (input.kind !== "vector-candidates" && input.kind !== "resident-vector-candidates") {
         throw new LakeqlError(
           "LAKEQL_PHYSICAL_BACKEND_UNSUPPORTED",
           "WebGPU vector top-k requires vector candidate input",
@@ -616,20 +880,25 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
   async #executeVectorTopK(
     fragment: PhysicalFragment,
     vector: CompiledWebGpuVectorTopK,
-    input: Extract<PhysicalFragmentInput, { kind: "vector-candidates" }>,
+    input: VectorFragmentInput,
     context: BackendExecutionContext,
   ): Promise<PhysicalFragmentResult> {
-    if (fragment.input.kind !== "vector-candidates") {
+    if (
+      fragment.input.kind !== "vector-candidates" &&
+      fragment.input.kind !== "resident-vector-candidates"
+    ) {
       throw new LakeqlError(
         "LAKEQL_TYPE_ERROR",
         "Physical vector input does not match the compiled WebGPU fragment",
       );
     }
-    validatePhysicalVectorCandidateBlock(input.block);
-    if (
-      input.block.rowCount !== fragment.input.rowCount ||
-      input.block.dimensions !== fragment.input.dimensions
-    ) {
+    const resident =
+      input.kind === "resident-vector-candidates" ? residentEntry(input.handle) : undefined;
+    if (input.kind === "vector-candidates") validatePhysicalVectorCandidateBlock(input.block);
+    const rowCount = input.kind === "vector-candidates" ? input.block.rowCount : input.rowCount;
+    const dimensions =
+      input.kind === "vector-candidates" ? input.block.dimensions : input.dimensions;
+    if (rowCount !== fragment.input.rowCount || dimensions !== fragment.input.dimensions) {
       throw new LakeqlError(
         "LAKEQL_TYPE_ERROR",
         "Physical vector candidate shape changed after planning",
@@ -641,12 +910,29 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
     ) {
       throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Physical input source identity changed");
     }
+    if (input.kind === "resident-vector-candidates") {
+      if (
+        resident === undefined ||
+        input.backendId !== this.id ||
+        input.deviceGeneration !== this.#devices.generation ||
+        resident.generation !== input.deviceGeneration ||
+        resident.cacheKey !== input.cacheKey ||
+        this.#residentVectors.get(input.cacheKey) !== resident
+      ) {
+        throw new LakeqlError(
+          "LAKEQL_PHYSICAL_BACKEND_UNAVAILABLE",
+          "Resident WebGPU vector input is stale or unavailable",
+          { cacheKey: input.cacheKey, deviceGeneration: input.deviceGeneration },
+        );
+      }
+    }
+    if (resident !== undefined) resident.lastUsed = ++this.#residentClock;
     const signal = context.budget?.signal;
     const now = context.now ?? (() => Date.now());
     const startedAt = now();
     const transfer = physicalTransferBytes(fragment, vector);
     enforceRuntimeBudget(fragment.id, context, transfer);
-    const tileCount = Math.ceil(input.block.rowCount / vector.tileRows);
+    const tileCount = Math.ceil(rowCount / vector.tileRows);
     const outputWords = await this.#devices.scoped(
       this.id,
       async (lease) => {
@@ -667,33 +953,50 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
         }
         const buffers: GPUBuffer[] = [];
         try {
-          const valuesBuffer = createUploadBuffer(
-            lease.device,
-            lease.runtime.constants.bufferUsage,
-            input.block.vectors,
-            `lakeql:${fragment.id}:vectors`,
-          );
-          const lowBuffer = createUploadBuffer(
-            lease.device,
-            lease.runtime.constants.bufferUsage,
-            input.block.rowIdsLow,
-            `lakeql:${fragment.id}:row-ids-low`,
-          );
-          const highBuffer = createUploadBuffer(
-            lease.device,
-            lease.runtime.constants.bufferUsage,
-            input.block.rowIdsHigh,
-            `lakeql:${fragment.id}:row-ids-high`,
-          );
-          const validity = new Uint32Array(input.block.rowCount);
-          if (input.block.valid === undefined) validity.fill(1);
-          else validity.set(input.block.valid);
-          const validityBuffer = createUploadBuffer(
-            lease.device,
-            lease.runtime.constants.bufferUsage,
-            validity,
-            `lakeql:${fragment.id}:validity`,
-          );
+          let valuesBuffer: GPUBuffer;
+          let lowBuffer: GPUBuffer;
+          let highBuffer: GPUBuffer;
+          let validityBuffer: GPUBuffer;
+          if (input.kind === "resident-vector-candidates" && resident !== undefined) {
+            valuesBuffer = resident.values;
+            lowBuffer = resident.rowIdsLow;
+            highBuffer = resident.rowIdsHigh;
+            validityBuffer = resident.validity;
+          } else if (input.kind === "vector-candidates") {
+            valuesBuffer = createUploadBuffer(
+              lease.device,
+              lease.runtime.constants.bufferUsage,
+              input.block.vectors,
+              `lakeql:${fragment.id}:vectors`,
+            );
+            lowBuffer = createUploadBuffer(
+              lease.device,
+              lease.runtime.constants.bufferUsage,
+              input.block.rowIdsLow,
+              `lakeql:${fragment.id}:row-ids-low`,
+            );
+            highBuffer = createUploadBuffer(
+              lease.device,
+              lease.runtime.constants.bufferUsage,
+              input.block.rowIdsHigh,
+              `lakeql:${fragment.id}:row-ids-high`,
+            );
+            const validity = new Uint32Array(input.block.rowCount);
+            if (input.block.valid === undefined) validity.fill(1);
+            else validity.set(input.block.valid);
+            validityBuffer = createUploadBuffer(
+              lease.device,
+              lease.runtime.constants.bufferUsage,
+              validity,
+              `lakeql:${fragment.id}:validity`,
+            );
+            buffers.push(valuesBuffer, lowBuffer, highBuffer, validityBuffer);
+          } else {
+            throw new LakeqlError(
+              "LAKEQL_PHYSICAL_BACKEND_UNAVAILABLE",
+              "Resident WebGPU vector buffers are unavailable",
+            );
+          }
           const queryBuffer = createUploadBuffer(
             lease.device,
             lease.runtime.constants.bufferUsage,
@@ -704,8 +1007,8 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
             lease.device,
             lease.runtime.constants.bufferUsage,
             Uint32Array.of(
-              input.block.rowCount,
-              input.block.dimensions,
+              rowCount,
+              dimensions,
               tileCount,
               vector.limit,
               webGpuVectorMetricCode(vector.metric),
@@ -728,16 +1031,7 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
               lease.runtime.constants.bufferUsage.MAP_READ |
               lease.runtime.constants.bufferUsage.COPY_DST,
           });
-          buffers.push(
-            valuesBuffer,
-            lowBuffer,
-            highBuffer,
-            validityBuffer,
-            queryBuffer,
-            paramsBuffer,
-            output,
-            readback,
-          );
+          buffers.push(queryBuffer, paramsBuffer, output, readback);
           const pipeline = await this.#pipeline(lease.device, lease.generation, vector);
           throwIfAborted(signal);
           const bindGroup = lease.device.createBindGroup({
@@ -802,12 +1096,17 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
       metrics: {
         backendId: this.id,
         elapsedMs,
-        inputRows: input.block.rowCount,
+        inputRows: rowCount,
         selectedRows:
-          input.block.valid?.reduce((count, valid) => count + (valid === 1 ? 1 : 0), 0) ??
-          input.block.rowCount,
+          input.kind === "vector-candidates"
+            ? (input.block.valid?.reduce((count, valid) => count + (valid === 1 ? 1 : 0), 0) ??
+              input.block.rowCount)
+            : (resident?.validRows ?? rowCount),
         outputRows: candidates.scores.length,
-        inputBytes: physicalVectorCandidateBytes(input.block),
+        inputBytes:
+          input.kind === "vector-candidates"
+            ? physicalVectorCandidateBytes(input.block)
+            : (resident?.logicalBytes ?? 0),
         uploadBytes: transfer.uploadBytes,
         readbackBytes: transfer.outputBytes,
         dispatches: tileCount > 0 && vector.limit > 0 ? 1 : 0,
@@ -817,8 +1116,67 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
   }
 
   close(): void {
+    this.#closed = true;
+    for (const entry of this.#residentVectors.values()) destroyResidentEntry(entry);
+    this.#residentVectors.clear();
+    this.#residentBytes = 0;
     this.#pipelines.clear();
     this.#devices.close();
+  }
+
+  #residentLease(entry: ResidentVectorEntry): WebGpuResidentVectorCandidates {
+    let released = false;
+    return {
+      descriptor: {
+        kind: "resident-vector-candidates",
+        rowCount: entry.rowCount,
+        dimensions: entry.dimensions,
+        encoding: "f32",
+        backendId: this.id,
+        deviceGeneration: entry.generation,
+        representation: "vector-candidates-f32",
+        cacheKey: entry.cacheKey,
+        sourceIdentity: entry.sourceIdentity,
+      },
+      input: {
+        kind: "resident-vector-candidates",
+        backendId: this.id,
+        deviceGeneration: entry.generation,
+        representation: "vector-candidates-f32",
+        cacheKey: entry.cacheKey,
+        rowCount: entry.rowCount,
+        dimensions: entry.dimensions,
+        handle: entry,
+        sourceIdentity: entry.sourceIdentity,
+      },
+      release: () => {
+        if (released) return;
+        released = true;
+        entry.references = Math.max(0, entry.references - 1);
+        entry.lastUsed = ++this.#residentClock;
+      },
+    };
+  }
+
+  #evictResidentVectors(requiredBytes: number): void {
+    if (this.#residentBytes + this.#residentReservedBytes + requiredBytes <= this.#maxResidentBytes)
+      return;
+    const candidates = [...this.#residentVectors.values()]
+      .filter((entry) => entry.references === 0)
+      .sort(
+        (left, right) =>
+          left.lastUsed - right.lastUsed || left.cacheKey.localeCompare(right.cacheKey),
+      );
+    for (const entry of candidates) {
+      this.#residentVectors.delete(entry.cacheKey);
+      this.#residentBytes -= entry.byteSize;
+      destroyResidentEntry(entry);
+      if (
+        this.#residentBytes + this.#residentReservedBytes + requiredBytes <=
+        this.#maxResidentBytes
+      )
+        return;
+    }
   }
 
   async #pipeline(
@@ -863,7 +1221,12 @@ function physicalTransferBytes(
   predicate: WebGpuKernel,
 ): PhysicalTransfer {
   if (predicate.kind === "vector-top-k") {
-    const dimensions = fragment.input.kind === "vector-candidates" ? fragment.input.dimensions : 0;
+    const dimensions =
+      fragment.input.kind === "vector-candidates" ||
+      fragment.input.kind === "resident-vector-candidates"
+        ? fragment.input.dimensions
+        : 0;
+    const resident = fragment.input.kind === "resident-vector-candidates";
     const vectorsBytes = alignedBufferBytes(fragment.input.rowCount * dimensions * 4);
     const rowIdBytes = alignedBufferBytes(fragment.input.rowCount * 4);
     const validityBytes = rowIdBytes;
@@ -878,12 +1241,18 @@ function physicalTransferBytes(
           4,
       ),
     );
-    const uploadBytes = vectorsBytes + rowIdBytes * 2 + validityBytes + queryBytes + parameterBytes;
+    const uploadBytes =
+      (resident ? 0 : vectorsBytes + rowIdBytes * 2 + validityBytes) + queryBytes + parameterBytes;
     return {
       uploadBytes,
       outputBytes,
       deviceBytes: uploadBytes + outputBytes * 2,
-      largestBufferBytes: Math.max(vectorsBytes, rowIdBytes, queryBytes, outputBytes),
+      largestBufferBytes: Math.max(
+        resident ? 0 : vectorsBytes,
+        resident ? 0 : rowIdBytes,
+        queryBytes,
+        outputBytes,
+      ),
     };
   }
   const bufferBytes = alignedBufferBytes(fragment.input.rowCount * 4);
@@ -920,7 +1289,9 @@ function webGpuCost(
       : physicalTransferBytes(fragment, predicate);
   const uploadMs = transfer.uploadBytes / model.uploadBytesPerMs;
   const computeUnits =
-    predicate?.kind === "vector-top-k" && fragment.input.kind === "vector-candidates"
+    predicate?.kind === "vector-top-k" &&
+    (fragment.input.kind === "vector-candidates" ||
+      fragment.input.kind === "resident-vector-candidates")
       ? (fragment.input.rowCount * fragment.input.dimensions) / 16
       : fragment.input.rowCount;
   const computeMs = computeUnits / model.computeRowsPerMs;
@@ -1224,4 +1595,25 @@ function isCompiledState(value: unknown): value is WebGpuCompiledState {
     typeof value.kernel === "object" &&
     value.kernel !== null
   );
+}
+
+function destroyResidentEntry(entry: ResidentVectorEntry): void {
+  entry.values.destroy();
+  entry.rowIdsLow.destroy();
+  entry.rowIdsHigh.destroy();
+  entry.validity.destroy();
+}
+
+function residentEntry(value: unknown): ResidentVectorEntry | undefined {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("cacheKey" in value) ||
+    !("generation" in value) ||
+    !("values" in value) ||
+    !("validity" in value)
+  ) {
+    return undefined;
+  }
+  return value as ResidentVectorEntry;
 }

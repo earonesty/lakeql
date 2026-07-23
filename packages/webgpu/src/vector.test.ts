@@ -1,6 +1,8 @@
 import {
   CpuPhysicalBackend,
   type PhysicalFragment,
+  type PhysicalFragmentInput,
+  type PhysicalResidentVectorCandidateInput,
   type PhysicalVectorCandidateBlock,
   type PhysicalVectorMetric,
 } from "lakeql-core";
@@ -27,7 +29,7 @@ describe("WebGPU bounded vector top-k with Dawn", () => {
         mapMode: constants.GPUMapMode,
       },
     };
-    backend = new WebGpuPhysicalBackend(() => runtime);
+    backend = new WebGpuPhysicalBackend(() => runtime, { maxResidentBytes: 1024 * 1024 });
   });
 
   afterAll(() => backend.close());
@@ -64,6 +66,62 @@ describe("WebGPU bounded vector top-k with Dawn", () => {
     expect(backend.assess(right, {}).compiledResident).toBe(true);
   });
 
+  it("reuses immutable resident candidates without charging query uploads for them", async () => {
+    const block = candidateBlock(2051, 8);
+    const lease = await backend.cacheVectorCandidates("vectors:resident", block, {
+      sourceIdentity: "vectors:snapshot-7",
+    });
+    try {
+      const target = residentFragment(
+        lease.descriptor,
+        block,
+        "dot",
+        [1, 0.5, -0.25, 0, 0.75, -1, 0.125, 0.25],
+        12,
+      );
+      const actual = await executeInput(backend, target, lease.input);
+      const expected = await execute(
+        new CpuPhysicalBackend(),
+        fragment(block, "dot", [1, 0.5, -0.25, 0, 0.75, -1, 0.125, 0.25], 12),
+        block,
+      );
+      expect(actual.output).toEqual(expected.output);
+      expect(actual.metrics).toMatchObject({
+        inputRows: 2051,
+        selectedRows: 2037,
+        outputRows: 12,
+        uploadBytes: 56,
+      });
+      expect(backend.assess(target, {})).toMatchObject({
+        supported: true,
+        inputResident: true,
+      });
+    } finally {
+      lease.release();
+    }
+  });
+
+  it("shares matching leases and rejects changed cache identity", async () => {
+    const block = candidateBlock(8, 2);
+    const [first, second] = await Promise.all([
+      backend.cacheVectorCandidates("vectors:shared", block, {
+        sourceIdentity: "snapshot:a",
+      }),
+      backend.cacheVectorCandidates("vectors:shared", block, {
+        sourceIdentity: "snapshot:a",
+      }),
+    ]);
+    expect(second.descriptor).toEqual(first.descriptor);
+    await expect(
+      backend.cacheVectorCandidates("vectors:shared", block, {
+        sourceIdentity: "snapshot:b",
+      }),
+    ).rejects.toMatchObject({ code: "LAKEQL_VALIDATION_ERROR" });
+    first.release();
+    first.release();
+    second.release();
+  });
+
   it("handles zero candidates and zero limit without dispatch", async () => {
     const empty = candidateBlock(0, 2);
     const emptyResult = await execute(backend, fragment(empty, "l2", [0, 0], 4), empty);
@@ -84,6 +142,50 @@ describe("WebGPU bounded vector top-k with Dawn", () => {
       0,
     );
     expect(zero.metrics.dispatches).toBe(0);
+  });
+
+  it("evicts only released entries and rejects stale descriptors", async () => {
+    const constants = globals as unknown as {
+      GPUBufferUsage: typeof GPUBufferUsage;
+      GPUMapMode: typeof GPUMapMode;
+    };
+    const local = new WebGpuPhysicalBackend(
+      () => ({
+        gpu,
+        constants: {
+          bufferUsage: constants.GPUBufferUsage,
+          mapMode: constants.GPUMapMode,
+        },
+      }),
+      { maxResidentBytes: 80 },
+    );
+    const block = candidateBlock(4, 2);
+    try {
+      const first = await local.cacheVectorCandidates("vectors:first", block, {
+        sourceIdentity: "snapshot:first",
+      });
+      await expect(
+        local.cacheVectorCandidates("vectors:blocked", block, {
+          sourceIdentity: "snapshot:blocked",
+        }),
+      ).rejects.toMatchObject({
+        code: "LAKEQL_BUDGET_EXCEEDED",
+        details: { resource: "resident accelerator bytes" },
+      });
+      first.release();
+      const second = await local.cacheVectorCandidates("vectors:second", block, {
+        sourceIdentity: "snapshot:second",
+      });
+      expect(
+        local.assess(residentFragment(first.descriptor, block, "dot", [1, 0], 2), {}).supported,
+      ).toBe(false);
+      await expect(
+        local.compile(residentFragment(first.descriptor, block, "dot", [1, 0], 2)),
+      ).rejects.toMatchObject({ code: "LAKEQL_PHYSICAL_BACKEND_UNSUPPORTED" });
+      second.release();
+    } finally {
+      local.close();
+    }
   });
 });
 
@@ -127,6 +229,15 @@ async function execute(
   });
 }
 
+async function executeInput(
+  backend: WebGpuPhysicalBackend,
+  target: PhysicalFragment,
+  input: PhysicalFragmentInput,
+) {
+  const compiled = await backend.compile(target);
+  return backend.execute(compiled, input);
+}
+
 function fragment(
   block: PhysicalVectorCandidateBlock,
   metric: PhysicalVectorMetric,
@@ -157,6 +268,19 @@ function fragment(
       outputBytes: limit * 16,
       dispatchCount: block.rowCount === 0 || limit === 0 ? 0 : 1,
     },
+  };
+}
+
+function residentFragment(
+  input: PhysicalResidentVectorCandidateInput,
+  block: PhysicalVectorCandidateBlock,
+  metric: PhysicalVectorMetric,
+  query: number[],
+  limit: number,
+): PhysicalFragment {
+  return {
+    ...fragment(block, metric, query, limit),
+    input,
   };
 }
 
