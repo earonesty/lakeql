@@ -77,7 +77,7 @@ class WorkerR2Bucket {
     return {
       objects: page.map(([key, bytes]) => new WorkerR2Object(key, bytes)),
       truncated: next < matching.length,
-      cursor: next < matching.length ? String(next) : undefined,
+      ...(next < matching.length ? { cursor: String(next) } : {}),
     };
   }
 }
