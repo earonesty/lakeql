@@ -6,7 +6,9 @@ read or mutate browser globals.
 
 The current backend executes bounded selection and fused reduction fragments
 over `bool`, `u8`, `i32`, `u32`, and `f32` vectors. Reductions support exact
-counts and order-preserving `min`/`max` partials. It preserves LakeQL null
+counts and order-preserving `min`/`max` partials. Exact `f32` candidate blocks
+support dot product, squared L2 distance, cosine distance, paired 64-bit row-ID
+words, and stable tiled top-k up to 32 candidates. It preserves LakeQL null
 semantics, rejects numeric literals that WebGPU cannot compare with
 CPU-equivalent precision, packs input columns into a fixed binding layout,
 enforces accelerator budgets, caches compiled pipelines by device generation,
@@ -55,8 +57,8 @@ dependency of this package and is never loaded by query-time code.
   synchronization, and before publishing mapped results.
 - `close()` destroys the active device and clears compilation state.
 
-Only decoded batch input, CPU selection-mask output, and aggregate snapshots are
-supported by this package version. Grouped reductions, resident columns, vector
-distance, and top-k remain governed by the generic physical contract and are
-added as backend capabilities as their semantic and resource contracts are
-implemented.
+Decoded batch input, CPU selection-mask output, aggregate snapshots, and
+format-neutral exact-vector candidate blocks are supported. Grouped reductions,
+resident columns, and quantized vector encodings remain governed by the generic
+physical contract and are added as backend capabilities as their semantic and
+resource contracts are implemented.

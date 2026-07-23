@@ -435,7 +435,7 @@ export class CpuPhysicalBackend implements PhysicalExecutionBackend {
   async execute(
     compiled: CompiledPhysicalFragment,
     input: PhysicalFragmentInput,
-    context: BackendExecutionContext,
+    context: BackendExecutionContext = {},
   ): Promise<PhysicalFragmentResult> {
     if (compiled.backendId !== this.id) {
       throw new PhysicalBackendExecutionError(

@@ -7,11 +7,13 @@ import {
   createVectorAggregateStates,
   estimateBatchBytes,
   LakeqlError,
+  mergePhysicalScoredCandidates,
   type PhysicalCapabilities,
   type PhysicalExecutionBackend,
   type PhysicalFragment,
   type PhysicalFragmentInput,
   type PhysicalFragmentResult,
+  physicalVectorCandidateBytes,
   restoreVectorAggregateStates,
   selectedRowCount,
   snapshotVectorAggregateStates,
@@ -20,6 +22,7 @@ import {
   type Vector,
   type VectorAggregateStates,
   validatePhysicalFragment,
+  validatePhysicalVectorCandidateBlock,
 } from "lakeql-core";
 import {
   type CompiledWebGpuPredicate,
@@ -36,6 +39,11 @@ import {
   type WebGpuDeviceOptions,
   type WebGpuRuntimeProvider,
 } from "./runtime.js";
+import {
+  type CompiledWebGpuVectorTopK,
+  compileWebGpuVectorTopK,
+  webGpuVectorMetricCode,
+} from "./vector.js";
 
 export interface WebGpuBackendOptions extends WebGpuDeviceOptions {
   id?: string;
@@ -54,7 +62,7 @@ export interface WebGpuCostModel {
 }
 
 interface WebGpuCompiledState {
-  readonly kernel: CompiledWebGpuPredicate | CompiledWebGpuReduction;
+  readonly kernel: CompiledWebGpuPredicate | CompiledWebGpuReduction | CompiledWebGpuVectorTopK;
 }
 
 type WebGpuKernel = WebGpuCompiledState["kernel"];
@@ -74,9 +82,11 @@ function compileWebGpuKernel(fragment: PhysicalFragment) {
   if (selection.supported) return selection;
   const reduction = compileWebGpuReduction(fragment);
   if (reduction.supported) return reduction;
+  const vector = compileWebGpuVectorTopK(fragment);
+  if (vector.supported) return vector;
   return {
     supported: false as const,
-    reason: `${selection.reason}; ${reduction.reason}`,
+    reason: `${selection.reason}; ${reduction.reason}; ${vector.reason}`,
   };
 }
 
@@ -142,8 +152,27 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
           supportsDictionary: false,
           notes: ["Exact count and order-preserving min/max partial snapshots"],
         },
+        {
+          kind: "vector-distance",
+          inputShapes: ["f32", "u32"],
+          outputShapes: ["f32"],
+          supportsNulls: true,
+          supportsDictionary: false,
+          notes: ["Contiguous exact f32 candidate blocks with paired u32 row IDs"],
+        },
+        {
+          kind: "bounded-top-k",
+          inputShapes: ["f32", "u32"],
+          outputShapes: ["f32", "u32"],
+          supportsNulls: false,
+          supportsDictionary: false,
+          notes: ["Stable tiled top-k with a maximum k of 32"],
+        },
       ],
-      fusedSequences: [["select", "reduce"]],
+      fusedSequences: [
+        ["select", "reduce"],
+        ["vector-distance", "bounded-top-k"],
+      ],
       vectorShapes: SUPPORTED_SHAPES,
       semantics: {
         nulls: "lakeql",
@@ -253,6 +282,16 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
         "Compiled WebGPU fragment does not belong to this backend",
       );
     }
+    const kernel = compiled.backendState.kernel;
+    if (kernel.kind === "vector-top-k") {
+      if (input.kind !== "vector-candidates") {
+        throw new LakeqlError(
+          "LAKEQL_PHYSICAL_BACKEND_UNSUPPORTED",
+          "WebGPU vector top-k requires vector candidate input",
+        );
+      }
+      return this.#executeVectorTopK(compiled.fragment, kernel, input, context);
+    }
     if (input.kind !== "batch") {
       throw new LakeqlError(
         "LAKEQL_PHYSICAL_BACKEND_UNSUPPORTED",
@@ -263,7 +302,6 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
     const signal = context.budget?.signal;
     const now = context.now ?? (() => Date.now());
     const startedAt = now();
-    const kernel = compiled.backendState.kernel;
     if (kernel.kind === "reduction") {
       return this.#executeReduction(compiled.fragment, kernel, input, context);
     }
@@ -575,6 +613,209 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
     };
   }
 
+  async #executeVectorTopK(
+    fragment: PhysicalFragment,
+    vector: CompiledWebGpuVectorTopK,
+    input: Extract<PhysicalFragmentInput, { kind: "vector-candidates" }>,
+    context: BackendExecutionContext,
+  ): Promise<PhysicalFragmentResult> {
+    if (fragment.input.kind !== "vector-candidates") {
+      throw new LakeqlError(
+        "LAKEQL_TYPE_ERROR",
+        "Physical vector input does not match the compiled WebGPU fragment",
+      );
+    }
+    validatePhysicalVectorCandidateBlock(input.block);
+    if (
+      input.block.rowCount !== fragment.input.rowCount ||
+      input.block.dimensions !== fragment.input.dimensions
+    ) {
+      throw new LakeqlError(
+        "LAKEQL_TYPE_ERROR",
+        "Physical vector candidate shape changed after planning",
+      );
+    }
+    if (
+      fragment.input.sourceIdentity !== undefined &&
+      fragment.input.sourceIdentity !== input.sourceIdentity
+    ) {
+      throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Physical input source identity changed");
+    }
+    const signal = context.budget?.signal;
+    const now = context.now ?? (() => Date.now());
+    const startedAt = now();
+    const transfer = physicalTransferBytes(fragment, vector);
+    enforceRuntimeBudget(fragment.id, context, transfer);
+    const tileCount = Math.ceil(input.block.rowCount / vector.tileRows);
+    const outputWords = await this.#devices.scoped(
+      this.id,
+      async (lease) => {
+        const deviceLimit = Math.min(
+          lease.device.limits.maxBufferSize,
+          lease.device.limits.maxStorageBufferBindingSize,
+        );
+        if (transfer.largestBufferBytes > deviceLimit) {
+          throw new LakeqlError(
+            "LAKEQL_PHYSICAL_BACKEND_UNSUPPORTED",
+            "Fragment exceeds the acquired WebGPU device buffer limit",
+            {
+              fragmentId: fragment.id,
+              actual: transfer.largestBufferBytes,
+              limit: deviceLimit,
+            },
+          );
+        }
+        const buffers: GPUBuffer[] = [];
+        try {
+          const valuesBuffer = createUploadBuffer(
+            lease.device,
+            lease.runtime.constants.bufferUsage,
+            input.block.vectors,
+            `lakeql:${fragment.id}:vectors`,
+          );
+          const lowBuffer = createUploadBuffer(
+            lease.device,
+            lease.runtime.constants.bufferUsage,
+            input.block.rowIdsLow,
+            `lakeql:${fragment.id}:row-ids-low`,
+          );
+          const highBuffer = createUploadBuffer(
+            lease.device,
+            lease.runtime.constants.bufferUsage,
+            input.block.rowIdsHigh,
+            `lakeql:${fragment.id}:row-ids-high`,
+          );
+          const validity = new Uint32Array(input.block.rowCount);
+          if (input.block.valid === undefined) validity.fill(1);
+          else validity.set(input.block.valid);
+          const validityBuffer = createUploadBuffer(
+            lease.device,
+            lease.runtime.constants.bufferUsage,
+            validity,
+            `lakeql:${fragment.id}:validity`,
+          );
+          const queryBuffer = createUploadBuffer(
+            lease.device,
+            lease.runtime.constants.bufferUsage,
+            vector.query,
+            `lakeql:${fragment.id}:query`,
+          );
+          const paramsBuffer = createUploadBuffer(
+            lease.device,
+            lease.runtime.constants.bufferUsage,
+            Uint32Array.of(
+              input.block.rowCount,
+              input.block.dimensions,
+              tileCount,
+              vector.limit,
+              webGpuVectorMetricCode(vector.metric),
+              vector.tileRows,
+            ),
+            `lakeql:${fragment.id}:params`,
+            lease.runtime.constants.bufferUsage.UNIFORM,
+          );
+          const output = lease.device.createBuffer({
+            label: `lakeql:${fragment.id}:candidates`,
+            size: transfer.outputBytes,
+            usage:
+              lease.runtime.constants.bufferUsage.STORAGE |
+              lease.runtime.constants.bufferUsage.COPY_SRC,
+          });
+          const readback = lease.device.createBuffer({
+            label: `lakeql:${fragment.id}:readback`,
+            size: transfer.outputBytes,
+            usage:
+              lease.runtime.constants.bufferUsage.MAP_READ |
+              lease.runtime.constants.bufferUsage.COPY_DST,
+          });
+          buffers.push(
+            valuesBuffer,
+            lowBuffer,
+            highBuffer,
+            validityBuffer,
+            queryBuffer,
+            paramsBuffer,
+            output,
+            readback,
+          );
+          const pipeline = await this.#pipeline(lease.device, lease.generation, vector);
+          throwIfAborted(signal);
+          const bindGroup = lease.device.createBindGroup({
+            layout: pipeline.getBindGroupLayout(0),
+            entries: [
+              { binding: 0, resource: { buffer: valuesBuffer } },
+              { binding: 1, resource: { buffer: lowBuffer } },
+              { binding: 2, resource: { buffer: highBuffer } },
+              { binding: 3, resource: { buffer: validityBuffer } },
+              { binding: 4, resource: { buffer: queryBuffer } },
+              { binding: 5, resource: { buffer: paramsBuffer } },
+              { binding: vector.outputBinding, resource: { buffer: output } },
+            ],
+          });
+          const encoder = lease.device.createCommandEncoder({ label: `lakeql:${fragment.id}` });
+          if (tileCount > 0 && vector.limit > 0) {
+            const pass = encoder.beginComputePass();
+            pass.setPipeline(pipeline);
+            pass.setBindGroup(0, bindGroup);
+            pass.dispatchWorkgroups(tileCount);
+            pass.end();
+          }
+          encoder.copyBufferToBuffer(output, 0, readback, 0, transfer.outputBytes);
+          lease.device.queue.submit([encoder.finish()]);
+          await lease.device.queue.onSubmittedWorkDone();
+          throwIfAborted(signal);
+          await readback.mapAsync(lease.runtime.constants.mapMode.READ, 0, transfer.outputBytes);
+          try {
+            return Uint32Array.from(
+              new Uint32Array(readback.getMappedRange(0, transfer.outputBytes)),
+            );
+          } finally {
+            readback.unmap();
+          }
+        } finally {
+          for (const buffer of buffers) buffer.destroy();
+        }
+      },
+      signal,
+    );
+    const candidates = mergeVectorTileOutputs(vector, outputWords, tileCount);
+    const elapsedMs = now() - startedAt;
+    enforceElapsedBudget(fragment.id, context, elapsedMs, now);
+    if (
+      context.enforceOutputRows !== false &&
+      context.budget?.maxOutputRows !== undefined &&
+      candidates.scores.length > context.budget.maxOutputRows
+    ) {
+      throw new LakeqlError(
+        "LAKEQL_BUDGET_EXCEEDED",
+        `Query exceeded output rows budget (${candidates.scores.length} > ${context.budget.maxOutputRows})`,
+        {
+          resource: "output rows",
+          actual: candidates.scores.length,
+          limit: context.budget.maxOutputRows,
+          fragmentId: fragment.id,
+        },
+      );
+    }
+    return {
+      output: { kind: "vector-candidates", candidates },
+      metrics: {
+        backendId: this.id,
+        elapsedMs,
+        inputRows: input.block.rowCount,
+        selectedRows:
+          input.block.valid?.reduce((count, valid) => count + (valid === 1 ? 1 : 0), 0) ??
+          input.block.rowCount,
+        outputRows: candidates.scores.length,
+        inputBytes: physicalVectorCandidateBytes(input.block),
+        uploadBytes: transfer.uploadBytes,
+        readbackBytes: transfer.outputBytes,
+        dispatches: tileCount > 0 && vector.limit > 0 ? 1 : 0,
+        replayed: false,
+      },
+    };
+  }
+
   close(): void {
     this.#pipelines.clear();
     this.#devices.close();
@@ -621,6 +862,30 @@ function physicalTransferBytes(
   fragment: PhysicalFragment,
   predicate: WebGpuKernel,
 ): PhysicalTransfer {
+  if (predicate.kind === "vector-top-k") {
+    const dimensions = fragment.input.kind === "vector-candidates" ? fragment.input.dimensions : 0;
+    const vectorsBytes = alignedBufferBytes(fragment.input.rowCount * dimensions * 4);
+    const rowIdBytes = alignedBufferBytes(fragment.input.rowCount * 4);
+    const validityBytes = rowIdBytes;
+    const queryBytes = alignedBufferBytes(dimensions * 4);
+    const parameterBytes = 24;
+    const outputBytes = Math.max(
+      predicate.outputWordsPerCandidate * 4,
+      alignedBufferBytes(
+        Math.ceil(fragment.input.rowCount / predicate.tileRows) *
+          predicate.limit *
+          predicate.outputWordsPerCandidate *
+          4,
+      ),
+    );
+    const uploadBytes = vectorsBytes + rowIdBytes * 2 + validityBytes + queryBytes + parameterBytes;
+    return {
+      uploadBytes,
+      outputBytes,
+      deviceBytes: uploadBytes + outputBytes * 2,
+      largestBufferBytes: Math.max(vectorsBytes, rowIdBytes, queryBytes, outputBytes),
+    };
+  }
   const bufferBytes = alignedBufferBytes(fragment.input.rowCount * 4);
   const outputBytes =
     predicate.kind === "selection"
@@ -654,7 +919,11 @@ function webGpuCost(
       ? { uploadBytes: fragment.estimates.inputBytes, outputBytes: fragment.estimates.outputBytes }
       : physicalTransferBytes(fragment, predicate);
   const uploadMs = transfer.uploadBytes / model.uploadBytesPerMs;
-  const computeMs = fragment.input.rowCount / model.computeRowsPerMs;
+  const computeUnits =
+    predicate?.kind === "vector-top-k" && fragment.input.kind === "vector-candidates"
+      ? (fragment.input.rowCount * fragment.input.dimensions) / 16
+      : fragment.input.rowCount;
+  const computeMs = computeUnits / model.computeRowsPerMs;
   const readbackMs = transfer.outputBytes / model.readbackBytesPerMs;
   const compileMs = compiledResident ? 0 : model.coldCompileMs;
   const synchronizationMs = model.fixedMs;
@@ -754,6 +1023,37 @@ function reductionValue(aggregate: WebGpuReductionAggregate, bits: number): numb
     case "u8":
       return bits;
   }
+}
+
+function mergeVectorTileOutputs(
+  vector: CompiledWebGpuVectorTopK,
+  words: Uint32Array,
+  tileCount: number,
+) {
+  const tiles = [];
+  const stride = vector.outputWordsPerCandidate;
+  for (let tile = 0; tile < tileCount; tile += 1) {
+    const lows: number[] = [];
+    const highs: number[] = [];
+    const scores: number[] = [];
+    const indices: number[] = [];
+    for (let candidate = 0; candidate < vector.limit; candidate += 1) {
+      const offset = (tile * vector.limit + candidate) * stride;
+      if (words[offset + 4] !== 1) continue;
+      const scoreWord = Uint32Array.of(words[offset] ?? 0);
+      scores.push(new Float32Array(scoreWord.buffer)[0] ?? Number.NaN);
+      indices.push(words[offset + 1] ?? 0);
+      lows.push(words[offset + 2] ?? 0);
+      highs.push(words[offset + 3] ?? 0);
+    }
+    tiles.push({
+      rowIdsLow: Uint32Array.from(lows),
+      rowIdsHigh: Uint32Array.from(highs),
+      scores: Float32Array.from(scores),
+      sourceIndices: Uint32Array.from(indices),
+    });
+  }
+  return mergePhysicalScoredCandidates(tiles, vector.metric, vector.limit);
 }
 
 function uploadValues(
