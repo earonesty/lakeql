@@ -46,6 +46,25 @@ snapshot-safe projected materializer. BTree page lookup, binary search, stable-I
 result materialization share one cumulative byte, request, memory, decoded-row, concurrency,
 cancellation, and elapsed-time budget.
 
+Ordered range retrieval uses the same index without decoding intervening key pages:
+
+```ts
+const result = await dataset.rangeRows({
+  snapshotId: dataset.snapshotId,
+  index: "serial_btree",
+  range: {
+    lower: 1000,
+    lowerInclusive: true,
+    upper: 2000,
+    upperInclusive: false,
+  },
+  select: ["mark_text", "owner_name"],
+});
+```
+
+Either bound may be omitted. Results remain in BTree order and output-row budgets are checked from
+the binary-search bounds before stable IDs or projected data are fetched.
+
 Store `dataset.snapshotId` with every external index generation. `takeRows` requires it and returns
 a typed `LAKEQL_LANCE_SNAPSHOT_MISMATCH` error before reading data if it does not match. Duplicate
 IDs and caller order are preserved. Missing and snapshot-deleted IDs throw by default; use
@@ -62,7 +81,7 @@ timestamps using uncompressed flat and nullable encodings. Sparse Arrow-array de
 supported, including Zstandard-compressed buffers.
 
 Official version-0 BTree indexes over the supported scalar key types are supported for exact
-equality lookup. Range predicates, null-key lookup, bitmap/label-list index variants, and index
+equality and bounded range lookup. Null-key lookup, bitmap/label-list index variants, and index
 versions other than 0 remain explicit unsupported boundaries.
 
 The reader deliberately rejects unsupported storage versions, compressed data pages, nested

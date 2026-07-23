@@ -26,6 +26,13 @@ export interface LanceScalarMatch {
   rowIds: bigint[];
 }
 
+export interface LanceScalarRange {
+  lower?: LanceScalarValue;
+  lowerInclusive?: boolean;
+  upper?: LanceScalarValue;
+  upperInclusive?: boolean;
+}
+
 export async function loadScalarIndexes(options: {
   context: LanceReadContext;
   manifestPath: string;
@@ -107,6 +114,140 @@ export async function lookupScalarRowIds(options: {
   if (options.values.length === 0) {
     throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Scalar lookup values must not be empty");
   }
+  const opened = await openBTreeIndex(options);
+  const values = options.values.map((value) => validatedScalarValue(value, opened.field));
+  const candidatePages = values.map((value) => {
+    const pages: number[] = [];
+    for (const row of opened.lookupRows.values()) {
+      const minimum = row.min;
+      const maximum = row.max;
+      const page = row.page_idx;
+      if (
+        minimum !== null &&
+        maximum !== null &&
+        typeof page === "number" &&
+        compareScalar(minimum as LanceScalarValue, value) <= 0 &&
+        compareScalar(maximum as LanceScalarValue, value) >= 0
+      ) {
+        pages.push(page);
+      }
+    }
+    return pages;
+  });
+  const searches: SearchState[] = [];
+  for (const [valueIndex, pages] of candidatePages.entries()) {
+    for (const page of pages) {
+      const low = page * opened.batchSize;
+      const high = Math.min(opened.pageData.rowCount, low + opened.batchSize);
+      searches.push({ valueIndex, page, mode: "lower", low, high });
+      searches.push({ valueIndex, page, mode: "upper", low, high });
+    }
+  }
+  await runBinarySearch(options.context, opened.pageData, values, searches);
+  const bounds = new Map<string, { lower?: number; upper?: number }>();
+  for (const search of searches) {
+    const key = `${search.valueIndex}:${search.page}`;
+    const entry = bounds.get(key) ?? {};
+    entry[search.mode] = search.low;
+    bounds.set(key, entry);
+  }
+  const rowOffsetsByValue = values.map(() => [] as number[]);
+  for (const [key, bound] of bounds) {
+    const [valueIndexText] = key.split(":");
+    const valueIndex = Number(valueIndexText);
+    const lower = bound.lower;
+    const upper = bound.upper;
+    if (lower === undefined || upper === undefined) corrupt("Incomplete BTree search bounds");
+    for (let offset = lower; offset < upper; offset += 1) {
+      rowOffsetsByValue[valueIndex]?.push(offset);
+    }
+  }
+  enforceOutputRows(options.budget, rowOffsetsByValue.flat().length);
+  const idRows = await materializeStableIds(options.context, opened.pageData, rowOffsetsByValue);
+  const matches = rowOffsetsByValue.map((offsets, valueIndex) => ({
+    value: options.values[valueIndex] as LanceScalarValue,
+    rowIds: stableIdsAtOffsets(idRows, offsets),
+  }));
+  return { index: opened.index, matches };
+}
+
+export async function rangeScalarRowIds(options: {
+  context: LanceReadContext;
+  root: string;
+  manifestPath: string;
+  manifestFileSize: number;
+  manifest: LanceManifest;
+  indexName: string;
+  range: LanceScalarRange;
+  budget: QueryBudget;
+}): Promise<{ index: LanceScalarIndexInfo; rowIds: bigint[] }> {
+  if (options.range.lower === undefined && options.range.upper === undefined) {
+    throw new LakeqlError(
+      "LAKEQL_VALIDATION_ERROR",
+      "A Lance scalar range requires a lower or upper bound",
+    );
+  }
+  const opened = await openBTreeIndex(options);
+  const lower =
+    options.range.lower === undefined
+      ? undefined
+      : validatedScalarValue(options.range.lower, opened.field);
+  const upper =
+    options.range.upper === undefined
+      ? undefined
+      : validatedScalarValue(options.range.upper, opened.field);
+  if (lower !== undefined && upper !== undefined && compareScalar(lower, upper) > 0) {
+    throw new LakeqlError(
+      "LAKEQL_VALIDATION_ERROR",
+      "Lance scalar range lower bound exceeds its upper bound",
+    );
+  }
+  const values: LanceScalarValue[] = [];
+  const searches: SearchState[] = [];
+  if (lower !== undefined) {
+    const valueIndex = values.push(lower) - 1;
+    searches.push({
+      valueIndex,
+      page: -1,
+      mode: options.range.lowerInclusive === false ? "upper" : "lower",
+      low: 0,
+      high: opened.pageData.rowCount,
+    });
+  }
+  if (upper !== undefined) {
+    const valueIndex = values.push(upper) - 1;
+    searches.push({
+      valueIndex,
+      page: -1,
+      mode: options.range.upperInclusive === false ? "lower" : "upper",
+      low: 0,
+      high: opened.pageData.rowCount,
+    });
+  }
+  await runBinarySearch(options.context, opened.pageData, values, searches);
+  const start = lower === undefined ? 0 : (searches[0]?.low ?? 0);
+  const end = upper === undefined ? opened.pageData.rowCount : (searches.at(-1)?.low ?? 0);
+  const offsets =
+    end <= start ? [] : Array.from({ length: end - start }, (_value, index) => start + index);
+  enforceOutputRows(options.budget, offsets.length);
+  const idRows = await materializeStableIds(options.context, opened.pageData, [offsets]);
+  return { index: opened.index, rowIds: stableIdsAtOffsets(idRows, offsets) };
+}
+
+async function openBTreeIndex(options: {
+  context: LanceReadContext;
+  root: string;
+  manifestPath: string;
+  manifestFileSize: number;
+  manifest: LanceManifest;
+  indexName: string;
+}): Promise<{
+  index: LanceScalarIndexInfo;
+  field: LanceField;
+  batchSize: number;
+  pageData: InspectedLanceFile;
+  lookupRows: Map<number, Row>;
+}> {
   const indices = await loadScalarIndexes(options);
   const selected = indices.find(({ info }) => info.name === options.indexName);
   if (selected === undefined) {
@@ -126,7 +267,6 @@ export async function lookupScalarRowIds(options: {
     (candidate) => candidate.id === selected.metadata.fields[0],
   );
   if (field === undefined) corrupt("Selected Lance scalar-index field is absent");
-  const values = options.values.map((value) => validatedScalarValue(value, field));
   const fileByName = new Map(selected.metadata.files.map((file) => [file.path, file]));
   const lookupMetadata = fileByName.get("page_lookup.lance");
   const pageMetadata = fileByName.get("page_data.lance");
@@ -159,85 +299,47 @@ export async function lookupScalarRowIds(options: {
     })),
     rowOffsets: Array.from({ length: lookup.rowCount }, (_value, index) => index),
   });
-  const candidatePages = values.map((value) => {
-    const pages: number[] = [];
-    for (const row of lookupRows.values()) {
-      const minimum = row.min;
-      const maximum = row.max;
-      const page = row.page_idx;
-      if (
-        minimum !== null &&
-        maximum !== null &&
-        typeof page === "number" &&
-        compareScalar(minimum as LanceScalarValue, value) <= 0 &&
-        compareScalar(maximum as LanceScalarValue, value) >= 0
-      ) {
-        pages.push(page);
-      }
-    }
-    return pages;
-  });
-  const searches: SearchState[] = [];
-  for (const [valueIndex, pages] of candidatePages.entries()) {
-    for (const page of pages) {
-      const low = page * batchSize;
-      const high = Math.min(pageData.rowCount, low + batchSize);
-      searches.push({ valueIndex, page, mode: "lower", low, high });
-      searches.push({ valueIndex, page, mode: "upper", low, high });
-    }
-  }
-  await runBinarySearch(options.context, pageData, values, searches);
-  const bounds = new Map<string, { lower?: number; upper?: number }>();
-  for (const search of searches) {
-    const key = `${search.valueIndex}:${search.page}`;
-    const entry = bounds.get(key) ?? {};
-    entry[search.mode] = search.low;
-    bounds.set(key, entry);
-  }
-  const rowOffsetsByValue = values.map(() => [] as number[]);
-  for (const [key, bound] of bounds) {
-    const [valueIndexText] = key.split(":");
-    const valueIndex = Number(valueIndexText);
-    const lower = bound.lower;
-    const upper = bound.upper;
-    if (lower === undefined || upper === undefined) corrupt("Incomplete BTree search bounds");
-    for (let offset = lower; offset < upper; offset += 1) {
-      rowOffsetsByValue[valueIndex]?.push(offset);
-    }
-  }
-  const totalMatches = rowOffsetsByValue.reduce((total, offsets) => total + offsets.length, 0);
-  if (options.budget.maxOutputRows !== undefined && totalMatches > options.budget.maxOutputRows) {
+  return { index: selected.info, field, batchSize, pageData, lookupRows };
+}
+
+function enforceOutputRows(budget: QueryBudget, count: number): void {
+  if (budget.maxOutputRows !== undefined && count > budget.maxOutputRows) {
     throw new LakeqlError(
       "LAKEQL_BUDGET_EXCEEDED",
-      `Lance scalar lookup exceeded output row budget (${totalMatches} > ${options.budget.maxOutputRows})`,
+      `Lance scalar lookup exceeded output row budget (${count} > ${budget.maxOutputRows})`,
       {
         metric: "output rows",
-        limit: options.budget.maxOutputRows,
-        actual: totalMatches,
+        limit: budget.maxOutputRows,
+        actual: count,
       },
     );
   }
-  const uniqueOffsets = [...new Set(rowOffsetsByValue.flat())];
-  const idRows =
-    uniqueOffsets.length === 0
-      ? new Map<number, Row>()
-      : await materializeRowsWithBudget({
-          context: options.context,
-          file: pageData,
-          selections: [{ field: pageData.fields[1] as LanceField, columnIndex: 1 }],
-          rowOffsets: uniqueOffsets,
-        });
-  const matches = rowOffsetsByValue.map((offsets, valueIndex) => ({
-    value: options.values[valueIndex] as LanceScalarValue,
-    rowIds: offsets.map((offset) => {
-      const id = idRows.get(offset)?.ids;
-      if (typeof id !== "number" && typeof id !== "bigint") {
-        corrupt("Lance BTree page contains an invalid stable row ID", { offset });
-      }
-      return BigInt(id);
-    }),
-  }));
-  return { index: selected.info, matches };
+}
+
+async function materializeStableIds(
+  context: LanceReadContext,
+  pageData: InspectedLanceFile,
+  groups: readonly number[][],
+): Promise<Map<number, Row>> {
+  const uniqueOffsets = [...new Set(groups.flat())];
+  return uniqueOffsets.length === 0
+    ? new Map<number, Row>()
+    : await materializeRowsWithBudget({
+        context,
+        file: pageData,
+        selections: [{ field: pageData.fields[1] as LanceField, columnIndex: 1 }],
+        rowOffsets: uniqueOffsets,
+      });
+}
+
+function stableIdsAtOffsets(idRows: Map<number, Row>, offsets: readonly number[]): bigint[] {
+  return offsets.map((offset) => {
+    const id = idRows.get(offset)?.ids;
+    if (typeof id !== "number" && typeof id !== "bigint") {
+      corrupt("Lance BTree page contains an invalid stable row ID", { offset });
+    }
+    return BigInt(id);
+  });
 }
 
 interface SearchState {

@@ -22,9 +22,11 @@ import {
 import { resolveRequestedRowIds } from "./rowids.js";
 import {
   type LanceScalarIndexInfo,
+  type LanceScalarRange,
   type LanceScalarValue,
   loadScalarIndexes,
   lookupScalarRowIds,
+  rangeScalarRowIds,
 } from "./scalar.js";
 
 export const PACKAGE = "lakeql-lance" as const;
@@ -89,7 +91,21 @@ export interface LanceScalarLookupResult {
   stats: LanceReadStats;
 }
 
-export type { LanceScalarIndexInfo, LanceScalarValue };
+export interface RangeLanceRowsOptions {
+  snapshotId: string;
+  index: string;
+  range: LanceScalarRange;
+  select: readonly string[];
+}
+
+export interface LanceScalarRangeResult {
+  index: LanceScalarIndexInfo;
+  rowIds: string[];
+  rows: Row[];
+  stats: LanceReadStats;
+}
+
+export type { LanceScalarIndexInfo, LanceScalarRange, LanceScalarValue };
 
 export interface LanceReadStats {
   snapshotId: string;
@@ -201,6 +217,49 @@ export class LanceDataset {
       };
     });
     return { index: lookup.index, groups, stats: materialized.stats };
+  }
+
+  async rangeRows(options: RangeLanceRowsOptions): Promise<LanceScalarRangeResult> {
+    if (options.snapshotId !== this.snapshotId) {
+      snapshotMismatch(options.snapshotId, this.snapshotId, this.version);
+    }
+    const stats = cloneStats(this.options.openStats);
+    const context = this.context(stats);
+    const lookup = await rangeScalarRowIds({
+      context,
+      root: this.options.root,
+      manifestPath: this.options.manifestPath,
+      manifestFileSize: this.options.manifestFileSize,
+      manifest: this.options.manifest,
+      indexName: options.index,
+      range: options.range,
+      budget: this.options.budget,
+    });
+    const materialized = await this.takeRowsWithStats(
+      {
+        snapshotId: this.snapshotId,
+        rowIds: lookup.rowIds,
+        select: options.select,
+        onMissing: "null",
+      },
+      stats,
+    );
+    const retained = materialized.rows.flatMap((row, index) =>
+      row === null
+        ? []
+        : [
+            {
+              row,
+              rowId: (lookup.rowIds[index] as bigint).toString(),
+            },
+          ],
+    );
+    return {
+      index: lookup.index,
+      rowIds: retained.map(({ rowId }) => rowId),
+      rows: retained.map(({ row }) => row),
+      stats: materialized.stats,
+    };
   }
 
   private async takeRowsWithStats(

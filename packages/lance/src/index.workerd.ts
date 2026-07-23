@@ -136,6 +136,22 @@ describe("lakeql-lance workerd runtime", () => {
         { value: 9999, rowIds: [], rows: [] },
       ],
     });
+    await expect(
+      indexed.rangeRows({
+        snapshotId: indexed.snapshotId,
+        index: "serial_btree",
+        range: { lower: 1005, upper: 1006 },
+        select: ["label"],
+      }),
+    ).resolves.toMatchObject({
+      rowIds: ["10", "11", "12", "13"],
+      rows: [
+        { label: "indexed-10" },
+        { label: "indexed-11" },
+        { label: "indexed-12" },
+        { label: "indexed-13" },
+      ],
+    });
   });
 });
 

@@ -295,6 +295,116 @@ describe("lakeql-lance takeRows", () => {
     expect(observed.fullDataGets).toBe(0);
   });
 
+  it("reads inclusive, exclusive, and one-sided BTree ranges in index order", async () => {
+    const fixture = await fixtureStore(
+      SCALAR_MULTIPAGE_FIXTURE_ROOT,
+      SCALAR_MULTIPAGE_DATASET_PATH,
+    );
+    const dataset = await openLanceDataset({
+      store: fixture.store,
+      path: SCALAR_MULTIPAGE_DATASET_PATH,
+      budget: { ...generousBudget(), maxRowsDecoded: 256 },
+    });
+
+    await expect(
+      dataset.rangeRows({
+        snapshotId: dataset.snapshotId,
+        index: "serial_btree",
+        range: { lower: 24_095, upper: 24_097 },
+        select: ["serial", "label"],
+      }),
+    ).resolves.toMatchObject({
+      rowIds: ["4095", "4096", "4097"],
+      rows: [
+        { serial: 24_095, label: "multi-4095" },
+        { serial: 24_096, label: "multi-4096" },
+        { serial: 24_097, label: "multi-4097" },
+      ],
+    });
+    await expect(
+      dataset.rangeRows({
+        snapshotId: dataset.snapshotId,
+        index: "serial_btree",
+        range: {
+          lower: 24_095,
+          lowerInclusive: false,
+          upper: 24_098,
+          upperInclusive: false,
+        },
+        select: ["serial"],
+      }),
+    ).resolves.toMatchObject({
+      rowIds: ["4096", "4097"],
+      rows: [{ serial: 24_096 }, { serial: 24_097 }],
+    });
+    await expect(
+      dataset.rangeRows({
+        snapshotId: dataset.snapshotId,
+        index: "serial_btree",
+        range: { upper: 20_002 },
+        select: ["serial"],
+      }),
+    ).resolves.toMatchObject({
+      rowIds: ["0", "1", "2"],
+      rows: [{ serial: 20_000 }, { serial: 20_001 }, { serial: 20_002 }],
+    });
+    await expect(
+      dataset.rangeRows({
+        snapshotId: dataset.snapshotId,
+        index: "serial_btree",
+        range: { lower: 24_998 },
+        select: ["serial"],
+      }),
+    ).resolves.toMatchObject({
+      rowIds: ["4998", "4999"],
+      rows: [{ serial: 24_998 }, { serial: 24_999 }],
+    });
+  });
+
+  it("validates BTree range shape and applies output budgets before ID reads", async () => {
+    const fixture = await fixtureStore(SCALAR_FIXTURE_ROOT, SCALAR_DATASET_PATH);
+    const dataset = await openLanceDataset({
+      store: fixture.store,
+      path: SCALAR_DATASET_PATH,
+      budget: generousBudget(),
+    });
+    for (const range of [{}, { lower: 10, upper: 1 }]) {
+      await expect(
+        dataset.rangeRows({
+          snapshotId: dataset.snapshotId,
+          index: "serial_btree",
+          range,
+          select: ["label"],
+        }),
+      ).rejects.toMatchObject({ code: "LAKEQL_VALIDATION_ERROR" });
+    }
+    await expect(
+      dataset.rangeRows({
+        snapshotId: dataset.snapshotId,
+        index: "serial_btree",
+        range: { lower: 1005, lowerInclusive: false, upper: 1005 },
+        select: ["label"],
+      }),
+    ).resolves.toMatchObject({ rowIds: [], rows: [] });
+
+    const bounded = await openLanceDataset({
+      store: fixture.store,
+      path: SCALAR_DATASET_PATH,
+      budget: { ...generousBudget(), maxOutputRows: 1 },
+    });
+    await expect(
+      bounded.rangeRows({
+        snapshotId: bounded.snapshotId,
+        index: "serial_btree",
+        range: { lower: 1005, upper: 1005 },
+        select: ["label"],
+      }),
+    ).rejects.toMatchObject({
+      code: "LAKEQL_BUDGET_EXCEEDED",
+      details: { metric: "output rows" },
+    });
+  });
+
   it("validates scalar lookup identity, index names, key types, and row budgets", async () => {
     const fixture = await fixtureStore(SCALAR_FIXTURE_ROOT, SCALAR_DATASET_PATH);
     const dataset = await openLanceDataset({

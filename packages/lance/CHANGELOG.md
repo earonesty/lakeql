@@ -11,3 +11,5 @@
 - Discover official version-0 Lance BTree indexes and perform bounded exact-key
   lookup, including duplicate keys and multi-page binary search, before composing
   matched stable IDs with projected row materialization.
+- Read inclusive, exclusive, and one-sided BTree ranges in index order with
+  pre-materialization output-budget enforcement.
