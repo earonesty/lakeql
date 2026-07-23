@@ -1,6 +1,8 @@
 # Cloudflare Workers
 
-Use the `lakeql/cloudflare` subpath for Worker-oriented imports and `lakeql-r2` for R2-backed object access.
+Use the `lakeql/cloudflare` subpath for Worker-oriented imports. It provides
+`r2Store` for native R2 bindings and also exposes the portable `httpStore` and
+`s3Store` adapters for HTTP and S3-compatible object storage.
 
 ```ts
 import { createLake } from "lakeql/cloudflare";

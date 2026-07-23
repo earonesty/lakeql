@@ -36,6 +36,7 @@ it("re-exports the core surface", () => {
 
 it("exports runtime driver subpaths", async () => {
   const cloudflare = await import("./cloudflare.js");
+  const fetchRuntime = await import("./fetch.js");
   const node = await import("./node.js");
 
   expect(cloudflare.createLake).toBeTypeOf("function");
@@ -43,12 +44,19 @@ it("exports runtime driver subpaths", async () => {
   expect(cloudflare.loadIcebergTable).toBeTypeOf("function");
   expect(cloudflare.querySql).toBeTypeOf("function");
   expect(cloudflare.r2Store).toBeTypeOf("function");
+  expect(cloudflare.httpStore).toBeTypeOf("function");
+  expect(cloudflare.s3Store).toBeTypeOf("function");
+  expect(fetchRuntime.createLake).toBeTypeOf("function");
+  expect(fetchRuntime.httpStore).toBeTypeOf("function");
+  expect(fetchRuntime.s3Store).toBeTypeOf("function");
+  expect(fetchRuntime.fsJsonCache).toBeUndefined();
   expect(node.createLake).toBeTypeOf("function");
   expect(node.writePartitionedParquet).toBeTypeOf("function");
   expect(node.loadIcebergTable).toBeTypeOf("function");
   expect(node.querySql).toBeTypeOf("function");
   expect(node.httpStore).toBeTypeOf("function");
   expect(node.s3Store).toBeTypeOf("function");
+  expect(node.fsJsonCache).toBeTypeOf("function");
 });
 
 it("runs SQL through the public lake helper", async () => {

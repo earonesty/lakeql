@@ -1,7 +1,7 @@
 {
   "name": "lakeql",
   "sideEffects": false,
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "lakeql: lightweight TypeScript query engine for Iceberg + Parquet on object storage",
   "keywords": [
     "lakehouse",
@@ -22,6 +22,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./fetch": {
+      "types": "./dist/fetch.d.ts",
+      "default": "./dist/fetch.js"
     },
     "./cloudflare": {
       "types": "./dist/cloudflare.d.ts",

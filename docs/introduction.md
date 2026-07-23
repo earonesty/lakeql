@@ -71,8 +71,8 @@ const rows = await lake
 ## Reading Data
 
 LakeQL reads from an `ObjectStore`. The main package includes in-memory stores
-for tests, HTTP range reads for public or signed URLs, S3 support for Node.js,
-and R2 support for Cloudflare Workers.
+for tests, HTTP range reads for public or signed URLs, S3-compatible storage in
+Node.js and Fetch-based runtimes, and R2 bindings in Cloudflare Workers.
 
 ```ts
 import { createLake, httpStore } from "lakeql/node";

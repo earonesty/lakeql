@@ -126,14 +126,22 @@ The detailed reference pages are still useful when you need exact behavior:
 
 ## Packages
 
-Most applications should import from `lakeql`, `lakeql/node`, or
-`lakeql/cloudflare`.
+Choose an entry point by runtime. The runtime entry points include the query
+engine and the storage adapters available in that environment.
 
 | Import | Use it for |
 | --- | --- |
-| `lakeql` | Query builder, Parquet, Iceberg, in-memory stores, and shared types. |
-| `lakeql/node` | Node.js apps that need HTTP, S3, or filesystem cache helpers. |
-| `lakeql/cloudflare` | Cloudflare Workers apps that read from R2. |
+| `lakeql` | Runtime-neutral query APIs, Parquet, Iceberg, in-memory stores, and shared types. |
+| `lakeql/fetch` | Browsers, Web Workers, and Fetch-compatible edge functions using HTTP or S3-compatible storage. |
+| `lakeql/node` | Node.js servers and AWS Lambda functions using HTTP, S3-compatible storage, or filesystem caches. |
+| `lakeql/cloudflare` | Cloudflare Workers using HTTP, S3-compatible storage, R2 bindings, or D1-backed caches. |
+
+`lakeql/fetch` is the portable Fetch/Web Crypto contract. `lakeql/node` extends
+it with filesystem support, while `lakeql/cloudflare` extends it with native R2
+and D1 adapters. For example, a Cloudflare Worker reading AWS S3 can import
+`s3Store` from either `lakeql/fetch` or `lakeql/cloudflare`; using the
+runtime-specific entry point leaves room to add R2 or D1 without changing
+imports.
 
 The repository also contains workspace packages for adapter, format, and parser
 development. Most application code should use the entry points above.
