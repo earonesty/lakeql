@@ -1,13 +1,5 @@
 # lakeql-fs
 
-## 0.0.7
-
-### Patch Changes
-
-- Updated dependencies [f7e1c58]
-- Updated dependencies [f8a4d39]
-  - lakeql-core@0.6.0
-
 ## 0.0.6
 
 ### Patch Changes

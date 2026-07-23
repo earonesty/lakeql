@@ -1,13 +1,5 @@
 # lakeql-geo
 
-## 0.1.8
-
-### Patch Changes
-
-- Updated dependencies [f7e1c58]
-- Updated dependencies [f8a4d39]
-  - lakeql-core@0.6.0
-
 ## 0.1.7
 
 ### Patch Changes

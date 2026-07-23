@@ -2,8 +2,9 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = resolve(new URL("..", import.meta.url).pathname);
+const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const temporaryRoot = mkdtempSync(join(tmpdir(), "lakeql-package-install-"));
 const packageDirectory = join(temporaryRoot, "packages");
 const consumerDirectory = join(temporaryRoot, "consumer");
