@@ -1,22 +1,5 @@
 # lakeql-lance
 
-## 0.2.0
-
-### Minor Changes
-
-- 4de4c1f: Add snapshot-safe projected materialization for stable Lance row IDs through bounded
-  object-store range reads, a broad scalar/binary/date/timestamp type matrix, sparse
-  deletion vectors, bounded official BTree exact-key and range lookup, and typed Lance
-  compatibility and snapshot errors. Add bounded IVF_FLAT vector search for L2,
-  cosine, and dot metrics with explicit dimension, partition, and candidate limits.
-  Support Lance dictionary-encoded UTF-8 projections and add a reproducible public
-  USPTO scattered-row HTTP range benchmark with physical I/O reporting.
-
-### Patch Changes
-
-- Updated dependencies [4de4c1f]
-  - lakeql-core@0.5.1
-
 ## 0.1.0
 
 ### Minor Changes

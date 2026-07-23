@@ -1,12 +1,5 @@
 # lakeql-opfs
 
-## 0.0.9
-
-### Patch Changes
-
-- Updated dependencies [4de4c1f]
-  - lakeql-core@0.5.1
-
 ## 0.0.8
 
 ### Patch Changes

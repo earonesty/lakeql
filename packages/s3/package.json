@@ -1,6 +1,6 @@
 {
   "name": "lakeql-s3",
-  "version": "0.0.10",
+  "version": "0.0.9",
   "description": "lakeql S3-compatible object store adapter",
   "keywords": [
     "s3",
