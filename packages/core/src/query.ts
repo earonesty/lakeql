@@ -82,7 +82,7 @@ import {
   type VectorGroupByStateSnapshot,
 } from "./vector-group-by.js";
 import { vectorProjectBatch } from "./vector-project.js";
-import { concatBatches, vectorTopKBatch } from "./vector-sort.js";
+import { concatBatches, gatherBatch, vectorTopKBatch } from "./vector-sort.js";
 import type { WindowExpr } from "./window.js";
 import {
   collectWindowColumns,
@@ -446,6 +446,7 @@ export interface PhysicalFragmentExplain {
   dispatches: number;
   elapsedMs: number;
   replays: number;
+  replaySourceBackendId?: string;
   candidates: PhysicalPlacementCandidate[];
 }
 
@@ -972,31 +973,57 @@ export class QueryResult {
         object.path,
         scanOptions,
       )) {
-        const operators: PhysicalOperator[] = [];
+        const sourceIdentity = physicalSourceIdentity(object, rowOffset);
+        let projectedBatch: Batch;
+        let selectedRows: number;
         if (config.where !== undefined) {
-          operators.push({ kind: "select", predicate: config.where });
-        }
-        operators.push({
-          kind: "project",
-          ...(config.select === undefined ? {} : { select: config.select }),
-          ...(config.projections === undefined ? {} : { projections: config.projections }),
-        });
-        const physical = await this.executePhysicalBatch(
-          batch,
-          operators,
-          { kind: "batch" },
-          physicalSourceIdentity(object, rowOffset),
-          startedAt,
-        );
-        if (physical.output.kind !== "batch") {
-          throw new LakeqlError(
-            "LAKEQL_PHYSICAL_BACKEND_FAILURE",
-            "Projected physical fragment did not return a batch",
-            { actual: physical.output.kind },
+          const physical = await this.executePhysicalBatch(
+            batch,
+            [{ kind: "select", predicate: config.where }],
+            { kind: "selection" },
+            sourceIdentity,
+            startedAt,
           );
+          if (physical.output.kind !== "selection") {
+            throw new LakeqlError(
+              "LAKEQL_PHYSICAL_BACKEND_FAILURE",
+              "Selection physical fragment did not return a selection",
+              { actual: physical.output.kind },
+            );
+          }
+          const indices = [...selectedRowIndices(batch.rowCount, physical.output.selection)];
+          selectedRows = indices.length;
+          projectedBatch = vectorProjectBatch(
+            gatherBatch(batch, indices),
+            config.select,
+            config.projections,
+          );
+        } else {
+          const physical = await this.executePhysicalBatch(
+            batch,
+            [
+              {
+                kind: "project",
+                ...(config.select === undefined ? {} : { select: config.select }),
+                ...(config.projections === undefined ? {} : { projections: config.projections }),
+              },
+            ],
+            { kind: "batch" },
+            sourceIdentity,
+            startedAt,
+          );
+          if (physical.output.kind !== "batch") {
+            throw new LakeqlError(
+              "LAKEQL_PHYSICAL_BACKEND_FAILURE",
+              "Projected physical fragment did not return a batch",
+              { actual: physical.output.kind },
+            );
+          }
+          selectedRows = physical.metrics.selectedRows ?? batch.rowCount;
+          projectedBatch = physical.output.batch;
         }
-        stats.rowsMatched += physical.metrics.selectedRows ?? batch.rowCount;
-        const rows = materializeBatchRows(physical.output.batch);
+        stats.rowsMatched += selectedRows;
+        const rows = materializeBatchRows(projectedBatch);
         const out: Row[] = [];
         for (const row of rows) {
           if (offsetSkipped < (config.offset ?? 0)) {
@@ -1047,16 +1074,17 @@ export class QueryResult {
         dispatchCount: Math.max(1, operators.length),
       },
     };
+    const budget = this.remainingPhysicalBudget();
     const plan = planPhysicalFragment(fragment, this.config.physicalExecution.backends, {
       policy: this.config.physicalExecution.acceleratorPolicy,
-      budget: this.config.budget,
+      budget,
     });
     const result = await executePlannedPhysicalFragment(
       plan,
       this.config.physicalExecution.backends,
       { kind: "batch", batch, sourceIdentity },
       {
-        budget: this.config.budget,
+        budget,
         now: this.config.now,
         queryStartedAt,
         enforceOutputRows: false,
@@ -1073,7 +1101,9 @@ export class QueryResult {
     fragment: PhysicalFragment,
     metrics: PhysicalExecutionMetrics,
   ): void {
-    const key = `${fragment.id}\u0000${metrics.backendId}`;
+    const key = `${fragment.id}\u0000${metrics.backendId}\u0000${
+      metrics.replaySourceBackendId ?? ""
+    }`;
     const existing = this.physicalFragments.get(key);
     if (existing === undefined) {
       this.physicalFragments.set(key, {
@@ -1091,6 +1121,9 @@ export class QueryResult {
         dispatches: metrics.dispatches,
         elapsedMs: metrics.elapsedMs,
         replays: metrics.replayed ? 1 : 0,
+        ...(metrics.replaySourceBackendId === undefined
+          ? {}
+          : { replaySourceBackendId: metrics.replaySourceBackendId }),
         candidates: candidates.map(clonePhysicalCandidate),
       });
     } else {
@@ -1108,15 +1141,50 @@ export class QueryResult {
     const backendKind = candidates.find(
       (candidate) => candidate.backendId === metrics.backendId,
     )?.backendKind;
+    const replaySourceKind = candidates.find(
+      (candidate) => candidate.backendId === metrics.replaySourceBackendId,
+    )?.backendKind;
     this.stats.physicalFragments = (this.stats.physicalFragments ?? 0) + 1;
     this.stats.acceleratorFragments =
-      (this.stats.acceleratorFragments ?? 0) + (backendKind === "accelerator" ? 1 : 0);
+      (this.stats.acceleratorFragments ?? 0) +
+      (backendKind === "accelerator" || replaySourceKind === "accelerator" ? 1 : 0);
     this.stats.acceleratorUploadBytes =
       (this.stats.acceleratorUploadBytes ?? 0) + metrics.uploadBytes;
     this.stats.acceleratorReadbackBytes =
       (this.stats.acceleratorReadbackBytes ?? 0) + metrics.readbackBytes;
     this.stats.acceleratorDispatches = (this.stats.acceleratorDispatches ?? 0) + metrics.dispatches;
     this.stats.physicalReplays = (this.stats.physicalReplays ?? 0) + (metrics.replayed ? 1 : 0);
+  }
+
+  private remainingPhysicalBudget(): QueryBudget {
+    const budget = this.config.budget;
+    return {
+      ...budget,
+      ...(budget.maxAcceleratorUploadBytes === undefined
+        ? {}
+        : {
+            maxAcceleratorUploadBytes: Math.max(
+              0,
+              budget.maxAcceleratorUploadBytes - (this.stats.acceleratorUploadBytes ?? 0),
+            ),
+          }),
+      ...(budget.maxAcceleratorReadbackBytes === undefined
+        ? {}
+        : {
+            maxAcceleratorReadbackBytes: Math.max(
+              0,
+              budget.maxAcceleratorReadbackBytes - (this.stats.acceleratorReadbackBytes ?? 0),
+            ),
+          }),
+      ...(budget.maxAcceleratorDispatches === undefined
+        ? {}
+        : {
+            maxAcceleratorDispatches: Math.max(
+              0,
+              budget.maxAcceleratorDispatches - (this.stats.acceleratorDispatches ?? 0),
+            ),
+          }),
+    };
   }
 
   private requirePhysicalPath(operation: string): void {
@@ -2187,6 +2255,10 @@ export class QueryResult {
           (fragment) =>
             `physical ${fragment.fragmentId}: ${fragment.operators.join(" -> ") || "pass"} on ${
               fragment.backendId
+            }${
+              fragment.replaySourceBackendId === undefined
+                ? ""
+                : ` after replay from ${fragment.replaySourceBackendId}`
             } (${fragment.executions} execution${fragment.executions === 1 ? "" : "s"})`,
         ) ?? []),
         ...(json.windowPlan === undefined

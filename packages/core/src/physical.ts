@@ -318,6 +318,16 @@ export interface PhysicalExecutionMetrics {
   readbackBytes: number;
   dispatches: number;
   replayed: boolean;
+  /** Accelerator backend whose unpublished failure caused this CPU replay. */
+  replaySourceBackendId?: string;
+}
+
+export interface PhysicalExecutionAttemptMetrics {
+  backendId: string;
+  elapsedMs: number;
+  uploadBytes: number;
+  readbackBytes: number;
+  dispatches: number;
 }
 
 export interface PhysicalFragmentResult {
@@ -353,11 +363,17 @@ export interface PlannedPhysicalFragment {
 export class PhysicalBackendExecutionError extends LakeqlError {
   readonly backendId: string;
   readonly replayable: boolean;
+  readonly attemptedMetrics: PhysicalExecutionAttemptMetrics | undefined;
 
   constructor(
     backendId: string,
     message: string,
-    options: { replayable: boolean; cause?: unknown; details?: Record<string, unknown> },
+    options: {
+      replayable: boolean;
+      cause?: unknown;
+      details?: Record<string, unknown>;
+      attemptedMetrics?: PhysicalExecutionAttemptMetrics;
+    },
   ) {
     super("LAKEQL_PHYSICAL_BACKEND_FAILURE", message, {
       backendId,
@@ -368,6 +384,7 @@ export class PhysicalBackendExecutionError extends LakeqlError {
     this.name = "PhysicalBackendExecutionError";
     this.backendId = backendId;
     this.replayable = options.replayable;
+    this.attemptedMetrics = options.attemptedMetrics;
   }
 }
 
@@ -792,7 +809,19 @@ export async function executePlannedPhysicalFragment(
     if (cpu === undefined) throw error;
     const compiled = await cpu.compile(plan.fragment);
     const replay = await cpu.execute(compiled, input, context);
-    return { ...replay, metrics: { ...replay.metrics, replayed: true } };
+    const attempt = error.attemptedMetrics;
+    return {
+      ...replay,
+      metrics: {
+        ...replay.metrics,
+        elapsedMs: replay.metrics.elapsedMs + (attempt?.elapsedMs ?? 0),
+        uploadBytes: replay.metrics.uploadBytes + (attempt?.uploadBytes ?? 0),
+        readbackBytes: replay.metrics.readbackBytes + (attempt?.readbackBytes ?? 0),
+        dispatches: replay.metrics.dispatches + (attempt?.dispatches ?? 0),
+        replayed: true,
+        replaySourceBackendId: attempt?.backendId ?? selected.id,
+      },
+    };
   }
 }
 
@@ -1248,9 +1277,20 @@ function physicalOutputRows(output: PhysicalOutputValue): number | undefined {
   }
 }
 
+const CPU_RELATIONAL_WORK_UNITS_PER_MS = 140_000;
+const CPU_VECTOR_VALUES_PER_MS = 375_000;
+
 function cpuCost(fragment: PhysicalFragment): PhysicalCostEstimate {
   const computeMs =
-    (fragment.estimates.rowCount * Math.max(1, fragment.operators.length)) / 2_000_000;
+    fragment.input.kind === "vector-candidates" ||
+    fragment.input.kind === "resident-vector-candidates"
+      ? (fragment.input.rowCount * fragment.input.dimensions) / CPU_VECTOR_VALUES_PER_MS
+      : (fragment.estimates.rowCount *
+          Math.max(
+            1,
+            fragment.operators.reduce((sum, operator) => sum + cpuOperatorWeight(operator), 0),
+          )) /
+        CPU_RELATIONAL_WORK_UNITS_PER_MS;
   return {
     totalMs: computeMs,
     inputConversionMs: 0,
@@ -1261,6 +1301,26 @@ function cpuCost(fragment: PhysicalFragment): PhysicalCostEstimate {
     readbackMs: 0,
     outputConversionMs: 0,
   };
+}
+
+function cpuOperatorWeight(operator: PhysicalOperator): number {
+  switch (operator.kind) {
+    case "select":
+      return 1;
+    case "project":
+      return 1 + (operator.select?.length ?? 0) + Object.keys(operator.projections ?? {}).length;
+    case "reduce":
+      return 2 + Object.keys(operator.aggregates).length;
+    case "grouped-reduce":
+      return 5 + operator.keys.length + Object.keys(operator.aggregates).length;
+    case "order":
+      return 4 + operator.orderBy.length;
+    case "top-k":
+      return 3 + operator.orderBy.length;
+    case "vector-distance":
+    case "bounded-top-k":
+      return 1;
+  }
 }
 
 function placementPolicyReasons(

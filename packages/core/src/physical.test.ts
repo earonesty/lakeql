@@ -459,7 +459,14 @@ describe("physical execution", () => {
       {},
       { replayOnCpu: true },
     );
-    expect(replayed.metrics).toMatchObject({ backendId: "cpu", replayed: true });
+    expect(replayed.metrics).toMatchObject({
+      backendId: "cpu",
+      replayed: true,
+      replaySourceBackendId: "gpu",
+      uploadBytes: 64,
+      readbackBytes: 16,
+      dispatches: 1,
+    });
     if (replayed.output.kind !== "batch") throw new Error("expected replayed batch");
     expect(materializeBatchRows(replayed.output.batch)).toEqual([{ id: 2 }, { id: 3 }]);
   });
@@ -583,7 +590,16 @@ class TestBackend implements PhysicalExecutionBackend {
     _context: BackendExecutionContext,
   ): Promise<PhysicalFragmentResult> {
     if (this.behavior === "replayable-failure") {
-      throw new PhysicalBackendExecutionError(this.id, "device lost", { replayable: true });
+      throw new PhysicalBackendExecutionError(this.id, "device lost", {
+        replayable: true,
+        attemptedMetrics: {
+          backendId: this.id,
+          elapsedMs: 2,
+          uploadBytes: 64,
+          readbackBytes: 16,
+          dispatches: 1,
+        },
+      });
     }
     if (input.kind !== "batch") {
       throw new PhysicalBackendExecutionError(this.id, "test backend expected a batch", {

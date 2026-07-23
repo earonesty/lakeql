@@ -10,6 +10,7 @@ import {
   type BackendPlanningContext,
   type CompiledPhysicalFragment,
   CpuPhysicalBackend,
+  PhysicalBackendExecutionError,
   type PhysicalCapabilities,
   type PhysicalExecutionBackend,
   type PhysicalFragment,
@@ -45,6 +46,9 @@ class RecordingPhysicalBackend implements PhysicalExecutionBackend {
   readonly id = "recording-accelerator";
   readonly compiledOperators: PhysicalFragment["operators"][number]["kind"][][] = [];
   private readonly cpu = new CpuPhysicalBackend("recording-cpu-delegate");
+  private failed = false;
+
+  constructor(private readonly replayFirstExecution = false) {}
 
   capabilities(): PhysicalCapabilities {
     return {
@@ -78,6 +82,19 @@ class RecordingPhysicalBackend implements PhysicalExecutionBackend {
     input: PhysicalFragmentInput,
     context: BackendExecutionContext,
   ): Promise<PhysicalFragmentResult> {
+    if (this.replayFirstExecution && !this.failed) {
+      this.failed = true;
+      throw new PhysicalBackendExecutionError(this.id, "simulated unpublished device loss", {
+        replayable: true,
+        attemptedMetrics: {
+          backendId: this.id,
+          elapsedMs: 2,
+          uploadBytes: compiled.fragment.estimates.inputBytes,
+          readbackBytes: 0,
+          dispatches: 1,
+        },
+      });
+    }
     const delegated = await this.cpu.execute(
       { backendId: this.cpu.id, fragment: compiled.fragment },
       input,
@@ -421,7 +438,8 @@ describe("Lake query runtime", () => {
     expect(projectedExplain.json.physicalFragments).toEqual([
       expect.objectContaining({
         backendId: "recording-accelerator",
-        operators: ["select", "project"],
+        operators: ["select"],
+        output: "selection",
         executions: 2,
         inputRows: 4,
         selectedRows: 3,
@@ -429,7 +447,7 @@ describe("Lake query runtime", () => {
         dispatches: 2,
       }),
     ]);
-    expect(projectedExplain.text).toContain("select -> project on recording-accelerator");
+    expect(projectedExplain.text).toContain("select on recording-accelerator");
     expect(projected.stats).toMatchObject({
       physicalFragments: 2,
       acceleratorFragments: 2,
@@ -471,12 +489,86 @@ describe("Lake query runtime", () => {
 
     expect(accelerator.compiledOperators).toEqual(
       expect.arrayContaining([
-        ["select", "project"],
+        ["select"],
         ["select", "grouped-reduce"],
         ["select", "reduce"],
         ["select", "top-k"],
       ]),
     );
+  });
+
+  it("spends accelerator transfer and dispatch budgets across vector batches", async () => {
+    const accelerator = new RecordingPhysicalBackend();
+    const { lake } = await makeLake({
+      vectorBatches: true,
+      physicalExecution: {
+        backends: [accelerator],
+        acceleratorPolicy: "required",
+      },
+      budget: {
+        maxAcceleratorUploadBytes: 32,
+        maxAcceleratorDispatches: 1,
+      },
+      rowsByPath: {
+        table: [
+          { id: 1, amount: 10 },
+          { id: 2, amount: 20 },
+          { id: 3, amount: 30 },
+          { id: 4, amount: 40 },
+        ],
+      },
+    });
+
+    const result = lake.path("table").select(["id"]).where(gt("amount", 0)).batchSize(2).run();
+    await expect(result.toArray()).rejects.toMatchObject({
+      code: "LAKEQL_PHYSICAL_BACKEND_UNAVAILABLE",
+    });
+    expect(result.stats).toMatchObject({
+      acceleratorFragments: 1,
+      acceleratorUploadBytes: 32,
+      acceleratorDispatches: 1,
+    });
+  });
+
+  it("attributes unpublished accelerator work when a fragment replays on CPU", async () => {
+    const accelerator = new RecordingPhysicalBackend(true);
+    const { lake } = await makeLake({
+      vectorBatches: true,
+      physicalExecution: {
+        backends: [accelerator],
+        acceleratorPolicy: "required",
+        replayOnCpu: true,
+      },
+      budget: {
+        maxAcceleratorUploadBytes: 32,
+        maxAcceleratorDispatches: 1,
+      },
+      rowsByPath: {
+        table: [
+          { id: 1, amount: 10 },
+          { id: 2, amount: 20 },
+        ],
+      },
+    });
+
+    const result = lake.path("table").select(["id"]).where(gt("amount", 0)).run();
+    await expect(result.toArray()).resolves.toEqual([{ id: 1 }, { id: 2 }]);
+    expect(result.stats).toMatchObject({
+      acceleratorFragments: 1,
+      acceleratorUploadBytes: 32,
+      acceleratorReadbackBytes: 0,
+      acceleratorDispatches: 1,
+      physicalReplays: 1,
+    });
+    expect((await result.explain()).json.physicalFragments).toEqual([
+      expect.objectContaining({
+        backendId: "cpu",
+        replaySourceBackendId: "recording-accelerator",
+        replays: 1,
+        uploadBytes: 32,
+        dispatches: 1,
+      }),
+    ]);
   });
 
   it("does not silently bypass required physical placement", async () => {
