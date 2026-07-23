@@ -10,6 +10,9 @@ npm install lakeql
 Use the example paths as your own object keys or file paths. The returned values
 below show the shape of the output, not a required fixture.
 
+Examples using optional Lance or WebGPU packages include their additional
+installation command in that section.
+
 ## Local Parquet With SQL
 
 ```ts
@@ -183,6 +186,98 @@ Output shape:
   "files": [{ "path": "warehouse/places/data/part-00000.parquet" }]
 }
 ```
+
+## Lance Rows By Stable ID
+
+Install the separate Lance reader:
+
+```sh
+npm install lakeql lakeql-lance
+```
+
+```ts
+import { httpStore } from "lakeql/node";
+import { openLanceDataset } from "lakeql-lance";
+
+const dataset = await openLanceDataset({
+  store: httpStore({ baseUrl: "https://example.com/data/" }),
+  path: "catalog.lance",
+  budget: {
+    maxBytes: 8 * 1024 * 1024,
+    maxRangeRequests: 128,
+    maxMemoryBytes: 16 * 1024 * 1024,
+    maxOutputRows: 32,
+    maxConcurrentReads: 4,
+    maxElapsedMs: 3_000,
+  },
+});
+
+const result = await dataset.takeRows({
+  snapshotId: dataset.snapshotId,
+  rowIds: [42n, 7n, 99n],
+  select: ["title", "owner_name", "source_url"],
+});
+
+console.log(result.rows, result.stats);
+```
+
+Persist `dataset.snapshotId` beside row IDs in an external index. LakeQL rejects
+IDs coupled to another snapshot instead of returning unrelated records. See
+[Querying Lance](./querying-lance.md) for BTree and IVF_FLAT examples.
+
+## Browser Query With WebGPU Placement
+
+Install the optional backend:
+
+```sh
+npm install lakeql lakeql-webgpu
+```
+
+```ts
+import { createLake, gt, httpStore } from "lakeql/fetch";
+import { WebGpuPhysicalBackend } from "lakeql-webgpu";
+import { browserWebGpuRuntime } from "lakeql-webgpu/browser";
+
+if (navigator.gpu === undefined) {
+  throw new Error("This browser does not expose WebGPU");
+}
+
+const runtime = browserWebGpuRuntime(navigator, { GPUBufferUsage, GPUMapMode });
+const webgpu = new WebGpuPhysicalBackend(() => runtime);
+const lake = createLake({
+  store: httpStore({ baseUrl: "https://example.com/data/" }),
+  physicalExecution: {
+    backends: [webgpu],
+    acceleratorPolicy: "auto",
+    replayOnCpu: true,
+  },
+  budget: {
+    maxAcceleratorMemoryBytes: 64 * 1024 * 1024,
+    maxAcceleratorUploadBytes: 64 * 1024 * 1024,
+    maxAcceleratorReadbackBytes: 4 * 1024 * 1024,
+    maxAcceleratorDispatches: 32,
+  },
+});
+
+try {
+  const result = lake
+    .path("scores.parquet")
+    .select(["item_id", "score"])
+    .where(gt("score", 0.5))
+    .limit(100)
+    .run();
+
+  console.log(await result.toArray());
+  console.log((await result.explain()).text);
+} finally {
+  webgpu.close();
+}
+```
+
+`auto` includes upload, dispatch, and readback costs and may choose CPU. Use
+`required` only when failure is preferable to CPU placement. See
+[WebGPU execution](./webgpu.md) for the supported operator shapes and benchmark
+interpretation.
 
 ## Write Results To Parquet
 

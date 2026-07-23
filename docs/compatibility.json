@@ -643,6 +643,86 @@
     ]
   },
   {
+    "area": "Lance",
+    "feature": "Snapshot-safe stable row-ID materialization",
+    "status": "supported+tested",
+    "notes": "The optional lakeql-lance reader opens stable-row-ID datasets using Lance storage version 2.0 and V2 manifest paths, groups requested IDs by physical location, reads projected scalar columns through bounded ranges, preserves caller order and duplicates, and rejects stale snapshot identities before data reads.",
+    "evidence": [
+      {
+        "file": "packages/lance/src/index.test.ts",
+        "pattern": "materializes 32 scattered rows with bounded reads and concurrency"
+      },
+      {
+        "file": "packages/lance/src/index.test.ts",
+        "pattern": "rejects row IDs coupled to another snapshot before data reads"
+      },
+      {
+        "file": "packages/lance/src/index.workerd.ts",
+        "pattern": "materializes scattered projected rows through the real Workers runtime"
+      }
+    ]
+  },
+  {
+    "area": "Lance",
+    "feature": "Official BTree equality and range lookup",
+    "status": "supported+tested",
+    "notes": "Official version-0 BTree indexes over supported scalar keys provide exact equality and bounded range lookup without rescanning the key column. Duplicate keys and stable index order are preserved, and lookup plus materialization share one cumulative operation budget.",
+    "evidence": [
+      {
+        "file": "packages/lance/src/index.test.ts",
+        "pattern": "uses an official BTree index for duplicate and missing exact keys before takeRows"
+      },
+      {
+        "file": "packages/lance/src/index.test.ts",
+        "pattern": "searches both sides of an official multi-page BTree boundary with logarithmic reads"
+      },
+      {
+        "file": "packages/lance/src/index.test.ts",
+        "pattern": "reads inclusive, exclusive, and one-sided BTree ranges in index order"
+      }
+    ]
+  },
+  {
+    "area": "Lance",
+    "feature": "Official IVF_FLAT vector search",
+    "status": "supported+tested",
+    "notes": "Official vector-index V3 IVF_FLAT indexes over float32 fixed-size-list columns support bounded partition selection, L2/cosine/Lance-dot scoring, deterministic top-k, and projected result materialization. Unsupported vector layouts are rejected without a brute-force dataset fallback.",
+    "evidence": [
+      {
+        "file": "packages/lance/src/index.test.ts",
+        "pattern": "matches official IVF_FLAT results and materializes projections in distance order"
+      },
+      {
+        "file": "packages/lance/src/index.test.ts",
+        "pattern": "bounds IVF_FLAT partitions, candidates, vector shape, and result buffering"
+      },
+      {
+        "file": "packages/lance/src/vector-math.test.ts",
+        "pattern": "uses Lance L2, dot, and cosine distance semantics"
+      }
+    ]
+  },
+  {
+    "area": "Lance",
+    "feature": "Object-storage budgets and runtime portability",
+    "status": "supported+tested",
+    "notes": "Lance metadata, deletion vectors, indexes, and projected pages use LakeQL ObjectStore, cache, cancellation, concurrency, elapsed-time, byte, request, decoded-row, output-row, and memory contracts. HTTP range and workerd tests verify portable reads, and complete Lance data-file reads are rejected.",
+    "evidence": [
+      {
+        "file": "packages/lance/src/index.test.ts",
+        "pattern": "enforces byte, request, output, memory, elapsed, and cancellation budgets"
+      },
+      {
+        "file": "packages/lance/src/index.test.ts",
+        "pattern": "reads the official fixture through HTTP byte ranges"
+      },
+      {
+        "file": "packages/lance/src/io.test.ts",
+        "pattern": "accounts metadata categories and rejects truncated or whole-file data reads"
+      }
+    ]
+  },
+  {
     "area": "WebGPU",
     "feature": "Accelerator-neutral physical planning",
     "status": "supported+tested",

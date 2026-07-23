@@ -1,7 +1,8 @@
 # lakeql
 
-LakeQL is a JavaScript query engine for Parquet and Iceberg data in object storage.
-It runs in Node.js, browsers, Cloudflare Workers, and other JavaScript runtimes.
+LakeQL is a JavaScript query engine for Parquet, Iceberg, and Lance data in
+object storage. It runs in Node.js, browsers, Cloudflare Workers, and other
+JavaScript runtimes.
 
 Use it when you want to query lake data without a database server, native module,
 JVM, or WASM runtime. LakeQL reads with HTTP range requests, streams results, and
@@ -112,6 +113,13 @@ LakeQL supports SQL through the CLI and JavaScript, a JavaScript query builder,
 and a JSON query format. It can query Parquet paths, prefixes, and globs,
 including compatible multi-file schemas with missing columns filled as `null`.
 
+| Format or backend | Package | Supported use |
+| --- | --- | --- |
+| Parquet | `lakeql` | Projected scans, filtering, SQL, aggregation, and bounded object-storage reads. |
+| Iceberg | `lakeql` | Snapshot-aware planning and reads over supported table versions, partitions, and delete files. |
+| Lance | `lakeql-lance` | Snapshot-safe row-ID materialization, BTree equality/range lookup, and IVF_FLAT vector search without native bindings. |
+| WebGPU | `lakeql-webgpu` | Optional acceleration for supported physical selection, reduction, grouped-reduction, and exact-vector top-k fragments. |
+
 The detailed reference pages are still useful when you need exact behavior:
 
 - [Docs index](./docs/README.md)
@@ -119,6 +127,8 @@ The detailed reference pages are still useful when you need exact behavior:
 - [SQL guide](./docs/sql-dialect.md)
 - [Querying Parquet](./docs/querying-parquet.md)
 - [Querying Iceberg](./docs/querying-iceberg.md)
+- [Querying Lance](./docs/querying-lance.md)
+- [WebGPU execution](./docs/webgpu.md)
 - [Cloudflare Workers](./docs/cloudflare-workers.md)
 - [Compatibility matrix](./docs/compatibility.md)
 - [Unsupported features](./docs/unsupported.md)
@@ -146,6 +156,22 @@ imports.
 The repository also contains workspace packages for adapter, format, and parser
 development. Most application code should use the entry points above.
 
+## Query Lance
+
+Install `lakeql-lance` when an application needs bounded reads from an immutable
+Lance dataset:
+
+```sh
+npm install lakeql lakeql-lance
+```
+
+The reader supports stable row-ID materialization, official BTree index lookup,
+and official IVF_FLAT vector search through the same object-store, budget,
+cache, and cancellation contracts used elsewhere in LakeQL. It never silently
+falls back to a dataset scan. See [Querying Lance](./docs/querying-lance.md) for
+the supported storage version, API examples, explicit limitations, and the
+recorded 32-row benchmark.
+
 ## Optional WebGPU Execution
 
 Install `lakeql-webgpu` alongside `lakeql` to add an accelerator backend in
@@ -159,8 +185,9 @@ The backend is opt-in and receives its runtime explicitly, so CPU-only
 applications do not load WebGPU or a native dependency. It currently supports
 nullable scalar selection, bounded count/min/max reductions, and exact `f32`
 vector scoring with stable top-k and bounded device residency. See the
-[WebGPU package guide](./packages/webgpu/README.md) and
-[implementation roadmap](./docs/webgpu-accelerated-execution.md).
+[WebGPU execution guide](./docs/webgpu.md), the
+[runnable browser example](./examples/webgpu-browser.ts), and the
+[package reference](./packages/webgpu/README.md).
 
 ## Confidence
 
