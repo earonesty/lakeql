@@ -206,6 +206,7 @@ function canEncodeScalarVector(vector: Vector): boolean {
     case "u32":
     case "u8":
     case "i64":
+    case "u64":
     case "timestamp":
     case "bool":
     case "utf8":
@@ -374,6 +375,7 @@ function vectorGroupKeyPart(vector: Vector, index: number): string {
     case "u8":
       return scalarGroupKeyPart(vector.values[index] ?? 0);
     case "i64":
+    case "u64":
       return scalarGroupKeyPart(vector.values[index] ?? 0n);
     case "timestamp":
       return scalarGroupKeyPart(scalarVectorValue(vector, index));
@@ -433,6 +435,9 @@ export function restoreVectorGroupByState(
   snapshot: VectorGroupByStateSnapshot,
   options: VectorGroupByOptions = {},
 ): VectorGroupByState {
+  if (options.maxGroups !== undefined && snapshot.groups.length > options.maxGroups) {
+    throw groupLimitError(options.maxGroups, snapshot.groups.length);
+  }
   const state = createVectorGroupByState(keys, spec);
   for (const groupSnapshot of snapshot.groups) {
     const keyValues = groupSnapshot.keyValues.map(restoreGroupValue);
@@ -471,6 +476,9 @@ export function mergeVectorGroupByStates(
   for (const [key, sourceGroup] of source.groups) {
     const targetGroup = target.groups.get(key);
     if (targetGroup === undefined) {
+      if (options.maxGroups !== undefined && target.groups.size >= options.maxGroups) {
+        throw groupLimitError(options.maxGroups, target.groups.size + 1);
+      }
       target.groups.set(key, {
         keyValues: [...sourceGroup.keyValues],
         states: restoreVectorAggregateStates(
@@ -483,6 +491,14 @@ export function mergeVectorGroupByStates(
     }
     enforceGroupByMemoryBudget(target, options.budget);
   }
+}
+
+function groupLimitError(limit: number, actual: number): LakeqlError {
+  return new LakeqlError(
+    "LAKEQL_GROUP_LIMIT_EXCEEDED",
+    `Query exceeded group budget (${actual} > ${limit})`,
+    { limit, actual },
+  );
 }
 
 export function vectorGroupByBatch(

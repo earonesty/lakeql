@@ -136,7 +136,7 @@ fn vector_score(row: u32) -> f32 {
     return l2;
   }
   if (vector_norm == 0.0f || query_norm == 0.0f) {
-    return dot / vector_norm;
+    return dot / min(vector_norm, query_norm);
   }
   return 1.0f - dot / sqrt(vector_norm * query_norm);
 }

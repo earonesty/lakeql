@@ -90,6 +90,33 @@ describe("column batches", () => {
     );
   });
 
+  it("preserves Date values and the full unsigned 64-bit bigint range", () => {
+    const occurredAt = new Date("2024-01-02T03:04:05.006Z");
+    const batch = batchFromColumns({
+      occurredAt: [occurredAt, null],
+      unsigned: [0xffff_ffff_ffff_ffffn, 3n],
+    });
+    expect(batch.columns.occurredAt?.type).toBe("timestamp");
+    expect(batch.columns.unsigned?.type).toBe("u64");
+    expect(materializeBatchRows(batch)).toEqual([
+      {
+        occurredAt: expect.objectContaining({
+          epochNanoseconds: 1_704_164_645_006_000_000n,
+          unit: "millis",
+        }),
+        unsigned: 0xffff_ffff_ffff_ffffn,
+      },
+      { occurredAt: null, unsigned: 3n },
+    ]);
+    expect(predicateSelection(batch, gt("unsigned", 3n))).toEqual(Uint8Array.of(1, 0));
+    expect(() => batchFromColumns({ mixed: [-1n, 0xffff_ffff_ffff_ffffn] })).toThrowError(
+      /cannot mix negative and unsigned/u,
+    );
+    expect(() => batchFromColumns({ tooLarge: [0x1_0000_0000_0000_0000n] })).toThrowError(
+      /exceeds 64-bit range/u,
+    );
+  });
+
   it("represents nested values as recursive vectors and materializes them at the boundary", () => {
     const batch = batchFromColumns({
       id: [1, 2, 3],
@@ -273,6 +300,10 @@ describe("column batches", () => {
       u32: { type: "u32", values: new Uint32Array([0, 2 ** 31, 2 ** 32 - 1]) },
       u8: { type: "u8", values: new Uint8Array([0, 127, 255]) },
       i64: { type: "i64", values: new BigInt64Array([1n, 2n, 3n]) },
+      u64: {
+        type: "u64",
+        values: new BigUint64Array([1n, 0x8000_0000_0000_0000n, 0xffff_ffff_ffff_ffffn]),
+      },
       bool: { type: "bool", values: new Uint8Array([1, 0, 1]) },
       utf8: { type: "utf8", values: ["a", "b", "c"] },
       dict: { type: "dict", indices: new Uint32Array([0, 1, 0]), dictionary },
@@ -303,6 +334,9 @@ describe("column batches", () => {
     expect(vectorValue(batch.columns.u32 ?? { type: "null", length: 0 }, 2)).toBe(2 ** 32 - 1);
     expect(vectorValue(batch.columns.u8 ?? { type: "null", length: 0 }, 2)).toBe(255);
     expect(vectorValue(batch.columns.i64 ?? { type: "null", length: 0 }, 2)).toBe(3n);
+    expect(vectorValue(batch.columns.u64 ?? { type: "null", length: 0 }, 2)).toBe(
+      0xffff_ffff_ffff_ffffn,
+    );
     expect(vectorValue(batch.columns.bool ?? { type: "null", length: 0 }, 1)).toBe(false);
     expect(vectorValue(batch.columns.utf8 ?? { type: "null", length: 0 }, 2)).toBe("c");
     expect(vectorValue(batch.columns.dict ?? { type: "null", length: 0 }, 1)).toBe("b");
@@ -330,6 +364,7 @@ describe("column batches", () => {
       [lt("i64", 3), [0, 1]],
       [lte("i64", 2n), [0, 1]],
       [gte("i64", 2), [1, 2]],
+      [gte("u64", 0x8000_0000_0000_0000n), [1, 2]],
       [gt(lit(2), col("f64")), [0]],
       [gte(lit(3), col("f32")), [0, 1]],
       [lt(lit(2), col("i32")), []],

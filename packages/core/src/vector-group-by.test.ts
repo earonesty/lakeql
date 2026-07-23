@@ -12,6 +12,7 @@ import {
   finalizeVectorGroupByBatch,
   finalizeVectorGroupByRows,
   getOrCreateVectorGroup,
+  getOrCreateVectorGroupByValues,
   mergeVectorGroupByStates,
   restoreVectorGroupByState,
   snapshotVectorGroupByState,
@@ -523,6 +524,34 @@ describe("vector group-by kernels", () => {
     );
     expect(() => enforceVectorGroupByBudget(state, { maxMemoryBytes: 1 })).toThrowError(
       expect.objectContaining({ code: "LAKEQL_BUDGET_EXCEEDED" }),
+    );
+  });
+
+  it("enforces group limits while restoring and merging external partials", () => {
+    const spec = { rows: { op: "count" } } as const;
+    const source = createVectorGroupByState(["region"], spec);
+    const east = ["east"];
+    getOrCreateVectorGroupByValues(source, east);
+    east[0] = "changed";
+    getOrCreateVectorGroupByValues(source, ["west"]);
+    const snapshot = snapshotVectorGroupByState(source);
+    expect(snapshot.groups[0]?.keyValues).toEqual(["east"]);
+    expect(() =>
+      restoreVectorGroupByState(["region"], spec, snapshot, { maxGroups: 1 }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "LAKEQL_GROUP_LIMIT_EXCEEDED",
+        details: { limit: 1, actual: 2 },
+      }),
+    );
+
+    const target = createVectorGroupByState(["region"], spec);
+    getOrCreateVectorGroupByValues(target, ["north"]);
+    expect(() => mergeVectorGroupByStates(target, source, { maxGroups: 1 })).toThrowError(
+      expect.objectContaining({
+        code: "LAKEQL_GROUP_LIMIT_EXCEEDED",
+        details: { limit: 1, actual: 2 },
+      }),
     );
   });
 });

@@ -684,7 +684,7 @@ describe("direct Parquet vector batches", () => {
     if (idLeaf !== undefined) {
       idLeaf.logical_type = { type: "INTEGER", bitWidth: 64, isSigned: false };
     }
-    expect(canReadParquetVectorBatches(unsignedLogical, { columns: ["id"] })).toBe(false);
+    expect(canReadParquetVectorBatches(unsignedLogical, { columns: ["id"] })).toBe(true);
 
     for (const logicalType of ["GEOMETRY", "GEOGRAPHY"] as const) {
       const supported = structuredClone(metadata);
@@ -717,7 +717,7 @@ describe("direct Parquet vector batches", () => {
       rowGroupSize: [5],
       pageSize: 1024,
       schema: [
-        { name: "root", num_children: 5 },
+        { name: "root", num_children: 6 },
         { name: "f32", type: "FLOAT", repetition_type: "OPTIONAL" },
         { name: "i32", type: "INT32", repetition_type: "OPTIONAL" },
         {
@@ -733,6 +733,12 @@ describe("direct Parquet vector batches", () => {
           converted_type: "UINT_32",
           repetition_type: "REQUIRED",
         },
+        {
+          name: "u64",
+          type: "INT64",
+          converted_type: "UINT_64",
+          repetition_type: "OPTIONAL",
+        },
       ],
       columnData: [
         { name: "f32", data: [1.25, null, 3.5, 4.75, 5] },
@@ -740,6 +746,10 @@ describe("direct Parquet vector batches", () => {
         { name: "u32", data: [0, null, 2_147_483_648, 4_000_000_000, 4_294_967_295] },
         { name: "required_f32", data: [10.25, 20.5, 30.75, 40, 50.125] },
         { name: "required_u32", data: [10, 20, 3_000_000_000, 40, 4_294_967_295] },
+        {
+          name: "u64",
+          data: [0n, null, 0x8000_0000_0000_0000n, 3n, 0xffff_ffff_ffff_ffffn],
+        },
       ],
     });
     const file = await fileBuffer(store, "data/vector-narrow-numeric.parquet");
@@ -747,7 +757,7 @@ describe("direct Parquet vector batches", () => {
 
     const batches = [];
     for await (const batch of readParquetVectorBatchesFromFile(file, metadata, {
-      columns: ["f32", "i32", "u32", "required_f32", "required_u32"],
+      columns: ["f32", "i32", "u32", "required_f32", "required_u32", "u64"],
       rowStart: 1,
       rowEnd: 5,
       batchSize: 2,
@@ -773,22 +783,42 @@ describe("direct Parquet vector batches", () => {
     });
     expect(batch.columns.required_f32).toMatchObject({ type: "f32" });
     expect(batch.columns.required_u32).toMatchObject({ type: "u32" });
+    expect(batch.columns.u64).toMatchObject({
+      type: "u64",
+      valid: new Uint8Array([0, 1, 1, 1]),
+    });
     expect(materializeBatchRows(batch)).toEqual([
-      { f32: null, i32: -1, u32: null, required_f32: 20.5, required_u32: 20 },
+      {
+        f32: null,
+        i32: -1,
+        u32: null,
+        required_f32: 20.5,
+        required_u32: 20,
+        u64: null,
+      },
       {
         f32: 3.5,
         i32: null,
         u32: 2_147_483_648,
         required_f32: 30.75,
         required_u32: 3_000_000_000,
+        u64: 0x8000_0000_0000_0000n,
       },
-      { f32: 4.75, i32: 1, u32: 4_000_000_000, required_f32: 40, required_u32: 40 },
+      {
+        f32: 4.75,
+        i32: 1,
+        u32: 4_000_000_000,
+        required_f32: 40,
+        required_u32: 40,
+        u64: 3n,
+      },
       {
         f32: 5,
         i32: 2,
         u32: 4_294_967_295,
         required_f32: 50.125,
         required_u32: 4_294_967_295,
+        u64: 0xffff_ffff_ffff_ffffn,
       },
     ]);
   });
@@ -1061,7 +1091,7 @@ describe("direct Parquet vector batches", () => {
     const unsignedMetadata = structuredClone(metadata);
     const idLeaf = unsignedMetadata.schema.find((entry) => entry.name === "id");
     if (idLeaf !== undefined) idLeaf.converted_type = "UINT_64";
-    expect(canReadParquetVectorBatches(unsignedMetadata, { columns: ["id"] })).toBe(false);
+    expect(canReadParquetVectorBatches(unsignedMetadata, { columns: ["id"] })).toBe(true);
   });
 });
 

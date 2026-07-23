@@ -302,6 +302,14 @@ function gatherVector(vector: Vector, indices: readonly number[]): Vector {
         },
         valid,
       );
+    case "u64":
+      return optionalValidity(
+        {
+          type: vector.type,
+          values: BigUint64Array.from(indices, (index) => vector.values[index] ?? 0n),
+        },
+        valid,
+      );
     case "timestamp":
       return optionalValidity(
         {
@@ -432,6 +440,16 @@ function concatVectors(name: string, vectors: readonly Vector[]): Vector {
         },
         valid,
       );
+    case "u64":
+      return optionalValidity(
+        {
+          type: first.type,
+          values: concatBigUintArrays(
+            vectors.map((vector) => requireVectorType(vector, "u64").values),
+          ),
+        },
+        valid,
+      );
     case "timestamp": {
       const timestampVectors = vectors.map((vector) => requireVectorType(vector, "timestamp"));
       if (
@@ -555,6 +573,17 @@ function concatTypedArrays<
 function concatBigIntArrays(arrays: readonly BigInt64Array[]): BigInt64Array {
   const length = arrays.reduce((sum, array) => sum + array.length, 0);
   const out = new BigInt64Array(length);
+  let offset = 0;
+  for (const array of arrays) {
+    out.set(array, offset);
+    offset += array.length;
+  }
+  return out;
+}
+
+function concatBigUintArrays(arrays: readonly BigUint64Array[]): BigUint64Array {
+  const length = arrays.reduce((sum, array) => sum + array.length, 0);
+  const out = new BigUint64Array(length);
   let offset = 0;
   for (const array of arrays) {
     out.set(array, offset);

@@ -379,6 +379,7 @@ const CPU_VECTOR_SHAPES: readonly PhysicalVectorShape[] = [
   "u32",
   "u8",
   "i64",
+  "u64",
   "timestamp",
   "bool",
   "utf8",
@@ -1133,6 +1134,7 @@ function estimateVectorBytes(vector: Vector): number {
     case "u32":
     case "u8":
     case "i64":
+    case "u64":
     case "timestamp":
     case "bool":
       return bytes + vector.values.byteLength;

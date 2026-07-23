@@ -66,6 +66,27 @@ describe("WebGPU bounded vector top-k with Dawn", () => {
     expect(backend.assess(right, {}).compiledResident).toBe(true);
   });
 
+  it("matches CPU cosine semantics for zero query and candidate vectors", async () => {
+    const block: PhysicalVectorCandidateBlock = {
+      rowCount: 3,
+      dimensions: 2,
+      vectors: Float32Array.of(0, 0, 1, 0, 0, 1),
+      rowIdsLow: Uint32Array.of(1, 2, 3),
+      rowIdsHigh: Uint32Array.of(0, 0, 0),
+    };
+    for (const query of [
+      [0, 0],
+      [1, 0],
+    ]) {
+      const target = fragment(block, "cosine-distance", query, 3);
+      const [actual, expected] = await Promise.all([
+        execute(backend, target, block),
+        execute(new CpuPhysicalBackend(), target, block),
+      ]);
+      expect(actual.output).toEqual(expected.output);
+    }
+  });
+
   it("reuses immutable resident candidates without charging query uploads for them", async () => {
     const block = candidateBlock(2051, 8);
     const lease = await backend.cacheVectorCandidates("vectors:resident", block, {
