@@ -87,6 +87,7 @@ Common result methods:
 | `streamNdjson()` | Streaming line-delimited JSON. |
 | `streamCsv()` | CSV response bodies. |
 | `explain()` | Planned files, projected columns, and pruning details for builder queries. |
+| `analyze()` | Execute without retaining output rows and return the plan with runtime metrics. |
 
 `streamCsv({ preventFormulae: true })` prefixes cells that spreadsheet apps may
 interpret as formulae. The default is faithful CSV output for data interchange.

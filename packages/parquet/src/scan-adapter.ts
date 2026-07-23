@@ -189,6 +189,10 @@ export class ParquetScanAdapter implements ScanAdapter {
         ...(present === undefined ? {} : { columns: present }),
         ...(options.where === undefined ? {} : { where: options.where }),
         ...(options.canStopEarly === undefined ? {} : { canStopEarly: options.canStopEarly }),
+        ...(options.budget.maxConcurrentReads === undefined
+          ? {}
+          : { maxConcurrentReads: options.budget.maxConcurrentReads }),
+        now: options.now,
         ...(this.decodedColumnCache === undefined
           ? {}
           : {
@@ -226,6 +230,10 @@ export class ParquetScanAdapter implements ScanAdapter {
         ...(present === undefined ? {} : { columns: present }),
         ...(options.where === undefined ? {} : { where: options.where }),
         ...(options.canStopEarly === undefined ? {} : { canStopEarly: options.canStopEarly }),
+        ...(options.budget.maxConcurrentReads === undefined
+          ? {}
+          : { maxConcurrentReads: options.budget.maxConcurrentReads }),
+        now: options.now,
         ...(this.decodedColumnCache === undefined
           ? {}
           : {
@@ -250,14 +258,31 @@ export class ParquetScanAdapter implements ScanAdapter {
   }
 
   async planTask(path: string, options: ScanTaskPlanOptions): Promise<ScanTaskPlan> {
+    const planningReadOptions: ScanOptions | undefined =
+      options.stats === undefined || options.budget === undefined || options.now === undefined
+        ? undefined
+        : {
+            batchSize: this.defaultBatchSize,
+            stats: options.stats,
+            budget: options.budget,
+            now: options.now,
+            startedAt: options.now(),
+          };
     const file =
       options.object === undefined
-        ? await asyncBufferFromStore(this.store, path)
-        : asyncBufferFromObjectInfo(this.store, options.object);
-    const metadata = await this.metadata(path, file);
+        ? await asyncBufferFromStore(this.store, path, planningReadOptions)
+        : asyncBufferFromObjectInfo(this.store, options.object, planningReadOptions);
+    const metadata = await this.metadata(path, file, planningReadOptions);
+    const plan = planRowGroupsFromMetadata(metadata, options.where);
+    if (options.stats !== undefined) {
+      options.stats.rowGroupsTotal =
+        (options.stats.rowGroupsTotal ?? 0) + metadata.row_groups.length;
+      options.stats.rowGroupsPlanned =
+        (options.stats.rowGroupsPlanned ?? 0) + plan.rowGroups.length;
+    }
     return {
       rowGroupCount: metadata.row_groups.length,
-      rowGroupRanges: planRowGroupsFromMetadata(metadata, options.where).rowGroupRanges,
+      rowGroupRanges: plan.rowGroupRanges,
     };
   }
 
@@ -287,11 +312,16 @@ export class ParquetScanAdapter implements ScanAdapter {
     file: StoreAsyncBuffer,
     options?: ScanOptions,
   ): Promise<ParquetMetadata> {
+    const startedAt = options?.now();
     const { metadata, cached } = await readCachedParquetMetadata(path, file, this.metadataCache);
     if (cached) {
       if (options !== undefined) options.stats.cacheHits += 1;
     } else if (options !== undefined) {
       options.stats.cacheMisses += 1;
+      if (startedAt !== undefined) {
+        options.stats.footerFetchMs =
+          (options.stats.footerFetchMs ?? 0) + (options.now() - startedAt);
+      }
     }
     return metadata;
   }

@@ -2,15 +2,24 @@
 
 Lakeql keeps reads bounded by batches and row groups. Projection is derived from `select`, `where`, and `orderBy`, so scans only request needed physical columns where the Parquet adapter can do so.
 
-Use `explain()` to inspect planned files and projected columns:
+Use `explain()` to inspect planned files, projected columns, Parquet row-group
+selection, and planning I/O:
 
 ```ts
 const explanation = await lake.path("sales.parquet").select(["amount"]).explain();
 console.log(explanation.text);
 console.log(explanation.json.predicatePlan);
+console.log(explanation.json.metrics);
 ```
 
 The JSON predicate plan classifies pruning candidates as partition, file stats, row-group stats, or residual predicates.
+The metrics include planning and footer-fetch time, selected and total row
+groups, physical range-request count and bytes, cumulative object-store wait,
+decode time, and decoded rows. After execution, the same measurements are
+available on `result.stats`. Cumulative object-store wait can exceed elapsed
+wall time when reads overlap.
+Call `analyze()` to execute and drain a query without retaining its output rows,
+then receive the explain result with completed runtime metrics.
 For window queries, `explain()` also reports the number of window expressions,
 the number of shared window sort groups, whether `QUALIFY` is present, and the
 execution path used by the query API.
@@ -20,6 +29,15 @@ does not expose a public dictionary-filter API; dictionary pruning should be add
 when that API becomes available without breaking row-group skip accounting.
 
 Budgets can cap files, bytes, decoded rows, returned rows, range requests, elapsed time, buffered rows, and serialized operator memory.
+Budget failures include a snapshot of the query measurements in
+`LakeqlError.details.measurements`.
+
+`maxConcurrentReads` is an explicit object-store policy. When configured, the
+Parquet scanner prefetches selected column ranges in bounded windows so the
+configured concurrency can be used; the object-store read semaphore remains the
+hard limit. When it is omitted, scans do not introduce row-group range
+prefetching. Tune it for the deployed provider and account rather than assuming
+that R2, S3, and HTTP origins have the same useful concurrency.
 
 ## Work-unit fan-out
 
@@ -106,7 +124,14 @@ window. The 10M work-unit benchmark uses this cache to prove warm planning avoid
 re-listing and re-heading the same 100 files before splitting row-group work
 units.
 
-Pass a shared Parquet `metadataCache` when repeated planning or fan-out execution
+Each Parquet lake keeps a local metadata cache, so planning and execution through
+that lake reuse parsed footer statistics. Pass a shared Parquet `metadataCache`
+when separate lake instances or Worker invocations should reuse metadata.
+`encodedParquetMetadataCache` adapts a persistent byte `CacheAdapter`—including
+the Cloudflare Cache API adapter—to Parquet metadata while preserving Thrift
+bigints and byte values. Other runtimes can provide any adapter with the same
+contract.
+Repeated planning or fan-out execution
 can reuse footer statistics. The task payloads remain data-only JSON, but warm
 planning can avoid footer range reads entirely, and aggregate fan-out can reuse
 the same cached metadata instead of rereading footers for each row-group work

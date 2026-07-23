@@ -9,6 +9,9 @@ import {
 } from "lakeql-core";
 
 type StatsValue = string | number | bigint | boolean | TimestampValue;
+type InExpr = Extract<Expr, { kind: "in" }>;
+
+const sortedInValues = new WeakMap<InExpr, Map<string, StatsValue[]> | undefined>();
 
 /** @internal Exposed for pruning tests; not part of the stable public API. */
 export function rowGroupMayMatch(rowGroup: RowGroup, expr: Expr | undefined): boolean {
@@ -117,18 +120,62 @@ function inMayMatch(rowGroup: RowGroup, expr: Extract<Expr, { kind: "in" }>): bo
   if (expr.target.kind !== "column") return true;
   const stats = columnStats(rowGroup, expr.target.name);
   if (!stats) return true;
-  return expr.values.some((valueExpr) => {
-    if (valueExpr.kind !== "literal" || valueExpr.value === null) return true;
-    const value = valueExpr.value;
-    if (
-      !isStatsValue(value) ||
-      !sameComparableType(stats.min, value) ||
-      !sameComparableType(stats.max, value)
-    ) {
-      return true;
+  const byType = cachedSortedInValues(expr);
+  if (byType === undefined) return true;
+  const values = byType.get(statsValueType(stats.min));
+  if (values === undefined || !sameComparableType(stats.min, stats.max)) return true;
+  const candidate = lowerBound(values, stats.min);
+  return (
+    candidate < values.length && compareValues(values[candidate] as StatsValue, stats.max) <= 0
+  );
+}
+
+function cachedSortedInValues(expr: InExpr): Map<string, StatsValue[]> | undefined {
+  if (sortedInValues.has(expr)) return sortedInValues.get(expr);
+  const byType = new Map<string, StatsValue[]>();
+  for (const valueExpr of expr.values) {
+    if (valueExpr.kind !== "literal") {
+      sortedInValues.set(expr, undefined);
+      return undefined;
     }
-    return compareValues(value, stats.min) >= 0 && compareValues(value, stats.max) <= 0;
-  });
+    if (valueExpr.value === null) {
+      sortedInValues.set(expr, undefined);
+      return undefined;
+    }
+    if (!isStatsValue(valueExpr.value)) {
+      sortedInValues.set(expr, undefined);
+      return undefined;
+    }
+    const key = statsValueType(valueExpr.value);
+    const values = byType.get(key) ?? [];
+    values.push(valueExpr.value);
+    byType.set(key, values);
+  }
+  for (const values of byType.values()) {
+    values.sort(compareValues);
+  }
+  sortedInValues.set(expr, byType);
+  return byType;
+}
+
+function statsValueType(value: StatsValue): string {
+  if (typeof value === "number" || typeof value === "bigint") return "number";
+  if (isTimestampValue(value) || (typeof value === "string" && timestampValueFromIso(value))) {
+    return "timestamp";
+  }
+  return typeof value;
+}
+
+function lowerBound(values: readonly StatsValue[], target: StatsValue): number {
+  let low = 0;
+  let high = values.length;
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    const value = values[middle] as StatsValue;
+    if (compareValues(value, target) < 0) low = middle + 1;
+    else high = middle;
+  }
+  return low;
 }
 
 function betweenMayMatch(rowGroup: RowGroup, expr: Extract<Expr, { kind: "between" }>): boolean {

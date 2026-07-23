@@ -63,6 +63,19 @@ export async function* readParquetVectorBatchesFromFile(
   const requestedStart = options.rowStart ?? 0;
   const requestedEnd = options.rowEnd ?? Number(metadata.num_rows);
   recordReadColumns(options.stats, columns);
+  const prefetchWindowSize =
+    options.maxConcurrentReads !== undefined && options.maxConcurrentReads > 1
+      ? options.maxConcurrentReads
+      : undefined;
+  const prefetchGroups =
+    prefetchWindowSize !== undefined
+      ? selectedDirectVectorRanges(metadata, columns, requestedStart, requestedEnd, options.where)
+      : undefined;
+  const prefetchedRowGroupIndexes =
+    prefetchGroups === undefined
+      ? undefined
+      : new Set(prefetchGroups.map((group) => group.rowGroupIndex));
+  let selectedGroupIndex = 0;
   let rowGroupStart = 0;
   for (let rowGroupIndex = 0; rowGroupIndex < metadata.row_groups.length; rowGroupIndex += 1) {
     const rowGroup = metadata.row_groups[rowGroupIndex];
@@ -71,12 +84,27 @@ export async function* readParquetVectorBatchesFromFile(
     if (
       rowGroupEnd <= requestedStart ||
       rowGroupStart >= requestedEnd ||
-      !rowGroupMayMatch(rowGroup, options.where)
+      (prefetchedRowGroupIndexes === undefined
+        ? !rowGroupMayMatch(rowGroup, options.where)
+        : !prefetchedRowGroupIndexes.has(rowGroupIndex))
     ) {
       recordRowGroupSkipped(options.stats);
       rowGroupStart = rowGroupEnd;
       continue;
     }
+    if (
+      prefetchGroups !== undefined &&
+      file.prefetch !== undefined &&
+      prefetchWindowSize !== undefined &&
+      selectedGroupIndex % prefetchWindowSize === 0
+    ) {
+      const window = prefetchGroups.slice(
+        selectedGroupIndex,
+        selectedGroupIndex + prefetchWindowSize,
+      );
+      await file.prefetch(window.flatMap((group) => group.ranges));
+    }
+    selectedGroupIndex += 1;
     const vectorSources = columnVectorSources(
       file,
       metadata,
@@ -96,6 +124,42 @@ export async function* readParquetVectorBatchesFromFile(
     }
     rowGroupStart = rowGroupEnd;
   }
+}
+
+function selectedDirectVectorRanges(
+  metadata: ParquetMetadata,
+  columns: readonly string[],
+  requestedStart: number,
+  requestedEnd: number,
+  where: ReadParquetBatchOptions["where"],
+): { rowGroupIndex: number; ranges: { start: number; end: number }[] }[] {
+  const selected: { rowGroupIndex: number; ranges: { start: number; end: number }[] }[] = [];
+  let rowGroupStart = 0;
+  for (let rowGroupIndex = 0; rowGroupIndex < metadata.row_groups.length; rowGroupIndex += 1) {
+    const rowGroup = metadata.row_groups[rowGroupIndex];
+    if (rowGroup === undefined) break;
+    const rowGroupEnd = rowGroupStart + Number(rowGroup.num_rows);
+    if (
+      rowGroupEnd > requestedStart &&
+      rowGroupStart < requestedEnd &&
+      rowGroupMayMatch(rowGroup, where)
+    ) {
+      const ranges = columns.flatMap((column) => {
+        const columnMetadata = directLeafColumnMetadata(rowGroup, column);
+        if (columnMetadata === undefined || !canDirectVector(metadata, columnMetadata)) return [];
+        const start = safeNumber(
+          columnMetadata.dictionary_page_offset ?? columnMetadata.data_page_offset,
+        );
+        const length = safeNumber(columnMetadata.total_compressed_size);
+        return start === undefined || length === undefined || length <= 0
+          ? []
+          : [{ start, end: start + length }];
+      });
+      selected.push({ rowGroupIndex, ranges });
+    }
+    rowGroupStart = rowGroupEnd;
+  }
+  return selected;
 }
 
 function directVectorColumns(columns: readonly string[] | undefined): string[] | undefined {
@@ -424,15 +488,17 @@ async function* readColumnVectorBatches(
     );
     reader.offset += header.compressed_page_size;
     if (header.type === "DICTIONARY_PAGE") {
-      dictionary = dictionaryPageValues(
-        compressedBytes,
-        header,
-        columnDecoder,
-        column,
-        rowGroupStart,
-        pageOffset,
-        file,
-        options,
+      dictionary = recordDecodeTime(options, () =>
+        dictionaryPageValues(
+          compressedBytes,
+          header,
+          columnDecoder,
+          column,
+          rowGroupStart,
+          pageOffset,
+          file,
+          options,
+        ),
       );
       continue;
     }
@@ -466,7 +532,9 @@ async function* readColumnVectorBatches(
       if (cached !== undefined) {
         vector = cached;
       } else {
-        const page = dataPageValues(compressedBytes, header, columnDecoder, dictionary);
+        const page = recordDecodeTime(options, () =>
+          dataPageValues(compressedBytes, header, columnDecoder, dictionary),
+        );
         if (page === undefined) continue;
         vector = flatPageVector(page.values, page.definitionLevels, 0, rowCount, page.dictionary);
         if (key !== undefined && cache !== undefined) cache.setVector(key, vector);
@@ -517,15 +585,17 @@ async function* readColumnWindowVectorBatches(
     if (page === undefined) return;
     offset += page.headerBytes + page.header.compressed_page_size;
     if (page.header.type === "DICTIONARY_PAGE") {
-      dictionary = dictionaryPageValues(
-        page.compressedBytes,
-        page.header,
-        columnDecoder,
-        column,
-        rowGroupStart,
-        page.bodyOffset,
-        file,
-        options,
+      dictionary = recordDecodeTime(options, () =>
+        dictionaryPageValues(
+          page.compressedBytes,
+          page.header,
+          columnDecoder,
+          column,
+          rowGroupStart,
+          page.bodyOffset,
+          file,
+          options,
+        ),
       );
       continue;
     }
@@ -559,7 +629,9 @@ async function* readColumnWindowVectorBatches(
       if (cached !== undefined) {
         vector = cached;
       } else {
-        const values = dataPageValues(page.compressedBytes, page.header, columnDecoder, dictionary);
+        const values = recordDecodeTime(options, () =>
+          dataPageValues(page.compressedBytes, page.header, columnDecoder, dictionary),
+        );
         if (values === undefined) continue;
         vector = flatPageVector(
           values.values,
@@ -763,6 +835,17 @@ function dataPageValues(
     };
   }
   return undefined;
+}
+
+function recordDecodeTime<T>(options: ReadParquetBatchOptions, decode: () => T): T {
+  const startedAt = options.now?.();
+  try {
+    return decode();
+  } finally {
+    if (startedAt !== undefined && options.stats !== undefined && options.now !== undefined) {
+      options.stats.decodeMs = (options.stats.decodeMs ?? 0) + (options.now() - startedAt);
+    }
+  }
 }
 
 function compactPresentValues(values: DecodedArray): DecodedArray {

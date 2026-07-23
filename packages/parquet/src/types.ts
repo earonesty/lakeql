@@ -13,6 +13,12 @@ export interface ReadParquetBatchOptions extends ReadParquetOptions {
   batchSize?: number;
   where?: Expr;
   canStopEarly?: boolean;
+  /**
+   * Number of selected row groups whose physical column ranges may be fetched
+   * ahead of decoding. Read concurrency remains enforced by the ObjectStore.
+   */
+  maxConcurrentReads?: number;
+  now?: () => number;
   stats?: QueryStats;
   decodedColumnCache?: DecodedColumnCache;
   decodedColumnCacheKey?: string;
@@ -35,4 +41,9 @@ export interface StoreAsyncBuffer {
   byteLength: number;
   etag?: string;
   slice(start: number, end?: number): Promise<ArrayBuffer>;
+  /**
+   * Populate a bounded range cache before decoding. Implementations may ignore
+   * ranges that cannot be retained within their cache budget.
+   */
+  prefetch?(ranges: readonly { start: number; end: number }[]): Promise<void>;
 }

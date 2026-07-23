@@ -1420,12 +1420,13 @@ describe("Lake query runtime", () => {
 
     await expect(result.toArray()).resolves.toEqual([{ id: 1 }, { id: 2 }]);
     expect(result.stats.queryId).toBe("q_substrate");
-    expect(result.stats.elapsedMs).toBe(35);
+    expect(result.stats.elapsedMs).toBe(45);
+    expect(result.stats.planningMs).toBe(5);
     expect(counts).toEqual([
       { name: "lakeql.query.created", value: 1, tags: { queryId: "q_substrate" } },
     ]);
     expect(timings).toEqual([
-      { name: "lakeql.query.elapsed", ms: 35, tags: { queryId: "q_substrate" } },
+      { name: "lakeql.query.elapsed", ms: 45, tags: { queryId: "q_substrate" } },
     ]);
   });
 
@@ -1452,7 +1453,16 @@ describe("Lake query runtime", () => {
     });
     await expect(
       (await makeLake({ rowsByPath, budget: { maxRowsDecoded: 1 } })).lake.path("table").toArray(),
-    ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+    ).rejects.toMatchObject({
+      code: "LAKEQL_BUDGET_EXCEEDED",
+      details: {
+        metric: "rows decoded",
+        measurements: expect.objectContaining({
+          rowsDecoded: 2,
+          rowsReturned: 1,
+        }),
+      },
+    });
     await expect(
       (await makeLake({ rowsByPath, budget: { maxOutputRows: 1 } })).lake.path("table").toArray(),
     ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
