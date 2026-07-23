@@ -10,15 +10,18 @@ import { WebGpuPhysicalBackend } from "../packages/webgpu/dist/index.js";
 const rows = positiveInteger(process.env.LAKEQL_WEBGPU_ROWS, 1_000_000);
 const warmRuns = positiveInteger(process.env.LAKEQL_WEBGPU_WARM_RUNS, 8);
 const ids = new Uint32Array(rows);
+const groups = new Uint32Array(rows);
 const scores = new Float32Array(rows);
 const valid = new Uint8Array(rows);
 for (let index = 0; index < rows; index += 1) {
   ids[index] = index;
+  groups[index] = index % 16;
   scores[index] = (index % 1024) / 1024;
   valid[index] = index % 97 === 0 ? 0 : 1;
 }
 const batch = batchFromVectors({
   id: { type: "u32", values: ids },
+  group: { type: "u32", values: groups },
   score: { type: "f32", values: scores, valid },
 });
 const fragment = {
@@ -42,6 +45,29 @@ const fragment = {
     inputBytes: ids.byteLength + scores.byteLength + valid.byteLength,
     outputBytes: 128,
     dispatchCount: 1,
+  },
+};
+const groupedFragment = {
+  ...fragment,
+  id: `webgpu-grouped-benchmark-${rows}`,
+  operators: [
+    { kind: "select", predicate: gte("score", 0.5) },
+    {
+      kind: "grouped-reduce",
+      keys: ["group"],
+      aggregates: {
+        rows: { op: "count" },
+        lowId: { op: "min", column: "id" },
+        highScore: { op: "max", column: "score" },
+      },
+      maxGroups: 16,
+    },
+  ],
+  output: { kind: "grouped-aggregate-snapshot" },
+  estimates: {
+    ...fragment.estimates,
+    inputBytes: fragment.estimates.inputBytes + groups.byteLength,
+    outputBytes: 16 * 9 * 4,
   },
 };
 
@@ -68,11 +94,21 @@ try {
   const cpuWarm = await repeated(warmRuns, () => cpu.execute(cpuCompiled, input, {}));
   const gpuWarm = await repeated(warmRuns, () => webgpu.execute(gpuCompiled, input, {}));
   assertSameOutput(cpuWarm.last.output, gpuWarm.last.output);
+  const cpuGroupedCompiled = await cpu.compile(groupedFragment);
+  const gpuGroupedCompiled = await webgpu.compile(groupedFragment);
+  const cpuGroupedCold = await timed(() => cpu.execute(cpuGroupedCompiled, input, {}));
+  const gpuGroupedCold = await timed(() => webgpu.execute(gpuGroupedCompiled, input, {}));
+  assertSameOutput(cpuGroupedCold.value.output, gpuGroupedCold.value.output);
+  const cpuGroupedWarm = await repeated(warmRuns, () => cpu.execute(cpuGroupedCompiled, input, {}));
+  const gpuGroupedWarm = await repeated(warmRuns, () =>
+    webgpu.execute(gpuGroupedCompiled, input, {}),
+  );
+  assertSameOutput(cpuGroupedWarm.last.output, gpuGroupedWarm.last.output);
 
   console.log(
     JSON.stringify(
       {
-        benchmark: "fused selection + count/min/max",
+        benchmark: "fused relational reductions",
         adapter: "Dawn Node development adapter",
         rows,
         warmRuns,
@@ -88,6 +124,20 @@ try {
           metrics: gpuWarm.last.metrics,
         },
         output: gpuWarm.last.output,
+        grouped: {
+          shape: "selection + one-key grouped count/min/max (16 groups)",
+          cpu: {
+            coldMs: cpuGroupedCold.elapsedMs,
+            warmMedianMs: median(cpuGroupedWarm.times),
+            metrics: cpuGroupedWarm.last.metrics,
+          },
+          webgpu: {
+            coldMs: gpuGroupedCold.elapsedMs,
+            warmMedianMs: median(gpuGroupedWarm.times),
+            metrics: gpuGroupedWarm.last.metrics,
+          },
+          output: gpuGroupedWarm.last.output,
+        },
       },
       null,
       2,

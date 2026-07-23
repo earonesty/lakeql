@@ -1,4 +1,5 @@
 export * from "./backend.js";
+export * from "./grouped-reduction.js";
 export * from "./predicate.js";
 export * from "./reduction.js";
 export * from "./runtime.js";

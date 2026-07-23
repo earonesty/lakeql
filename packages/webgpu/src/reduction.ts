@@ -1,4 +1,4 @@
-import { type AggregateExpr, lit, type PhysicalFragment } from "lakeql-core";
+import { type AggregateExpr, type AggregateSpec, lit, type PhysicalFragment } from "lakeql-core";
 import {
   type CompiledWebGpuPredicateExpression,
   compileWebGpuPredicateExpression,
@@ -10,6 +10,20 @@ export interface WebGpuReductionAggregate {
   readonly op: "count" | "min" | "max";
   readonly column?: WebGpuPredicateColumn;
 }
+
+export interface WebGpuAggregateDefinition {
+  readonly alias: string;
+  readonly op: "count" | "min" | "max";
+  readonly columnName?: string;
+}
+
+export type WebGpuAggregateDefinitions =
+  | {
+      supported: true;
+      definitions: readonly WebGpuAggregateDefinition[];
+      requiredColumns: readonly string[];
+    }
+  | { supported: false; reason: string };
 
 export interface CompiledWebGpuReduction {
   readonly kind: "reduction";
@@ -43,12 +57,43 @@ export function compileWebGpuReduction(fragment: PhysicalFragment): WebGpuReduct
       reason: "WebGPU reduction requires an optional select followed by reduce",
     };
   }
-  const aggregateEntries = Object.entries(reduce.aggregates);
+  const aggregateCompilation = compileWebGpuAggregateDefinitions(reduce.aggregates);
+  if (!aggregateCompilation.supported) return aggregateCompilation;
+  const { definitions, requiredColumns } = aggregateCompilation;
+  const select = prefix[0];
+  const predicate = compileWebGpuPredicateExpression(
+    select?.kind === "select" ? select.predicate : lit(true),
+    fragment.input.columns,
+    requiredColumns,
+  );
+  if (!predicate.supported) return predicate;
+  const aggregates = bindWebGpuAggregates(definitions, predicate.compiled.columns);
+  const outputWordsPerTile = 1 + aggregates.length * 2;
+  const wgsl = reductionShader(predicate.compiled, aggregates, outputWordsPerTile);
+  return {
+    supported: true,
+    compiled: {
+      kind: "reduction",
+      columns: predicate.compiled.columns,
+      aggregates,
+      outputBinding: 3,
+      outputWordsPerTile,
+      tileRows: REDUCTION_TILE_ROWS,
+      wgsl,
+      cacheKey: wgsl,
+    },
+  };
+}
+
+export function compileWebGpuAggregateDefinitions(
+  aggregates: AggregateSpec,
+): WebGpuAggregateDefinitions {
+  const aggregateEntries = Object.entries(aggregates);
   if (aggregateEntries.length === 0) {
     return { supported: false, reason: "WebGPU reduction requires at least one aggregate" };
   }
   const requiredColumns: string[] = [];
-  const definitions: Array<{ alias: string; aggregate: AggregateExpr; columnName?: string }> = [];
+  const definitions: WebGpuAggregateDefinition[] = [];
   for (const [alias, aggregate] of aggregateEntries) {
     if (aggregate.op !== "count" && aggregate.op !== "min" && aggregate.op !== "max") {
       return {
@@ -72,19 +117,19 @@ export function compileWebGpuReduction(fragment: PhysicalFragment): WebGpuReduct
     if (columnName !== undefined) requiredColumns.push(columnName);
     definitions.push({
       alias,
-      aggregate,
+      op: aggregate.op,
       ...(columnName === undefined ? {} : { columnName }),
     });
   }
-  const select = prefix[0];
-  const predicate = compileWebGpuPredicateExpression(
-    select?.kind === "select" ? select.predicate : lit(true),
-    fragment.input.columns,
-    requiredColumns,
-  );
-  if (!predicate.supported) return predicate;
-  const columnsByName = new Map(predicate.compiled.columns.map((column) => [column.name, column]));
-  const aggregates: WebGpuReductionAggregate[] = definitions.map((definition) => {
+  return { supported: true, definitions, requiredColumns };
+}
+
+export function bindWebGpuAggregates(
+  definitions: readonly WebGpuAggregateDefinition[],
+  columns: readonly WebGpuPredicateColumn[],
+): WebGpuReductionAggregate[] {
+  const columnsByName = new Map(columns.map((column) => [column.name, column]));
+  return definitions.map((definition) => {
     const column =
       definition.columnName === undefined ? undefined : columnsByName.get(definition.columnName);
     if (definition.columnName !== undefined && column === undefined) {
@@ -92,25 +137,10 @@ export function compileWebGpuReduction(fragment: PhysicalFragment): WebGpuReduct
     }
     return {
       alias: definition.alias,
-      op: definition.aggregate.op as "count" | "min" | "max",
+      op: definition.op,
       ...(column === undefined ? {} : { column }),
     };
   });
-  const outputWordsPerTile = 1 + aggregates.length * 2;
-  const wgsl = reductionShader(predicate.compiled, aggregates, outputWordsPerTile);
-  return {
-    supported: true,
-    compiled: {
-      kind: "reduction",
-      columns: predicate.compiled.columns,
-      aggregates,
-      outputBinding: 3,
-      outputWordsPerTile,
-      tileRows: REDUCTION_TILE_ROWS,
-      wgsl,
-      cacheKey: wgsl,
-    },
-  };
 }
 
 function reductionShader(

@@ -143,7 +143,7 @@ function updateEncodedVectorGroupByState(
     const groupId = encoder.groupIdAt(index);
     let group = groupsById[groupId];
     if (group === undefined) {
-      group = getOrCreateGroupByValues(state, encoder.keyValues(groupId), options);
+      group = getOrCreateVectorGroupByValues(state, encoder.keyValues(groupId), options);
       groupsById[groupId] = group;
     }
     for (const input of aggregateInputs) {
@@ -154,10 +154,10 @@ function updateEncodedVectorGroupByState(
   return matched;
 }
 
-function getOrCreateGroupByValues(
+export function getOrCreateVectorGroupByValues(
   state: VectorGroupByState,
-  keyValues: Scalar[],
-  options: VectorGroupByOptions,
+  keyValues: readonly Scalar[],
+  options: VectorGroupByOptions = {},
 ): VectorGroup {
   const key = groupKey(keyValues);
   let group = state.groups.get(key);
@@ -170,7 +170,7 @@ function getOrCreateGroupByValues(
     );
   }
   group = {
-    keyValues,
+    keyValues: [...keyValues],
     states: createVectorAggregateStates(state.spec, options),
   };
   state.groups.set(key, group);

@@ -6,10 +6,11 @@ read or mutate browser globals.
 
 The current backend executes bounded selection and fused reduction fragments
 over `bool`, `u8`, `i32`, `u32`, and `f32` vectors. Reductions support exact
-counts and order-preserving `min`/`max` partials. Exact `f32` candidate blocks
-support dot product, squared L2 distance, cosine distance, paired 64-bit row-ID
-words, and stable tiled top-k up to 32 candidates. It preserves LakeQL null
-semantics, rejects numeric literals that WebGPU cannot compare with
+counts and order-preserving `min`/`max` partials; grouped reductions support one
+scalar key and an explicit limit of up to 32 groups. Exact `f32` candidate
+blocks support dot product, squared L2 distance, cosine distance, paired 64-bit
+row-ID words, and stable tiled top-k up to 32 candidates. It preserves LakeQL
+null semantics, rejects numeric literals that WebGPU cannot compare with
 CPU-equivalent precision, packs input columns into a fixed binding layout,
 enforces accelerator budgets, caches compiled pipelines by device generation,
 and destroys transient GPU resources deterministically.
@@ -90,9 +91,9 @@ dependency of this package and is never loaded by query-time code.
   synchronization, and before publishing mapped results.
 - `close()` destroys the active device and clears compilation state.
 
-Decoded batch input, CPU selection-mask output, aggregate snapshots,
-format-neutral exact-vector candidate blocks, and bounded resident exact-vector
-blocks are supported. Grouped reductions, general resident columns, and
-quantized vector encodings remain governed by the generic physical contract and
-are added as backend capabilities as their semantic and resource contracts are
-implemented.
+Decoded batch input, CPU selection-mask output, aggregate and grouped-aggregate
+snapshots, format-neutral exact-vector candidate blocks, and bounded resident
+exact-vector blocks are supported. Multi-key and dictionary-key grouped
+reductions, general resident columns, and quantized vector encodings remain
+governed by the generic physical contract and are added as backend capabilities
+as their semantic and resource contracts are implemented.

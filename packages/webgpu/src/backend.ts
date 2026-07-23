@@ -5,7 +5,10 @@ import {
   type BackendRejection,
   type CompiledPhysicalFragment,
   createVectorAggregateStates,
+  createVectorGroupByState,
+  enforceVectorGroupByBudget,
   estimateBatchBytes,
+  getOrCreateVectorGroupByValues,
   LakeqlError,
   mergePhysicalScoredCandidates,
   type PhysicalCapabilities,
@@ -17,15 +20,24 @@ import {
   type PhysicalVectorCandidateBlock,
   physicalVectorCandidateBytes,
   restoreVectorAggregateStates,
+  restoreVectorGroupByState,
   selectedRowCount,
   snapshotVectorAggregateStates,
+  snapshotVectorGroupByState,
   throwIfAborted,
   updateVectorAggregateStateValue,
+  updateVectorGroupAggregateValue,
   type Vector,
   type VectorAggregateStates,
+  type VectorGroupByOptions,
+  type VectorGroupByState,
   validatePhysicalFragment,
   validatePhysicalVectorCandidateBlock,
 } from "lakeql-core";
+import {
+  type CompiledWebGpuGroupedReduction,
+  compileWebGpuGroupedReduction,
+} from "./grouped-reduction.js";
 import {
   type CompiledWebGpuPredicate,
   compileWebGpuPredicate,
@@ -71,7 +83,11 @@ export interface WebGpuCostModel {
 }
 
 interface WebGpuCompiledState {
-  readonly kernel: CompiledWebGpuPredicate | CompiledWebGpuReduction | CompiledWebGpuVectorTopK;
+  readonly kernel:
+    | CompiledWebGpuPredicate
+    | CompiledWebGpuReduction
+    | CompiledWebGpuGroupedReduction
+    | CompiledWebGpuVectorTopK;
 }
 
 type WebGpuKernel = WebGpuCompiledState["kernel"];
@@ -119,11 +135,13 @@ function compileWebGpuKernel(fragment: PhysicalFragment) {
   if (selection.supported) return selection;
   const reduction = compileWebGpuReduction(fragment);
   if (reduction.supported) return reduction;
+  const groupedReduction = compileWebGpuGroupedReduction(fragment);
+  if (groupedReduction.supported) return groupedReduction;
   const vector = compileWebGpuVectorTopK(fragment);
   if (vector.supported) return vector;
   return {
     supported: false as const,
-    reason: `${selection.reason}; ${reduction.reason}; ${vector.reason}`,
+    reason: `${selection.reason}; ${reduction.reason}; ${groupedReduction.reason}; ${vector.reason}`,
   };
 }
 
@@ -208,6 +226,14 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
           notes: ["Exact count and order-preserving min/max partial snapshots"],
         },
         {
+          kind: "grouped-reduce",
+          inputShapes: SUPPORTED_SHAPES,
+          outputShapes: ["u32", "i32", "f32", "bool"],
+          supportsNulls: true,
+          supportsDictionary: false,
+          notes: ["One scalar key, at most 32 groups, and exact count/min/max partial snapshots"],
+        },
+        {
           kind: "vector-distance",
           inputShapes: ["f32", "u32"],
           outputShapes: ["f32"],
@@ -226,6 +252,7 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
       ],
       fusedSequences: [
         ["select", "reduce"],
+        ["select", "grouped-reduce"],
         ["vector-distance", "bounded-top-k"],
       ],
       vectorShapes: SUPPORTED_SHAPES,
@@ -569,6 +596,9 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
     if (kernel.kind === "reduction") {
       return this.#executeReduction(compiled.fragment, kernel, input, context);
     }
+    if (kernel.kind === "grouped-reduction") {
+      return this.#executeReduction(compiled.fragment, kernel, input, context);
+    }
     const predicate = kernel;
     const transfer = physicalTransferBytes(compiled.fragment, kernel);
     enforceRuntimeBudget(compiled.fragment.id, context, transfer);
@@ -709,14 +739,16 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
 
   async #executeReduction(
     fragment: PhysicalFragment,
-    reduction: CompiledWebGpuReduction,
+    reduction: CompiledWebGpuReduction | CompiledWebGpuGroupedReduction,
     input: Extract<PhysicalFragmentInput, { kind: "batch" }>,
     context: BackendExecutionContext,
   ): Promise<PhysicalFragmentResult> {
-    if (context.priorOutput !== undefined && context.priorOutput.kind !== "aggregate-snapshot") {
+    const outputKind =
+      reduction.kind === "grouped-reduction" ? "grouped-aggregate-snapshot" : "aggregate-snapshot";
+    if (context.priorOutput !== undefined && context.priorOutput.kind !== outputKind) {
       throw new LakeqlError(
         "LAKEQL_TYPE_ERROR",
-        `Physical prior output ${context.priorOutput.kind} does not match aggregate-snapshot`,
+        `Physical prior output ${context.priorOutput.kind} does not match ${outputKind}`,
       );
     }
     const signal = context.budget?.signal;
@@ -821,6 +853,73 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
       },
       signal,
     );
+    if (reduction.kind === "grouped-reduction") {
+      const grouped = fragment.operators.at(-1);
+      if (grouped?.kind !== "grouped-reduce") {
+        throw new LakeqlError(
+          "LAKEQL_TYPE_ERROR",
+          "Compiled WebGPU grouped reduction has no grouped-reduce operator",
+        );
+      }
+      const groupOptions = {
+        ...(context.budget === undefined ? {} : { budget: context.budget }),
+        maxGroups: reduction.maxGroups,
+      };
+      const state =
+        context.priorOutput?.kind === "grouped-aggregate-snapshot"
+          ? restoreVectorGroupByState(
+              grouped.keys,
+              grouped.aggregates,
+              context.priorOutput.snapshot,
+              groupOptions,
+            )
+          : createVectorGroupByState(grouped.keys, grouped.aggregates);
+      const selectedRows = mergeGroupedReductionPartials(
+        state,
+        reduction,
+        partials,
+        tileCount,
+        groupOptions,
+      );
+      enforceVectorGroupByBudget(state, context.budget);
+      const elapsedMs = now() - startedAt;
+      enforceElapsedBudget(fragment.id, context, elapsedMs, now);
+      const outputRows = state.groups.size;
+      if (
+        context.enforceOutputRows !== false &&
+        context.budget?.maxOutputRows !== undefined &&
+        outputRows > context.budget.maxOutputRows
+      ) {
+        throw new LakeqlError(
+          "LAKEQL_BUDGET_EXCEEDED",
+          `Query exceeded output rows budget (${outputRows} > ${context.budget.maxOutputRows})`,
+          {
+            resource: "output rows",
+            actual: outputRows,
+            limit: context.budget.maxOutputRows,
+            fragmentId: fragment.id,
+          },
+        );
+      }
+      return {
+        output: {
+          kind: "grouped-aggregate-snapshot",
+          snapshot: snapshotVectorGroupByState(state),
+        },
+        metrics: {
+          backendId: this.id,
+          elapsedMs,
+          inputRows: input.batch.rowCount,
+          selectedRows,
+          outputRows,
+          inputBytes: estimateBatchBytes(input.batch),
+          uploadBytes: transfer.uploadBytes,
+          readbackBytes: transfer.outputBytes,
+          dispatches: tileCount === 0 ? 0 : 1,
+          replayed: false,
+        },
+      };
+    }
     const states =
       context.priorOutput?.kind === "aggregate-snapshot"
         ? restoreVectorAggregateStates(context.priorOutput.snapshot, {
@@ -1267,7 +1366,8 @@ function physicalTransferBytes(
   const packedInputBytes = alignedBufferBytes(
     predicate.columns.length * fragment.input.rowCount * 4,
   );
-  const parameterBytes = predicate.kind === "reduction" ? 8 : 0;
+  const parameterBytes =
+    predicate.kind === "reduction" || predicate.kind === "grouped-reduction" ? 8 : 0;
   const uploadBytes = packedInputBytes * 2 + parameterBytes;
   return {
     uploadBytes,
@@ -1372,6 +1472,92 @@ function mergeReductionPartials(
     }
   }
   return selectedRows;
+}
+
+function mergeGroupedReductionPartials(
+  state: VectorGroupByState,
+  reduction: CompiledWebGpuGroupedReduction,
+  partials: Uint32Array,
+  tileCount: number,
+  options: VectorGroupByOptions,
+): number {
+  let selectedRows = 0;
+  for (let tile = 0; tile < tileCount; tile += 1) {
+    const tileOffset = tile * reduction.outputWordsPerTile;
+    selectedRows += partials[tileOffset] ?? 0;
+    if (partials[tileOffset + 2] === 1) {
+      throw new LakeqlError(
+        "LAKEQL_GROUP_LIMIT_EXCEEDED",
+        `Query exceeded group budget (${reduction.maxGroups + 1} > ${reduction.maxGroups})`,
+        { limit: reduction.maxGroups, actual: reduction.maxGroups + 1 },
+      );
+    }
+    const groupCount = partials[tileOffset + 1] ?? 0;
+    for (let groupIndex = 0; groupIndex < groupCount; groupIndex += 1) {
+      const groupOffset = tileOffset + 3 + groupIndex * reduction.outputWordsPerGroup;
+      if (partials[groupOffset] !== 1) continue;
+      const key = groupedReductionKey(
+        reduction.key,
+        partials[groupOffset + 2] ?? 0,
+        partials[groupOffset + 1] === 1,
+      );
+      const group = getOrCreateVectorGroupByValues(state, [key], options);
+      for (
+        let aggregateIndex = 0;
+        aggregateIndex < reduction.aggregates.length;
+        aggregateIndex += 1
+      ) {
+        const aggregate = reduction.aggregates[aggregateIndex];
+        if (aggregate === undefined) continue;
+        const stateValue = group.states[aggregate.alias];
+        if (stateValue === undefined) {
+          throw new LakeqlError(
+            "LAKEQL_TYPE_ERROR",
+            `Missing WebGPU grouped aggregate state ${aggregate.alias}`,
+          );
+        }
+        const valueOffset = groupOffset + 3 + aggregateIndex * 2;
+        const valid = partials[valueOffset] === 1;
+        const bits = partials[valueOffset + 1] ?? 0;
+        if (aggregate.op === "count") {
+          if (stateValue.op !== "count") {
+            throw new LakeqlError(
+              "LAKEQL_TYPE_ERROR",
+              `WebGPU grouped aggregate state ${aggregate.alias} is not count`,
+            );
+          }
+          stateValue.count += bits;
+        } else if (valid) {
+          updateVectorGroupAggregateValue(
+            group,
+            aggregate.alias,
+            reductionValue(aggregate, bits),
+            options,
+          );
+        }
+      }
+    }
+  }
+  return selectedRows;
+}
+
+function groupedReductionKey(
+  key: WebGpuPredicateColumn,
+  bits: number,
+  valid: boolean,
+): number | boolean | null {
+  if (!valid) return null;
+  switch (key.shape) {
+    case "f32":
+      return new Float32Array(Uint32Array.of(bits).buffer)[0] ?? 0;
+    case "i32":
+      return new Int32Array(Uint32Array.of(bits).buffer)[0] ?? 0;
+    case "bool":
+      return bits !== 0;
+    case "u32":
+    case "u8":
+      return bits;
+  }
 }
 
 function reductionValue(aggregate: WebGpuReductionAggregate, bits: number): number | boolean {
