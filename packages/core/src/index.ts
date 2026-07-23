@@ -11,6 +11,7 @@ export * from "./memory-store.js";
 export * from "./object-key.js";
 export * from "./object-store-cache.js";
 export * from "./object-store-json-cache.js";
+export * from "./physical.js";
 export * from "./predicate-plan.js";
 export * from "./query.js";
 export * from "./runtime.js";

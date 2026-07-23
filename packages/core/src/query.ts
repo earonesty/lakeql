@@ -106,6 +106,14 @@ export interface QueryBudget {
   maxMemoryBytes?: number;
   /** Maximum object-store reads allowed to be in flight at once. */
   maxConcurrentReads?: number;
+  /** Maximum live accelerator allocations charged to this query. */
+  maxAcceleratorMemoryBytes?: number;
+  /** Maximum bytes uploaded to accelerators by this query. */
+  maxAcceleratorUploadBytes?: number;
+  /** Maximum bytes read back from accelerators by this query. */
+  maxAcceleratorReadbackBytes?: number;
+  /** Maximum accelerator dispatches issued by this query. */
+  maxAcceleratorDispatches?: number;
   /** Abort query planning or scanning at await boundaries. */
   signal?: AbortSignal;
 }
