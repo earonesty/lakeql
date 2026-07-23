@@ -1,0 +1,46 @@
+{
+  "datasetVersion": 2,
+  "deletedOffsets": [
+    2,
+    7,
+    13
+  ],
+  "deletedRowIds": [
+    "2",
+    "7",
+    "13"
+  ],
+  "originalRowIds": [
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15"
+  ],
+  "producer": {
+    "package": "pylance",
+    "version": "8.0.0"
+  },
+  "rowCount": 13,
+  "sha256": {
+    "_deletions/0-1-2929236741175439801.arrow": "2e1f41d7a16cca6348ef9a3bcfa8b36ca706f0dd620255ecce78e1e959d8931d",
+    "_transactions/0-61cec259-f4e8-4b75-b8d2-ef45eba0a4d4.txn": "f0e3d21f3d594fc831a59d474e3a8a83ef6fe20123d36c0bb29fa7e77d689e50",
+    "_transactions/1-0ae203ef-a3ac-400d-aaf0-a5d4bb21beff.txn": "e846a54d7ab968ef3791b312cbd8ef0acc66b10c615b750f4c218509d9e1e7b2",
+    "_versions/18446744073709551613.manifest": "815dd8fac323830ba497e26bb9d85bcc6d53339f460c730ea64a2efdd3533da1",
+    "_versions/18446744073709551614.manifest": "a8b87025b5b0f5795680604e355fae651ed72f3a3982fd06c8c73048d76e132b",
+    "_versions/latest_version_hint.json": "732322c128ed67841ef5aa42c7cd04ffcd74a61b2d17d710cd502b713d62930d",
+    "data/1010000001010010010011007455624e089c03c62b8eff2f81.lance": "2e9c9009a3e9b3659113951480020111be3beda681c01b845a7a87c0270eab30"
+  },
+  "storageVersion": "2.0"
+}

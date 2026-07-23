@@ -1,0 +1,51 @@
+{
+  "datasetVersion": 1,
+  "producer": {
+    "package": "pylance",
+    "version": "8.0.0"
+  },
+  "rowCount": 4096,
+  "sampleProjection": {
+    "rowIds": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4095",
+      "1"
+    ],
+    "rows": [
+      {
+        "serial": 0,
+        "status": null
+      },
+      {
+        "serial": 1,
+        "status": "LIVE"
+      },
+      {
+        "serial": 2,
+        "status": "PENDING"
+      },
+      {
+        "serial": 3,
+        "status": "DEAD"
+      },
+      {
+        "serial": 4095,
+        "status": "DEAD"
+      },
+      {
+        "serial": 1,
+        "status": "LIVE"
+      }
+    ]
+  },
+  "sha256": {
+    "_transactions/0-a549e9b4-ddd0-46bc-842b-1167a58d2a34.txn": "f73e4a80c7cdf393a86c74fee8c02c5bb37a2a57588e92fba48152201af968ca",
+    "_versions/18446744073709551614.manifest": "7451ce8965a944e2eb2a4420c06b3da75216fb714b18fe8ad107d76e4c5c8be6",
+    "_versions/latest_version_hint.json": "2430f1a2ad2982d0067885488a4c89e21ad1d7c83b115ba8f1b20acc88dfaea8",
+    "data/1001010110111101011110107e4c22499ba37c5596e4a513c4.lance": "80ce0ae91d3f39cc063294b3fde8059866677476594f6183502c8539e1fb4fbe"
+  },
+  "storageVersion": "2.0"
+}

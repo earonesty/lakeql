@@ -53,3 +53,4 @@ Plans and follow-up trackers are contributor notes. They describe design work
 that may already be implemented, superseded, or awaiting another pass.
 
 - [DX follow-ups](./dx-followups.md)
+- [Lance vector search at the edge](./lance-edge-vector-search.md)

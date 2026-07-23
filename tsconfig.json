@@ -8,6 +8,7 @@
     { "path": "packages/fs" },
     { "path": "packages/parquet" },
     { "path": "packages/iceberg" },
+    { "path": "packages/lance" },
     { "path": "packages/http" },
     { "path": "packages/r2" },
     { "path": "packages/s3" },

@@ -11,7 +11,8 @@
       "!**/dist",
       "!**/coverage",
       "!fixtures/data",
-      "!fixtures/external/iceberg-reference"
+      "!fixtures/external/iceberg-reference",
+      "!packages/lance/fixtures"
     ]
   },
   "formatter": {

@@ -1,0 +1,20 @@
+{
+  "datasetVersion": 1,
+  "producer": {
+    "package": "pylance",
+    "version": "8.0.0"
+  },
+  "rowCount": 3,
+  "rowIds": [
+    "0",
+    "1",
+    "2"
+  ],
+  "sha256": {
+    "_transactions/0-72d6da97-785b-4188-be63-2e249628e744.txn": "aee3d7fec8b0cb95a5191b5e8ea7b7b177dc52d3dcd9e88724bc10476b5a5865",
+    "_versions/18446744073709551614.manifest": "16c53dbfdf8a403dd25c926fa845152c549dc758a6b0eb4e53fcb218217a9355",
+    "_versions/latest_version_hint.json": "2430f1a2ad2982d0067885488a4c89e21ad1d7c83b115ba8f1b20acc88dfaea8",
+    "data/0101101011000111001010100bf12447e9be8fa2d8fb251699.lance": "3a7946813aef783e20559877ad0115a555e64d8c91735fa02128531a9e146dc5"
+  },
+  "storageVersion": "2.0"
+}
