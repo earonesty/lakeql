@@ -1,0 +1,49 @@
+{
+  "name": "lakeql-lance",
+  "sideEffects": false,
+  "version": "0.1.0",
+  "description": "Bounded random-access Lance reader for JavaScript runtimes",
+  "keywords": [
+    "lance",
+    "lakehouse",
+    "random-access",
+    "object-storage",
+    "cloudflare-workers"
+  ],
+  "author": "Erik Aronesty",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "prepack": "pnpm -w build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/earonesty/lakeql.git",
+    "directory": "packages/lance"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "lakeql-core": "workspace:*"
+  },
+  "devDependencies": {
+    "lakeql-http": "workspace:*"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

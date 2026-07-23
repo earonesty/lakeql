@@ -1,0 +1,137 @@
+{
+  "datasetVersion": 1,
+  "producer": {
+    "package": "pylance",
+    "version": "8.0.0"
+  },
+  "rowCount": 64,
+  "rowIds": [
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16",
+    "17",
+    "18",
+    "19",
+    "20",
+    "21",
+    "22",
+    "23",
+    "24",
+    "25",
+    "26",
+    "27",
+    "28",
+    "29",
+    "30",
+    "31",
+    "32",
+    "33",
+    "34",
+    "35",
+    "36",
+    "37",
+    "38",
+    "39",
+    "40",
+    "41",
+    "42",
+    "43",
+    "44",
+    "45",
+    "46",
+    "47",
+    "48",
+    "49",
+    "50",
+    "51",
+    "52",
+    "53",
+    "54",
+    "55",
+    "56",
+    "57",
+    "58",
+    "59",
+    "60",
+    "61",
+    "62",
+    "63"
+  ],
+  "sampleProjection": {
+    "rowIds": [
+      "31",
+      "0",
+      "31",
+      "47",
+      "9"
+    ],
+    "rows": [
+      {
+        "mark_text": "MARK 031",
+        "owner_name": "Owner 3",
+        "serial": 10000031,
+        "source_url": "https://example.test/marks/10000031",
+        "status": "DEAD"
+      },
+      {
+        "mark_text": "MARK 000",
+        "owner_name": "Owner 0",
+        "serial": 10000000,
+        "source_url": "https://example.test/marks/10000000",
+        "status": "LIVE"
+      },
+      {
+        "mark_text": "MARK 031",
+        "owner_name": "Owner 3",
+        "serial": 10000031,
+        "source_url": "https://example.test/marks/10000031",
+        "status": "DEAD"
+      },
+      {
+        "mark_text": "MARK 047",
+        "owner_name": "Owner 5",
+        "serial": 10000047,
+        "source_url": "https://example.test/marks/10000047",
+        "status": "PENDING"
+      },
+      {
+        "mark_text": null,
+        "owner_name": "Owner 2",
+        "serial": 10000009,
+        "source_url": "https://example.test/marks/10000009",
+        "status": "LIVE"
+      }
+    ],
+    "select": [
+      "serial",
+      "mark_text",
+      "owner_name",
+      "status",
+      "source_url"
+    ]
+  },
+  "sha256": {
+    "_transactions/0-24367271-a313-418a-a39a-7df8969b9cdc.txn": "44cbd45861e4e386c1041d93414c07506059cc31bf64bac4feab8cd70b6b2833",
+    "_versions/18446744073709551614.manifest": "a495cdad6fff5a859383c55e8d08dc558e53b771dd73742aca65c3743ff5acbc",
+    "_versions/latest_version_hint.json": "2430f1a2ad2982d0067885488a4c89e21ad1d7c83b115ba8f1b20acc88dfaea8",
+    "data/00110011000000010010110084cb40464aa891d71a1aae8121.lance": "f724c6d4f6b0ee738716d77faba3bfa7453ce8539809500470421a28488bffef",
+    "data/100101111000001001101110abadb8470f95abf90221c570ac.lance": "1efc702f2a6138c1b870d6dba4b806058c38c0cb1dbdf4be80b2a243039bd947",
+    "data/1100010111110010011010104e961442d88b89f721fa2d8120.lance": "5d0d7ff29ad0506730d75f2a659c93753cdf5270862989b569d52b1a604ae0ab",
+    "data/111101000111001101000001e813de4ef98c3b06b06c9104b7.lance": "1b32d40da0de1fd6e25048fccac04546c3b8595c9d729d72014ab9e01e84916a"
+  },
+  "storageVersion": "2.0"
+}

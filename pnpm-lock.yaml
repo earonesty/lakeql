@@ -192,6 +192,16 @@ importers:
         specifier: ^8.5.0
         version: 8.5.1(postcss@8.5.15)(typescript@6.0.3)
 
+  packages/lance:
+    dependencies:
+      lakeql-core:
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      lakeql-http:
+        specifier: workspace:*
+        version: link:../http
+
   packages/opfs:
     dependencies:
       lakeql-core:

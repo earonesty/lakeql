@@ -14,7 +14,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["packages/*/src/**"],
-      exclude: ["**/bin.ts", "**/*.test.ts", "**/*.workerd.ts"],
+      exclude: ["**/bin.ts", "**/*.test.ts", "**/*.workerd.ts", "**/*.generated.ts"],
       thresholds: {
         lines: 90,
         functions: 90,
