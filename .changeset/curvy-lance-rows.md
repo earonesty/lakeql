@@ -1,6 +1,7 @@
 ---
 "lakeql-lance": minor
 "lakeql-core": patch
+"lakeql": minor
 ---
 
 Add snapshot-safe projected materialization for stable Lance row IDs through bounded
