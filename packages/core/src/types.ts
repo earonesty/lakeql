@@ -70,6 +70,10 @@ export interface SliceResult {
 export interface QueryStats {
   queryId: string;
   elapsedMs: number;
+  planningMs?: number;
+  footerFetchMs?: number;
+  objectStoreWaitMs?: number;
+  decodeMs?: number;
 
   manifestsRead: number;
   manifestsSkipped: number;
@@ -80,10 +84,14 @@ export interface QueryStats {
 
   rowGroupsRead: number;
   rowGroupsSkipped: number;
+  rowGroupsPlanned?: number;
+  rowGroupsTotal?: number;
 
   columnsRead: string[];
 
   bytesRequested: number;
+  /** Bytes transferred by ranged ObjectStore reads, excluding logical file-size charges. */
+  physicalBytesRequested?: number;
   rangeRequests: number;
 
   rowsDecoded: number;

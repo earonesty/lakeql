@@ -1,6 +1,6 @@
 {
   "name": "lakeql-sql",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "lakeql SQL dialect: parser and SQL-to-AST compiler",
   "keywords": [
     "sql",

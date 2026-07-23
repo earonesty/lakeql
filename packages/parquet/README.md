@@ -16,6 +16,8 @@ Parquet metadata, row-group planning, or writer APIs.
   object store.
 - `readParquetMetadata` reads footer metadata through ranged object-store
   access.
+- `encodedParquetMetadataCache` adapts persistent byte caches to parsed metadata
+  without losing bigint or byte fields.
 - `planRowGroups` and `planRowGroupsFromMetadata` expose row-group pruning.
 - `rejectUnsupportedParquetSchema` rejects unsupported nested schema features
   before rows are returned.

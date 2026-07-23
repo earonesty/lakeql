@@ -49,7 +49,7 @@ export function cachedRangeBuffer(
   const pending = new Map<string, Promise<RangeCacheEntry>>();
   let cachedBytes = 0;
 
-  return {
+  const buffer: StoreAsyncBuffer = {
     byteLength: file.byteLength,
     ...(file.etag === undefined ? {} : { etag: file.etag }),
     async slice(start, end) {
@@ -94,6 +94,13 @@ export function cachedRangeBuffer(
       return sliceEntry(entry, start, normalizedEnd);
     },
   };
+  buffer.prefetch = (ranges) =>
+    prefetchRetainableRanges(buffer, ranges, file.byteLength, {
+      maxBytes,
+      maxEntryBytes,
+      coalesceBytes,
+    });
+  return buffer;
 }
 
 function sharedCachedRangeBuffer(
@@ -104,7 +111,7 @@ function sharedCachedRangeBuffer(
   options: { maxBytes: number; maxEntryBytes: number; coalesceBytes: number },
 ): StoreAsyncBuffer {
   const pending = new Map<string, Promise<ArrayBuffer>>();
-  return {
+  const buffer: StoreAsyncBuffer = {
     byteLength: file.byteLength,
     ...(file.etag === undefined ? {} : { etag: file.etag }),
     async slice(start, end) {
@@ -136,6 +143,38 @@ function sharedCachedRangeBuffer(
       return sliceBuffer(bytes, start - request.start, normalizedEnd - request.start);
     },
   };
+  buffer.prefetch = (ranges) => prefetchRetainableRanges(buffer, ranges, file.byteLength, options);
+  return buffer;
+}
+
+async function prefetchRetainableRanges(
+  file: StoreAsyncBuffer,
+  ranges: readonly { start: number; end: number }[],
+  fileLength: number,
+  options: { maxBytes: number; maxEntryBytes: number; coalesceBytes: number },
+): Promise<void> {
+  const retained: { start: number; end: number }[] = [];
+  const seen = new Set<string>();
+  let retainedBytes = 0;
+  for (const range of ranges) {
+    const request = coalescedRange(fileLength, range.start, range.end, options.coalesceBytes);
+    const bytes = request.end - request.start;
+    const key = `${request.start}:${request.end}`;
+    if (
+      bytes <= 0 ||
+      bytes > options.maxEntryBytes ||
+      retainedBytes + bytes > options.maxBytes ||
+      seen.has(key)
+    ) {
+      continue;
+    }
+    seen.add(key);
+    retained.push(request);
+    retainedBytes += bytes;
+  }
+  await Promise.all(
+    retained.map((range) => file.slice(range.start, range.end).then(() => undefined)),
+  );
 }
 
 function coalescedRange(

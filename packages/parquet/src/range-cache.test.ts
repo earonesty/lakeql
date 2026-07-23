@@ -67,6 +67,53 @@ describe("cachedRangeBuffer", () => {
     expect(slices).toBe(1);
   });
 
+  it("prefetches retainable coalesced ranges concurrently and serves later slices from cache", async () => {
+    const source = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
+    let slices = 0;
+    let active = 0;
+    let peakActive = 0;
+    const file: StoreAsyncBuffer = {
+      byteLength: source.byteLength,
+      async slice(start, end) {
+        slices += 1;
+        active += 1;
+        peakActive = Math.max(peakActive, active);
+        await Promise.resolve();
+        active -= 1;
+        return source.buffer.slice(start, end);
+      },
+    };
+    const cached = cachedRangeBuffer(file, { maxBytes: 8, coalesceBytes: 4 }, "prefetch");
+
+    await cached.prefetch?.([
+      { start: 1, end: 2 },
+      { start: 2, end: 3 },
+      { start: 5, end: 6 },
+    ]);
+    await expect(bytes(cached.slice(2, 4))).resolves.toEqual([3, 4]);
+    await expect(bytes(cached.slice(6, 8))).resolves.toEqual([7, 8]);
+
+    expect(slices).toBe(2);
+    expect(peakActive).toBe(2);
+  });
+
+  it("does not prefetch ranges that cannot be retained within the cache budget", async () => {
+    let slices = 0;
+    const file = storeBuffer([1, 2, 3, 4, 5, 6, 7, 8], () => {
+      slices += 1;
+    });
+    const cached = cachedRangeBuffer(file, { maxBytes: 4, coalesceBytes: 4 }, "bounded-prefetch");
+
+    await cached.prefetch?.([
+      { start: 0, end: 1 },
+      { start: 4, end: 5 },
+    ]);
+    expect(slices).toBe(1);
+
+    await cached.slice(4, 5);
+    expect(slices).toBe(2);
+  });
+
   it("does not cache ranges larger than the entry budget", async () => {
     let slices = 0;
     const source = new Uint8Array([1, 2, 3, 4, 5, 6]);

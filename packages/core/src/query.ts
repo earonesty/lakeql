@@ -192,6 +192,9 @@ export interface ScanTaskPlanOptions {
   where?: Expr;
   partitionValues: Record<string, string>;
   object?: ObjectInfo;
+  stats?: QueryStats;
+  budget?: QueryBudget;
+  now?: () => number;
 }
 
 export interface ScanTaskPlan {
@@ -383,6 +386,7 @@ export interface ExplainJson {
   filesSkipped: number;
   projectedColumns: string[];
   predicatePlan: PredicatePlan;
+  metrics?: QueryStats;
   windowPlan?: WindowExplainPlan;
   tasks: TaskInput[];
 }
@@ -564,6 +568,10 @@ export class QueryBuilder {
 
   explain(): Promise<ExplainResult> {
     return this.run().explain();
+  }
+
+  analyze(): Promise<ExplainResult> {
+    return this.run().analyze();
   }
 
   planTasks(): Promise<TaskInput[]> {
@@ -1856,6 +1864,7 @@ export class QueryResult {
         partitionColumns: partitionColumnsFromTasks(tasks),
         rowGroupStatsColumns: projectedColumns,
       }),
+      metrics: { ...this.stats, columnsRead: [...this.stats.columnsRead] },
       ...(this.config.windows === undefined
         ? {}
         : {
@@ -1881,8 +1890,18 @@ export class QueryResult {
     };
   }
 
+  async analyze(): Promise<ExplainResult> {
+    for await (const _batch of this.batches()) {
+      // Drain execution without retaining output rows; stats remain on this result.
+    }
+    return this.explain();
+  }
+
   private async tasksFromObjects(objects: ObjectInfo[]): Promise<TaskInput[]> {
     const config = this.config;
+    const startedAt = config.now();
+    this.stats.rowGroupsPlanned = 0;
+    this.stats.rowGroupsTotal = 0;
     const projectedColumns =
       config.windows === undefined
         ? projectedReadColumns(config.select, config.where, config.orderBy, config.projections)
@@ -1898,6 +1917,9 @@ export class QueryResult {
       const scanPlan = await config.scanner.planTask?.(object.path, {
         object,
         partitionValues,
+        stats: this.stats,
+        budget: config.budget,
+        now: config.now,
         ...(physicalColumns !== undefined && physicalColumns.length > 0
           ? { columns: physicalColumns }
           : {}),
@@ -1916,11 +1938,13 @@ export class QueryResult {
       if (windowTaskPlan !== undefined) task.window = windowTaskPlan;
       tasks.push(task);
     }
+    this.stats.planningMs = (this.stats.planningMs ?? 0) + (config.now() - startedAt);
     return tasks;
   }
 
   private async planObjects(): Promise<{ planned: ObjectInfo[]; skipped: number }> {
     const config = this.config;
+    const startedAt = config.now();
     // Lazily load the geospatial backend before any row is evaluated, but only
     // if this query's filter/projection expressions actually use a spatial
     // function that needs it. Every read path funnels through planObjects().
@@ -1968,6 +1992,7 @@ export class QueryResult {
         ...(config.where !== undefined ? { where: config.where } : {}),
       });
     }
+    this.stats.planningMs = (this.stats.planningMs ?? 0) + (config.now() - startedAt);
     return { planned, skipped };
   }
 
@@ -3755,22 +3780,22 @@ function enforceBudget(
   const elapsedMs = now() - startedAt;
   stats.elapsedMs = elapsedMs;
   if (budget.maxFiles !== undefined && stats.filesRead > budget.maxFiles) {
-    throwBudget("files", budget.maxFiles, stats.filesRead);
+    throwBudget("files", budget.maxFiles, stats.filesRead, stats);
   }
   if (budget.maxBytes !== undefined && stats.bytesRequested > budget.maxBytes) {
-    throwBudget("bytes", budget.maxBytes, stats.bytesRequested);
+    throwBudget("bytes", budget.maxBytes, stats.bytesRequested, stats);
   }
   if (budget.maxRowsDecoded !== undefined && stats.rowsDecoded > budget.maxRowsDecoded) {
-    throwBudget("rows decoded", budget.maxRowsDecoded, stats.rowsDecoded);
+    throwBudget("rows decoded", budget.maxRowsDecoded, stats.rowsDecoded, stats);
   }
   if (budget.maxOutputRows !== undefined && stats.rowsReturned > budget.maxOutputRows) {
-    throwBudget("output rows", budget.maxOutputRows, stats.rowsReturned);
+    throwBudget("output rows", budget.maxOutputRows, stats.rowsReturned, stats);
   }
   if (budget.maxRangeRequests !== undefined && stats.rangeRequests > budget.maxRangeRequests) {
-    throwBudget("range requests", budget.maxRangeRequests, stats.rangeRequests);
+    throwBudget("range requests", budget.maxRangeRequests, stats.rangeRequests, stats);
   }
   if (budget.maxElapsedMs !== undefined && elapsedMs > budget.maxElapsedMs) {
-    throwBudget("elapsed milliseconds", budget.maxElapsedMs, elapsedMs);
+    throwBudget("elapsed milliseconds", budget.maxElapsedMs, elapsedMs, stats);
   }
 }
 
@@ -3829,11 +3854,18 @@ function estimateOperatorMemoryBytes(value: unknown): number {
   return textEncoder.encode(stableStringify(jsonSafeValue(value))).byteLength;
 }
 
-function throwBudget(metric: string, limit: number, actual: number): never {
+function throwBudget(metric: string, limit: number, actual: number, stats?: QueryStats): never {
   throw new LakeqlError(
     "LAKEQL_BUDGET_EXCEEDED",
     `Query exceeded ${metric} budget (${actual} > ${limit}). Add a partition filter, date filter, h3 filter, or limit.`,
-    { metric, limit, actual },
+    {
+      metric,
+      limit,
+      actual,
+      ...(stats === undefined
+        ? {}
+        : { measurements: { ...stats, columnsRead: [...stats.columnsRead] } }),
+    },
   );
 }
 
@@ -3875,6 +3907,10 @@ function initialStats(queryId: string): QueryStats {
   return {
     queryId,
     elapsedMs: 0,
+    planningMs: 0,
+    footerFetchMs: 0,
+    objectStoreWaitMs: 0,
+    decodeMs: 0,
     manifestsRead: 0,
     manifestsSkipped: 0,
     filesPlanned: 0,
@@ -3882,8 +3918,11 @@ function initialStats(queryId: string): QueryStats {
     filesSkipped: 0,
     rowGroupsRead: 0,
     rowGroupsSkipped: 0,
+    rowGroupsPlanned: 0,
+    rowGroupsTotal: 0,
     columnsRead: [],
     bytesRequested: 0,
+    physicalBytesRequested: 0,
     rangeRequests: 0,
     rowsDecoded: 0,
     rowsMatched: 0,

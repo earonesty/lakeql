@@ -23,7 +23,7 @@ import {
 } from "lakeql-core";
 import { readParquetColumnBatchesFromFile } from "./column-batches.js";
 import { DecodedColumnCache } from "./decoded-column-cache.js";
-import { readParquetMetadataFromFile } from "./metadata-cache.js";
+import { readParquetMetadataFromFile, sharedParquetMetadataCache } from "./metadata-cache.js";
 import { readParquetObjectBatchesFromFile } from "./object-batches.js";
 import type { RangeCacheOptions } from "./range-cache.js";
 import { type ParquetRowGroupPlan, planRowGroupsFromMetadata } from "./row-group-plan.js";
@@ -46,6 +46,7 @@ export {
   aggregateParquetTask,
   aggregateParquetTasks,
 } from "./aggregate-task.js";
+export { encodedParquetMetadataCache } from "./metadata-cache.js";
 export type { ParquetRowGroupPlan, PlannedParquetRowGroup } from "./row-group-plan.js";
 export { planRowGroupsFromMetadata } from "./row-group-plan.js";
 export { rowGroupMayMatch, rowGroupMustMatch } from "./row-group-pruning.js";
@@ -1049,9 +1050,8 @@ export function createParquetLake(config: ParquetLakeConfig): Lake {
     config.cache !== undefined
       ? { ...scanRangeCache, sharedCache: scanRangeSharedCache, cacheOptions: config.cache }
       : { ...scanRangeCache, sharedCache: scanRangeSharedCache };
-  if (config.metadataCache !== undefined) scannerOptions.metadataCache = config.metadataCache;
-  else if (config.cache !== undefined)
-    scannerOptions.metadataCache = memoryCache<ParquetMetadata>();
+  scannerOptions.metadataCache =
+    config.metadataCache ?? sharedParquetMetadataCache(scanRangeSharedCache);
   if (config.cache !== undefined && sharedCache !== undefined) {
     scannerOptions.decodedColumnCache = new DecodedColumnCache(sharedCache, config.cache);
   }

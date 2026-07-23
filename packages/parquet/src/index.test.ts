@@ -1479,6 +1479,27 @@ describe("createParquetLake", () => {
     expect(result.stats.rowGroupsSkipped).toBe(2);
   });
 
+  it("analyzes Parquet execution with physical I/O, pruning, and decode measurements", async () => {
+    const analysis = await createParquetLake({ store })
+      .path(`data/${STATS.file}`)
+      .select(["id"])
+      .where(lt("metric", 50))
+      .analyze();
+
+    expect(analysis.json.metrics).toMatchObject({
+      rowGroupsRead: 1,
+      rowGroupsSkipped: 2,
+      rowGroupsPlanned: 1,
+      rowGroupsTotal: 3,
+      rowsDecoded: STATS.rowGroupSize,
+      rowsReturned: STATS.rowGroupSize,
+    });
+    expect(analysis.json.metrics?.rangeRequests).toBeGreaterThan(0);
+    expect(analysis.json.metrics?.physicalBytesRequested).toBeGreaterThan(0);
+    expect(analysis.json.metrics?.objectStoreWaitMs).toBeGreaterThanOrEqual(0);
+    expect(analysis.json.metrics?.decodeMs).toBeGreaterThanOrEqual(0);
+  });
+
   it("plans bounded row-group task ranges from Parquet footer statistics", async () => {
     const taskStore = memoryStore();
     await taskStore.put(`data/${STATS.file}`, readFileSync(fixturePath(STATS.file)));
@@ -1496,6 +1517,23 @@ describe("createParquetLake", () => {
 
     const explain = await query.explain();
     expect(explain.json.tasks[0]?.rowGroupRanges).toEqual([{ start: 1, end: 3 }]);
+    expect(explain.json.metrics).toMatchObject({
+      rowGroupsPlanned: 2,
+      rowGroupsTotal: 3,
+    });
+
+    const coldExplain = await createParquetLake({ store: taskStore })
+      .path(`data/${STATS.file}`)
+      .select(["id"])
+      .where(gte("metric", 100))
+      .explain();
+    expect(coldExplain.json.metrics).toMatchObject({
+      rowGroupsPlanned: 2,
+      rowGroupsTotal: 3,
+      rowsDecoded: 0,
+    });
+    expect(coldExplain.json.metrics?.rangeRequests).toBeGreaterThan(0);
+    expect(coldExplain.json.metrics?.physicalBytesRequested).toBeGreaterThan(0);
 
     const golden = readFileSync(fixturePath(MANIFESTS.parquetTaskManifest), "utf8").trim();
     await expect(query.taskManifest("job_stats").then(stableStringify)).resolves.toBe(golden);

@@ -1,5 +1,19 @@
 # lakeql-parquet
 
+## 0.4.0
+
+### Minor Changes
+
+- Expose query analysis measurements, include them in budget failures, optimize
+  Parquet `isIn` row-group pruning, and use explicitly configured concurrent reads
+  to prefetch bounded selected-column ranges. Cache parsed Parquet metadata within
+  each lake and add an encoded adapter for persistent byte caches.
+
+### Patch Changes
+
+- Updated dependencies
+  - lakeql-core@0.5.0
+
 ## 0.3.1
 
 ### Patch Changes
