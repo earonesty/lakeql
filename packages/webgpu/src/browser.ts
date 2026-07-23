@@ -1,12 +1,12 @@
-import type { WebGpuRuntime } from "./runtime.js";
+import type { WebGpuConstants, WebGpuRuntime } from "./runtime.js";
 
 export interface BrowserWebGpuSource {
   readonly gpu?: GPU;
 }
 
 export interface BrowserWebGpuConstants {
-  readonly GPUBufferUsage: typeof GPUBufferUsage;
-  readonly GPUMapMode: typeof GPUMapMode;
+  readonly GPUBufferUsage: WebGpuConstants["bufferUsage"];
+  readonly GPUMapMode: WebGpuConstants["mapMode"];
 }
 
 export function browserWebGpuRuntime(

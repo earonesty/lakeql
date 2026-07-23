@@ -7,7 +7,7 @@ import { Footer } from "apache-arrow/ipc/metadata/file";
 import "apache-arrow/ipc/metadata/message";
 import { ByteBuffer } from "flatbuffers";
 import { decompress } from "fzstd";
-import { LakeqlError } from "lakeql-core";
+import { LakeqlError } from "lakeql";
 import type { LanceReadContext } from "./io.js";
 import type { LanceFragment } from "./proto.js";
 

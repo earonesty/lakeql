@@ -1,7 +1,7 @@
 {
   "name": "lakeql-webgpu",
   "sideEffects": false,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "WebGPU physical execution backend for LakeQL",
   "keywords": [
     "lakeql",
@@ -41,7 +41,10 @@
   "engines": {
     "node": ">=22"
   },
-  "dependencies": {
+  "peerDependencies": {
+    "lakeql": "workspace:^"
+  },
+  "devDependencies": {
     "lakeql-core": "workspace:*"
   },
   "publishConfig": {

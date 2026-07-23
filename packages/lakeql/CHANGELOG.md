@@ -1,5 +1,22 @@
 # lakeql
 
+## 0.8.0
+
+### Minor Changes
+
+- f7e1c58: Add snapshot-safe projected materialization for stable Lance row IDs through bounded
+  object-store range reads, a broad scalar/binary/date/timestamp type matrix, sparse
+  deletion vectors, bounded official BTree exact-key and range lookup, and typed Lance
+  compatibility and snapshot errors. Add bounded IVF_FLAT vector search for L2,
+  cosine, and dot metrics with explicit dimension, partition, and candidate limits.
+  Support Lance dictionary-encoded UTF-8 projections and add a reproducible public
+  USPTO scattered-row HTTP range benchmark with physical I/O reporting.
+- f8a4d39: Add accelerator-neutral physical planning, type-preserving numeric vectors, and
+  the optional `lakeql-webgpu` backend. Support nullable selection, exact
+  count/min/max and bounded grouped reductions, exact f32 vector scoring with
+  stable bounded top-k, immutable device-resident vector candidates, accelerator
+  budgets, explain statistics, device-loss handling, and bounded CPU replay.
+
 ## 0.7.0
 
 ### Minor Changes

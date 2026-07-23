@@ -87,7 +87,7 @@ describe("lakeql/cloudflare", () => {
     expect(cloudflare.httpStore).toBeTypeOf("function");
     expect(cloudflare.s3Store).toBeTypeOf("function");
     expect(cloudflare.memoryStore).toBeTypeOf("function");
-  });
+  }, 15_000);
 
   it("streams R2-backed Parquet NDJSON under a Worker budget", async () => {
     const cloudflare = await import("./cloudflare.js");

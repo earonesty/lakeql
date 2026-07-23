@@ -13,7 +13,7 @@
     ]
   },
   "scripts": {
-    "build": "tsc -b && tsc -p fixtures",
+    "build": "tsc -b && pnpm --filter lakeql build && tsc -p fixtures",
     "test": "vitest run",
     "test:workerd": "vitest run -c vitest.workerd.config.ts",
     "test:conformance": "LAKEQL_CONFORMANCE=1 vitest run -c vitest.conformance.config.ts",
@@ -26,6 +26,7 @@
     "docs:compatibility": "node scripts/generate-compatibility.mjs",
     "check:compatibility": "node scripts/generate-compatibility.mjs --check",
     "check:large-files": "node scripts/check-large-files.mjs",
+    "check:packages": "node scripts/check-package-install.mjs",
     "fixtures": "pnpm --filter lakeql-fixtures generate",
     "fixtures:external": "pnpm --filter lakeql-fixtures fetch:external",
     "fixtures:iceberg": "pnpm --filter lakeql-fixtures generate:iceberg",
@@ -47,7 +48,7 @@
     "changeset": "changeset",
     "version": "changeset version",
     "release": "pnpm check && changeset publish",
-    "check": "pnpm lint && pnpm build && pnpm typecheck && pnpm check:compatibility && pnpm check:large-files && pnpm test && pnpm test:workerd && pnpm test:conformance && pnpm test:reference && pnpm coverage && node scripts/check-fixtures.mjs"
+    "check": "pnpm lint && pnpm build && pnpm typecheck && pnpm check:compatibility && pnpm check:large-files && pnpm check:packages && pnpm test && pnpm test:workerd && pnpm test:conformance && pnpm test:reference && pnpm coverage && node scripts/check-fixtures.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.0",

@@ -1,4 +1,4 @@
-import { type AggregateExpr, type AggregateSpec, lit, type PhysicalFragment } from "lakeql-core";
+import { type AggregateExpr, type AggregateSpec, lit, type PhysicalFragment } from "lakeql";
 import {
   type CompiledWebGpuPredicateExpression,
   compileWebGpuPredicateExpression,

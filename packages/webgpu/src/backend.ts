@@ -35,7 +35,7 @@ import {
   type VectorGroupByState,
   validatePhysicalFragment,
   validatePhysicalVectorCandidateBlock,
-} from "lakeql-core";
+} from "lakeql";
 import {
   type CompiledWebGpuGroupedReduction,
   compileWebGpuGroupedReduction,

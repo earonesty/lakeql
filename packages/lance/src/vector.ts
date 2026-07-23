@@ -1,4 +1,4 @@
-import { LakeqlError, type QueryBudget } from "lakeql-core";
+import { LakeqlError, type QueryBudget } from "lakeql";
 import {
   inspectLanceFile,
   materializeInspectedLanceFileRows,

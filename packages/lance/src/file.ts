@@ -4,7 +4,7 @@ import {
   type Row,
   type TimestampUnit,
   timestampFromEpoch,
-} from "lakeql-core";
+} from "lakeql";
 import type { ByteRange, LanceReadContext, RangeLease } from "./io.js";
 import {
   type LanceArrayEncoding,

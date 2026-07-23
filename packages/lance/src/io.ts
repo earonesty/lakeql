@@ -4,7 +4,7 @@ import {
   type QueryBudget,
   throwIfAborted,
   withObjectStoreReadControls,
-} from "lakeql-core";
+} from "lakeql";
 
 export interface ByteRange {
   offset: number;

@@ -5,7 +5,7 @@ import {
   type ObjectStore,
   type QueryBudget,
   type Row,
-} from "lakeql-core";
+} from "lakeql";
 import { readDeletedRowOffsets } from "./deletions.js";
 import { materializeFragmentRows } from "./file.js";
 import {

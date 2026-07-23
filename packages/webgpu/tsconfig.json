@@ -3,6 +3,9 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
+    "paths": {
+      "lakeql": ["../core/src/index.ts"]
+    },
     "types": ["@webgpu/types"]
   },
   "references": [{ "path": "../core" }],

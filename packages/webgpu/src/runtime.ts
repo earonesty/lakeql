@@ -1,4 +1,4 @@
-import { LakeqlError, PhysicalBackendExecutionError, throwIfAborted } from "lakeql-core";
+import { LakeqlError, PhysicalBackendExecutionError, throwIfAborted } from "lakeql";
 
 export interface WebGpuConstants {
   readonly bufferUsage: {

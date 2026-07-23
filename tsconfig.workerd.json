@@ -3,6 +3,10 @@
   "compilerOptions": {
     "composite": false,
     "noEmit": true,
+    "paths": {
+      "lakeql": ["./packages/core/src/index.ts"],
+      "lakeql-core": ["./packages/core/src/index.ts"]
+    },
     "types": ["@webgpu/types"]
   },
   "include": ["packages/**/*.workerd.ts"]
