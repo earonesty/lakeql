@@ -15,10 +15,145 @@ import {
   type LanceFragment,
   type LancePage,
   parseColumnMetadata,
+  parseFileDescriptor,
 } from "./proto.js";
 
 const DATA_FILE_FOOTER_BYTES = 40;
 const MAGIC = "LANC";
+
+export interface InspectedLanceFile {
+  path: string;
+  fileSize: number;
+  fields: LanceField[];
+  schemaMetadata: Record<string, Uint8Array>;
+  columns: LanceColumnMetadata[];
+  rowCount: number;
+}
+
+export async function inspectLanceFile(
+  context: LanceReadContext,
+  path: string,
+  knownFileSize?: number,
+): Promise<InspectedLanceFile> {
+  const fileSize = knownFileSize ?? (await requiredHead(context, path)).size;
+  if (fileSize < DATA_FILE_FOOTER_BYTES) {
+    corrupt("Lance file is smaller than its footer", { path });
+  }
+  const footerRange = {
+    offset: fileSize - DATA_FILE_FOOTER_BYTES,
+    length: DATA_FILE_FOOTER_BYTES,
+  };
+  const footerLease = await context.readRange(path, footerRange, "file_metadata", fileSize);
+  let footer: FileFooter;
+  try {
+    footer = parseFooter(footerLease.slice(footerRange), fileSize);
+  } finally {
+    footerLease.release();
+  }
+  if (footer.numGlobalBuffers < 1) {
+    corrupt("Self-describing Lance file has no descriptor buffer", { path });
+  }
+  const tableRanges: ByteRange[] = [
+    { offset: footer.globalBufferOffsets, length: 16 },
+    ...Array.from({ length: footer.numColumns }, (_value, index) => ({
+      offset: footer.columnMetadataOffsets + index * 16,
+      length: 16,
+    })),
+  ];
+  const tableLease = await context.readRanges(path, tableRanges, "file_metadata", fileSize);
+  let descriptorRange: ByteRange;
+  const columnRanges: ByteRange[] = [];
+  try {
+    descriptorRange = readTableRange(
+      tableLease,
+      tableRanges[0] as ByteRange,
+      footer.columnMetadataStart,
+      path,
+    );
+    for (let index = 0; index < footer.numColumns; index += 1) {
+      columnRanges.push(
+        readTableRange(
+          tableLease,
+          tableRanges[index + 1] as ByteRange,
+          footer.columnMetadataOffsets,
+          path,
+        ),
+      );
+    }
+  } finally {
+    tableLease.release();
+  }
+  const metadataLease = await context.readRanges(
+    path,
+    [descriptorRange, ...columnRanges],
+    "file_metadata",
+    fileSize,
+  );
+  try {
+    const descriptor = parseFileDescriptor(metadataLease.slice(descriptorRange));
+    const columns = columnRanges.map((range) => parseColumnMetadata(metadataLease.slice(range)));
+    if (descriptor.fields.length !== columns.length) {
+      corrupt("Self-describing Lance schema and column tables have different lengths", {
+        path,
+        fields: descriptor.fields.length,
+        columns: columns.length,
+      });
+    }
+    const derivedRows = columns[0]?.pages.reduce(
+      (maximum, page) => Math.max(maximum, page.priority + page.length),
+      0,
+    );
+    const rowCount = descriptor.length || derivedRows || 0;
+    return {
+      path,
+      fileSize,
+      fields: descriptor.fields,
+      schemaMetadata: descriptor.metadata,
+      columns,
+      rowCount,
+    };
+  } finally {
+    metadataLease.release();
+  }
+}
+
+export async function materializeInspectedLanceFileRows(options: {
+  context: LanceReadContext;
+  file: InspectedLanceFile;
+  selections: readonly { field: LanceField; columnIndex: number }[];
+  rowOffsets: readonly number[];
+}): Promise<Map<number, Row>> {
+  const plans: CellPlan[] = [];
+  for (const selection of options.selections) {
+    const column = options.file.columns[selection.columnIndex];
+    if (column === undefined) {
+      corrupt("Selected Lance self-described column is absent", {
+        path: options.file.path,
+        columnIndex: selection.columnIndex,
+      });
+    }
+    for (const rowOffset of options.rowOffsets) {
+      if (rowOffset < 0 || rowOffset >= options.file.rowCount) {
+        corrupt("Selected Lance self-described row is out of bounds", {
+          path: options.file.path,
+          rowOffset,
+          rowCount: options.file.rowCount,
+        });
+      }
+      const location = findPage(column.pages, rowOffset);
+      options.context.stats.pages.add(
+        `${options.file.path}:${selection.columnIndex}:${location.index}`,
+      );
+      plans.push({
+        field: selection.field,
+        rowOffset,
+        page: location.page,
+        rowInPage: rowOffset - location.page.priority,
+      });
+    }
+  }
+  return await executeCellPlans(options.context, options.file.path, options.file.fileSize, plans);
+}
 
 export async function materializeFragmentRows(options: {
   context: LanceReadContext;
@@ -681,6 +816,21 @@ function validateContainedRange(range: ByteRange, end: number, path: string): vo
       metadataTableOffset: end,
     });
   }
+}
+
+function readTableRange(
+  lease: RangeLease,
+  tableEntry: ByteRange,
+  sectionEnd: number,
+  path: string,
+): ByteRange {
+  const entry = dataView(lease.slice(tableEntry));
+  const range = {
+    offset: safeU64(entry.getBigUint64(0, true), "metadata offset"),
+    length: safeU64(entry.getBigUint64(8, true), "metadata length"),
+  };
+  validateContainedRange(range, sectionEnd, path);
+  return range;
 }
 
 function assignCell(

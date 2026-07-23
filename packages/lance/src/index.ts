@@ -20,6 +20,12 @@ import {
   parseRowIdSequence,
 } from "./proto.js";
 import { resolveRequestedRowIds } from "./rowids.js";
+import {
+  type LanceScalarIndexInfo,
+  type LanceScalarValue,
+  loadScalarIndexes,
+  lookupScalarRowIds,
+} from "./scalar.js";
 
 export const PACKAGE = "lakeql-lance" as const;
 export const SUPPORTED_LANCE_STORAGE_VERSION = "2.0" as const;
@@ -64,6 +70,27 @@ export interface LanceTakeRowsResult {
   stats: LanceReadStats;
 }
 
+export interface LookupLanceRowsOptions {
+  snapshotId: string;
+  index: string;
+  values: readonly LanceScalarValue[];
+  select: readonly string[];
+}
+
+export interface LanceScalarLookupGroup {
+  value: LanceScalarValue;
+  rowIds: string[];
+  rows: Row[];
+}
+
+export interface LanceScalarLookupResult {
+  index: LanceScalarIndexInfo;
+  groups: LanceScalarLookupGroup[];
+  stats: LanceReadStats;
+}
+
+export type { LanceScalarIndexInfo, LanceScalarValue };
+
 export interface LanceReadStats {
   snapshotId: string;
   snapshotVersion: string;
@@ -76,6 +103,7 @@ export interface LanceReadStats {
   fragmentsTouched: number;
   pagesTouched: number;
   rowsRequested: number;
+  rowsDecoded: number;
   rowsMaterialized: number;
   selectedColumns: string[];
   cacheHits: number;
@@ -94,6 +122,8 @@ export class LanceDataset {
       store: ObjectStore;
       root: string;
       manifest: LanceManifest;
+      manifestPath: string;
+      manifestFileSize: number;
       snapshotId: string;
       budget: QueryBudget;
       startedAt: number;
@@ -108,31 +138,85 @@ export class LanceDataset {
   }
 
   async takeRows(options: TakeLanceRowsOptions): Promise<LanceTakeRowsResult> {
+    return await this.takeRowsWithStats(options, cloneStats(this.options.openStats));
+  }
+
+  async scalarIndexes(): Promise<LanceScalarIndexInfo[]> {
+    const stats = cloneStats(this.options.openStats);
+    const context = this.context(stats);
+    return (
+      await loadScalarIndexes({
+        context,
+        manifestPath: this.options.manifestPath,
+        manifestFileSize: this.options.manifestFileSize,
+        manifest: this.options.manifest,
+      })
+    ).map(({ info }) => info);
+  }
+
+  async lookupRows(options: LookupLanceRowsOptions): Promise<LanceScalarLookupResult> {
     if (options.snapshotId !== this.snapshotId) {
-      throw new LakeqlError(
-        "LAKEQL_LANCE_SNAPSHOT_MISMATCH",
-        "Lance row IDs belong to a different immutable snapshot",
-        {
-          expectedSnapshotId: options.snapshotId,
-          actualSnapshotId: this.snapshotId,
-          snapshotVersion: this.version,
-        },
+      snapshotMismatch(options.snapshotId, this.snapshotId, this.version);
+    }
+    const stats = cloneStats(this.options.openStats);
+    const context = this.context(stats);
+    const lookup = await lookupScalarRowIds({
+      context,
+      root: this.options.root,
+      manifestPath: this.options.manifestPath,
+      manifestFileSize: this.options.manifestFileSize,
+      manifest: this.options.manifest,
+      indexName: options.index,
+      values: options.values,
+      budget: this.options.budget,
+    });
+    const rowIds = lookup.matches.flatMap((match) => match.rowIds);
+    const materialized = await this.takeRowsWithStats(
+      {
+        snapshotId: this.snapshotId,
+        rowIds,
+        select: options.select,
+        onMissing: "null",
+      },
+      stats,
+    );
+    let offset = 0;
+    const groups = lookup.matches.map((match) => {
+      const rows = materialized.rows.slice(offset, offset + match.rowIds.length);
+      offset += match.rowIds.length;
+      const retained = rows.flatMap((row, index) =>
+        row === null
+          ? []
+          : [
+              {
+                row,
+                rowId: (match.rowIds[index] as bigint).toString(),
+              },
+            ],
       );
+      return {
+        value: match.value,
+        rowIds: retained.map(({ rowId }) => rowId),
+        rows: retained.map(({ row }) => row),
+      };
+    });
+    return { index: lookup.index, groups, stats: materialized.stats };
+  }
+
+  private async takeRowsWithStats(
+    options: TakeLanceRowsOptions,
+    stats: MutableLanceReadStats,
+  ): Promise<LanceTakeRowsResult> {
+    if (options.snapshotId !== this.snapshotId) {
+      snapshotMismatch(options.snapshotId, this.snapshotId, this.version);
     }
     const rowIds = options.rowIds.map(normalizeRowId);
     const select = validatedProjection(options.select);
     enforceRowShapeBudget(this.options.budget, rowIds);
-    const stats = cloneStats(this.options.openStats);
-    const context = new LanceReadContext(
-      this.options.store,
-      this.options.budget,
-      stats,
-      this.options.startedAt,
-      this.options.now,
-      this.options.planning,
-    );
+    const context = this.context(stats);
     context.check();
     const uniqueRowIds = [...new Map(rowIds.map((rowId) => [rowId.toString(), rowId])).values()];
+    context.reserveDecodedRows(uniqueRowIds.length);
     const fragments = await Promise.all(
       this.options.manifest.fragments.map(async (fragment) => ({
         physicalRows: fragment.physicalRows,
@@ -218,6 +302,17 @@ export class LanceDataset {
       }),
     };
   }
+
+  private context(stats: MutableLanceReadStats): LanceReadContext {
+    return new LanceReadContext(
+      this.options.store,
+      this.options.budget,
+      stats,
+      this.options.startedAt,
+      this.options.now,
+      this.options.planning,
+    );
+  }
 }
 
 export async function openLanceDataset(options: OpenLanceDatasetOptions): Promise<LanceDataset> {
@@ -258,6 +353,8 @@ export async function openLanceDataset(options: OpenLanceDatasetOptions): Promis
     store: options.store,
     root,
     manifest,
+    manifestPath,
+    manifestFileSize: manifestHead.size,
     snapshotId,
     budget,
     startedAt,
@@ -464,14 +561,6 @@ function enforceRowShapeBudget(budget: QueryBudget, rowIds: readonly bigint[]): 
       { metric: "output rows", limit: budget.maxOutputRows, actual: rowIds.length },
     );
   }
-  const uniqueRows = new Set(rowIds.map(String)).size;
-  if (budget.maxRowsDecoded !== undefined && uniqueRows > budget.maxRowsDecoded) {
-    throw new LakeqlError(
-      "LAKEQL_BUDGET_EXCEEDED",
-      `Lance takeRows exceeded decoded row budget (${uniqueRows} > ${budget.maxRowsDecoded})`,
-      { metric: "rows decoded", limit: budget.maxRowsDecoded, actual: uniqueRows },
-    );
-  }
 }
 
 function validatedPlanning(options: OpenLanceDatasetOptions): LanceRangePlanningOptions {
@@ -570,6 +659,7 @@ function emptyStats(): MutableLanceReadStats {
     cacheHits: 0,
     cacheMisses: 0,
     peakMemoryBytes: 0,
+    rowsDecoded: 0,
     fragments: new Set(),
     pages: new Set(),
   };
@@ -605,6 +695,7 @@ function finalizeStats(options: {
     fragmentsTouched: options.mutable.fragments.size,
     pagesTouched: options.mutable.pages.size,
     rowsRequested: options.rowsRequested,
+    rowsDecoded: options.mutable.rowsDecoded,
     rowsMaterialized: options.rowsMaterialized,
     selectedColumns: options.selectedColumns,
     cacheHits: options.mutable.cacheHits,
@@ -660,6 +751,18 @@ function copyBytes(bytes: Uint8Array): Uint8Array {
   const copy = new Uint8Array(bytes.byteLength);
   copy.set(bytes);
   return copy;
+}
+
+function snapshotMismatch(expected: string, actual: string, version: string): never {
+  throw new LakeqlError(
+    "LAKEQL_LANCE_SNAPSHOT_MISMATCH",
+    "Lance row IDs belong to a different immutable snapshot",
+    {
+      expectedSnapshotId: expected,
+      actualSnapshotId: actual,
+      snapshotVersion: version,
+    },
+  );
 }
 
 function unsupported(message: string, details: Record<string, unknown> = {}): never {

@@ -94,8 +94,7 @@ describe("Lance Arrow deletion vectors", () => {
     {
       name: "duplicate row IDs",
       mutate(bytes: Uint8Array) {
-        const values = findSequence(bytes, Uint8Array.of(2, 0, 0, 0, 7, 0, 0, 0, 13, 0, 0, 0));
-        bytes.set(Uint8Array.of(7, 0, 0, 0), values + 8);
+        duplicateOneDeletionValue(bytes);
       },
     },
   ])("rejects corrupt $name", ({ mutate, expectedRows = 3, physicalRows = 16 }) => {
@@ -155,6 +154,7 @@ function emptyStats(): MutableLanceReadStats {
     cacheHits: 0,
     cacheMisses: 0,
     peakMemoryBytes: 0,
+    rowsDecoded: 0,
     fragments: new Set(),
     pages: new Set(),
   };
@@ -168,4 +168,25 @@ function findSequence(haystack: Uint8Array, needle: Uint8Array): number {
     return offset;
   }
   throw new Error("expected byte sequence not found");
+}
+
+function duplicateOneDeletionValue(bytes: Uint8Array): void {
+  for (const values of [
+    [2, 7, 13],
+    [2, 13, 7],
+    [7, 2, 13],
+    [7, 13, 2],
+    [13, 2, 7],
+    [13, 7, 2],
+  ]) {
+    const encoded = new Uint8Array(new Uint32Array(values).buffer);
+    try {
+      const offset = findSequence(bytes, encoded);
+      bytes.set(encoded.subarray(0, 4), offset + 8);
+      return;
+    } catch {
+      // Try the next producer-defined deletion ordering.
+    }
+  }
+  throw new Error("expected deletion values not found");
 }

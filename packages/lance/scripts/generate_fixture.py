@@ -17,6 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "fixtures" / "take-v2.0.lance"
 TYPE_FIXTURE = ROOT / "fixtures" / "types-v2.0.lance"
 DELETION_FIXTURE = ROOT / "fixtures" / "deletions-v2.0.lance"
+SCALAR_FIXTURE = ROOT / "fixtures" / "scalar-btree-v2.0.lance"
+SCALAR_MULTIPAGE_FIXTURE = ROOT / "fixtures" / "scalar-btree-multipage-v2.0.lance"
 WORKERD_MODULE = ROOT / "src" / "fixture.generated.ts"
 
 
@@ -95,6 +97,8 @@ def main() -> None:
     )
     write_type_fixture()
     write_deletion_fixture()
+    write_scalar_fixture()
+    write_scalar_multipage_fixture()
     write_workerd_module()
 
 
@@ -226,12 +230,121 @@ def write_deletion_fixture() -> None:
     )
 
 
+def write_scalar_fixture() -> None:
+    if SCALAR_FIXTURE.exists():
+        shutil.rmtree(SCALAR_FIXTURE)
+    table = pa.table(
+        {
+            "serial": pa.array([1_000 + index // 2 for index in range(64)], type=pa.int64()),
+            "label": pa.array([f"indexed-{index}" for index in range(64)], type=pa.string()),
+            "status": pa.array(
+                ["LIVE" if index % 2 == 0 else "DEAD" for index in range(64)],
+                type=pa.string(),
+            ),
+        }
+    )
+    dataset = lance.write_dataset(
+        table,
+        SCALAR_FIXTURE,
+        mode="create",
+        data_storage_version="2.0",
+        enable_stable_row_ids=True,
+        enable_v2_manifest_paths=True,
+        max_rows_per_file=16,
+        max_rows_per_group=8,
+    )
+    row_ids = [
+        str(value)
+        for value in dataset.scanner(columns=["serial"], with_row_id=True)
+        .to_table()
+        .column("_rowid")
+        .to_pylist()
+    ]
+    dataset.create_scalar_index("serial", "BTREE", name="serial_btree")
+    index = dataset.list_indices()[0]
+    expected = {
+        "producer": {"package": "pylance", "version": lance.__version__},
+        "storageVersion": dataset.data_storage_version,
+        "datasetVersion": dataset.version,
+        "rowCount": 64,
+        "index": {
+            "name": index["name"],
+            "type": index["type"],
+            "uuid": index["uuid"],
+            "version": index["version"],
+        },
+        "lookups": {
+            "1005": {"rowIds": row_ids[10:12], "labels": ["indexed-10", "indexed-11"]},
+            "1031": {"rowIds": row_ids[62:64], "labels": ["indexed-62", "indexed-63"]},
+            "9999": {"rowIds": [], "labels": []},
+        },
+    }
+    expected["sha256"] = fixture_hashes(SCALAR_FIXTURE)
+    (SCALAR_FIXTURE / "expected.json").write_text(
+        json.dumps(expected, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def write_scalar_multipage_fixture() -> None:
+    if SCALAR_MULTIPAGE_FIXTURE.exists():
+        shutil.rmtree(SCALAR_MULTIPAGE_FIXTURE)
+    row_count = 5_000
+    table = pa.table(
+        {
+            "serial": pa.array(range(20_000, 20_000 + row_count), type=pa.int64()),
+            "label": pa.array([f"multi-{index}" for index in range(row_count)], type=pa.string()),
+        }
+    )
+    dataset = lance.write_dataset(
+        table,
+        SCALAR_MULTIPAGE_FIXTURE,
+        mode="create",
+        data_storage_version="2.0",
+        enable_stable_row_ids=True,
+        enable_v2_manifest_paths=True,
+        max_rows_per_file=500,
+        max_rows_per_group=250,
+    )
+    row_ids = [
+        str(value)
+        for value in dataset.scanner(columns=["serial"], with_row_id=True)
+        .to_table()
+        .column("_rowid")
+        .to_pylist()
+    ]
+    dataset.create_scalar_index("serial", "BTREE", name="serial_btree")
+    index = dataset.list_indices()[0]
+    expected = {
+        "producer": {"package": "pylance", "version": lance.__version__},
+        "storageVersion": dataset.data_storage_version,
+        "datasetVersion": dataset.version,
+        "rowCount": row_count,
+        "index": {
+            "name": index["name"],
+            "type": index["type"],
+            "uuid": index["uuid"],
+            "version": index["version"],
+        },
+        "lookups": {
+            "24095": {"rowIds": [row_ids[4_095]], "labels": ["multi-4095"]},
+            "24096": {"rowIds": [row_ids[4_096]], "labels": ["multi-4096"]},
+            "24999": {"rowIds": [row_ids[4_999]], "labels": ["multi-4999"]},
+        },
+    }
+    expected["sha256"] = fixture_hashes(SCALAR_MULTIPAGE_FIXTURE)
+    (SCALAR_MULTIPAGE_FIXTURE / "expected.json").write_text(
+        json.dumps(expected, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
 def write_workerd_module() -> None:
     files = {
         f"fixtures/{root.name}/{path.relative_to(root)}": b64encode(path.read_bytes()).decode(
             "ascii"
         )
-        for root in [FIXTURE, TYPE_FIXTURE, DELETION_FIXTURE]
+        for root in [FIXTURE, TYPE_FIXTURE, DELETION_FIXTURE, SCALAR_FIXTURE]
         for path in sorted(root.rglob("*"))
         if path.is_file() and path.name != "expected.json"
     }

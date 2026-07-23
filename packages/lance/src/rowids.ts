@@ -39,6 +39,59 @@ export function resolveRequestedRowIds(
   return resolved;
 }
 
+export function stableRowIdAtOffset(
+  segments: readonly LanceRowIdSegment[],
+  physicalOffset: number,
+): bigint {
+  if (!Number.isSafeInteger(physicalOffset) || physicalOffset < 0) {
+    corrupt("Invalid Lance physical row offset", { physicalOffset });
+  }
+  let remaining = physicalOffset;
+  for (const segment of segments) {
+    validateSegment(segment);
+    const length = segmentLength(segment);
+    if (remaining >= length) {
+      remaining -= length;
+      continue;
+    }
+    switch (segment.kind) {
+      case "range":
+        return requiredRange(segment).start + BigInt(remaining);
+      case "range_with_holes": {
+        let value = requiredRange(segment).start + BigInt(remaining);
+        for (const hole of segment.holes ?? []) {
+          if (hole > value) break;
+          value += 1n;
+        }
+        return value;
+      }
+      case "range_with_bitmap": {
+        const { start, end } = requiredRange(segment);
+        const width = safeOffset(end - start);
+        let rank = 0;
+        for (let index = 0; index < width; index += 1) {
+          if (!bitmapValue(segment.bitmap ?? new Uint8Array(), index)) continue;
+          if (rank === remaining) return start + BigInt(index);
+          rank += 1;
+        }
+        break;
+      }
+      case "sorted_array":
+      case "array": {
+        const value = segment.values?.[remaining];
+        if (value !== undefined) return value;
+        break;
+      }
+    }
+    corrupt("Lance stable row-ID segment does not cover its physical offset", {
+      physicalOffset,
+    });
+  }
+  corrupt("Lance stable row-ID sequence does not cover its physical offset", {
+    physicalOffset,
+  });
+}
+
 function findInSegment(segment: LanceRowIdSegment, rowId: bigint): number | undefined {
   switch (segment.kind) {
     case "range": {

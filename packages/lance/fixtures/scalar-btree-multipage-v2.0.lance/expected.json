@@ -1,0 +1,60 @@
+{
+  "datasetVersion": 2,
+  "index": {
+    "name": "serial_btree",
+    "type": "BTree",
+    "uuid": "a5fca4de-c7db-4631-8913-c75ee612c9cf",
+    "version": 1
+  },
+  "lookups": {
+    "24095": {
+      "labels": [
+        "multi-4095"
+      ],
+      "rowIds": [
+        "4095"
+      ]
+    },
+    "24096": {
+      "labels": [
+        "multi-4096"
+      ],
+      "rowIds": [
+        "4096"
+      ]
+    },
+    "24999": {
+      "labels": [
+        "multi-4999"
+      ],
+      "rowIds": [
+        "4999"
+      ]
+    }
+  },
+  "producer": {
+    "package": "pylance",
+    "version": "8.0.0"
+  },
+  "rowCount": 5000,
+  "sha256": {
+    "_indices/a5fca4de-c7db-4631-8913-c75ee612c9cf/page_data.lance": "80903f86364f78a240de232ed5cbdaef64ef271b58cda2231ab22d80c29897a6",
+    "_indices/a5fca4de-c7db-4631-8913-c75ee612c9cf/page_lookup.lance": "b3eefce8a6d44d75e104d6dcfeb53d610253db85565e83139d0b65b55c0abe27",
+    "_transactions/0-3a3f4624-de36-439c-87ac-241de904d455.txn": "59cddaa7aa1aec5646ad7e1aeecc42ba500ba0042940c92b7555f44693ad2a93",
+    "_transactions/1-e7da81e4-559b-4934-9dab-041190017acf.txn": "a8d3736ddb286060d7a3d3a50ef39d6cc4714ef829f0778cb12b1ea94c0f8c88",
+    "_versions/18446744073709551613.manifest": "c67fa1bc3f721acd5ac0c6805bf148a4cf70af5cef408f1be0f873cfd907bb55",
+    "_versions/18446744073709551614.manifest": "ec6095b52119f6f81f8217ede574ab538ae8b9c6e88b05ad8fdbb256f18cf3a8",
+    "_versions/latest_version_hint.json": "732322c128ed67841ef5aa42c7cd04ffcd74a61b2d17d710cd502b713d62930d",
+    "data/0000101100101001100101102e7cfe4501b22287e62bf722a5.lance": "e740501dbfb0822fd8479de2bdd82f8438d74e540f6e5c3f501a0f63f33307ef",
+    "data/0001101100111100101011107003af4f83959c0f147f09adb9.lance": "3b50623e88adddcace02f60ed291fe0fdaf5b692fab745f7f7f795133b1cf288",
+    "data/0100110110100010010010104406c14c5ca12be46c8641850e.lance": "bb2564f61e1b48912d0734e22acdcffab56b2255a9bc146977ee80e0686eccf0",
+    "data/0101001100111111101110011f9b9641a6ae7b54f930014893.lance": "ebc2c1c6547a43f62a899da49d5b9be5c67aae3c2531feed32beab1df4792045",
+    "data/0111010100101000011001119d49df4176a0ad05b029f2b6e7.lance": "f0d1356395c5278fa64a7c8e57be039fbb864a1cc1cb0da353ebc48c484b8092",
+    "data/10010001011110000101100038c33b42d0bd423377d8e07289.lance": "3f00336aa3d1980b962f5fb7aea1f0cd8b2136ccf4c65093b8b0cf03ea914d7b",
+    "data/101101110100100011011001cad13a41a69f21678cd16fb63a.lance": "8abc7f4fc59ac686ef9fcb18be7b56ba69f60bc82f530ea5c54c10a22101635c",
+    "data/1011100010010011110101003d74034041afc748667b5c2a30.lance": "b75ebcebe30235faf153cd1359db97fc083f7bdfcb3e04ff2e65d692d6848b14",
+    "data/110100000011000111001011fd3646416cb40b43c35b59483b.lance": "8cd1354fa2116ebde974a77da6a63103bcbb75c725012634278dab1999446f8e",
+    "data/1110110000110000001100015f3d774dfabcc0e7cefdd26b90.lance": "a22145fe423de1f9d06e347568d14b4d55343970318775136fecb97fc610e7cd"
+  },
+  "storageVersion": "2.0"
+}

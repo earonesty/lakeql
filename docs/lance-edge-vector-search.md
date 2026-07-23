@@ -511,6 +511,13 @@ reader.
 - Composition with the row-materialization operator without rescanning key columns.
 - Index-aware range planning, cache keys, and physical-I/O statistics.
 
+The first scalar slice supports official version-0 BTree exact equality lookup over
+supported scalar types. It reads page summaries, performs batched binary searches
+inside only candidate pages, fetches stable IDs for matching bounds, and composes
+them with projected materialization under one cumulative budget. Range predicates
+and other scalar-index layouts remain later extensions of this milestone, not scan
+fallbacks.
+
 ### Vector indexed retrieval
 
 - IVF-PQ metadata and codebook decoding.

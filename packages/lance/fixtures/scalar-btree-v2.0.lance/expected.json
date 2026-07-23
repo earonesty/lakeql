@@ -1,0 +1,54 @@
+{
+  "datasetVersion": 2,
+  "index": {
+    "name": "serial_btree",
+    "type": "BTree",
+    "uuid": "384b3777-081b-4654-9d9e-22b338eb192d",
+    "version": 1
+  },
+  "lookups": {
+    "1005": {
+      "labels": [
+        "indexed-10",
+        "indexed-11"
+      ],
+      "rowIds": [
+        "10",
+        "11"
+      ]
+    },
+    "1031": {
+      "labels": [
+        "indexed-62",
+        "indexed-63"
+      ],
+      "rowIds": [
+        "62",
+        "63"
+      ]
+    },
+    "9999": {
+      "labels": [],
+      "rowIds": []
+    }
+  },
+  "producer": {
+    "package": "pylance",
+    "version": "8.0.0"
+  },
+  "rowCount": 64,
+  "sha256": {
+    "_indices/384b3777-081b-4654-9d9e-22b338eb192d/page_data.lance": "19a1cf2964401f221f48d8f00ad48a16046ffe617fc9a80bca969a715a268d94",
+    "_indices/384b3777-081b-4654-9d9e-22b338eb192d/page_lookup.lance": "81f920c220e81c62693f1ab0a411d7deb2de2f107a4c5f2cf2a0e1cee02d5d6c",
+    "_transactions/0-69dacced-ee41-45c8-b0b7-c338da4b0db1.txn": "fa24fc626a5e5929dc49398fae13b2631f52be7fc1ba00f9dd6bf10485f792c3",
+    "_transactions/1-5f1f362c-c8a9-4586-a5b5-c08eb35994a7.txn": "ec23bbdc2f1fbf31d8e7a388fb3ca5ec08e74cf3aedcf6fee6ce751870523016",
+    "_versions/18446744073709551613.manifest": "349d835798c2f1d4485b656a8f5998343a30016466b3ba1f58f520cc1e9ddc08",
+    "_versions/18446744073709551614.manifest": "93e9f2b07a11ca3cdb00189295fea0e4995e435cbbbef13329a3e3a90dd89734",
+    "_versions/latest_version_hint.json": "732322c128ed67841ef5aa42c7cd04ffcd74a61b2d17d710cd502b713d62930d",
+    "data/000001011110010101001101dac1d247ca923f349987373a5e.lance": "a5440f71bef04b468c4efdbaacca3f14070e7540644a8463ac20387f00db5619",
+    "data/0000101111101101100011106d5b4143f6b36ef097680ad8aa.lance": "633c362287ed206fb5883ab96ff335e16ddcfe9c295ea08d06fbe1901c8309d4",
+    "data/0011101010100001010110007124024588a9a9b607825dd013.lance": "4f994003679ad18fe820f46c1a9fabea1ea0b5815d5612d5ee7ac99321d83c1c",
+    "data/101000001110010010110010b3528b440da1cb7ea55b5e3d4c.lance": "4f162c892e82c9d974e52257334ed33bba6b1a9e2ba28971a89179bfc80973d3"
+  },
+  "storageVersion": "2.0"
+}

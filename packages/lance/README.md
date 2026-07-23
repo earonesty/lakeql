@@ -28,6 +28,24 @@ const result = await dataset.takeRows({
 });
 ```
 
+Official Lance BTree indexes can produce those stable IDs directly without a key-column scan:
+
+```ts
+const indexes = await dataset.scalarIndexes();
+const result = await dataset.lookupRows({
+  snapshotId: dataset.snapshotId,
+  index: indexes[0].name,
+  values: [1005, 1031],
+  select: ["mark_text", "owner_name"],
+});
+```
+
+`lookupRows` performs exact equality lookup, preserves the caller's key order and duplicate keys,
+returns every indexed duplicate in stable index order, and composes matches with the same
+snapshot-safe projected materializer. BTree page lookup, binary search, stable-ID retrieval, and
+result materialization share one cumulative byte, request, memory, decoded-row, concurrency,
+cancellation, and elapsed-time budget.
+
 Store `dataset.snapshotId` with every external index generation. `takeRows` requires it and returns
 a typed `LAKEQL_LANCE_SNAPSHOT_MISMATCH` error before reading data if it does not match. Duplicate
 IDs and caller order are preserved. Missing and snapshot-deleted IDs throw by default; use
@@ -43,14 +61,18 @@ signed and unsigned integers, 32/64-bit floats, dates, and second/millisecond/mi
 timestamps using uncompressed flat and nullable encodings. Sparse Arrow-array deletion files are
 supported, including Zstandard-compressed buffers.
 
+Official version-0 BTree indexes over the supported scalar key types are supported for exact
+equality lookup. Range predicates, null-key lookup, bitmap/label-list index variants, and index
+versions other than 0 remain explicit unsupported boundaries.
+
 The reader deliberately rejects unsupported storage versions, compressed data pages, nested
 fields, Roaring-bitmap deletion files, and unknown encodings. It never silently scans a column,
-file, or dataset, and it rejects a data range that would read an entire Lance data file.
+index, file, or dataset, and it rejects a data range that would read an entire Lance data file.
 
 All metadata and data access flows through LakeQL's `ObjectStore`, cancellation, concurrency,
 cache, and query-budget contracts. The result reports snapshot/data metadata bytes, logical and
-physical bytes, range requests, fragments/pages touched, cache activity, row counts, peak memory,
-and elapsed time.
+physical bytes, range requests, fragments/pages touched, cache activity, requested, decoded, and
+materialized row counts, peak memory, and elapsed time.
 
 ## Reproducing the fixture
 
@@ -61,4 +83,6 @@ python packages/lance/scripts/generate_fixture.py
 ```
 
 The generator records producer and storage versions, expected projections, stable row IDs, and
-SHA-256 hashes in `fixtures/take-v2.0.lance/expected.json`.
+SHA-256 hashes in each fixture's `expected.json`. The generated suite includes single- and
+multi-page BTree datasets so compatibility tests exercise page boundaries and bounded logarithmic
+reads.

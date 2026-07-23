@@ -52,6 +52,28 @@ export interface LanceManifest {
   writerVersion: string;
   dataFileFormat: string;
   dataStorageVersion: string;
+  indexSectionOffset?: number;
+}
+
+export interface LanceIndexFile {
+  path: string;
+  sizeBytes: number;
+}
+
+export interface LanceIndexMetadata {
+  uuid: string;
+  fields: number[];
+  name: string;
+  datasetVersion: bigint;
+  detailsTypeUrl: string;
+  indexVersion?: number;
+  files: LanceIndexFile[];
+}
+
+export interface LanceFileDescriptor {
+  fields: LanceField[];
+  metadata: Record<string, Uint8Array>;
+  length: number;
 }
 
 export interface LancePage {
@@ -130,6 +152,7 @@ export function parseManifest(bytes: Uint8Array): LanceManifest {
   let writerVersion = "";
   let dataFileFormat = "";
   let dataStorageVersion = "";
+  let indexSectionOffset: number | undefined;
   while (!reader.done) {
     const { field, wire } = reader.key();
     switch (field) {
@@ -141,6 +164,9 @@ export function parseManifest(bytes: Uint8Array): LanceManifest {
         break;
       case 3:
         version = reader.varint(wire);
+        break;
+      case 6:
+        indexSectionOffset = reader.safeInteger(wire, "index section offset");
         break;
       case 9:
         readerFeatureFlags = reader.varint(wire);
@@ -170,7 +196,39 @@ export function parseManifest(bytes: Uint8Array): LanceManifest {
     writerVersion,
     dataFileFormat,
     dataStorageVersion,
+    ...(indexSectionOffset === undefined ? {} : { indexSectionOffset }),
   };
+}
+
+export function parseIndexSection(bytes: Uint8Array): LanceIndexMetadata[] {
+  const reader = new ProtoReader(bytes);
+  const indices: LanceIndexMetadata[] = [];
+  while (!reader.done) {
+    const key = reader.key();
+    if (key.field === 1) indices.push(parseIndexMetadata(reader.message(key.wire)));
+    else reader.skip(key.wire);
+  }
+  return indices;
+}
+
+export function parseFileDescriptor(bytes: Uint8Array): LanceFileDescriptor {
+  const reader = new ProtoReader(bytes);
+  let fields: LanceField[] = [];
+  let metadata: Record<string, Uint8Array> = {};
+  let length = 0;
+  while (!reader.done) {
+    const key = reader.key();
+    if (key.field === 1) {
+      const schema = parseSchema(reader.message(key.wire));
+      fields = schema.fields;
+      metadata = schema.metadata;
+    } else if (key.field === 2) {
+      length = reader.safeInteger(key.wire, "file descriptor row count");
+    } else {
+      reader.skip(key.wire);
+    }
+  }
+  return { fields, metadata, length };
 }
 
 export function parseRowIdSequence(bytes: Uint8Array): LanceRowIdSegment[] {
@@ -212,6 +270,125 @@ export function parseColumnMetadata(bytes: Uint8Array): LanceColumnMetadata {
     });
   }
   return { pages, bufferOffsets, bufferSizes };
+}
+
+function parseIndexMetadata(bytes: Uint8Array): LanceIndexMetadata {
+  const reader = new ProtoReader(bytes);
+  let uuid = "";
+  const fields: number[] = [];
+  let name = "";
+  let datasetVersion = 0n;
+  let detailsTypeUrl = "";
+  let indexVersion: number | undefined;
+  const files: LanceIndexFile[] = [];
+  while (!reader.done) {
+    const key = reader.key();
+    switch (key.field) {
+      case 1:
+        uuid = parseUuid(reader.message(key.wire));
+        break;
+      case 2:
+        fields.push(...reader.packedInt32(key.wire));
+        break;
+      case 3:
+        name = reader.string(key.wire);
+        break;
+      case 4:
+        datasetVersion = reader.varint(key.wire);
+        break;
+      case 6:
+        detailsTypeUrl = parseAnyTypeUrl(reader.message(key.wire));
+        break;
+      case 7:
+        indexVersion = reader.int32(key.wire);
+        break;
+      case 10:
+        files.push(parseIndexFile(reader.message(key.wire)));
+        break;
+      default:
+        reader.skip(key.wire);
+    }
+  }
+  return {
+    uuid,
+    fields,
+    name,
+    datasetVersion,
+    detailsTypeUrl,
+    ...(indexVersion === undefined ? {} : { indexVersion }),
+    files,
+  };
+}
+
+function parseUuid(bytes: Uint8Array): string {
+  const reader = new ProtoReader(bytes);
+  let raw: Uint8Array | undefined;
+  while (!reader.done) {
+    const key = reader.key();
+    if (key.field === 1) raw = reader.bytesValue(key.wire);
+    else reader.skip(key.wire);
+  }
+  if (raw?.byteLength !== 16) corrupt("Lance index UUID must contain 16 bytes");
+  const hex = [...raw].map((value) => value.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(
+    16,
+    20,
+  )}-${hex.slice(20)}`;
+}
+
+function parseAnyTypeUrl(bytes: Uint8Array): string {
+  const reader = new ProtoReader(bytes);
+  let typeUrl = "";
+  while (!reader.done) {
+    const key = reader.key();
+    if (key.field === 1) typeUrl = reader.string(key.wire);
+    else reader.skip(key.wire);
+  }
+  return typeUrl;
+}
+
+function parseIndexFile(bytes: Uint8Array): LanceIndexFile {
+  const reader = new ProtoReader(bytes);
+  let path = "";
+  let sizeBytes = 0;
+  while (!reader.done) {
+    const key = reader.key();
+    if (key.field === 1) path = reader.string(key.wire);
+    else if (key.field === 2) sizeBytes = reader.safeInteger(key.wire, "index file size");
+    else reader.skip(key.wire);
+  }
+  return { path, sizeBytes };
+}
+
+function parseSchema(bytes: Uint8Array): {
+  fields: LanceField[];
+  metadata: Record<string, Uint8Array>;
+} {
+  const reader = new ProtoReader(bytes);
+  const fields: LanceField[] = [];
+  const metadata: Record<string, Uint8Array> = {};
+  while (!reader.done) {
+    const key = reader.key();
+    if (key.field === 1) fields.push(parseField(reader.message(key.wire)));
+    else if (key.field === 5) {
+      const entry = parseBytesMapEntry(reader.message(key.wire));
+      metadata[entry.key] = entry.value;
+    } else reader.skip(key.wire);
+  }
+  return { fields, metadata };
+}
+
+function parseBytesMapEntry(bytes: Uint8Array): { key: string; value: Uint8Array } {
+  const reader = new ProtoReader(bytes);
+  let key = "";
+  let value: Uint8Array<ArrayBufferLike> = new Uint8Array();
+  while (!reader.done) {
+    const field = reader.key();
+    if (field.field === 1) key = reader.string(field.wire);
+    else if (field.field === 2) value = reader.bytesValue(field.wire);
+    else reader.skip(field.wire);
+  }
+  return { key, value };
 }
 
 function parseField(bytes: Uint8Array): LanceField {

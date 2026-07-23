@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LanceRowIdSegment } from "./proto.js";
-import { resolveRequestedRowIds } from "./rowids.js";
+import { resolveRequestedRowIds, stableRowIdAtOffset } from "./rowids.js";
 
 describe("stable Lance row-ID resolution", () => {
   it("resolves every supported segment representation and fragment offset", () => {
@@ -49,6 +49,39 @@ describe("stable Lance row-ID resolution", () => {
       "65": { fragmentIndex: 2, rowOffset: 1 },
       "90": { fragmentIndex: 2, rowOffset: 2 },
     });
+  });
+
+  it("maps physical offsets back through every supported stable row-ID segment", () => {
+    const segments = [
+      { kind: "range", start: 10n, end: 12n },
+      {
+        kind: "range_with_holes",
+        start: 20n,
+        end: 25n,
+        holes: [21n, 23n],
+      },
+      {
+        kind: "range_with_bitmap",
+        start: 30n,
+        end: 35n,
+        bitmap: Uint8Array.of(0b1011_0000),
+      },
+      { kind: "sorted_array", values: [50n, 60n] },
+      { kind: "array", values: [90n, 70n] },
+    ] satisfies LanceRowIdSegment[];
+
+    expect(
+      Array.from({ length: 12 }, (_value, offset) => stableRowIdAtOffset(segments, offset)),
+    ).toEqual([10n, 11n, 20n, 22n, 24n, 30n, 32n, 33n, 50n, 60n, 90n, 70n]);
+  });
+
+  it("rejects invalid and uncovered physical offsets", () => {
+    expect(() => stableRowIdAtOffset([], -1)).toThrowError(
+      expect.objectContaining({ code: "LAKEQL_LANCE_READ_ERROR" }),
+    );
+    expect(() => stableRowIdAtOffset([], 0)).toThrowError(
+      expect.objectContaining({ code: "LAKEQL_LANCE_READ_ERROR" }),
+    );
   });
 
   it.each([

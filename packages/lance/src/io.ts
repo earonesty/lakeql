@@ -22,6 +22,7 @@ export interface MutableLanceReadStats {
   cacheHits: number;
   cacheMisses: number;
   peakMemoryBytes: number;
+  rowsDecoded: number;
   fragments: Set<number>;
   pages: Set<string>;
 }
@@ -61,6 +62,25 @@ export class LanceReadContext {
       coalesceGapBytes: 0,
       maxCoalescedRangeBytes: range.length,
     });
+  }
+
+  reserveDecodedRows(count: number): void {
+    if (!Number.isSafeInteger(count) || count < 0) {
+      throw new LakeqlError("LAKEQL_LANCE_READ_ERROR", "Invalid decoded row count", { count });
+    }
+    const total = this.stats.rowsDecoded + count;
+    if (this.budget.maxRowsDecoded !== undefined && total > this.budget.maxRowsDecoded) {
+      throw new LakeqlError(
+        "LAKEQL_BUDGET_EXCEEDED",
+        `Lance read exceeded decoded row budget (${total} > ${this.budget.maxRowsDecoded})`,
+        {
+          metric: "rows decoded",
+          limit: this.budget.maxRowsDecoded,
+          actual: total,
+        },
+      );
+    }
+    this.stats.rowsDecoded = total;
   }
 
   async readRanges(

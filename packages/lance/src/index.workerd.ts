@@ -103,6 +103,39 @@ describe("lakeql-lance workerd runtime", () => {
       rows: [null, { serial: 103, label: "row-3" }],
       deletedRowIds: ["2"],
     });
+
+    const indexed = await openLanceDataset({
+      store,
+      path: "fixtures/scalar-btree-v2.0.lance",
+      budget: {
+        maxBytes: 64_000,
+        maxRangeRequests: 128,
+        maxMemoryBytes: 64_000,
+        maxOutputRows: 8,
+        maxConcurrentReads: 2,
+        maxElapsedMs: 3_000,
+      },
+    });
+    await expect(
+      indexed.lookupRows({
+        snapshotId: indexed.snapshotId,
+        index: "serial_btree",
+        values: [1005, 9999],
+        select: ["label", "status"],
+      }),
+    ).resolves.toMatchObject({
+      groups: [
+        {
+          value: 1005,
+          rowIds: ["10", "11"],
+          rows: [
+            { label: "indexed-10", status: "LIVE" },
+            { label: "indexed-11", status: "DEAD" },
+          ],
+        },
+        { value: 9999, rowIds: [], rows: [] },
+      ],
+    });
   });
 });
 

@@ -12,6 +12,13 @@ const TYPE_FIXTURE_ROOT = resolve(import.meta.dirname, "../fixtures/types-v2.0.l
 const TYPE_DATASET_PATH = "fixtures/types-v2.0.lance";
 const DELETION_FIXTURE_ROOT = resolve(import.meta.dirname, "../fixtures/deletions-v2.0.lance");
 const DELETION_DATASET_PATH = "fixtures/deletions-v2.0.lance";
+const SCALAR_FIXTURE_ROOT = resolve(import.meta.dirname, "../fixtures/scalar-btree-v2.0.lance");
+const SCALAR_DATASET_PATH = "fixtures/scalar-btree-v2.0.lance";
+const SCALAR_MULTIPAGE_FIXTURE_ROOT = resolve(
+  import.meta.dirname,
+  "../fixtures/scalar-btree-multipage-v2.0.lance",
+);
+const SCALAR_MULTIPAGE_DATASET_PATH = "fixtures/scalar-btree-multipage-v2.0.lance";
 const servers: { close(): Promise<void> }[] = [];
 
 afterEach(async () => {
@@ -178,6 +185,191 @@ describe("lakeql-lance takeRows", () => {
       missingRowIds: expected.deletedRowIds,
       deletedRowIds: expected.deletedRowIds,
     });
+  });
+
+  it("uses an official BTree index for duplicate and missing exact keys before takeRows", async () => {
+    const fixture = await fixtureStore(SCALAR_FIXTURE_ROOT, SCALAR_DATASET_PATH);
+    const observed = recordingStore(fixture.store);
+    const expected = JSON.parse(
+      await readFile(resolve(SCALAR_FIXTURE_ROOT, "expected.json"), "utf8"),
+    ) as {
+      index: { name: string; uuid: string; version: number };
+      lookups: Record<string, { rowIds: string[]; labels: string[] }>;
+    };
+    const dataset = await openLanceDataset({
+      store: observed.store,
+      path: SCALAR_DATASET_PATH,
+      budget: generousBudget(),
+    });
+
+    await expect(dataset.scalarIndexes()).resolves.toEqual([
+      {
+        name: expected.index.name,
+        uuid: expected.index.uuid,
+        column: "serial",
+        indexVersion: 0,
+      },
+    ]);
+    const result = await dataset.lookupRows({
+      snapshotId: dataset.snapshotId,
+      index: "serial_btree",
+      values: [1005, 9999, 1031, 1005],
+      select: ["label", "status"],
+    });
+
+    expect(result.groups).toEqual([
+      {
+        value: 1005,
+        rowIds: expected.lookups["1005"]?.rowIds,
+        rows: [
+          { label: "indexed-10", status: "LIVE" },
+          { label: "indexed-11", status: "DEAD" },
+        ],
+      },
+      { value: 9999, rowIds: [], rows: [] },
+      {
+        value: 1031,
+        rowIds: expected.lookups["1031"]?.rowIds,
+        rows: [
+          { label: "indexed-62", status: "LIVE" },
+          { label: "indexed-63", status: "DEAD" },
+        ],
+      },
+      {
+        value: 1005,
+        rowIds: expected.lookups["1005"]?.rowIds,
+        rows: [
+          { label: "indexed-10", status: "LIVE" },
+          { label: "indexed-11", status: "DEAD" },
+        ],
+      },
+    ]);
+    expect(result.stats.rowsRequested).toBe(6);
+    expect(result.stats.rowsMaterialized).toBe(6);
+    expect(observed.fullDataGets).toBe(0);
+    expect(observed.dataRanges.every((range) => range.length < range.fileSize)).toBe(true);
+  });
+
+  it("searches both sides of an official multi-page BTree boundary with logarithmic reads", async () => {
+    const fixture = await fixtureStore(
+      SCALAR_MULTIPAGE_FIXTURE_ROOT,
+      SCALAR_MULTIPAGE_DATASET_PATH,
+    );
+    const observed = recordingStore(fixture.store);
+    const dataset = await openLanceDataset({
+      store: observed.store,
+      path: SCALAR_MULTIPAGE_DATASET_PATH,
+      budget: {
+        ...generousBudget(),
+        maxBytes: 128_000,
+        maxRangeRequests: 128,
+        maxRowsDecoded: 256,
+      },
+    });
+    const result = await dataset.lookupRows({
+      snapshotId: dataset.snapshotId,
+      index: "serial_btree",
+      values: [24_095, 24_096, 24_999],
+      select: ["serial", "label"],
+    });
+
+    expect(result.groups).toEqual([
+      {
+        value: 24_095,
+        rowIds: ["4095"],
+        rows: [{ serial: 24_095, label: "multi-4095" }],
+      },
+      {
+        value: 24_096,
+        rowIds: ["4096"],
+        rows: [{ serial: 24_096, label: "multi-4096" }],
+      },
+      {
+        value: 24_999,
+        rowIds: ["4999"],
+        rows: [{ serial: 24_999, label: "multi-4999" }],
+      },
+    ]);
+    expect(result.stats.physicalBytesRequested).toBeLessThan(64_000);
+    expect(result.stats.rangeRequests).toBeLessThan(100);
+    expect(observed.fullDataGets).toBe(0);
+  });
+
+  it("validates scalar lookup identity, index names, key types, and row budgets", async () => {
+    const fixture = await fixtureStore(SCALAR_FIXTURE_ROOT, SCALAR_DATASET_PATH);
+    const dataset = await openLanceDataset({
+      store: fixture.store,
+      path: SCALAR_DATASET_PATH,
+      budget: generousBudget(),
+    });
+
+    await expect(
+      dataset.lookupRows({
+        snapshotId: `${dataset.snapshotId}-stale`,
+        index: "serial_btree",
+        values: [1005],
+        select: ["label"],
+      }),
+    ).rejects.toMatchObject({ code: "LAKEQL_LANCE_SNAPSHOT_MISMATCH" });
+    await expect(
+      dataset.lookupRows({
+        snapshotId: dataset.snapshotId,
+        index: "serial_btree",
+        values: [],
+        select: ["label"],
+      }),
+    ).rejects.toMatchObject({ code: "LAKEQL_VALIDATION_ERROR" });
+    await expect(
+      dataset.lookupRows({
+        snapshotId: dataset.snapshotId,
+        index: "absent",
+        values: [1005],
+        select: ["label"],
+      }),
+    ).rejects.toMatchObject({ code: "LAKEQL_OBJECT_NOT_FOUND" });
+    await expect(
+      dataset.lookupRows({
+        snapshotId: dataset.snapshotId,
+        index: "serial_btree",
+        values: ["1005"],
+        select: ["label"],
+      }),
+    ).rejects.toMatchObject({ code: "LAKEQL_VALIDATION_ERROR" });
+    await expect(
+      dataset.lookupRows({
+        snapshotId: dataset.snapshotId,
+        index: "serial_btree",
+        values: [9999],
+        select: ["label"],
+      }),
+    ).resolves.toMatchObject({
+      groups: [{ value: 9999, rowIds: [], rows: [] }],
+      stats: { rowsRequested: 0, rowsMaterialized: 0 },
+    });
+
+    const decodedBudget = await openLanceDataset({
+      store: fixture.store,
+      path: SCALAR_DATASET_PATH,
+      budget: { ...generousBudget(), maxRowsDecoded: 1 },
+    });
+    await expect(
+      decodedBudget.lookupRows({
+        snapshotId: decodedBudget.snapshotId,
+        index: "serial_btree",
+        values: [1005],
+        select: ["label"],
+      }),
+    ).rejects.toMatchObject({
+      code: "LAKEQL_BUDGET_EXCEEDED",
+      details: { metric: "rows decoded" },
+    });
+
+    const unindexed = await openLanceDataset({
+      store: (await fixtureStore()).store,
+      path: DATASET_PATH,
+      budget: generousBudget(),
+    });
+    await expect(unindexed.scalarIndexes()).resolves.toEqual([]);
   });
 
   it("materializes 32 scattered rows with bounded reads and concurrency", async () => {

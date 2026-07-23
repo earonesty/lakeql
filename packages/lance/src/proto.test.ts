@@ -1,7 +1,116 @@
 import { describe, expect, it } from "vitest";
-import { parseColumnMetadata, parseManifest, parseRowIdSequence } from "./proto.js";
+import {
+  parseColumnMetadata,
+  parseFileDescriptor,
+  parseIndexSection,
+  parseManifest,
+  parseRowIdSequence,
+} from "./proto.js";
 
 describe("Lance protobuf compatibility decoder", () => {
+  it("decodes scalar-index metadata and self-described file schemas", () => {
+    const uuid = Uint8Array.from({ length: 16 }, (_value, index) => index);
+    const index = message(
+      bytesField(1, message(bytesField(1, uuid), scalar(99, 1))),
+      packed(2, [7]),
+      scalar(2, 8),
+      text(3, "serial_btree"),
+      scalar(4, 12),
+      bytesField(6, message(text(1, "/lance.table.BTreeIndexDetails"), scalar(99, 1))),
+      scalar(7, 0),
+      bytesField(10, message(text(1, "page_data.lance"), scalar(2, 4_096))),
+      scalar(99, 1),
+    );
+
+    expect(parseIndexSection(message(bytesField(1, index), scalar(99, 1)))).toEqual([
+      {
+        uuid: "00010203-0405-0607-0809-0a0b0c0d0e0f",
+        fields: [7, 8],
+        name: "serial_btree",
+        datasetVersion: 12n,
+        detailsTypeUrl: "/lance.table.BTreeIndexDetails",
+        indexVersion: 0,
+        files: [{ path: "page_data.lance", sizeBytes: 4_096 }],
+      },
+    ]);
+
+    const field = message(
+      text(2, "serial"),
+      scalar(3, 7),
+      scalar(4, -1),
+      text(5, "int64"),
+      scalar(6, 1),
+    );
+    const schema = message(
+      bytesField(1, field),
+      bytesField(
+        5,
+        message(text(1, "batch_size"), bytesField(2, new TextEncoder().encode("4096"))),
+      ),
+    );
+    expect(
+      parseFileDescriptor(message(bytesField(1, schema), scalar(2, 64), scalar(99, 1))),
+    ).toEqual({
+      fields: [
+        {
+          id: 7,
+          name: "serial",
+          parentId: -1,
+          logicalType: "int64",
+          nullable: true,
+        },
+      ],
+      metadata: { batch_size: new TextEncoder().encode("4096") },
+      length: 64,
+    });
+  });
+
+  it("rejects malformed scalar-index UUIDs", () => {
+    const index = message(bytesField(1, message(bytesField(1, Uint8Array.of(1)))));
+    expect(() => parseIndexSection(message(bytesField(1, index)))).toThrowError(
+      expect.objectContaining({ code: "LAKEQL_LANCE_READ_ERROR" }),
+    );
+  });
+
+  it("preserves absent optional scalar-index and file-descriptor fields", () => {
+    const uuid = Uint8Array.from({ length: 16 }, () => 1);
+    const index = message(bytesField(1, message(bytesField(1, uuid))));
+    expect(parseIndexSection(message(bytesField(1, index)))).toEqual([
+      {
+        uuid: "01010101-0101-0101-0101-010101010101",
+        fields: [],
+        name: "",
+        datasetVersion: 0n,
+        detailsTypeUrl: "",
+        files: [],
+      },
+    ]);
+    expect(parseFileDescriptor(new Uint8Array())).toEqual({
+      fields: [],
+      metadata: {},
+      length: 0,
+    });
+    expect(
+      parseFileDescriptor(
+        message(
+          bytesField(
+            1,
+            message(
+              bytesField(5, message()),
+              bytesField(5, message(text(1, "key-only"))),
+              bytesField(5, message(bytesField(2, Uint8Array.of(9)))),
+              scalar(99, 1),
+            ),
+          ),
+        ),
+      ),
+    ).toEqual({
+      fields: [],
+      metadata: { "": Uint8Array.of(9), "key-only": new Uint8Array() },
+      length: 0,
+    });
+  });
+
   it("decodes manifest fields, files, deletions, external row IDs, and format identity", () => {
     const field = message(
       text(2, "serial"),
