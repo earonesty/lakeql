@@ -160,8 +160,13 @@ function estimateVectorBytes(vector: Vector): number {
   switch (vector.type) {
     case "null":
       return bytes;
+    case "f32":
     case "f64":
+    case "i32":
+    case "u32":
+    case "u8":
     case "i64":
+    case "u64":
     case "timestamp":
     case "bool":
       return bytes + vector.values.byteLength;

@@ -13,8 +13,13 @@ import type { Row } from "./types.js";
 
 export type Vector =
   | { type: "null"; length: number }
+  | { type: "f32"; values: Float32Array; valid?: Uint8Array }
   | { type: "f64"; values: Float64Array; valid?: Uint8Array }
+  | { type: "i32"; values: Int32Array; valid?: Uint8Array }
+  | { type: "u32"; values: Uint32Array; valid?: Uint8Array }
+  | { type: "u8"; values: Uint8Array; valid?: Uint8Array }
   | { type: "i64"; values: BigInt64Array; valid?: Uint8Array }
+  | { type: "u64"; values: BigUint64Array; valid?: Uint8Array }
   | {
       type: "timestamp";
       values: BigInt64Array;
@@ -38,7 +43,7 @@ export interface Batch {
 export type Selection = Uint8Array;
 
 type VectorValue = unknown;
-type VectorShape = Exclude<Vector["type"], "dict">;
+type VectorShape = Exclude<Vector["type"], "dict" | "f32" | "i32" | "u32" | "u8">;
 
 export function batchFromColumns(columns: Record<string, ArrayLike<VectorValue>>): Batch {
   let rowCount: number | undefined;
@@ -82,6 +87,8 @@ export function vectorFromValues(values: ArrayLike<VectorValue>): Vector {
       return optionalValidity({ type, values: f64Values(values) }, valid);
     case "i64":
       return optionalValidity({ type, values: i64Values(values) }, valid);
+    case "u64":
+      return optionalValidity({ type, values: u64Values(values) }, valid);
     case "timestamp": {
       const timestamp = timestampValues(values);
       return optionalValidity({ type, ...timestamp }, valid);
@@ -198,9 +205,14 @@ export function vectorValue(
   switch (vector.type) {
     case "null":
       return null;
+    case "f32":
     case "f64":
+    case "i32":
+    case "u32":
+    case "u8":
       return vector.values[index] ?? 0;
     case "i64":
+    case "u64":
       return vector.values[index] ?? 0n;
     case "timestamp":
       return new TimestampValue(
@@ -255,7 +267,12 @@ export function vectorLength(vector: Vector): number {
     case "map":
       return Math.max(0, vector.offsets.length - 1);
     case "f64":
+    case "f32":
+    case "i32":
+    case "u32":
+    case "u8":
     case "i64":
+    case "u64":
     case "timestamp":
     case "bool":
     case "utf8":
@@ -296,6 +313,29 @@ function vectorShape(values: ArrayLike<VectorValue>): {
       });
     }
   }
+  if (type === "i64") {
+    let requiresUnsigned = false;
+    let hasNegative = false;
+    for (let index = 0; index < values.length; index += 1) {
+      const value = values[index];
+      if (typeof value !== "bigint") continue;
+      if (value < 0n) hasNegative = true;
+      if (value > 0x7fff_ffff_ffff_ffffn) requiresUnsigned = true;
+      if (value < -0x8000_0000_0000_0000n || value > 0xffff_ffff_ffff_ffffn) {
+        throw new LakeqlError("LAKEQL_TYPE_ERROR", "Bigint column value exceeds 64-bit range", {
+          index,
+          value: String(value),
+        });
+      }
+    }
+    if (requiresUnsigned && hasNegative) {
+      throw new LakeqlError(
+        "LAKEQL_TYPE_ERROR",
+        "Bigint column cannot mix negative and unsigned 64-bit values",
+      );
+    }
+    if (requiresUnsigned) type = "u64";
+  }
   const shape: { type: VectorShape; valid?: Uint8Array } = { type: type ?? "null" };
   if (valid !== undefined) shape.valid = valid;
   return shape;
@@ -311,6 +351,7 @@ function vectorShapeForValue(value: Exclude<VectorValue, null | undefined>): Vec
     case "bigint":
       return "i64";
     case "object":
+      if (value instanceof Date) return "timestamp";
       if (isTimestampValue(value)) return "timestamp";
       return "struct";
     case "boolean":
@@ -335,16 +376,20 @@ function timestampValues(values: ArrayLike<VectorValue>): {
   for (let index = 0; index < values.length; index += 1) {
     const value = values[index];
     if (value == null) continue;
-    if (!isTimestampValue(value)) {
+    if (!(value instanceof Date) && !isTimestampValue(value)) {
       throw new LakeqlError("LAKEQL_TYPE_ERROR", "Expected timestamp vector value", {
         type: typeof value,
       });
     }
+    const timestamp =
+      value instanceof Date
+        ? new TimestampValue(BigInt(value.getTime()) * 1_000_000n, "millis", true)
+        : value;
     if (unit === undefined) {
-      unit = value.unit;
-      isAdjustedToUTC = value.isAdjustedToUTC;
+      unit = timestamp.unit;
+      isAdjustedToUTC = timestamp.isAdjustedToUTC;
     }
-    out[index] = timestampEpochForUnit(value, unit);
+    out[index] = timestampEpochForUnit(timestamp, unit);
   }
   return { values: out, unit: unit ?? "millis", isAdjustedToUTC };
 }
@@ -371,6 +416,21 @@ function i64Values(values: ArrayLike<VectorValue>): BigInt64Array {
   const out = new BigInt64Array(values.length);
   for (let index = 0; index < values.length; index += 1) {
     out[index] = bigintValue(values[index]);
+  }
+  return out;
+}
+
+function u64Values(values: ArrayLike<VectorValue>): BigUint64Array {
+  const out = new BigUint64Array(values.length);
+  for (let index = 0; index < values.length; index += 1) {
+    const value = bigintValue(values[index]);
+    if (value < 0n || value > 0xffff_ffff_ffff_ffffn) {
+      throw new LakeqlError("LAKEQL_TYPE_ERROR", "Expected unsigned 64-bit vector value", {
+        index,
+        value: String(value),
+      });
+    }
+    out[index] = value;
   }
   return out;
 }
@@ -630,9 +690,14 @@ export function scalarVectorValue(vector: Vector, index: number): Scalar {
   switch (vector.type) {
     case "null":
       return null;
+    case "f32":
     case "f64":
+    case "i32":
+    case "u32":
+    case "u8":
       return vector.values[index] ?? 0;
     case "i64":
+    case "u64":
       return vector.values[index] ?? 0n;
     case "timestamp":
       return new TimestampValue(
@@ -707,14 +772,18 @@ function compareVectorLiteralMasks(
 ): Uint8Array | undefined {
   if (literal === null) return nullCompareMask(vectorLength(vector));
   if (vector.type === "dict") return compareDictLiteralMasks(op, vector, literal);
-  if (vector.type === "f64" && typeof literal === "number") {
-    return compareF64LiteralMasks(op, vector, literal);
+  if (isNumberVector(vector) && typeof literal === "number") {
+    return compareNumberLiteralMasks(op, vector, literal);
   }
-  if (vector.type === "i64" && typeof literal === "bigint") {
-    return compareI64LiteralMasks(op, vector, literal);
+  if ((vector.type === "i64" || vector.type === "u64") && typeof literal === "bigint") {
+    return compareBigIntLiteralMasks(op, vector, literal);
   }
-  if (vector.type === "i64" && typeof literal === "number" && Number.isSafeInteger(literal)) {
-    return compareI64LiteralMasks(op, vector, BigInt(literal));
+  if (
+    (vector.type === "i64" || vector.type === "u64") &&
+    typeof literal === "number" &&
+    Number.isSafeInteger(literal)
+  ) {
+    return compareBigIntLiteralMasks(op, vector, BigInt(literal));
   }
   if (vector.type === "timestamp") {
     const timestamp = timestampLiteral(literal);
@@ -742,9 +811,21 @@ function compareDictLiteralMasks(
   return mask;
 }
 
-function compareF64LiteralMasks(
+type NumberVector = Extract<Vector, { type: "f32" | "f64" | "i32" | "u32" | "u8" }>;
+
+function isNumberVector(vector: Vector): vector is NumberVector {
+  return (
+    vector.type === "f32" ||
+    vector.type === "f64" ||
+    vector.type === "i32" ||
+    vector.type === "u32" ||
+    vector.type === "u8"
+  );
+}
+
+function compareNumberLiteralMasks(
   op: CompareOp,
-  vector: Extract<Vector, { type: "f64" }>,
+  vector: NumberVector,
   literal: number,
 ): Uint8Array {
   const mask = new Uint8Array(vector.values.length);
@@ -760,9 +841,9 @@ function compareF64LiteralMasks(
   return mask;
 }
 
-function compareI64LiteralMasks(
+function compareBigIntLiteralMasks(
   op: CompareOp,
-  vector: Extract<Vector, { type: "i64" }>,
+  vector: Extract<Vector, { type: "i64" | "u64" }>,
   literal: bigint,
 ): Uint8Array {
   const mask = new Uint8Array(vector.values.length);

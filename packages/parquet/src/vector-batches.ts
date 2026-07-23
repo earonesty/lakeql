@@ -247,7 +247,7 @@ function canRepresentDirectVectorLeaf(leaf: ColumnDecoder["element"]): boolean {
     leaf.converted_type === "UINT_64" ||
     (logicalType?.type === "INTEGER" && logicalType.bitWidth === 64 && !logicalType.isSigned)
   ) {
-    return false;
+    return true;
   }
   if (
     leaf.converted_type === "DATE" ||
@@ -274,6 +274,15 @@ function canRepresentDirectVectorLeaf(leaf: ColumnDecoder["element"]): boolean {
     default:
       return false;
   }
+}
+
+function isUnsigned64Leaf(leaf: ColumnDecoder["element"]): boolean {
+  return (
+    leaf.converted_type === "UINT_64" ||
+    (leaf.logical_type?.type === "INTEGER" &&
+      leaf.logical_type.bitWidth === 64 &&
+      !leaf.logical_type.isSigned)
+  );
 }
 
 function usesDictionaryEncoding(column: ColumnMetaData): boolean {
@@ -536,7 +545,14 @@ async function* readColumnVectorBatches(
           dataPageValues(compressedBytes, header, columnDecoder, dictionary),
         );
         if (page === undefined) continue;
-        vector = flatPageVector(page.values, page.definitionLevels, 0, rowCount, page.dictionary);
+        vector = flatPageVector(
+          page.values,
+          page.definitionLevels,
+          0,
+          rowCount,
+          page.dictionary,
+          isUnsigned64Leaf(columnDecoder.element),
+        );
         if (key !== undefined && cache !== undefined) cache.setVector(key, vector);
       }
       if (key !== undefined && options.stats !== undefined) {
@@ -639,6 +655,7 @@ async function* readColumnWindowVectorBatches(
           0,
           rowCount,
           values.dictionary,
+          isUnsigned64Leaf(columnDecoder.element),
         );
         if (key !== undefined && cache !== undefined) cache.setVector(key, vector);
       }
@@ -875,11 +892,12 @@ function flatPageVector(
   start: number,
   end: number,
   dictionary?: DecodedArray,
+  unsigned64 = false,
 ): Vector {
   if (dictionary !== undefined)
-    return dictionaryPageVector(values, dictionary, definitionLevels, start, end);
-  if (definitionLevels === undefined) return nonNullFlatVector(values, start, end);
-  return nullableFlatVector(values, definitionLevels, start, end);
+    return dictionaryPageVector(values, dictionary, definitionLevels, start, end, unsigned64);
+  if (definitionLevels === undefined) return nonNullFlatVector(values, start, end, unsigned64);
+  return nullableFlatVector(values, definitionLevels, start, end, unsigned64);
 }
 
 function sliceVector(vector: Vector, start: number, end: number): Vector {
@@ -889,14 +907,39 @@ function sliceVector(vector: Vector, start: number, end: number): Vector {
   switch (vector.type) {
     case "null":
       return { type: "null", length: end - start };
+    case "f32":
+      return optionalVectorValidity(
+        { type: "f32", values: vector.values.subarray(start, end) },
+        valid,
+      );
     case "f64":
       return optionalVectorValidity(
         { type: "f64", values: vector.values.subarray(start, end) },
         valid,
       );
+    case "i32":
+      return optionalVectorValidity(
+        { type: "i32", values: vector.values.subarray(start, end) },
+        valid,
+      );
+    case "u32":
+      return optionalVectorValidity(
+        { type: "u32", values: vector.values.subarray(start, end) },
+        valid,
+      );
+    case "u8":
+      return optionalVectorValidity(
+        { type: "u8", values: vector.values.subarray(start, end) },
+        valid,
+      );
     case "i64":
       return optionalVectorValidity(
         { type: "i64", values: vector.values.subarray(start, end) },
+        valid,
+      );
+    case "u64":
+      return optionalVectorValidity(
+        { type: "u64", values: vector.values.subarray(start, end) },
         valid,
       );
     case "timestamp":
@@ -949,8 +992,9 @@ function dictionaryPageVector(
   definitionLevels: readonly number[] | undefined,
   start: number,
   end: number,
+  unsigned64: boolean,
 ): Vector {
-  const dictionaryVector = nonNullFlatVector(dictionary, 0, dictionary.length);
+  const dictionaryVector = nonNullFlatVector(dictionary, 0, dictionary.length, unsigned64);
   const length = end - start;
   const indices = new Uint32Array(length);
   if (definitionLevels === undefined) {
@@ -966,31 +1010,26 @@ function dictionaryPageVector(
   return optionalVectorValidity({ type: "dict", indices, dictionary: dictionaryVector }, valid);
 }
 
-function nonNullFlatVector(values: DecodedArray, start: number, end: number): Vector {
-  const length = end - start;
+function nonNullFlatVector(
+  values: DecodedArray,
+  start: number,
+  end: number,
+  unsigned64 = false,
+): Vector {
   if (values instanceof Float64Array) return { type: "f64", values: values.subarray(start, end) };
-  if (values instanceof Float32Array) {
-    const out = new Float64Array(length);
-    for (let index = 0; index < length; index += 1) out[index] = values[start + index] ?? 0;
-    return { type: "f64", values: out };
+  if (values instanceof Float32Array) return { type: "f32", values: values.subarray(start, end) };
+  if (values instanceof Int32Array) return { type: "i32", values: values.subarray(start, end) };
+  if (values instanceof Uint32Array) return { type: "u32", values: values.subarray(start, end) };
+  if (values instanceof Uint8Array) return { type: "u8", values: values.subarray(start, end) };
+  if (values instanceof BigInt64Array) {
+    if (unsigned64) {
+      const unsigned = new BigUint64Array(values.buffer, values.byteOffset, values.length);
+      return { type: "u64", values: unsigned.subarray(start, end) };
+    }
+    return { type: "i64", values: values.subarray(start, end) };
   }
-  if (
-    values instanceof Int32Array ||
-    values instanceof Uint32Array ||
-    values instanceof Uint8Array
-  ) {
-    const out = new Float64Array(length);
-    for (let index = 0; index < length; index += 1) out[index] = values[start + index] ?? 0;
-    return { type: "f64", values: out };
-  }
-  if (values instanceof BigInt64Array) return { type: "i64", values: values.subarray(start, end) };
-  if (values instanceof BigUint64Array) {
-    const out = new BigInt64Array(length);
-    for (let index = 0; index < length; index += 1)
-      out[index] = BigInt(values[start + index] ?? 0n);
-    return { type: "i64", values: out };
-  }
-  return arrayFlatVector(values, start, end);
+  if (values instanceof BigUint64Array) return { type: "u64", values: values.subarray(start, end) };
+  return arrayFlatVector(values, start, end, unsigned64);
 }
 
 function nullableFlatVector(
@@ -998,30 +1037,68 @@ function nullableFlatVector(
   definitionLevels: readonly number[],
   start: number,
   end: number,
+  unsigned64 = false,
 ): Vector {
   const length = end - start;
   const valid = new Uint8Array(length);
-  if (
-    values instanceof Float64Array ||
-    values instanceof Float32Array ||
-    values instanceof Int32Array ||
-    values instanceof Uint32Array ||
-    values instanceof Uint8Array
-  ) {
+  if (values instanceof Float64Array) {
     const out = new Float64Array(length);
     copyNullableValues(definitionLevels, start, end, valid, (outIndex, valueIndex) => {
       out[outIndex] = Number(values[valueIndex] ?? 0);
     });
     return optionalVectorValidity({ type: "f64", values: out }, valid);
   }
-  if (values instanceof BigInt64Array || values instanceof BigUint64Array) {
+  if (values instanceof Float32Array) {
+    const out = new Float32Array(length);
+    copyNullableValues(definitionLevels, start, end, valid, (outIndex, valueIndex) => {
+      out[outIndex] = values[valueIndex] ?? 0;
+    });
+    return optionalVectorValidity({ type: "f32", values: out }, valid);
+  }
+  if (values instanceof Int32Array) {
+    const out = new Int32Array(length);
+    copyNullableValues(definitionLevels, start, end, valid, (outIndex, valueIndex) => {
+      out[outIndex] = values[valueIndex] ?? 0;
+    });
+    return optionalVectorValidity({ type: "i32", values: out }, valid);
+  }
+  if (values instanceof Uint32Array) {
+    const out = new Uint32Array(length);
+    copyNullableValues(definitionLevels, start, end, valid, (outIndex, valueIndex) => {
+      out[outIndex] = values[valueIndex] ?? 0;
+    });
+    return optionalVectorValidity({ type: "u32", values: out }, valid);
+  }
+  if (values instanceof Uint8Array) {
+    const out = new Uint8Array(length);
+    copyNullableValues(definitionLevels, start, end, valid, (outIndex, valueIndex) => {
+      out[outIndex] = values[valueIndex] ?? 0;
+    });
+    return optionalVectorValidity({ type: "u8", values: out }, valid);
+  }
+  if (values instanceof BigInt64Array) {
+    if (unsigned64) {
+      const source = new BigUint64Array(values.buffer, values.byteOffset, values.length);
+      const out = new BigUint64Array(length);
+      copyNullableValues(definitionLevels, start, end, valid, (outIndex, valueIndex) => {
+        out[outIndex] = source[valueIndex] ?? 0n;
+      });
+      return optionalVectorValidity({ type: "u64", values: out }, valid);
+    }
     const out = new BigInt64Array(length);
     copyNullableValues(definitionLevels, start, end, valid, (outIndex, valueIndex) => {
       out[outIndex] = BigInt(values[valueIndex] ?? 0n);
     });
     return optionalVectorValidity({ type: "i64", values: out }, valid);
   }
-  return nullableArrayFlatVector(values, definitionLevels, start, end, valid);
+  if (values instanceof BigUint64Array) {
+    const out = new BigUint64Array(length);
+    copyNullableValues(definitionLevels, start, end, valid, (outIndex, valueIndex) => {
+      out[outIndex] = values[valueIndex] ?? 0n;
+    });
+    return optionalVectorValidity({ type: "u64", values: out }, valid);
+  }
+  return nullableArrayFlatVector(values, definitionLevels, start, end, valid, unsigned64);
 }
 
 function copyNullableValues(
@@ -1043,7 +1120,12 @@ function copyNullableValues(
   }
 }
 
-function arrayFlatVector(values: unknown[], start: number, end: number): Vector {
+function arrayFlatVector(
+  values: unknown[],
+  start: number,
+  end: number,
+  unsigned64: boolean,
+): Vector {
   const first = firstPresentArrayValue(values, start, end);
   switch (typeof first) {
     case "number": {
@@ -1054,6 +1136,13 @@ function arrayFlatVector(values: unknown[], start: number, end: number): Vector 
       return { type: "f64", values: out };
     }
     case "bigint": {
+      if (unsigned64) {
+        const out = new BigUint64Array(end - start);
+        for (let index = 0; index < out.length; index += 1) {
+          out[index] = BigInt.asUintN(64, bigintArrayValue(values[start + index]));
+        }
+        return { type: "u64", values: out };
+      }
       const out = new BigInt64Array(end - start);
       for (let index = 0; index < out.length; index += 1) {
         out[index] = bigintArrayValue(values[start + index]);
@@ -1070,7 +1159,8 @@ function arrayFlatVector(values: unknown[], start: number, end: number): Vector 
     case "string":
       return { type: "utf8", values: values.slice(start, end).map((value) => String(value ?? "")) };
     case "object":
-      if (isTimestampValue(first)) return vectorFromValues(values.slice(start, end));
+      if (first instanceof Date || isTimestampValue(first))
+        return vectorFromValues(values.slice(start, end));
       if (isBinaryValue(first)) {
         return {
           type: "binary",
@@ -1089,6 +1179,7 @@ function nullableArrayFlatVector(
   start: number,
   end: number,
   valid: Uint8Array,
+  unsigned64: boolean,
 ): Vector {
   const first = firstPresentDefinitionValue(values, definitionLevels, start, end);
   const length = end - start;
@@ -1101,6 +1192,13 @@ function nullableArrayFlatVector(
       return optionalVectorValidity({ type: "f64", values: out }, valid);
     }
     case "bigint": {
+      if (unsigned64) {
+        const out = new BigUint64Array(length);
+        copyNullableValues(definitionLevels, start, end, valid, (outIndex, valueIndex) => {
+          out[outIndex] = BigInt.asUintN(64, bigintArrayValue(values[valueIndex]));
+        });
+        return optionalVectorValidity({ type: "u64", values: out }, valid);
+      }
       const out = new BigInt64Array(length);
       copyNullableValues(definitionLevels, start, end, valid, (outIndex, valueIndex) => {
         out[outIndex] = bigintArrayValue(values[valueIndex]);
@@ -1135,7 +1233,7 @@ function nullableArrayFlatVector(
         }
         return optionalVectorValidity({ type: "binary", values: out }, valid);
       }
-      if (!isTimestampValue(first)) return { type: "null", length };
+      if (!(first instanceof Date) && !isTimestampValue(first)) return { type: "null", length };
       const out = new Array<unknown>(length);
       copyNullableValues(definitionLevels, start, end, valid, (outIndex, valueIndex) => {
         out[outIndex] = values[valueIndex];

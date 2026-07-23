@@ -90,7 +90,7 @@ describe("direct Parquet vector batches", () => {
       { id: 3, tags: [], attrs: {} },
       { id: 4, tags: ["park"], attrs: { category: "park" } },
     ]);
-    expect(batches[0]?.batch.columns.id?.type).toBe("f64");
+    expect(batches[0]?.batch.columns.id?.type).toBe("i32");
     expect(batches[0]?.batch.columns.tags?.type).toBe("list");
     expect(batches[0]?.batch.columns.attrs?.type).toBe("map");
     expect(stats.rowsDecoded).toBe(3);
@@ -684,7 +684,7 @@ describe("direct Parquet vector batches", () => {
     if (idLeaf !== undefined) {
       idLeaf.logical_type = { type: "INTEGER", bitWidth: 64, isSigned: false };
     }
-    expect(canReadParquetVectorBatches(unsignedLogical, { columns: ["id"] })).toBe(false);
+    expect(canReadParquetVectorBatches(unsignedLogical, { columns: ["id"] })).toBe(true);
 
     for (const logicalType of ["GEOMETRY", "GEOGRAPHY"] as const) {
       const supported = structuredClone(metadata);
@@ -709,6 +709,118 @@ describe("direct Parquet vector batches", () => {
     const firstColumn = missingMetadata.row_groups[0]?.columns[0];
     if (firstColumn !== undefined) delete firstColumn.meta_data;
     expect(canReadParquetVectorBatches(missingMetadata, { columns: ["id"] })).toBe(false);
+  });
+
+  it("preserves nullable accelerator-width numeric pages", async () => {
+    const store = memoryStore();
+    await writeParquet(store, "data/vector-narrow-numeric.parquet", {
+      rowGroupSize: [5],
+      pageSize: 1024,
+      schema: [
+        { name: "root", num_children: 6 },
+        { name: "f32", type: "FLOAT", repetition_type: "OPTIONAL" },
+        { name: "i32", type: "INT32", repetition_type: "OPTIONAL" },
+        {
+          name: "u32",
+          type: "INT32",
+          converted_type: "UINT_32",
+          repetition_type: "OPTIONAL",
+        },
+        { name: "required_f32", type: "FLOAT", repetition_type: "REQUIRED" },
+        {
+          name: "required_u32",
+          type: "INT32",
+          converted_type: "UINT_32",
+          repetition_type: "REQUIRED",
+        },
+        {
+          name: "u64",
+          type: "INT64",
+          converted_type: "UINT_64",
+          repetition_type: "OPTIONAL",
+        },
+      ],
+      columnData: [
+        { name: "f32", data: [1.25, null, 3.5, 4.75, 5] },
+        { name: "i32", data: [-2, -1, null, 1, 2] },
+        { name: "u32", data: [0, null, 2_147_483_648, 4_000_000_000, 4_294_967_295] },
+        { name: "required_f32", data: [10.25, 20.5, 30.75, 40, 50.125] },
+        { name: "required_u32", data: [10, 20, 3_000_000_000, 40, 4_294_967_295] },
+        {
+          name: "u64",
+          data: [0n, null, 0x8000_0000_0000_0000n, 3n, 0xffff_ffff_ffff_ffffn],
+        },
+      ],
+    });
+    const file = await fileBuffer(store, "data/vector-narrow-numeric.parquet");
+    const metadata = await readParquetMetadata(store, "data/vector-narrow-numeric.parquet");
+
+    const batches = [];
+    for await (const batch of readParquetVectorBatchesFromFile(file, metadata, {
+      columns: ["f32", "i32", "u32", "required_f32", "required_u32", "u64"],
+      rowStart: 1,
+      rowEnd: 5,
+      batchSize: 2,
+      stats: queryStats(),
+    })) {
+      batches.push(batch.batch);
+    }
+
+    expect(batches).toHaveLength(1);
+    const batch = batches[0];
+    if (batch === undefined) throw new Error("missing narrow numeric vector batch");
+    expect(batch.columns.f32).toMatchObject({
+      type: "f32",
+      valid: new Uint8Array([0, 1, 1, 1]),
+    });
+    expect(batch.columns.i32).toMatchObject({
+      type: "i32",
+      valid: new Uint8Array([1, 0, 1, 1]),
+    });
+    expect(batch.columns.u32).toMatchObject({
+      type: "u32",
+      valid: new Uint8Array([0, 1, 1, 1]),
+    });
+    expect(batch.columns.required_f32).toMatchObject({ type: "f32" });
+    expect(batch.columns.required_u32).toMatchObject({ type: "u32" });
+    expect(batch.columns.u64).toMatchObject({
+      type: "u64",
+      valid: new Uint8Array([0, 1, 1, 1]),
+    });
+    expect(materializeBatchRows(batch)).toEqual([
+      {
+        f32: null,
+        i32: -1,
+        u32: null,
+        required_f32: 20.5,
+        required_u32: 20,
+        u64: null,
+      },
+      {
+        f32: 3.5,
+        i32: null,
+        u32: 2_147_483_648,
+        required_f32: 30.75,
+        required_u32: 3_000_000_000,
+        u64: 0x8000_0000_0000_0000n,
+      },
+      {
+        f32: 4.75,
+        i32: 1,
+        u32: 4_000_000_000,
+        required_f32: 40,
+        required_u32: 40,
+        u64: 3n,
+      },
+      {
+        f32: 5,
+        i32: 2,
+        u32: 4_294_967_295,
+        required_f32: 50.125,
+        required_u32: 4_294_967_295,
+        u64: 0xffff_ffff_ffff_ffffn,
+      },
+    ]);
   });
 
   it("queries GeoParquet WKB geometry columns through vector spatial predicates", async () => {
@@ -979,7 +1091,7 @@ describe("direct Parquet vector batches", () => {
     const unsignedMetadata = structuredClone(metadata);
     const idLeaf = unsignedMetadata.schema.find((entry) => entry.name === "id");
     if (idLeaf !== undefined) idLeaf.converted_type = "UINT_64";
-    expect(canReadParquetVectorBatches(unsignedMetadata, { columns: ["id"] })).toBe(false);
+    expect(canReadParquetVectorBatches(unsignedMetadata, { columns: ["id"] })).toBe(true);
   });
 });
 

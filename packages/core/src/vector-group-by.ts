@@ -143,7 +143,7 @@ function updateEncodedVectorGroupByState(
     const groupId = encoder.groupIdAt(index);
     let group = groupsById[groupId];
     if (group === undefined) {
-      group = getOrCreateGroupByValues(state, encoder.keyValues(groupId), options);
+      group = getOrCreateVectorGroupByValues(state, encoder.keyValues(groupId), options);
       groupsById[groupId] = group;
     }
     for (const input of aggregateInputs) {
@@ -154,10 +154,10 @@ function updateEncodedVectorGroupByState(
   return matched;
 }
 
-function getOrCreateGroupByValues(
+export function getOrCreateVectorGroupByValues(
   state: VectorGroupByState,
-  keyValues: Scalar[],
-  options: VectorGroupByOptions,
+  keyValues: readonly Scalar[],
+  options: VectorGroupByOptions = {},
 ): VectorGroup {
   const key = groupKey(keyValues);
   let group = state.groups.get(key);
@@ -170,7 +170,7 @@ function getOrCreateGroupByValues(
     );
   }
   group = {
-    keyValues,
+    keyValues: [...keyValues],
     states: createVectorAggregateStates(state.spec, options),
   };
   state.groups.set(key, group);
@@ -200,8 +200,13 @@ function createGroupKeyEncoder(keys: readonly string[], batch: Batch): GroupKeyE
 function canEncodeScalarVector(vector: Vector): boolean {
   switch (vector.type) {
     case "null":
+    case "f32":
     case "f64":
+    case "i32":
+    case "u32":
+    case "u8":
     case "i64":
+    case "u64":
     case "timestamp":
     case "bool":
     case "utf8":
@@ -363,9 +368,14 @@ function vectorGroupKeyPart(vector: Vector, index: number): string {
   switch (vector.type) {
     case "null":
       return scalarGroupKeyPart(null);
+    case "f32":
     case "f64":
+    case "i32":
+    case "u32":
+    case "u8":
       return scalarGroupKeyPart(vector.values[index] ?? 0);
     case "i64":
+    case "u64":
       return scalarGroupKeyPart(vector.values[index] ?? 0n);
     case "timestamp":
       return scalarGroupKeyPart(scalarVectorValue(vector, index));
@@ -425,6 +435,9 @@ export function restoreVectorGroupByState(
   snapshot: VectorGroupByStateSnapshot,
   options: VectorGroupByOptions = {},
 ): VectorGroupByState {
+  if (options.maxGroups !== undefined && snapshot.groups.length > options.maxGroups) {
+    throw groupLimitError(options.maxGroups, snapshot.groups.length);
+  }
   const state = createVectorGroupByState(keys, spec);
   for (const groupSnapshot of snapshot.groups) {
     const keyValues = groupSnapshot.keyValues.map(restoreGroupValue);
@@ -463,6 +476,9 @@ export function mergeVectorGroupByStates(
   for (const [key, sourceGroup] of source.groups) {
     const targetGroup = target.groups.get(key);
     if (targetGroup === undefined) {
+      if (options.maxGroups !== undefined && target.groups.size >= options.maxGroups) {
+        throw groupLimitError(options.maxGroups, target.groups.size + 1);
+      }
       target.groups.set(key, {
         keyValues: [...sourceGroup.keyValues],
         states: restoreVectorAggregateStates(
@@ -475,6 +491,14 @@ export function mergeVectorGroupByStates(
     }
     enforceGroupByMemoryBudget(target, options.budget);
   }
+}
+
+function groupLimitError(limit: number, actual: number): LakeqlError {
+  return new LakeqlError(
+    "LAKEQL_GROUP_LIMIT_EXCEEDED",
+    `Query exceeded group budget (${actual} > ${limit})`,
+    { limit, actual },
+  );
 }
 
 export function vectorGroupByBatch(
@@ -534,15 +558,26 @@ function directAggregateInput(
       column: aggregate.column,
     });
   }
-  if (aggregate.op === "sum" && vector.type === "f64") return directF64SumInput(alias, vector);
-  if (aggregate.op === "avg" && vector.type === "f64") return directF64AvgInput(alias, vector);
+  if (aggregate.op === "sum" && isDirectNumberVector(vector))
+    return directNumberSumInput(alias, vector);
+  if (aggregate.op === "avg" && isDirectNumberVector(vector))
+    return directNumberAvgInput(alias, vector);
   return undefined;
 }
 
-function directF64SumInput(
-  alias: string,
-  vector: Extract<Vector, { type: "f64" }>,
-): AggregateInput {
+type DirectNumberVector = Extract<Vector, { type: "f32" | "f64" | "i32" | "u32" | "u8" }>;
+
+function isDirectNumberVector(vector: Vector): vector is DirectNumberVector {
+  return (
+    vector.type === "f32" ||
+    vector.type === "f64" ||
+    vector.type === "i32" ||
+    vector.type === "u32" ||
+    vector.type === "u8"
+  );
+}
+
+function directNumberSumInput(alias: string, vector: DirectNumberVector): AggregateInput {
   const values = vector.values;
   const valid = vector.valid;
   return {
@@ -557,10 +592,7 @@ function directF64SumInput(
   };
 }
 
-function directF64AvgInput(
-  alias: string,
-  vector: Extract<Vector, { type: "f64" }>,
-): AggregateInput {
+function directNumberAvgInput(alias: string, vector: DirectNumberVector): AggregateInput {
   const values = vector.values;
   const valid = vector.valid;
   return {

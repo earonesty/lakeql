@@ -93,6 +93,14 @@ it with filesystem support, while `lakeql/cloudflare` extends it with native R2
 and D1 adapters. A Cloudflare Worker reading AWS S3 can import `s3Store` from
 either `lakeql/fetch` or `lakeql/cloudflare`.
 
+## Optional WebGPU Execution
+
+Install the separate `lakeql-webgpu` package to register an opt-in accelerator
+backend in a browser or another runtime that explicitly provides WebGPU.
+CPU-only applications do not load WebGPU or a native dependency. See the
+[package guide](https://github.com/earonesty/lakeql/blob/main/packages/webgpu/README.md)
+for supported physical fragments, budgets, residency, and lifecycle behavior.
+
 ## Documentation
 
 - [Full README](https://github.com/earonesty/lakeql#readme)

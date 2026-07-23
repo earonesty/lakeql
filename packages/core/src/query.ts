@@ -2,7 +2,6 @@ import { continuousQuantile, requiredQuantile } from "./aggregate-quantile.js";
 import {
   type Batch,
   materializeBatchRows,
-  materializeSelectedBatchRows,
   predicateSelection,
   scalarVectorValue,
   selectedRowCount,
@@ -24,10 +23,26 @@ import {
   assertBookmarkMatches,
   createBookmark,
   createTaskManifest,
+  fingerprint,
   stableStringify,
   type TaskManifest,
 } from "./manifest.js";
 import { isPrototypeMutationKey } from "./object-key.js";
+import {
+  type AcceleratorPolicy,
+  CpuPhysicalBackend,
+  estimateBatchBytes,
+  executePlannedPhysicalFragment,
+  type PhysicalExecutionBackend,
+  type PhysicalExecutionMetrics,
+  type PhysicalFragment,
+  type PhysicalOperator,
+  type PhysicalOutput,
+  type PhysicalOutputValue,
+  type PhysicalPlacementCandidate,
+  physicalInputFromBatch,
+  planPhysicalFragment,
+} from "./physical.js";
 import { classifyPredicate, type PredicatePlan } from "./predicate-plan.js";
 import { parseJsonQuery } from "./query-json.js";
 import {
@@ -49,18 +64,25 @@ import type {
 import { pruneFilesWithIndex, type SidecarFileIndex } from "./sidecar-index.js";
 import type { ObjectInfo, ObjectStore } from "./store.js";
 import type { Bookmark, BookmarkQuery, QueryStats, Row, SliceResult } from "./types.js";
-import type { VectorAggregateValue } from "./vector-aggregate.js";
+import {
+  createVectorAggregateStates,
+  finalizeVectorAggregateStates,
+  restoreVectorAggregateStates,
+  type VectorAggregateStateSnapshots,
+  type VectorAggregateValue,
+} from "./vector-aggregate.js";
 import {
   createVectorGroupByState,
   enforceVectorGroupByBudget,
   finalizeVectorGroupByRows,
   getOrCreateVectorGroup,
+  restoreVectorGroupByState,
   updateVectorGroupAggregateValue,
-  updateVectorGroupByState,
   type VectorGroup,
+  type VectorGroupByStateSnapshot,
 } from "./vector-group-by.js";
 import { vectorProjectBatch } from "./vector-project.js";
-import { concatBatches, vectorTopKBatch } from "./vector-sort.js";
+import { concatBatches, gatherBatch, vectorTopKBatch } from "./vector-sort.js";
 import type { WindowExpr } from "./window.js";
 import {
   collectWindowColumns,
@@ -106,6 +128,14 @@ export interface QueryBudget {
   maxMemoryBytes?: number;
   /** Maximum object-store reads allowed to be in flight at once. */
   maxConcurrentReads?: number;
+  /** Maximum live accelerator allocations charged to this query. */
+  maxAcceleratorMemoryBytes?: number;
+  /** Maximum bytes uploaded to accelerators by this query. */
+  maxAcceleratorUploadBytes?: number;
+  /** Maximum bytes read back from accelerators by this query. */
+  maxAcceleratorReadbackBytes?: number;
+  /** Maximum accelerator dispatches issued by this query. */
+  maxAcceleratorDispatches?: number;
   /** Abort query planning or scanning at await boundaries. */
   signal?: AbortSignal;
 }
@@ -132,6 +162,15 @@ export interface LakeConfig {
   substrate?: RuntimeSubstrate;
   now?: () => number;
   queryId?: () => string;
+  physicalExecution?: PhysicalExecutionOptions;
+}
+
+export interface PhysicalExecutionOptions {
+  /** Additional physical backends. A complete CPU backend is installed automatically. */
+  backends?: readonly PhysicalExecutionBackend[];
+  acceleratorPolicy?: AcceleratorPolicy;
+  /** Replay unpublished fragments on CPU after a backend reports a replayable failure. */
+  replayOnCpu?: boolean;
 }
 
 export interface ScanOptions {
@@ -388,7 +427,27 @@ export interface ExplainJson {
   predicatePlan: PredicatePlan;
   metrics?: QueryStats;
   windowPlan?: WindowExplainPlan;
+  physicalFragments?: PhysicalFragmentExplain[];
   tasks: TaskInput[];
+}
+
+export interface PhysicalFragmentExplain {
+  fragmentId: string;
+  operators: PhysicalOperator["kind"][];
+  output: PhysicalOutput["kind"];
+  backendId: string;
+  executions: number;
+  inputRows: number;
+  selectedRows: number;
+  outputRows: number;
+  inputBytes: number;
+  uploadBytes: number;
+  readbackBytes: number;
+  dispatches: number;
+  elapsedMs: number;
+  replays: number;
+  replaySourceBackendId?: string;
+  candidates: PhysicalPlacementCandidate[];
 }
 
 export interface ExplainResult {
@@ -441,6 +500,7 @@ export class Lake {
   private readonly substrate: RuntimeSubstrate | undefined;
   private readonly sidecarIndex: SidecarFileIndex[] | undefined;
   private readonly planningCache: CacheAdapter<ObjectInfo[]> | undefined;
+  private readonly physicalExecution: NormalizedPhysicalExecution;
 
   constructor(config: LakeConfig) {
     const substrate = config.substrate;
@@ -455,6 +515,7 @@ export class Lake {
     this.substrate = substrate;
     this.sidecarIndex = config.sidecarIndex;
     this.planningCache = config.planningCache;
+    this.physicalExecution = normalizePhysicalExecution(config.physicalExecution);
   }
 
   path(source: string): QueryBuilder {
@@ -486,6 +547,7 @@ export class Lake {
       ...(metrics !== undefined ? { metrics } : {}),
       ...(this.sidecarIndex !== undefined ? { sidecarIndex: this.sidecarIndex } : {}),
       ...(this.planningCache !== undefined ? { planningCache: this.planningCache } : {}),
+      physicalExecution: this.physicalExecution,
       scanner: this.scanner,
     });
   }
@@ -674,11 +736,13 @@ interface QueryResultConfig extends PathQueryInit {
   metrics?: MetricsHook;
   sidecarIndex?: SidecarFileIndex[];
   planningCache?: CacheAdapter<ObjectInfo[]>;
+  physicalExecution: NormalizedPhysicalExecution;
 }
 
 export class QueryResult {
   readonly stats: QueryStats;
   private readonly config: QueryResultConfig;
+  private readonly physicalFragments = new Map<string, PhysicalFragmentExplain>();
 
   constructor(config: QueryResultConfig) {
     validateQueryInit(config);
@@ -754,6 +818,7 @@ export class QueryResult {
       yield* columnarBatches;
       return;
     }
+    this.requirePhysicalPath("query");
     const config = this.config;
     const { stats } = this;
     const startedAt = config.now();
@@ -848,12 +913,8 @@ export class QueryResult {
 
   private tryColumnarProjectedBatches(): AsyncIterable<Row[]> | undefined {
     const config = this.config;
-    const hasProjectedShape =
-      config.select !== undefined ||
-      (config.projections !== undefined && Object.keys(config.projections).length > 0);
     if (
       config.scanner.scanVectorBatches === undefined ||
-      !hasProjectedShape ||
       config.distinct === true ||
       config.hive === true ||
       !vectorExprSupported(config.where) ||
@@ -870,7 +931,10 @@ export class QueryResult {
     const startedAt = config.now();
     const scanVectorBatches = config.scanner.scanVectorBatches;
     if (scanVectorBatches === undefined) return;
-    const lateMaterialized = await this.lateMaterializedLimitRows(startedAt);
+    const lateMaterialized =
+      config.physicalExecution.acceleratorPolicy === "required"
+        ? undefined
+        : await this.lateMaterializedLimitRows(startedAt);
     if (lateMaterialized !== undefined) {
       yield* rowsAsBatches(lateMaterialized, config.batchSize ?? 4096);
       return;
@@ -904,19 +968,62 @@ export class QueryResult {
       if (config.where === undefined && (config.offset ?? 0) === 0 && config.limit !== undefined) {
         scanOptions.rowEnd = Math.max(0, config.limit - returned);
       }
-      for await (const { batch } of scanVectorBatches.call(
+      for await (const { rowOffset, batch } of scanVectorBatches.call(
         config.scanner,
         object.path,
         scanOptions,
       )) {
-        const selection =
-          config.where === undefined ? undefined : predicateSelection(batch, config.where);
-        stats.rowsMatched += selectedRowCount(batch.rowCount, selection);
-        const projected = vectorProjectBatch(batch, config.select, config.projections);
-        const rows =
-          selection === undefined
-            ? materializeBatchRows(projected)
-            : materializeSelectedBatchRows(projected, selection);
+        const sourceIdentity = physicalSourceIdentity(object, rowOffset);
+        let projectedBatch: Batch;
+        let selectedRows: number;
+        if (config.where !== undefined) {
+          const physical = await this.executePhysicalBatch(
+            batch,
+            [{ kind: "select", predicate: config.where }],
+            { kind: "selection" },
+            sourceIdentity,
+            startedAt,
+          );
+          if (physical.output.kind !== "selection") {
+            throw new LakeqlError(
+              "LAKEQL_PHYSICAL_BACKEND_FAILURE",
+              "Selection physical fragment did not return a selection",
+              { actual: physical.output.kind },
+            );
+          }
+          const indices = [...selectedRowIndices(batch.rowCount, physical.output.selection)];
+          selectedRows = indices.length;
+          projectedBatch = vectorProjectBatch(
+            gatherBatch(batch, indices),
+            config.select,
+            config.projections,
+          );
+        } else {
+          const physical = await this.executePhysicalBatch(
+            batch,
+            [
+              {
+                kind: "project",
+                ...(config.select === undefined ? {} : { select: config.select }),
+                ...(config.projections === undefined ? {} : { projections: config.projections }),
+              },
+            ],
+            { kind: "batch" },
+            sourceIdentity,
+            startedAt,
+          );
+          if (physical.output.kind !== "batch") {
+            throw new LakeqlError(
+              "LAKEQL_PHYSICAL_BACKEND_FAILURE",
+              "Projected physical fragment did not return a batch",
+              { actual: physical.output.kind },
+            );
+          }
+          selectedRows = physical.metrics.selectedRows ?? batch.rowCount;
+          projectedBatch = physical.output.batch;
+        }
+        stats.rowsMatched += selectedRows;
+        const rows = materializeBatchRows(projectedBatch);
         const out: Row[] = [];
         for (const row of rows) {
           if (offsetSkipped < (config.offset ?? 0)) {
@@ -936,6 +1043,157 @@ export class QueryResult {
     }
     stats.elapsedMs = config.now() - startedAt;
     config.metrics?.timing("lakeql.query.elapsed", stats.elapsedMs, { queryId: stats.queryId });
+  }
+
+  private async executePhysicalBatch(
+    batch: Batch,
+    operators: readonly PhysicalOperator[],
+    output: PhysicalOutput,
+    sourceIdentity: string,
+    queryStartedAt: number,
+    priorOutput?: Extract<
+      PhysicalOutputValue,
+      { kind: "aggregate-snapshot" | "grouped-aggregate-snapshot" }
+    >,
+  ) {
+    const input = physicalInputFromBatch(batch, { sourceIdentity });
+    const fragment: PhysicalFragment = {
+      id: fingerprint({
+        version: 1,
+        inputColumns: input.columns,
+        operators,
+        output,
+      }),
+      input,
+      operators,
+      output,
+      estimates: {
+        rowCount: batch.rowCount,
+        inputBytes: estimateBatchBytes(batch),
+        outputBytes: estimatePhysicalOutputBytes(batch, operators, output),
+        dispatchCount: Math.max(1, operators.length),
+      },
+    };
+    const budget = this.remainingPhysicalBudget();
+    const plan = planPhysicalFragment(fragment, this.config.physicalExecution.backends, {
+      policy: this.config.physicalExecution.acceleratorPolicy,
+      budget,
+    });
+    const result = await executePlannedPhysicalFragment(
+      plan,
+      this.config.physicalExecution.backends,
+      { kind: "batch", batch, sourceIdentity },
+      {
+        budget,
+        now: this.config.now,
+        queryStartedAt,
+        enforceOutputRows: false,
+        ...(priorOutput === undefined ? {} : { priorOutput }),
+      },
+      { replayOnCpu: this.config.physicalExecution.replayOnCpu },
+    );
+    this.recordPhysicalExecution(plan.candidates, fragment, result.metrics);
+    return result;
+  }
+
+  private recordPhysicalExecution(
+    candidates: readonly PhysicalPlacementCandidate[],
+    fragment: PhysicalFragment,
+    metrics: PhysicalExecutionMetrics,
+  ): void {
+    const key = `${fragment.id}\u0000${metrics.backendId}\u0000${
+      metrics.replaySourceBackendId ?? ""
+    }`;
+    const existing = this.physicalFragments.get(key);
+    if (existing === undefined) {
+      this.physicalFragments.set(key, {
+        fragmentId: fragment.id,
+        operators: fragment.operators.map((operator) => operator.kind),
+        output: fragment.output.kind,
+        backendId: metrics.backendId,
+        executions: 1,
+        inputRows: metrics.inputRows,
+        selectedRows: metrics.selectedRows ?? metrics.inputRows,
+        outputRows: metrics.outputRows ?? 0,
+        inputBytes: metrics.inputBytes,
+        uploadBytes: metrics.uploadBytes,
+        readbackBytes: metrics.readbackBytes,
+        dispatches: metrics.dispatches,
+        elapsedMs: metrics.elapsedMs,
+        replays: metrics.replayed ? 1 : 0,
+        ...(metrics.replaySourceBackendId === undefined
+          ? {}
+          : { replaySourceBackendId: metrics.replaySourceBackendId }),
+        candidates: candidates.map(clonePhysicalCandidate),
+      });
+    } else {
+      existing.executions += 1;
+      existing.inputRows += metrics.inputRows;
+      existing.selectedRows += metrics.selectedRows ?? metrics.inputRows;
+      existing.outputRows += metrics.outputRows ?? 0;
+      existing.inputBytes += metrics.inputBytes;
+      existing.uploadBytes += metrics.uploadBytes;
+      existing.readbackBytes += metrics.readbackBytes;
+      existing.dispatches += metrics.dispatches;
+      existing.elapsedMs += metrics.elapsedMs;
+      existing.replays += metrics.replayed ? 1 : 0;
+    }
+    const backendKind = candidates.find(
+      (candidate) => candidate.backendId === metrics.backendId,
+    )?.backendKind;
+    const replaySourceKind = candidates.find(
+      (candidate) => candidate.backendId === metrics.replaySourceBackendId,
+    )?.backendKind;
+    this.stats.physicalFragments = (this.stats.physicalFragments ?? 0) + 1;
+    this.stats.acceleratorFragments =
+      (this.stats.acceleratorFragments ?? 0) +
+      (backendKind === "accelerator" || replaySourceKind === "accelerator" ? 1 : 0);
+    this.stats.acceleratorUploadBytes =
+      (this.stats.acceleratorUploadBytes ?? 0) + metrics.uploadBytes;
+    this.stats.acceleratorReadbackBytes =
+      (this.stats.acceleratorReadbackBytes ?? 0) + metrics.readbackBytes;
+    this.stats.acceleratorDispatches = (this.stats.acceleratorDispatches ?? 0) + metrics.dispatches;
+    this.stats.physicalReplays = (this.stats.physicalReplays ?? 0) + (metrics.replayed ? 1 : 0);
+  }
+
+  private remainingPhysicalBudget(): QueryBudget {
+    const budget = this.config.budget;
+    return {
+      ...budget,
+      ...(budget.maxAcceleratorUploadBytes === undefined
+        ? {}
+        : {
+            maxAcceleratorUploadBytes: Math.max(
+              0,
+              budget.maxAcceleratorUploadBytes - (this.stats.acceleratorUploadBytes ?? 0),
+            ),
+          }),
+      ...(budget.maxAcceleratorReadbackBytes === undefined
+        ? {}
+        : {
+            maxAcceleratorReadbackBytes: Math.max(
+              0,
+              budget.maxAcceleratorReadbackBytes - (this.stats.acceleratorReadbackBytes ?? 0),
+            ),
+          }),
+      ...(budget.maxAcceleratorDispatches === undefined
+        ? {}
+        : {
+            maxAcceleratorDispatches: Math.max(
+              0,
+              budget.maxAcceleratorDispatches - (this.stats.acceleratorDispatches ?? 0),
+            ),
+          }),
+    };
+  }
+
+  private requirePhysicalPath(operation: string): void {
+    if (this.config.physicalExecution.acceleratorPolicy !== "required") return;
+    throw new LakeqlError(
+      "LAKEQL_PHYSICAL_BACKEND_UNAVAILABLE",
+      `Required accelerator placement is unavailable for this ${operation}`,
+      { operation },
+    );
   }
 
   private async lateMaterializedLimitRows(startedAt: number): Promise<Row[] | undefined> {
@@ -1205,6 +1463,7 @@ export class QueryResult {
   ): Promise<Row[]> {
     const columnarRows = await this.tryColumnarAggregateRows(groupColumns, spec, options);
     if (columnarRows !== undefined) return columnarRows;
+    this.requirePhysicalPath("aggregate");
     return (await this.aggregateWithState(groupColumns, spec, options)).rows;
   }
 
@@ -1230,28 +1489,110 @@ export class QueryResult {
     validateAggregateRequest(groupColumns, spec, options);
     await ensureGeoBackendForExprs(Object.values(spec).map((aggregate) => aggregate.expr));
     const startedAt = config.now();
-    const adaptiveRows = await this.tryLateMaterializedAggregateRows(
-      groupColumns,
-      spec,
-      options,
-      startedAt,
-    );
+    const adaptiveRows =
+      config.physicalExecution.acceleratorPolicy === "required"
+        ? undefined
+        : await this.tryLateMaterializedAggregateRows(groupColumns, spec, options, startedAt);
     if (adaptiveRows !== undefined) return adaptiveRows;
     if (config.scanner.scanColumns === undefined) return undefined;
-    const state = createVectorGroupByState(groupColumns, spec);
-    for await (const batch of this.columnBatches(
+    if (groupColumns.length === 0) {
+      return this.columnarUngroupedAggregateRows(spec, options, startedAt);
+    }
+    let aggregateSnapshot: VectorGroupByStateSnapshot | undefined;
+    for await (const { batch, sourceIdentity } of this.columnBatches(
       aggregateReadColumns(groupColumns, spec, config.where, config.projections),
       startedAt,
       columnarBatchSize(config.batchSize),
     )) {
-      const selection = predicateSelection(batch, config.where);
-      this.stats.rowsMatched += updateVectorGroupByState(state, batch, selection, {
-        budget: config.budget,
+      const operators: PhysicalOperator[] = [];
+      if (config.where !== undefined) {
+        operators.push({ kind: "select", predicate: config.where });
+      }
+      operators.push({
+        kind: "grouped-reduce",
+        keys: groupColumns,
+        aggregates: spec,
         ...(options.maxGroups === undefined ? {} : { maxGroups: options.maxGroups }),
       });
-      enforceBufferedRowsBudget(config.budget, state.groups.size);
+      const physical = await this.executePhysicalBatch(
+        batch,
+        operators,
+        { kind: "grouped-aggregate-snapshot" },
+        sourceIdentity,
+        startedAt,
+        aggregateSnapshot === undefined
+          ? undefined
+          : { kind: "grouped-aggregate-snapshot", snapshot: aggregateSnapshot },
+      );
+      if (physical.output.kind !== "grouped-aggregate-snapshot") {
+        throw new LakeqlError(
+          "LAKEQL_PHYSICAL_BACKEND_FAILURE",
+          "Grouped physical fragment did not return an aggregate snapshot",
+          { actual: physical.output.kind },
+        );
+      }
+      this.stats.rowsMatched += physical.metrics.selectedRows ?? batch.rowCount;
+      aggregateSnapshot = physical.output.snapshot;
+      enforceBufferedRowsBudget(config.budget, aggregateSnapshot.groups.length);
     }
+    const state =
+      aggregateSnapshot === undefined
+        ? createVectorGroupByState(groupColumns, spec)
+        : restoreVectorGroupByState(groupColumns, spec, aggregateSnapshot, {
+            budget: config.budget,
+            ...(options.maxGroups === undefined ? {} : { maxGroups: options.maxGroups }),
+          });
     const rows = applyAggregateResultOptions(finalizeVectorGroupByRows(state), options);
+    for (const _row of rows) {
+      this.stats.rowsReturned += 1;
+      enforceBudget(config.budget, this.stats, config.now, startedAt);
+    }
+    this.stats.elapsedMs = config.now() - startedAt;
+    return rows;
+  }
+
+  private async columnarUngroupedAggregateRows(
+    spec: AggregateSpec,
+    options: AggregateOptions,
+    startedAt: number,
+  ): Promise<Row[]> {
+    const config = this.config;
+    let aggregateSnapshot: VectorAggregateStateSnapshots | undefined;
+    for await (const { batch, sourceIdentity } of this.columnBatches(
+      aggregateReadColumns([], spec, config.where, config.projections),
+      startedAt,
+      columnarBatchSize(config.batchSize),
+    )) {
+      const operators: PhysicalOperator[] = [];
+      if (config.where !== undefined) {
+        operators.push({ kind: "select", predicate: config.where });
+      }
+      operators.push({ kind: "reduce", aggregates: spec });
+      const physical = await this.executePhysicalBatch(
+        batch,
+        operators,
+        { kind: "aggregate-snapshot" },
+        sourceIdentity,
+        startedAt,
+        aggregateSnapshot === undefined
+          ? undefined
+          : { kind: "aggregate-snapshot", snapshot: aggregateSnapshot },
+      );
+      if (physical.output.kind !== "aggregate-snapshot") {
+        throw new LakeqlError(
+          "LAKEQL_PHYSICAL_BACKEND_FAILURE",
+          "Ungrouped physical fragment did not return an aggregate snapshot",
+          { actual: physical.output.kind },
+        );
+      }
+      this.stats.rowsMatched += physical.metrics.selectedRows ?? batch.rowCount;
+      aggregateSnapshot = physical.output.snapshot;
+    }
+    const state =
+      aggregateSnapshot === undefined
+        ? createVectorAggregateStates(spec, { budget: config.budget })
+        : restoreVectorAggregateStates(aggregateSnapshot, { budget: config.budget });
+    const rows = applyAggregateResultOptions([finalizeVectorAggregateStates(state)], options);
     for (const _row of rows) {
       this.stats.rowsReturned += 1;
       enforceBudget(config.budget, this.stats, config.now, startedAt);
@@ -1497,6 +1838,7 @@ export class QueryResult {
       }
       return;
     }
+    this.requirePhysicalPath("ordered query");
     const matched: Row[] = [];
     const topK =
       config.distinct === true || config.limit === undefined
@@ -1547,18 +1889,39 @@ export class QueryResult {
     const orderBy = normalizeOrderBy(config.orderBy);
     const topK = (config.offset ?? 0) + config.limit;
     const startedAt = config.now();
-    const lateMaterialized = await this.tryLateMaterializedTopKRows(orderBy, topK, startedAt);
+    const lateMaterialized =
+      config.physicalExecution.acceleratorPolicy === "required"
+        ? undefined
+        : await this.tryLateMaterializedTopKRows(orderBy, topK, startedAt);
     if (lateMaterialized !== undefined) return lateMaterialized;
     if (config.scanner.scanColumns === undefined) return undefined;
     let retained: Batch | undefined;
-    for await (const batch of this.columnBatches(
+    for await (const { batch, sourceIdentity } of this.columnBatches(
       projectedReadColumns(config.select, config.where, orderBy, config.projections),
       startedAt,
       columnarBatchSize(config.batchSize),
     )) {
-      const selection = predicateSelection(batch, config.where);
-      this.stats.rowsMatched += selectedRowCount(batch.rowCount, selection);
-      const candidates = vectorTopKBatch(batch, orderBy, { limit: topK }, selection);
+      const operators: PhysicalOperator[] = [];
+      if (config.where !== undefined) {
+        operators.push({ kind: "select", predicate: config.where });
+      }
+      operators.push({ kind: "top-k", orderBy, limit: topK });
+      const physical = await this.executePhysicalBatch(
+        batch,
+        operators,
+        { kind: "batch" },
+        sourceIdentity,
+        startedAt,
+      );
+      if (physical.output.kind !== "batch") {
+        throw new LakeqlError(
+          "LAKEQL_PHYSICAL_BACKEND_FAILURE",
+          "Top-k physical fragment did not return a batch",
+          { actual: physical.output.kind },
+        );
+      }
+      this.stats.rowsMatched += physical.metrics.selectedRows ?? batch.rowCount;
+      const candidates = physical.output.batch;
       retained =
         retained === undefined
           ? candidates
@@ -1716,7 +2079,7 @@ export class QueryResult {
     readColumns: string[] | undefined,
     startedAt: number,
     batchSize = this.config.batchSize ?? 4096,
-  ): AsyncIterable<Batch> {
+  ): AsyncIterable<{ batch: Batch; sourceIdentity: string }> {
     const config = this.config;
     const scanColumns = config.scanner.scanColumns;
     if (scanColumns === undefined) return;
@@ -1737,9 +2100,11 @@ export class QueryResult {
       };
       if (readColumns !== undefined && readColumns.length > 0) scanOptions.columns = readColumns;
       if (config.where !== undefined) scanOptions.where = config.where;
+      let rowOffset = 0;
       for await (const batch of scanColumns.call(config.scanner, object.path, scanOptions)) {
         enforceBudget(config.budget, this.stats, config.now, startedAt);
-        yield batch;
+        yield { batch, sourceIdentity: physicalSourceIdentity(object, rowOffset) };
+        rowOffset += batch.rowCount;
         this.stats.elapsedMs = config.now() - startedAt;
       }
     }
@@ -1870,6 +2235,11 @@ export class QueryResult {
         : {
             windowPlan: explainWindowPlan(this.config, Math.max(1, tasks.length * 2)),
           }),
+      physicalFragments: [...this.physicalFragments.values()].map((fragment) => ({
+        ...fragment,
+        operators: [...fragment.operators],
+        candidates: fragment.candidates.map(clonePhysicalCandidate),
+      })),
       tasks,
     };
     return {
@@ -1878,6 +2248,19 @@ export class QueryResult {
         `files planned: ${json.filesPlanned}`,
         `files skipped: ${json.filesSkipped}`,
         `projected columns: ${json.projectedColumns.join(", ") || "*"}`,
+        `physical fragments: ${
+          json.physicalFragments?.reduce((sum, fragment) => sum + fragment.executions, 0) ?? 0
+        }`,
+        ...(json.physicalFragments?.map(
+          (fragment) =>
+            `physical ${fragment.fragmentId}: ${fragment.operators.join(" -> ") || "pass"} on ${
+              fragment.backendId
+            }${
+              fragment.replaySourceBackendId === undefined
+                ? ""
+                : ` after replay from ${fragment.replaySourceBackendId}`
+            } (${fragment.executions} execution${fragment.executions === 1 ? "" : "s"})`,
+        ) ?? []),
         ...(json.windowPlan === undefined
           ? []
           : [
@@ -3682,6 +4065,33 @@ function aggregateSpecVectorSupported(spec: AggregateSpec): boolean {
   );
 }
 
+function estimatePhysicalOutputBytes(
+  batch: Batch,
+  operators: readonly PhysicalOperator[],
+  output: PhysicalOutput,
+): number {
+  switch (output.kind) {
+    case "selection":
+      return batch.rowCount;
+    case "indices":
+      return batch.rowCount * 4;
+    case "aggregate-snapshot": {
+      const reduce = operators.at(-1);
+      return reduce?.kind === "reduce"
+        ? Math.max(16, Object.keys(reduce.aggregates).length * 32)
+        : 32;
+    }
+    case "vector-candidates": {
+      const topK = operators.at(-1);
+      return topK?.kind === "bounded-top-k" ? topK.limit * 16 : batch.rowCount * 16;
+    }
+    case "grouped-aggregate-snapshot":
+    case "batch":
+    case "resident":
+      return estimateBatchBytes(batch);
+  }
+}
+
 function project(
   row: Row,
   select: string[] | undefined,
@@ -3929,6 +4339,50 @@ function initialStats(queryId: string): QueryStats {
     rowsReturned: 0,
     cacheHits: 0,
     cacheMisses: 0,
+    physicalFragments: 0,
+    acceleratorFragments: 0,
+    acceleratorUploadBytes: 0,
+    acceleratorReadbackBytes: 0,
+    acceleratorDispatches: 0,
+    physicalReplays: 0,
+  };
+}
+
+interface NormalizedPhysicalExecution {
+  backends: readonly PhysicalExecutionBackend[];
+  acceleratorPolicy: AcceleratorPolicy;
+  replayOnCpu: boolean;
+}
+
+function normalizePhysicalExecution(
+  options: PhysicalExecutionOptions | undefined,
+): NormalizedPhysicalExecution {
+  const backends = [...(options?.backends ?? [])];
+  if (!backends.some((backend) => backend.capabilities().backendKind === "cpu")) {
+    backends.push(new CpuPhysicalBackend());
+  }
+  return {
+    backends,
+    acceleratorPolicy: options?.acceleratorPolicy ?? "auto",
+    replayOnCpu: options?.replayOnCpu ?? true,
+  };
+}
+
+function physicalSourceIdentity(object: ObjectInfo, rowOffset: number): string {
+  return `${object.path}\u0000${object.etag ?? object.size}\u0000${rowOffset}`;
+}
+
+function clonePhysicalCandidate(candidate: PhysicalPlacementCandidate): PhysicalPlacementCandidate {
+  return {
+    ...candidate,
+    assessment: {
+      ...candidate.assessment,
+      cost: { ...candidate.assessment.cost },
+      reasons: candidate.assessment.reasons.map((reason) => ({
+        ...reason,
+        ...(reason.details === undefined ? {} : { details: { ...reason.details } }),
+      })),
+    },
   };
 }
 

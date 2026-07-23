@@ -100,4 +100,11 @@ export interface QueryStats {
 
   cacheHits: number;
   cacheMisses: number;
+
+  physicalFragments?: number;
+  acceleratorFragments?: number;
+  acceleratorUploadBytes?: number;
+  acceleratorReadbackBytes?: number;
+  acceleratorDispatches?: number;
+  physicalReplays?: number;
 }

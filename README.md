@@ -146,6 +146,22 @@ imports.
 The repository also contains workspace packages for adapter, format, and parser
 development. Most application code should use the entry points above.
 
+## Optional WebGPU Execution
+
+Install `lakeql-webgpu` alongside `lakeql` to add an accelerator backend in
+browsers or other runtimes that provide WebGPU:
+
+```sh
+npm install lakeql lakeql-webgpu
+```
+
+The backend is opt-in and receives its runtime explicitly, so CPU-only
+applications do not load WebGPU or a native dependency. It currently supports
+nullable scalar selection, bounded count/min/max reductions, and exact `f32`
+vector scoring with stable top-k and bounded device residency. See the
+[WebGPU package guide](./packages/webgpu/README.md) and
+[implementation roadmap](./docs/webgpu-accelerated-execution.md).
+
 ## Confidence
 
 LakeQL is checked in CI against Spark and PyIceberg reference warehouses,

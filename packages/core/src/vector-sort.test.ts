@@ -17,6 +17,59 @@ import {
 } from "./vector-sort.js";
 
 describe("vector sort kernels", () => {
+  it("gathers and concatenates type-preserving numeric vectors", () => {
+    const left = batchFromVectors({
+      f32: { type: "f32", values: Float32Array.of(1.5, 2.5) },
+      i32: { type: "i32", values: Int32Array.of(-2, 3) },
+      u32: { type: "u32", values: Uint32Array.of(1, 4_000_000_000) },
+      u8: { type: "u8", values: Uint8Array.of(7, 255) },
+      u64: { type: "u64", values: BigUint64Array.of(1n, 0xffff_ffff_ffff_ffffn) },
+    });
+    const gathered = gatherBatch(left, [1, 0]);
+    expect(gathered.columns.f32).toMatchObject({ type: "f32", values: Float32Array.of(2.5, 1.5) });
+    expect(gathered.columns.i32).toMatchObject({ type: "i32", values: Int32Array.of(3, -2) });
+    expect(gathered.columns.u32).toMatchObject({
+      type: "u32",
+      values: Uint32Array.of(4_000_000_000, 1),
+    });
+    expect(gathered.columns.u8).toMatchObject({ type: "u8", values: Uint8Array.of(255, 7) });
+    expect(gathered.columns.u64).toMatchObject({
+      type: "u64",
+      values: BigUint64Array.of(0xffff_ffff_ffff_ffffn, 1n),
+    });
+
+    const concatenated = concatBatches([left, gathered]);
+    expect(concatenated.columns.f32?.type).toBe("f32");
+    expect(concatenated.columns.i32?.type).toBe("i32");
+    expect(concatenated.columns.u32?.type).toBe("u32");
+    expect(concatenated.columns.u8?.type).toBe("u8");
+    expect(concatenated.columns.u64?.type).toBe("u64");
+    expect(materializeBatchRows(concatenated)).toHaveLength(4);
+
+    const mixedTimestampUnits = concatBatches([
+      batchFromVectors({
+        at: {
+          type: "timestamp",
+          values: BigInt64Array.of(1_000n),
+          unit: "millis",
+          isAdjustedToUTC: true,
+        },
+      }),
+      batchFromVectors({
+        at: {
+          type: "timestamp",
+          values: BigInt64Array.of(1_000_000n),
+          unit: "micros",
+          isAdjustedToUTC: true,
+        },
+      }),
+    ]);
+    expect(materializeBatchRows(mixedTimestampUnits)).toEqual([
+      { at: timestampFromEpoch(1_000n, "millis", true) },
+      { at: timestampFromEpoch(1_000n, "millis", true) },
+    ]);
+  });
+
   it("orders column batches with row-sort null defaults and stable ties", () => {
     const batch = batchFromColumns({
       id: [1, 2, 3, 4, 5],

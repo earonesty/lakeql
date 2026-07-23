@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "types": ["@webgpu/types"]
+  },
+  "references": [{ "path": "../core" }],
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.workerd.ts"]
+}

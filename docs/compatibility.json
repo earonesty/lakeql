@@ -641,5 +641,85 @@
         "pattern": "stores JSON-compatible values for planning cache style entries"
       }
     ]
+  },
+  {
+    "area": "WebGPU",
+    "feature": "Accelerator-neutral physical planning",
+    "status": "supported+tested",
+    "notes": "LakeQL lowers supported columnar query paths to backend-neutral fragments, selects complete CPU or accelerator placements by capability, cost, policy, and budgets, explains placement, and permits bounded CPU replay only for replayable unpublished failures.",
+    "evidence": [
+      {
+        "file": "packages/core/src/physical.test.ts",
+        "pattern": "plans by capability, cost, policy, and accelerator budgets"
+      },
+      {
+        "file": "packages/core/src/physical.test.ts",
+        "pattern": "replays only explicitly replayable accelerator failures on CPU"
+      },
+      {
+        "file": "packages/core/src/query.test.ts",
+        "pattern": "places projected, grouped-reduce, and top-k fragments on an installed backend"
+      }
+    ]
+  },
+  {
+    "area": "WebGPU",
+    "feature": "Selection and bounded reductions",
+    "status": "supported+tested",
+    "notes": "The optional lakeql-webgpu backend executes nullable bool/u8/i32/u32/f32 selection, exact count/min/max partial reductions, and one-key grouped reductions with an explicit maximum of 32 groups. Dawn differential tests compare every advertised kernel path with the CPU physical backend.",
+    "evidence": [
+      {
+        "file": "packages/webgpu/src/backend.test.ts",
+        "pattern": "executes nullable multi-shape predicates with CPU-equivalent three-valued logic"
+      },
+      {
+        "file": "packages/webgpu/src/reduction.test.ts",
+        "pattern": "fuses selection with exact count and order-preserving min/max partials"
+      },
+      {
+        "file": "packages/webgpu/src/grouped-reduction.test.ts",
+        "pattern": "matches CPU grouping, nulls, selection, and count/min/max across tiles"
+      }
+    ]
+  },
+  {
+    "area": "WebGPU",
+    "feature": "Exact vector scoring, bounded top-k, and residency",
+    "status": "supported+tested",
+    "notes": "Format-neutral f32 candidate blocks support dot, squared-L2, and cosine-distance scoring with paired u32 row-ID words, stable top-k up to 32, parameterized queries, and a bounded immutable device-resident cache tied to source identity and device generation.",
+    "evidence": [
+      {
+        "file": "packages/webgpu/src/vector.test.ts",
+        "pattern": "matches the CPU f32 contract across tiles"
+      },
+      {
+        "file": "packages/webgpu/src/vector.test.ts",
+        "pattern": "reuses immutable resident candidates without charging query uploads for them"
+      },
+      {
+        "file": "packages/webgpu/src/vector.test.ts",
+        "pattern": "evicts only released entries and rejects stale descriptors"
+      }
+    ]
+  },
+  {
+    "area": "WebGPU",
+    "feature": "Runtime portability and lifecycle",
+    "status": "supported+tested",
+    "notes": "The package accepts an injected WebGPU runtime without mutating globals, packages under workerd without a native dependency, scopes validation errors, invalidates generation-bound pipelines and resident buffers on device loss, honors cancellation, and destroys resources deterministically.",
+    "evidence": [
+      {
+        "file": "packages/webgpu/src/runtime.test.ts",
+        "pattern": "shares an acquired device, reports invalidation, and closes deterministically"
+      },
+      {
+        "file": "packages/webgpu/src/runtime.test.ts",
+        "pattern": "marks failures replayable when the device is lost during work"
+      },
+      {
+        "file": "packages/webgpu/src/index.workerd.ts",
+        "pattern": "plans and compiles without browser globals or native dependencies"
+      }
+    ]
   }
 ]

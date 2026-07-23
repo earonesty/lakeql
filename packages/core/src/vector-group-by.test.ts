@@ -12,6 +12,7 @@ import {
   finalizeVectorGroupByBatch,
   finalizeVectorGroupByRows,
   getOrCreateVectorGroup,
+  getOrCreateVectorGroupByValues,
   mergeVectorGroupByStates,
   restoreVectorGroupByState,
   snapshotVectorGroupByState,
@@ -21,6 +22,71 @@ import {
 } from "./vector-group-by.js";
 
 describe("vector group-by kernels", () => {
+  it("groups and reduces type-preserving numeric vectors", () => {
+    const batch = batchFromVectors({
+      bucket: { type: "u32", values: Uint32Array.of(2, 1, 2, 1) },
+      amount: { type: "f32", values: Float32Array.of(1.5, 2.5, 3.5, 4.5) },
+    });
+
+    expect(
+      materializeBatchRows(
+        vectorGroupByBatch(
+          ["bucket"],
+          {
+            total: { op: "sum", column: "amount" },
+            average: { op: "avg", column: "amount" },
+          },
+          batch,
+        ),
+      ),
+    ).toEqual([
+      { bucket: 2, total: 5, average: 2.5 },
+      { bucket: 1, total: 7, average: 3.5 },
+    ]);
+
+    const composite = batchFromVectors({
+      floatKey: { type: "f32", values: Float32Array.of(1, 1, 2) },
+      signedKey: { type: "i32", values: Int32Array.of(-1, -1, 1) },
+      byteKey: { type: "u8", values: Uint8Array.of(7, 7, 8) },
+    });
+    expect(
+      materializeBatchRows(
+        vectorGroupByBatch(
+          ["floatKey", "signedKey", "byteKey"],
+          { rows: { op: "count" } },
+          composite,
+        ),
+      ),
+    ).toEqual([
+      { floatKey: 1, signedKey: -1, byteKey: 7, rows: 2 },
+      { floatKey: 2, signedKey: 1, byteKey: 8, rows: 1 },
+    ]);
+
+    const dictionaryEncoded = batchFromVectors({
+      floatKey: {
+        type: "dict",
+        indices: Uint32Array.of(0, 0, 1),
+        dictionary: { type: "f32", values: Float32Array.of(1.5, 2.5) },
+      },
+      byteKey: {
+        type: "dict",
+        indices: Uint32Array.of(0, 0, 1),
+        dictionary: { type: "u8", values: Uint8Array.of(7, 8) },
+      },
+    });
+    expect(
+      materializeBatchRows(
+        vectorGroupByBatch(["floatKey", "byteKey"], { rows: { op: "count" } }, dictionaryEncoded),
+      ),
+    ).toEqual([
+      { floatKey: 1.5, byteKey: 7, rows: 2 },
+      { floatKey: 2.5, byteKey: 8, rows: 1 },
+    ]);
+    expect(() =>
+      vectorGroupByBatch(["missing"], { rows: { op: "count" } }, dictionaryEncoded),
+    ).toThrowError(expect.objectContaining({ code: "LAKEQL_UNKNOWN_COLUMN" }));
+  });
+
   it("groups selected batches with aggregate states without materializing input rows", () => {
     const batch = batchFromColumns({
       region: ["east", "west", "east", null, "west"],
@@ -458,6 +524,34 @@ describe("vector group-by kernels", () => {
     );
     expect(() => enforceVectorGroupByBudget(state, { maxMemoryBytes: 1 })).toThrowError(
       expect.objectContaining({ code: "LAKEQL_BUDGET_EXCEEDED" }),
+    );
+  });
+
+  it("enforces group limits while restoring and merging external partials", () => {
+    const spec = { rows: { op: "count" } } as const;
+    const source = createVectorGroupByState(["region"], spec);
+    const east = ["east"];
+    getOrCreateVectorGroupByValues(source, east);
+    east[0] = "changed";
+    getOrCreateVectorGroupByValues(source, ["west"]);
+    const snapshot = snapshotVectorGroupByState(source);
+    expect(snapshot.groups[0]?.keyValues).toEqual(["east"]);
+    expect(() =>
+      restoreVectorGroupByState(["region"], spec, snapshot, { maxGroups: 1 }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "LAKEQL_GROUP_LIMIT_EXCEEDED",
+        details: { limit: 1, actual: 2 },
+      }),
+    );
+
+    const target = createVectorGroupByState(["region"], spec);
+    getOrCreateVectorGroupByValues(target, ["north"]);
+    expect(() => mergeVectorGroupByStates(target, source, { maxGroups: 1 })).toThrowError(
+      expect.objectContaining({
+        code: "LAKEQL_GROUP_LIMIT_EXCEEDED",
+        details: { limit: 1, actual: 2 },
+      }),
     );
   });
 });
