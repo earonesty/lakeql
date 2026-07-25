@@ -3,11 +3,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from dotenv import find_dotenv, load_dotenv
 
+from .diagnostics import DiagnosticRecorder
 from .discovery import discover_source_objects
 from .embedders import DeterministicImageEmbedder, MobileClip2S0Embedder
 from .models import BuildBudgets
@@ -17,6 +20,7 @@ from .storage import (
     publish_bucket,
     publish_release,
     restore_bucket,
+    upload_diagnostic_bundle,
     upload_terminal_receipt,
 )
 from .worker import run_bucket
@@ -28,7 +32,27 @@ def main(argv: list[str] | None = None) -> int:
         load_dotenv(environment_path, override=False)
     parser = _parser()
     args = parser.parse_args(argv)
-    result = args.handler(args)
+    recorder = _diagnostic_recorder(args)
+    args.diagnostic_recorder = recorder
+    if recorder is not None:
+        recorder.event("command_started")
+    try:
+        result = args.handler(args)
+    except (Exception, KeyboardInterrupt) as error:
+        if recorder is not None:
+            try:
+                recorder.record_exception(error)
+                _capture_failure_artifacts(args, recorder)
+                _upload_failure_artifacts(args, recorder)
+            except BaseException as diagnostic_error:
+                print(
+                    "semantic-museum diagnostic capture failed: "
+                    f"{type(diagnostic_error).__name__}: {diagnostic_error}",
+                    file=sys.stderr,
+                )
+        raise
+    if recorder is not None:
+        recorder.event("command_completed")
     if result is not None:
         print(json.dumps(result, indent=2, sort_keys=True))
     return 0
@@ -39,7 +63,15 @@ def _parser() -> argparse.ArgumentParser:
         prog="semantic-museum",
         description="Build reproducible historical-image embedding releases.",
     )
-    commands = parser.add_subparsers(required=True)
+    parser.add_argument(
+        "--diagnostics-dir",
+        type=Path,
+        default=(
+            Path(value) if (value := os.environ.get("SEMANTIC_MUSEUM_DIAGNOSTICS_DIR")) else None
+        ),
+        help="durable structured event and exception output directory",
+    )
+    commands = parser.add_subparsers(required=True, dest="command_name")
 
     plan = commands.add_parser("plan", help="normalize source JSONL into immutable buckets")
     plan.add_argument("--output", type=Path, required=True)
@@ -137,16 +169,18 @@ def _parser() -> argparse.ArgumentParser:
         "supervise",
         help="run a worker under a hard deadline and destroy its GPU resource",
     )
-    supervise.add_argument(
-        "--provider", choices=("auto", "runpod", "vast", "none"), default="auto"
-    )
+    supervise.add_argument("--provider", choices=("auto", "runpod", "vast", "none"), default="auto")
     supervise.add_argument("--max-runtime-seconds", type=_positive_int, required=True)
     supervise.add_argument("--checkpoint-grace-seconds", type=_positive_int, default=30)
     supervise.add_argument("--receipt", type=Path, required=True)
     supervise.add_argument(
-        "--receipt-remote-bucket", default=os.environ.get("R2_BUCKET")
+        "--diagnostics-dir",
+        type=Path,
+        dest="supervisor_diagnostics_dir",
     )
+    supervise.add_argument("--receipt-remote-bucket", default=os.environ.get("R2_BUCKET"))
     supervise.add_argument("--receipt-remote-key")
+    supervise.add_argument("--diagnostics-remote-prefix")
     supervise.add_argument("--endpoint-url")
     supervise.add_argument("command", nargs=argparse.REMAINDER)
     supervise.set_defaults(handler=_supervise)
@@ -162,9 +196,7 @@ def _plan(args: argparse.Namespace) -> dict[str, Any]:
     if args.bucket_bits != 0 and (
         args.bucket_bits < 4 or args.bucket_bits > 24 or args.bucket_bits % 4
     ):
-        raise ValueError(
-            "bucket-bits must be zero or a multiple of four between 4 and 24"
-        )
+        raise ValueError("bucket-bits must be zero or a multiple of four between 4 and 24")
     sources = list(args.source)
     if args.source_index:
         sources.extend(
@@ -191,6 +223,11 @@ def _plan(args: argparse.Namespace) -> dict[str, Any]:
         bucket_bits=args.bucket_bits,
         media_policy=args.media_policy,
         selection_policy=args.selection_policy,
+        progress=(
+            (lambda event, values: args.diagnostic_recorder.event(event, **values))
+            if args.diagnostic_recorder is not None
+            else None
+        ),
     )
     return manifest.to_dict()
 
@@ -279,6 +316,7 @@ def _cloud_job(args: argparse.Namespace) -> dict[str, Any]:
         download_concurrency=args.download_concurrency,
         calibration_records=args.calibration_records,
         max_records=args.max_records,
+        diagnostics=args.diagnostic_recorder,
     )
 
 
@@ -293,14 +331,31 @@ def _supervise(args: argparse.Namespace) -> None:
         and bool(os.environ.get("RUNPOD_POD_ID") or os.environ.get("CONTAINER_ID"))
     )
     if cloud_provider and not args.receipt_remote_bucket:
-        raise RuntimeError(
-            "cloud supervision requires a remote terminal-receipt bucket"
-        )
+        raise RuntimeError("cloud supervision requires a remote terminal-receipt bucket")
     if bool(args.receipt_remote_bucket) != bool(args.receipt_remote_key):
-        raise ValueError(
-            "receipt-remote-bucket and receipt-remote-key must be provided together"
+        raise ValueError("receipt-remote-bucket and receipt-remote-key must be provided together")
+    diagnostics_dir = (
+        args.supervisor_diagnostics_dir
+        or args.diagnostics_dir
+        or args.receipt.parent / "diagnostics"
+    )
+    diagnostics_remote_prefix = args.diagnostics_remote_prefix
+    if args.receipt_remote_key and diagnostics_remote_prefix is None:
+        receipt_parent = args.receipt_remote_key.rpartition("/")[0]
+        diagnostics_remote_prefix = (
+            f"{receipt_parent}/diagnostics" if receipt_parent else "diagnostics"
         )
+    if bool(args.receipt_remote_bucket) != bool(diagnostics_remote_prefix):
+        raise ValueError("remote receipt bucket and diagnostics prefix must be provided together")
+    os.environ["SEMANTIC_MUSEUM_DIAGNOSTICS_DIR"] = str(diagnostics_dir)
+    os.environ["SEMANTIC_MUSEUM_SUPERVISED"] = "1"
+    if args.receipt_remote_bucket and diagnostics_remote_prefix is not None:
+        os.environ["SEMANTIC_MUSEUM_DIAGNOSTICS_REMOTE_BUCKET"] = args.receipt_remote_bucket
+        os.environ["SEMANTIC_MUSEUM_DIAGNOSTICS_REMOTE_PREFIX"] = diagnostics_remote_prefix
+        if args.endpoint_url:
+            os.environ["SEMANTIC_MUSEUM_DIAGNOSTICS_ENDPOINT_URL"] = args.endpoint_url
     if args.receipt_remote_bucket:
+
         def uploader(path: Path) -> None:
             upload_terminal_receipt(
                 path=path,
@@ -310,21 +365,32 @@ def _supervise(args: argparse.Namespace) -> None:
             )
     else:
         uploader = None
+    if args.receipt_remote_bucket:
+
+        def diagnostics_uploader(path: Path) -> dict[str, Any]:
+            return upload_diagnostic_bundle(
+                directory=path,
+                bucket=args.receipt_remote_bucket,
+                prefix=diagnostics_remote_prefix,
+                endpoint_url=args.endpoint_url,
+            )
+    else:
+        diagnostics_uploader = None
     exit_code = run_supervised(
         command=command,
         max_runtime_seconds=args.max_runtime_seconds,
         checkpoint_grace_seconds=args.checkpoint_grace_seconds,
         receipt_path=args.receipt,
         provider=args.provider,
+        diagnostics_path=diagnostics_dir,
         upload_receipt=uploader,
+        upload_diagnostics=diagnostics_uploader,
     )
     raise SystemExit(exit_code)
 
 
 def _require_cloud_checkpointing(remote_bucket: str | None) -> None:
-    provider_identity = os.environ.get("RUNPOD_POD_ID") or os.environ.get(
-        "CONTAINER_ID"
-    )
+    provider_identity = os.environ.get("RUNPOD_POD_ID") or os.environ.get("CONTAINER_ID")
     if provider_identity and not remote_bucket:
         raise RuntimeError(
             "cloud embedding requires R2 bucket checkpointing; set R2_BUCKET "
@@ -337,6 +403,64 @@ def _positive_int(value: str) -> int:
     if parsed <= 0:
         raise argparse.ArgumentTypeError("value must be positive")
     return parsed
+
+
+def _diagnostic_recorder(args: argparse.Namespace) -> DiagnosticRecorder | None:
+    directory = args.diagnostics_dir
+    if directory is None and args.command_name == "cloud-job":
+        directory = args.work / "diagnostics"
+    if directory is None and hasattr(args, "output"):
+        directory = args.output / "diagnostics"
+    if directory is None:
+        return None
+    return DiagnosticRecorder(directory, command=args.command_name)
+
+
+def _capture_failure_artifacts(args: argparse.Namespace, recorder: DiagnosticRecorder) -> None:
+    if args.command_name != "cloud-job":
+        return
+    recorder.capture_artifact(args.work / "state.json", name="cloud-job-state.json")
+    recorder.capture_artifact(
+        args.work / "plan" / "plan-state.sqlite3",
+        name="full-plan-state.sqlite3",
+    )
+    recorder.capture_artifact(
+        args.work / "calibration-plan" / "plan-state.sqlite3",
+        name="calibration-plan-state.sqlite3",
+    )
+
+
+def _upload_failure_artifacts(args: argparse.Namespace, recorder: DiagnosticRecorder) -> None:
+    if args.command_name != "cloud-job" or os.environ.get("SEMANTIC_MUSEUM_SUPERVISED"):
+        return
+    bucket = os.environ.get("SEMANTIC_MUSEUM_DIAGNOSTICS_REMOTE_BUCKET") or args.bucket
+    remote_prefix = os.environ.get("SEMANTIC_MUSEUM_DIAGNOSTICS_REMOTE_PREFIX")
+    if remote_prefix is None:
+        job_id = os.environ.get("SEMANTIC_MUSEUM_JOB_ID") or (
+            f"job-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{os.getpid()}"
+        )
+        remote_prefix = f"{args.prefix.strip('/')}/jobs/{job_id}/diagnostics"
+    endpoint_url = os.environ.get("SEMANTIC_MUSEUM_DIAGNOSTICS_ENDPOINT_URL") or args.endpoint_url
+    try:
+        result = upload_diagnostic_bundle(
+            directory=recorder.directory,
+            bucket=bucket,
+            prefix=remote_prefix,
+            endpoint_url=endpoint_url,
+        )
+    except Exception as upload_error:
+        recorder.event(
+            "diagnostic_upload_failed",
+            exception_type=(f"{type(upload_error).__module__}.{type(upload_error).__qualname__}"),
+            exception_message=str(upload_error),
+            remote_prefix=remote_prefix,
+        )
+    else:
+        recorder.event(
+            "diagnostic_upload_completed",
+            remote_prefix=remote_prefix,
+            **result,
+        )
 
 
 if __name__ == "__main__":

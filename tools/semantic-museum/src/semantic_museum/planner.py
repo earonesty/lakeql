@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import time
 from collections import Counter
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -21,9 +23,11 @@ from .smithsonian import (
 SCHEMA_VERSION = 1
 DEFAULT_MODEL_ID = "MobileCLIP2-S0:apple/MobileCLIP2-S0:mobileclip2_s0.pt"
 DEFAULT_PREPROCESSING_ID = (
-    "open_clip-3.3.0:MobileCLIP2-S0:"
-    "resize-shortest-bicubic:center-crop-256:rgb:mean-0:std-1"
+    "open_clip-3.3.0:MobileCLIP2-S0:resize-shortest-bicubic:center-crop-256:rgb:mean-0:std-1"
 )
+PlannerProgress = Callable[[str, dict[str, Any]], None]
+PROGRESS_BYTE_INTERVAL = 256 * 1024**2
+PROGRESS_TIME_INTERVAL_SECONDS = 60
 
 
 def build_plan(
@@ -37,6 +41,7 @@ def build_plan(
     selection_policy: str = "bottom-k",
     model_id: str = DEFAULT_MODEL_ID,
     preprocessing_id: str = DEFAULT_PREPROCESSING_ID,
+    progress: PlannerProgress | None = None,
 ) -> BuildManifest:
     if not sources:
         raise ValueError("at least one source object is required")
@@ -76,18 +81,40 @@ def build_plan(
         )
         accepted = _completed_record_count(connection)
         consumed_source_bytes = _completed_source_bytes(connection)
-        budget_reached = (
-            selection_policy == "prefix" and accepted >= budgets.max_records
+        _report(
+            progress,
+            "planner_started",
+            source_objects=len(sources),
+            completed_source_objects=_completed_source_count(connection),
+            accepted_records=accepted,
+            consumed_source_bytes=consumed_source_bytes,
+            selection_policy=selection_policy,
         )
-        for source in sources:
+        budget_reached = selection_policy == "prefix" and accepted >= budgets.max_records
+        for source_index, source in enumerate(sources):
             if budget_reached:
                 break
             if _source_complete(connection, source):
                 continue
             current_source_bytes = 0
+            last_reported_bytes = consumed_source_bytes
+            last_reported_at = time.monotonic()
+            source_identity = _source_identity(source)
+            _report(
+                progress,
+                "planner_source_started",
+                source_index=source_index,
+                source_objects=len(sources),
+                **source_identity,
+            )
 
-            def consume_source_bytes(size: int) -> None:
+            def consume_source_bytes(
+                size: int,
+                _source_index: int = source_index,
+                _source_identity: dict[str, Any] = source_identity,
+            ) -> None:
                 nonlocal consumed_source_bytes, current_source_bytes
+                nonlocal last_reported_at, last_reported_bytes
                 consumed_source_bytes += size
                 current_source_bytes += size
                 if consumed_source_bytes > budgets.max_source_bytes:
@@ -95,6 +122,23 @@ def build_plan(
                         "global source byte budget exceeded "
                         f"({consumed_source_bytes} > {budgets.max_source_bytes})"
                     )
+                now = time.monotonic()
+                if (
+                    consumed_source_bytes - last_reported_bytes >= PROGRESS_BYTE_INTERVAL
+                    or now - last_reported_at >= PROGRESS_TIME_INTERVAL_SECONDS
+                ):
+                    _report(
+                        progress,
+                        "planner_progress",
+                        source_index=_source_index,
+                        source_objects=len(sources),
+                        accepted_records=_completed_record_count(connection),
+                        consumed_source_bytes=consumed_source_bytes,
+                        current_source_bytes=current_source_bytes,
+                        **_source_identity,
+                    )
+                    last_reported_bytes = consumed_source_bytes
+                    last_reported_at = now
 
             for raw in iter_source_records(
                 source,
@@ -110,10 +154,7 @@ def build_plan(
                     inserted = _insert_record(connection, record, bucket_bits)
                     if inserted:
                         accepted += 1
-                        if (
-                            selection_policy == "prefix"
-                            and accepted >= budgets.max_records
-                        ):
+                        if selection_policy == "prefix" and accepted >= budgets.max_records:
                             budget_reached = True
                             break
                         if (
@@ -128,16 +169,32 @@ def build_plan(
                 connection.commit()
                 break
             connection.execute(
-                "INSERT OR REPLACE INTO completed_sources(source, source_bytes) "
-                "VALUES (?, ?)",
+                "INSERT OR REPLACE INTO completed_sources(source, source_bytes) VALUES (?, ?)",
                 (source, current_source_bytes),
             )
             connection.commit()
+            _report(
+                progress,
+                "planner_source_completed",
+                source_index=source_index,
+                source_objects=len(sources),
+                accepted_records=accepted,
+                consumed_source_bytes=consumed_source_bytes,
+                current_source_bytes=current_source_bytes,
+                **source_identity,
+            )
         if selection_policy == "bottom-k":
             _retain_bottom_k(connection, budgets.max_records)
+            accepted = _completed_record_count(connection)
+            _report(
+                progress,
+                "planner_selection_completed",
+                accepted_records=accepted,
+                consumed_source_bytes=consumed_source_bytes,
+            )
         if _completed_record_count(connection) == 0:
             raise RuntimeError("source selection produced no eligible image records")
-        return _publish_plan(
+        manifest = _publish_plan(
             connection=connection,
             output=output,
             sources=sources,
@@ -149,6 +206,15 @@ def build_plan(
             model_id=model_id,
             preprocessing_id=preprocessing_id,
         )
+        _report(
+            progress,
+            "planner_published",
+            release_id=manifest.release_id,
+            records=manifest.records,
+            buckets=len(manifest.buckets),
+            consumed_source_bytes=consumed_source_bytes,
+        )
+        return manifest
     finally:
         connection.close()
 
@@ -164,9 +230,7 @@ def _initialize_state(connection: sqlite3.Connection) -> None:
         )
         """
     )
-    connection.execute(
-        "CREATE INDEX IF NOT EXISTS records_by_bucket ON records(bucket, media_id)"
-    )
+    connection.execute("CREATE INDEX IF NOT EXISTS records_by_bucket ON records(bucket, media_id)")
     connection.execute(
         "CREATE TABLE IF NOT EXISTS completed_sources "
         "(source TEXT PRIMARY KEY, source_bytes INTEGER NOT NULL DEFAULT 0)"
@@ -174,29 +238,21 @@ def _initialize_state(connection: sqlite3.Connection) -> None:
     connection.execute(
         "CREATE TABLE IF NOT EXISTS state_config (singleton INTEGER PRIMARY KEY, value BLOB)"
     )
-    columns = {
-        str(row[1]) for row in connection.execute("PRAGMA table_info(records)")
-    }
+    columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(records)")}
     if "selection_rank" not in columns:
-        raise RuntimeError(
-            "plan state uses an incompatible schema; choose a new plan directory"
-        )
+        raise RuntimeError("plan state uses an incompatible schema; choose a new plan directory")
     completed_source_columns = {
-        str(row[1])
-        for row in connection.execute("PRAGMA table_info(completed_sources)")
+        str(row[1]) for row in connection.execute("PRAGMA table_info(completed_sources)")
     }
     if "source_bytes" not in completed_source_columns:
         connection.execute(
-            "ALTER TABLE completed_sources "
-            "ADD COLUMN source_bytes INTEGER NOT NULL DEFAULT 0"
+            "ALTER TABLE completed_sources ADD COLUMN source_bytes INTEGER NOT NULL DEFAULT 0"
         )
     connection.commit()
 
 
 def _bind_state_config(connection: sqlite3.Connection, value: bytes) -> None:
-    row = connection.execute(
-        "SELECT value FROM state_config WHERE singleton = 1"
-    ).fetchone()
+    row = connection.execute("SELECT value FROM state_config WHERE singleton = 1").fetchone()
     if row is not None and bytes(row[0]) != value:
         raise RuntimeError(
             "plan configuration differs from existing state; choose a new plan directory"
@@ -228,6 +284,26 @@ def _completed_source_bytes(connection: sqlite3.Connection) -> int:
         "SELECT COALESCE(SUM(source_bytes), 0) FROM completed_sources"
     ).fetchone()
     return int(row[0]) if row else 0
+
+
+def _completed_source_count(connection: sqlite3.Connection) -> int:
+    row = connection.execute("SELECT COUNT(*) FROM completed_sources").fetchone()
+    return int(row[0]) if row else 0
+
+
+def _source_identity(source: str) -> dict[str, Any]:
+    from urllib.parse import urlparse
+
+    parsed = urlparse(source)
+    return {
+        "source_name": Path(parsed.path).name,
+        "source_sha256": hashlib.sha256(source.encode()).hexdigest(),
+    }
+
+
+def _report(progress: PlannerProgress | None, event: str, **values: Any) -> None:
+    if progress is not None:
+        progress(event, values)
 
 
 def _insert_record(
@@ -322,9 +398,7 @@ def _publish_plan(
         source_name=SMITHSONIAN_SOURCE,
         source_objects=tuple(sources),
         source_fingerprint=source_fingerprint,
-        selection_policy=cast(
-            Literal["bottom-k", "prefix"], selection_policy
-        ),
+        selection_policy=cast(Literal["bottom-k", "prefix"], selection_policy),
         media_policy=cast(Literal["primary", "all"], media_policy),
         thumbnail_size=thumbnail_size,
         bucket_bits=bucket_bits,

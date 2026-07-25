@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from .diagnostics import DiagnosticRecorder
 from .discovery import SMITHSONIAN_INDEX, discover_source_objects
 from .embedders import MobileClip2S0Embedder
 from .jsonio import write_json_atomic
@@ -14,8 +15,7 @@ from .storage import publish_bucket, publish_plan, publish_release
 from .worker import run_bucket
 
 CALIBRATION_INDEX = (
-    "https://smithsonian-open-access.s3-us-west-2.amazonaws.com/"
-    "metadata/edan/saam/index.txt"
+    "https://smithsonian-open-access.s3-us-west-2.amazonaws.com/metadata/edan/saam/index.txt"
 )
 
 
@@ -30,16 +30,21 @@ def run_cloud_job(
     download_concurrency: int,
     calibration_records: int,
     max_records: int,
+    diagnostics: DiagnosticRecorder | None = None,
 ) -> dict[str, Any]:
     work.mkdir(parents=True, exist_ok=True)
     state_path = work / "state.json"
-    _write_state(state_path, phase="calibration_source_discovery")
+    _write_state(
+        state_path,
+        phase="calibration_source_discovery",
+        diagnostics=diagnostics,
+    )
     calibration_sources = discover_source_objects(
         [CALIBRATION_INDEX],
         max_bytes=16 * 1024**2,
         timeout_seconds=30,
     )
-    _write_state(state_path, phase="calibration_plan")
+    _write_state(state_path, phase="calibration_plan", diagnostics=diagnostics)
     calibration_plan = work / "calibration-plan"
     calibration_output = work / "calibration-release"
     calibration = build_plan(
@@ -56,6 +61,7 @@ def run_cloud_job(
         bucket_bits=4,
         media_policy="primary",
         selection_policy="prefix",
+        progress=_progress_callback(diagnostics),
     )
     publish_plan(
         plan=calibration_plan,
@@ -67,6 +73,7 @@ def run_cloud_job(
     _write_state(
         state_path,
         phase="calibration_embed",
+        diagnostics=diagnostics,
         calibration_release_id=calibration.release_id,
     )
     _embed_all(
@@ -80,9 +87,7 @@ def run_cloud_job(
         batch_size=batch_size,
         download_concurrency=download_concurrency,
     )
-    calibration_status = release_status(
-        plan=calibration_plan, output=calibration_output
-    )
+    calibration_status = release_status(plan=calibration_plan, output=calibration_output)
     minimum_embedded = max(1, int(calibration.records * 0.9))
     if (
         not calibration_status["complete"]
@@ -99,6 +104,7 @@ def run_cloud_job(
     _write_state(
         state_path,
         phase="full_source_discovery",
+        diagnostics=diagnostics,
         calibration_release_id=calibration.release_id,
         calibration_status=calibration_status,
     )
@@ -110,6 +116,7 @@ def run_cloud_job(
     _write_state(
         state_path,
         phase="full_plan",
+        diagnostics=diagnostics,
         calibration_release_id=calibration.release_id,
         calibration_status=calibration_status,
     )
@@ -129,6 +136,7 @@ def run_cloud_job(
         bucket_bits=8,
         media_policy="primary",
         selection_policy="bottom-k",
+        progress=_progress_callback(diagnostics),
     )
     publish_plan(
         plan=plan,
@@ -139,6 +147,7 @@ def run_cloud_job(
     _write_state(
         state_path,
         phase="full_embed",
+        diagnostics=diagnostics,
         calibration_release_id=calibration.release_id,
         calibration_status=calibration_status,
         release_id=manifest.release_id,
@@ -154,7 +163,12 @@ def run_cloud_job(
         batch_size=batch_size,
         download_concurrency=download_concurrency,
     )
-    _write_state(state_path, phase="finalize", release_id=manifest.release_id)
+    _write_state(
+        state_path,
+        phase="finalize",
+        diagnostics=diagnostics,
+        release_id=manifest.release_id,
+    )
     release = finalize_release(plan=plan, output=output)
     published = publish_release(
         output=output,
@@ -168,7 +182,7 @@ def run_cloud_job(
         "release_status": release["status"],
         "published": published,
     }
-    _write_state(state_path, phase="complete", **result)
+    _write_state(state_path, phase="complete", diagnostics=diagnostics, **result)
     return result
 
 
@@ -205,7 +219,13 @@ def _embed_all(
             raise RuntimeError(f"bucket {bucket_name} is not fully accounted for")
 
 
-def _write_state(path: Path, *, phase: str, **values: Any) -> None:
+def _write_state(
+    path: Path,
+    *,
+    phase: str,
+    diagnostics: DiagnosticRecorder | None,
+    **values: Any,
+) -> None:
     write_json_atomic(
         path,
         {
@@ -215,3 +235,15 @@ def _write_state(path: Path, *, phase: str, **values: Any) -> None:
             **values,
         },
     )
+    if diagnostics is not None:
+        diagnostics.event("cloud_job_phase", phase=phase, **values)
+
+
+def _progress_callback(diagnostics: DiagnosticRecorder | None):
+    if diagnostics is None:
+        return None
+
+    def report(event: str, values: dict[str, Any]) -> None:
+        diagnostics.event(event, **values)
+
+    return report

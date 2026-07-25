@@ -16,7 +16,12 @@ from semantic_museum.models import BuildBudgets
 from semantic_museum.planner import build_plan
 from semantic_museum.release import finalize_release, release_status
 from semantic_museum.smithsonian import SourceBudgetExceeded
-from semantic_museum.storage import publish_bucket, publish_plan, restore_bucket
+from semantic_museum.storage import (
+    publish_bucket,
+    publish_plan,
+    restore_bucket,
+    upload_diagnostic_bundle,
+)
 from semantic_museum.worker import run_bucket
 
 
@@ -41,6 +46,33 @@ def test_r2_client_uses_explicit_auto_region(
     assert arguments["region_name"] == "auto"
 
 
+def test_diagnostic_bundle_is_committed_with_manifest_last(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    diagnostics = tmp_path / "diagnostics"
+    diagnostics.mkdir()
+    (diagnostics / "error.json").write_text('{"error":"boom"}\n')
+    (diagnostics / "stderr.log").write_text("traceback\n")
+    remote = _FakeObjectStore()
+    monkeypatch.setattr(storage, "_client", lambda _endpoint: remote)
+
+    result = upload_diagnostic_bundle(
+        directory=diagnostics,
+        bucket="museum",
+        prefix="semantic-museum/leases/job/diagnostics",
+        endpoint_url=None,
+    )
+
+    assert result["objects"] == 2
+    assert result["bytes"] == 27
+    manifest_key = result["manifest_key"]
+    manifest = json.loads(remote.objects[("museum", manifest_key)][0])
+    assert [item["path"] for item in manifest["objects"]] == [
+        "error.json",
+        "stderr.log",
+    ]
+
+
 def test_bounded_release_is_reproducible_and_resumable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -61,6 +93,7 @@ def test_bounded_release_is_reproducible_and_resumable(
         max_total_image_bytes=256 * 1024,
         request_timeout_seconds=2,
     )
+    progress: list[tuple[str, dict[str, Any]]] = []
 
     first = build_plan(
         output=plan,
@@ -71,6 +104,7 @@ def test_bounded_release_is_reproducible_and_resumable(
         media_policy="primary",
         model_id=DeterministicImageEmbedder.model_id,
         preprocessing_id=DeterministicImageEmbedder.preprocessing_id,
+        progress=lambda event, values: progress.append((event, values)),
     )
     second = build_plan(
         output=plan,
@@ -84,6 +118,14 @@ def test_bounded_release_is_reproducible_and_resumable(
     )
     assert first.release_id == second.release_id
     assert first.records == 4
+    assert [event for event, _values in progress] == [
+        "planner_started",
+        "planner_source_started",
+        "planner_source_completed",
+        "planner_selection_completed",
+        "planner_published",
+    ]
+    assert progress[-1][1]["records"] == 4
 
     output = tmp_path / "release"
     embedder = DeterministicImageEmbedder()
@@ -148,10 +190,13 @@ def test_bounded_release_is_reproducible_and_resumable(
     release = finalize_release(plan=plan, output=output)
     assert release["release_id"] == first.release_id
     assert sum(part["rows"] for part in release["metadata_files"]) == 4
-    assert sum(
-        pq.ParquetFile(output / part["path"]).metadata.num_rows
-        for part in release["metadata_files"]
-    ) == 4
+    assert (
+        sum(
+            pq.ParquetFile(output / part["path"]).metadata.num_rows
+            for part in release["metadata_files"]
+        )
+        == 4
+    )
 
 
 def test_failure_rows_account_for_unreadable_images(tmp_path: Path) -> None:

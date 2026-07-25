@@ -129,6 +129,30 @@ checksum-verified in R2 before destruction. RunPod uses its injected
 independent lease reaper described in the WebGPU plan remain required because no
 in-container process can survive host loss or `SIGKILL`.
 
+The receipt key also defines a durable diagnostics prefix. Before resource
+destruction, the supervisor uploads `stdout.log`, `stderr.log`, a runtime and
+resource snapshot, structured command events, and a checksum manifest under the
+receipt key's sibling `diagnostics/` prefix. Python failures include the complete
+exception chain and traceback in `error.json`. A failed cloud planning job also
+preserves `state.json` and the resumable `plan-state.sqlite3` database as
+diagnostic artifacts, so a late corpus-scan failure retains both its explanation
+and completed planning work. The diagnostic manifest is uploaded last and is the
+commit marker for the bundle. Use `--diagnostics-remote-prefix` to override the
+derived remote location or `--diagnostics-dir` to choose the local capture
+directory.
+
+The RunPod container entry point is
+[`run-cloud-worker.sh`](run-cloud-worker.sh). It validates the provider and R2
+contract, installs the locked environment, assigns the pod identity as the
+durable job identity, and launches the million-record job under the supervisor.
+Configure RunPod's native termination time independently when creating the pod.
+
+The planner records source-safe progress at least every 256 MiB or 60 seconds,
+including source index, accepted records, and consumed bytes. Runtime snapshots
+add free disk and available memory at failure and supervisor exit. Source URLs
+are represented by a basename and SHA-256 identity instead of being copied into
+diagnostics, avoiding disclosure of signed query parameters.
+
 Cloud embedding refuses to start without `R2_BUCKET` or `--remote-bucket`.
 Embedding and failure Parquet are uploaded and verified after every completed
 bucket; the receipt is uploaded last as its commit marker. With the full build's

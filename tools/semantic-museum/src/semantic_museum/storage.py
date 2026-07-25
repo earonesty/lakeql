@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -160,9 +161,7 @@ def publish_plan(
         ContentType="application/json",
         Metadata={"sha256": index_sha256},
     )
-    if not _remote_matches(
-        client, bucket, index_key, index_sha256, len(index_bytes)
-    ):
+    if not _remote_matches(client, bucket, index_key, index_sha256, len(index_bytes)):
         raise RuntimeError("uploaded plan index failed validation")
     return {
         "release_id": manifest.release_id,
@@ -246,6 +245,49 @@ def upload_terminal_receipt(
         raise RuntimeError("terminal receipt upload failed validation")
 
 
+def upload_diagnostic_bundle(
+    *,
+    directory: Path,
+    bucket: str,
+    prefix: str,
+    endpoint_url: str | None,
+) -> dict[str, Any]:
+    client = _client(endpoint_url)
+    normalized_prefix = prefix.strip("/")
+    paths = sorted(path for path in directory.rglob("*") if path.is_file())
+    objects: list[dict[str, Any]] = []
+    for path in paths:
+        item = _object_description(directory, path)
+        key = f"{normalized_prefix}/{item['path']}".lstrip("/")
+        if not _remote_matches(client, bucket, key, item["sha256"], item["bytes"]):
+            _upload_object(client, bucket, key, path, item)
+            if not _remote_matches(client, bucket, key, item["sha256"], item["bytes"]):
+                raise RuntimeError(f"uploaded diagnostic object failed validation: {key}")
+        objects.append(item)
+    manifest = {
+        "schema_version": 1,
+        "created_at": datetime.now(UTC).isoformat(),
+        "objects": objects,
+    }
+    manifest_bytes = canonical_json_bytes(manifest) + b"\n"
+    manifest_key = f"{normalized_prefix}/manifest.json".lstrip("/")
+    manifest_sha256 = sha256_bytes(manifest_bytes)
+    client.put_object(
+        Bucket=bucket,
+        Key=manifest_key,
+        Body=manifest_bytes,
+        ContentType="application/json",
+        Metadata={"sha256": manifest_sha256},
+    )
+    if not _remote_matches(client, bucket, manifest_key, manifest_sha256, len(manifest_bytes)):
+        raise RuntimeError("uploaded diagnostic manifest failed validation")
+    return {
+        "objects": len(objects),
+        "bytes": sum(int(item["bytes"]) for item in objects),
+        "manifest_key": manifest_key,
+    }
+
+
 def _validate_local_release(output: Path, release: dict[str, Any]) -> None:
     if not release.get("status", {}).get("complete"):
         raise RuntimeError("release manifest is not complete")
@@ -265,9 +307,7 @@ def _object_description(output: Path, path: Path) -> dict[str, Any]:
     }
 
 
-def _remote_matches(
-    client: Any, bucket: str, key: str, sha256: str, size: int
-) -> bool:
+def _remote_matches(client: Any, bucket: str, key: str, sha256: str, size: int) -> bool:
     try:
         result = client.head_object(Bucket=bucket, Key=key)
     except ClientError as error:
@@ -280,8 +320,7 @@ def _remote_matches(
             return False
         raise
     return (
-        int(result["ContentLength"]) == size
-        and result.get("Metadata", {}).get("sha256") == sha256
+        int(result["ContentLength"]) == size and result.get("Metadata", {}).get("sha256") == sha256
     )
 
 
