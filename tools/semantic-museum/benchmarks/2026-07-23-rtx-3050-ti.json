@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "measured_at": "2026-07-23",
+  "device": "NVIDIA GeForce RTX 3050 Ti Laptop GPU",
+  "torch": "2.7.1+cu126",
+  "model_id": "MobileCLIP2-S0:apple/MobileCLIP2-S0:mobileclip2_s0.pt",
+  "model_fingerprint": "bc3bc861baa680df2f9e3dc1aa0acbe5a21af21032df385026dda70c33505aa6",
+  "preprocessing_id": "open_clip-3.3.0:MobileCLIP2-S0:resize-shortest-bicubic:center-crop-256:rgb:mean-0:std-1",
+  "source": "https://smithsonian-open-access.s3-us-west-2.amazonaws.com/metadata/edan/saam/00.txt",
+  "thumbnail_size": 256,
+  "planned_records": 42,
+  "embedded_records": 42,
+  "failed_records": 0,
+  "batch_size": 16,
+  "download_concurrency": 16,
+  "downloaded_bytes": 1507460,
+  "elapsed_worker_seconds": 2.142554871039465,
+  "images_per_second": 19.602765169614354,
+  "scope": "end-to-end bucket worker time, including fetch, decode, inference, validation, and Parquet writes"
+}

@@ -6,6 +6,24 @@ on:
   pull_request:
 
 jobs:
+  semantic-museum:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/semantic-museum
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: tools/semantic-museum/uv.lock
+
+      - run: uv sync --frozen --extra test
+
+      - name: Validate historical-image release harness
+        run: uv run pytest && uv run ruff check src tests
+
   check:
     runs-on: ubuntu-latest
     steps:

@@ -824,34 +824,40 @@ bottom-k selection to avoid collection-order bias.
 RunPod and Vast storage must not become the archive. Workers use ephemeral local
 space as a bounded decode/cache area and stream completed shards to R2. This
 avoids paying GPU-provider persistent-disk rates between runs and makes
-interruptible Vast instances safe. Choose an instance by measured dollars per
-successfully embedded image, including download and decode, rather than by GPU
-name.
+interruptible instances safe.
 
-Before the million-image build, run the same production pipeline over a
-representative 10,000-image manifest on two inexpensive candidates. Measure
-successful images per second, retry rate, bytes fetched, GPU utilization, and
-output bytes. At an hourly price `p` and sustained end-to-end throughput `r`,
-the million-image compute cost is:
+Select the cheapest eligible RunPod or Vast offer available when the build is
+launched; do not target a named GPU class. Eligibility requires one NVIDIA GPU
+with at least 4 GB of VRAM, a CUDA 12.6-compatible driver, enough disk for the
+bounded cache, a lease duration beyond the hard deadline, and sufficient
+download bandwidth to keep inference fed. Compare total hourly cost, including
+provider bandwidth and ephemeral storage. Prefer interruptible capacity because
+every completed bucket is already an R2 checkpoint.
+
+Cloud workers must refuse to embed without a configured R2 checkpoint bucket.
+For the default 8-bit full-build partitioning, one million records produce 256
+immutable buckets. At the measured laptop reference rate, the average bucket
+takes about 3.3 minutes. A worker uploads and verifies embedding and failure
+Parquet after each bucket, then uploads its receipt last as the commit marker.
+Partial uploads without a receipt are ignored and safely overwritten or reused;
+an interruption loses only the active bucket.
+
+Run a bounded calibration shard on the selected offer before releasing the full
+queue. Reject it only if image failures, network throughput, or effective dollars
+per successfully embedded image violate the declared lease budget. The laptop's
+19.60 image/second measurement is the reference floor, not the intended
+production runner. At an hourly price `p` and sustained end-to-end throughput
+`r`, the million-image compute cost is:
 
 ```text
 cost = 1,000,000 / r / 3,600 * p
 ```
 
-Using current RunPod Community Cloud prices as examples:
-
-| End-to-end rate | RTX A5000 at $0.27/hour | A40 at $0.44/hour |
-| ---: | ---: | ---: |
-| 10 images/second | $7.50 | $12.22 |
-| 25 images/second | $3.00 | $4.89 |
-| 50 images/second | $1.50 | $2.44 |
-| 100 images/second | $0.75 | $1.22 |
-
-These are scenario calculations, not a throughput claim. Network fetch and image
-decode may dominate MobileCLIP inference. Use bounded concurrent fetching,
-backpressure, and a decoded-batch queue so that measurement covers the complete
-pipeline. Prefer a cheaper interruptible Vast listing when its measured
-dollars-per-image wins and checkpoint recovery has been exercised.
+At the measured laptop rate, one million images take about 14.2 worker-hours.
+The offer selector therefore minimizes total estimated job cost while treating
+bandwidth and reliability as eligibility gates. Network fetch and image decode
+may dominate MobileCLIP inference. Use bounded concurrent fetching, backpressure,
+and a decoded-batch queue so that measurement covers the complete pipeline.
 
 For one million items, normalized float32 embeddings occupy 2.048 GB before
 container overhead; 64-byte PQ codes occupy 64 MB. Compressed metadata,

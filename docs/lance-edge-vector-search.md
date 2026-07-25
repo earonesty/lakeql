@@ -268,6 +268,60 @@ direct API because the direct API establishes the physical behavior and error mo
 
 ## Query Execution
 
+### Serving format decision
+
+Use Parquet as the canonical archive of exact embeddings and normalized metadata.
+Use an official Lance V3 IVF-PQ index as the regenerable query-serving
+representation. Parquet is appropriate for durable interchange, analytical
+scans, and rebuilding indexes, but it does not define IVF clustering, quantizer
+codebooks, partition-local packed codes, or ANN search semantics. Recreating
+those structures in a project-specific Parquet convention would create another
+index format.
+
+Lance V3 already stores the required serving structures in regular Lance files:
+
+- IVF centroids and partition offsets/lengths;
+- metric and quantizer metadata;
+- a float32 PQ codebook in a global buffer;
+- stable uint64 row IDs;
+- fixed-size packed uint8 PQ codes grouped by partition.
+
+This division is intentional duplication of a small derived index, not two
+competing sources of truth. A release manifest records the exact Parquet inputs
+and Lance build parameters so the serving index can always be regenerated.
+
+The execution engine must nevertheless remain format-neutral. Lance decoding
+ends at a packed candidate-block boundary; distance and top-k operators do not
+receive Lance dataset or file objects. A Parquet reader or resident browser cache
+can produce the same block type.
+
+```ts
+type PhysicalVectorCandidateBlock =
+  | {
+      encoding: "f32";
+      count: number;
+      dimension: number;
+      rowIdLow: Uint32Array;
+      rowIdHigh: Uint32Array;
+      values: Float32Array;
+    }
+  | {
+      encoding: "pq8";
+      count: number;
+      dimension: number;
+      subVectors: number;
+      rowIdLow: Uint32Array;
+      rowIdHigh: Uint32Array;
+      codes: Uint8Array;
+      quantizer: PhysicalProductQuantizer;
+    };
+```
+
+Blocks are bounded, structure-of-arrays values with no per-candidate objects.
+They are consumed by both the CPU physical backend and optional accelerator
+backends. The public Lance API remains responsible for snapshot correctness,
+budgets, partition/range planning, refinement, and materialization.
+
 ### 1. Resolve a stable snapshot
 
 Open the dataset path, read the version metadata needed to select a stable snapshot,
@@ -524,6 +578,8 @@ milestone, not scan fallbacks.
 - Bounded centroid selection and partition range planning.
 - Cosine, dot-product, and L2 approximate scoring.
 - IVF-flat reference scoring for correctness comparisons.
+- Format-neutral packed candidate blocks shared by CPU and accelerator backends.
+- Paired-word uint64 row IDs and deterministic bounded top-k.
 
 The first vector slice implements the IVF-flat reference path against official
 vector-index V3 files. It discovers index segments from the immutable manifest,
@@ -532,6 +588,14 @@ only selected partitions, scores L2, cosine, and dot candidates in bounded chunk
 and feeds stable IDs into projected materialization. Searching all partitions is
 an exact reference; lower `nprobes` values exercise the same bounded approximate
 partition-selection contract that IVF-PQ will use.
+
+The production serving slice implements official V3 IVF-PQ. It parses
+`storage_metadata`, validates `dimension`, `num_sub_vectors`, `nbits`, codebook
+position, and transposition, reads the referenced codebook tensor, and yields
+partition-local row-ID/code blocks. It supports the stored Lance metric and
+quantizer semantics through the generic product-quantized score operator. It does
+not reconstruct a float vector per PQ code and does not route candidate scoring
+through row materialization.
 
 ### Complete vector search result
 
