@@ -1,4 +1,4 @@
-import { LakeqlError, type QueryBudget, type Row } from "lakeql";
+import { LakeqlError, type QueryBudget, type Row, type SharedMemoryCache } from "lakeql";
 import {
   type InspectedLanceFile,
   inspectLanceFile,
@@ -38,8 +38,9 @@ export async function loadScalarIndexes(options: {
   manifestPath: string;
   manifestFileSize: number;
   manifest: LanceManifest;
+  indexMetadata?: readonly LanceIndexMetadata[];
 }): Promise<{ metadata: LanceIndexMetadata; info: LanceScalarIndexInfo }[]> {
-  const indices = await loadLanceIndexMetadata(options);
+  const indices = options.indexMetadata ?? (await loadLanceIndexMetadata(options));
   const fieldById = new Map(options.manifest.fields.map((field) => [field.id, field]));
   return indices.flatMap((metadata) => {
     if (metadata.detailsTypeUrl.toLowerCase() !== "/lance.table.btreeindexdetails") return [];
@@ -117,6 +118,9 @@ export async function lookupScalarRowIds(options: {
   manifestPath: string;
   manifestFileSize: number;
   manifest: LanceManifest;
+  indexMetadata?: readonly LanceIndexMetadata[];
+  indexCache?: SharedMemoryCache;
+  cacheNamespace?: string;
   indexName: string;
   values: readonly LanceScalarValue[];
   budget: QueryBudget;
@@ -144,39 +148,32 @@ export async function lookupScalarRowIds(options: {
     }
     return pages;
   });
-  const searches: SearchState[] = [];
+  const pageRows = await materializeCandidatePages(
+    options.context,
+    opened.pageData,
+    opened.batchSize,
+    candidatePages.flat(),
+    options.indexCache,
+    options.cacheNamespace,
+    opened.index.uuid,
+  );
+  const rowOffsetsByValue = values.map(() => [] as number[]);
   for (const [valueIndex, pages] of candidatePages.entries()) {
+    const value = values[valueIndex] as LanceScalarValue;
     for (const page of pages) {
       const low = page * opened.batchSize;
       const high = Math.min(opened.pageData.rowCount, low + opened.batchSize);
-      searches.push({ valueIndex, page, mode: "lower", low, high });
-      searches.push({ valueIndex, page, mode: "upper", low, high });
-    }
-  }
-  await runBinarySearch(options.context, opened.pageData, values, searches);
-  const bounds = new Map<string, { lower?: number; upper?: number }>();
-  for (const search of searches) {
-    const key = `${search.valueIndex}:${search.page}`;
-    const entry = bounds.get(key) ?? {};
-    entry[search.mode] = search.low;
-    bounds.set(key, entry);
-  }
-  const rowOffsetsByValue = values.map(() => [] as number[]);
-  for (const [key, bound] of bounds) {
-    const [valueIndexText] = key.split(":");
-    const valueIndex = Number(valueIndexText);
-    const lower = bound.lower;
-    const upper = bound.upper;
-    if (lower === undefined || upper === undefined) corrupt("Incomplete BTree search bounds");
-    for (let offset = lower; offset < upper; offset += 1) {
-      rowOffsetsByValue[valueIndex]?.push(offset);
+      const lower = localBound(pageRows, value, "lower", low, high);
+      const upper = localBound(pageRows, value, "upper", lower, high);
+      for (let offset = lower; offset < upper; offset += 1) {
+        rowOffsetsByValue[valueIndex]?.push(offset);
+      }
     }
   }
   enforceOutputRows(options.budget, rowOffsetsByValue.flat().length);
-  const idRows = await materializeStableIds(options.context, opened.pageData, rowOffsetsByValue);
   const matches = rowOffsetsByValue.map((offsets, valueIndex) => ({
     value: options.values[valueIndex] as LanceScalarValue,
-    rowIds: stableIdsAtOffsets(idRows, offsets),
+    rowIds: stableIdsAtOffsets(pageRows, offsets),
   }));
   return { index: opened.index, matches };
 }
@@ -187,6 +184,9 @@ export async function rangeScalarRowIds(options: {
   manifestPath: string;
   manifestFileSize: number;
   manifest: LanceManifest;
+  indexMetadata?: readonly LanceIndexMetadata[];
+  indexCache?: SharedMemoryCache;
+  cacheNamespace?: string;
   indexName: string;
   range: LanceScalarRange;
   budget: QueryBudget;
@@ -244,20 +244,25 @@ export async function rangeScalarRowIds(options: {
   return { index: opened.index, rowIds: stableIdsAtOffsets(idRows, offsets) };
 }
 
+interface OpenedBTreeIndex {
+  index: LanceScalarIndexInfo;
+  field: LanceField;
+  batchSize: number;
+  pageData: InspectedLanceFile;
+  lookupRows: Map<number, Row>;
+}
+
 async function openBTreeIndex(options: {
   context: LanceReadContext;
   root: string;
   manifestPath: string;
   manifestFileSize: number;
   manifest: LanceManifest;
+  indexMetadata?: readonly LanceIndexMetadata[];
+  indexCache?: SharedMemoryCache;
+  cacheNamespace?: string;
   indexName: string;
-}): Promise<{
-  index: LanceScalarIndexInfo;
-  field: LanceField;
-  batchSize: number;
-  pageData: InspectedLanceFile;
-  lookupRows: Map<number, Row>;
-}> {
+}): Promise<OpenedBTreeIndex> {
   const indices = await loadScalarIndexes(options);
   const selected = indices.find(({ info }) => info.name === options.indexName);
   if (selected === undefined) {
@@ -273,6 +278,17 @@ async function openBTreeIndex(options: {
       indexVersion: selected.metadata.indexVersion,
     });
   }
+  const indexCache = options.indexCache;
+  const cacheKey =
+    indexCache === undefined || options.cacheNamespace === undefined
+      ? undefined
+      : `${options.cacheNamespace}:btree:${selected.info.uuid}:state`;
+  const cached = cacheKey === undefined ? undefined : indexCache?.get<OpenedBTreeIndex>(cacheKey);
+  if (cached !== undefined) {
+    options.context.stats.cacheHits += 1;
+    return cached.value;
+  }
+  if (cacheKey !== undefined) options.context.stats.cacheMisses += 1;
   const field = options.manifest.fields.find(
     (candidate) => candidate.id === selected.metadata.fields[0],
   );
@@ -309,7 +325,11 @@ async function openBTreeIndex(options: {
     })),
     rowOffsets: Array.from({ length: lookup.rowCount }, (_value, index) => index),
   });
-  return { index: selected.info, field, batchSize, pageData, lookupRows };
+  const opened = { index: selected.info, field, batchSize, pageData, lookupRows };
+  if (cacheKey !== undefined) {
+    indexCache?.set(cacheKey, opened, estimateOpenedIndexBytes(opened), { priority: 4 });
+  }
+  return opened;
 }
 
 function enforceOutputRows(budget: QueryBudget, count: number): void {
@@ -340,6 +360,134 @@ async function materializeStableIds(
         selections: [{ field: pageData.fields[1] as LanceField, columnIndex: 1 }],
         rowOffsets: uniqueOffsets,
       });
+}
+
+async function materializeCandidatePages(
+  context: LanceReadContext,
+  pageData: InspectedLanceFile,
+  batchSize: number,
+  pages: readonly number[],
+  indexCache?: SharedMemoryCache,
+  cacheNamespace?: string,
+  indexUuid?: string,
+): Promise<Map<number, Row>> {
+  const uniquePages = [...new Set(pages)].sort((left, right) => left - right);
+  const output = new Map<number, Row>();
+  const missingPages: number[] = [];
+  for (const page of uniquePages) {
+    const cacheKey =
+      indexCache === undefined || cacheNamespace === undefined || indexUuid === undefined
+        ? undefined
+        : `${cacheNamespace}:btree:${indexUuid}:page:${page}`;
+    const cached = cacheKey === undefined ? undefined : indexCache?.get<Map<number, Row>>(cacheKey);
+    if (cached === undefined) {
+      missingPages.push(page);
+      if (cacheKey !== undefined) context.stats.cacheMisses += 1;
+      continue;
+    }
+    context.stats.cacheHits += 1;
+    const firstRow = page * batchSize;
+    for (const [columnIndex, column] of pageData.columns.entries()) {
+      const physicalPage = column.pages.findIndex(
+        (candidate) =>
+          firstRow >= candidate.rowStart && firstRow < candidate.rowStart + candidate.length,
+      );
+      if (physicalPage >= 0) {
+        context.stats.pages.add(`${pageData.path}:${columnIndex}:${physicalPage}`);
+      }
+    }
+    for (const [offset, row] of cached.value) output.set(offset, row);
+  }
+  const rowOffsets = missingPages.flatMap((page) => {
+    const low = page * batchSize;
+    const high = Math.min(pageData.rowCount, low + batchSize);
+    if (low < 0 || low >= high) {
+      corrupt("Lance BTree lookup references an invalid page", {
+        page,
+        batchSize,
+        rowCount: pageData.rowCount,
+      });
+    }
+    return Array.from({ length: high - low }, (_value, index) => low + index);
+  });
+  if (rowOffsets.length > 0) {
+    const loaded = await materializeRowsWithBudget({
+      context,
+      file: pageData,
+      selections: pageData.fields.map((field, columnIndex) => ({ field, columnIndex })),
+      rowOffsets,
+    });
+    for (const [offset, row] of loaded) output.set(offset, row);
+    for (const page of missingPages) {
+      if (indexCache === undefined || cacheNamespace === undefined || indexUuid === undefined) {
+        continue;
+      }
+      const low = page * batchSize;
+      const high = Math.min(pageData.rowCount, low + batchSize);
+      const rows = new Map<number, Row>();
+      for (let offset = low; offset < high; offset += 1) {
+        const row = loaded.get(offset);
+        if (row !== undefined) rows.set(offset, row);
+      }
+      indexCache.set(
+        `${cacheNamespace}:btree:${indexUuid}:page:${page}`,
+        rows,
+        estimateRowsBytes(rows),
+        { priority: 3 },
+      );
+    }
+  }
+  return output;
+}
+
+function estimateOpenedIndexBytes(opened: OpenedBTreeIndex): number {
+  return (
+    estimateRowsBytes(opened.lookupRows) +
+    opened.pageData.fields.reduce(
+      (bytes, field) => bytes + field.name.length * 2 + field.logicalType.length * 2 + 32,
+      0,
+    ) +
+    opened.pageData.columns.reduce((bytes, column) => bytes + column.pages.length * 128, 0)
+  );
+}
+
+function estimateRowsBytes(rows: ReadonlyMap<number, Row>): number {
+  let bytes = rows.size * 32;
+  for (const row of rows.values()) {
+    for (const value of Object.values(row)) {
+      if (typeof value === "string") bytes += value.length * 2;
+      else if (typeof value === "number" || typeof value === "bigint") bytes += 8;
+      else if (typeof value === "boolean") bytes += 1;
+      else if (value instanceof Uint8Array) bytes += value.byteLength;
+    }
+  }
+  return bytes;
+}
+
+function localBound(
+  rows: ReadonlyMap<number, Row>,
+  value: LanceScalarValue,
+  mode: "lower" | "upper",
+  initialLow: number,
+  initialHigh: number,
+): number {
+  let low = initialLow;
+  let high = initialHigh;
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    const candidate = rows.get(middle)?.values;
+    if (candidate === undefined || candidate === null) {
+      low = middle + 1;
+      continue;
+    }
+    const comparison = compareScalar(candidate as LanceScalarValue, value);
+    if (comparison < 0 || (mode === "upper" && comparison === 0)) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+  return low;
 }
 
 function stableIdsAtOffsets(idRows: Map<number, Row>, offsets: readonly number[]): bigint[] {

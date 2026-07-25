@@ -19,6 +19,7 @@ import {
 } from "./proto.js";
 
 const DATA_FILE_FOOTER_BYTES = 40;
+const DATA_FILE_METADATA_TAIL_BYTES = 64 * 1024;
 const MAGIC = "LANC";
 
 export interface InspectedLanceFile {
@@ -40,95 +41,92 @@ export async function inspectLanceFile(
   if (fileSize < DATA_FILE_FOOTER_BYTES) {
     corrupt("Lance file is smaller than its footer", { path });
   }
-  const footerRange = {
-    offset: fileSize - DATA_FILE_FOOTER_BYTES,
-    length: DATA_FILE_FOOTER_BYTES,
-  };
-  const footerLease = await context.readRange(path, footerRange, "file_metadata", fileSize);
-  let footer: FileFooter;
+  const metadataTail = await readMetadataTail(context, path, fileSize);
   try {
-    footer = parseFooter(footerLease.slice(footerRange), fileSize);
-  } finally {
-    footerLease.release();
-  }
-  if (footer.numGlobalBuffers < 1) {
-    corrupt("Self-describing Lance file has no descriptor buffer", { path });
-  }
-  const globalTableRanges = Array.from({ length: footer.numGlobalBuffers }, (_value, index) => ({
-    offset: footer.globalBufferOffsets + index * 16,
-    length: 16,
-  }));
-  const columnTableRanges = Array.from({ length: footer.numColumns }, (_value, index) => ({
-    offset: footer.columnMetadataOffsets + index * 16,
-    length: 16,
-  }));
-  const tableRanges: ByteRange[] = [...globalTableRanges, ...columnTableRanges];
-  const tableLease = await context.readRanges(path, tableRanges, "file_metadata", fileSize);
-  let descriptorRange: ByteRange;
-  const globalBuffers: ByteRange[] = [];
-  const columnRanges: ByteRange[] = [];
-  try {
-    descriptorRange = readTableRange(
-      tableLease,
-      tableRanges[0] as ByteRange,
-      footer.columnMetadataStart,
-      path,
-    );
-    for (let index = 1; index < footer.numGlobalBuffers; index += 1) {
-      globalBuffers.push(
-        readTableRange(
-          tableLease,
-          globalTableRanges[index] as ByteRange,
-          footer.columnMetadataStart,
-          path,
-        ),
-      );
+    const { footer } = metadataTail;
+    if (footer.numGlobalBuffers < 1) {
+      corrupt("Self-describing Lance file has no descriptor buffer", { path });
     }
-    for (let index = 0; index < footer.numColumns; index += 1) {
-      columnRanges.push(
-        readTableRange(
-          tableLease,
-          columnTableRanges[index] as ByteRange,
-          footer.columnMetadataOffsets,
-          path,
-        ),
-      );
-    }
-  } finally {
-    tableLease.release();
-  }
-  const metadataLease = await context.readRanges(
-    path,
-    [descriptorRange, ...columnRanges],
-    "file_metadata",
-    fileSize,
-  );
-  try {
-    const descriptor = parseFileDescriptor(metadataLease.slice(descriptorRange));
-    const columns = columnRanges.map((range) => parseColumnMetadata(metadataLease.slice(range)));
-    if (descriptor.fields.length !== columns.length) {
-      corrupt("Self-describing Lance schema and column tables have different lengths", {
+    const globalTableRanges = Array.from({ length: footer.numGlobalBuffers }, (_value, index) => ({
+      offset: footer.globalBufferOffsets + index * 16,
+      length: 16,
+    }));
+    const columnTableRanges = Array.from({ length: footer.numColumns }, (_value, index) => ({
+      offset: footer.columnMetadataOffsets + index * 16,
+      length: 16,
+    }));
+    const tableRanges: ByteRange[] = [...globalTableRanges, ...columnTableRanges];
+    const tableLease = rangesCoveredBy(metadataTail.range, tableRanges)
+      ? metadataTail.lease
+      : await context.readRanges(path, tableRanges, "file_metadata", fileSize);
+    let descriptorRange: ByteRange;
+    const globalBuffers: ByteRange[] = [];
+    const columnRanges: ByteRange[] = [];
+    try {
+      descriptorRange = readTableRange(
+        tableLease,
+        tableRanges[0] as ByteRange,
+        footer.columnMetadataStart,
         path,
-        fields: descriptor.fields.length,
-        columns: columns.length,
-      });
+      );
+      for (let index = 1; index < footer.numGlobalBuffers; index += 1) {
+        globalBuffers.push(
+          readTableRange(
+            tableLease,
+            globalTableRanges[index] as ByteRange,
+            footer.columnMetadataStart,
+            path,
+          ),
+        );
+      }
+      for (let index = 0; index < footer.numColumns; index += 1) {
+        columnRanges.push(
+          readTableRange(
+            tableLease,
+            columnTableRanges[index] as ByteRange,
+            footer.columnMetadataOffsets,
+            path,
+          ),
+        );
+      }
+    } finally {
+      if (tableLease !== metadataTail.lease) tableLease.release();
     }
-    const derivedRows = columns[0]?.pages.reduce(
-      (maximum, page) => Math.max(maximum, page.rowStart + page.length),
-      0,
-    );
-    const rowCount = descriptor.length || derivedRows || 0;
-    return {
-      path,
-      fileSize,
-      fields: descriptor.fields,
-      schemaMetadata: descriptor.metadata,
-      globalBuffers,
-      columns,
-      rowCount,
-    };
-  } finally {
-    metadataLease.release();
+    const metadataRanges = [descriptorRange, ...columnRanges];
+    const metadataLease = rangesCoveredBy(metadataTail.range, metadataRanges)
+      ? metadataTail.lease
+      : await context.readRanges(path, metadataRanges, "file_metadata", fileSize);
+    try {
+      const descriptor = parseFileDescriptor(metadataLease.slice(descriptorRange));
+      const columns = columnRanges.map((range) => parseColumnMetadata(metadataLease.slice(range)));
+      if (descriptor.fields.length !== columns.length) {
+        corrupt("Self-describing Lance schema and column tables have different lengths", {
+          path,
+          fields: descriptor.fields.length,
+          columns: columns.length,
+        });
+      }
+      const derivedRows = columns[0]?.pages.reduce(
+        (maximum, page) => Math.max(maximum, page.rowStart + page.length),
+        0,
+      );
+      const rowCount = descriptor.length || derivedRows || 0;
+      return {
+        path,
+        fileSize,
+        fields: descriptor.fields,
+        schemaMetadata: descriptor.metadata,
+        globalBuffers,
+        columns,
+        rowCount,
+      };
+    } finally {
+      if (metadataLease !== metadataTail.lease) metadataLease.release();
+      metadataTail.lease.release();
+    }
+  } catch (cause) {
+    metadataTail.lease.release();
+    throw cause;
   }
 }
 
@@ -256,87 +254,77 @@ async function materializeDataFile(options: {
 }): Promise<Map<number, Row>> {
   const path = joinObjectPath(options.root, "data", options.file.path);
   const fileSize = await resolveFileSize(options.context, path, options.file);
-  const footerLease = await options.context.readRange(
-    path,
-    { offset: fileSize - DATA_FILE_FOOTER_BYTES, length: DATA_FILE_FOOTER_BYTES },
-    "file_metadata",
-    fileSize,
-  );
-  let footer: FileFooter;
+  const metadataTail = await readMetadataTail(options.context, path, fileSize);
   try {
-    footer = parseFooter(
-      footerLease.slice({
-        offset: fileSize - DATA_FILE_FOOTER_BYTES,
-        length: DATA_FILE_FOOTER_BYTES,
-      }),
-      fileSize,
-    );
-  } finally {
-    footerLease.release();
-  }
-  const uniqueColumns = [
-    ...new Set(options.selections.map((selection) => selection.columnIndex)),
-  ].sort((left, right) => left - right);
-  for (const columnIndex of uniqueColumns) {
-    if (columnIndex < 0 || columnIndex >= footer.numColumns) {
-      corrupt("Lance manifest references an invalid data-file column", {
-        path,
-        columnIndex,
-        numColumns: footer.numColumns,
-      });
-    }
-  }
-  const tableRanges = uniqueColumns.map((columnIndex) => ({
-    offset: footer.columnMetadataOffsets + columnIndex * 16,
-    length: 16,
-  }));
-  const tableLease = await options.context.readRanges(path, tableRanges, "file_metadata", fileSize);
-  const metadataRanges = new Map<number, ByteRange>();
-  try {
+    const { footer } = metadataTail;
+    const uniqueColumns = [
+      ...new Set(options.selections.map((selection) => selection.columnIndex)),
+    ].sort((left, right) => left - right);
     for (const columnIndex of uniqueColumns) {
-      const entryRange = {
-        offset: footer.columnMetadataOffsets + columnIndex * 16,
-        length: 16,
-      };
-      const entry = dataView(tableLease.slice(entryRange));
-      const offset = safeU64(entry.getBigUint64(0, true), "column metadata offset");
-      const length = safeU64(entry.getBigUint64(8, true), "column metadata length");
-      validateContainedRange({ offset, length }, footer.columnMetadataOffsets, path);
-      metadataRanges.set(columnIndex, { offset, length });
+      if (columnIndex < 0 || columnIndex >= footer.numColumns) {
+        corrupt("Lance manifest references an invalid data-file column", {
+          path,
+          columnIndex,
+          numColumns: footer.numColumns,
+        });
+      }
     }
-  } finally {
-    tableLease.release();
-  }
-  const metadataLease = await options.context.readRanges(
-    path,
-    [...metadataRanges.values()],
-    "file_metadata",
-    fileSize,
-  );
-  const metadata = new Map<number, LanceColumnMetadata>();
-  try {
-    for (const [columnIndex, range] of metadataRanges) {
-      metadata.set(columnIndex, parseColumnMetadata(metadataLease.slice(range)));
+    const tableRanges = uniqueColumns.map((columnIndex) => ({
+      offset: footer.columnMetadataOffsets + columnIndex * 16,
+      length: 16,
+    }));
+    const tableLease = rangesCoveredBy(metadataTail.range, tableRanges)
+      ? metadataTail.lease
+      : await options.context.readRanges(path, tableRanges, "file_metadata", fileSize);
+    const metadataRanges = new Map<number, ByteRange>();
+    try {
+      for (const columnIndex of uniqueColumns) {
+        const entryRange = {
+          offset: footer.columnMetadataOffsets + columnIndex * 16,
+          length: 16,
+        };
+        const entry = dataView(tableLease.slice(entryRange));
+        const offset = safeU64(entry.getBigUint64(0, true), "column metadata offset");
+        const length = safeU64(entry.getBigUint64(8, true), "column metadata length");
+        validateContainedRange({ offset, length }, footer.columnMetadataOffsets, path);
+        metadataRanges.set(columnIndex, { offset, length });
+      }
+    } finally {
+      if (tableLease !== metadataTail.lease) tableLease.release();
     }
-  } finally {
-    metadataLease.release();
-  }
-  const cellPlans: CellPlan[] = [];
-  for (const selection of options.selections) {
-    const column = metadata.get(selection.columnIndex);
-    if (column === undefined) corrupt("Missing selected Lance column metadata");
-    for (const rowOffset of options.rowOffsets) {
-      const pageLocation = findPage(column.pages, rowOffset);
-      options.context.stats.pages.add(`${path}:${selection.columnIndex}:${pageLocation.index}`);
-      cellPlans.push({
-        field: selection.field,
-        rowOffset,
-        page: pageLocation.page,
-        rowInPage: rowOffset - pageLocation.page.rowStart,
-      });
+    const selectedMetadataRanges = [...metadataRanges.values()];
+    const metadataLease = rangesCoveredBy(metadataTail.range, selectedMetadataRanges)
+      ? metadataTail.lease
+      : await options.context.readRanges(path, selectedMetadataRanges, "file_metadata", fileSize);
+    const metadata = new Map<number, LanceColumnMetadata>();
+    try {
+      for (const [columnIndex, range] of metadataRanges) {
+        metadata.set(columnIndex, parseColumnMetadata(metadataLease.slice(range)));
+      }
+    } finally {
+      if (metadataLease !== metadataTail.lease) metadataLease.release();
+      metadataTail.lease.release();
     }
+    const cellPlans: CellPlan[] = [];
+    for (const selection of options.selections) {
+      const column = metadata.get(selection.columnIndex);
+      if (column === undefined) corrupt("Missing selected Lance column metadata");
+      for (const rowOffset of options.rowOffsets) {
+        const pageLocation = findPage(column.pages, rowOffset);
+        options.context.stats.pages.add(`${path}:${selection.columnIndex}:${pageLocation.index}`);
+        cellPlans.push({
+          field: selection.field,
+          rowOffset,
+          page: pageLocation.page,
+          rowInPage: rowOffset - pageLocation.page.rowStart,
+        });
+      }
+    }
+    return await executeCellPlans(options.context, path, fileSize, cellPlans);
+  } catch (cause) {
+    metadataTail.lease.release();
+    throw cause;
   }
-  return await executeCellPlans(options.context, path, fileSize, cellPlans);
 }
 
 interface CellPlan {
@@ -1051,6 +1039,41 @@ interface FileFooter {
   numColumns: number;
   majorVersion: number;
   minorVersion: number;
+}
+
+async function readMetadataTail(
+  context: LanceReadContext,
+  path: string,
+  fileSize: number,
+): Promise<{ footer: FileFooter; lease: RangeLease; range: ByteRange }> {
+  const tailLength = Math.max(
+    DATA_FILE_FOOTER_BYTES,
+    Math.min(DATA_FILE_METADATA_TAIL_BYTES, Math.floor(fileSize / 8)),
+  );
+  const range = {
+    offset: fileSize - tailLength,
+    length: tailLength,
+  };
+  const lease = await context.readRange(path, range, "file_metadata", fileSize);
+  try {
+    const footerRange = {
+      offset: fileSize - DATA_FILE_FOOTER_BYTES,
+      length: DATA_FILE_FOOTER_BYTES,
+    };
+    return {
+      footer: parseFooter(lease.slice(footerRange), fileSize),
+      lease,
+      range,
+    };
+  } catch (cause) {
+    lease.release();
+    throw cause;
+  }
+}
+
+function rangesCoveredBy(outer: ByteRange, inner: readonly ByteRange[]): boolean {
+  const end = outer.offset + outer.length;
+  return inner.every((range) => range.offset >= outer.offset && range.offset + range.length <= end);
 }
 
 function parseFooter(bytes: Uint8Array, fileSize: number): FileFooter {

@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { resolve } from "node:path";
-import { memoryCache, memoryStore, type ObjectStore } from "lakeql-core";
+import { memoryCache, memoryStore, type ObjectStore, SharedMemoryCache } from "lakeql-core";
 import { httpStore } from "lakeql-http";
 import { afterEach, describe, expect, it } from "vitest";
 import { openLanceDataset } from "./index.js";
@@ -53,7 +53,7 @@ describe("lakeql-lance takeRows", () => {
       pagesTouched: 3,
       selectedColumns: ["serial", "mark_text", "active"],
     });
-    expect(result.stats.physicalBytesRequested).toBeLessThan(4_000);
+    expect(result.stats.physicalBytesRequested).toBeLessThan(5_000);
     expect(observed.fullDataGets).toBe(0);
     expect(observed.dataRanges.every((range) => range.length < range.fileSize)).toBe(true);
   });
@@ -227,7 +227,7 @@ describe("lakeql-lance takeRows", () => {
     const dataset = await openLanceDataset({
       store: observed.store,
       path: SCALAR_DATASET_PATH,
-      budget: generousBudget(),
+      budget: { ...generousBudget(), maxRowsDecoded: 128 },
     });
 
     await expect(dataset.scalarIndexes()).resolves.toEqual([
@@ -276,9 +276,25 @@ describe("lakeql-lance takeRows", () => {
     expect(result.stats.rowsMaterialized).toBe(6);
     expect(observed.fullDataGets).toBe(0);
     expect(observed.dataRanges.every((range) => range.length < range.fileSize)).toBe(true);
+
+    const withoutDecodedCache = await openLanceDataset({
+      store: fixture.store,
+      path: SCALAR_DATASET_PATH,
+      indexCacheBytes: 0,
+      budget: { ...generousBudget(), maxRowsDecoded: 128 },
+    });
+    const lookup = {
+      snapshotId: withoutDecodedCache.snapshotId,
+      index: "serial_btree",
+      values: [1005],
+      select: ["label"],
+    } as const;
+    await withoutDecodedCache.lookupRows(lookup);
+    const repeated = await withoutDecodedCache.lookupRows(lookup);
+    expect(repeated.stats.cacheHits).toBe(0);
   });
 
-  it("searches both sides of an official multi-page BTree boundary with logarithmic reads", async () => {
+  it("searches both sides of an official multi-page BTree boundary within local pages", async () => {
     const fixture = await fixtureStore(
       SCALAR_MULTIPAGE_FIXTURE_ROOT,
       SCALAR_MULTIPAGE_DATASET_PATH,
@@ -289,9 +305,9 @@ describe("lakeql-lance takeRows", () => {
       path: SCALAR_MULTIPAGE_DATASET_PATH,
       budget: {
         ...generousBudget(),
-        maxBytes: 128_000,
+        maxBytes: 192_000,
         maxRangeRequests: 128,
-        maxRowsDecoded: 256,
+        maxRowsDecoded: 5_005,
       },
     });
     const result = await dataset.lookupRows({
@@ -318,9 +334,20 @@ describe("lakeql-lance takeRows", () => {
         rows: [{ serial: 24_999, label: "multi-4999" }],
       },
     ]);
-    expect(result.stats.physicalBytesRequested).toBeLessThan(64_000);
-    expect(result.stats.rangeRequests).toBeLessThan(100);
+    expect(result.stats.physicalBytesRequested).toBeLessThan(180_000);
+    expect(result.stats.rangeRequests).toBeLessThanOrEqual(27);
     expect(observed.fullDataGets).toBe(0);
+
+    const coldRequests = observed.rangeRequests;
+    const warm = await dataset.lookupRows({
+      snapshotId: dataset.snapshotId,
+      index: "serial_btree",
+      values: [24_095, 24_096, 24_999],
+      select: ["serial", "label"],
+    });
+    expect(warm.groups).toEqual(result.groups);
+    expect(warm.stats.cacheHits).toBeGreaterThanOrEqual(3);
+    expect(observed.rangeRequests - coldRequests).toBeLessThanOrEqual(8);
   });
 
   it("reads inclusive, exclusive, and one-sided BTree ranges in index order", async () => {
@@ -844,7 +871,7 @@ describe("lakeql-lance takeRows", () => {
     );
     expect(peak).toBeLessThanOrEqual(2);
     expect(result.stats.fragmentsTouched).toBe(4);
-    expect(result.stats.physicalBytesRequested).toBeLessThan(16_000);
+    expect(result.stats.physicalBytesRequested).toBeLessThan(24_000);
   });
 
   it("defines missing and invalid row-ID behavior", async () => {
@@ -899,6 +926,9 @@ describe("lakeql-lance takeRows", () => {
       { coalesceGapBytes: 0.5 },
       { maxCoalescedRangeBytes: 0 },
       { maxCoalescedRangeBytes: 0.5 },
+      { indexCacheBytes: -1 },
+      { indexCacheBytes: 0.5 },
+      { indexCache: new SharedMemoryCache(), indexCacheBytes: 1024 },
     ]) {
       await expect(
         openLanceDataset({ store: fixture.store, path: DATASET_PATH, ...options }),

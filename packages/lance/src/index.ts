@@ -5,6 +5,7 @@ import {
   type ObjectStore,
   type QueryBudget,
   type Row,
+  SharedMemoryCache,
 } from "lakeql";
 import { readDeletedRowOffsets } from "./deletions.js";
 import { materializeFragmentRows } from "./file.js";
@@ -15,7 +16,9 @@ import {
 } from "./io.js";
 import {
   type LanceFragment,
+  type LanceIndexMetadata,
   type LanceManifest,
+  parseIndexSection,
   parseManifest,
   parseRowIdSequence,
 } from "./proto.js";
@@ -56,6 +59,10 @@ export interface OpenLanceDatasetOptions {
   /** Pin a manifest version. Omit to resolve the latest-version hint. */
   version?: LanceRowIdInput;
   metadataCache?: CacheAdapter<Uint8Array>;
+  /** Snapshot-scoped decoded scalar-index state and page cache. */
+  indexCache?: SharedMemoryCache;
+  /** Maximum bytes retained by the default decoded index cache. Defaults to 8 MiB. */
+  indexCacheBytes?: number;
   coalesceGapBytes?: number;
   maxCoalescedRangeBytes?: number;
   now?: () => number;
@@ -171,12 +178,14 @@ export class LanceDataset {
   readonly snapshotId: string;
   readonly version: string;
   readonly storageVersion = SUPPORTED_LANCE_STORAGE_VERSION;
+  private readonly indexCache: SharedMemoryCache;
 
   constructor(
     private readonly options: {
       store: ObjectStore;
       root: string;
       manifest: LanceManifest;
+      indexMetadata?: LanceIndexMetadata[];
       manifestPath: string;
       manifestFileSize: number;
       snapshotId: string;
@@ -186,10 +195,12 @@ export class LanceDataset {
       openStats: MutableLanceReadStats;
       metadataMs: number;
       vectorLimits: LanceVectorLimits;
+      indexCache: SharedMemoryCache;
     },
   ) {
     this.snapshotId = options.snapshotId;
     this.version = options.manifest.version.toString();
+    this.indexCache = options.indexCache;
   }
 
   async takeRows(options: TakeLanceRowsOptions): Promise<LanceTakeRowsResult> {
@@ -213,6 +224,9 @@ export class LanceDataset {
           manifestPath: this.options.manifestPath,
           manifestFileSize: this.options.manifestFileSize,
           manifest: this.options.manifest,
+          ...(this.options.indexMetadata === undefined
+            ? {}
+            : { indexMetadata: this.options.indexMetadata }),
         })
       ).map(({ info }) => info);
     } finally {
@@ -234,9 +248,14 @@ export class LanceDataset {
         manifestPath: this.options.manifestPath,
         manifestFileSize: this.options.manifestFileSize,
         manifest: this.options.manifest,
+        ...(this.options.indexMetadata === undefined
+          ? {}
+          : { indexMetadata: this.options.indexMetadata }),
         indexName: options.index,
         values: options.values,
         budget: this.options.budget,
+        indexCache: this.indexCache,
+        cacheNamespace: `${this.options.root}:${this.snapshotId}`,
       });
       const rowIds = lookup.matches.flatMap((match) => match.rowIds);
       const materialized = await this.takeRowsWithStats(
@@ -290,9 +309,14 @@ export class LanceDataset {
         manifestPath: this.options.manifestPath,
         manifestFileSize: this.options.manifestFileSize,
         manifest: this.options.manifest,
+        ...(this.options.indexMetadata === undefined
+          ? {}
+          : { indexMetadata: this.options.indexMetadata }),
         indexName: options.index,
         range: options.range,
         budget: this.options.budget,
+        indexCache: this.indexCache,
+        cacheNamespace: `${this.options.root}:${this.snapshotId}`,
       });
       const materialized = await this.takeRowsWithStats(
         {
@@ -545,6 +569,7 @@ export async function openLanceDataset(options: OpenLanceDatasetOptions): Promis
   const stats = emptyStats();
   const planning = validatedPlanning(options);
   const vectorLimits = validatedVectorLimits(options.vectorLimits);
+  const indexCache = validatedIndexCache(options);
   const context = new LanceReadContext(options.store, budget, stats, startedAt, now, planning);
   const version =
     options.version === undefined
@@ -557,18 +582,25 @@ export async function openLanceDataset(options: OpenLanceDatasetOptions): Promis
   const manifestHead = await requiredHead(context, manifestPath);
   const cacheKey = manifestCacheKey(manifestPath, manifestHead);
   let manifestBytes: Uint8Array;
+  let indexSource: { bytes: Uint8Array; offset: number } | undefined;
   const cached = await options.metadataCache?.get(cacheKey);
   if (cached === undefined) {
     stats.cacheMisses += options.metadataCache === undefined ? 0 : 1;
-    manifestBytes = await readManifestBytes(context, manifestPath, manifestHead.size);
+    const read = await readManifestBytes(context, manifestPath, manifestHead.size);
+    manifestBytes = read.manifestBytes;
+    indexSource = read.indexSource;
     await options.metadataCache?.set(cacheKey, { value: copyBytes(manifestBytes) });
   } else {
     stats.cacheHits += 1;
     manifestBytes = cached.value;
   }
-  context.accountDecodedMemory(manifestBytes.byteLength);
+  context.accountDecodedMemory(manifestBytes.byteLength + (indexSource?.bytes.byteLength ?? 0));
   const manifest = parseManifest(manifestBytes);
   validateManifest(manifest, version);
+  const indexMetadata =
+    indexSource === undefined
+      ? undefined
+      : embeddedIndexMetadata(manifest, indexSource.bytes, indexSource.offset);
   const digest = await sha256(manifestBytes);
   const snapshotId = `lance:${manifest.version}:sha256:${digest}`;
   context.check();
@@ -576,6 +608,7 @@ export async function openLanceDataset(options: OpenLanceDatasetOptions): Promis
     store: options.store,
     root,
     manifest,
+    ...(indexMetadata === undefined ? {} : { indexMetadata }),
     manifestPath,
     manifestFileSize: manifestHead.size,
     snapshotId,
@@ -585,9 +618,49 @@ export async function openLanceDataset(options: OpenLanceDatasetOptions): Promis
     openStats: stats,
     metadataMs: now() - startedAt,
     vectorLimits,
+    indexCache,
   });
   context.releaseDecodedMemory();
   return dataset;
+}
+
+function validatedIndexCache(options: OpenLanceDatasetOptions): SharedMemoryCache {
+  if (options.indexCache !== undefined && options.indexCacheBytes !== undefined) {
+    throw new LakeqlError(
+      "LAKEQL_VALIDATION_ERROR",
+      "Provide indexCache or indexCacheBytes, not both",
+    );
+  }
+  const maxBytes = options.indexCacheBytes ?? 8 * 1024 * 1024;
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
+    throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Invalid Lance index cache byte budget", {
+      indexCacheBytes: maxBytes,
+    });
+  }
+  return (
+    options.indexCache ??
+    new SharedMemoryCache({
+      maxBytes,
+      policy: "latency",
+    })
+  );
+}
+
+function embeddedIndexMetadata(
+  manifest: LanceManifest,
+  sourceBytes: Uint8Array,
+  sourceOffset: number,
+): LanceIndexMetadata[] | undefined {
+  const offset = manifest.indexSectionOffset;
+  if (offset === undefined) return [];
+  const relativeOffset = offset - sourceOffset;
+  if (relativeOffset < 0 || relativeOffset + 4 > sourceBytes.byteLength) return undefined;
+  const length = dataView(sourceBytes).getUint32(relativeOffset, true);
+  const sectionStart = relativeOffset + 4;
+  if (length <= 0 || sectionStart + length > sourceBytes.byteLength) {
+    corrupt("Lance manifest index section is out of bounds", { offset, length });
+  }
+  return parseIndexSection(sourceBytes.subarray(sectionStart, sectionStart + length));
 }
 
 function validatedVectorLimits(limits: Partial<LanceVectorLimits> | undefined): LanceVectorLimits {
@@ -644,7 +717,10 @@ async function readManifestBytes(
   context: LanceReadContext,
   path: string,
   fileSize: number,
-): Promise<Uint8Array> {
+): Promise<{
+  manifestBytes: Uint8Array;
+  indexSource: { bytes: Uint8Array; offset: number };
+}> {
   if (fileSize < MANIFEST_FOOTER_BYTES + 4) {
     corrupt("Lance manifest is smaller than its footer", { path, fileSize });
   }
@@ -652,8 +728,10 @@ async function readManifestBytes(
   const tailRange = { offset: tailOffset, length: fileSize - tailOffset };
   const tailLease = await context.readRange(path, tailRange, "snapshot");
   let combined: Uint8Array;
+  let tailCopy: Uint8Array;
   try {
     const tail = tailLease.slice(tailRange);
+    tailCopy = copyBytes(tail);
     const footer = tail.subarray(tail.byteLength - MANIFEST_FOOTER_BYTES);
     if (decodeAscii(footer.subarray(12, 16)) !== "LANC") {
       corrupt("Invalid Lance manifest magic", { path });
@@ -688,7 +766,10 @@ async function readManifestBytes(
       availableBytes: combined.byteLength,
     });
   }
-  return copyBytes(combined.subarray(4, 4 + messageLength));
+  return {
+    manifestBytes: copyBytes(combined.subarray(4, 4 + messageLength)),
+    indexSource: { bytes: tailCopy, offset: tailOffset },
+  };
 }
 
 async function readFragmentRowIds(

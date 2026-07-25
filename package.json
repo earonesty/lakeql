@@ -35,6 +35,7 @@
     "bench:browser-r2": "pnpm build && node bench/browser-spatial-fixture.mjs && node bench/browser-window-fixture.mjs && pnpm --dir site build",
     "bench:bundle": "pnpm build && node bench/bundle.mjs",
     "bench:lance": "pnpm build && node bench/lance-random-read.mjs",
+    "bench:lance-btree": "pnpm build && node bench/lance-btree-exact.mjs",
     "bench:webgpu": "pnpm build && node bench/webgpu.mjs",
     "bench:webgpu-vector": "pnpm build && node bench/webgpu-vector.mjs",
     "bench:workunits": "pnpm build && node bench/workunits.mjs",

@@ -11,6 +11,7 @@ import { openLanceDataset } from "lakeql-lance";
 const dataset = await openLanceDataset({
   store,
   path: "catalog.lance",
+  indexCacheBytes: 8 * 1024 * 1024,
   budget: {
     maxBytes: 8 * 1024 * 1024,
     maxRangeRequests: 128,
@@ -42,9 +43,16 @@ const result = await dataset.lookupRows({
 
 `lookupRows` performs exact equality lookup, preserves the caller's key order and duplicate keys,
 returns every indexed duplicate in stable index order, and composes matches with the same
-snapshot-safe projected materializer. BTree page lookup, binary search, stable-ID retrieval, and
-result materialization share one cumulative byte, request, memory, decoded-row, concurrency,
-cancellation, and elapsed-time budget.
+snapshot-safe projected materializer. It retains the BTree lookup state, loads each candidate
+4,096-row leaf once, and binary-searches its sorted keys locally. BTree page lookup, stable-ID
+retrieval, and result materialization share one cumulative byte, request, memory, decoded-row,
+concurrency, cancellation, and elapsed-time budget.
+
+Decoded BTree lookup state and leaves use a separate snapshot-scoped LRU cache. `indexCacheBytes`
+sets its byte ceiling and defaults to 8 MiB; set it to `0` to disable decoded-index caching. Supply
+an explicitly sized `SharedMemoryCache` as `indexCache` to share immutable index state across
+separately opened handles for the same snapshot. Cache population remains subject to the query
+budgets, while hits consume neither range/byte budget nor decoded-row budget.
 
 Ordered range retrieval uses the same index without decoding intervening key pages:
 
@@ -146,8 +154,8 @@ python packages/lance/scripts/generate_fixture.py
 
 The generator records producer and storage versions, expected projections, stable row IDs, and
 SHA-256 hashes in each fixture's `expected.json`. The generated suite includes single- and
-multi-page BTree datasets so compatibility tests exercise page boundaries and bounded logarithmic
-reads, a dictionary-encoded UTF-8 dataset, plus L2, cosine, and dot IVF_FLAT indexes checked
+multi-page BTree datasets so compatibility tests exercise page boundaries and bounded page-local
+search, a dictionary-encoded UTF-8 dataset, plus L2, cosine, and dot IVF_FLAT indexes checked
 against official Lance ground truth.
 
 ## Reproducing the public-data benchmark
@@ -166,3 +174,16 @@ expected projections in `benchmark.json`. The runner also accepts `--base-url`, 
 `--manifest` for a dataset hosted on R2 or another HTTP range server. See
 [`docs/lance-random-read-benchmark.md`](../../docs/lance-random-read-benchmark.md) for the recorded
 results and interpretation.
+
+For the million-row exact BTree lookup benchmark:
+
+```sh
+pnpm bench:lance-btree -- \
+  --dataset /tmp/parcels-1m.lance \
+  --version 3 \
+  --key 50000:000000550000 \
+  --trials 3
+```
+
+The runner enforces a 27-request cold ceiling by default and reports cold and shared-cache trials.
+See [`docs/lance-btree-exact-benchmark.md`](../../docs/lance-btree-exact-benchmark.md).
