@@ -1,5 +1,11 @@
 # lakeql-lance
 
+## 0.2.1
+
+### Patch Changes
+
+- 02ce9da: Resolve storage-version-2.0 rows through ordered physical column page spans, enabling bounded reads across multi-page columns including official B-tree index data.
+
 ## 0.2.0
 
 ### Minor Changes
