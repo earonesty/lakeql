@@ -294,7 +294,7 @@ describe("Lance protobuf compatibility decoder", () => {
           packed(2, [20]),
           scalar(3, 8),
           bytesField(4, fileEncoding(encoding)),
-          scalar(5, index),
+          scalar(5, 0),
           scalar(90, 1),
         ),
       ),
@@ -305,6 +305,8 @@ describe("Lance protobuf compatibility decoder", () => {
 
     expect(metadata.bufferOffsets).toEqual([10, 20]);
     expect(metadata.bufferSizes).toEqual([5, 6]);
+    expect(metadata.pages.map((page) => page.priority)).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
+    expect(metadata.pages.map((page) => page.rowStart)).toEqual([0, 8, 16, 24, 32, 40, 48, 56]);
     expect(metadata.pages.map((page) => page.encoding)).toEqual([
       {
         kind: "flat",
