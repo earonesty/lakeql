@@ -114,7 +114,7 @@ export async function inspectLanceFile(
       });
     }
     const derivedRows = columns[0]?.pages.reduce(
-      (maximum, page) => Math.max(maximum, page.priority + page.length),
+      (maximum, page) => Math.max(maximum, page.rowStart + page.length),
       0,
     );
     const rowCount = descriptor.length || derivedRows || 0;
@@ -184,7 +184,7 @@ export async function materializeInspectedLanceFileRows(options: {
         field: selection.field,
         rowOffset,
         page: location.page,
-        rowInPage: rowOffset - location.page.priority,
+        rowInPage: rowOffset - location.page.rowStart,
       });
     }
   }
@@ -332,7 +332,7 @@ async function materializeDataFile(options: {
         field: selection.field,
         rowOffset,
         page: pageLocation.page,
-        rowInPage: rowOffset - pageLocation.page.priority,
+        rowInPage: rowOffset - pageLocation.page.rowStart,
       });
     }
   }
@@ -1012,7 +1012,7 @@ function findPage(
   rowOffset: number,
 ): { page: LancePage; index: number } {
   for (const [index, page] of pages.entries()) {
-    if (rowOffset >= page.priority && rowOffset < page.priority + page.length) {
+    if (rowOffset >= page.rowStart && rowOffset < page.rowStart + page.length) {
       return { page, index };
     }
   }

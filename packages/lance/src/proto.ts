@@ -90,6 +90,7 @@ export interface LancePage {
   bufferSizes: number[];
   length: number;
   priority: number;
+  rowStart: number;
   encoding: LanceArrayEncoding;
 }
 
@@ -339,14 +340,14 @@ export function parseRowIdSequence(bytes: Uint8Array): LanceRowIdSegment[] {
 
 export function parseColumnMetadata(bytes: Uint8Array): LanceColumnMetadata {
   const reader = new ProtoReader(bytes);
-  const pages: LancePage[] = [];
+  const parsedPages: Omit<LancePage, "rowStart">[] = [];
   const bufferOffsets: number[] = [];
   const bufferSizes: number[] = [];
   while (!reader.done) {
     const { field, wire } = reader.key();
     switch (field) {
       case 2:
-        pages.push(parsePage(reader.message(wire)));
+        parsedPages.push(parsePage(reader.message(wire)));
         break;
       case 3:
         bufferOffsets.push(...reader.packedSafeIntegers(wire, "column buffer offset"));
@@ -364,6 +365,12 @@ export function parseColumnMetadata(bytes: Uint8Array): LanceColumnMetadata {
       sizes: bufferSizes.length,
     });
   }
+  let rowStart = 0;
+  const pages = parsedPages.map((page) => {
+    const located = { ...page, rowStart };
+    rowStart = checkedPageRowEnd(rowStart, page.length);
+    return located;
+  });
   return { pages, bufferOffsets, bufferSizes };
 }
 
@@ -686,7 +693,7 @@ function parseDataFormat(bytes: Uint8Array): { fileFormat: string; version: stri
   return { fileFormat, version };
 }
 
-function parsePage(bytes: Uint8Array): LancePage {
+function parsePage(bytes: Uint8Array): Omit<LancePage, "rowStart"> {
   const reader = new ProtoReader(bytes);
   const bufferOffsets: number[] = [];
   const bufferSizes: number[] = [];
@@ -723,6 +730,17 @@ function parsePage(bytes: Uint8Array): LancePage {
   }
   if (encoding === undefined) corrupt("Lance page has no direct encoding");
   return { bufferOffsets, bufferSizes, length, priority, encoding };
+}
+
+function checkedPageRowEnd(rowStart: number, length: number): number {
+  const rowEnd = rowStart + length;
+  if (!Number.isSafeInteger(rowEnd)) {
+    corrupt("Lance column page row span exceeds JavaScript's safe integer range", {
+      rowStart,
+      length,
+    });
+  }
+  return rowEnd;
 }
 
 function parseFileEncoding(bytes: Uint8Array): LanceArrayEncoding {
