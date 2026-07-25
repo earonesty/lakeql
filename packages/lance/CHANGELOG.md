@@ -1,5 +1,11 @@
 # lakeql-lance
 
+## 0.2.3
+
+### Patch Changes
+
+- Make a zero-byte decoded index cache disable cache allocation, and support package-specific trusted-publishing release tags.
+
 ## 0.2.2
 
 ### Patch Changes

@@ -178,7 +178,7 @@ export class LanceDataset {
   readonly snapshotId: string;
   readonly version: string;
   readonly storageVersion = SUPPORTED_LANCE_STORAGE_VERSION;
-  private readonly indexCache: SharedMemoryCache;
+  private readonly indexCache: SharedMemoryCache | undefined;
 
   constructor(
     private readonly options: {
@@ -195,7 +195,7 @@ export class LanceDataset {
       openStats: MutableLanceReadStats;
       metadataMs: number;
       vectorLimits: LanceVectorLimits;
-      indexCache: SharedMemoryCache;
+      indexCache: SharedMemoryCache | undefined;
     },
   ) {
     this.snapshotId = options.snapshotId;
@@ -254,7 +254,7 @@ export class LanceDataset {
         indexName: options.index,
         values: options.values,
         budget: this.options.budget,
-        indexCache: this.indexCache,
+        ...(this.indexCache === undefined ? {} : { indexCache: this.indexCache }),
         cacheNamespace: `${this.options.root}:${this.snapshotId}`,
       });
       const rowIds = lookup.matches.flatMap((match) => match.rowIds);
@@ -315,7 +315,7 @@ export class LanceDataset {
         indexName: options.index,
         range: options.range,
         budget: this.options.budget,
-        indexCache: this.indexCache,
+        ...(this.indexCache === undefined ? {} : { indexCache: this.indexCache }),
         cacheNamespace: `${this.options.root}:${this.snapshotId}`,
       });
       const materialized = await this.takeRowsWithStats(
@@ -624,7 +624,7 @@ export async function openLanceDataset(options: OpenLanceDatasetOptions): Promis
   return dataset;
 }
 
-function validatedIndexCache(options: OpenLanceDatasetOptions): SharedMemoryCache {
+function validatedIndexCache(options: OpenLanceDatasetOptions): SharedMemoryCache | undefined {
   if (options.indexCache !== undefined && options.indexCacheBytes !== undefined) {
     throw new LakeqlError(
       "LAKEQL_VALIDATION_ERROR",
@@ -637,6 +637,7 @@ function validatedIndexCache(options: OpenLanceDatasetOptions): SharedMemoryCach
       indexCacheBytes: maxBytes,
     });
   }
+  if (maxBytes === 0) return undefined;
   return (
     options.indexCache ??
     new SharedMemoryCache({

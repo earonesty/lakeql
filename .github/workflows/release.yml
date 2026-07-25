@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - "v*"
+      - "lakeql@*"
+      - "lakeql-*@*"
 
 permissions:
   contents: write
@@ -34,15 +36,32 @@ jobs:
       - name: Install the software WebGPU adapter
         run: sudo apt-get update && sudo apt-get install --yes mesa-vulkan-drivers
 
-      - name: Verify release tag matches lakeql package version
+      - name: Verify release tag matches package version
         run: |
-          tag_version="${GITHUB_REF_NAME#v}"
-          package_version="$(node -p "require('./packages/lakeql/package.json').version")"
-          if [ "$tag_version" != "$package_version" ]; then
-            echo "::error::Release tag ${GITHUB_REF_NAME} does not match packages/lakeql version ${package_version}."
-            echo "::error::Run changeset version so packages/lakeql/package.json is ${tag_version}, or use a tag matching the published package version."
-            exit 1
+          if [[ "$GITHUB_REF_NAME" == v* ]]; then
+            export RELEASE_PACKAGE="lakeql"
+            export RELEASE_VERSION="${GITHUB_REF_NAME#v}"
+          else
+            export RELEASE_PACKAGE="${GITHUB_REF_NAME%@*}"
+            export RELEASE_VERSION="${GITHUB_REF_NAME##*@}"
           fi
+          node --input-type=module <<'NODE'
+          import { readFileSync, readdirSync } from "node:fs";
+
+          const manifests = readdirSync("packages", { withFileTypes: true })
+            .filter((entry) => entry.isDirectory())
+            .map((entry) => `packages/${entry.name}/package.json`)
+            .map((path) => ({ path, manifest: JSON.parse(readFileSync(path, "utf8")) }));
+          const selected = manifests.find(({ manifest }) => manifest.name === process.env.RELEASE_PACKAGE);
+          if (selected === undefined) {
+            throw new Error(`Release tag names unknown package ${process.env.RELEASE_PACKAGE}`);
+          }
+          if (selected.manifest.version !== process.env.RELEASE_VERSION) {
+            throw new Error(
+              `Release tag ${process.env.GITHUB_REF_NAME} does not match ${selected.path} version ${selected.manifest.version}`,
+            );
+          }
+          NODE
 
       - name: Publish packages
         run: pnpm release
