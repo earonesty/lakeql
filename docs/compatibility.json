@@ -674,7 +674,7 @@
       },
       {
         "file": "packages/lance/src/index.test.ts",
-        "pattern": "searches both sides of an official multi-page BTree boundary with logarithmic reads"
+        "pattern": "searches both sides of an official multi-page BTree boundary within local pages"
       },
       {
         "file": "packages/lance/src/index.test.ts",
