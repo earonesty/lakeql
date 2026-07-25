@@ -31,6 +31,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Install the software WebGPU adapter
+        run: sudo apt-get update && sudo apt-get install --yes mesa-vulkan-drivers
+
       - name: Verify release tag matches lakeql package version
         run: |
           tag_version="${GITHUB_REF_NAME#v}"
