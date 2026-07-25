@@ -45,6 +45,8 @@ jobs:
             export RELEASE_PACKAGE="${GITHUB_REF_NAME%@*}"
             export RELEASE_VERSION="${GITHUB_REF_NAME##*@}"
           fi
+          echo "RELEASE_PACKAGE=${RELEASE_PACKAGE}" >> "$GITHUB_ENV"
+          echo "RELEASE_VERSION=${RELEASE_VERSION}" >> "$GITHUB_ENV"
           node --input-type=module <<'NODE'
           import { readFileSync, readdirSync } from "node:fs";
 
@@ -63,8 +65,16 @@ jobs:
           }
           NODE
 
-      - name: Publish packages
-        run: pnpm release
+      - name: Run release gate
+        run: pnpm check
+
+      - name: Publish tagged package
+        run: |
+          if npm view "${RELEASE_PACKAGE}@${RELEASE_VERSION}" version >/dev/null 2>&1; then
+            echo "${RELEASE_PACKAGE}@${RELEASE_VERSION} is already published."
+            exit 0
+          fi
+          pnpm --filter "${RELEASE_PACKAGE}" publish --no-git-checks
         env:
           NPM_CONFIG_PROVENANCE: "true"
           NPM_CONFIG_ACCESS: public
