@@ -13,6 +13,11 @@ jobs:
         with:
           lfs: true
 
+      - name: Verify Git LFS assets
+        run: |
+          git lfs pull
+          git lfs fsck
+
       - uses: pnpm/action-setup@v4
 
       - uses: actions/setup-node@v4
