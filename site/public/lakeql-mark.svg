@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">LakeQL</title>
+  <defs>
+    <mask id="rows">
+      <rect width="64" height="64" fill="white"/>
+      <path d="M34 25h15v5H29zm-12 13h27v5H17z" fill="black"/>
+    </mask>
+  </defs>
+  <path d="M8 56 56 8v48Z" fill="#c6f24e" mask="url(#rows)"/>
+</svg>

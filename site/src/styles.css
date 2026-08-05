@@ -206,16 +206,16 @@ kbd {
 }
 .brand {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 9px;
   font-family: var(--mono);
   font-weight: 700;
   letter-spacing: -0.02em;
 }
 .brand__mark {
-  color: var(--acid);
-  font-size: 1.05rem;
-  transform: translateY(1px);
+  display: block;
+  width: 17px;
+  height: 17px;
 }
 .brand__word {
   font-size: 1.18rem;
