@@ -39,6 +39,7 @@ fixtures/external/*
 fixtures/external/parquet-testing/
 site/dist/
 plans/
+tools/
 
 # Local secrets — synced from .env / .env.prod, never committed.
 # The committed template is `env.example` (no leading dot → not ignored).
