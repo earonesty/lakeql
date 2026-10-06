@@ -182,8 +182,6 @@ export class HttpObjectStore implements ObjectStore {
 function isCompressedRangeProbe(bytes: Uint8Array, headers: Headers): boolean {
   const encoding = headers.get("content-encoding")?.toLowerCase();
   if (encoding && encoding !== "identity") return true;
-  const vary = headers.get("vary")?.toLowerCase();
-  if (vary?.split(",").some((value) => value.trim() === "accept-encoding")) return true;
   if (bytes[0] === 0x1f && bytes[1] === 0x8b) return true;
   return false;
 }

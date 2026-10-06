@@ -17,6 +17,7 @@ import {
 } from "lakeql-core";
 import { readParquetColumnBatch } from "./column-batches.js";
 import { lakeqlParquetCompressors } from "./compressors.js";
+import { convertIntegerDecimalValues, isIntegerDecimal } from "./decimal.js";
 import {
   decodedColumnCacheKey,
   decodedColumnPageCacheKey,
@@ -772,15 +773,13 @@ function dictionaryPageValues(
     view: new DataView(page.buffer, page.byteOffset, page.byteLength),
     offset: 0,
   };
-  const dictionary = convert(
-    readPlain(
-      pageReader,
-      columnDecoder.type,
-      dictionaryHeader.num_values,
-      columnDecoder.element.type_length,
-    ),
-    columnDecoder,
+  const rawDictionary = readPlain(
+    pageReader,
+    columnDecoder.type,
+    dictionaryHeader.num_values,
+    columnDecoder.element.type_length,
   );
+  const dictionary = convertDecodedValues(rawDictionary, columnDecoder);
   if (key !== undefined && cache !== undefined) {
     cache.setValue(key, dictionary, estimateDecodedArrayBytes(dictionary));
     if (options.stats !== undefined) options.stats.cacheMisses += 1;
@@ -820,7 +819,12 @@ function dataPageValues(
       rowCount: dataHeader.num_values,
       values:
         pageDictionary === undefined
-          ? convertWithDictionary(compactDataPage, dictionary, dataHeader.encoding, columnDecoder)
+          ? convertDecodedValuesWithDictionary(
+              compactDataPage,
+              dictionary,
+              dataHeader.encoding,
+              columnDecoder,
+            )
           : compactDataPage,
       definitionLevels:
         definitionLevels === undefined || definitionLevels.length === 0
@@ -842,7 +846,12 @@ function dataPageValues(
       rowCount: dataHeader.num_rows,
       values:
         pageDictionary === undefined
-          ? convertWithDictionary(compactDataPage, dictionary, dataHeader.encoding, columnDecoder)
+          ? convertDecodedValuesWithDictionary(
+              compactDataPage,
+              dictionary,
+              dataHeader.encoding,
+              columnDecoder,
+            )
           : compactDataPage,
       definitionLevels:
         definitionLevels === undefined || definitionLevels.length === 0
@@ -852,6 +861,31 @@ function dataPageValues(
     };
   }
   return undefined;
+}
+
+function convertDecodedValues(values: DecodedArray, columnDecoder: ColumnDecoder): DecodedArray {
+  if (!isIntegerDecimal(columnDecoder.element)) return convert(values, columnDecoder);
+  return convertIntegerDecimalValues(
+    values,
+    columnDecoder.element,
+    columnDecoder.pathInSchema.join("."),
+  );
+}
+
+function convertDecodedValuesWithDictionary(
+  values: DecodedArray,
+  dictionary: DecodedArray | undefined,
+  encoding: Encoding,
+  columnDecoder: ColumnDecoder,
+): DecodedArray {
+  if (!isIntegerDecimal(columnDecoder.element)) {
+    return convertWithDictionary(values, dictionary, encoding, columnDecoder);
+  }
+  return convertIntegerDecimalValues(
+    values,
+    columnDecoder.element,
+    columnDecoder.pathInSchema.join("."),
+  );
 }
 
 function recordDecodeTime<T>(options: ReadParquetBatchOptions, decode: () => T): T {

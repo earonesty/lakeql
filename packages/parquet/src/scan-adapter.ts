@@ -67,7 +67,7 @@ export class ParquetScanAdapter implements ScanAdapter {
     for (const object of objects) {
       const file = await asyncBufferFromObjectInfo(this.store, object);
       const metadata = await this.metadata(object.path, file);
-      rejectUnsupportedParquetSchema(metadata);
+      rejectUnsupportedParquetSchema(metadata, { allowValueCheckedInt64Decimals: true });
       const columns = parquetColumnDescriptors(metadata, object.path);
       perFile.set(object.path, columns);
       for (const [column, descriptor] of columns) {
@@ -176,7 +176,6 @@ export class ParquetScanAdapter implements ScanAdapter {
     const batchSize = options.batchSize || this.defaultBatchSize;
     const file = this.scanBuffer(path, await asyncBufferFromStore(this.store, path, options));
     const metadata = await this.metadata(path, file, options);
-    rejectUnsupportedParquetSchema(metadata, { columns: options.columns });
     const planned = plannedParquetSchema(options.object);
     const requestedColumns = options.columns ?? planned?.columns;
     const present = presentColumns(requestedColumns, planned, metadata);
@@ -201,11 +200,15 @@ export class ParquetScanAdapter implements ScanAdapter {
             }),
         stats: options.stats,
       };
-      if (
+      const useVectorReader =
         present !== undefined &&
         present.length > 0 &&
-        canReadParquetVectorBatches(metadata, vectorOptions)
-      ) {
+        canReadParquetVectorBatches(metadata, vectorOptions);
+      rejectUnsupportedParquetSchema(metadata, {
+        columns: options.columns,
+        allowValueCheckedInt64Decimals: useVectorReader,
+      });
+      if (useVectorReader) {
         for await (const vectorBatch of readParquetVectorBatchesFromFile(
           file,
           metadata,

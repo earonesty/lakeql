@@ -1200,6 +1200,47 @@ describe("writePartitionedParquet", () => {
 });
 
 describe("createParquetLake", () => {
+  it("queries DECIMAL(18,4) INT64 values when every unscaled value is exact", async () => {
+    const decimalStore = memoryStore();
+    await writeParquet(decimalStore, "data/nav.parquet", {
+      schema: [
+        { name: "schema", num_children: 2 },
+        { name: "scheme_code", type: "INT32", repetition_type: "REQUIRED" },
+        {
+          name: "nav",
+          type: "INT64",
+          converted_type: "DECIMAL",
+          precision: 18,
+          scale: 4,
+          repetition_type: "REQUIRED",
+        },
+      ],
+      columnData: [
+        { name: "scheme_code", data: [122639, 122639] },
+        { name: "nav", data: [10.1234, 2540201.9508] },
+      ],
+    });
+
+    await expect(
+      createParquetLake({ store: decimalStore })
+        .path("data/nav.parquet")
+        .select(["scheme_code", "nav"])
+        .where(eq("scheme_code", 122639))
+        .toArray(),
+    ).resolves.toEqual([
+      { scheme_code: 122639, nav: 10.1234 },
+      { scheme_code: 122639, nav: 2540201.9508 },
+    ]);
+
+    await expect(
+      createParquetLake({ store: decimalStore })
+        .path("data/nav.parquet")
+        .select(["nav"])
+        .where(lt("nav", 100))
+        .toArray(),
+    ).resolves.toEqual([{ nav: 10.1234 }]);
+  });
+
   it("queries projected rows from a path", async () => {
     const lake = createParquetLake({ store, queryId: () => "test-query" });
     const rows = await lake
@@ -2643,6 +2684,37 @@ describe("rejectUnsupportedParquetSchema", () => {
             scale: 2,
           },
         ]),
+      ),
+    ).toThrow(/precision 15/u);
+    expect(() =>
+      rejectUnsupportedParquetSchema(
+        metadataWithSchema([
+          { name: "root", num_children: 1 },
+          {
+            name: "wide_decimal",
+            type: "INT64",
+            converted_type: "DECIMAL",
+            precision: 18,
+            scale: 4,
+          },
+        ]),
+        { allowValueCheckedInt64Decimals: true },
+      ),
+    ).not.toThrow();
+    expect(() =>
+      rejectUnsupportedParquetSchema(
+        metadataWithSchema([
+          { name: "root", num_children: 1 },
+          {
+            name: "wide_decimal",
+            type: "FIXED_LEN_BYTE_ARRAY",
+            type_length: 8,
+            converted_type: "DECIMAL",
+            precision: 18,
+            scale: 4,
+          },
+        ]),
+        { allowValueCheckedInt64Decimals: true },
       ),
     ).toThrow(/precision 15/u);
     expect(() =>

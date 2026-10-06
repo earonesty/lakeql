@@ -191,29 +191,29 @@ describe("httpStore", () => {
     expect(seen.map((entry) => entry.range)).toEqual(["bytes=0-1", null]);
   });
 
-  it("falls back when compressed ranged probes expose no decoded bytes", async () => {
-    const whole = enc.encode("PAR1decoded-parquet-body");
+  it("keeps range reads when an unencoded response varies on Accept-Encoding", async () => {
+    const seen: { range: string | null }[] = [];
     const store = httpStore({
       baseUrl: "https://example.test/data/",
       fetch: async (_input, init) => {
         const range = new Headers(init?.headers).get("range");
+        seen.push({ range });
         if (range === "bytes=0-1") {
-          return new Response(new Uint8Array(), {
+          return new Response(enc.encode("PA"), {
             status: 206,
             headers: {
-              "content-range": "bytes 0-1/11",
+              "content-range": "bytes 0-1/178680256",
+              "content-length": "2",
               vary: "Accept-Encoding",
             },
           });
         }
-        return new Response(whole);
+        throw new Error("head must not fall back to a full-object request");
       },
     });
 
-    await expect(store.head("file.parquet")).resolves.toMatchObject({ size: whole.byteLength });
-    await expect(store.getRange("file.parquet", { offset: 0, length: 4 })).resolves.toEqual(
-      enc.encode("PAR1"),
-    );
+    await expect(store.head("file.parquet")).resolves.toMatchObject({ size: 178680256 });
+    expect(seen).toEqual([{ range: "bytes=0-1" }]);
   });
 
   it("falls back when ranged probes carry content-encoding", async () => {
