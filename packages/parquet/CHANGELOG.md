@@ -1,5 +1,13 @@
 # lakeql-parquet
 
+## 0.4.1
+
+### Patch Changes
+
+- 01ee02c: Keep HTTP range reads active when an unencoded response merely varies on
+  `Accept-Encoding`, and read `INT64 DECIMAL` columns with declared precision above
+  15 when every decoded unscaled value remains exactly representable in JavaScript.
+
 ## 0.4.0
 
 ### Minor Changes

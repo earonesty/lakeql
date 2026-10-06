@@ -1,6 +1,6 @@
 {
   "name": "lakeql-cli",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "description": "lakeql command line: query, explain, inspect, write, compact",
   "keywords": [
     "lakehouse",
