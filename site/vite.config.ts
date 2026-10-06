@@ -28,6 +28,7 @@ export default defineConfig({
       input: {
         main: fileURLToPath(new URL("index.html", import.meta.url)),
         compare: fileURLToPath(new URL("compare.html", import.meta.url)),
+        funds: fileURLToPath(new URL("funds.html", import.meta.url)),
       },
     },
   },

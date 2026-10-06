@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>37 million NAVs, queried in your browser — lakeql</title>
+    <meta
+      name="description"
+      content="Choose an Indian mutual fund and watch lakeql query 37 million daily NAV records from a remote Parquet file using HTTP range reads."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://api.tigzig.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <div class="fund-grain" aria-hidden="true"></div>
+
+    <header class="fund-topbar">
+      <a class="fund-brand" href="./" aria-label="lakeql home">
+        <img src="./lakeql-mark.svg" alt="" />
+        <span>lakeql</span>
+        <small>v__LAKEQL_VERSION__</small>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="./">playground</a>
+        <a href="./compare.html">compare</a>
+        <a href="https://github.com/earonesty/lakeql">github</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="fund-hero">
+        <div class="fund-hero__copy">
+          <p class="fund-eyebrow"><span></span> live parquet · no backend</p>
+          <h1><em id="hero-rows">37.5 million</em> fund prices.<br />A few byte ranges.</h1>
+          <p class="fund-hero__lede">
+            Pick an Indian mutual fund. LakeQL will find its complete NAV history inside a
+            <strong id="hero-size">170 MB</strong> Parquet file, straight from this browser.
+          </p>
+        </div>
+        <aside class="fund-file" aria-label="Live dataset details">
+          <div class="fund-file__name">
+            <span>remote object</span>
+            <strong>amfi_nav_master.parquet</strong>
+          </div>
+          <dl>
+            <div><dt>rows</dt><dd id="file-rows">37,523,624</dd></div>
+            <div><dt>physical size</dt><dd id="file-size">170.3 MB</dd></div>
+            <div><dt>clustered by</dt><dd>scheme_code</dd></div>
+            <div><dt>refreshed</dt><dd id="file-generated">3× daily</dd></div>
+          </dl>
+        </aside>
+      </section>
+
+      <section class="fund-picker" aria-labelledby="picker-title">
+        <div>
+          <p class="fund-kicker">choose a fund</p>
+          <h2 id="picker-title">Search 38,000+ schemes</h2>
+        </div>
+        <div class="fund-search">
+          <label for="fund-search-input">Fund name or AMFI code</label>
+          <div class="fund-search__box">
+            <input
+              id="fund-search-input"
+              type="search"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="Try HDFC flexi cap"
+            />
+            <span id="search-state">search</span>
+          </div>
+          <div class="fund-search__results" id="search-results" hidden></div>
+        </div>
+        <fieldset class="fund-presets">
+          <legend>Example funds</legend>
+          <button type="button" data-scheme="122639">Parag Parikh</button>
+          <button type="button" data-scheme="118955">HDFC Flexi Cap</button>
+          <button type="button" data-scheme="120564">Aditya Birla</button>
+          <button type="button" data-scheme="118535">Franklin India</button>
+        </fieldset>
+      </section>
+
+      <section class="fund-demo" aria-live="polite">
+        <div class="fund-chart-card">
+          <header class="fund-chart-card__head">
+            <div>
+              <p class="fund-kicker">NAV history</p>
+              <h2 id="fund-name">Parag Parikh Flexi Cap Fund — Direct Growth</h2>
+              <p id="fund-range">Loading the live Parquet file…</p>
+            </div>
+            <div class="fund-live"><span></span><b id="run-state">querying</b></div>
+          </header>
+
+          <div class="fund-chart-wrap">
+            <svg
+              id="nav-chart"
+              viewBox="0 0 960 400"
+              role="img"
+              aria-labelledby="chart-title chart-description"
+              preserveAspectRatio="none"
+            >
+              <title id="chart-title">Fund NAV history</title>
+              <desc id="chart-description">Net asset value over the available date range.</desc>
+              <defs>
+                <linearGradient id="chart-fill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#c6f24e" stop-opacity="0.28" />
+                  <stop offset="100%" stop-color="#c6f24e" stop-opacity="0" />
+                </linearGradient>
+              </defs>
+              <g class="chart-grid" aria-hidden="true">
+                <line x1="54" y1="40" x2="930" y2="40" />
+                <line x1="54" y1="140" x2="930" y2="140" />
+                <line x1="54" y1="240" x2="930" y2="240" />
+                <line x1="54" y1="340" x2="930" y2="340" />
+              </g>
+              <path id="chart-area" class="chart-area" d="" />
+              <path id="chart-line" class="chart-line" d="" />
+              <g id="chart-labels" class="chart-labels"></g>
+            </svg>
+            <div class="fund-chart__empty" id="chart-empty">Reading row-group metadata…</div>
+          </div>
+
+          <div class="fund-summary">
+            <div class="fund-summary__item"><span>latest NAV</span><strong id="latest-nav">—</strong></div>
+            <div class="fund-summary__item"><span>history</span><strong id="history-years">—</strong></div>
+            <div class="fund-summary__item"><span>NAV change</span><strong id="nav-change">—</strong></div>
+            <div class="fund-summary__item"><span>observations</span><strong id="observation-count">—</strong></div>
+          </div>
+        </div>
+
+        <aside class="fund-proof">
+          <header>
+            <p class="fund-kicker">what crossed the wire</p>
+            <h2>Range reads, measured.</h2>
+          </header>
+          <div class="fund-proof__hero">
+            <strong id="bytes-read">—</strong>
+            <span>fetched from a <b id="proof-file-size">170.3 MB</b> file</span>
+          </div>
+          <dl class="fund-proof__metrics">
+            <div class="fund-proof__metric"><dt>HTTP requests</dt><dd id="request-count">—</dd></div>
+            <div class="fund-proof__metric"><dt>full downloads</dt><dd id="full-requests">—</dd></div>
+            <div class="fund-proof__metric"><dt>file avoided</dt><dd id="scan-ratio">—</dd></div>
+            <div class="fund-proof__metric"><dt>wall time</dt><dd id="query-time">—</dd></div>
+          </dl>
+          <div class="fund-query">
+            <div class="fund-query__head"><span>executed in this tab</span><button id="copy-query" type="button">copy</button></div>
+            <pre><code id="query-code">lake.path("amfi_nav_master.parquet")
+  .where(eq("scheme_code", 122639))
+  .select(["date", "nav", "scheme_name"])
+  .orderBy([{ column: "date" }])
+  .toArray()</code></pre>
+          </div>
+          <p class="fund-error" id="fund-error" hidden></p>
+        </aside>
+      </section>
+
+      <section class="fund-ledger" aria-labelledby="ledger-title">
+        <div class="fund-ledger__head">
+          <div>
+            <p class="fund-kicker">rows returned</p>
+            <h2 id="ledger-title">The latest observations</h2>
+          </div>
+          <a id="source-record" href="https://api.tigzig.com/mf/v1/docs">Open TigZig source ↗</a>
+        </div>
+        <div class="fund-table-wrap">
+          <table>
+            <thead><tr><th>Date</th><th>NAV</th><th>AMFI scheme code</th></tr></thead>
+            <tbody id="fund-rows">
+              <tr><td>—</td><td>—</td><td>122639</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="fund-notes">
+        <article>
+          <span>01</span>
+          <h3>The dataset stays remote.</h3>
+          <p>LakeQL reads Parquet metadata first, prunes by scheme code, then requests only the selected column chunks.</p>
+        </article>
+        <article>
+          <span>02</span>
+          <h3>The decimal stays accurate.</h3>
+          <p>NAV is stored as INT64 DECIMAL(18,4). LakeQL checks every unscaled value before converting it to JavaScript.</p>
+        </article>
+        <article>
+          <span>03</span>
+          <h3>The numbers are public.</h3>
+          <p>TigZig republishes AMFI records under CC0 and keeps matured schemes, which avoids survivorship-only histories.</p>
+        </article>
+      </section>
+    </main>
+
+    <footer class="fund-footer">
+      <span>lakeql × <a href="https://www.tigzig.com/apis/mf-nav">TigZig</a></span>
+      <span>Data sourced from AMFI public records · verify important figures with AMFI</span>
+    </footer>
+
+    <script type="module" src="/src/funds.ts"></script>
+  </body>
+</html>
