@@ -1,5 +1,7 @@
 import { parquetMetadataAsync } from "hyparquet";
+import { getSchemaPath } from "hyparquet/src/schema.js";
 import type { CacheAdapter, CacheEntry, SharedMemoryCache } from "lakeql-core";
+import { convertIntegerDecimalValues, isIntegerDecimal } from "./decimal.js";
 import { lakeqlParquetParsers } from "./parsers.js";
 import type { ParquetMetadata, StoreAsyncBuffer } from "./types.js";
 
@@ -9,7 +11,36 @@ export function readParquetMetadataFromFile(file: StoreAsyncBuffer): Promise<Par
   return parquetMetadataAsync(file, {
     initialFetchSize: metadataInitialFetchSize,
     parsers: lakeqlParquetParsers,
-  });
+  }).then(normalizeIntegerDecimalStatistics);
+}
+
+function normalizeIntegerDecimalStatistics(metadata: ParquetMetadata): ParquetMetadata {
+  for (const rowGroup of metadata.row_groups) {
+    for (const column of rowGroup.columns) {
+      const columnMetadata = column.meta_data;
+      const statistics = columnMetadata?.statistics;
+      if (columnMetadata === undefined || statistics === undefined) continue;
+      const element = getSchemaPath(metadata.schema, columnMetadata.path_in_schema).at(-1)?.element;
+      if (element === undefined || !isIntegerDecimal(element)) continue;
+      for (const key of ["min", "max", "min_value", "max_value"] as const) {
+        const value = statistics[key];
+        if (value === undefined) continue;
+        try {
+          const converted = convertIntegerDecimalValues(
+            [value],
+            element,
+            columnMetadata.path_in_schema.join("."),
+          )[0];
+          if (converted !== undefined) statistics[key] = converted;
+        } catch {
+          // Unsafe statistics cannot be used for pruning. Value decoding still
+          // emits the typed precision error if the column is selected.
+          delete statistics[key];
+        }
+      }
+    }
+  }
+  return metadata;
 }
 
 export async function readCachedParquetMetadata(

@@ -3,6 +3,7 @@ import type { ParquetMetadata } from "./types.js";
 
 export interface RejectUnsupportedParquetSchemaOptions {
   columns?: readonly string[] | undefined;
+  allowValueCheckedInt64Decimals?: boolean;
 }
 
 export function rejectUnsupportedParquetSchema(
@@ -16,7 +17,7 @@ export function rejectUnsupportedParquetSchema(
   const childCount = schemaChildCount(root);
   let index = 1;
   for (let child = 0; child < childCount && index < schema.length; child += 1) {
-    index = rejectUnsupportedParquetSchemaNode(schema, index, [], selected);
+    index = rejectUnsupportedParquetSchemaNode(schema, index, [], selected, options);
   }
 }
 
@@ -27,6 +28,7 @@ function rejectUnsupportedParquetSchemaNode(
   index: number,
   path: string[],
   selected: ReadonlySet<string> | undefined,
+  options: RejectUnsupportedParquetSchemaOptions,
 ): number {
   const element = schema[index];
   if (element === undefined) return index + 1;
@@ -36,7 +38,7 @@ function rejectUnsupportedParquetSchemaNode(
     return skipParquetSchemaSubtree(schema, index);
   }
   const childCount = schemaChildCount(element);
-  rejectUnsupportedParquetLeaf(element, nodePath);
+  rejectUnsupportedParquetLeaf(element, nodePath, options);
   if (childCount === 0) return index + 1;
   if (isSupportedNestedParquetGroup(element)) {
     return skipParquetSchemaSubtree(schema, index);
@@ -79,7 +81,11 @@ function isSupportedNestedParquetGroup(element: ParquetSchemaElement): boolean {
   return logicalType === "LIST" || logicalType === "MAP";
 }
 
-function rejectUnsupportedParquetLeaf(element: ParquetSchemaElement, path: string[]): void {
+function rejectUnsupportedParquetLeaf(
+  element: ParquetSchemaElement,
+  path: string[],
+  options: RejectUnsupportedParquetSchemaOptions,
+): void {
   const column = path.join(".");
   const convertedType = String(element.converted_type ?? "").toUpperCase();
   const logicalType = logicalTypeRecord(element.logical_type);
@@ -93,7 +99,8 @@ function rejectUnsupportedParquetLeaf(element: ParquetSchemaElement, path: strin
   if (
     (convertedType === "DECIMAL" || logicalTypeName === "DECIMAL") &&
     decimalPrecision !== undefined &&
-    decimalPrecision > 15
+    decimalPrecision > 15 &&
+    !(options.allowValueCheckedInt64Decimals === true && element.type === "INT64")
   ) {
     throw new LakeqlError(
       "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",

@@ -18,7 +18,7 @@ Legend: supported+tested = covered by tests; supported = implemented with narrow
 | Parquet | Struct assembly | detected+rejected | Rejected with LAKEQL_UNSUPPORTED_PARQUET_FEATURE to avoid silent flattening. |
 | Parquet | Decimal/date/time/timestamp logical values | supported+tested | Reference-engine comparison covers DuckDB-authored DECIMAL(9,2), TIME, DATE, and TIMESTAMP logical decoding. |
 | Parquet | Unsigned integer and byte-array values | supported+tested | Reference-engine comparison covers DuckDB-authored unsigned integer logical values, binary payloads, and fixed-length byte arrays. |
-| Parquet | Wide decimal backing variants | detected+rejected | Decimals above precision 15 are rejected with LAKEQL_UNSUPPORTED_PARQUET_FEATURE to avoid lossy JS number decoding. |
+| Parquet | Wide decimal backing variants | supported+tested | INT64 DECIMAL values are read when each unscaled integer is exactly representable in JavaScript; unsafe values and wider byte-array encodings are rejected with LAKEQL_UNSUPPORTED_PARQUET_FEATURE. |
 | Parquet | Timestamp micros/nanos | supported+tested | TIMESTAMP_MICROS and TIMESTAMP_NANOS are represented as precision-preserving timestamp values for filtering, ordering, aggregation, and JSON output. |
 | Parquet | Null-heavy scalar and nested rows | supported+tested | Reference-engine comparison covers null-heavy DuckDB-authored scalar, date/timestamp, list, map, and binary values. |
 | Iceberg | Format v1 reads | supported+tested | Metadata load and planning are covered. |

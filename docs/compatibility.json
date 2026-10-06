@@ -169,12 +169,16 @@
   {
     "area": "Parquet",
     "feature": "Wide decimal backing variants",
-    "status": "detected+rejected",
-    "notes": "Decimals above precision 15 are rejected with LAKEQL_UNSUPPORTED_PARQUET_FEATURE to avoid lossy JS number decoding.",
+    "status": "supported+tested",
+    "notes": "INT64 DECIMAL values are read when each unscaled integer is exactly representable in JavaScript; unsafe values and wider byte-array encodings are rejected with LAKEQL_UNSUPPORTED_PARQUET_FEATURE.",
     "evidence": [
       {
         "file": "packages/parquet/src/index.test.ts",
-        "pattern": "rejects unsupported precision-sensitive decimals without rejecting timestamps"
+        "pattern": "queries DECIMAL(18,4) INT64 values when every unscaled value is exact"
+      },
+      {
+        "file": "packages/parquet/src/decimal.test.ts",
+        "pattern": "rejects values whose unscaled integer cannot be represented exactly"
       }
     ]
   },
