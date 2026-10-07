@@ -3,6 +3,7 @@ import { parquetRead, parquetSchema } from "hyparquet";
 import { getSchemaPath } from "hyparquet/src/schema.js";
 import { type Batch, batchFromColumns } from "lakeql-core";
 import { lakeqlParquetCompressors } from "./compressors.js";
+import { normalizeIntegerDecimalColumns, rawIntegerDecimalMetadata } from "./decimal.js";
 import { decodedColumnCacheKey } from "./decoded-column-cache.js";
 import { lakeqlParquetParsers } from "./parsers.js";
 import {
@@ -90,7 +91,7 @@ export async function readParquetColumnBatch(
   );
   const readOptions: Parameters<typeof parquetRead>[0] = {
     file,
-    metadata,
+    metadata: rawIntegerDecimalMetadata(metadata, columns),
     columns,
     rowStart,
     rowEnd,
@@ -101,7 +102,13 @@ export async function readParquetColumnBatch(
     },
   };
   await parquetRead(readOptions);
-  return batchFromColumns(normalizeParquetColumnValues(metadata, columns, columnValues));
+  return batchFromColumns(
+    normalizeParquetColumnValues(
+      metadata,
+      columns,
+      normalizeIntegerDecimalColumns(metadata, columns, columnValues),
+    ),
+  );
 }
 
 function normalizeParquetColumnValues(

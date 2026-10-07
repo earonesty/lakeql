@@ -1,4 +1,5 @@
-import { parquetReadObjects } from "hyparquet";
+import { parquetReadObjects, parquetSchema } from "hyparquet";
+import { normalizeIntegerDecimalRows, rawIntegerDecimalMetadata } from "./decimal.js";
 import { normalizeDecodedRows } from "./decoded-rows.js";
 import { lakeqlParquetParsers } from "./parsers.js";
 import {
@@ -23,6 +24,8 @@ export async function* readParquetObjectBatchesFromFile(
   const batchSize = options.batchSize ?? 4096;
   const requestedStart = options.rowStart ?? 0;
   const requestedEnd = options.rowEnd ?? Number(metadata.num_rows);
+  const columns =
+    options.columns ?? parquetSchema(metadata).children.map((child) => child.element.name);
   if (options.columns !== undefined) recordReadColumns(options.stats, options.columns);
   let rowGroupStart = 0;
   for (const rowGroup of metadata.row_groups) {
@@ -43,14 +46,16 @@ export async function* readParquetObjectBatchesFromFile(
       const rowEnd = Math.min(rowStart + batchSize, end);
       const readOptions: Parameters<typeof parquetReadObjects>[0] = {
         file,
-        metadata,
+        metadata: rawIntegerDecimalMetadata(metadata, columns),
         rowFormat: "object",
         rowStart,
         rowEnd,
         parsers: lakeqlParquetParsers,
       };
       if (options.columns) readOptions.columns = options.columns;
-      const rows = normalizeDecodedRows(await parquetReadObjects(readOptions));
+      const rows = normalizeDecodedRows(
+        normalizeIntegerDecimalRows(metadata, columns, await parquetReadObjects(readOptions)),
+      );
       recordRowsDecoded(options.stats, rows.length);
       yield {
         rowOffset: rowStart,

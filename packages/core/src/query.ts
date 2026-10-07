@@ -152,6 +152,13 @@ export interface QueryPolicy {
   context?: QueryPolicyContext;
 }
 
+export interface MetadataAccessPolicy {
+  /** Top-level columns whose metadata may be disclosed, or undefined when unrestricted. */
+  allowedColumns?: readonly string[];
+  /** Whether physical row counts may be returned without evaluating a row filter. */
+  permitsUnfilteredRowCounts: boolean;
+}
+
 export interface LakeConfig {
   store: ObjectStore;
   scanner: ScanAdapter;
@@ -528,6 +535,18 @@ export class Lake {
 
   query(input: JsonQueryV1): QueryBuilder {
     return new QueryBuilder(this, parseJsonQuery(input));
+  }
+
+  metadataAccessPolicy(): MetadataAccessPolicy {
+    const allowedColumns =
+      this.policy.allowedColumns === undefined
+        ? undefined
+        : normalizeAllowedColumns(this.policy.allowedColumns);
+    const rowFilter = resolvePolicyRowFilter(this.policy);
+    return {
+      ...(allowedColumns === undefined ? {} : { allowedColumns }),
+      permitsUnfilteredRowCounts: rowFilter === undefined,
+    };
   }
 
   resume(bookmark: Bookmark): ResumedQuery {
@@ -3483,10 +3502,7 @@ function applyQueryPolicy(init: PathQueryInit, policy: QueryPolicy): PathQueryIn
     policy.allowedColumns === undefined
       ? undefined
       : normalizeAllowedColumns(policy.allowedColumns);
-  const rowFilter =
-    typeof policy.rowFilter === "function"
-      ? policy.rowFilter(policy.context ?? {})
-      : policy.rowFilter;
+  const rowFilter = resolvePolicyRowFilter(policy);
   const effectiveWhere = combineWhere(init.where, rowFilter);
   validatePolicyColumns(init, effectiveWhere, allowedColumns);
   const out: PathQueryInit = {
@@ -3497,8 +3513,21 @@ function applyQueryPolicy(init: PathQueryInit, policy: QueryPolicy): PathQueryIn
   else delete out.where;
   if (effectiveLimit !== undefined) out.limit = effectiveLimit;
   else delete out.limit;
-  if (allowedColumns !== undefined && init.select === undefined) out.select = allowedColumns;
+  if (allowedColumns !== undefined) {
+    if (init.select === undefined) out.select = allowedColumns;
+    else if (init.select.includes("*")) {
+      out.select = [
+        ...new Set([...allowedColumns, ...init.select.filter((column) => column !== "*")]),
+      ];
+    }
+  }
   return out;
+}
+
+function resolvePolicyRowFilter(policy: QueryPolicy): Expr | undefined {
+  return typeof policy.rowFilter === "function"
+    ? policy.rowFilter(policy.context ?? {})
+    : policy.rowFilter;
 }
 
 function cloneBookmarkQuery(init: PathQueryInit): BookmarkQuery {
@@ -3718,6 +3747,7 @@ function projectedReadColumns(
   orderBy: OrderByTerm[] | undefined = undefined,
   projections: Record<string, Expr> | undefined = undefined,
 ): string[] | undefined {
+  if (select?.includes("*")) return undefined;
   const columns = new Set<string>();
   for (const column of select ?? []) {
     if (column !== "*") columns.add(column);

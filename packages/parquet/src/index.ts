@@ -204,7 +204,10 @@ export async function* readParquetObjectBatches(
   const file = await asyncBufferFromStore(store, path);
   try {
     const metadata = await readParquetMetadataFromFile(file);
-    rejectUnsupportedParquetSchema(metadata, { columns: options.columns });
+    rejectUnsupportedParquetSchema(metadata, {
+      columns: options.columns,
+      allowValueCheckedInt64Decimals: true,
+    });
     yield* readParquetObjectBatchesFromFile(file, metadata, options);
   } catch (cause) {
     if (cause instanceof LakeqlError) throw cause;
@@ -220,7 +223,10 @@ export async function* readParquetColumnBatches(
   const file = await asyncBufferFromStore(store, path);
   try {
     const metadata = await readParquetMetadataFromFile(file);
-    rejectUnsupportedParquetSchema(metadata, { columns: options.columns });
+    rejectUnsupportedParquetSchema(metadata, {
+      columns: options.columns,
+      allowValueCheckedInt64Decimals: true,
+    });
     yield* readParquetColumnBatchesFromFile(file, metadata, options);
   } catch (cause) {
     if (cause instanceof LakeqlError) throw cause;

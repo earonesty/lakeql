@@ -25,7 +25,12 @@ export function vectorProjectBatch(
 
 function projectionColumns(batch: Batch, select: readonly string[] | undefined): string[] {
   if (select === undefined || select.length === 0) return Object.keys(batch.columns);
-  return select.filter((column) => column !== "*");
+  if (!select.includes("*")) return [...select];
+  const columns = new Set(Object.keys(batch.columns));
+  for (const column of select) {
+    if (column !== "*") columns.add(column);
+  }
+  return [...columns];
 }
 
 function exprValues(batch: Batch, expr: Expr): Scalar[] {

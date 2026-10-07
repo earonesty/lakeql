@@ -16,6 +16,7 @@ import {
   readParquetObjects,
   scanBatches,
   scanRows,
+  writeParquet,
   writePartitionedParquet,
 } from "./index.js";
 
@@ -79,6 +80,62 @@ it("runs SQL through the public lake helper", async () => {
   await expect(
     querySql(lake, `select store_id, amount from read_parquet('${SALES.file}') limit 1`).first(),
   ).resolves.toEqual({ store_id: "store-000", amount: 0 });
+});
+
+it("applies exact INT64 decimal decoding across SQL execution shapes", async () => {
+  const store = memoryStore();
+  await writeParquet(store, "nav.parquet", {
+    schema: [
+      { name: "schema", num_children: 3 },
+      {
+        name: "valuation_date",
+        type: "INT32",
+        converted_type: "DATE",
+        repetition_type: "REQUIRED",
+      },
+      { name: "scheme_code", type: "INT32", repetition_type: "REQUIRED" },
+      {
+        name: "nav",
+        type: "INT64",
+        converted_type: "DECIMAL",
+        precision: 18,
+        scale: 4,
+        repetition_type: "REQUIRED",
+      },
+    ],
+    columnData: [
+      { name: "valuation_date", data: [20_000, 20_001, 20_002] },
+      { name: "scheme_code", data: [1, 1, 2] },
+      { name: "nav", data: [10.1234, 11.1234, 2540201.9508] },
+    ],
+  });
+  const lake = createLake({ store });
+
+  const wildcard = await lake.sql("select * from input limit 2", { path: "nav.parquet" }).toArray();
+  expect(wildcard).toHaveLength(2);
+  expect(wildcard[0]).toMatchObject({ scheme_code: 1, nav: 10.1234 });
+  expect(wildcard[0]).toHaveProperty("valuation_date");
+
+  await expect(
+    lake
+      .sql(
+        "select scheme_code, nav, lag(nav) over (order by valuation_date) as previous_nav, row_number() over (order by valuation_date) as rn from input",
+        { path: "nav.parquet" },
+      )
+      .toArray(),
+  ).resolves.toEqual([
+    { scheme_code: 1, nav: 10.1234, previous_nav: null, rn: 1 },
+    { scheme_code: 1, nav: 11.1234, previous_nav: 10.1234, rn: 2 },
+    { scheme_code: 2, nav: 2540201.9508, previous_nav: 11.1234, rn: 3 },
+  ]);
+
+  await expect(
+    lake
+      .sql("select valuation_date, nav from input where scheme_code = 1 or scheme_code = 2", {
+        path: "nav.parquet",
+      })
+      .toArray(),
+  ).resolves.toHaveLength(3);
 });
 
 it("formats public SQL helper results", async () => {
@@ -1175,8 +1232,60 @@ it("covers SQL helper defaults, validation, empty results, and CSV escaping", as
       .sql("select amount, count(*) as rows from input group by region", { path: SALES.file })
       .toArray(),
   ).rejects.toMatchObject({ code: "LAKEQL_SQL_UNSUPPORTED" });
-  await expect(lake.sql("describe input", { path: SALES.file }).toArray()).rejects.toMatchObject({
-    code: "LAKEQL_PARSE_ERROR",
+  await expect(lake.sql("describe input", { path: SALES.file }).toArray()).resolves.toEqual([
+    {
+      path: SALES.file,
+      rows: SALES.rows,
+      columns: expect.arrayContaining([expect.objectContaining({ name: "amount" })]),
+    },
+  ]);
+  await expect(
+    lake
+      .sql("describe input", {
+        path: SALES.file,
+        icebergTables: { input: { metadataPath: "unused-iceberg-metadata.json" } },
+      })
+      .toArray(),
+  ).resolves.toEqual([
+    {
+      path: SALES.file,
+      rows: SALES.rows,
+      columns: expect.arrayContaining([expect.objectContaining({ name: "amount" })]),
+    },
+  ]);
+
+  const columnRestrictedLake = createLake({
+    store,
+    policy: { allowedColumns: ["store_id", "amount"] },
+  });
+  await expect(
+    columnRestrictedLake.sql("describe input", { path: SALES.file }).toArray(),
+  ).resolves.toEqual([
+    {
+      path: SALES.file,
+      rows: SALES.rows,
+      columns: expect.arrayContaining([
+        expect.objectContaining({ name: "store_id" }),
+        expect.objectContaining({ name: "amount" }),
+      ]),
+    },
+  ]);
+  const restrictedDescription = await columnRestrictedLake
+    .sql("describe input", { path: SALES.file })
+    .toArray();
+  expect(
+    (restrictedDescription[0]?.columns as Array<{ name: string }>).map((column) => column.name),
+  ).toEqual(["store_id", "amount"]);
+
+  const rowRestrictedLake = createLake({
+    store,
+    policy: { rowFilter: eq("region", "west") },
+  });
+  await expect(
+    rowRestrictedLake.sql("describe input", { path: SALES.file }).toArray(),
+  ).rejects.toMatchObject({
+    code: "LAKEQL_VALIDATION_ERROR",
+    message: expect.stringMatching(/rowFilter/u),
   });
 
   const empty = lake.sql("select store_id from input where amount > 2000", { path: SALES.file });
@@ -1216,7 +1325,10 @@ it("covers SQL helper defaults, validation, empty results, and CSV escaping", as
       .toArray(),
   ).resolves.toEqual([
     {
+      store_id: "store-000",
+      date: "2026-01-01",
       amount: 0,
+      region: "west",
       doubled: 0,
     },
   ]);

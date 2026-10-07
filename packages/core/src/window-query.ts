@@ -47,6 +47,7 @@ export interface WindowExplainPlan {
 export type WindowExecutionMode = "row-materialized" | "vector-window" | "parquet-work-unit-fanout";
 
 export function windowReadColumns(input: WindowReadColumnInput): string[] | undefined {
+  if (input.select?.includes("*")) return undefined;
   const columns = new Set<string>();
   const windowAliases = new Set(Object.keys(input.windows ?? {}));
   for (const column of input.select ?? []) {

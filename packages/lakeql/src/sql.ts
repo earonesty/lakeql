@@ -4,6 +4,7 @@ import {
   crossJoin,
   type Expr,
   evaluate,
+  fanInWorkUnits,
   LakeqlError,
   matches,
   type ObjectStore,
@@ -11,8 +12,21 @@ import {
   type Row,
 } from "lakeql-core";
 import type { IcebergReadMode, IcebergTable, PlanIcebergFilesOptions } from "lakeql-iceberg";
-import { createParquetLake, type ParquetLakeConfig, writePartitionedParquet } from "lakeql-parquet";
-import { parseSql, type SqlParameterValue, type SqlQueryAst } from "lakeql-sql";
+import {
+  createParquetLake,
+  type ParquetLakeConfig,
+  type ParquetMetadata,
+  readParquetMetadata,
+  writePartitionedParquet,
+} from "lakeql-parquet";
+import {
+  parseSql,
+  parseSqlStatement,
+  type SqlDescribeAst,
+  type SqlParameterValue,
+  type SqlQueryAst,
+  type SqlStatementAst,
+} from "lakeql-sql";
 import { loadTable, planFiles, scanRows } from "./engine.js";
 
 export interface SqlIcebergTableOptions {
@@ -49,6 +63,7 @@ export type SqlLake = ReturnType<typeof createParquetLake> & {
 type ParquetLake = ReturnType<typeof createParquetLake>;
 
 const textEncoder = new TextEncoder();
+const SQL_METADATA_READ_CONCURRENCY = 8;
 let sqlTempOrdinal = 0;
 
 export function createLake(config: ParquetLakeConfig): SqlLake {
@@ -115,8 +130,12 @@ async function executeSql(
   sql: string,
   options: SqlQueryOptions,
 ): Promise<Row[]> {
-  const ast = sqlAst(sql, options);
+  const statement = sqlStatement(sql, options);
   validateSourceBindings(options);
+  if ("type" in statement && statement.type === "describe") {
+    return await describeSqlSource(lake, statement, options);
+  }
+  const ast = statement;
   const bound = bindSources(ast, options);
   const pushed = pushdownIcebergPredicates(bound, options);
   const materializedIceberg = await materializeIcebergTablesIfNeeded(
@@ -130,6 +149,95 @@ async function executeSql(
   } finally {
     await materializedIceberg.cleanup();
   }
+}
+
+async function describeSqlSource(
+  lake: ParquetLake,
+  statement: SqlDescribeAst,
+  options: SqlQueryOptions,
+): Promise<Row[]> {
+  const metadataAccess = lake.metadataAccessPolicy();
+  if (!metadataAccess.permitsUnfilteredRowCounts) {
+    throw new LakeqlError(
+      "LAKEQL_VALIDATION_ERROR",
+      "DESCRIBE cannot return physical row counts when QueryPolicy.rowFilter is active",
+    );
+  }
+  const source = bindSqlSource(statement.source, options);
+  if (source === statement.source && options.icebergTables?.[statement.source] !== undefined) {
+    throw new LakeqlError(
+      "LAKEQL_SQL_UNSUPPORTED",
+      `DESCRIBE does not support Iceberg source "${statement.source}"`,
+    );
+  }
+  const tasks = await lake.path(source).planTasks();
+  const paths = [...new Set(tasks.map((task) => task.path))];
+  return await fanInWorkUnits({
+    inputs: paths,
+    initial: [] as Row[],
+    maxConcurrentTasks: SQL_METADATA_READ_CONCURRENCY,
+    maxBufferedPartials: SQL_METADATA_READ_CONCURRENCY,
+    async run(path) {
+      const metadata = await readParquetMetadata(lake.store, path);
+      return {
+        path,
+        rows: metadata.row_groups.reduce((sum, group) => sum + Number(group.num_rows), 0),
+        columns: describeParquetColumns(metadata, metadataAccess.allowedColumns),
+      };
+    },
+    reduce(rows, row, _path, index) {
+      rows[index] = row;
+    },
+  });
+}
+
+function describeParquetColumns(
+  metadata: ParquetMetadata,
+  allowedColumns: readonly string[] | undefined,
+): Row[] {
+  const schema = metadata.schema;
+  if (schema.length === 0) return [];
+  const allowed = allowedColumns === undefined ? undefined : new Set(allowedColumns);
+  const columns: Row[] = [];
+  let index = 1;
+  for (let child = 0; child < schemaChildCount(schema[0]) && index < schema.length; child += 1) {
+    const start = index;
+    index = parquetSchemaSubtreeEnd(schema, index);
+    const topLevelName = String(schema[start]?.name ?? `field_${start}`);
+    if (allowed !== undefined && !allowed.has(topLevelName)) continue;
+    for (const field of schema.slice(start, index)) {
+      columns.push({
+        name: field.name,
+        type: field.type ?? field.converted_type ?? "group",
+      });
+    }
+  }
+  return columns;
+}
+
+function parquetSchemaSubtreeEnd(schema: ParquetMetadata["schema"], index: number): number {
+  const element = schema[index];
+  if (element === undefined) return index + 1;
+  let next = index + 1;
+  for (let child = 0; child < schemaChildCount(element) && next < schema.length; child += 1) {
+    next = parquetSchemaSubtreeEnd(schema, next);
+  }
+  return next;
+}
+
+function schemaChildCount(element: ParquetMetadata["schema"][number] | undefined): number {
+  const count = element?.num_children;
+  if (typeof count === "number" && Number.isInteger(count) && count > 0) return count;
+  if (typeof count === "bigint" && count > 0n && count <= BigInt(Number.MAX_SAFE_INTEGER)) {
+    return Number(count);
+  }
+  return 0;
+}
+
+function sqlStatement(sql: string, options: SqlQueryOptions): SqlStatementAst {
+  const trimmed = sql.trim();
+  if (/^describe\b/iu.test(trimmed)) return parseSqlStatement(trimmed);
+  return sqlAst(trimmed, options);
 }
 
 async function executeRowsFromAst(
@@ -161,11 +269,17 @@ function sqlAst(sql: string, options: SqlQueryOptions): SqlQueryAst {
     : parseSql(sourceSql, { parameters: options.parameters });
 }
 
+function bindSqlSource(source: string, options: SqlQueryOptions): string {
+  if (source === "input" && options.path !== undefined) return options.path;
+  return options.tables?.[source] ?? source;
+}
+
 function bindSources(ast: SqlQueryAst, options: SqlQueryOptions): SqlQueryAst {
   const tables = options.tables ?? {};
   const icebergTables = options.icebergTables ?? {};
   const bindSource = (source: string): string => {
-    if (source === "input" && options.path !== undefined) return options.path;
+    const parquetSource = bindSqlSource(source, options);
+    if (parquetSource !== source) return parquetSource;
     if (icebergTables[source] !== undefined) return source;
     return tables[source] ?? source;
   };

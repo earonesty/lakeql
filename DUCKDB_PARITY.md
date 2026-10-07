@@ -198,14 +198,14 @@ easy to inspect a public Parquet object before running a full query.
 Current state:
 
 - CLI schema/inspect paths exist.
-- `DESCRIBE` is partially available through SQL statement parsing and CLI query
-  paths.
+- `DESCRIBE` is available through SQL statement parsing, the public `lake.sql`
+  API, and CLI query paths for Parquet sources.
 - The compare page exposes fixed benchmark queries but not a general inspector
   workflow.
 
 TODO:
 
-- Make `DESCRIBE <source>` work consistently in browser, CLI, and API surfaces.
+- Extend `DESCRIBE <source>` to Iceberg sources and the browser inspector UI.
 - Add `SUMMARIZE <source>` for per-column count/null/min/max/basic stats where
   the values can be computed from metadata or bounded scans.
 - Add SQL `SAMPLE` support with an explicit bounded strategy.
