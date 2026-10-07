@@ -1709,6 +1709,12 @@ describe("Lake query runtime", () => {
     ).toThrow(/disallowed/u);
   });
 
+  it("reports unrestricted metadata access when no query policy restricts it", async () => {
+    const { lake } = await makeLake({ rowsByPath: { table: [{ id: 1 }] } });
+
+    expect(lake.metadataAccessPolicy()).toEqual({ permitsUnfilteredRowCounts: true });
+  });
+
   it("uses runtime substrate hooks for query ids, clock, and metrics", async () => {
     const store = memoryStore();
     await store.put("table", new Uint8Array([1, 2, 3]));
