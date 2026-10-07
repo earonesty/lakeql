@@ -4,6 +4,7 @@ import {
   crossJoin,
   type Expr,
   evaluate,
+  fanInWorkUnits,
   LakeqlError,
   matches,
   type ObjectStore,
@@ -61,6 +62,7 @@ export type SqlLake = ReturnType<typeof createParquetLake> & {
 type ParquetLake = ReturnType<typeof createParquetLake>;
 
 const textEncoder = new TextEncoder();
+const SQL_METADATA_READ_CONCURRENCY = 8;
 let sqlTempOrdinal = 0;
 
 export function createLake(config: ParquetLakeConfig): SqlLake {
@@ -153,17 +155,21 @@ async function describeSqlSource(
   statement: SqlDescribeAst,
   options: SqlQueryOptions,
 ): Promise<Row[]> {
-  if (options.icebergTables?.[statement.source] !== undefined) {
+  const source = bindSqlSource(statement.source, options);
+  if (source === statement.source && options.icebergTables?.[statement.source] !== undefined) {
     throw new LakeqlError(
       "LAKEQL_SQL_UNSUPPORTED",
       `DESCRIBE does not support Iceberg source "${statement.source}"`,
     );
   }
-  const source = bindSqlSource(statement.source, options);
   const tasks = await lake.path(source).planTasks();
   const paths = [...new Set(tasks.map((task) => task.path))];
-  return await Promise.all(
-    paths.map(async (path) => {
+  return await fanInWorkUnits({
+    inputs: paths,
+    initial: [] as Row[],
+    maxConcurrentTasks: SQL_METADATA_READ_CONCURRENCY,
+    maxBufferedPartials: SQL_METADATA_READ_CONCURRENCY,
+    async run(path) {
       const metadata = await readParquetMetadata(lake.store, path);
       return {
         path,
@@ -173,8 +179,11 @@ async function describeSqlSource(
           type: field.type ?? field.converted_type ?? "group",
         })),
       };
-    }),
-  );
+    },
+    reduce(rows, row, _path, index) {
+      rows[index] = row;
+    },
+  });
 }
 
 function sqlStatement(sql: string, options: SqlQueryOptions): SqlStatementAst {

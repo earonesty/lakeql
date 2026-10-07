@@ -3,6 +3,7 @@ import type { ParquetMetadata } from "./types.js";
 
 export interface RejectUnsupportedParquetSchemaOptions {
   columns?: readonly string[] | undefined;
+  /** Permit exact value-checked decoding for top-level scalar INT64 decimal leaves. */
   allowValueCheckedInt64Decimals?: boolean;
 }
 
@@ -41,7 +42,7 @@ function rejectUnsupportedParquetSchemaNode(
   rejectUnsupportedParquetLeaf(element, nodePath, options);
   if (childCount === 0) return index + 1;
   if (isSupportedNestedParquetGroup(element)) {
-    return skipParquetSchemaSubtree(schema, index);
+    return rejectUnsupportedNestedParquetDecimals(schema, index, path, options);
   }
   throw new LakeqlError(
     "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
@@ -51,6 +52,24 @@ function rejectUnsupportedParquetSchemaNode(
       feature: "struct",
     },
   );
+}
+
+function rejectUnsupportedNestedParquetDecimals(
+  schema: ParquetSchemaElement[],
+  index: number,
+  path: string[],
+  options: RejectUnsupportedParquetSchemaOptions,
+): number {
+  const element = schema[index];
+  if (element === undefined) return index + 1;
+  const name = String(element.name ?? `field_${index}`);
+  const nodePath = [...path, name];
+  rejectUnsupportedParquetLeaf(element, nodePath, options);
+  let next = index + 1;
+  for (let child = 0; child < schemaChildCount(element) && next < schema.length; child += 1) {
+    next = rejectUnsupportedNestedParquetDecimals(schema, next, nodePath, options);
+  }
+  return next;
 }
 
 function skipParquetSchemaSubtree(schema: ParquetSchemaElement[], index: number): number {
@@ -100,7 +119,11 @@ function rejectUnsupportedParquetLeaf(
     (convertedType === "DECIMAL" || logicalTypeName === "DECIMAL") &&
     decimalPrecision !== undefined &&
     decimalPrecision > 15 &&
-    !(options.allowValueCheckedInt64Decimals === true && element.type === "INT64")
+    !(
+      options.allowValueCheckedInt64Decimals === true &&
+      path.length === 1 &&
+      element.type === "INT64"
+    )
   ) {
     throw new LakeqlError(
       "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",

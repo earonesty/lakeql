@@ -40,9 +40,12 @@ export function rawIntegerDecimalMetadata(
   columns: readonly string[] | undefined,
 ): ParquetMetadata {
   const selected = columns === undefined ? undefined : new Set(columns);
+  const scalarIndexes = new Set(topLevelScalarSchemaEntries(metadata).map(([index]) => index));
   let changed = false;
   const schema = metadata.schema.map((element, index) => {
-    if (index === 0 || (selected !== undefined && !selected.has(element.name))) return element;
+    if (!scalarIndexes.has(index) || (selected !== undefined && !selected.has(element.name))) {
+      return element;
+    }
     if (!isIntegerDecimal(element)) return element;
     changed = true;
     const raw = { ...element };
@@ -95,7 +98,44 @@ function topLevelSchemaElement(
   metadata: ParquetMetadata,
   column: string,
 ): ColumnDecoder["element"] | undefined {
-  return metadata.schema.slice(1).find((element) => element.name === column);
+  return topLevelScalarSchemaEntries(metadata).find(([, element]) => element.name === column)?.[1];
+}
+
+function topLevelScalarSchemaEntries(
+  metadata: ParquetMetadata,
+): Array<readonly [number, ColumnDecoder["element"]]> {
+  const entries: Array<readonly [number, ColumnDecoder["element"]]> = [];
+  let index = 1;
+  for (
+    let child = 0;
+    child < schemaChildCount(metadata.schema[0]) && index < metadata.schema.length;
+    child += 1
+  ) {
+    const element = metadata.schema[index];
+    if (element === undefined) break;
+    if (schemaChildCount(element) === 0) entries.push([index, element]);
+    index = skipSchemaSubtree(metadata.schema, index);
+  }
+  return entries;
+}
+
+function skipSchemaSubtree(schema: ParquetMetadata["schema"], index: number): number {
+  const element = schema[index];
+  if (element === undefined) return index + 1;
+  let next = index + 1;
+  for (let child = 0; child < schemaChildCount(element) && next < schema.length; child += 1) {
+    next = skipSchemaSubtree(schema, next);
+  }
+  return next;
+}
+
+function schemaChildCount(element: ColumnDecoder["element"] | undefined): number {
+  const count = element?.num_children;
+  if (typeof count === "number" && Number.isInteger(count) && count > 0) return count;
+  if (typeof count === "bigint" && count > 0n && count <= BigInt(Number.MAX_SAFE_INTEGER)) {
+    return Number(count);
+  }
+  return 0;
 }
 
 function unsafeDecimalValue(

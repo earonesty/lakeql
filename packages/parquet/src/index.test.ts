@@ -2764,6 +2764,31 @@ describe("rejectUnsupportedParquetSchema", () => {
     ).not.toThrow();
   });
 
+  it("keeps nested high-precision decimals outside the scalar value-checked capability", () => {
+    expect(() =>
+      rejectUnsupportedParquetSchema(
+        metadataWithSchema([
+          { name: "root", num_children: 1 },
+          { name: "values", num_children: 1, converted_type: "LIST" },
+          { name: "list", num_children: 1, repetition_type: "REPEATED" },
+          {
+            name: "element",
+            type: "INT64",
+            converted_type: "DECIMAL",
+            precision: 18,
+            scale: 4,
+          },
+        ]),
+        { allowValueCheckedInt64Decimals: true },
+      ),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+        details: expect.objectContaining({ column: "values.list.element" }),
+      }),
+    );
+  });
+
   it("applies the struct rejection before row-group planning", () => {
     expect(() =>
       planRowGroupsFromMetadata(

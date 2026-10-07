@@ -1675,6 +1675,24 @@ describe("Lake query runtime", () => {
     ]);
     expect(scanner.requestedColumns[0]).toEqual(["id", "tenant", "visible"]);
 
+    await expect(lake.path("table").select(["*"]).toArray()).resolves.toEqual([
+      { id: 1, tenant: "a", visible: true },
+    ]);
+    expect(scanner.requestedColumns.at(-1)).toEqual(["id", "tenant", "visible"]);
+
+    await expect(
+      lake
+        .path("table")
+        .select(["*", "rn"])
+        .window("rn", {
+          fn: "row_number",
+          args: [],
+          over: { partitionBy: [col("tenant")], orderBy: [{ expr: col("id") }] },
+        })
+        .toArray(),
+    ).resolves.toEqual([{ id: 1, tenant: "a", visible: true, rn: 1 }]);
+    expect(scanner.requestedColumns.at(-1)).toEqual(["id", "tenant", "visible"]);
+
     expect(() => lake.path("table").select(["secret"]).toArray()).toThrowError(LakeqlError);
     expect(() => lake.path("table").select(["secret"]).toArray()).toThrow(/disallowed/u);
     expect(() => lake.path("table").where(eq("secret", "x")).toArray()).toThrow(/disallowed/u);

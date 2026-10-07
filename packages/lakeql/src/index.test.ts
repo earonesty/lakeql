@@ -1239,6 +1239,20 @@ it("covers SQL helper defaults, validation, empty results, and CSV escaping", as
       columns: expect.arrayContaining([expect.objectContaining({ name: "amount" })]),
     },
   ]);
+  await expect(
+    lake
+      .sql("describe input", {
+        path: SALES.file,
+        icebergTables: { input: { metadataPath: "unused-iceberg-metadata.json" } },
+      })
+      .toArray(),
+  ).resolves.toEqual([
+    {
+      path: SALES.file,
+      rows: SALES.rows,
+      columns: expect.arrayContaining([expect.objectContaining({ name: "amount" })]),
+    },
+  ]);
 
   const empty = lake.sql("select store_id from input where amount > 2000", { path: SALES.file });
   await expect(empty.toArray()).resolves.toEqual([]);

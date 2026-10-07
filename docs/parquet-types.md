@@ -26,9 +26,10 @@ leaves as sub-column data rather than assembling the parent object, so Lakeql re
 group nodes before scanning or row-group planning. This prevents silent flattening from looking like
 a successful read.
 
-`INT64 DECIMAL` columns above precision 15 are value-checked while decoding. Rows whose unscaled
-integer fits JavaScript's exact integer range are returned as numbers; unsafe values and wider
-byte-array decimal encodings are rejected with `LAKEQL_UNSUPPORTED_PARQUET_FEATURE`.
+Top-level scalar `INT64 DECIMAL` columns above precision 15 are value-checked while decoding. Rows
+whose unscaled integer fits JavaScript's exact integer range are returned as numbers; unsafe values,
+wider byte-array decimal encodings, and nested decimals above precision 15 are rejected with
+`LAKEQL_UNSUPPORTED_PARQUET_FEATURE`.
 
 The current Parquet type matrix is either supported and tested or detected and rejected. New logical
 types should update `docs/compatibility.json` before they become compatibility promises.

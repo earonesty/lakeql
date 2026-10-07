@@ -3497,7 +3497,14 @@ function applyQueryPolicy(init: PathQueryInit, policy: QueryPolicy): PathQueryIn
   else delete out.where;
   if (effectiveLimit !== undefined) out.limit = effectiveLimit;
   else delete out.limit;
-  if (allowedColumns !== undefined && init.select === undefined) out.select = allowedColumns;
+  if (allowedColumns !== undefined) {
+    if (init.select === undefined) out.select = allowedColumns;
+    else if (init.select.includes("*")) {
+      out.select = [
+        ...new Set([...allowedColumns, ...init.select.filter((column) => column !== "*")]),
+      ];
+    }
+  }
   return out;
 }
 
