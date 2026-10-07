@@ -1,6 +1,6 @@
 {
   "name": "lakeql-arrow",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "lakeql Arrow output adapter: convert rows and column batches to Apache Arrow tables",
   "keywords": [
     "arrow",

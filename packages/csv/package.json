@@ -1,6 +1,6 @@
 {
   "name": "lakeql-csv",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "lakeql CSV adapter: browser-friendly CSV ingest with bounded parsing and type sniffing",
   "keywords": [
     "csv",

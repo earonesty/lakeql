@@ -1,6 +1,6 @@
 {
   "name": "lakeql-iceberg",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "description": "lakeql Iceberg adapter: table loading, snapshots, manifest planning, commits",
   "keywords": [
     "iceberg",
