@@ -1693,6 +1693,11 @@ describe("Lake query runtime", () => {
     ).resolves.toEqual([{ id: 1, tenant: "a", visible: true, rn: 1 }]);
     expect(scanner.requestedColumns.at(-1)).toEqual(["id", "tenant", "visible"]);
 
+    expect(lake.metadataAccessPolicy()).toEqual({
+      allowedColumns: ["id", "tenant", "visible"],
+      permitsUnfilteredRowCounts: false,
+    });
+
     expect(() => lake.path("table").select(["secret"]).toArray()).toThrowError(LakeqlError);
     expect(() => lake.path("table").select(["secret"]).toArray()).toThrow(/disallowed/u);
     expect(() => lake.path("table").where(eq("secret", "x")).toArray()).toThrow(/disallowed/u);

@@ -434,7 +434,7 @@
     "area": "SQL",
     "feature": "DESCRIBE metadata statement",
     "status": "supported+tested",
-    "notes": "parseSqlStatement recognizes DESCRIBE; the public lake.sql API and CLI query path return Parquet schema metadata for paths, globs, or named tables.",
+    "notes": "parseSqlStatement recognizes DESCRIBE; the public lake.sql API and CLI query path return Parquet schema metadata for paths, globs, or named tables while enforcing column policies and rejecting unfiltered counts under row policies.",
     "evidence": [
       {
         "file": "packages/sql/src/index.test.ts",

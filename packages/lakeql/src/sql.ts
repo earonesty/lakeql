@@ -15,6 +15,7 @@ import type { IcebergReadMode, IcebergTable, PlanIcebergFilesOptions } from "lak
 import {
   createParquetLake,
   type ParquetLakeConfig,
+  type ParquetMetadata,
   readParquetMetadata,
   writePartitionedParquet,
 } from "lakeql-parquet";
@@ -155,6 +156,13 @@ async function describeSqlSource(
   statement: SqlDescribeAst,
   options: SqlQueryOptions,
 ): Promise<Row[]> {
+  const metadataAccess = lake.metadataAccessPolicy();
+  if (!metadataAccess.permitsUnfilteredRowCounts) {
+    throw new LakeqlError(
+      "LAKEQL_VALIDATION_ERROR",
+      "DESCRIBE cannot return physical row counts when QueryPolicy.rowFilter is active",
+    );
+  }
   const source = bindSqlSource(statement.source, options);
   if (source === statement.source && options.icebergTables?.[statement.source] !== undefined) {
     throw new LakeqlError(
@@ -174,16 +182,56 @@ async function describeSqlSource(
       return {
         path,
         rows: metadata.row_groups.reduce((sum, group) => sum + Number(group.num_rows), 0),
-        columns: metadata.schema.slice(1).map((field) => ({
-          name: field.name,
-          type: field.type ?? field.converted_type ?? "group",
-        })),
+        columns: describeParquetColumns(metadata, metadataAccess.allowedColumns),
       };
     },
     reduce(rows, row, _path, index) {
       rows[index] = row;
     },
   });
+}
+
+function describeParquetColumns(
+  metadata: ParquetMetadata,
+  allowedColumns: readonly string[] | undefined,
+): Row[] {
+  const schema = metadata.schema;
+  if (schema.length === 0) return [];
+  const allowed = allowedColumns === undefined ? undefined : new Set(allowedColumns);
+  const columns: Row[] = [];
+  let index = 1;
+  for (let child = 0; child < schemaChildCount(schema[0]) && index < schema.length; child += 1) {
+    const start = index;
+    index = parquetSchemaSubtreeEnd(schema, index);
+    const topLevelName = String(schema[start]?.name ?? `field_${start}`);
+    if (allowed !== undefined && !allowed.has(topLevelName)) continue;
+    for (const field of schema.slice(start, index)) {
+      columns.push({
+        name: field.name,
+        type: field.type ?? field.converted_type ?? "group",
+      });
+    }
+  }
+  return columns;
+}
+
+function parquetSchemaSubtreeEnd(schema: ParquetMetadata["schema"], index: number): number {
+  const element = schema[index];
+  if (element === undefined) return index + 1;
+  let next = index + 1;
+  for (let child = 0; child < schemaChildCount(element) && next < schema.length; child += 1) {
+    next = parquetSchemaSubtreeEnd(schema, next);
+  }
+  return next;
+}
+
+function schemaChildCount(element: ParquetMetadata["schema"][number] | undefined): number {
+  const count = element?.num_children;
+  if (typeof count === "number" && Number.isInteger(count) && count > 0) return count;
+  if (typeof count === "bigint" && count > 0n && count <= BigInt(Number.MAX_SAFE_INTEGER)) {
+    return Number(count);
+  }
+  return 0;
 }
 
 function sqlStatement(sql: string, options: SqlQueryOptions): SqlStatementAst {

@@ -152,6 +152,13 @@ export interface QueryPolicy {
   context?: QueryPolicyContext;
 }
 
+export interface MetadataAccessPolicy {
+  /** Top-level columns whose metadata may be disclosed, or undefined when unrestricted. */
+  allowedColumns?: readonly string[];
+  /** Whether physical row counts may be returned without evaluating a row filter. */
+  permitsUnfilteredRowCounts: boolean;
+}
+
 export interface LakeConfig {
   store: ObjectStore;
   scanner: ScanAdapter;
@@ -528,6 +535,18 @@ export class Lake {
 
   query(input: JsonQueryV1): QueryBuilder {
     return new QueryBuilder(this, parseJsonQuery(input));
+  }
+
+  metadataAccessPolicy(): MetadataAccessPolicy {
+    const allowedColumns =
+      this.policy.allowedColumns === undefined
+        ? undefined
+        : normalizeAllowedColumns(this.policy.allowedColumns);
+    const rowFilter = resolvePolicyRowFilter(this.policy);
+    return {
+      ...(allowedColumns === undefined ? {} : { allowedColumns }),
+      permitsUnfilteredRowCounts: rowFilter === undefined,
+    };
   }
 
   resume(bookmark: Bookmark): ResumedQuery {
@@ -3483,10 +3502,7 @@ function applyQueryPolicy(init: PathQueryInit, policy: QueryPolicy): PathQueryIn
     policy.allowedColumns === undefined
       ? undefined
       : normalizeAllowedColumns(policy.allowedColumns);
-  const rowFilter =
-    typeof policy.rowFilter === "function"
-      ? policy.rowFilter(policy.context ?? {})
-      : policy.rowFilter;
+  const rowFilter = resolvePolicyRowFilter(policy);
   const effectiveWhere = combineWhere(init.where, rowFilter);
   validatePolicyColumns(init, effectiveWhere, allowedColumns);
   const out: PathQueryInit = {
@@ -3506,6 +3522,12 @@ function applyQueryPolicy(init: PathQueryInit, policy: QueryPolicy): PathQueryIn
     }
   }
   return out;
+}
+
+function resolvePolicyRowFilter(policy: QueryPolicy): Expr | undefined {
+  return typeof policy.rowFilter === "function"
+    ? policy.rowFilter(policy.context ?? {})
+    : policy.rowFilter;
 }
 
 function cloneBookmarkQuery(init: PathQueryInit): BookmarkQuery {

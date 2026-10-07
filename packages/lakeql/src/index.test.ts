@@ -1254,6 +1254,40 @@ it("covers SQL helper defaults, validation, empty results, and CSV escaping", as
     },
   ]);
 
+  const columnRestrictedLake = createLake({
+    store,
+    policy: { allowedColumns: ["store_id", "amount"] },
+  });
+  await expect(
+    columnRestrictedLake.sql("describe input", { path: SALES.file }).toArray(),
+  ).resolves.toEqual([
+    {
+      path: SALES.file,
+      rows: SALES.rows,
+      columns: expect.arrayContaining([
+        expect.objectContaining({ name: "store_id" }),
+        expect.objectContaining({ name: "amount" }),
+      ]),
+    },
+  ]);
+  const restrictedDescription = await columnRestrictedLake
+    .sql("describe input", { path: SALES.file })
+    .toArray();
+  expect(
+    (restrictedDescription[0]?.columns as Array<{ name: string }>).map((column) => column.name),
+  ).toEqual(["store_id", "amount"]);
+
+  const rowRestrictedLake = createLake({
+    store,
+    policy: { rowFilter: eq("region", "west") },
+  });
+  await expect(
+    rowRestrictedLake.sql("describe input", { path: SALES.file }).toArray(),
+  ).rejects.toMatchObject({
+    code: "LAKEQL_VALIDATION_ERROR",
+    message: expect.stringMatching(/rowFilter/u),
+  });
+
   const empty = lake.sql("select store_id from input where amount > 2000", { path: SALES.file });
   await expect(empty.toArray()).resolves.toEqual([]);
   await expect(readStream(empty.streamCsv())).resolves.toBe("\n");

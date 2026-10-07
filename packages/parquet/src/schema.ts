@@ -135,8 +135,10 @@ function rejectUnsupportedParquetLeaf(
 
 function parquetLogicalTypeName(value: unknown): string | undefined {
   if (typeof value === "string") return value.toUpperCase();
-  if (typeof value !== "object" || value === null) return undefined;
-  const keys = Object.keys(value);
+  const record = logicalTypeRecord(value);
+  if (record === undefined) return undefined;
+  if (typeof record.type === "string") return record.type.toUpperCase();
+  const keys = Object.keys(record);
   if (keys.length === 0) return undefined;
   return keys[0]?.toUpperCase();
 }

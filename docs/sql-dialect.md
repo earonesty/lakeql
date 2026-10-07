@@ -252,6 +252,10 @@ Parquet object:
 const schema = await lake.sql("describe input", { path: "sales.parquet" }).toArray();
 ```
 
+`DESCRIBE` honors `QueryPolicy.allowedColumns`. Because its row counts come from physical Parquet
+metadata, it is rejected when `QueryPolicy.rowFilter` is active rather than disclosing an
+unfiltered count.
+
 The CLI exposes the same statement:
 
 ```sh
