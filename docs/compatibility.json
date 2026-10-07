@@ -434,7 +434,7 @@
     "area": "SQL",
     "feature": "DESCRIBE metadata statement",
     "status": "supported+tested",
-    "notes": "parseSqlStatement recognizes DESCRIBE and the CLI query path returns Parquet schema metadata for local paths or named tables.",
+    "notes": "parseSqlStatement recognizes DESCRIBE; the public lake.sql API and CLI query path return Parquet schema metadata for paths, globs, or named tables.",
     "evidence": [
       {
         "file": "packages/sql/src/index.test.ts",
@@ -443,6 +443,10 @@
       {
         "file": "packages/cli/src/index.test.ts",
         "pattern": "describes a local Parquet path through SQL"
+      },
+      {
+        "file": "packages/lakeql/src/index.test.ts",
+        "pattern": "covers SQL helper defaults, validation, empty results, and CSV escaping"
       }
     ]
   },

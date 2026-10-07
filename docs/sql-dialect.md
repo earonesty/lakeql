@@ -244,7 +244,15 @@ Parameters are bound to scalar literals before execution. Missing parameters,
 non-scalar values, and non-integer `LIMIT` / `OFFSET` bindings are rejected with
 typed errors.
 
-`DESCRIBE <table>` is supported as a metadata statement in the CLI query path:
+`DESCRIBE <table>` is supported as a metadata statement in both the public
+`lake.sql` API and the CLI query path. It returns one schema summary per matched
+Parquet object:
+
+```ts
+const schema = await lake.sql("describe input", { path: "sales.parquet" }).toArray();
+```
+
+The CLI exposes the same statement:
 
 ```sh
 node packages/cli/dist/bin.js query \
@@ -264,7 +272,7 @@ execution subset is rejected with `LAKEQL_SQL_UNSUPPORTED`.
 | Feature | Status | Rejection code | Notes |
 | --- | --- | --- | --- |
 | Standard `SELECT ... FROM ...` | Supported |  | CLI also supports omitted `from input` for `--path` queries. |
-| `DESCRIBE <table>` | Supported subset | `LAKEQL_OBJECT_NOT_FOUND` | CLI query path only; returns Parquet schema metadata. `SUMMARIZE` and SQL `SAMPLE` remain future work. |
+| `DESCRIBE <table>` | Supported subset | `LAKEQL_OBJECT_NOT_FOUND` | Public API and CLI query paths return Parquet schema metadata. Iceberg sources, `SUMMARIZE`, and SQL `SAMPLE` remain future work. |
 | Positional `$1` SQL parameters | Supported subset | `LAKEQL_SQL_UNSUPPORTED` / `LAKEQL_TYPE_ERROR` | Parser API only; bound values must be scalars. Named parameters and reusable prepared statement objects remain future work. |
 | `WHERE`, `ORDER BY`, `LIMIT`, `OFFSET` | Supported |  | Expressions use SQL three-valued null semantics. |
 | Scalar functions, arithmetic, searched `CASE WHEN` | Supported | `LAKEQL_SQL_UNSUPPORTED` | Includes regex matches/replace. Unknown functions and simple `CASE <expr>` are rejected. |

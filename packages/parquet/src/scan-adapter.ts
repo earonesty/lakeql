@@ -22,6 +22,7 @@ import {
 } from "lakeql-core";
 import { readParquetColumnBatchesFromFile } from "./column-batches.js";
 import { lakeqlParquetCompressors } from "./compressors.js";
+import { normalizeIntegerDecimalRows, rawIntegerDecimalMetadata } from "./decimal.js";
 import type { DecodedColumnCache } from "./decoded-column-cache.js";
 import { normalizeDecodedRows } from "./decoded-rows.js";
 import { readCachedParquetMetadata } from "./metadata-cache.js";
@@ -107,10 +108,15 @@ export class ParquetScanAdapter implements ScanAdapter {
     const batchSize = options.batchSize || this.defaultBatchSize;
     const file = this.scanBuffer(path, await asyncBufferFromStore(this.store, path, options));
     const metadata = await this.metadata(path, file, options);
-    rejectUnsupportedParquetSchema(metadata, { columns: options.columns });
+    rejectUnsupportedParquetSchema(metadata, {
+      columns: options.columns,
+      allowValueCheckedInt64Decimals: true,
+    });
     const planned = plannedParquetSchema(options.object);
     const requestedColumns = options.columns ?? planned?.columns;
     const readColumns = presentColumns(requestedColumns, planned, metadata);
+    const decodedColumns =
+      readColumns ?? parquetSchema(metadata).children.map((child) => child.element.name);
     const missingColumns = missingColumnsFor(requestedColumns, planned);
     if (readColumns) {
       recordReadColumns(options.stats, readColumns);
@@ -131,7 +137,7 @@ export class ParquetScanAdapter implements ScanAdapter {
         const rowEnd = Math.min(rowStart + batchSize, rowGroupEnd);
         const readOptions: Parameters<typeof parquetReadObjects>[0] = {
           file,
-          metadata,
+          metadata: rawIntegerDecimalMetadata(metadata, decodedColumns),
           rowFormat: "object",
           rowStart,
           rowEnd,
@@ -148,7 +154,13 @@ export class ParquetScanAdapter implements ScanAdapter {
             continue;
           }
           yield fillMissingRowColumns(
-            normalizeDecodedRows(await parquetReadObjects(readOptions)),
+            normalizeDecodedRows(
+              normalizeIntegerDecimalRows(
+                metadata,
+                decodedColumns,
+                await parquetReadObjects(readOptions),
+              ),
+            ),
             missingColumns,
           );
         } catch (cause) {
@@ -206,7 +218,7 @@ export class ParquetScanAdapter implements ScanAdapter {
         canReadParquetVectorBatches(metadata, vectorOptions);
       rejectUnsupportedParquetSchema(metadata, {
         columns: options.columns,
-        allowValueCheckedInt64Decimals: useVectorReader,
+        allowValueCheckedInt64Decimals: true,
       });
       if (useVectorReader) {
         for await (const vectorBatch of readParquetVectorBatchesFromFile(

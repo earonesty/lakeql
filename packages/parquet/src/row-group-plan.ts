@@ -20,7 +20,7 @@ export function planRowGroupsFromMetadata(
   metadata: ParquetMetadata,
   where: Expr | undefined,
 ): ParquetRowGroupPlan {
-  rejectUnsupportedParquetSchema(metadata);
+  rejectUnsupportedParquetSchema(metadata, { allowValueCheckedInt64Decimals: true });
   const rowGroups: PlannedParquetRowGroup[] = [];
   const ranges: { start: number; end: number }[] = [];
   let rowStart = 0;

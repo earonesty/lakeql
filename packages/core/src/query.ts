@@ -3718,6 +3718,7 @@ function projectedReadColumns(
   orderBy: OrderByTerm[] | undefined = undefined,
   projections: Record<string, Expr> | undefined = undefined,
 ): string[] | undefined {
+  if (select?.includes("*")) return undefined;
   const columns = new Set<string>();
   for (const column of select ?? []) {
     if (column !== "*") columns.add(column);

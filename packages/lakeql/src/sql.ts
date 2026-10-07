@@ -11,8 +11,20 @@ import {
   type Row,
 } from "lakeql-core";
 import type { IcebergReadMode, IcebergTable, PlanIcebergFilesOptions } from "lakeql-iceberg";
-import { createParquetLake, type ParquetLakeConfig, writePartitionedParquet } from "lakeql-parquet";
-import { parseSql, type SqlParameterValue, type SqlQueryAst } from "lakeql-sql";
+import {
+  createParquetLake,
+  type ParquetLakeConfig,
+  readParquetMetadata,
+  writePartitionedParquet,
+} from "lakeql-parquet";
+import {
+  parseSql,
+  parseSqlStatement,
+  type SqlDescribeAst,
+  type SqlParameterValue,
+  type SqlQueryAst,
+  type SqlStatementAst,
+} from "lakeql-sql";
 import { loadTable, planFiles, scanRows } from "./engine.js";
 
 export interface SqlIcebergTableOptions {
@@ -115,8 +127,12 @@ async function executeSql(
   sql: string,
   options: SqlQueryOptions,
 ): Promise<Row[]> {
-  const ast = sqlAst(sql, options);
+  const statement = sqlStatement(sql, options);
   validateSourceBindings(options);
+  if ("type" in statement && statement.type === "describe") {
+    return await describeSqlSource(lake, statement, options);
+  }
+  const ast = statement;
   const bound = bindSources(ast, options);
   const pushed = pushdownIcebergPredicates(bound, options);
   const materializedIceberg = await materializeIcebergTablesIfNeeded(
@@ -130,6 +146,41 @@ async function executeSql(
   } finally {
     await materializedIceberg.cleanup();
   }
+}
+
+async function describeSqlSource(
+  lake: ParquetLake,
+  statement: SqlDescribeAst,
+  options: SqlQueryOptions,
+): Promise<Row[]> {
+  if (options.icebergTables?.[statement.source] !== undefined) {
+    throw new LakeqlError(
+      "LAKEQL_SQL_UNSUPPORTED",
+      `DESCRIBE does not support Iceberg source "${statement.source}"`,
+    );
+  }
+  const source = bindSqlSource(statement.source, options);
+  const tasks = await lake.path(source).planTasks();
+  const paths = [...new Set(tasks.map((task) => task.path))];
+  return await Promise.all(
+    paths.map(async (path) => {
+      const metadata = await readParquetMetadata(lake.store, path);
+      return {
+        path,
+        rows: metadata.row_groups.reduce((sum, group) => sum + Number(group.num_rows), 0),
+        columns: metadata.schema.slice(1).map((field) => ({
+          name: field.name,
+          type: field.type ?? field.converted_type ?? "group",
+        })),
+      };
+    }),
+  );
+}
+
+function sqlStatement(sql: string, options: SqlQueryOptions): SqlStatementAst {
+  const trimmed = sql.trim();
+  if (/^describe\b/iu.test(trimmed)) return parseSqlStatement(trimmed);
+  return sqlAst(trimmed, options);
 }
 
 async function executeRowsFromAst(
@@ -161,11 +212,17 @@ function sqlAst(sql: string, options: SqlQueryOptions): SqlQueryAst {
     : parseSql(sourceSql, { parameters: options.parameters });
 }
 
+function bindSqlSource(source: string, options: SqlQueryOptions): string {
+  if (source === "input" && options.path !== undefined) return options.path;
+  return options.tables?.[source] ?? source;
+}
+
 function bindSources(ast: SqlQueryAst, options: SqlQueryOptions): SqlQueryAst {
   const tables = options.tables ?? {};
   const icebergTables = options.icebergTables ?? {};
   const bindSource = (source: string): string => {
-    if (source === "input" && options.path !== undefined) return options.path;
+    const parquetSource = bindSqlSource(source, options);
+    if (parquetSource !== source) return parquetSource;
     if (icebergTables[source] !== undefined) return source;
     return tables[source] ?? source;
   };

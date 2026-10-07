@@ -36,6 +36,14 @@ describe("vector projection kernels", () => {
     expect(materializeBatchRows(vectorProjectBatch(batch))).toEqual([{ id: 1, label: "a" }]);
   });
 
+  it("expands wildcard selections before adding expression vectors", () => {
+    const batch = batchFromColumns({ id: [1], amount: [10] });
+
+    expect(
+      materializeBatchRows(vectorProjectBatch(batch, ["*"], { doubled: mul(col("amount"), 2) })),
+    ).toEqual([{ id: 1, amount: 10, doubled: 20 }]);
+  });
+
   it("rejects unknown selected columns with typed errors", () => {
     const batch = batchFromColumns({ id: [1] });
 
