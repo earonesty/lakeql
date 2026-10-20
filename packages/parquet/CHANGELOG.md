@@ -1,5 +1,12 @@
 # lakeql-parquet
 
+## 0.4.3
+
+### Patch Changes
+
+- Updated dependencies [764fcd2]
+  - lakeql-core@0.5.2
+
 ## 0.4.2
 
 ### Patch Changes

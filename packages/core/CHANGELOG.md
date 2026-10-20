@@ -1,5 +1,11 @@
 # lakeql-core
 
+## 0.5.2
+
+### Patch Changes
+
+- 764fcd2: Improve vector top-k sorting performance by periodically sorting and trimming candidates while preserving row-index tie breaking. Keep retained row indices bounded by top-k, avoid per-term batch-sized key caches, and deduplicate equivalent sort terms.
+
 ## 0.5.1
 
 ### Patch Changes
