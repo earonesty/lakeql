@@ -52,10 +52,10 @@ export function vectorSortIndices(
 }
 
 /**
- * Returns the `topK` first selected rows in order. Sort keys are read once per row, and the
- * candidate list is sorted and cut back to `topK` whenever it reaches twice that size, so the cost
- * is O(n log k) rather than a rescan of the kept rows for every later row. Ties break on row index,
- * as in `vectorSortIndices`, so the rows returned are the first `topK` of the full sort.
+ * Returns the `topK` first selected rows in order using O(k) retained row indices. Candidates
+ * are periodically sorted and trimmed for O(n log(k + 1)) comparisons. Sort keys are read from
+ * the input vectors during comparisons, without a batch-sized cache per order term.
+ * Ties break on row index, as in `vectorSortIndices`.
  */
 export function vectorTopKIndices(
   batch: Batch,
@@ -69,11 +69,11 @@ export function vectorTopKIndices(
   const normalized = normalizeVectorOrderBy(orderBy);
   validateOrderColumns(batch, normalized);
   if (topK === 0) return [];
-  const selected = selectedIndices(batch.rowCount, selection);
-  const compare = keyedRowComparator(batch, normalized, selected);
+  const compare = (left: number, right: number) => compareBatchRows(batch, left, right, normalized);
   const trimAt = topK * 2 + 64;
   const kept: number[] = [];
-  for (const index of selected) {
+  for (let index = 0; index < batch.rowCount; index += 1) {
+    if (selection !== undefined && selection[index] !== 1) continue;
     kept.push(index);
     if (kept.length >= trimAt) {
       kept.sort(compare);
@@ -134,11 +134,14 @@ export function concatBatches(batches: readonly Batch[]): Batch {
   };
 }
 
+/** Validates sort terms and removes equivalent terms without changing their precedence. */
 function normalizeVectorOrderBy(orderBy: readonly OrderByTerm[]): OrderByTerm[] {
   if (!Array.isArray(orderBy) || orderBy.length === 0) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy must contain at least one term");
   }
-  return orderBy.map((term) => {
+  const normalized: OrderByTerm[] = [];
+  const seen = new Set<string>();
+  for (const term of orderBy) {
     if (typeof term.column !== "string" || term.column.length === 0) {
       throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy columns must be non-empty strings");
     }
@@ -150,8 +153,12 @@ function normalizeVectorOrderBy(orderBy: readonly OrderByTerm[]): OrderByTerm[] 
     if (nulls !== "first" && nulls !== "last") {
       throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy nulls must be first or last", { term });
     }
-    return { column: term.column, direction, nulls };
-  });
+    const key = JSON.stringify([term.column, direction, nulls]);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push({ column: term.column, direction, nulls });
+  }
+  return normalized;
 }
 
 function validateOrderColumns(batch: Batch, orderBy: readonly OrderByTerm[]): void {
@@ -231,38 +238,6 @@ function selectedIndices(rowCount: number, selection?: Selection): number[] {
     indices.push(index);
   }
   return indices;
-}
-
-// Reads each order column once for the given rows, so top-k does not call vectorValue inside
-// every comparison.
-function keyedRowComparator(
-  batch: Batch,
-  orderBy: readonly OrderByTerm[],
-  indices: readonly number[],
-): (left: number, right: number) => number {
-  const keys = orderBy.map((term) => {
-    const vector = batch.columns[term.column];
-    if (vector === undefined) {
-      throw new LakeqlError("LAKEQL_UNKNOWN_COLUMN", `Unknown column ${term.column}`, {
-        column: term.column,
-      });
-    }
-    const values: unknown[] = new Array(batch.rowCount);
-    for (const index of indices) values[index] = vectorValue(vector, index);
-    return values;
-  });
-  return (left, right) => {
-    for (let term = 0; term < orderBy.length; term += 1) {
-      const termKeys = keys[term] as unknown[];
-      const comparison = compareSortValues(
-        termKeys[left],
-        termKeys[right],
-        orderBy[term] as OrderByTerm,
-      );
-      if (comparison !== 0) return comparison;
-    }
-    return left - right;
-  };
 }
 
 function gatherVector(vector: Vector, indices: readonly number[]): Vector {

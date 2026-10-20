@@ -170,6 +170,34 @@ describe("vector sort kernels", () => {
     }
   });
 
+  it("bounds top-k work with repeated order terms on a large batch", () => {
+    const rowCount = 262_144;
+    let valueReads = 0;
+    const values = new Proxy(new Array<string>(rowCount).fill("tie"), {
+      get(target, property, receiver) {
+        if (typeof property === "string" && /^\d+$/u.test(property)) valueReads += 1;
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const batch = batchFromVectors({ score: { type: "utf8", values } });
+    const orderBy = Array.from({ length: 64 }, (_, index) =>
+      index % 2 === 0
+        ? { column: "score" }
+        : { column: "score", direction: "asc" as const, nulls: "last" as const },
+    );
+
+    expect(vectorTopKIndices(batch, orderBy, 1)).toEqual([0]);
+    // Repeated terms must not cause a full-batch read/allocation for each occurrence.
+    expect(valueReads).toBeLessThan(rowCount * 4);
+
+    valueReads = 0;
+    const selection = new Uint8Array(rowCount);
+    selection[1] = 1;
+    selection[rowCount - 1] = 1;
+    expect(vectorTopKIndices(batch, orderBy, 1, selection)).toEqual([1]);
+    expect(valueReads).toBe(2);
+  });
+
   it("orders timestamp vectors by epoch precision", () => {
     const batch = batchFromColumns({
       id: [1, 2, 3],
