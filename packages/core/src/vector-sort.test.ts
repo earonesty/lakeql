@@ -149,6 +149,27 @@ describe("vector sort kernels", () => {
     ).toEqual([]);
   });
 
+  it("matches the first rows of a full sort for every k, with ties, nulls and a selection", () => {
+    const rowCount = 600;
+    const batch = batchFromColumns({
+      group: Array.from({ length: rowCount }, (_, i) => (i % 11 === 0 ? null : (i * 7) % 5)),
+      name: Array.from({ length: rowCount }, (_, i) => `n${(i * 13) % 17}`),
+    });
+    const orderBy = [
+      { column: "group", nulls: "first" as const },
+      { column: "name", direction: "desc" as const },
+    ];
+    const selection = Uint8Array.from({ length: rowCount }, (_, i) => (i % 3 === 0 ? 0 : 1));
+
+    for (const rowSelection of [undefined, selection]) {
+      const full = vectorSortIndices(batch, orderBy, rowSelection);
+      // Sizes around the point where the candidate list is cut back (2 * k + 64 rows).
+      for (const k of [1, 2, 3, 10, 64, 100, 268, 400, full.length, full.length + 5]) {
+        expect(vectorTopKIndices(batch, orderBy, k, rowSelection)).toEqual(full.slice(0, k));
+      }
+    }
+  });
+
   it("orders timestamp vectors by epoch precision", () => {
     const batch = batchFromColumns({
       id: [1, 2, 3],

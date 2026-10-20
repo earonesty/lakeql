@@ -51,6 +51,12 @@ export function vectorSortIndices(
   return indices;
 }
 
+/**
+ * Returns the `topK` first selected rows in order. Sort keys are read once per row, and the
+ * candidate list is sorted and cut back to `topK` whenever it reaches twice that size, so the cost
+ * is O(n log k) rather than a rescan of the kept rows for every later row. Ties break on row index,
+ * as in `vectorSortIndices`, so the rows returned are the first `topK` of the full sort.
+ */
 export function vectorTopKIndices(
   batch: Batch,
   orderBy: readonly OrderByTerm[],
@@ -62,19 +68,20 @@ export function vectorTopKIndices(
   }
   const normalized = normalizeVectorOrderBy(orderBy);
   validateOrderColumns(batch, normalized);
+  if (topK === 0) return [];
+  const selected = selectedIndices(batch.rowCount, selection);
+  const compare = keyedRowComparator(batch, normalized, selected);
+  const trimAt = topK * 2 + 64;
   const kept: number[] = [];
-  for (const index of selectedIndices(batch.rowCount, selection)) {
-    if (topK === 0) break;
-    if (kept.length < topK) {
-      kept.push(index);
-      continue;
-    }
-    const worstIndex = worstKeptIndex(batch, kept, normalized);
-    const worst = kept[worstIndex];
-    if (worst !== undefined && compareBatchRows(batch, index, worst, normalized) < 0) {
-      kept[worstIndex] = index;
+  for (const index of selected) {
+    kept.push(index);
+    if (kept.length >= trimAt) {
+      kept.sort(compare);
+      kept.length = topK;
     }
   }
+  kept.sort(compare);
+  if (kept.length > topK) kept.length = topK;
   return kept;
 }
 
@@ -226,24 +233,36 @@ function selectedIndices(rowCount: number, selection?: Selection): number[] {
   return indices;
 }
 
-function worstKeptIndex(
+// Reads each order column once for the given rows, so top-k does not call vectorValue inside
+// every comparison.
+function keyedRowComparator(
   batch: Batch,
-  kept: readonly number[],
   orderBy: readonly OrderByTerm[],
-): number {
-  let worst = 0;
-  for (let index = 1; index < kept.length; index += 1) {
-    const candidate = kept[index];
-    const currentWorst = kept[worst];
-    if (
-      candidate !== undefined &&
-      currentWorst !== undefined &&
-      compareBatchRows(batch, candidate, currentWorst, orderBy) > 0
-    ) {
-      worst = index;
+  indices: readonly number[],
+): (left: number, right: number) => number {
+  const keys = orderBy.map((term) => {
+    const vector = batch.columns[term.column];
+    if (vector === undefined) {
+      throw new LakeqlError("LAKEQL_UNKNOWN_COLUMN", `Unknown column ${term.column}`, {
+        column: term.column,
+      });
     }
-  }
-  return worst;
+    const values: unknown[] = new Array(batch.rowCount);
+    for (const index of indices) values[index] = vectorValue(vector, index);
+    return values;
+  });
+  return (left, right) => {
+    for (let term = 0; term < orderBy.length; term += 1) {
+      const termKeys = keys[term] as unknown[];
+      const comparison = compareSortValues(
+        termKeys[left],
+        termKeys[right],
+        orderBy[term] as OrderByTerm,
+      );
+      if (comparison !== 0) return comparison;
+    }
+    return left - right;
+  };
 }
 
 function gatherVector(vector: Vector, indices: readonly number[]): Vector {
