@@ -149,6 +149,55 @@ describe("vector sort kernels", () => {
     ).toEqual([]);
   });
 
+  it("matches the first rows of a full sort for every k, with ties, nulls and a selection", () => {
+    const rowCount = 600;
+    const batch = batchFromColumns({
+      group: Array.from({ length: rowCount }, (_, i) => (i % 11 === 0 ? null : (i * 7) % 5)),
+      name: Array.from({ length: rowCount }, (_, i) => `n${(i * 13) % 17}`),
+    });
+    const orderBy = [
+      { column: "group", nulls: "first" as const },
+      { column: "name", direction: "desc" as const },
+    ];
+    const selection = Uint8Array.from({ length: rowCount }, (_, i) => (i % 3 === 0 ? 0 : 1));
+
+    for (const rowSelection of [undefined, selection]) {
+      const full = vectorSortIndices(batch, orderBy, rowSelection);
+      // Sizes around the point where the candidate list is cut back (2 * k + 64 rows).
+      for (const k of [1, 2, 3, 10, 64, 100, 268, 400, full.length, full.length + 5]) {
+        expect(vectorTopKIndices(batch, orderBy, k, rowSelection)).toEqual(full.slice(0, k));
+      }
+    }
+  });
+
+  it("bounds top-k work with repeated order terms on a large batch", () => {
+    const rowCount = 262_144;
+    let valueReads = 0;
+    const values = new Proxy(new Array<string>(rowCount).fill("tie"), {
+      get(target, property, receiver) {
+        if (typeof property === "string" && /^\d+$/u.test(property)) valueReads += 1;
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const batch = batchFromVectors({ score: { type: "utf8", values } });
+    const orderBy = Array.from({ length: 64 }, (_, index) =>
+      index % 2 === 0
+        ? { column: "score" }
+        : { column: "score", direction: "asc" as const, nulls: "last" as const },
+    );
+
+    expect(vectorTopKIndices(batch, orderBy, 1)).toEqual([0]);
+    // Repeated terms must not cause a full-batch read/allocation for each occurrence.
+    expect(valueReads).toBeLessThan(rowCount * 4);
+
+    valueReads = 0;
+    const selection = new Uint8Array(rowCount);
+    selection[1] = 1;
+    selection[rowCount - 1] = 1;
+    expect(vectorTopKIndices(batch, orderBy, 1, selection)).toEqual([1]);
+    expect(valueReads).toBe(2);
+  });
+
   it("orders timestamp vectors by epoch precision", () => {
     const batch = batchFromColumns({
       id: [1, 2, 3],

@@ -51,6 +51,12 @@ export function vectorSortIndices(
   return indices;
 }
 
+/**
+ * Returns the `topK` first selected rows in order using O(k) retained row indices. Candidates
+ * are periodically sorted and trimmed for O(n log(k + 1)) comparisons. Sort keys are read from
+ * the input vectors during comparisons, without a batch-sized cache per order term.
+ * Ties break on row index, as in `vectorSortIndices`.
+ */
 export function vectorTopKIndices(
   batch: Batch,
   orderBy: readonly OrderByTerm[],
@@ -62,19 +68,20 @@ export function vectorTopKIndices(
   }
   const normalized = normalizeVectorOrderBy(orderBy);
   validateOrderColumns(batch, normalized);
+  if (topK === 0) return [];
+  const compare = (left: number, right: number) => compareBatchRows(batch, left, right, normalized);
+  const trimAt = topK * 2 + 64;
   const kept: number[] = [];
-  for (const index of selectedIndices(batch.rowCount, selection)) {
-    if (topK === 0) break;
-    if (kept.length < topK) {
-      kept.push(index);
-      continue;
-    }
-    const worstIndex = worstKeptIndex(batch, kept, normalized);
-    const worst = kept[worstIndex];
-    if (worst !== undefined && compareBatchRows(batch, index, worst, normalized) < 0) {
-      kept[worstIndex] = index;
+  for (let index = 0; index < batch.rowCount; index += 1) {
+    if (selection !== undefined && selection[index] !== 1) continue;
+    kept.push(index);
+    if (kept.length >= trimAt) {
+      kept.sort(compare);
+      kept.length = topK;
     }
   }
+  kept.sort(compare);
+  if (kept.length > topK) kept.length = topK;
   return kept;
 }
 
@@ -127,11 +134,14 @@ export function concatBatches(batches: readonly Batch[]): Batch {
   };
 }
 
+/** Validates sort terms and removes equivalent terms without changing their precedence. */
 function normalizeVectorOrderBy(orderBy: readonly OrderByTerm[]): OrderByTerm[] {
   if (!Array.isArray(orderBy) || orderBy.length === 0) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy must contain at least one term");
   }
-  return orderBy.map((term) => {
+  const normalized: OrderByTerm[] = [];
+  const seen = new Set<string>();
+  for (const term of orderBy) {
     if (typeof term.column !== "string" || term.column.length === 0) {
       throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy columns must be non-empty strings");
     }
@@ -143,8 +153,12 @@ function normalizeVectorOrderBy(orderBy: readonly OrderByTerm[]): OrderByTerm[] 
     if (nulls !== "first" && nulls !== "last") {
       throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy nulls must be first or last", { term });
     }
-    return { column: term.column, direction, nulls };
-  });
+    const key = JSON.stringify([term.column, direction, nulls]);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push({ column: term.column, direction, nulls });
+  }
+  return normalized;
 }
 
 function validateOrderColumns(batch: Batch, orderBy: readonly OrderByTerm[]): void {
@@ -224,26 +238,6 @@ function selectedIndices(rowCount: number, selection?: Selection): number[] {
     indices.push(index);
   }
   return indices;
-}
-
-function worstKeptIndex(
-  batch: Batch,
-  kept: readonly number[],
-  orderBy: readonly OrderByTerm[],
-): number {
-  let worst = 0;
-  for (let index = 1; index < kept.length; index += 1) {
-    const candidate = kept[index];
-    const currentWorst = kept[worst];
-    if (
-      candidate !== undefined &&
-      currentWorst !== undefined &&
-      compareBatchRows(batch, candidate, currentWorst, orderBy) > 0
-    ) {
-      worst = index;
-    }
-  }
-  return worst;
 }
 
 function gatherVector(vector: Vector, indices: readonly number[]): Vector {
