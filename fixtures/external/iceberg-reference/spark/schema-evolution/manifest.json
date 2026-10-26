@@ -5,96 +5,96 @@
   "expectedRecordCount": 4,
   "files": [
     {
-      "path": "warehouse/db/places/data/country=CA/.00000-2-de7148a0-81f5-4fa4-81af-89790f471a1c-0-00002.parquet.crc",
+      "path": "warehouse/db/places/data/country=CA/.00000-2-652853d5-d000-48fa-81da-4a6ceefa6996-0-00002.parquet.crc",
       "sha256": "49b87d0c4d7e8e7adeb2ba6bc35a9d433b1f2751dfd2ac3e0091409926a636bd"
     },
     {
-      "path": "warehouse/db/places/data/country=CA/00000-2-de7148a0-81f5-4fa4-81af-89790f471a1c-0-00002.parquet",
+      "path": "warehouse/db/places/data/country=CA/00000-2-652853d5-d000-48fa-81da-4a6ceefa6996-0-00002.parquet",
       "sha256": "e6109a0ecbbcc1abc4ae8bb2dcfebc7619f751746f78d8feac22d39ea009dd79"
     },
     {
-      "path": "warehouse/db/places/data/country=MX/.00000-5-91bb9229-9843-4fb5-8a73-c3ff6b3f8c44-0-00002.parquet.crc",
+      "path": "warehouse/db/places/data/country=MX/.00000-5-d02f28dc-c084-46db-a10b-70a55184474c-0-00002.parquet.crc",
       "sha256": "5bfbba38466a7ebd1e552e6405e6ceb8e02a6cf7e5ed8a67447cbfc969891e6a"
     },
     {
-      "path": "warehouse/db/places/data/country=MX/00000-5-91bb9229-9843-4fb5-8a73-c3ff6b3f8c44-0-00002.parquet",
+      "path": "warehouse/db/places/data/country=MX/00000-5-d02f28dc-c084-46db-a10b-70a55184474c-0-00002.parquet",
       "sha256": "af1e489218d58b258ccc59f6d2bee976bebd16aaff1079b7b4f57ddbc59663fd"
     },
     {
-      "path": "warehouse/db/places/data/country=US/.00000-2-de7148a0-81f5-4fa4-81af-89790f471a1c-0-00001.parquet.crc",
+      "path": "warehouse/db/places/data/country=US/.00000-2-652853d5-d000-48fa-81da-4a6ceefa6996-0-00001.parquet.crc",
       "sha256": "d20a8ae13b80a8f211a4341c894fac27624f4b346d77e856919792e0899290e5"
     },
     {
-      "path": "warehouse/db/places/data/country=US/.00000-5-91bb9229-9843-4fb5-8a73-c3ff6b3f8c44-0-00001.parquet.crc",
+      "path": "warehouse/db/places/data/country=US/.00000-5-d02f28dc-c084-46db-a10b-70a55184474c-0-00001.parquet.crc",
       "sha256": "509a837a72ba0100ec5134a1a6125c33935f153efb3283dd213c855d17d176a1"
     },
     {
-      "path": "warehouse/db/places/data/country=US/00000-2-de7148a0-81f5-4fa4-81af-89790f471a1c-0-00001.parquet",
+      "path": "warehouse/db/places/data/country=US/00000-2-652853d5-d000-48fa-81da-4a6ceefa6996-0-00001.parquet",
       "sha256": "61b858e0c07e4414fa73dcc5ad4d1b0163c51b5e011081b53350cfb0469f2f34"
     },
     {
-      "path": "warehouse/db/places/data/country=US/00000-5-91bb9229-9843-4fb5-8a73-c3ff6b3f8c44-0-00001.parquet",
+      "path": "warehouse/db/places/data/country=US/00000-5-d02f28dc-c084-46db-a10b-70a55184474c-0-00001.parquet",
       "sha256": "f4fd0b0b05a79b5db1f024a22eb7ea809f1982ab82f0f6b21c7affff3d737aaf"
     },
     {
-      "path": "warehouse/db/places/metadata/.39480b88-0a26-4bc7-9ff0-e2fc4236f795-m0.avro.crc",
-      "sha256": "4f3fe101ff3a77ce4d67d173f882ba992ff79f1fe485305cdb6ca5a04c67d597"
+      "path": "warehouse/db/places/metadata/.647e93eb-6347-46dd-8b57-5c1ca403e4dd-m0.avro.crc",
+      "sha256": "7b04afba9860f7b0717d9ca3893aa725f5e33aa64aab8e5a76ca49acecdd6db2"
     },
     {
-      "path": "warehouse/db/places/metadata/.3d8009bf-2f64-41fd-a4fc-6898d528d7ea-m0.avro.crc",
-      "sha256": "9a370a5be0491bd55f274308f9c3a04aaa1c7b842f21fc3939ee06060cb0345f"
+      "path": "warehouse/db/places/metadata/.a74a583a-1128-4876-8033-12fba95d1642-m0.avro.crc",
+      "sha256": "48f590e861090368f16a415bbbe9bde7585506acc8c97cec1a2f897b3be01e98"
     },
     {
-      "path": "warehouse/db/places/metadata/.snap-264414565515610468-1-3d8009bf-2f64-41fd-a4fc-6898d528d7ea.avro.crc",
-      "sha256": "5a4bbd3cc296dc3d8aa2a02bb56931270515003f842182f9c2f3c7eada744d05"
+      "path": "warehouse/db/places/metadata/.snap-2740847382002506875-1-a74a583a-1128-4876-8033-12fba95d1642.avro.crc",
+      "sha256": "e5c1f11db99480dd51f526097b674359d002c2c7982eb9da94c73b2bbddf3db0"
     },
     {
-      "path": "warehouse/db/places/metadata/.snap-5622327259665169765-1-39480b88-0a26-4bc7-9ff0-e2fc4236f795.avro.crc",
-      "sha256": "c5a2e361208df12aefbd06112c14d26874ad88f8b669a7d1f38429273d7fef03"
+      "path": "warehouse/db/places/metadata/.snap-3848277631312066523-1-647e93eb-6347-46dd-8b57-5c1ca403e4dd.avro.crc",
+      "sha256": "38899f5725757eda5fc9c3501dd28b190394f23361551743f63403f0373ea43f"
     },
     {
       "path": "warehouse/db/places/metadata/.v1.metadata.json.crc",
-      "sha256": "438ca9fa297b74fe956f9c4ee6a0a9d3221ee3c725da053557004b9c1576db8a"
+      "sha256": "658a6ac3aa7bb205fdc34ec212b3a43b2a3196e88e64dd42a7029a35c6318aa6"
     },
     {
       "path": "warehouse/db/places/metadata/.v2.metadata.json.crc",
-      "sha256": "789fd077911c4baedbd0ada2e66d621112441e6ea00d1f257d18e30b21ee7504"
+      "sha256": "0095da47ad628e9f5cb36a3bdc59e9337b0e0f3206dcbbc13a0d10e2ddfd162f"
     },
     {
       "path": "warehouse/db/places/metadata/.v3.metadata.json.crc",
-      "sha256": "5bf06ce87bd1d8def2970a77527f5f7ce46917a626f31844996ed6b81ac21fb1"
+      "sha256": "f55d900d414cdda11af6b8b596301b00d0a59bf1d6920497612c66282e2fa035"
     },
     {
       "path": "warehouse/db/places/metadata/.version-hint.text.crc",
       "sha256": "052410c430a90327ff265f1ad6b84ef5713b827fd8492617ae1864a2c363ef92"
     },
     {
-      "path": "warehouse/db/places/metadata/39480b88-0a26-4bc7-9ff0-e2fc4236f795-m0.avro",
-      "sha256": "ebe63480b31991cd289f1061901c2ce6ab57762247bc118de38f70db4db5cf4e"
+      "path": "warehouse/db/places/metadata/647e93eb-6347-46dd-8b57-5c1ca403e4dd-m0.avro",
+      "sha256": "173381979e8ac544b4b1e549a2a16e30eb1b65644e28b2f2388a6e711a888daa"
     },
     {
-      "path": "warehouse/db/places/metadata/3d8009bf-2f64-41fd-a4fc-6898d528d7ea-m0.avro",
-      "sha256": "2db20d8591bd5bdee9460e3e0e547a273493fa67e039167760a8624afcb1f277"
+      "path": "warehouse/db/places/metadata/a74a583a-1128-4876-8033-12fba95d1642-m0.avro",
+      "sha256": "28e3b1e441a908ec893fb1ef1734b36285ea89dad61f896187e1b612dd12d77d"
     },
     {
-      "path": "warehouse/db/places/metadata/snap-264414565515610468-1-3d8009bf-2f64-41fd-a4fc-6898d528d7ea.avro",
-      "sha256": "a0dd7944e313eda4bb4c21b57a0a962c89bdc6a33202f66edbf4d39925319375"
+      "path": "warehouse/db/places/metadata/snap-2740847382002506875-1-a74a583a-1128-4876-8033-12fba95d1642.avro",
+      "sha256": "f2941d3e75b88fcaa77e8dfcbdd0688fd91708209443c57d1e02238689732e6f"
     },
     {
-      "path": "warehouse/db/places/metadata/snap-5622327259665169765-1-39480b88-0a26-4bc7-9ff0-e2fc4236f795.avro",
-      "sha256": "778399a990057000a200cc2697e128bfd2c863cc6fdd06b545e2a66dd36d6534"
+      "path": "warehouse/db/places/metadata/snap-3848277631312066523-1-647e93eb-6347-46dd-8b57-5c1ca403e4dd.avro",
+      "sha256": "e0eab68c91a4fa9ad8a46392640919dc6b186771484b3b7dde1ec200b0c40cc1"
     },
     {
       "path": "warehouse/db/places/metadata/v1.metadata.json",
-      "sha256": "a51bd71c9cb5f8e0682491baff3e4898a1b0ea310d485cf02f15589d84175030"
+      "sha256": "72746fd464bb45a06609fdf3537ad73a0b195cf352a400bfd110e1d1d3244f38"
     },
     {
       "path": "warehouse/db/places/metadata/v2.metadata.json",
-      "sha256": "61ad5fdbece4de339ebf34a52448c1c261ff5f02355455dae4b68131dd813967"
+      "sha256": "53a2fffaeb98c755f2fc99be6508078db7d656b8f82fb3ebf0a01c6f4c16e0ac"
     },
     {
       "path": "warehouse/db/places/metadata/v3.metadata.json",
-      "sha256": "8f2752824778a7682d100f77230fbfed60b70e074049738a4f78da3c23aed67a"
+      "sha256": "8b911b8960e3f6932fecce832b7f3f3a2bdb119f3c6d758911d26656de51c813"
     },
     {
       "path": "warehouse/db/places/metadata/version-hint.text",
@@ -104,24 +104,24 @@
   "metadataPath": "warehouse/db/places/metadata/v3.metadata.json",
   "snapshots": [
     {
-      "asOfTimestampMs": 1781545594856,
+      "asOfTimestampMs": 1793032965892,
       "expectedFiles": [
-        "warehouse/db/places/data/country=CA/00000-2-de7148a0-81f5-4fa4-81af-89790f471a1c-0-00002.parquet",
-        "warehouse/db/places/data/country=US/00000-2-de7148a0-81f5-4fa4-81af-89790f471a1c-0-00001.parquet"
+        "warehouse/db/places/data/country=CA/00000-2-652853d5-d000-48fa-81da-4a6ceefa6996-0-00002.parquet",
+        "warehouse/db/places/data/country=US/00000-2-652853d5-d000-48fa-81da-4a6ceefa6996-0-00001.parquet"
       ],
       "expectedRecordCount": 2,
-      "snapshotId": 5622327259665169765
+      "snapshotId": 3848277631312066523
     },
     {
-      "asOfTimestampMs": 1781545595310,
+      "asOfTimestampMs": 1793032966297,
       "expectedFiles": [
-        "warehouse/db/places/data/country=CA/00000-2-de7148a0-81f5-4fa4-81af-89790f471a1c-0-00002.parquet",
-        "warehouse/db/places/data/country=MX/00000-5-91bb9229-9843-4fb5-8a73-c3ff6b3f8c44-0-00002.parquet",
-        "warehouse/db/places/data/country=US/00000-2-de7148a0-81f5-4fa4-81af-89790f471a1c-0-00001.parquet",
-        "warehouse/db/places/data/country=US/00000-5-91bb9229-9843-4fb5-8a73-c3ff6b3f8c44-0-00001.parquet"
+        "warehouse/db/places/data/country=CA/00000-2-652853d5-d000-48fa-81da-4a6ceefa6996-0-00002.parquet",
+        "warehouse/db/places/data/country=MX/00000-5-d02f28dc-c084-46db-a10b-70a55184474c-0-00002.parquet",
+        "warehouse/db/places/data/country=US/00000-2-652853d5-d000-48fa-81da-4a6ceefa6996-0-00001.parquet",
+        "warehouse/db/places/data/country=US/00000-5-d02f28dc-c084-46db-a10b-70a55184474c-0-00001.parquet"
       ],
       "expectedRecordCount": 4,
-      "snapshotId": 264414565515610468
+      "snapshotId": 2740847382002506875
     }
   ]
 }

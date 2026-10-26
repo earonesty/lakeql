@@ -6,10 +6,10 @@
   "files": [
     {
       "path": "catalog.db",
-      "sha256": "2381e345c3e9dbd9d8b48988e82e1662dbdca8fe7566682b04b650813d5ff4d6"
+      "sha256": "8264d2a66ed28d006af9d0a4d47b4a7b11d6f202d28021eb62d1148e80e137c8"
     },
     {
-      "path": "warehouse/db.db/places/data/00000-0-eb3c4c8d-9af9-4212-85f2-6f02970bb168.parquet",
+      "path": "warehouse/db.db/places/data/00000-0-e367a154-61af-47c2-ab3c-5096736b00e6.parquet",
       "sha256": "b1b5a89f4ad0ca831d8732d50f22f0d43edd73e5b0eef4a7815e31e469d3a316"
     },
     {
@@ -17,20 +17,20 @@
       "sha256": "70cd56cb2516b79b5c63a349c458a1cadc4dc27bd111808029bc0d4fb7e9796b"
     },
     {
-      "path": "warehouse/db.db/places/metadata/00000-03a942eb-205c-4f54-85c2-3225ea80dbd6.metadata.json",
-      "sha256": "147a274e9c95da87bb29bacae722f6a0332140cf20e5aa8fe91121420c9c18fb"
+      "path": "warehouse/db.db/places/metadata/00000-16bbd5f5-f240-408f-923c-f73193d5aad0.metadata.json",
+      "sha256": "87799a788816e61fe1b1ba5e5404ba0c111c3d6e3ef398c353c7090c4a49dfe4"
     },
     {
-      "path": "warehouse/db.db/places/metadata/00001-70a7db08-78fb-4baf-b99d-c205df6eb4a8.metadata.json",
-      "sha256": "ca153e306561621bdcbabffcfd228aea22a617220e39b4a42e1b4c8481aee1f8"
+      "path": "warehouse/db.db/places/metadata/00001-c20ccc58-51e3-44be-ba44-9933e72ea09c.metadata.json",
+      "sha256": "fc7e5af7ae8b98aba14678c1e9b4e7c878dcccf633eb84dbc5352fb033d4b5ec"
     },
     {
-      "path": "warehouse/db.db/places/metadata/eb3c4c8d-9af9-4212-85f2-6f02970bb168-m0.avro",
-      "sha256": "d5ea26a48f261db6d506e68d82507a31f4295256afd33c1bdc994551fe9a733a"
+      "path": "warehouse/db.db/places/metadata/e367a154-61af-47c2-ab3c-5096736b00e6-m0.avro",
+      "sha256": "66acac1a6689d7b6a1298a260d97e4a4f2bdc2b67f3f902bb9e87674e4f74f10"
     },
     {
       "path": "warehouse/db.db/places/metadata/lakeql-data-manifest.json",
-      "sha256": "8528b9e2815f4cd3e310ad0634d51dc6f4362e9a09e97befa2d90f2f3d49313d"
+      "sha256": "84545a6581925589dc844edd72f5dbc762c5f0a7dde435062366ec009a6e334c"
     },
     {
       "path": "warehouse/db.db/places/metadata/lakeql-delete-manifest.json",
@@ -41,8 +41,8 @@
       "sha256": "dcfa93bf38ff71c30b8ea2f04b3fe2b7333bd7b4575a6512f06190c5bf26d4c3"
     },
     {
-      "path": "warehouse/db.db/places/metadata/snap-6877658114620335408-0-eb3c4c8d-9af9-4212-85f2-6f02970bb168.avro",
-      "sha256": "f779f3196b6907f065efc9d0daec3bef3d394accc5646434554e18aa73f5f17c"
+      "path": "warehouse/db.db/places/metadata/snap-6747141901708582705-0-e367a154-61af-47c2-ab3c-5096736b00e6.avro",
+      "sha256": "650182c9010d1a95d9ee9fe1a0d6f6cbac76b07b354053f8dfc1ee261dd7ae4d"
     }
   ],
   "metadataPath": "warehouse/db.db/places/metadata/lakeql-equality.metadata.json",
@@ -50,7 +50,7 @@
     {
       "asOfTimestampMs": 1767225600000,
       "expectedFiles": [
-        "warehouse/db.db/places/data/00000-0-eb3c4c8d-9af9-4212-85f2-6f02970bb168.parquet"
+        "warehouse/db.db/places/data/00000-0-e367a154-61af-47c2-ab3c-5096736b00e6.parquet"
       ],
       "expectedRecordCount": 3,
       "snapshotId": 2

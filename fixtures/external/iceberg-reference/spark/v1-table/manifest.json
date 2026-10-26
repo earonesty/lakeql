@@ -5,48 +5,48 @@
   "expectedRecordCount": 3,
   "files": [
     {
-      "path": "warehouse/db/places/data/.00000-0-1644bc86-e2a2-41ba-8b4c-c133ec94c5a6-0-00001.parquet.crc",
-      "sha256": "d20a8ae13b80a8f211a4341c894fac27624f4b346d77e856919792e0899290e5"
+      "path": "warehouse/db/places/data/.00000-0-7bb00a1b-7c00-4cb7-8782-211fba543f07-0-00001.parquet.crc",
+      "sha256": "f6dd98094ff711139b13c01196f57c8f3bae8db748fe3c63fdf4a82275a64b03"
     },
     {
-      "path": "warehouse/db/places/data/.00001-1-1644bc86-e2a2-41ba-8b4c-c133ec94c5a6-0-00001.parquet.crc",
-      "sha256": "326b4feba7e09aef52a764a8d1edf0095b1ee727373ec91886948b5ee7ba2cd2"
+      "path": "warehouse/db/places/data/.00001-1-7bb00a1b-7c00-4cb7-8782-211fba543f07-0-00001.parquet.crc",
+      "sha256": "ddcda1ec1ce456332e163bf8a02ed91ea7e044ad422c3e0a23b66ab7d3975feb"
     },
     {
-      "path": "warehouse/db/places/data/00000-0-1644bc86-e2a2-41ba-8b4c-c133ec94c5a6-0-00001.parquet",
-      "sha256": "61b858e0c07e4414fa73dcc5ad4d1b0163c51b5e011081b53350cfb0469f2f34"
+      "path": "warehouse/db/places/data/00000-0-7bb00a1b-7c00-4cb7-8782-211fba543f07-0-00001.parquet",
+      "sha256": "2bfd30c05c7ccec8d674ca39d9708f2b9ce116be3418e2fb9077cba21fdda2ce"
     },
     {
-      "path": "warehouse/db/places/data/00001-1-1644bc86-e2a2-41ba-8b4c-c133ec94c5a6-0-00001.parquet",
-      "sha256": "b1375cbeec6cbb4ce46fb7a6a211c2c629d3cfd012705294a98376b2ab009b0a"
+      "path": "warehouse/db/places/data/00001-1-7bb00a1b-7c00-4cb7-8782-211fba543f07-0-00001.parquet",
+      "sha256": "a545f75f5e861b76a1dfec99af79b19e33c6f5a70f152e5eedec6552046bcf06"
     },
     {
-      "path": "warehouse/db/places/metadata/.13a04a11-1caa-410e-b356-6838c5560607-m0.avro.crc",
-      "sha256": "4985298ce3664fa6ad7e7dd63e24f9aa2138cb7756528671c725e450ba41314b"
+      "path": "warehouse/db/places/metadata/.0a544559-acc9-4d5d-8058-854ad747b8e5-m0.avro.crc",
+      "sha256": "d57b0b1c368757e1e85210e8bc9107eb3d1cc2086182e3371ca1bfa5234f94a9"
     },
     {
-      "path": "warehouse/db/places/metadata/.snap-2375026653812530753-1-13a04a11-1caa-410e-b356-6838c5560607.avro.crc",
-      "sha256": "9f09f7e061551bdc7a32d1075500c046fc68624f221214d3e9b5a59846d27f7a"
+      "path": "warehouse/db/places/metadata/.snap-2831996250461087805-1-0a544559-acc9-4d5d-8058-854ad747b8e5.avro.crc",
+      "sha256": "169b7d1664569a1a14cd15bbb339c2955eea9c66f7b7f9dd7a4ba2037a333b26"
     },
     {
       "path": "warehouse/db/places/metadata/.v1.metadata.json.crc",
-      "sha256": "10e5659c779e8e33a524878dc796801ac020c75fe7b3fd38cc7a3977af9b4f23"
+      "sha256": "ac70e49af77d95d0fab8d75e79a023a8fcaadb889ae9352489259da961be3dcc"
     },
     {
       "path": "warehouse/db/places/metadata/.version-hint.text.crc",
       "sha256": "c52c21698770cda3ff97758c94f204e078e5ba5a308efba648448d0477e24349"
     },
     {
-      "path": "warehouse/db/places/metadata/13a04a11-1caa-410e-b356-6838c5560607-m0.avro",
-      "sha256": "5c06d8b1f10bb884c8931fc482f711442115d135a037b56b0fa7572a8d890d57"
+      "path": "warehouse/db/places/metadata/0a544559-acc9-4d5d-8058-854ad747b8e5-m0.avro",
+      "sha256": "62a6770608688b222e00bb88242e480822fa49d992159db5791885f4fe13055c"
     },
     {
-      "path": "warehouse/db/places/metadata/snap-2375026653812530753-1-13a04a11-1caa-410e-b356-6838c5560607.avro",
-      "sha256": "bebacd5c2fa79bc270463c60dcdd423da6ef7cdb8f64c62dbbd4a8d8be8d3193"
+      "path": "warehouse/db/places/metadata/snap-2831996250461087805-1-0a544559-acc9-4d5d-8058-854ad747b8e5.avro",
+      "sha256": "ed3abc0bb150d5d37d3d3c9a069583233488a1b764792afe064d6d2df47f4e10"
     },
     {
       "path": "warehouse/db/places/metadata/v1.metadata.json",
-      "sha256": "d166e5cb440486bf7f1c9b0240c45eff854d35988fd1760b369467b74b06efa9"
+      "sha256": "cca819d4fc41e28c3e1171429d85d5f1cc5d5666988dc8f78198acbbf29a9509"
     },
     {
       "path": "warehouse/db/places/metadata/version-hint.text",
@@ -56,13 +56,13 @@
   "metadataPath": "warehouse/db/places/metadata/v1.metadata.json",
   "snapshots": [
     {
-      "asOfTimestampMs": 1781545556823,
+      "asOfTimestampMs": 1793032930571,
       "expectedFiles": [
-        "warehouse/db/places/data/00000-0-1644bc86-e2a2-41ba-8b4c-c133ec94c5a6-0-00001.parquet",
-        "warehouse/db/places/data/00001-1-1644bc86-e2a2-41ba-8b4c-c133ec94c5a6-0-00001.parquet"
+        "warehouse/db/places/data/00000-0-7bb00a1b-7c00-4cb7-8782-211fba543f07-0-00001.parquet",
+        "warehouse/db/places/data/00001-1-7bb00a1b-7c00-4cb7-8782-211fba543f07-0-00001.parquet"
       ],
       "expectedRecordCount": 3,
-      "snapshotId": 2375026653812530753
+      "snapshotId": 2831996250461087805
     }
   ]
 }
