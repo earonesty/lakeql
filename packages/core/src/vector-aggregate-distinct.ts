@@ -1,10 +1,13 @@
+import {
+  jsonItemBytes,
+  jsonListBytes,
+  jsonListBytesAfterAppend,
+  unmeasuredMemoryBytes,
+} from "./aggregate-memory.js";
 import { LakeqlError } from "./errors.js";
-import { jsonSafeValue } from "./evaluator.js";
-import { stableStringify } from "./manifest.js";
 import type { QueryBudget } from "./query.js";
 import type { VectorAggregateValue } from "./vector-aggregate.js";
 
-const textEncoder = new TextEncoder();
 const sortedRunMergeMinValues = 1024;
 const sortedRunSampleValues = 1024;
 const sortedRunMinSampleDistinctRatio = 0.5;
@@ -33,9 +36,13 @@ export function addDistinctValue(
   budget?: QueryBudget,
 ): void {
   const values = mutableDistinctValues(state);
+  measureDistinctBytes(state, budget);
   if (values.has(key)) return;
   values.add(key);
-  state.memoryBytes = distinctMemoryBytes(state.values, budget);
+  state.memoryBytes =
+    budget?.maxMemoryBytes === undefined
+      ? unmeasuredMemoryBytes
+      : jsonListBytesAfterAppend(state.memoryBytes, values.size - 1, jsonItemBytes(key));
   enforceDistinctBudget(state, budget);
 }
 
@@ -150,8 +157,8 @@ export function cloneDistinctAggregateState(
 }
 
 export function distinctMemoryBytes(values: Set<string>, budget?: QueryBudget): number {
-  if (budget?.maxMemoryBytes === undefined && values.size !== 0) return 0;
-  return textEncoder.encode(stableStringify(jsonSafeValue([...values]))).byteLength;
+  if (budget?.maxMemoryBytes === undefined && values.size !== 0) return unmeasuredMemoryBytes;
+  return jsonListBytes(values);
 }
 
 function mutableDistinctValues(state: VectorDistinctAggregateState): Set<string> {
@@ -159,15 +166,18 @@ function mutableDistinctValues(state: VectorDistinctAggregateState): Set<string>
     state.values = new Set(distinctSnapshotValues(state));
     delete state.sortedValues;
     delete state.sortedRuns;
+    state.memoryBytes = unmeasuredMemoryBytes;
   }
   return state.values;
 }
 
+function measureDistinctBytes(state: VectorDistinctAggregateState, budget?: QueryBudget): void {
+  if (budget?.maxMemoryBytes === undefined || state.memoryBytes !== unmeasuredMemoryBytes) return;
+  state.memoryBytes = jsonListBytes(mutableDistinctValues(state));
+}
+
 function enforceDistinctBudget(state: VectorDistinctAggregateState, budget?: QueryBudget): void {
-  if (budget?.maxMemoryBytes !== undefined) {
-    mutableDistinctValues(state);
-    state.memoryBytes = distinctMemoryBytes(state.values, budget);
-  }
+  measureDistinctBytes(state, budget);
   const valueCount = distinctValueCount(state);
   if (budget?.maxBufferedRows !== undefined && valueCount > budget.maxBufferedRows) {
     throwBudget("buffered rows", budget.maxBufferedRows, valueCount);
