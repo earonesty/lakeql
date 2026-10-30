@@ -1,3 +1,9 @@
+import {
+  jsonItemBytes,
+  jsonListBytes,
+  jsonListBytesAfterAppend,
+  unmeasuredMemoryBytes,
+} from "./aggregate-memory.js";
 import { continuousQuantile, requiredQuantile } from "./aggregate-quantile.js";
 import {
   type Batch,
@@ -19,7 +25,6 @@ import {
   cloneDistinctAggregateState,
   createDistinctAggregateState,
   distinctKey,
-  distinctMemoryBytes,
   distinctValueCount,
   enforceDistinctStateBudget,
   mergeDistinctSortedValues,
@@ -696,8 +701,9 @@ function addMedianValue(
   value: number | string,
   budget?: QueryBudget,
 ): void {
+  measureBufferedBytes(state, budget);
   state.values.push(value);
-  state.memoryBytes = medianMemoryBytes(state, budget);
+  state.memoryBytes = bufferedBytesAfterPush(state, value, budget);
   enforceMedianBudget(state, budget);
 }
 
@@ -724,7 +730,7 @@ function enforceMedianBudget(
   state: Extract<VectorAggregateState, { op: "median" }>,
   budget?: QueryBudget,
 ): void {
-  if (budget?.maxMemoryBytes !== undefined) state.memoryBytes = medianMemoryBytes(state, budget);
+  measureBufferedBytes(state, budget);
   if (budget?.maxBufferedRows !== undefined && state.values.length > budget.maxBufferedRows) {
     throwBudget("buffered rows", budget.maxBufferedRows, state.values.length);
   }
@@ -733,12 +739,22 @@ function enforceMedianBudget(
   }
 }
 
-function medianMemoryBytes(
-  state: Extract<VectorAggregateState, { op: "median" }>,
+type BufferedListState = Extract<VectorAggregateState, { op: "median" | "quantile" }>;
+
+/** The list's size after pushing `value` onto a list measured before the push. */
+function bufferedBytesAfterPush(
+  state: BufferedListState,
+  value: number | string,
   budget?: QueryBudget,
 ): number {
-  if (budget?.maxMemoryBytes === undefined && state.values.length !== 0) return 0;
-  return new TextEncoder().encode(JSON.stringify(state.values)).byteLength;
+  if (budget?.maxMemoryBytes === undefined) return unmeasuredMemoryBytes;
+  return jsonListBytesAfterAppend(state.memoryBytes, state.values.length - 1, jsonItemBytes(value));
+}
+
+function measureBufferedBytes(state: BufferedListState, budget?: QueryBudget): void {
+  if (budget?.maxMemoryBytes !== undefined && state.memoryBytes === unmeasuredMemoryBytes) {
+    state.memoryBytes = jsonListBytes(state.values);
+  }
 }
 
 function updateQuantile(
@@ -756,8 +772,9 @@ function addQuantileValue(
   value: number,
   budget?: QueryBudget,
 ): void {
+  measureBufferedBytes(state, budget);
   state.values.push(value);
-  state.memoryBytes = quantileMemoryBytes(state, budget);
+  state.memoryBytes = bufferedBytesAfterPush(state, value, budget);
   enforceQuantileBudget(state, budget);
 }
 
@@ -769,21 +786,13 @@ function enforceQuantileBudget(
   state: Extract<VectorAggregateState, { op: "quantile" }>,
   budget?: QueryBudget,
 ): void {
-  if (budget?.maxMemoryBytes !== undefined) state.memoryBytes = quantileMemoryBytes(state, budget);
+  measureBufferedBytes(state, budget);
   if (budget?.maxBufferedRows !== undefined && state.values.length > budget.maxBufferedRows) {
     throwBudget("buffered rows", budget.maxBufferedRows, state.values.length);
   }
   if (budget?.maxMemoryBytes !== undefined && state.memoryBytes > budget.maxMemoryBytes) {
     throwBudget("operator memory bytes", budget.maxMemoryBytes, state.memoryBytes);
   }
-}
-
-function quantileMemoryBytes(
-  state: Extract<VectorAggregateState, { op: "quantile" }>,
-  budget?: QueryBudget,
-): number {
-  if (budget?.maxMemoryBytes === undefined && state.values.length !== 0) return 0;
-  return new TextEncoder().encode(JSON.stringify(state.values)).byteLength;
 }
 
 function createModeAggregateState(): Extract<VectorAggregateState, { op: "mode" }> {
@@ -805,10 +814,18 @@ function addModeEntry(
   count: number,
   budget?: QueryBudget,
 ): void {
+  measureModeBytes(state, budget);
   const existing = state.values.get(key);
-  if (existing === undefined) state.values.set(key, { value, count });
-  else existing.count += count;
-  state.memoryBytes = modeMemoryBytes(state, budget);
+  if (existing !== undefined) {
+    existing.count += count;
+    enforceModeBudget(state, budget);
+    return;
+  }
+  state.values.set(key, { value, count });
+  state.memoryBytes =
+    budget?.maxMemoryBytes === undefined
+      ? unmeasuredMemoryBytes
+      : jsonListBytesAfterAppend(state.memoryBytes, state.values.size - 1, jsonItemBytes(key));
   enforceModeBudget(state, budget);
 }
 
@@ -824,7 +841,7 @@ function enforceModeBudget(
   state: Extract<VectorAggregateState, { op: "mode" }>,
   budget?: QueryBudget,
 ): void {
-  if (budget?.maxMemoryBytes !== undefined) state.memoryBytes = modeMemoryBytes(state, budget);
+  measureModeBytes(state, budget);
   if (budget?.maxBufferedRows !== undefined && state.values.size > budget.maxBufferedRows) {
     throwBudget("buffered rows", budget.maxBufferedRows, state.values.size);
   }
@@ -833,11 +850,13 @@ function enforceModeBudget(
   }
 }
 
-function modeMemoryBytes(
+function measureModeBytes(
   state: Extract<VectorAggregateState, { op: "mode" }>,
   budget?: QueryBudget,
-): number {
-  return distinctMemoryBytes(new Set(state.values.keys()), budget);
+): void {
+  if (budget?.maxMemoryBytes !== undefined && state.memoryBytes === unmeasuredMemoryBytes) {
+    state.memoryBytes = jsonListBytes(state.values.keys());
+  }
 }
 
 function throwBudget(metric: string, limit: number, actual: number): never {
