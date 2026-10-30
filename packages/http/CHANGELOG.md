@@ -1,5 +1,12 @@
 # lakeql-http
 
+## 0.0.13
+
+### Patch Changes
+
+- Updated dependencies [31f73ed]
+  - lakeql-core@0.5.3
+
 ## 0.0.12
 
 ### Patch Changes
