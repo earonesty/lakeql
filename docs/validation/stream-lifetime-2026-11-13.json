@@ -19,5 +19,11 @@
     "This closes a resource lifetime gap; it does not newly admit JSON/CSV string or encoded-byte allocations.",
     "Consumer-retained stream chunks remain outside explicit owned-output accounting.",
     "Fault-injected encoding tests use real MemoryScope lifetimes with synthetic row producers; broader suites include existing real Parquet/HTTP/Worker fixtures."
-  ]
+  ],
+  "outputExtentPlanning": {
+    "finding": "serializedValueBytes describes stableStringify(jsonSafeValue), not stream JSON.stringify output. Non-finite numbers and prototype-named keys differ; it cannot be reused blindly for output-buffer admission.",
+    "change": "Added internal jsonOutputUtf8Bytes extent calculator matching actual JSON output semantics for supported immutable values, without constructing the cloned JSON value tree or complete serialized string/buffer. Cycles and custom toJSON functions are rejected.",
+    "validation": "23 focused tests compare actual JSON.stringify/jsonSafeValue/TextEncoder output, including Unicode, surrogate pairs/lone surrogates, escaping, binary, non-finite numbers, bigint, sparse arrays, undefined/function/symbol omission, timestamp/interval values, and shared references. Build, lint, and typecheck pass.",
+    "remaining": "Not wired into stream admission yet. Scalar formatting and traversal state still allocate; cloned-tree/string reservations, queue handoff ownership and CSV planning remain required. Stateful accessors are outside the immutable-input planning contract."
+  }
 }
