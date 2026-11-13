@@ -1,10 +1,17 @@
 // Reproduce the extreme INT96 fixture using Spark 3.4.3's documented arithmetic.
 
+import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { DuckDBInstance } from "@duckdb/node-api";
-import { MemoryBudget, MemoryScope, memoryStore } from "../packages/core/dist/index.js";
+import {
+  MemoryBudget,
+  MemoryScope,
+  memoryStore,
+  timestampEpochForUnit,
+} from "../packages/core/dist/index.js";
 import { lakeqlParquetCompressors } from "../packages/parquet/dist/compressors.js";
+import { createParquetLake, readParquetObjects } from "../packages/parquet/dist/index.js";
 import { preparePageWindow, readPreparedPageBody } from "../packages/parquet/dist/page-window.js";
 import { asyncBufferFromStore } from "../packages/parquet/dist/store-buffer.js";
 import { decompressPage } from "../packages/parquet/node_modules/hyparquet/src/datapage.js";
@@ -80,6 +87,48 @@ try {
 } finally {
   connection.closeSync();
 }
+const expectedMicros = [...documented.slice(0, 4), null, documented[4]].map((value) =>
+  value === null ? null : String(value),
+);
+const mismatches = (actual) => {
+  assert.equal(actual.length, expectedMicros.length, "fixture row count");
+  return actual.flatMap((value, index) =>
+    value === expectedMicros[index]
+      ? []
+      : [{ row: index, expected: expectedMicros[index], actual: value }],
+  );
+};
+const micros = (rows) =>
+  rows.map(({ a }) => (a === null ? null : String(timestampEpochForUnit(a, "micros"))));
+const publicMicros = micros(await readParquetObjects(store, "fixture"));
+const pool = new MemoryBudget(64 * 1024 * 1024);
+const lake = createParquetLake({ store, memoryPool: pool, scanRangeCache: { maxBytes: 0 } });
+const owned = await lake.path("fixture").batchSize(2).run().toOwnedArray();
+let ownedMicros;
+try {
+  ownedMicros = micros(owned.value);
+  assert.deepEqual(
+    owned.value.map(({ a }) => (a === null ? null : timestampEpochForUnit(a, "nanos"))),
+    expectedMicros.map((value) => (value === null ? null : BigInt(value) * 1000n)),
+    "owned timestamp nanoseconds must be exact, with no hidden sub-microsecond remainder",
+  );
+} finally {
+  owned.release();
+}
+assert.equal(pool.usedBytes, 0, "owned output cleanup");
+const comparisons = {
+  public: { micros: publicMicros, mismatches: mismatches(publicMicros) },
+  owned: { micros: ownedMicros, mismatches: mismatches(ownedMicros) },
+  duckdb: {
+    micros: duckdb.map(({ micros }) => micros),
+    mismatches: mismatches(duckdb.map(({ micros }) => micros)),
+  },
+};
+assert.deepEqual(
+  comparisons.owned.mismatches,
+  [],
+  "owned reader must preserve documented microseconds",
+);
 const report = {
   fixture,
   sha256: createHash("sha256").update(bytes).digest("hex"),
@@ -90,11 +139,14 @@ const report = {
   records,
   duckdbVersion: version,
   duckdb,
-  conclusion:
-    "All raw dictionary records exactly match Spark encoding and recover documented microseconds. DuckDB differs on the extreme value; do not use it as the oracle for that value.",
+  expectedMicros,
+  comparisons,
+  ownedPeakAdmittedBytes: pool.peakBytes,
+  ownedRemainingBytes: pool.usedBytes,
+  conclusion: `Raw dictionary arithmetic matches all documented values. Row mismatches against documented microseconds: public=${comparisons.public.mismatches.length}, owned=${comparisons.owned.mismatches.length}, DuckDB=${comparisons.duckdb.mismatches.length}.`,
 };
 writeFileSync(
-  "docs/benchmarks/int96-spark-oracle-2026-11-13.json",
+  "docs/benchmarks/int96-reader-oracle-2026-11-13.json",
   `${JSON.stringify(report, null, 2)}\n`,
 );
 console.log(report.conclusion);

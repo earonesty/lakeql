@@ -94,5 +94,12 @@
     ],
     "typecheck": "passed",
     "testSha256": "e2f4cf7a19ebc4fc346a4e2a414b0114d4f518fd17ed708989b1e7d72abccb0c"
+  },
+  "int96Followup": {
+    "evidence": "../benchmarks/int96-reader-oracle-2026-11-13.json",
+    "oracleScriptSha256": "43a28c1c47ebce555a892aab5d3fdc0b6afd530ec22d5d8f8234dde6df7c522f",
+    "result": "Raw dictionary bytes reproduce documented Spark signed-microsecond writer arithmetic. Owned output matches all six rows including null and exact nanoseconds; public and DuckDB each disagree at row 5. Owned output releases to zero.",
+    "rootCause": "Upstream readPlainInt96 combines a signed low 64-bit word with the high word, allowing sign extension to erase the day word before timestamp parsing. A custom scalar timestamp parser alone cannot recover it.",
+    "remaining": "Share the correct physical INT96 decoding contract with public and fallback readers; preserve ordinary Julian interpretation and Spark auto selection. No decoder fix or conformance exemption applied."
   }
 }
