@@ -31,22 +31,21 @@ under verified 64/128 MiB V8 heap settings; this distinguishes runtime GC policy
 from a persistent leak, but does not cap external backing or prove production
 Cloudflare total-memory safety. See the constrained-runtime section below.
 
-Current verification checkpoint (November 13, 2026): the latest default suite
-passes **2,670 tests** (598 skipped), and the expanded Worker suite passes **49**.
-The full distribution build, package-install smoke check, compatibility evidence
-check, tracked-file size check, typecheck and lint pass. The independent
-reference suite now passes **104 tests** after CASE, scalar-decimal and owned top-k
-integration. Coverage and fixture reproducibility also pass on this checkpoint; every gate still
-needs evaluation against the eventual final revision. No release-readiness
-or whole-runtime memory claim follows from these checks.
+Current verification checkpoint: commit `330e85b` (November 13, 2026) passes
+**2,791 default tests** (605 skipped), **53 Worker tests**, and **104 reference
+tests**, plus TypeScript build, typecheck and lint. These counts are recorded in
+`docs/validation/stream-lifetime-2026-11-13.json`. Distribution/package-install,
+compatibility, coverage, fixture reproducibility and tracked-file size gates passed
+at earlier documented revisions; they still require final-revision reruns.
 
-Expanded external conformance now reports **467 passed, 18 failed, one skipped**.
-The corpus still exercises all 243 files through both readers: 235 ordinary cases
-per reader and eight documented malformed cases with explicit rejection assertions
-for both readers. This replaces sixteen incorrect success expectations with eight
-combined negative tests; it does not skip the remaining failures. The value-checked scalar decimal extension
-subsequently fixed two cases; the remaining eighteen still fail.
-The current inventory is `docs/benchmarks/conformance-owned-2026-11-13.json`.
+The latest full external conformance checkpoint reports **475 passed, 18 failed,
+one skipped**. It checks both reader paths and compares owned values with public
+output, in addition to cardinality and cleanup. Eleven additional differential
+findings were fixed or independently validated as representation differences;
+the original eighteen failures remain. See
+`docs/validation/conformance-value-parity-2026-11-13.json` for the chronological
+results and independent INT96/Date evidence. No release-readiness or whole-runtime
+memory claim follows from the passing suites.
 
 Supported public owned nested reads now use admitted schema planning, bounded
 column blocks, batch-level assembly and shared decoded-page/dictionary caches.
@@ -93,13 +92,6 @@ complete runtime validation. The earlier largest indexed fixture retained about
 figures are neither current peak measurements nor portable bounds. Releasing
 ownership does not force garbage collection.
 
-Build, typecheck, lint, package-install, compatibility, fixture reproducibility and
-tracked-file size checks have passed at documented checkpoints; changes since each
-checkpoint still require final acceptance reruns. Expanded external conformance remains unresolved (18 failures across the two reader paths).
-The borrowed suite checks decode completion; owned cases also check cardinality and
-cleanup. Targeted fixtures separately verify values. Historical struct-guard census results remain below for context.
-These checks do not prove the outstanding whole-query/whole-Worker contract.
-
 Owned scan buffers and scoped top-k/projection paths propagate allocation budgets.
 Supported public columnar grouped and ungrouped aggregates now use owned continuation
 state, independently admitted checkpoints and result storage. The current public
@@ -136,6 +128,7 @@ route uses those paths. Closing the gaps remains required under M1/M2.
 | Predicate masks and scalar temporaries | Scoped mask backing, per-row/per-candidate scalar scopes, fixed bigint/timestamp fast-path workspace | Consume/reuse private masks; release scratch at last consumer | Predicate/CASE/expression/bigint/timestamp memory tests; compiled plan containers, unscoped conversion callers and runtime overhead remain open |
 | Sort/top-k replacements and row buffers | Incremental buffer accounting and scoped owned selection/projection workspaces | Eviction/replacement release; result transfer | `buffer-memory.test.ts`, `query-memory.test.ts`, `serialized-size.test.ts`, `vector-top-k-memory.test.ts`; full row fallback and replacement-overlap matrix still needs final review |
 | Window indexes and execution state | Charged shared boundary/index metadata and pressure-sensitive alternatives | Operator/workspace teardown | Window memory/reference/scaling evidence below; whole-window lifecycle coverage remains separate and incomplete |
+| JSON/NDJSON stream output | Exact byte extent admitted before encoding; direct writer avoids cloned value tree and whole JSON string | Queued owner releases on next pull, cancellation or failure; consumer-retained chunks leave library ownership | `json-output-encoding.test.ts`, `json-output-stream.test.ts`, real HTTP/native-R2 fixtures; CSV, scalar formatting and traversal workspace remain open. CPU tradeoffs recorded in `stream-lifetime-2026-11-13.json` |
 | Returned results and retained cache/output | Owned APIs transfer independent handles; plain Row[] APIs end library ownership at return | Explicit owner release for owned results; caller/GC lifetime for ordinary arrays | `query-owned-output.test.ts` and cache-pinning fixtures; caller-retained ordinary results and total process memory cannot be inferred from pool usage |
 
 CASE plan admission is now integrated into the supported owned aggregate route.

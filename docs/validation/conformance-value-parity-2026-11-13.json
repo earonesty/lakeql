@@ -157,5 +157,24 @@
       "scripts/check-package-install.mjs"
     ],
     "remaining": "All eleven additional differential disagreements are resolved or independently validated representation differences. The original eighteen failures remain, along with the broader memory audit requirements."
+  },
+  "currentRevalidation": {
+    "commit": "330e85b",
+    "command": "pnpm test:conformance",
+    "passed": 475,
+    "failed": 18,
+    "skipped": 1,
+    "failedFixturesBothReaders": [
+      "data/alp_extended.zstd.parquet",
+      "data/bson.parquet",
+      "data/large_string_map.brotli.parquet",
+      "data/nation.dict-malformed.parquet",
+      "shredded_variant/case-026.parquet",
+      "shredded_variant/case-027.parquet",
+      "shredded_variant/case-028.parquet",
+      "shredded_variant/case-029.parquet",
+      "shredded_variant/case-030.parquet"
+    ],
+    "conclusion": "The release gate still fails. Recent JSON stream and string sizing changes introduce no additional failures in this corpus. No exclusions or assertions changed."
   }
 }
