@@ -1,0 +1,68 @@
+{
+  "description": "Full external corpus gate now checks public row count against metadata and compares every successfully drained owned row with the public reader. Both readers execute independently before parity comparison. No failures are skipped or reclassified.",
+  "testSha256": "3189bc6c20f91c2b11a50f9184e793c5c36e6b0e8573bd31556e36493d47aec4",
+  "result": {
+    "passed": 456,
+    "failed": 29,
+    "skipped": 1,
+    "previousFailures": 18,
+    "newParityDisagreements": 11
+  },
+  "disagreements": [
+    {
+      "fixture": "data/int96_from_spark.parquet",
+      "firstDisagreement": "AssertionError: row 5 of data/int96_from_spark.parquet: expected { a: TimestampValue{ \u2026(3) } } to deeply equal { a: TimestampValue{ \u2026(3) } }"
+    },
+    {
+      "fixture": "data/json.parquet",
+      "firstDisagreement": "AssertionError: row 0 of data/json.parquet: expected { json_field: { a: 1, b: null } } to deeply equal { json_field: { a: 1 } }"
+    },
+    {
+      "fixture": "data/map_no_value.parquet",
+      "firstDisagreement": "AssertionError: row 0 of data/map_no_value.parquet: expected { my_map: { '1': null, \u2026(2) }, \u2026(2) } to deeply equal { my_map: { '1': null, \u2026(2) }, \u2026(2) }"
+    },
+    {
+      "fixture": "data/repeated_primitive_no_list.parquet",
+      "firstDisagreement": "AssertionError: row 1 of data/repeated_primitive_no_list.parquet: expected { Int32_list: [], \u2026(2) } to deeply equal { Int32_list: null, \u2026(2) }"
+    },
+    {
+      "fixture": "shredded_variant/case-018.parquet",
+      "firstDisagreement": "AssertionError: row 0 of shredded_variant/case-018.parquet: expected { id: 1, var: TimestampValue{ \u2026(3) } } to deeply equal { Object (id, var) }"
+    },
+    {
+      "fixture": "shredded_variant/case-019.parquet",
+      "firstDisagreement": "AssertionError: row 0 of shredded_variant/case-019.parquet: expected { id: 1, var: TimestampValue{ \u2026(3) } } to deeply equal { Object (id, var) }"
+    },
+    {
+      "fixture": "shredded_variant/case-062.parquet",
+      "firstDisagreement": "AssertionError: row 0 of shredded_variant/case-062.parquet: expected { id: 1, var: TimestampValue{ \u2026(3) } } to deeply equal { Object (id, var) }"
+    },
+    {
+      "fixture": "shredded_variant/case-063.parquet",
+      "firstDisagreement": "AssertionError: row 0 of shredded_variant/case-063.parquet: expected { id: 1, var: TimestampValue{ \u2026(3) } } to deeply equal { Object (id, var) }"
+    },
+    {
+      "fixture": "shredded_variant/case-104.parquet",
+      "firstDisagreement": "AssertionError: row 0 of shredded_variant/case-104.parquet: expected { id: 1, var: TimestampValue{ \u2026(3) } } to deeply equal { Object (id, var) }"
+    },
+    {
+      "fixture": "shredded_variant/case-105.parquet",
+      "firstDisagreement": "AssertionError: row 0 of shredded_variant/case-105.parquet: expected { id: 1, var: TimestampValue{ \u2026(3) } } to deeply equal { Object (id, var) }"
+    },
+    {
+      "fixture": "shredded_variant/case-134.parquet",
+      "firstDisagreement": "AssertionError: row 0 of shredded_variant/case-134.parquet: expected { id: 1, var: { a: null, \u2026(2) } } to deeply equal { id: 1, var: { \u2026(3) } }"
+    }
+  ],
+  "limitations": [
+    "Public reader is a differential comparator, not an independent semantic oracle. Disagreements require fixture/specification or independent-engine validation before choosing a fix.",
+    "Test-side collected rows and public oracle allocations are outside the owned pool. Pool assertions prove tracked cleanup, not process memory.",
+    "Core struct vectors intentionally unify field names and fill missing fields with null; applying that contract to JSON/variant objects can change object shape.",
+    "Public INT96 conversion and owned wide timestamp decoding disagree for a far-future Spark value; do not truncate the owned value merely to match the public reader."
+  ],
+  "nextWork": [
+    "Establish canonical public/query value contracts for dynamic JSON/variant objects versus fixed-schema structs.",
+    "Validate timestamp and legacy repeated/map disagreements against independent fixture expectations.",
+    "Resolve original unsupported encoding/codec and variant failures; release gate remains failing."
+  ]
+}

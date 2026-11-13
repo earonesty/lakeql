@@ -40,7 +40,11 @@ describeExternal("apache/parquet-testing conformance", () => {
     await store.put(objectPath, readFileSync(file));
 
     const rows = await readParquetObjects(store, objectPath);
-    expect(Array.isArray(rows)).toBe(true);
+    const bytes = readFileSync(file);
+    const metadata = parquetMetadata(
+      bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+    );
+    expect(rows).toHaveLength(Number(metadata.num_rows));
   });
   it.each(readableFiles)("streams %s through the owned query reader", async (file) => {
     const store = memoryStore();
@@ -59,11 +63,19 @@ describeExternal("apache/parquet-testing conformance", () => {
       const metadata = parquetMetadata(
         bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
       );
+      // Collected test rows and the public oracle are outside the owned pool:
+      // this checks value parity, not whole-process memory consumption.
+      const actual: unknown[] = [];
       for await (const row of lake.path(objectPath).batchSize(128).run().rows()) {
         expect(row).not.toBeNull();
+        actual.push(row);
         count++;
       }
       expect(count).toBe(Number(metadata.num_rows));
+      const expected = await readParquetObjects(store, objectPath);
+      expect(expected).toHaveLength(Number(metadata.num_rows));
+      for (let index = 0; index < actual.length; index++)
+        expect(actual[index], `row ${index} of ${objectPath}`).toEqual(expected[index]);
     } finally {
       expect(pool.usedBytes).toBe(0);
       expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
