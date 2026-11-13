@@ -344,3 +344,26 @@ it.each([
   scope.dispose();
   expect(scope.budget.usedBytes).toBe(0);
 });
+
+it.each([
+  false,
+  true,
+])("uses the same stable mode winner for output and allocation, long first=%s", (longFirst) => {
+  const text = "é😀".repeat(1024);
+  const values = longFirst ? [text, "x"] : ["x", text];
+  const states = createVectorAggregateStates({ result: { op: "mode" } });
+  const state = states.result;
+  if (!state) throw Error("Missing state");
+  for (const value of [...values, ...values]) updateVectorAggregateStateValue(state, value);
+  const plan = aggregateFinalizeAllocation(states);
+  expect(plan.scratchBytes).toBe(0);
+  const scope = new MemoryScope(new MemoryBudget(plan.outputBytes));
+  expect(finalizeVectorAggregateStates(states, scope)).toEqual({ result: values[0] });
+  expect(scope.budget.usedBytes).toBe(plan.outputBytes);
+  scope.dispose();
+  expect(scope.budget.usedBytes).toBe(0);
+  const insufficient = new MemoryScope(new MemoryBudget(plan.outputBytes - 1));
+  expect(() => finalizeVectorAggregateStates(states, insufficient)).toThrow(/budget/i);
+  insufficient.dispose();
+  expect(insufficient.budget.usedBytes).toBe(0);
+});

@@ -1,0 +1,15 @@
+{
+  "finding": "Cached task planning used borrowed metadata despite an available query allocation budget",
+  "change": "Use owned full-metadata loader for budgeted cached planning on stores with owned range reads, retain through range summarization, release on every exit; preserve cache-hit/miss statistics",
+  "fixture": "Written Parquet with three row groups; first warm an ordinary metadata cache, then test budgeted planning",
+  "validation": "Rebuilt full coverage suite: 2706 passed, 598 skipped; 51 Worker and 104 reference tests passed. Lint, typecheck, and TypeScript build passed. Coverage: 91.37% statements, 85.12% branches, 95.67% functions, 93.51% lines.",
+  "remaining": [
+    "Returned task-plan and schema descriptor structures require complete allocation coverage",
+    "Legacy stores without owned range reads retain borrowed metadata compatibility and are not covered by this allocation guarantee",
+    "Full memory-pressure refresh"
+  ],
+  "schemaDiscovery": "Budgeted cached multi-file schema discovery now owns metadata through descriptor extraction; indexed mode keeps streaming footer source.",
+  "compatibility": "The first full regression run found eight legacy-store failures. The owned metadata path now requires the same owned-read capability as indexed planning; existing public task and cache tests exercise the borrowed fallback.",
+  "cloudEvidence": "../benchmarks/cloud-cached-metadata-admitted-2026-11-13.json",
+  "releaseStatus": "External conformance remains failing; this checkpoint does not establish release readiness or a whole-Worker memory cap."
+}

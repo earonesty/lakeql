@@ -1,5 +1,6 @@
 import { aggregateFinalizeAllocation } from "./aggregate-finalize-allocation.js";
 import { bufferedAppendBytes, jsonListBytes, unmeasuredMemoryBytes } from "./aggregate-memory.js";
+import { finalizeMode } from "./aggregate-mode.js";
 import { continuousQuantile, requiredQuantile } from "./aggregate-quantile.js";
 import { aggregateRestoreAllocationBytes } from "./aggregate-restore-allocation.js";
 import { aggregateSnapshotAllocationBytes } from "./aggregate-snapshot-allocation.js";
@@ -900,14 +901,6 @@ export function addModeEntry(
   const bytes = bufferedAppendBytes(state.memoryBytes, state.values.size, key, budget);
   state.values.set(key, { value, count });
   state.memoryBytes = bytes;
-}
-
-function finalizeMode(state: Extract<VectorAggregateState, { op: "mode" }>): VectorAggregateValue {
-  let best: { value: Exclude<VectorAggregateValue, null>; count: number } | undefined;
-  for (const entry of state.values.values()) {
-    if (best === undefined || entry.count > best.count) best = entry;
-  }
-  return best?.value ?? null;
 }
 
 function enforceModeBudget(

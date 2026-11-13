@@ -65,3 +65,38 @@ it("plans independent dictionary indices and avoids validity for all-present sel
   expect(sharedGatherPlan(batch, [0, 1]).typedBytes).toBe(18);
   expect(sharedGatherPlan(batch, []).typedBytes).toBe(0);
 });
+
+it("keeps validity decisions column-specific for identical selected positions", () => {
+  const root = new MemoryBudget(4096);
+  const source = new MemoryScope(root);
+  const leftValues = source.allocate(12, "left values", () => Int32Array.of(1, 2, 3)).value;
+  const rightValues = source.allocate(12, "right values", () => Int32Array.of(4, 5, 6)).value;
+  const leftValid = source.allocate(3, "left validity", () => Uint8Array.of(1, 0, 1)).value;
+  const rightValid = source.allocate(3, "right validity", () => Uint8Array.of(0, 1, 1)).value;
+  const batch = {
+    rowCount: 3,
+    columns: {
+      left: { type: "i32" as const, values: leftValues, valid: leftValid },
+      right: { type: "i32" as const, values: rightValues, valid: rightValid },
+    },
+  };
+  const input = source.retainAllocations(batch);
+  source.dispose();
+  const positions = Uint32Array.of(0, 2);
+  const plan = sharedGatherPlan(batch, positions);
+  expect(plan.typedBytes).toBe(18);
+  const output = gatherOwnedBatch(input, positions, root.child(input.bytes + plan.typedBytes));
+  expect(output.value.columns.left?.valid).toBeUndefined();
+  expect(output.value.columns.right?.valid).toEqual(Uint8Array.of(0, 1));
+  expect(materializeBatchRows(output.value)).toEqual([
+    { left: 1, right: null },
+    { left: 3, right: 6 },
+  ]);
+  expect(output.bytes).toBe(18);
+  output.release();
+  const tight = root.child(input.bytes + plan.typedBytes - 1);
+  expect(() => gatherOwnedBatch(input, positions, tight)).toThrow(/budget/i);
+  expect(tight.usedBytes).toBe(0);
+  input.release();
+  expect(root.usedBytes).toBe(0);
+});

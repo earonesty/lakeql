@@ -39,6 +39,24 @@
       "resolution": "Shared fetchWithTimeout composes caller cancellation with timeout and preserves Request/init signal precedence",
       "validation": "Real loopback HTTP test covers cancellation via init and Request, timeout expiry, and explicit null signal override",
       "limitation": "Transport helper validated; cloud footer harness budget assumptions still need refresh before rerunning full cloud scripts"
+    },
+    {
+      "paths": [
+        "packages/core/src/aggregate-mode.ts",
+        "packages/core/src/aggregate-finalize-allocation.ts",
+        "packages/core/src/vector-aggregate.ts"
+      ],
+      "issue": "Mode winner selection duplicated between memory forecast and actual finalization",
+      "resolution": "Shared internal pure finalizer with type-only dependencies, avoiding a new runtime import cycle",
+      "validation": "143 aggregate allocation/owned-state tests pass; long/short equal-frequency ties in both encounter orders succeed at exact forecast and reject one byte below; TypeScript build passes",
+      "limitation": "Removes duplicated semantics; does not claim a runtime speedup"
+    },
+    {
+      "path": "bench/cloud-task-planning.mjs",
+      "issue": "First measured plan was reused as oracle, allowing consistent incorrect plans to pass",
+      "resolution": "Ordinary metadata reader plus independent row-group planner derives expected count/ranges before measurements; timeout composition and Content-Length validation shared with corrected methodology",
+      "validation": "All eight actual public R2 cases pass: 64/128 MiB, one/four jobs, auto/cached; both cold and warm plans match independent oracle; warm footer requests zero; cleanup zero",
+      "artifact": "docs/benchmarks/cloud-task-oracle-refresh-2026-11-13.json"
     }
   ],
   "pendingCategories": [
@@ -99,5 +117,11 @@
     "externalConformance": "Known 18 failures remain; not rerun in this checkpoint",
     "goalComplete": false
   },
-  "provenanceAction": "Clarified three historical checkpoint records and listed current mismatches without rewriting old hashes or attributing historical measurements to current source."
+  "provenanceAction": "Clarified three historical checkpoint records and listed current mismatches without rewriting old hashes or attributing historical measurements to current source.",
+  "gatherValidityReview": {
+    "finding": "Planning and construction rescan nullable selections; results are column/mask-specific, so a single batch-wide validity decision is invalid",
+    "evidence": "New adversarial test uses identical positions with one all-present column and one nullable column; exact 18-byte output forecast succeeds and one byte below rejects atomically; 3 gather-plan tests and TypeScript build pass",
+    "decision": "Keep current safe per-column scans. A future reusable per-mask plan must account for its own storage and show measured benefit; no uncharged memoization added.",
+    "status": "Performance opportunity remains; no correctness defect reproduced"
+  }
 }

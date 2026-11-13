@@ -624,7 +624,10 @@ it.each([
   }
 });
 
-it("bounds multi-file schema discovery and releases backing on success and conflicts", async () => {
+it.each([
+  "indexed",
+  "cached",
+] as const)("bounds %s multi-file schema discovery and releases backing on success and conflicts", async (mode) => {
   const store = memoryStore();
   for (const path of ["a.parquet", "b.parquet"]) {
     await writeParquet(store, path, {
@@ -634,9 +637,9 @@ it("bounds multi-file schema discovery and releases backing on success and confl
   }
   const objects = [];
   for await (const object of store.list("")) objects.push(object);
-  const adapter = new ParquetScanAdapter(store);
+  const adapter = new ParquetScanAdapter(store, { taskMetadataMode: mode });
   const expected = await adapter.planObjects(objects, {});
-  const budget = new MemoryBudget(65536);
+  const budget = new MemoryBudget(mode === "indexed" ? 65536 : 1024 * 1024);
   expect(await adapter.planObjects(objects, { memoryBudget: budget })).toEqual(expected);
   expect(budget.peakBytes).toBeGreaterThan(0);
   expect(budget.usedBytes).toBe(0);

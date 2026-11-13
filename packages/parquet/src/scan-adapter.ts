@@ -158,6 +158,22 @@ export class ParquetScanAdapter implements ScanAdapter {
         source.dispose();
       }
     }
+    if (options.memoryBudget !== undefined && file.sliceOwned !== undefined) {
+      const loaded = await readOwnedParquetMetadata(
+        path,
+        this.scanBuffer(path, file),
+        options.memoryBudget,
+        this.metadataCache,
+      );
+      try {
+        rejectUnsupportedParquetSchema(loaded.owner.value, {
+          allowValueCheckedScalarDecimals: true,
+        });
+        return parquetColumnDescriptors(loaded.owner.value, path);
+      } finally {
+        loaded.owner.release();
+      }
+    }
     const metadata = await this.metadata(path, file);
     rejectUnsupportedParquetSchema(metadata, { allowValueCheckedScalarDecimals: true });
     return parquetColumnDescriptors(metadata, path);
@@ -527,21 +543,45 @@ export class ParquetScanAdapter implements ScanAdapter {
         source.dispose();
       }
     }
-    const metadata = await this.metadata(path, file, planningReadOptions);
-    const plan = summarizePlannedRowGroups(
-      iteratePlannedRowGroups(metadata, metadata.row_groups, options.where, {
-        includeByteRanges: false,
-      }),
-    );
-    if (options.stats !== undefined) {
-      options.stats.rowGroupsTotal =
-        (options.stats.rowGroupsTotal ?? 0) + metadata.row_groups.length;
-      options.stats.rowGroupsPlanned = (options.stats.rowGroupsPlanned ?? 0) + plan.plannedCount;
-    }
-    return {
-      rowGroupCount: metadata.row_groups.length,
-      rowGroupRanges: plan.rowGroupRanges,
+    const finish = (metadata: ParquetMetadata): ScanTaskPlan => {
+      const plan = summarizePlannedRowGroups(
+        iteratePlannedRowGroups(metadata, metadata.row_groups, options.where, {
+          includeByteRanges: false,
+        }),
+      );
+      if (options.stats !== undefined) {
+        options.stats.rowGroupsTotal =
+          (options.stats.rowGroupsTotal ?? 0) + metadata.row_groups.length;
+        options.stats.rowGroupsPlanned = (options.stats.rowGroupsPlanned ?? 0) + plan.plannedCount;
+      }
+      return {
+        rowGroupCount: metadata.row_groups.length,
+        rowGroupRanges: plan.rowGroupRanges,
+      };
     };
+    if (options.memoryBudget !== undefined && file.sliceOwned !== undefined) {
+      const started = options.now?.();
+      const loaded = await readOwnedParquetMetadata(
+        path,
+        this.scanBuffer(path, file),
+        options.memoryBudget,
+        this.metadataCache,
+        options.budget?.signal === undefined ? [] : [options.budget.signal],
+      );
+      try {
+        if (options.stats) {
+          if (loaded.cached) options.stats.cacheHits++;
+          else options.stats.cacheMisses++;
+          if (started !== undefined && options.now)
+            options.stats.footerFetchMs =
+              (options.stats.footerFetchMs ?? 0) + options.now() - started;
+        }
+        return finish(loaded.owner.value);
+      } finally {
+        loaded.owner.release();
+      }
+    }
+    return finish(await this.metadata(path, file, planningReadOptions));
   }
 
   async executeWindowTasks(

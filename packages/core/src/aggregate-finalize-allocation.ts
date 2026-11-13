@@ -1,3 +1,4 @@
+import { finalizeMode } from "./aggregate-mode.js";
 import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
 import { decimalStringAllocationBytes } from "./scalar-allocation.js";
@@ -28,13 +29,9 @@ export function aggregateFinalizeAllocation(states: VectorAggregateStates): {
       case "any":
         payload = scalarBytes(state.value);
         break;
-      case "mode": {
-        let best: { value: Exclude<VectorAggregateValue, null>; count: number } | undefined;
-        for (const entry of state.values.values())
-          if (best === undefined || entry.count > best.count) best = entry;
-        payload = scalarBytes(best?.value ?? null);
+      case "mode":
+        payload = scalarBytes(finalizeMode(state));
         break;
-      }
       case "median":
         for (const value of state.values) payload = Math.max(payload, scalarBytes(value));
         scratch = state.values.length === 0 ? 0 : c.array + 2 * c.arraySlot * state.values.length;
