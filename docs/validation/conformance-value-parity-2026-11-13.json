@@ -136,5 +136,26 @@
       "buildLintTypecheck": "passed"
     },
     "tradeoff": "Dynamic map entries add explicitly admitted storage versus fixed-schema struct inference. The parser tree and replacement map storage remain conservatively charged together; this is needed to preserve member presence, not a tunable semantic choice."
+  },
+  "collectionShapeIntegration": {
+    "change": "Pinned reader recognizes key-only MAP schemas, supplies null values during assembly without constructing a synthetic value column, and distinguishes empty REPEATED leaves from null OPTIONAL values. Capability rejects absent/repeated keys and unknown second fields; key/value schema order is not assumed.",
+    "validation": {
+      "defaultPassed": 2718,
+      "defaultSkipped": 605,
+      "workerPassed": 51,
+      "referencePassed": 104,
+      "focusedAfterAdditionalSchemaTest": 7,
+      "conformancePassed": 475,
+      "conformanceFailed": 18,
+      "conformanceSkipped": 1,
+      "cleanNpmInstallRealFixtures": "passed",
+      "buildLintTypecheck": "passed, including final schema capability test"
+    },
+    "evidence": [
+      "packages/parquet/src/collection-shape-parity.test.ts",
+      "packages/parquet/src/nested-page-fixtures.test.ts",
+      "scripts/check-package-install.mjs"
+    ],
+    "remaining": "All eleven additional differential disagreements are resolved or independently validated representation differences. The original eighteen failures remain, along with the broader memory audit requirements."
   }
 }

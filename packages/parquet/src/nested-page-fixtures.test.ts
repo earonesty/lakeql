@@ -156,7 +156,7 @@ for (const { name, columns } of [
             path,
           );
           // Independently checked with DuckDB: an absent legacy REPEATED element
-          // is an empty list. Upstream assembleLists currently emits null here.
+          // is an empty list; the patched upstream assembler must agree.
           const expectedLists =
             column.type === "INT32"
               ? [[0, 1, 2, 3], [], [4], [5, 6, 7, 8]]
@@ -169,7 +169,7 @@ for (const { name, columns } of [
           expect(
             Array.from({ length: vectorLength(lists) }, (_, i) => vectorValue(lists, i)),
           ).toEqual(expectedLists);
-          expect(Array.from(reference, (value) => value ?? [])).toEqual(expectedLists);
+          expect(Array.from(reference)).toEqual(expectedLists);
           const repeated = path.at(-1);
           if (!repeated) throw Error("Missing repeated schema");
           const plan = compileNestedSchema(repeated, [path], scope);

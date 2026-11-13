@@ -1,4 +1,4 @@
-# hyparquet INT96 parser contract
+# hyparquet reader contracts
 
 `hyparquet@1.26.0.patch` preserves the unsigned low word when assembling a signed
 96-bit physical value and adds an optional `timestampFromInt96` parser. The hook
@@ -19,3 +19,10 @@ Spark microseconds, both LakeQL reader paths, and DuckDB. DuckDB is diagnostic f
 the extreme value, not the expected-value oracle. Temporal fixture tests exercise
 ordinary INT96, Spark INT96, and annotated FLBA12 timestamps. External conformance
 checks all successful public/owned rows and independent date fixture expectations.
+
+The same patch recognizes MAP schemas whose repeated key/value group contains
+only a key field. Assembly supplies null values without exposing the physical
+wrapper, while still rejecting a missing value column when the schema declares
+one. Empty unannotated REPEATED leaves become empty arrays; OPTIONAL leaves and
+optional LIST containers retain null semantics. Collection-shape fixture tests,
+the complete external corpus, and the clean npm install gate cover these rules.

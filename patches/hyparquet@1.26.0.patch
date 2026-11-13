@@ -1,3 +1,54 @@
+diff --git a/src/assemble.js b/src/assemble.js
+index 7ca6014024c18e52a22233a8e2efb8052c3a74a7..b9861cc01b231e49d05b2e0f19ec21d2c56d6773 100644
+--- a/src/assemble.js
++++ b/src/assemble.js
+@@ -83,7 +83,7 @@ export function assembleLists(output, definitionLevels, repetitionLevels, values
+       // assert(currentDepth === maxDefinitionLevel || currentDepth === repetitionPath.length - 2)
+       currentContainer.push(values[valueIndex++])
+     } else if (currentDepth === repetitionPath.length - 2) {
+-      currentContainer.push(null)
++      currentContainer.push(repetitionPath[currentDepth + 1] === 'REPEATED' ? [] : null)
+     } else {
+       currentContainer.push([])
+     }
+@@ -138,15 +138,17 @@ export function assembleNested(subcolumnData, schema, parsers, depth = 0) {
+     const mapName = schema.children[0].element.name
+ 
+     // Assemble keys and values
+-    assembleNested(subcolumnData, schema.children[0].children[0], parsers, nextDepth + 1)
+-    assembleNested(subcolumnData, schema.children[0].children[1], parsers, nextDepth + 1)
++    const keySchema = schema.children[0].children.find(child => child.element.name === 'key')
++    const valueSchema = schema.children[0].children.find(child => child.element.name === 'value')
++    assembleNested(subcolumnData, keySchema, parsers, nextDepth + 1)
++    if (valueSchema) assembleNested(subcolumnData, valueSchema, parsers, nextDepth + 1)
+ 
+     const keys = subcolumnData.get(`${path}.${mapName}.key`)
+     const values = subcolumnData.get(`${path}.${mapName}.value`)
+ 
+     if (!keys) throw new Error('parquet map column missing keys')
+-    if (!values) throw new Error('parquet map column missing values')
+-    if (keys.length !== values.length) {
++    if (valueSchema && !values) throw new Error('parquet map column missing values')
++    if (values && keys.length !== values.length) {
+       throw new Error('parquet map column key/value length mismatch')
+     }
+ 
+@@ -211,13 +213,13 @@ function assembleMaps(keys, values, depth) {
+   const out = []
+   for (let i = 0; i < keys.length; i++) {
+     if (depth) {
+-      out.push(assembleMaps(keys[i], values[i], depth - 1)) // go deeper
++      out.push(assembleMaps(keys[i], values?.[i], depth - 1)) // go deeper
+     } else {
+       if (keys[i]) {
+         /** @type {Record<string, any>} */
+         const obj = {}
+         for (let j = 0; j < keys[i].length; j++) {
+-          const value = values[i][j]
++          const value = values?.[i]?.[j]
+           obj[keys[i][j]] = value === undefined ? null : value
+         }
+         out.push(obj)
 diff --git a/src/convert.js b/src/convert.js
 index a16a55f63edd892868b1f8526365b7743bc92ac1..6d6097797d3e11d2a9a105c35ffd8029af7ae3ff 100644
 --- a/src/convert.js
@@ -23,6 +74,41 @@ index 7a513d461704772bbde225525ccf4b66aa8b486e..9961ab91923c67cac24771e95ef06faa
      const high = reader.view.getInt32(reader.offset + i * 12 + 8, true)
      values[i] = BigInt(high) << 64n | low
    }
+diff --git a/src/schema.js b/src/schema.js
+index 1dd9ae87307f5b04d89248d8ab84dc078d24bf29..3d8cd4a165224b73ae1cafb92ab64ea3ca03812f 100644
+--- a/src/schema.js
++++ b/src/schema.js
+@@ -107,7 +107,7 @@ export function getMaxDefinitionLevel(schemaPath) {
+ export function isListLike(schema) {
+   if (!schema) return false
+   if (schema.element.converted_type !== 'LIST') return false
+-  if (schema.children.length > 1) return false
++  if (schema.children.length !== 1) return false
+ 
+   const firstChild = schema.children[0]
+   if (firstChild.children.length > 1) return false
+@@ -125,17 +125,18 @@ export function isListLike(schema) {
+ export function isMapLike(schema) {
+   if (!schema) return false
+   if (schema.element.converted_type !== 'MAP') return false
+-  if (schema.children.length > 1) return false
++  if (schema.children.length !== 1) return false
+ 
+   const firstChild = schema.children[0]
+-  if (firstChild.children.length !== 2) return false
++  if (firstChild.children.length < 1 || firstChild.children.length > 2) return false
+   if (firstChild.element.repetition_type !== 'REPEATED') return false
+ 
+   const keyChild = firstChild.children.find(child => child.element.name === 'key')
+-  if (keyChild?.element.repetition_type === 'REPEATED') return false
++  if (!keyChild || keyChild.element.repetition_type === 'REPEATED') return false
+ 
+   const valueChild = firstChild.children.find(child => child.element.name === 'value')
+   if (valueChild?.element.repetition_type === 'REPEATED') return false
++  if (firstChild.children.length === 2 && !valueChild) return false
+ 
+   return true
+ }
 diff --git a/src/types.d.ts b/src/types.d.ts
 index e374278e193f7c73d18d20481eeb0d3b83eccf87..436640b4efb77de0ba10fcc250a6df00156e568e 100644
 --- a/src/types.d.ts

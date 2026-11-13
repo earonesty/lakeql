@@ -24,6 +24,11 @@ try {
     join(consumerDirectory, "int96.parquet"),
     readFileSync(join(root, "fixtures/external/parquet-testing/data/int96_from_spark.parquet")),
   );
+  for (const name of ["map_no_value.parquet", "repeated_primitive_no_list.parquet"])
+    writeFileSync(
+      join(consumerDirectory, name),
+      readFileSync(join(root, "fixtures/external/parquet-testing/data", name)),
+    );
   writeFileSync(
     join(consumerDirectory, "smoke.mjs"),
     `import { readFileSync } from "node:fs";
@@ -47,6 +52,13 @@ const rows = await readParquetObjects(store, "int96.parquet", { batchSize: 2 });
 assert.deepEqual(rows.map(({ a }) => a === null ? null : timestampEpochForUnit(a, "nanos")),
   [1704141296123456000n, 1704070800000000000n, 253402225200000000000n,
    1735599600000000000n, null, 9089380393200000000000n]);
+await store.put("map.parquet", readFileSync(new URL("map_no_value.parquet", import.meta.url)));
+const maps = await readParquetObjects(store, "map.parquet", { batchSize: 1 });
+assert.deepEqual(maps.map(({ my_map_no_v }) => my_map_no_v),
+  [[1, 2, 3], [4, 5, 6], [7, 8, 9]].map(keys => Object.fromEntries(keys.map(key => [key, null]))));
+await store.put("repeated.parquet", readFileSync(new URL("repeated_primitive_no_list.parquet", import.meta.url)));
+const repeated = await readParquetObjects(store, "repeated.parquet", { batchSize: 1 });
+assert.deepEqual(repeated.map(({ Int32_list }) => Int32_list), [[0, 1, 2, 3], [], [4], [5, 6, 7, 8]]);
 const batch = batchFromVectors({
   score: { type: "f32", values: Float32Array.of(0.25, 0.75) },
 });

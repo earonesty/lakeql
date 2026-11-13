@@ -341,3 +341,5 @@ Reuse object planning when emulated-range reads require eager fallback.
 Preserve complete INT96 physical values in public and fallback Parquet reads, sharing automatic Spark-writer interpretation with owned decoding. Bundle the pinned reader fix so clean npm installations receive the same behavior.
 
 Preserve dynamic JSON object members through vector inference, batching, gathering, and concatenation: missing keys remain absent rather than becoming null-valued struct fields. Admit JSON map storage before construction and preserve prototype-named own properties during public-row normalization.
+
+Read key-only Parquet maps as maps with null values, and preserve empty unannotated repeated fields as empty arrays across public, column, and owned readers. Keep optional nulls distinct and validate map shape before using map assembly.
