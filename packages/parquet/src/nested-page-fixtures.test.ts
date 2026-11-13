@@ -254,11 +254,12 @@ for (const name of ["json.parquet", "flba12_timestamp.parquet", "fixed_length_de
         readDataPage(bytes, header.data_page_header, decoder).dataPage,
         decoder,
       );
-      // Core struct vectors normalize missing object fields to null, as the public reader does.
+      // Scalar vectors may normalize carriers; dynamic JSON must preserve member presence.
       const expectedVector = vectorFromSource({ length: expected.length, get: (i) => expected[i] });
-      const canonical = Array.from({ length: expected.length }, (_, i) =>
-        vectorValue(expectedVector, i),
-      );
+      const canonical =
+        element.converted_type === "JSON"
+          ? expected
+          : Array.from({ length: expected.length }, (_, i) => vectorValue(expectedVector, i));
       const run = (scope: MemoryScope) => {
         const page = decodeNestedColumnPage(bytes, header, decoder, undefined, scope);
         if (!page) throw Error("Unsupported column fixture");

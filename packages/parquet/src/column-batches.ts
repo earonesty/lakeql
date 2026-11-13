@@ -183,6 +183,7 @@ export async function readParquetColumnBatch(
       metadata,
       columns,
       normalizeDecimalColumns(metadata, columns, columnValues),
+      decompressionScope,
     ),
     decompressionScope,
   );
@@ -192,6 +193,7 @@ function normalizeParquetColumnValues(
   metadata: ParquetMetadata,
   columns: readonly string[],
   columnValues: Record<string, ArrayLike<unknown>>,
+  scope?: MemoryScope,
 ): Record<string, ArrayLike<unknown>> {
   const normalized = { ...columnValues };
   const lookup = schemaPathIndex(metadata.schema);
@@ -199,7 +201,8 @@ function normalizeParquetColumnValues(
     const values = normalized[column];
     if (values === undefined) continue;
     const schema = lookup([column]).at(-1);
-    const normalize = schema === undefined ? undefined : nestedValueNormalizer(schema);
+    const normalize =
+      schema === undefined ? undefined : nestedValueNormalizer(schema, false, scope);
     if (normalize !== undefined) normalized[column] = Array.from(values, normalize);
   }
   return normalized;

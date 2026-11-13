@@ -17,8 +17,8 @@ export function convertDecodedValues(
   scope?: MemoryScope,
 ): DecodedArray {
   if (!isDecimal(columnDecoder.element)) {
+    if (columnDecoder.element.converted_type === "JSON") return convertJsonValues(values, scope);
     if (scope !== undefined) {
-      if (columnDecoder.element.converted_type === "JSON") return convertJsonValues(values, scope);
       if (
         columnDecoder.element.converted_type === undefined &&
         columnDecoder.element.logical_type?.type === "FLOAT16"

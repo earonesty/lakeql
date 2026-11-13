@@ -1,19 +1,25 @@
 import { isListLike } from "hyparquet/src/schema.js";
 import type { SchemaTree } from "hyparquet/src/types.js";
 
+import type { MemoryScope } from "lakeql-core";
+import { jsonMapObjects } from "./json-allocation.js";
+
 type Normalize = (value: unknown) => unknown;
 
 /** Preserve schema-declared maps before generic vector inference sees objects. */
 export function nestedValueNormalizer(
   schema: SchemaTree,
   repeatedHandled = false,
+  scope?: MemoryScope,
 ): Normalize | undefined {
   const element = schema.element;
   const logical = logicalTypeName(element.logical_type);
   // A decoded variant no longer has the shape of its physical shredded fields.
   if (logical === "VARIANT") return undefined;
   let normalize: Normalize | undefined;
-  if (
+  if (element.converted_type === "JSON" || logical === "JSON") {
+    normalize = (value) => jsonMapObjects(value, scope);
+  } else if (
     element.converted_type === "MAP" ||
     element.converted_type === "MAP_KEY_VALUE" ||
     logical === "MAP"
@@ -23,8 +29,9 @@ export function nestedValueNormalizer(
       : (schema.children[0]?.children ?? []);
     const key = fields.find((child) => child.element.name === "key");
     const item = fields.find((child) => child.element.name === "value");
-    const normalizeKey = key === undefined ? undefined : nestedValueNormalizer(key);
-    const normalizeItem = item === undefined ? undefined : nestedValueNormalizer(item);
+    const normalizeKey = key === undefined ? undefined : nestedValueNormalizer(key, false, scope);
+    const normalizeItem =
+      item === undefined ? undefined : nestedValueNormalizer(item, false, scope);
     normalize = (value) => {
       if (value === null || value === undefined || typeof value !== "object") return value;
       if (value instanceof Map && normalizeKey === undefined && normalizeItem === undefined)
@@ -49,12 +56,12 @@ export function nestedValueNormalizer(
   } else if (isListLike(schema)) {
     let child = schema.children[0];
     if (child?.children.length === 1) child = child.children[0];
-    const convert = child === undefined ? undefined : nestedValueNormalizer(child, true);
+    const convert = child === undefined ? undefined : nestedValueNormalizer(child, true, scope);
     if (convert !== undefined)
       normalize = (value) => (Array.isArray(value) ? value.map(convert) : value);
   } else {
     const fields = schema.children.flatMap((child) => {
-      const convert = nestedValueNormalizer(child);
+      const convert = nestedValueNormalizer(child, false, scope);
       return convert === undefined ? [] : [{ name: child.element.name, convert }];
     });
     if (fields.length > 0)

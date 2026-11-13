@@ -114,5 +114,27 @@
       "buildLintTypes": "passed"
     },
     "remaining": "Original 18 corpus failures plus JSON shape, map-without-value shape, and legacy repeated null/empty discrepancies remain. Pool accounting limitations elsewhere are unchanged."
+  },
+  "jsonObjectContract": {
+    "change": "JSON objects use dynamic map vectors rather than fixed-schema structs. A shared map builder admits map entries before construction for parsed JSON and fallback column normalization. Arrays, nulls, absent keys and explicit null fields retain their distinctions. Public decoded-row normalization defines own properties, including __proto__.",
+    "focusedValidation": "17 focused tests passed, including exact/one-byte-short JSON allocation bounds, parse failure rollback, true/ignored HTTP ranges, concurrent cold/warm cache reuse, retained output after cache eviction, repeated gather/concat, and generated nested fixtures at batch sizes 1, 3, 32.",
+    "conformance": {
+      "passed": 473,
+      "failed": 20,
+      "skipped": 1
+    },
+    "limitations": [
+      "Native JSON parser/reviver workspace remains outside the parsed-tree allocation model.",
+      "Upstream fixture writer toJson drops __proto__ before encoding. Generated readback tests exclude that key; parser and public normalizer tests explicitly exercise it independently. Writer preservation remains an open finding.",
+      "Two remaining parity disagreements: map-without-value and unannotated repeated fields. Original 18 corpus failures remain."
+    ],
+    "regressionValidation": {
+      "defaultPassed": 2712,
+      "defaultSkipped": 605,
+      "workerPassed": 51,
+      "referencePassed": 104,
+      "buildLintTypecheck": "passed"
+    },
+    "tradeoff": "Dynamic map entries add explicitly admitted storage versus fixed-schema struct inference. The parser tree and replacement map storage remain conservatively charged together; this is needed to preserve member presence, not a tunable semantic choice."
   }
 }

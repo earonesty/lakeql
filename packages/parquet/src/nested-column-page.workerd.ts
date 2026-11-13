@@ -55,7 +55,7 @@ for (const mib of [64, 128])
                   Array.from({ length: vectorLength(page.slots) }, (_, i) =>
                     vectorValue(page.slots, i),
                   ),
-                ).toEqual([{ a: 1, b: null }, { a: 1, b: null }, [1, null, 3], null]);
+                ).toEqual([{ a: 1 }, { a: 1, b: null }, [1, null, 3], null]);
                 // Retain each decoded result while all four jobs reach this point.
                 await Promise.resolve();
               } finally {

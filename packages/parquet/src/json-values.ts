@@ -1,13 +1,19 @@
 import type { DecodedArray } from "hyparquet/src/types.js";
 import { MATERIALIZATION_CHARGES as c, LakeqlError, type MemoryScope } from "lakeql-core";
-import { parseAdmittedJson } from "./json-allocation.js";
+import { parseJsonMapObjects } from "./json-allocation.js";
 
 const decoder = new TextDecoder();
 
 /** Admit text before decoding and each parsed tree before construction.
  * Failed pages release already parsed trees; successful pages retain only output.
  */
-export function convertJsonValues(values: DecodedArray, scope: MemoryScope): DecodedArray {
+export function convertJsonValues(values: DecodedArray, scope?: MemoryScope): DecodedArray {
+  if (scope === undefined)
+    return Array.from(values, (value) => {
+      if (!(value instanceof Uint8Array))
+        throw new LakeqlError("LAKEQL_PARQUET_READ_ERROR", "Invalid JSON physical value");
+      return parseJsonMapObjects(decoder.decode(value));
+    }) as DecodedArray;
   const construction = scope.childScope();
   try {
     const output = construction.allocate(
@@ -26,7 +32,7 @@ export function convertJsonValues(values: DecodedArray, scope: MemoryScope): Dec
           "JSON decoded text",
           () => decoder.decode(value),
         ).value;
-        output[index] = parseAdmittedJson(text, construction);
+        output[index] = parseJsonMapObjects(text, construction);
       } finally {
         scratch.dispose();
       }

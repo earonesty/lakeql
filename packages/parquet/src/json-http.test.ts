@@ -23,7 +23,7 @@ it.skipIf(!existsSync(fixture)).each([false, true])(
   "preserves mixed JSON over HTTP, ignored=%s",
   async (ignoreRange) => {
     const bytes = new Uint8Array(readFileSync(fixture));
-    const records = [{ a: 1, b: null }, { a: 1, b: null }, [1, null, 3], null];
+    const records = [{ a: 1 }, { a: 1, b: null }, [1, null, 3], null];
     const ranges: string[] = [];
     let active = 0;
     let peak = 0;

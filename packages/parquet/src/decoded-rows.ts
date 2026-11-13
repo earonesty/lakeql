@@ -10,7 +10,14 @@ function normalizeDecodedValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(normalizeDecodedValue);
   if (value && typeof value === "object") {
     const out: Record<string, unknown> = {};
-    for (const [key, nested] of Object.entries(value)) out[key] = normalizeDecodedValue(nested);
+    for (const [key, nested] of Object.entries(value)) {
+      Object.defineProperty(out, key, {
+        value: normalizeDecodedValue(nested),
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+    }
     return out;
   }
   return value;
