@@ -765,3 +765,54 @@ it.each([64, 128])("owns deferred top-k over native R2 with a %s MiB shared pool
   }
   expect(pool.usedBytes).toBe(0);
 });
+
+it.each([
+  64, 128,
+])("streams concurrent native R2 JSON outputs with a shared %i MiB pool", async (mib) => {
+  const bucket = (env as unknown as { MEMORY_TEST_BUCKET: R2BucketLike }).MEMORY_TEST_BUCKET;
+  const store = new R2ObjectStore(bucket);
+  const path = `json-output-${mib}.parquet`;
+  const names = ["雪😀", 'quote"line\n', null, "", "tail", "é"];
+  await writeParquet(store, path, {
+    codec: "SNAPPY",
+    rowGroupSize: [2, 2, 2],
+    columnData: [
+      { name: "id", type: "INT32", data: names.map((_, i) => i) },
+      { name: "name", type: "STRING", data: names },
+    ],
+  });
+  const pool = new MemoryBudget(mib * 1024 * 1024);
+  const lake = createParquetLake({ store, memoryPool: pool, scanRangeCache: { maxBytes: 0 } });
+  const expected = names.map((name, id) => ({ id, name }));
+  try {
+    const complete = async (format: "json" | "ndjson") => {
+      const query = lake.path(path).run();
+      const stream = format === "json" ? query.streamJson() : query.streamNdjson();
+      const text = await new Response(stream).text();
+      expect(text).toBe(
+        format === "json"
+          ? JSON.stringify(expected)
+          : expected.map((row) => `${JSON.stringify(row)}\n`).join(""),
+      );
+      expect(query.stats.rangeRequests).toBeGreaterThan(0);
+      expect(query.memoryBudget.usedBytes).toBe(0);
+    };
+    const cancel = async () => {
+      const query = lake.path(path).run();
+      const reader = query.streamNdjson().getReader();
+      const first = await reader.read();
+      expect(new TextDecoder().decode(first.value)).toBe(`${JSON.stringify(expected[0])}\n`);
+      await reader.cancel();
+      expect(query.memoryBudget.usedBytes).toBe(0);
+    };
+    // Repeat to exercise metadata reuse while a peer cancels its row producer.
+    for (let round = 0; round < 2; round++) {
+      await Promise.all([complete("json"), complete("ndjson"), complete("json"), cancel()]);
+      expect(pool.usedBytes).toBe(0);
+    }
+    expect(pool.peakBytes).toBeGreaterThan(0);
+    expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
+  } finally {
+    await store.delete(path);
+  }
+});

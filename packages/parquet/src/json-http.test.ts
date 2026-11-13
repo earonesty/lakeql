@@ -86,6 +86,30 @@ it.skipIf(!existsSync(fixture)).each([false, true])(
         else expect(dataReads.length).toBeGreaterThan(0);
         expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
       }
+      cache.deleteWhere(() => true);
+      for (const round of ["cold", "warm"]) {
+        ranges.length = 0;
+        await Promise.all(
+          Array.from({ length: 4 }, async (_, index) => {
+            const query = lake.path("json.parquet").batchSize(1).run();
+            const json = index % 2 === 0;
+            const text = await new Response(
+              json ? query.streamJson() : query.streamNdjson(),
+            ).text();
+            const expected = records.map((json_field) => ({ json_field }));
+            expect(text).toBe(
+              json
+                ? JSON.stringify(expected)
+                : expected.map((row) => `${JSON.stringify(row)}\n`).join(""),
+            );
+            expect(query.memoryBudget.usedBytes).toBe(0);
+          }),
+        );
+        const dataReads = ranges.filter((range) => range !== "bytes=0-1");
+        if (round === "warm") expect(dataReads).toHaveLength(0);
+        else expect(dataReads.length).toBeGreaterThan(0);
+        expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
+      }
       const producer = pool.child(512 * 1024);
       const consumer = pool.child(512 * 1024);
       const adapter = new ParquetScanAdapter(store, {

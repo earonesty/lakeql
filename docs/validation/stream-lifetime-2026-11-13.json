@@ -54,6 +54,12 @@
       "Scalar formatting and recursive traversal workspace are not yet fully admitted",
       "Worker/reference suites passed but do not establish production Cloudflare total-heap caps",
       "A bounded native encoding fast path needs measurement and complete workspace admission before adoption"
-    ]
+    ],
+    "cloudFixtureValidation": {
+      "worker": "24 tests passed in packages/parquet/src/index.workerd.ts, including two new native R2 stream cases at 64/128 MiB shared pool limits. Real written SNAPPY Parquet with three row groups includes Unicode, quotes/newlines, null and empty strings. Each of two rounds runs three completing JSON/NDJSON queries alongside one cancelled NDJSON query. Per-query and root charges return to zero; measured reservation peak stays within the pool.",
+      "http": "Both packages/parquet/src/json-http.test.ts cases passed. External parquet-testing json.parquet contains mixed objects, missing keys versus explicit null, arrays and null. Four concurrent JSON/NDJSON streams run with batchSize=1 against HTTP 206 ranges and ignored-range HTTP 200 responses. Cold and warm shared-cache rounds preserve exact JSON bytes; warm rounds perform no data reads beyond head probing. Per-query charges return to zero while shared cache backing remains separately owned.",
+      "limits": "Worker fixtures run under Miniflare native R2 bindings, not a deployed Cloudflare service. Pool limits are reservation limits; these small fixtures do not stress near-cap total runtime heap. Existing synthetic tests cover exact output cap and one-byte-short rejection.",
+      "checks": "tsc -b and typecheck passed after Worker test additions; focused HTTP tests passed after HTTP additions."
+    }
   }
 }
