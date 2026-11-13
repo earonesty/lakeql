@@ -16,7 +16,7 @@
     ]
   },
   "limitations": [
-    "This closes a resource lifetime gap; it does not newly admit JSON/CSV string or encoded-byte allocations.",
+    "CSV still uses legacy string/byte encoding. JSON/NDJSON now admit encoded backing, but scalar formatting and traversal workspace remain outside this output charge.",
     "Consumer-retained stream chunks remain outside explicit owned-output accounting.",
     "Fault-injected encoding tests use real MemoryScope lifetimes with synthetic row producers; broader suites include existing real Parquet/HTTP/Worker fixtures."
   ],
@@ -24,6 +24,36 @@
     "finding": "serializedValueBytes describes stableStringify(jsonSafeValue), not stream JSON.stringify output. Non-finite numbers and prototype-named keys differ; it cannot be reused blindly for output-buffer admission.",
     "change": "Added internal jsonOutputUtf8Bytes extent calculator matching actual JSON output semantics for supported immutable values, without constructing the cloned JSON value tree or complete serialized string/buffer. Cycles and custom toJSON functions are rejected.",
     "validation": "23 focused tests compare actual JSON.stringify/jsonSafeValue/TextEncoder output, including Unicode, surrogate pairs/lone surrogates, escaping, binary, non-finite numbers, bigint, sparse arrays, undefined/function/symbol omission, timestamp/interval values, and shared references. Build, lint, and typecheck pass.",
-    "remaining": "Not wired into stream admission yet. Scalar formatting and traversal state still allocate; cloned-tree/string reservations, queue handoff ownership and CSV planning remain required. Stateful accessors are outside the immutable-input planning contract."
+    "remaining": "Extent planning is now wired into JSON/NDJSON streams. Scalar formatting and traversal workspace still allocate; CSV planning remains required. Stateful accessors are outside the immutable-input planning contract."
+  },
+  "ownedJsonOutput": {
+    "change": "JSON and NDJSON encode directly into one exactly admitted byte buffer, without a cloned JSON-safe tree or whole JSON string. Queued backing stays owned until the next pull or cancellation. The query result supplies the same budget used by execution, so source and output charges overlap.",
+    "validation": {
+      "defaultPassed": 2784,
+      "defaultSkipped": 605,
+      "workerPassed": 51,
+      "referencePassed": 104,
+      "additionalFocusedTests": "Eight stream-lifetime tests pass; two were added after the full default run. Encoder/extent/query/iterator focused run: 133 passed.",
+      "build": "tsc -b passed",
+      "typecheck": "passed",
+      "cases": [
+        "Every UTF16 code unit and surrogate boundary matches native JSON bytes",
+        "Output allocation exact cap succeeds and cap minus one rejects without retained charges",
+        "Empty and populated JSON/NDJSON completion releases output",
+        "Queued output and suspended source are both released by cancellation",
+        "Shared source/output budget rejection closes the producer",
+        "Pending source read arriving after cancellation is not encoded",
+        "Delivered chunks remain valid after accounting transfers out of the queue",
+        "Empty JSON framing is admitted at exact cap and rejected one byte below"
+      ]
+    },
+    "benchmark": "../benchmarks/json-output-2026-11-13.json",
+    "tradeoff": "Synthetic alternating-order medians (rerun after test processes finished) show direct admitted encoding slower on small objects, ASCII and nested objects, roughly equal on Unicode, and faster on binary. This is an output memory-lifetime improvement, not a universal CPU improvement. Small-object legacy ~0.00074ms vs owned ~0.00622ms; ASCII ~0.234ms vs ~0.573ms. No cloud throughput or total heap conclusion.",
+    "remaining": [
+      "Consumer-retained buffers need caller accounting",
+      "Scalar formatting and recursive traversal workspace are not yet fully admitted",
+      "Worker/reference suites passed but do not establish production Cloudflare total-heap caps",
+      "A bounded native encoding fast path needs measurement and complete workspace admission before adoption"
+    ]
   }
 }

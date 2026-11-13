@@ -15,16 +15,11 @@ import { BoundedTopK } from "./bounded-top-k.js";
 import { BufferMemory } from "./buffer-memory.js";
 import { gatherDeferredColumns } from "./deferred-gather.js";
 import { LakeqlError } from "./errors.js";
-import {
-  encodeJsonLine,
-  ensureGeoBackendForExprs,
-  evaluate,
-  jsonSafeValue,
-  matches,
-} from "./evaluator.js";
+import { ensureGeoBackendForExprs, evaluate, jsonSafeValue, matches } from "./evaluator.js";
 import type { Expr } from "./expr.js";
 import { collectExprColumns } from "./expr-utils.js";
 import { iteratorReadableStream } from "./iterator-stream.js";
+import { jsonOutputStream } from "./json-output-stream.js";
 import {
   assertBookmarkMatches,
   createBookmark,
@@ -3363,40 +3358,11 @@ export class QueryResult {
   }
 
   streamNdjson(): ReadableStream<Uint8Array> {
-    const iterator = this.rows()[Symbol.asyncIterator]();
-    return iteratorReadableStream<Uint8Array>(iterator, {
-      async pull(controller) {
-        const next = await iterator.next();
-        if (next.done) {
-          controller.close();
-          return;
-        }
-        controller.enqueue(encodeJsonLine(next.value));
-      },
-    });
+    return jsonOutputStream(this.rows(), this.memoryBudget, "ndjson");
   }
 
   streamJson(): ReadableStream<Uint8Array> {
-    const iterator = this.rows()[Symbol.asyncIterator]();
-    let first = true;
-    return iteratorReadableStream<Uint8Array>(iterator, {
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode("["));
-      },
-      async pull(controller) {
-        const next = await iterator.next();
-        if (next.done) {
-          controller.enqueue(new TextEncoder().encode("]"));
-          controller.close();
-          return;
-        }
-        const prefix = first ? "" : ",";
-        first = false;
-        controller.enqueue(
-          new TextEncoder().encode(`${prefix}${JSON.stringify(jsonSafeValue(next.value))}`),
-        );
-      },
-    });
+    return jsonOutputStream(this.rows(), this.memoryBudget, "json");
   }
 
   streamCsv(options: CsvStreamOptions = {}): ReadableStream<Uint8Array> {
