@@ -347,3 +347,5 @@ Read key-only Parquet maps as maps with null values, and preserve empty unannota
 Validate Parquet schemas in one iterative pass, avoiding repeated ancestor-path copies and call-stack exhaustion on deep selected or skipped subtrees. Preserve projection and exact decimal error paths.
 
 Admit temporary schema-validation directories against caller budgets in owned scans, task execution, and indexed planning; release them on every exit and skip traversal for empty projections.
+
+Close suspended row iterators when NDJSON, JSON, or CSV encoding fails, releasing producer-owned allocations without masking the original error. Share cleanup across failure and cancellation races.

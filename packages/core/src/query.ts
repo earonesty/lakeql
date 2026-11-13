@@ -24,6 +24,7 @@ import {
 } from "./evaluator.js";
 import type { Expr } from "./expr.js";
 import { collectExprColumns } from "./expr-utils.js";
+import { iteratorReadableStream } from "./iterator-stream.js";
 import {
   assertBookmarkMatches,
   createBookmark,
@@ -3363,7 +3364,7 @@ export class QueryResult {
 
   streamNdjson(): ReadableStream<Uint8Array> {
     const iterator = this.rows()[Symbol.asyncIterator]();
-    return new ReadableStream<Uint8Array>({
+    return iteratorReadableStream<Uint8Array>(iterator, {
       async pull(controller) {
         const next = await iterator.next();
         if (next.done) {
@@ -3372,16 +3373,13 @@ export class QueryResult {
         }
         controller.enqueue(encodeJsonLine(next.value));
       },
-      async cancel() {
-        await iterator.return?.();
-      },
     });
   }
 
   streamJson(): ReadableStream<Uint8Array> {
     const iterator = this.rows()[Symbol.asyncIterator]();
     let first = true;
-    return new ReadableStream<Uint8Array>({
+    return iteratorReadableStream<Uint8Array>(iterator, {
       start(controller) {
         controller.enqueue(new TextEncoder().encode("["));
       },
@@ -3398,9 +3396,6 @@ export class QueryResult {
           new TextEncoder().encode(`${prefix}${JSON.stringify(jsonSafeValue(next.value))}`),
         );
       },
-      async cancel() {
-        await iterator.return?.();
-      },
     });
   }
 
@@ -3409,7 +3404,7 @@ export class QueryResult {
     const header = options.header ?? true;
     let columns = options.columns ?? this.config.select;
     let initialized = false;
-    return new ReadableStream<Uint8Array>({
+    return iteratorReadableStream<Uint8Array>(iterator, {
       async pull(controller) {
         if (initialized) {
           const next = await iterator.next();
@@ -3433,9 +3428,6 @@ export class QueryResult {
         columns = columns ?? Object.keys(next.value);
         const out = `${header ? csvHeader(columns) : ""}${csvRow(next.value, columns)}`;
         controller.enqueue(textEncoder.encode(out));
-      },
-      async cancel() {
-        await iterator.return?.();
       },
     });
   }

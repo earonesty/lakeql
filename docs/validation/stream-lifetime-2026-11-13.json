@@ -1,0 +1,23 @@
+{
+  "finding": "NDJSON, JSON, and CSV query streams closed their row iterator only on explicit cancellation. Encoding failure after a yielded row could leave a suspended producer and its allocation lifetime open.",
+  "change": "A shared iterator stream wrapper closes the producer on start/pull failure and cancellation. Concurrent cleanup paths share one promise. Encoding errors remain authoritative if cleanup also fails; explicit cancellation propagates cleanup failure.",
+  "validation": {
+    "defaultPassed": 2733,
+    "defaultSkipped": 605,
+    "workerPassed": 51,
+    "referencePassed": 104,
+    "buildLintTypecheck": "passed",
+    "cases": [
+      "Each actual query stream API closes a fault-injected row producer on serialization error and releases held backing exactly once",
+      "Producer allocation remains live during the suspended yield, then returns to zero after encoding failure",
+      "Original encoding error survives a cleanup error",
+      "Cancellation racing an in-flight pull releases backing once",
+      "Existing format output, empty results, and cancellation tests remain passing"
+    ]
+  },
+  "limitations": [
+    "This closes a resource lifetime gap; it does not newly admit JSON/CSV string or encoded-byte allocations.",
+    "Consumer-retained stream chunks remain outside explicit owned-output accounting.",
+    "Fault-injected encoding tests use real MemoryScope lifetimes with synthetic row producers; broader suites include existing real Parquet/HTTP/Worker fixtures."
+  ]
+}

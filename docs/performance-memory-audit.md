@@ -9,6 +9,7 @@ parallel range reads and respect configured memory limits, including allocations
 made to accelerate execution.
 
 Schema traversal findings: `docs/validation/schema-validation-2026-11-13.json`.
+Stream cleanup: `docs/validation/stream-lifetime-2026-11-13.json`.
 The original findings describe upstream `main` snapshot `b54d4ed`, retrieved
 November 12, 2026. Implementation on `perf/memory-bounded-execution` now includes
 measured kernel improvements, owned read/cache primitives, and local-HTTP/public-R2

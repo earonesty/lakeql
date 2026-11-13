@@ -4127,3 +4127,40 @@ it.each([
   expect(scanner.requestedColumnBatchSizes.length).toBeGreaterThan(0);
   expect(scanner.requestedColumnBatchSizes.every((size) => size <= batchSize)).toBe(true);
 });
+
+it.each([
+  "streamNdjson",
+  "streamJson",
+  "streamCsv",
+] as const)("%s closes its row producer when encoding a yielded row fails", async (format) => {
+  const { MemoryBudget } = await import("./memory-budget.js");
+  const { MemoryScope } = await import("./memory-scope.js");
+  const { lake } = await makeLake({ rowsByPath: { "data/stream.parquet": [{ id: 1 }] } });
+  const result = lake.path("data/stream.parquet").run();
+  const pool = new MemoryBudget(32);
+  const failure = new Error("injected serialization failure");
+  let releases = 0;
+  const row = Object.defineProperty({}, "bad", {
+    enumerable: true,
+    get() {
+      throw failure;
+    },
+  });
+  const spy = vi.spyOn(result, "rows").mockImplementation(async function* () {
+    const scope = new MemoryScope(pool);
+    try {
+      scope.allocate(32, "held row backing", () => new Uint8Array(32));
+      yield row;
+    } finally {
+      scope.dispose();
+      releases++;
+    }
+  });
+  try {
+    await expect(new Response(result[format]()).text()).rejects.toBe(failure);
+    expect(pool.usedBytes).toBe(0);
+    expect(releases).toBe(1);
+  } finally {
+    spy.mockRestore();
+  }
+});
