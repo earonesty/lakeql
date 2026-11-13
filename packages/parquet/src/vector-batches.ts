@@ -27,6 +27,7 @@ import {
   preparePageWindow,
   readPreparedPageBody,
 } from "./page-window.js";
+import { recoverColumnExtents } from "./recover-column-extents.js";
 
 export {
   type PreparedPageWindow,
@@ -156,7 +157,7 @@ export async function* readParquetVectorBatchesFromFile(
   let selectedGroupIndex = 0;
   let rowGroupStart = 0;
   for (let rowGroupIndex = 0; rowGroupIndex < metadata.row_groups.length; rowGroupIndex += 1) {
-    const rowGroup = metadata.row_groups[rowGroupIndex];
+    let rowGroup = metadata.row_groups[rowGroupIndex];
     if (rowGroup === undefined) return;
     const rowGroupEnd = rowGroupStart + Number(rowGroup.num_rows);
     if (
@@ -168,6 +169,15 @@ export async function* readParquetVectorBatchesFromFile(
       rowGroupStart = rowGroupEnd;
       continue;
     }
+    const recovered = await recoverColumnExtents(
+      file,
+      metadata,
+      { columns },
+      options.allocationScope ?? options.decompressionScope,
+      () => metadata.row_groups,
+      rowGroupIndex,
+    );
+    rowGroup = recovered.row_groups[rowGroupIndex] ?? rowGroup;
     if (
       prefetchGroups !== undefined &&
       file.prefetch !== undefined &&

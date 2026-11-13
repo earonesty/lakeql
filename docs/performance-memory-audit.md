@@ -1,6 +1,6 @@
 # Performance and memory budget audit
 
-Latest corpus value-parity findings: `docs/validation/conformance-value-parity-2026-11-13.json` (18 failures; release gate remains open).
+Latest corpus value-parity findings: `docs/validation/conformance-value-parity-2026-11-13.json` (16 failures; release gate remains open).
 
 LakeQL has further opportunities to remove repeated whole-state work from per-row
 execution. The highest-value work is shared incremental memory accounting, followed
@@ -31,18 +31,18 @@ under verified 64/128 MiB V8 heap settings; this distinguishes runtime GC policy
 from a persistent leak, but does not cap external backing or prove production
 Cloudflare total-memory safety. See the constrained-runtime section below.
 
-Current verification checkpoint: commit `330e85b` (November 13, 2026) passes
-**2,791 default tests** (605 skipped), **53 Worker tests**, and **104 reference
+Current dictionary-recovery checkpoint (November 13, 2026) passes
+**2,793 default tests** (605 skipped), **53 Worker tests**, and **104 reference
 tests**, plus TypeScript build, typecheck and lint. These counts are recorded in
-`docs/validation/stream-lifetime-2026-11-13.json`. Distribution/package-install,
+`docs/validation/conformance-value-parity-2026-11-13.json`. Distribution/package-install,
 compatibility, coverage, fixture reproducibility and tracked-file size gates passed
 at earlier documented revisions; they still require final-revision reruns.
 
-The latest full external conformance checkpoint reports **475 passed, 18 failed,
+The latest full external conformance checkpoint reports **477 passed, 16 failed,
 one skipped**. It checks both reader paths and compares owned values with public
 output, in addition to cardinality and cleanup. Eleven additional differential
 findings were fixed or independently validated as representation differences;
-the original eighteen failures remain. See
+bounded dictionary-extent recovery fixes two original failures; sixteen remain. See
 `docs/validation/conformance-value-parity-2026-11-13.json` for the chronological
 results and independent INT96/Date evidence. No release-readiness or whole-runtime
 memory claim follows from the passing suites.

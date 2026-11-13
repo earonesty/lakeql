@@ -20,6 +20,7 @@ import {
   recordRowsDecoded,
 } from "./read-metrics.js";
 import { ParquetReadScope } from "./read-scope.js";
+import { recoverColumnExtents } from "./recover-column-extents.js";
 import { rowGroupMayMatch, rowGroupMustMatch } from "./row-group-pruning.js";
 import { schemaPathIndex } from "./schema-path-index.js";
 import type {
@@ -158,6 +159,12 @@ export async function readParquetColumnBatch(
   rowEnd: number,
   decompressionScope?: MemoryScope,
 ): Promise<Batch> {
+  metadata = await recoverColumnExtents(
+    file,
+    metadata,
+    { columns, rowStart, rowEnd },
+    decompressionScope,
+  );
   const columnValues: Record<string, ArrayLike<unknown>> = Object.fromEntries(
     columns.map((column) => [column, []]),
   );

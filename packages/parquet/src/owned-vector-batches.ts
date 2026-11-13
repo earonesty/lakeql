@@ -6,6 +6,7 @@ import { canReadNestedRowGroupBatches } from "./nested-read-capability.js";
 import { readNestedRowGroupBatches } from "./nested-row-group-read.js";
 import { validateParquetReadConcurrency } from "./read-concurrency.js";
 import { ParquetReadScope } from "./read-scope.js";
+import { recoverColumnExtents } from "./recover-column-extents.js";
 import type {
   ParquetMetadata,
   ParquetRowGroupSource,
@@ -119,7 +120,7 @@ export async function* readOwnedParquetVectorBatches(
 
         const stage = new ParquetReadScope(source, budget, signals);
         try {
-          const groupMetadata = {
+          let groupMetadata = {
             ...metadata,
             num_rows: rowGroup.num_rows,
             row_groups: [rowGroup],
@@ -140,6 +141,13 @@ export async function* readOwnedParquetVectorBatches(
             maxConcurrentPageReads:
               options.maxConcurrentPageReads ?? options.maxConcurrentReads ?? 4,
           };
+          groupMetadata = await recoverColumnExtents(
+            stage.file,
+            groupMetadata,
+            groupOptions,
+            stage.allocations,
+            rowGroups,
+          );
           if (canReadParquetVectorBatches(groupMetadata, groupOptions, { nested: false })) {
             for await (const output of readParquetVectorBatchesFromFile(
               stage.file,

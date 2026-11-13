@@ -188,6 +188,29 @@
       "contract": "Given a validated next-column/footer boundary, inspect bounded page headers for a missing-dictionary-offset column. Return a correction only for exactly one omitted initial dictionary header and the exact declared value count. Empty encoding lists are permitted because this fixture has them; page types provide the proof. Do not mutate metadata or fetch separate page bodies.",
       "validation": "Real fixture proves two 15-byte recoveries. Boundary one byte short, inconsistent value count, and size shortfall not equal to the dictionary header all reject. Already-corrected metadata stays unchanged. Tiny budgets reject at header-probe admission; scopes return to zero.",
       "integration": "Internal inspector only; public/owned readers do not call it yet. No conformance improvement is claimed. Integrating validated physical bounds, owned metadata changes, and cloud transport tests remains required."
+    },
+    "productionIntegration": {
+      "change": "Public object/column/vector and owned indexed/cached readers apply proven dictionary extent corrections in private metadata. Source metadata and cached entries are not mutated. Corrected object/array directories are admitted before copying, and header reads use the existing allocation-aware page inspector. Physical bounds come from all column starts and the footer; indexed group owners are released while enumerating those bounds.",
+      "lazyPlanning": "Object/vector recovery occurs at the selected row group. Ordinary early exit preserves lazy prefetch; the existing planned-past-window regression passes. Full physical-boundary enumeration is reserved for candidate missing-dictionary-offset metadata.",
+      "validation": {
+        "defaultPassed": 2793,
+        "defaultSkipped": 605,
+        "workerPassed": 53,
+        "referencePassed": 104,
+        "conformancePassed": 477,
+        "conformanceFailed": 16,
+        "conformanceSkipped": 1,
+        "buildLintTypecheck": "passed",
+        "targeted": "58 reader/lazy-planning/malformed/HTTP checks passed; metadata immutability and scoped copy ownership assertions passed afterward."
+      },
+      "http": "Actual external fixture over true 206 and ignored-range 200 responses; indexed auto and cached modes; three concurrent queries at batch sizes 1/3/32 under a 64 MiB shared pool; complete value parity, independently specified nation names and keys, cancellation, zero final reservation usage. Requests remain within file bounds.",
+      "expectationChanges": "The historical nation.dict-malformed rejection case is replaced by successful real-fixture HTTP checks, supported by the independent 25-row DuckDB oracle. ARROW-RS-GH-6229-DICTHEADER still rejects, now at physical-boundary validation before its malformed compact header. No conformance exclusion or expected-failure waiver was added.",
+      "limitations": [
+        "The full conformance gate still fails on sixteen other cases.",
+        "Specific fixture recovery has HTTP coverage; existing Worker suite passes but does not newly exercise this external fixture via native R2.",
+        "Physical-boundary enumeration for anomalous candidates can inspect all row groups; no claim of unchanged malformed-file planning cost.",
+        "Remaining decoder/runtime workspace and broader audit allocation gaps are unchanged."
+      ]
     }
   }
 }

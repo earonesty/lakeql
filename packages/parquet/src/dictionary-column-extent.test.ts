@@ -3,6 +3,7 @@ import { MemoryBudget, MemoryScope, memoryStore } from "lakeql-core";
 import { expect, it } from "vitest";
 import { dictionaryColumnEnd } from "./dictionary-column-extent.js";
 import { readParquetMetadataFromFile } from "./metadata-cache.js";
+import { recoverColumnExtents } from "./recover-column-extents.js";
 import { asyncBufferFromStore } from "./store-buffer.js";
 
 const fixture = new URL(
@@ -76,6 +77,17 @@ it.skipIf(!existsSync(fixture))(
           }
         }
       }
+      const corrected = await recoverColumnExtents(file, metadata, {}, scope);
+      expect(corrected).not.toBe(metadata);
+      expect(corrected.schema).toBe(metadata.schema);
+      expect(corrected.row_groups[0]?.columns[0]).toBe(metadata.row_groups[0]?.columns[0]);
+      const before = metadata.row_groups[0]?.columns[1]?.meta_data;
+      const after = corrected.row_groups[0]?.columns[1]?.meta_data;
+      expect(before?.total_compressed_size).toBe(322n);
+      expect(before?.dictionary_page_offset).toBeUndefined();
+      expect(after?.total_compressed_size).toBe(337n);
+      expect(after?.dictionary_page_offset).toBe(129n);
+      expect(pool.usedBytes).toBeGreaterThan(0);
     } finally {
       scope.dispose();
     }

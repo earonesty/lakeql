@@ -8,7 +8,6 @@ for (const path of [
   "bad_data/ARROW-RS-GH-6229-DICTHEADER.parquet",
   "bad_data/ARROW-RS-GH-6229-LEVELS.parquet",
   "bad_data/PARQUET-1481.parquet",
-  "data/nation.dict-malformed.parquet",
 ]) {
   const fixture = new URL(`../../../fixtures/external/parquet-testing/${path}`, import.meta.url);
   it.skipIf(!existsSync(fixture))(
@@ -41,7 +40,7 @@ for (const path of [
       } else if (path.endsWith("ARROW-RS-GH-6229-DICTHEADER.parquet")) {
         expect(failure).toMatchObject({
           code: "LAKEQL_PARQUET_READ_ERROR",
-          message: expect.stringMatching(/Unexpected compact type/),
+          message: "Invalid physical column boundary",
         });
       } else if (path.endsWith("ARROW-RS-GH-6229-LEVELS.parquet")) {
         // The bounded level decoder detects corruption before the upstream

@@ -9,6 +9,7 @@ import {
   recordRowGroupSkipped,
   recordRowsDecoded,
 } from "./read-metrics.js";
+import { recoverColumnExtents } from "./recover-column-extents.js";
 import { rowGroupMayMatch } from "./row-group-pruning.js";
 import type {
   ParquetMetadata,
@@ -29,7 +30,9 @@ export async function* readParquetObjectBatchesFromFile(
     options.columns ?? parquetSchema(metadata).children.map((child) => child.element.name);
   if (options.columns !== undefined) recordReadColumns(options.stats, options.columns);
   let rowGroupStart = 0;
-  for (const rowGroup of metadata.row_groups) {
+  for (let groupIndex = 0; groupIndex < metadata.row_groups.length; groupIndex++) {
+    const rowGroup = metadata.row_groups[groupIndex];
+    if (rowGroup === undefined) continue;
     const rowGroupEnd = rowGroupStart + Number(rowGroup.num_rows);
     if (
       rowGroupEnd <= requestedStart ||
@@ -43,6 +46,14 @@ export async function* readParquetObjectBatchesFromFile(
     recordRowGroupRead(options.stats);
     const start = Math.max(rowGroupStart, requestedStart);
     const end = Math.min(rowGroupEnd, requestedEnd);
+    const recovered = await recoverColumnExtents(
+      file,
+      metadata,
+      { columns },
+      options.allocationScope ?? options.decompressionScope,
+      () => metadata.row_groups,
+      groupIndex,
+    );
     for (let rowStart = start; rowStart < end; rowStart += batchSize) {
       const rowEnd = Math.min(rowStart + batchSize, end);
       const readOptions: Parameters<typeof parquetReadObjects>[0] = {
@@ -50,7 +61,7 @@ export async function* readParquetObjectBatchesFromFile(
         compressors: scopedParquetCompressors(
           options.allocationScope ?? options.decompressionScope,
         ),
-        metadata: rawDecimalMetadata(metadata, columns),
+        metadata: rawDecimalMetadata(recovered, columns),
         rowFormat: "object",
         rowStart,
         rowEnd,
