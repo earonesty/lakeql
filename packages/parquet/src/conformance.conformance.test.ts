@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { parquetMetadata } from "hyparquet";
-import { MemoryBudget, memoryStore } from "lakeql-core";
+import { isTimestampValue, MemoryBudget, memoryStore, timestampFromEpoch } from "lakeql-core";
 import { EXTERNAL_CONFORMANCE, externalFixturePath } from "lakeql-fixtures";
 import { describe, expect, it } from "vitest";
 import { createParquetLake, readParquetObjects } from "./index.js";
@@ -75,10 +75,39 @@ describeExternal("apache/parquet-testing conformance", () => {
       const expected = await readParquetObjects(store, objectPath);
       expect(expected).toHaveLength(Number(metadata.num_rows));
       for (let index = 0; index < actual.length; index++)
-        expect(actual[index], `row ${index} of ${objectPath}`).toEqual(expected[index]);
+        expect(actual[index], `row ${index} of ${objectPath}`).toEqual(
+          queryTemporalValues(expected[index]),
+        );
     } finally {
       expect(pool.usedBytes).toBe(0);
       expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
+    }
+  });
+  // Independent expected dates from shredded_variant/cases.json, covering
+  // shredded, unshredded, and partially shredded values (including pre-epoch).
+  it.each([
+    [18, "2024-11-07"],
+    [19, "1957-11-07"],
+    [62, "2024-11-07"],
+    [63, "1957-11-07"],
+    [104, "2024-11-07"],
+    [105, "1957-11-07"],
+    [134, "2024-01-30"],
+  ] as const)("preserves documented variant date case %i", async (number, date) => {
+    const file = `shredded_variant/case-${String(number).padStart(3, "0")}.parquet`;
+    const store = memoryStore();
+    await store.put(file, readFileSync(join(parquetTestingDir, file)));
+    const value = new Date(`${date}T00:00:00.000Z`);
+    const expected = [{ id: 1, var: number === 134 ? { a: null, b: "iceberg", d: value } : value }];
+    expect(await readParquetObjects(store, file)).toEqual(expected);
+    const pool = new MemoryBudget(64 * 1024 * 1024);
+    const lake = createParquetLake({ store, memoryPool: pool, scanRangeCache: { maxBytes: 0 } });
+    const output = await lake.path(file).run().toOwnedArray();
+    try {
+      expect(output.value).toEqual(queryTemporalValues(expected));
+    } finally {
+      output.release();
+      expect(pool.usedBytes).toBe(0);
     }
   });
   it.each(malformedFiles)("rejects documented malformed %s in both readers", async (file) => {
@@ -120,3 +149,50 @@ function listFiles(dir: string): string[] {
   }
   return out;
 }
+
+/** Query vectors canonicalize Date carriers to millisecond timestamps. Preserve
+ * every other value distinction, particularly bigint precision, nulls and keys.
+ */
+function queryTemporalValues(value: unknown): unknown {
+  if (value instanceof Date) return timestampFromEpoch(BigInt(value.getTime()), "millis");
+  if (value instanceof Uint8Array || isTimestampValue(value)) return value;
+  if (Array.isArray(value)) return value.map(queryTemporalValues);
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)
+  )
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nested]) => [key, queryTemporalValues(nested)]),
+    );
+  return value;
+}
+
+describe("conformance temporal comparison", () => {
+  it("canonicalizes nested dates without changing scalar or structural distinctions", () => {
+    const precise = timestampFromEpoch(123456789n, "nanos");
+    const bytes = new Uint8Array([0, 255]);
+    const value = {
+      before: new Date(-1),
+      nested: [new Date(0), precise],
+      large: 9007199254740993n,
+      bytes,
+      empty: [],
+      absent: {},
+      nullable: { a: null },
+    };
+    const normalized = queryTemporalValues(value);
+    expect(normalized).toEqual({
+      ...value,
+      before: timestampFromEpoch(-1n, "millis"),
+      nested: [timestampFromEpoch(0n, "millis"), precise],
+    });
+    expect(queryTemporalValues(precise)).toBe(precise);
+    expect(queryTemporalValues(bytes)).toBe(bytes);
+    const map = new Map([["a", 1]]);
+    expect(queryTemporalValues(map)).toBe(map);
+    expect(queryTemporalValues({})).not.toEqual({ a: null });
+    expect(queryTemporalValues([])).not.toEqual(null);
+    expect(queryTemporalValues(precise)).not.toEqual(timestampFromEpoch(123n, "millis"));
+  });
+});

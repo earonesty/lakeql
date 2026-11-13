@@ -64,5 +64,35 @@
     "Establish canonical public/query value contracts for dynamic JSON/variant objects versus fixed-schema structs.",
     "Validate timestamp and legacy repeated/map disagreements against independent fixture expectations.",
     "Resolve original unsupported encoding/codec and variant failures; release gate remains failing."
-  ]
+  ],
+  "temporalFollowup": {
+    "contractEvidence": [
+      "packages/core/src/batch.ts timestampSourceValue converts Date to millisecond TimestampValue",
+      "packages/parquet/src/temporal-values.test.ts asserts Date carriers from DATE parser",
+      "fixtures/external/parquet-testing/shredded_variant/cases.json documents independent expected dates"
+    ],
+    "change": "Parity comparison canonicalizes Date carriers only; retains timestamp precision/unit, bytes, bigint, object keys, null versus empty, and non-record objects. Seven explicit fixture tests assert documented public Dates and owned timestamps, including output release. No production API changes.",
+    "verifiedCases": [
+      18,
+      19,
+      62,
+      63,
+      104,
+      105,
+      134
+    ],
+    "result": {
+      "passed": 471,
+      "failed": 22,
+      "skipped": 1
+    },
+    "remainingParityDisagreements": [
+      "data/int96_from_spark.parquet",
+      "data/json.parquet",
+      "data/map_no_value.parquet",
+      "data/repeated_primitive_no_list.parquet"
+    ],
+    "typecheck": "passed",
+    "testSha256": "e2f4cf7a19ebc4fc346a4e2a414b0114d4f518fd17ed708989b1e7d72abccb0c"
+  }
 }

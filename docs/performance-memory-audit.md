@@ -1,6 +1,6 @@
 # Performance and memory budget audit
 
-Latest corpus value-parity findings: `docs/validation/conformance-value-parity-2026-11-13.json` (29 failures; release gate remains open).
+Latest corpus value-parity findings: `docs/validation/conformance-value-parity-2026-11-13.json` (22 failures; release gate remains open).
 
 LakeQL has further opportunities to remove repeated whole-state work from per-row
 execution. The highest-value work is shared incremental memory accounting, followed
