@@ -211,6 +211,20 @@
         "Physical-boundary enumeration for anomalous candidates can inspect all row groups; no claim of unchanged malformed-file planning cost.",
         "Remaining decoder/runtime workspace and broader audit allocation gaps are unchanged."
       ]
+    },
+    "proofReuseAndNativeR2": {
+      "change": "Private recovered row groups carry a scoped projection proof. Repeated batch consumers skip already inspected columns without a process-wide cache or mutations to original metadata. Projection arrays are copied under the allocation scope; requesting another column does not inherit an unrelated proof.",
+      "validation": {
+        "defaultPassed": 2793,
+        "defaultSkipped": 605,
+        "workerPassed": 57,
+        "referencePassed": 104,
+        "buildLintTypecheck": "passed",
+        "targetedPassed": 55
+      },
+      "proofTest": "A reader that throws on either slice or sliceOwned proves repeated recovery and narrower projections perform zero reads and allocate no additional reservations. A name-only correction leaves comment_col unchanged; a later comment_col projection inspects and corrects it independently without changing the earlier metadata.",
+      "nativeR2": "The Worker test configuration loads the exact external fixture bytes into a test-only binding. Four native-R2 cases cover 64/128 MiB pools and indexed/cached metadata, concurrent owned outputs at batch sizes 1/3/32, output retention, cancellation, complete parity with the corrected public reader, independently specified keys/first-last names, and zero reservations after release. The suite ran all 57 cases without skips.",
+      "limits": "This is local workerd/Miniflare native R2 operation with reservation assertions, not deployed-cloud total-heap proof or near-cap workload stress. The conformance checkpoint remains 477 passed and 16 failed from the preceding full run."
     }
   }
 }

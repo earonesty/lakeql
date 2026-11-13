@@ -1,11 +1,22 @@
+import { existsSync, readFileSync } from "node:fs";
 import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
 import { defineConfig } from "vitest/config";
+
+const dictionaryFixture = new URL(
+  "./fixtures/external/parquet-testing/data/nation.dict-malformed.parquet",
+  import.meta.url,
+);
 
 export default defineConfig({
   plugins: [
     cloudflareTest({
       miniflare: {
         r2Buckets: ["MEMORY_TEST_BUCKET"],
+        bindings: {
+          DICTIONARY_EXTENT_FIXTURE: existsSync(dictionaryFixture)
+            ? readFileSync(dictionaryFixture).toString("base64")
+            : "",
+        },
         compatibilityDate: "2026-06-13",
         compatibilityFlags: ["nodejs_compat"],
       },

@@ -88,6 +88,31 @@ it.skipIf(!existsSync(fixture))(
       expect(after?.total_compressed_size).toBe(337n);
       expect(after?.dictionary_page_offset).toBe(129n);
       expect(pool.usedBytes).toBeGreaterThan(0);
+      const used = pool.usedBytes;
+      const noRead = {
+        ...file,
+        slice: async () => {
+          throw Error("Repeated recovery read");
+        },
+        sliceOwned: async () => {
+          throw Error("Repeated owned recovery read");
+        },
+      };
+      expect(await recoverColumnExtents(noRead, corrected, {}, scope)).toBe(corrected);
+      expect(await recoverColumnExtents(noRead, corrected, { columns: ["name"] }, scope)).toBe(
+        corrected,
+      );
+      expect(pool.usedBytes).toBe(used);
+      const nameOnly = await recoverColumnExtents(file, metadata, { columns: ["name"] }, scope);
+      expect(nameOnly.row_groups[0]?.columns[3]?.meta_data?.total_compressed_size).toBe(2002n);
+      const comment = await recoverColumnExtents(
+        file,
+        nameOnly,
+        { columns: ["comment_col"] },
+        scope,
+      );
+      expect(comment.row_groups[0]?.columns[3]?.meta_data?.total_compressed_size).toBe(2017n);
+      expect(nameOnly.row_groups[0]?.columns[3]?.meta_data?.total_compressed_size).toBe(2002n);
     } finally {
       scope.dispose();
     }

@@ -15,7 +15,12 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { type R2BucketLike, R2ObjectStore } from "../../r2/src/index.js";
 import { DecodedColumnCache } from "./decoded-column-cache.js";
-import { createParquetLake, type ParquetMetadata, writeParquet } from "./index.js";
+import {
+  createParquetLake,
+  type ParquetMetadata,
+  readParquetObjects,
+  writeParquet,
+} from "./index.js";
 import {
   readOwnedParquetMetadata,
   readParquetMetadataFromFile,
@@ -816,3 +821,56 @@ it.each([
     await store.delete(path);
   }
 });
+
+const dictionaryExtentFixture = (env as unknown as { DICTIONARY_EXTENT_FIXTURE: string })
+  .DICTIONARY_EXTENT_FIXTURE;
+it
+  .skipIf(!dictionaryExtentFixture)
+  .each(
+    [64, 128].flatMap((mib) =>
+      ["auto", "cached"].map((mode) => ({ mib, mode: mode as "auto" | "cached" })),
+    ),
+  )(
+  "recovers dictionary extents through native R2 ($mib MiB, $mode metadata)",
+  async ({ mib, mode }) => {
+    const bucket = (env as unknown as { MEMORY_TEST_BUCKET: R2BucketLike }).MEMORY_TEST_BUCKET;
+    const store = new R2ObjectStore(bucket);
+    const path = `dictionary-recovery-${mib}-${mode}.parquet`;
+    await store.put(
+      path,
+      Uint8Array.from(atob(dictionaryExtentFixture), (char) => char.charCodeAt(0)),
+    );
+    try {
+      const expected = await readParquetObjects(store, path);
+      expect(expected).toHaveLength(25);
+      expect(expected.map((row) => row.nation_key)).toEqual(
+        Array.from({ length: 25 }, (_, i) => i),
+      );
+      expect(new TextDecoder().decode(expected[0]?.name as Uint8Array)).toBe("ALGERIA");
+      expect(new TextDecoder().decode(expected[24]?.name as Uint8Array)).toBe("UNITED STATES");
+      const pool = new MemoryBudget(mib * 1024 * 1024);
+      const lake = createParquetLake({
+        store,
+        memoryPool: pool,
+        scanRangeCache: { maxBytes: 0 },
+        scanMetadataMode: mode,
+      });
+      const queries = [1, 3, 32].map((batchSize) => lake.path(path).batchSize(batchSize).run());
+      const outputs = await Promise.all(queries.map((query) => query.toOwnedArray()));
+      try {
+        for (const output of outputs) expect(output.value).toEqual(expected);
+        expect(pool.usedBytes).toBeGreaterThan(0);
+      } finally {
+        for (const output of outputs) output.release();
+      }
+      expect(pool.usedBytes).toBe(0);
+      const iterator = lake.path(path).batchSize(1).run().rows()[Symbol.asyncIterator]();
+      expect((await iterator.next()).value).toEqual(expected[0]);
+      await iterator.return?.();
+      expect(pool.usedBytes).toBe(0);
+      expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
+    } finally {
+      await store.delete(path);
+    }
+  },
+);

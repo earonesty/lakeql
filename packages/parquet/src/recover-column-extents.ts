@@ -4,6 +4,10 @@ import { dictionaryPageOffset } from "./dictionary-offset.js";
 import type { ParquetMetadata, ReadParquetOptions, StoreAsyncBuffer } from "./types.js";
 
 type RowGroup = ParquetMetadata["row_groups"][number];
+// Only private recovered groups receive this proof. A projection must not certify
+// uninspected columns, and no global/cache lifetime is extended by this marker.
+const inspectedColumns = Symbol("inspected dictionary extents");
+type InspectedGroup = RowGroup & { [inspectedColumns]?: string[] | null };
 
 /** Correct proven legacy extents in private metadata, with no changes to cache entries.
  * physicalGroups must enumerate the complete file even when metadata is a selected
@@ -49,6 +53,12 @@ export async function recoverColumnExtents(
       rowStart < (options.rowEnd ?? Number(metadata.num_rows)) && rowEnd > (options.rowStart ?? 0);
     rowStart = rowEnd;
     if (!selected) continue;
+    const inspected = (group as InspectedGroup)[inspectedColumns];
+    if (
+      inspected === null ||
+      (inspected !== undefined && options.columns?.every((column) => inspected.includes(column)))
+    )
+      continue;
     let replacement = group;
     for (let columnIndex = 0; columnIndex < group.columns.length; columnIndex++) {
       const chunk = group.columns[columnIndex];
@@ -109,6 +119,10 @@ export async function recoverColumnExtents(
       const correctedChunk = copyObject(chunk);
       correctedChunk.meta_data = corrected;
       replacement.columns[columnIndex] = correctedChunk;
+    }
+    if (replacement !== group) {
+      (replacement as InspectedGroup)[inspectedColumns] =
+        options.columns === undefined ? null : copyArray(options.columns);
     }
   }
   return result;
