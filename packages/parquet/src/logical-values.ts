@@ -24,9 +24,9 @@ export function convertDecodedValues(
         columnDecoder.element.logical_type?.type === "FLOAT16"
       )
         return convertFloat16Values(values, scope);
-      const temporal = convertTemporalValues(values, columnDecoder, scope);
-      if (temporal !== undefined) return temporal;
     }
+    const temporal = convertTemporalValues(values, columnDecoder, scope);
+    if (temporal !== undefined) return temporal;
     return convert(values, columnDecoder);
   }
   return convertDecimalValues(

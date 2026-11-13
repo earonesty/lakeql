@@ -9,7 +9,7 @@ import { int96EpochNanos, type TemporalColumnDecoder } from "./int96-interpretat
 export function convertTemporalValues(
   values: DecodedArray,
   decoder: TemporalColumnDecoder,
-  scope: MemoryScope,
+  scope?: MemoryScope,
 ): DecodedArray | undefined {
   const { element, parsers } = decoder;
   const converted = element.converted_type;
@@ -33,6 +33,13 @@ export function convertTemporalValues(
           : parsers.timestampFromMilliseconds;
   }
   if (parser === undefined) return undefined;
+  const decode = () => {
+    const output = new Array(values.length);
+    for (let index = 0; index < values.length; index++)
+      output[index] = parser(values[index] as never);
+    return output as DecodedArray;
+  };
+  if (scope === undefined) return decode();
   let bytes = c.array + values.length * (c.arraySlot + c.timestamp + c.bigint);
   // Custom timestamp carriers can require a temporary view during scalar parsing.
   // Retaining its charge conservatively avoids hiding this parser workspace.
@@ -44,12 +51,7 @@ export function convertTemporalValues(
       )
     : undefined;
   try {
-    const output = (stage ?? scope).allocate(bytes, "converted temporal values", () => {
-      const output = new Array(values.length);
-      for (let index = 0; index < values.length; index++)
-        output[index] = parser(values[index] as never);
-      return output as DecodedArray;
-    });
+    const output = (stage ?? scope).allocate(bytes, "converted temporal values", decode);
     return stage === undefined ? output.value : scope.adopt(output.retain()).value;
   } finally {
     stage?.dispose();

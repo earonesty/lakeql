@@ -150,3 +150,33 @@ it("admits Spark conversion workspace before parsing and rolls back under budget
   expect(denied.budget.usedBytes).toBe(0);
   denied.dispose();
 });
+
+it("uses identical scoped and borrowed INT96 conversion for both writer contracts", async () => {
+  const { convertDecodedValues } = await import("./logical-values.js");
+  const values = [2440588n << 64n, (3n << 64n) | (1n << 63n), -1n];
+  for (const mode of ["julian-nanos", "spark-micros"] as const) {
+    const decoder = {
+      element: { name: "t", type: "INT96" },
+      parsers: lakeqlParquetParsers,
+      int96Interpretation: mode,
+    } as ColumnDecoder & { int96Interpretation: typeof mode };
+    // Spark requires microsecond-aligned signed remainders.
+    const selected =
+      mode === "spark-micros"
+        ? [2440588n << 64n, (3n << 64n) | BigInt.asUintN(64, -1000n)]
+        : values;
+    const expectedNanos =
+      mode === "spark-micros"
+        ? [0n, -210866544000000001000n]
+        : [0n, -201643171963145224192n, -192420145526290448385n];
+    const expected = expectedNanos.map((value) => timestampFromEpoch(value, "nanos"));
+    const scope = new MemoryScope(new MemoryBudget(4096));
+    try {
+      expect(convertDecodedValues(selected, decoder)).toEqual(expected);
+      expect(convertDecodedValues(selected, decoder, scope)).toEqual(expected);
+    } finally {
+      scope.dispose();
+    }
+    expect(scope.budget.usedBytes).toBe(0);
+  }
+});

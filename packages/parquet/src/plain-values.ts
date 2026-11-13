@@ -22,7 +22,7 @@ export function readPlainValues(
       type === "FIXED_LEN_BYTE_ARRAY" ? fixedLength : undefined,
       scope,
     );
-  if (scope !== undefined && type === "INT96") return int96Values(reader, count, scope);
+  if (type === "INT96") return int96Values(reader, count, scope);
   if (scope === undefined || count === 0) return readPlain(reader, type, count, fixedLength);
   switch (type) {
     case "INT32":
@@ -118,7 +118,7 @@ export function readByteStreamSplitValues(
   return output;
 }
 
-function int96Values(reader: DataReader, count: number, scope: MemoryScope): bigint[] {
+function int96Values(reader: DataReader, count: number, scope: MemoryScope | undefined): bigint[] {
   const size = count * 12;
   if (
     !Number.isSafeInteger(count) ||
@@ -129,27 +129,30 @@ function int96Values(reader: DataReader, count: number, scope: MemoryScope): big
     size > reader.view.byteLength - reader.offset
   )
     throw new LakeqlError("LAKEQL_PARQUET_READ_ERROR", "Invalid PLAIN INT96 extent");
+  const decode = () => {
+    const values = new Array<bigint>(count);
+    for (let i = 0; i < count; i++) {
+      const offset = reader.offset + i * 12;
+      const low = reader.view.getBigUint64(offset, true);
+      const high = BigInt(reader.view.getInt32(offset + 8, true));
+      values[i] = (high << 64n) | low;
+    }
+    return values;
+  };
   const retained = c.array + count * (c.arraySlot + c.bigint);
-  const stage = scope.childStage(
+  const stage = scope?.childStage(
     retained + (count === 0 ? 0 : 3 * c.bigint),
     "PLAIN INT96 conversion",
   );
   try {
-    const output = stage.allocate(retained, "PLAIN INT96 carriers", () => {
-      const values = new Array<bigint>(count);
-      for (let i = 0; i < count; i++) {
-        const offset = reader.offset + i * 12;
-        const low = reader.view.getBigUint64(offset, true);
-        const high = BigInt(reader.view.getInt32(offset + 8, true));
-        values[i] = (high << 64n) | low;
-      }
-      return values;
-    });
-    const values = scope.adopt(output.retain()).value;
+    const values =
+      stage === undefined || scope === undefined
+        ? decode()
+        : scope.adopt(stage.allocate(retained, "PLAIN INT96 carriers", decode).retain()).value;
     reader.offset += size;
     return values;
   } finally {
-    stage.dispose();
+    stage?.dispose();
   }
 }
 

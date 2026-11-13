@@ -101,6 +101,16 @@ it("admits signed INT96 carriers without losing high words to low-word sign exte
     view.setBigUint64(1 + i * 12, BigInt.asUintN(64, values[i] ?? 0n), true);
     view.setInt32(9 + i * 12, Number((values[i] ?? 0n) >> 64n), true);
   }
+  const borrowedReader = { view, offset: 1 };
+  expect(readPlainValues(borrowedReader, "INT96", values.length, undefined, undefined)).toEqual(
+    values,
+  );
+  expect(borrowedReader.offset).toBe(bytes.length);
+  const invalidReader = { view, offset: 2 };
+  expect(() =>
+    readPlainValues(invalidReader, "INT96", values.length, undefined, undefined),
+  ).toThrow(/extent/);
+  expect(invalidReader.offset).toBe(2);
   const retained = c.array + values.length * (c.arraySlot + c.bigint);
   const peak = retained + 3 * c.bigint;
   const scope = new MemoryScope(new MemoryBudget(peak));
