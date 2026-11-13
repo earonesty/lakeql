@@ -343,3 +343,5 @@ Preserve complete INT96 physical values in public and fallback Parquet reads, sh
 Preserve dynamic JSON object members through vector inference, batching, gathering, and concatenation: missing keys remain absent rather than becoming null-valued struct fields. Admit JSON map storage before construction and preserve prototype-named own properties during public-row normalization.
 
 Read key-only Parquet maps as maps with null values, and preserve empty unannotated repeated fields as empty arrays across public, column, and owned readers. Keep optional nulls distinct and validate map shape before using map assembly.
+
+Validate Parquet schemas in one iterative pass, avoiding repeated ancestor-path copies and call-stack exhaustion on deep selected or skipped subtrees. Preserve projection and exact decimal error paths.

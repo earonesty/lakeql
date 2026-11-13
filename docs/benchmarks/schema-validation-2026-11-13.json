@@ -1,0 +1,236 @@
+{
+  "node": "v24.18.1",
+  "baselineCommit": "1d05228",
+  "baselineSourceSha256": "21b5b8d38162bbc1968a381666148cad85e872cd5d5e4ef270c6aa1892f8cd9e",
+  "currentSourceSha256": "0059879dfadc183c4c77f11b366d9c37ec2a7456c6bc9757399fe55314e6920d",
+  "description": "Synthetic schema-only traversal, construction outside timed regions. Five samples of ten validations after warm-up. No IO, codec, heap-cap, or whole-query speed claim. Current implementation uses one mutable path and child-count stack; baseline copied paths and joined every node.",
+  "results": [
+    {
+      "depth": 16,
+      "selected": true,
+      "measurements": {
+        "baseline": {
+          "medianMilliseconds": 0.006533300000000963,
+          "samples": [
+            0.005380199999996194, 0.006389100000001235, 0.006533300000000963, 0.007168500000000222,
+            0.01004700000000298
+          ]
+        },
+        "current": {
+          "medianMilliseconds": 0.005353100000002086,
+          "samples": [
+            0.004168800000002193, 0.004553599999997005, 0.005353100000002086, 0.005957200000000285,
+            0.006159600000000864
+          ]
+        }
+      }
+    },
+    {
+      "depth": 16,
+      "selected": false,
+      "measurements": {
+        "baseline": {
+          "medianMilliseconds": 0.0017683999999974277,
+          "samples": [
+            0.0017533000000014454, 0.0017572999999970306, 0.0017683999999974277,
+            0.0021530000000041126, 0.0025789000000031592
+          ]
+        },
+        "current": {
+          "medianMilliseconds": 0.0022211999999967704,
+          "samples": [
+            0.001552899999995816, 0.0015809999999987668, 0.0022211999999967704,
+            0.002318299999996043, 0.0023383999999964543
+          ]
+        }
+      }
+    },
+    {
+      "depth": 128,
+      "selected": true,
+      "measurements": {
+        "current": {
+          "medianMilliseconds": 0.012676899999996749,
+          "samples": [
+            0.011066899999997304, 0.011603900000000066, 0.012676899999996749, 0.020438599999999953,
+            0.026326599999998736
+          ]
+        },
+        "baseline": {
+          "medianMilliseconds": 0.25163650000000076,
+          "samples": [
+            0.1787210000000016, 0.21706930000000285, 0.25163650000000076, 0.25852949999999736,
+            0.28961810000000127
+          ]
+        }
+      }
+    },
+    {
+      "depth": 128,
+      "selected": false,
+      "measurements": {
+        "current": {
+          "medianMilliseconds": 0.0009577999999976327,
+          "samples": [
+            0.0007083000000022821, 0.000727399999999534, 0.0009577999999976327,
+            0.001251299999995581, 0.001942700000000741
+          ]
+        },
+        "baseline": {
+          "medianMilliseconds": 0.001667200000002822,
+          "samples": [
+            0.0016660999999999148, 0.0016660999999999148, 0.001667200000002822,
+            0.0016801999999984218, 0.0021311000000025617
+          ]
+        }
+      }
+    },
+    {
+      "depth": 512,
+      "selected": true,
+      "measurements": {
+        "baseline": {
+          "medianMilliseconds": 2.446001699999999,
+          "samples": [
+            2.361451199999999, 2.3797266999999978, 2.446001699999999, 2.4881631999999967,
+            3.0621555999999996
+          ]
+        },
+        "current": {
+          "medianMilliseconds": 0.03884329999999636,
+          "samples": [
+            0.027580000000000382, 0.03030909999999949, 0.03884329999999636, 0.044372700000002395,
+            0.07543019999999956
+          ]
+        }
+      }
+    },
+    {
+      "depth": 512,
+      "selected": false,
+      "measurements": {
+        "baseline": {
+          "medianMilliseconds": 0.006197600000001557,
+          "samples": [
+            0.006059500000003481, 0.006085500000000366, 0.006197600000001557, 0.006378999999998314,
+            0.007168500000000222
+          ]
+        },
+        "current": {
+          "medianMilliseconds": 0.0022762999999997647,
+          "samples": [
+            0.0022672000000000026, 0.0022712999999953353, 0.0022762999999997647,
+            0.0023012999999991735, 0.003173999999995658
+          ]
+        }
+      }
+    },
+    {
+      "depth": 2048,
+      "selected": true,
+      "measurements": {
+        "current": {
+          "medianMilliseconds": 0.12162630000000263,
+          "samples": [
+            0.11719100000000253, 0.12143100000000118, 0.12162630000000263, 0.12284270000000105,
+            0.1260126000000014
+          ]
+        },
+        "baseline": {
+          "medianMilliseconds": 33.84613159999999,
+          "samples": [
+            32.932431600000015, 33.25557500000002, 33.84613159999999, 34.738269100000004, 40.4434528
+          ]
+        }
+      }
+    },
+    {
+      "depth": 2048,
+      "selected": false,
+      "measurements": {
+        "current": {
+          "medianMilliseconds": 0.003819199999998091,
+          "samples": [
+            0.003815199999962715, 0.0038172000000031405, 0.003819199999998091,
+            0.0038202000000183032, 0.003863199999977951
+          ]
+        },
+        "baseline": {
+          "medianMilliseconds": 0.013288099999999758,
+          "samples": [
+            0.012363300000015443, 0.012390300000015486, 0.013288099999999758, 0.01470369999997274,
+            0.020169999999961875
+          ]
+        }
+      }
+    },
+    {
+      "depth": 8192,
+      "selected": true,
+      "measurements": {
+        "baseline": {
+          "error": "RangeError: Maximum call stack size exceeded"
+        },
+        "current": {
+          "medianMilliseconds": 0.46440379999999093,
+          "samples": [
+            0.4589064000000235, 0.46240499999998974, 0.46440379999999093, 0.48765159999998103,
+            0.5110117000000173
+          ]
+        }
+      }
+    },
+    {
+      "depth": 8192,
+      "selected": false,
+      "measurements": {
+        "baseline": {
+          "medianMilliseconds": 0.061045100000001185,
+          "samples": [
+            0.05371530000002167, 0.05608280000001287, 0.061045100000001185, 0.0616863999999623,
+            0.06242080000001806
+          ]
+        },
+        "current": {
+          "medianMilliseconds": 0.015774800000008325,
+          "samples": [
+            0.01570560000000114, 0.01574270000000979, 0.015774800000008325, 0.015793800000028568,
+            0.016337799999973868
+          ]
+        }
+      }
+    },
+    {
+      "depth": 20000,
+      "selected": true,
+      "measurements": {
+        "current": {
+          "medianMilliseconds": 1.2434307999999874,
+          "samples": [
+            1.2343327000000044, 1.2423007000000326, 1.2434307999999874, 1.2507998000000042,
+            1.308234100000027
+          ]
+        },
+        "baseline": {
+          "error": "RangeError: Maximum call stack size exceeded"
+        }
+      }
+    },
+    {
+      "depth": 20000,
+      "selected": false,
+      "measurements": {
+        "current": {
+          "medianMilliseconds": 0.04026100000000952,
+          "samples": [
+            0.03961269999999786, 0.039726900000005116, 0.04026100000000952, 0.04146419999997306,
+            0.04901150000000598
+          ]
+        },
+        "baseline": {
+          "error": "RangeError: Maximum call stack size exceeded"
+        }
+      }
+    }
+  ]
+}

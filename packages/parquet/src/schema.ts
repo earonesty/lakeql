@@ -14,65 +14,44 @@ export function rejectUnsupportedParquetSchema(
   const schema = metadata.schema;
   if (!Array.isArray(schema) || schema.length === 0) return;
   const selected = options.columns === undefined ? undefined : new Set(options.columns);
-  const root = schema[0];
-  const childCount = schemaChildCount(root);
+  // One path and remaining-child stack: linear traversal, O(depth) workspace.
+  // Join the path only when reporting a rejected leaf, not at every group.
+  const remaining = [schemaChildCount(schema[0])];
+  const path: string[] = [];
   let index = 1;
-  for (let child = 0; child < childCount && index < schema.length; child += 1) {
-    index = rejectUnsupportedParquetSchemaNode(schema, index, [], selected, options);
+  while (remaining.length > 0 && index < schema.length) {
+    const depth = remaining.length - 1;
+    const children = remaining[depth] ?? 0;
+    if (children === 0) {
+      remaining.pop();
+      continue;
+    }
+    remaining[depth] = children - 1;
+    const element = schema[index];
+    if (element === undefined) break;
+    const name = String(element.name ?? `field_${index}`);
+    if (depth === 0 && selected !== undefined && !selected.has(name)) {
+      index = skipParquetSchemaSubtree(schema, index);
+      continue;
+    }
+    path.length = depth;
+    path.push(name);
+    rejectUnsupportedParquetLeaf(element, path, options);
+    index++;
+    const count = schemaChildCount(element);
+    if (count > 0) remaining.push(count);
   }
 }
 
 type ParquetSchemaElement = NonNullable<ParquetMetadata["schema"]>[number];
 
-function rejectUnsupportedParquetSchemaNode(
-  schema: ParquetSchemaElement[],
-  index: number,
-  path: string[],
-  selected: ReadonlySet<string> | undefined,
-  options: RejectUnsupportedParquetSchemaOptions,
-): number {
-  const element = schema[index];
-  if (element === undefined) return index + 1;
-  const name = String(element.name ?? `field_${index}`);
-  const nodePath = [...path, name];
-  if (selected !== undefined && path.length === 0 && !selected.has(name)) {
-    return skipParquetSchemaSubtree(schema, index);
-  }
-  const childCount = schemaChildCount(element);
-  rejectUnsupportedParquetLeaf(element, nodePath, options);
-  if (childCount === 0) return index + 1;
-  // Generic batch construction supports struct/list/map shapes. Leaf-specific
-  // conversion restrictions still apply recursively; physical operator dispatch
-  // determines which vector shapes use direct decoding versus owned fallback.
-  return rejectUnsupportedNestedParquetDecimals(schema, index, path, options);
-}
-
-function rejectUnsupportedNestedParquetDecimals(
-  schema: ParquetSchemaElement[],
-  index: number,
-  path: string[],
-  options: RejectUnsupportedParquetSchemaOptions,
-): number {
-  const element = schema[index];
-  if (element === undefined) return index + 1;
-  const name = String(element.name ?? `field_${index}`);
-  const nodePath = [...path, name];
-  rejectUnsupportedParquetLeaf(element, nodePath, options);
-  let next = index + 1;
-  for (let child = 0; child < schemaChildCount(element) && next < schema.length; child += 1) {
-    next = rejectUnsupportedNestedParquetDecimals(schema, next, nodePath, options);
-  }
-  return next;
-}
-
 function skipParquetSchemaSubtree(schema: ParquetSchemaElement[], index: number): number {
-  const element = schema[index];
-  if (element === undefined) return index + 1;
-  let next = index + 1;
-  for (let child = 0; child < schemaChildCount(element) && next < schema.length; child += 1) {
-    next = skipParquetSchemaSubtree(schema, next);
+  let pending = 1;
+  while (pending > 0 && index < schema.length) {
+    pending += schemaChildCount(schema[index]) - 1;
+    index++;
   }
-  return next;
+  return index;
 }
 
 function schemaChildCount(element: ParquetSchemaElement | undefined): number {
@@ -89,7 +68,6 @@ function rejectUnsupportedParquetLeaf(
   path: string[],
   options: RejectUnsupportedParquetSchemaOptions,
 ): void {
-  const column = path.join(".");
   const convertedType = String(element.converted_type ?? "").toUpperCase();
   const logicalType = logicalTypeRecord(element.logical_type);
   const logicalTypeName = parquetLogicalTypeName(element.logical_type);
@@ -115,7 +93,7 @@ function rejectUnsupportedParquetLeaf(
     throw new LakeqlError(
       "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
       "Parquet decimals above precision 15 are not supported",
-      { column, feature: "decimal-precision", precision: decimalPrecision },
+      { column: path.join("."), feature: "decimal-precision", precision: decimalPrecision },
     );
   }
 }
