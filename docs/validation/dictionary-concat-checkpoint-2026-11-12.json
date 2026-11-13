@@ -31,5 +31,16 @@
     "No total Worker heap bound",
     "No new public-cloud run",
     "Mandatory scheduler and general nested fallbacks incomplete"
-  ]
+  ],
+  "provenanceClarification": {
+    "kind": "Historical intermediate worktree checkpoint",
+    "currentRevisionAttestation": false,
+    "explanation": "Recorded source hashes identify the intermediate contents used for this dated run. Later implementation changed these files; hashes are intentionally not replaced with current hashes because that would attach old measurements to unmeasured source. Consult subsequent validation checkpoints for current evidence.",
+    "mismatchedPathsAtReview": [
+      "packages/core/src/packed-gather.ts",
+      "packages/core/src/vector-sort.ts",
+      "packages/core/src/batch.ts",
+      "packages/parquet/src/parsers.ts"
+    ]
+  }
 }

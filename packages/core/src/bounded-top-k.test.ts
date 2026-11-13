@@ -57,3 +57,23 @@ describe("bounded stable top-k", () => {
     }
   });
 });
+
+it.each([0, -0, NaN])("rejects later ties without replacing earlier values: %s", (comparison) => {
+  const heap = new BoundedTopK<number>(1, () => comparison);
+  heap.add(7);
+  const rejection = heap.add(8);
+  expect(rejection).toEqual({ accepted: false });
+  expect(heap.add(9)).toBe(rejection);
+  expect(Object.isFrozen(rejection)).toBe(true);
+  expect(heap.drainSorted()).toEqual([7]);
+});
+
+it("reuses rejection results while still accepting a better candidate", () => {
+  const heap = new BoundedTopK<number>(2, (a, b) => a - b);
+  heap.add(3);
+  heap.add(4);
+  const rejection = heap.add(5);
+  for (let value = 6; value < 1000; value++) expect(heap.add(value)).toBe(rejection);
+  expect(heap.add(2)).toEqual({ accepted: true, removed: [4] });
+  expect(heap.drainSorted()).toEqual([2, 3]);
+});

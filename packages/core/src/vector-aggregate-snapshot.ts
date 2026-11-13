@@ -1,4 +1,5 @@
 import { unmeasuredMemoryBytes } from "./aggregate-memory.js";
+import { LakeqlError } from "./errors.js";
 import { isTimestampValue, TimestampValue } from "./timestamp.js";
 import type {
   VectorAggregateSnapshotValue,
@@ -109,6 +110,7 @@ function snapshotValue(value: VectorAggregateValue): VectorAggregateSnapshotValu
 }
 
 function restoreValue(value: VectorAggregateSnapshotValue): VectorAggregateValue {
+  validateAggregateSnapshotScalar(value);
   if (isBigintSnapshot(value)) return BigInt(value.value);
   if (isTimestampSnapshot(value)) {
     return new TimestampValue(BigInt(value.epochNanoseconds), value.unit, value.isAdjustedToUTC);
@@ -147,4 +149,18 @@ function isTimestampSnapshot(value: VectorAggregateSnapshotValue): value is {
     "isAdjustedToUTC" in value &&
     typeof value.isAdjustedToUTC === "boolean"
   );
+}
+
+/** Validate serialized scalar shape without parsing or allocating bigint payloads. */
+export function validateAggregateSnapshotScalar(value: VectorAggregateSnapshotValue): void {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  )
+    return;
+  if (isBigintSnapshot(value) && /^-?[0-9]+$/.test(value.value)) return;
+  if (isTimestampSnapshot(value) && /^-?[0-9]+$/.test(value.epochNanoseconds)) return;
+  throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Invalid aggregate checkpoint scalar");
 }

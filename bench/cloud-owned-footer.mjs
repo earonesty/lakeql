@@ -7,6 +7,7 @@ import {
   readOwnedParquetMetadata,
   readParquetMetadataFromFile,
 } from "../packages/parquet/dist/metadata-cache.js";
+import { fetchWithTimeout } from "./bench-utils.mjs";
 
 const baseUrl = "https://pub-9d5bcb33a5384d79875a943eef183b6d.r2.dev/bench/";
 const path = "window-events.parquet";
@@ -14,12 +15,16 @@ const requests = [];
 const store = httpStore({
   baseUrl,
   fetch: async (input, init) => {
-    const response = await fetch(input, { ...init, signal: AbortSignal.timeout(30000) });
+    const response = await fetchWithTimeout(input, init);
     if (init?.method !== "HEAD") {
       const range = new Headers(init?.headers).get("Range");
       assert.ok(range, "Full-object requests are forbidden");
       assert.equal(response.status, 206);
-      requests.push({ range, bytes: Number(response.headers.get("Content-Length")) });
+      const length = response.headers.get("Content-Length");
+      assert.ok(length !== null && /^[0-9]+$/.test(length), "Missing or invalid Content-Length");
+      const bytes = Number(length);
+      assert.ok(Number.isSafeInteger(bytes));
+      requests.push({ range, bytes });
     }
     return response;
   },
@@ -30,31 +35,39 @@ const trailer = await file.slice(file.byteLength - 8, file.byteLength);
 const footerBytes = new DataView(trailer).getUint32(0, true) + 8;
 const oracle = await readParquetMetadataFromFile(file);
 const reports = [];
-for (const cap of [footerBytes - 1, footerBytes, footerBytes * 2]) {
+for (const cap of [footerBytes - 1, footerBytes, footerBytes * 2, 64 * 1024 * 1024]) {
   requests.length = 0;
   const budget = new MemoryBudget(cap);
-  if (cap < footerBytes) {
-    await assert.rejects(readOwnedParquetMetadata(path, file, budget), {
-      code: "LAKEQL_BUDGET_EXCEEDED",
-    });
-  } else {
+  let rejected = false;
+  try {
     const { owner } = await readOwnedParquetMetadata(path, file, budget);
     try {
       assert.deepEqual(owner.value, oracle);
     } finally {
       owner.release();
     }
+  } catch (error) {
+    assert.equal(error.code, "LAKEQL_BUDGET_EXCEEDED");
+    rejected = true;
   }
+  if (cap < footerBytes) assert.equal(rejected, true);
+  if (cap === 64 * 1024 * 1024) assert.equal(rejected, false);
   assert.equal(budget.usedBytes, 0);
   assert.ok(budget.peakBytes <= cap);
-  reports.push({ cap, footerBytes, peakBytes: budget.peakBytes, requests: [...requests] });
+  reports.push({
+    cap,
+    rejected,
+    footerBytes,
+    peakBytes: budget.peakBytes,
+    requests: [...requests],
+  });
 }
 console.log(
   JSON.stringify(
     {
       source: baseUrl + path,
       scope:
-        "Actual public R2 HTTP 206 responses; encoded allocation bounds only, excluding parsed JS objects and whole-worker heap",
+        "Actual public R2 HTTP 206 responses; tracked metadata allocation bounds, including admitted conversion containers; runtime overhead and whole-worker heap are not bounded",
       reports,
     },
     null,

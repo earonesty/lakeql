@@ -1,0 +1,13 @@
+{
+  "backend": "workerd/native R2",
+  "replacementRuns": 3,
+  "explicitRetainRows": 8,
+  "releasedBytes": 0,
+  "reconfiguredPreviousBytes": 0,
+  "checks": [
+    "Replacement runs retain identical charged bytes after cache eviction",
+    "retainPrevious=1 preserves two owned outputs",
+    "Release plus eviction returns zero",
+    "Reconfigure releases old output/cache before replacing pool"
+  ]
+}

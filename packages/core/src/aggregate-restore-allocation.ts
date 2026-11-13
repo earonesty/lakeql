@@ -4,6 +4,7 @@ import type {
   VectorAggregateSnapshotValue,
   VectorAggregateStateSnapshots,
 } from "./vector-aggregate.js";
+import { validateAggregateSnapshotScalar } from "./vector-aggregate-snapshot.js";
 
 /** Mutable checkpoint reconstruction, including collection entries and scalar
  * payloads. Duplicate entries are conservatively charged before deduplication.
@@ -71,6 +72,7 @@ function stringBytes(value: string): number {
 }
 
 function scalarBytes(value: VectorAggregateSnapshotValue): number {
+  validateAggregateSnapshotScalar(value);
   if (typeof value === "string") return stringBytes(value);
   if (value !== null && typeof value === "object") {
     // Decimal input length bounds binary bigint payload without parsing before

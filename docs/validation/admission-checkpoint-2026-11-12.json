@@ -32,5 +32,16 @@
     "No historical whole-query latency comparison",
     "External conformance not rerun in this checkpoint",
     "JS heap and mandatory scheduler remain incomplete"
-  ]
+  ],
+  "provenanceClarification": {
+    "kind": "Historical intermediate worktree checkpoint",
+    "currentRevisionAttestation": false,
+    "explanation": "Recorded source hashes identify the intermediate contents used for this dated run. Later implementation changed these files; hashes are intentionally not replaced with current hashes because that would attach old measurements to unmeasured source. Consult subsequent validation checkpoints for current evidence.",
+    "mismatchedPathsAtReview": [
+      "packages/core/src/memory-budget.ts",
+      "packages/core/src/memory-scope.ts",
+      "packages/core/src/packed-gather.ts",
+      "packages/core/src/vector-sort.ts"
+    ]
+  }
 }

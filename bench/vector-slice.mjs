@@ -27,8 +27,8 @@ for (const childWidth of [8, 128]) {
   );
   const view = sliceVector(vector, 1, rows - 1);
   const materialized = materializedSlice(vector, 1, rows - 1);
-  assert.equal(view.type);
-  assert.equal(vector.type);
+  assert.equal(view.type, "list");
+  assert.equal(vector.type, "list");
   assert.equal(view.child, vector.child);
   assert.equal(view.offsets.buffer, vector.offsets.buffer);
   for (let row = 0; row < rows - 2; row++)

@@ -9,6 +9,7 @@ import {
   readParquetMetadataFromFile,
 } from "../packages/parquet/dist/metadata-cache.js";
 import { planRowGroupsFromMetadata } from "../packages/parquet/dist/row-group-plan.js";
+import { fetchWithTimeout } from "./bench-utils.mjs";
 
 const baseUrl = "https://pub-9d5bcb33a5384d79875a943eef183b6d.r2.dev/bench/";
 const path = "window-events.parquet";
@@ -16,12 +17,16 @@ const requests = [];
 const store = httpStore({
   baseUrl,
   fetch: async (input, init) => {
-    const response = await fetch(input, { ...init, signal: AbortSignal.timeout(30000) });
+    const response = await fetchWithTimeout(input, init);
     if (init?.method !== "HEAD") {
       const range = new Headers(init?.headers).get("Range");
       assert.ok(range, "Full-object requests are forbidden");
       assert.equal(response.status, 206);
-      requests.push({ range, bytes: Number(response.headers.get("Content-Length")) });
+      const length = response.headers.get("Content-Length");
+      assert.ok(length !== null && /^[0-9]+$/.test(length), "Missing or invalid Content-Length");
+      const bytes = Number(length);
+      assert.ok(Number.isSafeInteger(bytes));
+      requests.push({ range, bytes });
     }
     return response;
   },
@@ -35,27 +40,34 @@ const expected = planRowGroupsFromMetadata(oracle);
 const directoryBytes = oracle.row_groups.length * 8;
 const reports = [];
 for (const mode of ["full", "indexed"]) {
-  for (const cap of [footerBytes + directoryBytes - 1, footerBytes + directoryBytes, 65536]) {
+  for (const cap of [
+    footerBytes + directoryBytes - 1,
+    footerBytes + directoryBytes,
+    65536,
+    64 * 1024 * 1024,
+  ]) {
     for (let sample = 0; sample < 3; sample++) {
       requests.length = 0;
       const budget = new MemoryBudget(cap);
       const start = performance.now();
       let rejected = false;
-      if (mode === "indexed" && cap < footerBytes + directoryBytes) {
-        await assert.rejects(planOwnedIndexedRowGroups(file, budget), {
-          code: "LAKEQL_BUDGET_EXCEEDED",
-        });
-        rejected = true;
-      } else if (mode === "indexed") {
-        assert.deepEqual(await planOwnedIndexedRowGroups(file, budget), expected);
-      } else {
-        const { owner } = await readOwnedParquetMetadata(path, file, budget);
-        try {
-          assert.deepEqual(planRowGroupsFromMetadata(owner.value), expected);
-        } finally {
-          owner.release();
+      try {
+        if (mode === "indexed") {
+          assert.deepEqual(await planOwnedIndexedRowGroups(file, budget), expected);
+        } else {
+          const { owner } = await readOwnedParquetMetadata(path, file, budget);
+          try {
+            assert.deepEqual(planRowGroupsFromMetadata(owner.value), expected);
+          } finally {
+            owner.release();
+          }
         }
+      } catch (error) {
+        assert.equal(error.code, "LAKEQL_BUDGET_EXCEEDED");
+        rejected = true;
       }
+      if (mode === "indexed" && cap < footerBytes + directoryBytes) assert.equal(rejected, true);
+      if (cap === 64 * 1024 * 1024) assert.equal(rejected, false);
       const milliseconds = performance.now() - start;
       assert.equal(budget.usedBytes, 0);
       assert.ok(budget.peakBytes <= cap);
@@ -78,7 +90,7 @@ console.log(
     {
       source: baseUrl + path,
       scope:
-        "Actual public R2 HTTP 206 responses; encoded allocation bounds only, excluding parsed JS objects and whole-worker heap",
+        "Actual public R2 HTTP 206 responses; tracked metadata allocation bounds, including admitted conversion containers; runtime overhead and whole-worker heap are not bounded",
       reports,
     },
     null,

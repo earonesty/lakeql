@@ -313,3 +313,34 @@ it("shares peak scratch across finalizers and retains only the result payloads",
   owner.release();
   expect(scope.budget.usedBytes).toBe(0);
 });
+
+it.each([
+  {},
+  { type: "bigint" },
+  { type: "bigint", value: 1 },
+  { type: "bigint", value: "1.5" },
+  { type: "bigint", value: "" },
+  { type: "timestamp", epochNanoseconds: "1", unit: "seconds", isAdjustedToUTC: true },
+  { type: "timestamp", epochNanoseconds: "1", unit: "nanos" },
+  { type: "timestamp", epochNanoseconds: [], unit: "nanos", isAdjustedToUTC: true },
+])("rejects malformed checkpoint scalars before admission: %j", (value) => {
+  const snapshot = { result: { op: "min", value } } as unknown as Parameters<
+    typeof aggregateRestoreAllocationBytes
+  >[0];
+  const scope = new MemoryScope(new MemoryBudget(4096));
+  scope.allocate(7, "sibling", () => 1);
+  expect(() => aggregateRestoreAllocationBytes(snapshot)).toThrow(
+    /Invalid aggregate checkpoint scalar/,
+  );
+  for (const allocationScope of [undefined, scope]) {
+    try {
+      restoreVectorAggregateStates(snapshot, {}, allocationScope);
+      throw Error("Expected rejection");
+    } catch (error) {
+      expect(error).toMatchObject({ code: "LAKEQL_VALIDATION_ERROR" });
+    }
+    expect(scope.budget.usedBytes).toBe(7);
+  }
+  scope.dispose();
+  expect(scope.budget.usedBytes).toBe(0);
+});

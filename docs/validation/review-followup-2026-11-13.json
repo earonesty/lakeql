@@ -1,0 +1,103 @@
+{
+  "source": "PR 21 inline review comments",
+  "observedCommentCount": 120,
+  "status": "Review findings require verification; not all are confirmed defects",
+  "fixedLocally": [
+    {
+      "path": "packages/core/src/aggregate-restore-allocation.ts",
+      "issue": "Malformed serialized scalar can produce raw TypeError during pre-admission sizing",
+      "resolution": "Shared scalar shape/decimal syntax validation in allocation planning and actual restore",
+      "tests": "70 snapshot/allocation tests pass, including eight malformed shapes with/without allocation scopes and sibling reservation preservation"
+    },
+    {
+      "path": "bench/vector-slice.mjs",
+      "issue": "Missing assert.equal expected values prevented benchmark execution",
+      "result": "Both widths validate all row values and shared child/offset backing; completed measurements archived"
+    },
+    {
+      "path": "bench/indexed-metadata-corpus.mjs",
+      "issue": "Obsolete directory-only budget rejects current metadata leaf/envelope allocation",
+      "result": "Configurable bounded 64 MiB default; recorded peak 155592 bytes; 242 parity passes and one ordinary-reader rejection; prior fixture-hash baseline regression guard passes"
+    },
+    {
+      "path": "packages/core/src/bounded-top-k.ts",
+      "issue": "Full-heap rejection allocated candidate and result wrappers for every losing row",
+      "resolution": "Compare against worst before creating candidate; frozen shared rejection result; preserve ordinal advancement and stable tie rejection",
+      "validation": "13 plain/owned heap tests and TypeScript build pass; stable sorting matrix, zero/negative-zero/NaN ties, repeated rejections followed by accepted replacement",
+      "limitation": "No new end-to-end speedup measurement claimed"
+    },
+    {
+      "path": "bench/worker-heap-entry.mjs",
+      "issue": "Replacement runs and reconfiguration dropped row snapshots without releasing prior owners",
+      "resolution": "One cleanup function used by replacement, release and configuration; report previous pool usage after cleanup",
+      "validation": "Real workerd/native R2 lifecycle harness verifies stable retained charge, explicit retention, release and reconfiguration",
+      "historicalEvidence": "Earlier reports are not rewritten; sequences relying on implicit replacement need reruns before relying on their memory measurements"
+    },
+    {
+      "paths": ["bench/cloud-owned-footer.mjs", "bench/cloud-indexed-planning.mjs"],
+      "issue": "Timeout replaced the object-store caller cancellation signal",
+      "resolution": "Shared fetchWithTimeout composes caller cancellation with timeout and preserves Request/init signal precedence",
+      "validation": "Real loopback HTTP test covers cancellation via init and Request, timeout expiry, and explicit null signal override",
+      "limitation": "Transport helper validated; cloud footer harness budget assumptions still need refresh before rerunning full cloud scripts"
+    }
+  ],
+  "pendingCategories": [
+    "Benchmark harness failures against evolved allocation contracts",
+    "Historical checkpoint hashes need explicit historical provenance, not silent replacement",
+    "Remaining production-code review suggestions",
+    "Current CI and external conformance outcomes"
+  ],
+  "goalComplete": false,
+  "workerStressRefresh": {
+    "artifact": "docs/benchmarks/worker-heap-review-refresh-64-2026-11-13.json",
+    "runtimeHeapMiB": 64,
+    "allocationPoolsMiB": [64, 128],
+    "rows": 32768,
+    "rounds": 2,
+    "concurrency": [1, 4],
+    "completedJobs": 16,
+    "budgetRejectedJobs": 4,
+    "singleJobPeakBytes": 28371353,
+    "fourJobPeakBytes": {
+      "64MiB": 67104219,
+      "128MiB": 110914610
+    },
+    "finalReservations": 0,
+    "historicalClarification": "This stress matrix explicitly releases each round, so implicit-replacement leakage did not affect its lifecycle. The separate lifecycle harness covers that defect.",
+    "limitation": "Local workerd over HTTP; V8 managed heap and tracked pools are not production total-memory guarantees"
+  },
+  "cloudMetadataRefresh": {
+    "transport": "Actual public R2 HTTP 206 ranges",
+    "fullPeakAllocatedBytes": 163758,
+    "indexedPeakAllocatedBytes": 90994,
+    "checks": [
+      "Small caps produce typed budget rejection",
+      "Successful metadata/plans match independent ordinary-reader oracle",
+      "All reservations released",
+      "Response Content-Length required and validated"
+    ],
+    "artifacts": [
+      "docs/benchmarks/cloud-footer-review-refresh-2026-11-13.json",
+      "docs/benchmarks/cloud-planning-review-refresh-2026-11-13.json"
+    ],
+    "limitation": "Single small fixture; tracked metadata allocations, not whole-runtime memory"
+  },
+  "validationCheckpoint": {
+    "defaultPassed": 2701,
+    "defaultSkipped": 598,
+    "workersPassed": 51,
+    "referencePassed": 104,
+    "coveragePercent": {
+      "statements": 91.38,
+      "branches": 85.15,
+      "functions": 95.66,
+      "lines": 93.52
+    },
+    "lint": "passed",
+    "typecheck": "passed",
+    "build": "tsc -b passed",
+    "externalConformance": "Known 18 failures remain; not rerun in this checkpoint",
+    "goalComplete": false
+  },
+  "provenanceAction": "Clarified three historical checkpoint records and listed current mismatches without rewriting old hashes or attributing historical measurements to current source."
+}

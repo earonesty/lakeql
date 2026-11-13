@@ -1,0 +1,19 @@
+{
+  "description": "Correctness-checked retained slicing versus materialized baseline; local microbenchmark, not whole-query timings",
+  "results": [
+    {
+      "rows": 2000,
+      "childWidth": 8,
+      "baselineMs": 0.7594920000000087,
+      "viewMs": 0.0012320000000016762,
+      "sharedChild": true
+    },
+    {
+      "rows": 2000,
+      "childWidth": 128,
+      "baselineMs": 9.993111999999996,
+      "viewMs": 0.0003609999999980573,
+      "sharedChild": true
+    }
+  ]
+}

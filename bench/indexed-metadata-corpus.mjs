@@ -10,6 +10,8 @@ import {
 } from "../packages/parquet/dist/row-group-plan.js";
 
 const root = new URL("../fixtures/external/parquet-testing/", import.meta.url);
+const maxAllocatedBytes = Number(process.env.LAKEQL_CORPUS_MEMORY_BYTES ?? 64 * 1024 * 1024);
+assert.ok(Number.isSafeInteger(maxAllocatedBytes) && maxAllocatedBytes > 0);
 const results = [];
 for (const path of (await readdir(root, { recursive: true }))
   .filter((p) => p.endsWith(".parquet"))
@@ -25,7 +27,7 @@ for (const path of (await readdir(root, { recursive: true }))
       slice: async (start, end) => bytes.slice(start, end),
     });
     phase = "indexed metadata parity";
-    scope = new MemoryScope(new MemoryBudget(oracle.row_groups.length * 8));
+    scope = new MemoryScope(new MemoryBudget(maxAllocatedBytes));
     const source = openIndexedParquetFooter(bytes, scope);
     const { row_groups, ...envelope } = oracle;
     assert.deepEqual(source.metadata, envelope);
@@ -65,12 +67,15 @@ for (const path of (await readdir(root, { recursive: true }))
       groups: source.rowGroupCount,
       plans,
       unsupportedPlans,
+      peakAllocatedBytes: scope.budget.peakBytes,
     });
   } catch (error) {
     results.push({
       ...entry,
       status: "rejected",
       phase,
+      code: error.code,
+      peakAllocatedBytes: scope?.budget.peakBytes,
       error: String(error.message).slice(0, 1000),
     });
   } finally {
@@ -82,7 +87,8 @@ console.log(
   JSON.stringify(
     {
       scope:
-        "Local real external Parquet files; indexed envelope/group equality with ordinary normalized reader, planner outcomes compared including unsupported schemas. Exact directory capacity only; no full-file data decode or whole-query heap claim.",
+        "Local real external Parquet files; indexed envelope/group equality with ordinary normalized reader, planner outcomes compared including unsupported schemas. Bounded per-file metadata allocation pool including leaf and envelope storage; no full-file data decode or whole-query heap claim.",
+      maxAllocatedBytes,
       results,
     },
     null,

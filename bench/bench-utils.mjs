@@ -231,3 +231,11 @@ function percentile(sorted, p) {
   const index = Math.min(sorted.length - 1, Math.floor(p * sorted.length));
   return sorted[index];
 }
+
+/** Add a benchmark timeout while preserving fetch's caller-signal precedence. */
+export function fetchWithTimeout(input, init, timeoutMs = 30000) {
+  const caller =
+    init?.signal !== undefined ? init.signal : input instanceof Request ? input.signal : undefined;
+  const timeout = AbortSignal.timeout(timeoutMs);
+  return fetch(input, { ...init, signal: caller ? AbortSignal.any([caller, timeout]) : timeout });
+}

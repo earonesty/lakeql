@@ -1,5 +1,7 @@
 import { LakeqlError } from "./errors.js";
 
+const REJECTED = Object.freeze({ accepted: false as const });
+
 interface Candidate<T> {
   value: T;
   ordinal: number;
@@ -26,14 +28,20 @@ export class BoundedTopK<T> {
   }
 
   add(value: T): { accepted: false } | { accepted: true; removed: T[] } {
-    if (this.limit === 0) return { accepted: false };
+    if (this.limit === 0) return REJECTED;
     if (this.ordinal === Number.MAX_SAFE_INTEGER) {
       throw new LakeqlError(
         "LAKEQL_TYPE_ERROR",
         "Top-k encounter ordinal exceeded safe integer range",
       );
     }
-    const candidate = { value, ordinal: this.ordinal++ };
+    const ordinal = this.ordinal++;
+    const worst = this.heap[0];
+    // A later tie cannot displace an earlier candidate. Avoid per-row wrappers
+    // and result objects for the common full-heap rejection path.
+    if (this.heap.length === this.limit && worst && !(this.compare(value, worst.value) < 0))
+      return REJECTED;
+    const candidate = { value, ordinal };
     if (this.heap.length < this.limit) {
       this.heap.push(candidate);
       for (let index = this.heap.length - 1; index > 0; ) {
@@ -47,8 +55,6 @@ export class BoundedTopK<T> {
       }
       return { accepted: true, removed: [] };
     }
-    const worst = this.heap[0] as Candidate<T>;
-    if (this.order(candidate, worst) >= 0) return { accepted: false };
     this.heap[0] = candidate;
     for (let index = 0; ; ) {
       const left = index * 2 + 1;
@@ -66,7 +72,7 @@ export class BoundedTopK<T> {
       this.heap[child] = swapped;
       index = child;
     }
-    return { accepted: true, removed: [worst.value] };
+    return { accepted: true, removed: [(worst as Candidate<T>).value] };
   }
 
   /** Finalize selection; callers must not add more values after draining. */
