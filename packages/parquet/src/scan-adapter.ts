@@ -33,7 +33,7 @@ import { acquireIndexedParquetSource } from "./indexed-source.js";
 import type { OwnedMetadataCache } from "./metadata-cache.js";
 import { readCachedParquetMetadata, readOwnedParquetMetadata } from "./metadata-cache.js";
 import { readOwnedParquetVectorBatches } from "./owned-vector-batches.js";
-import { lakeqlParquetParsers } from "./parsers.js";
+import { parquetParsersForMetadata } from "./parsers.js";
 import { cachedRangeBuffer, type RangeCacheOptions } from "./range-cache.js";
 import { recordReadColumns } from "./read-metrics.js";
 import { ParquetReadScope } from "./read-scope.js";
@@ -217,7 +217,7 @@ export class ParquetScanAdapter implements ScanAdapter {
           rowStart,
           rowEnd,
           compressors: lakeqlParquetCompressors,
-          parsers: lakeqlParquetParsers,
+          parsers: parquetParsersForMetadata(metadata),
           utf8: false,
         };
         if (readColumns) readOptions.columns = readColumns;

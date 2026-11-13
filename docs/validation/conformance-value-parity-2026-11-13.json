@@ -98,5 +98,21 @@
     "change": "Scoped and borrowed readPlainValues now share validated INT96 carrier decoding; convertDecodedValues uses the same temporal conversion regardless of allocation scope. Scoped reservation and cleanup remain unchanged.",
     "validation": "2708 default tests passed, 605 skipped; 25 focused carrier/temporal tests passed; seven temporal tests rerun with independent exact epoch constants passed. TypeScript build passed.",
     "remaining": "Public object reader still calls upstream directly; the public fixture mismatch is not fixed by this shared-helper change."
+  },
+  "int96PublicIntegration": {
+    "change": "Pinned hyparquet patch preserves unsigned low words and adds optional physical INT96 parser hook. Public object/column and legacy scan paths select shared ordinary/Spark parser tables from writer metadata. Published package bundles the patched reader and includes its license.",
+    "evidence": "../benchmarks/int96-public-integrated-2026-11-13.json",
+    "validation": {
+      "defaultPassed": 2708,
+      "defaultSkipped": 605,
+      "workerPassed": 51,
+      "referencePassed": 104,
+      "conformancePassed": 472,
+      "conformanceFailed": 21,
+      "conformanceSkipped": 1,
+      "cleanNpmInstallRealFixture": "passed",
+      "buildLintTypes": "passed"
+    },
+    "remaining": "Original 18 corpus failures plus JSON shape, map-without-value shape, and legacy repeated null/empty discrepancies remain. Pool accounting limitations elsewhere are unchanged."
   }
 }

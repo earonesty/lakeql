@@ -2,7 +2,7 @@ import { defineConfig } from "tsup";
 
 // `lakeql` is published as a single self-contained package: the internal
 // `lakeql-*` workspace sources are inlined, while the real runtime dependencies
-// (Parquet/Avro/crypto/geo libraries) stay external and are declared in
+// (Avro/crypto/geo libraries) stay external and are declared in
 // package.json so consumers install one package with a small dependency set.
 export default defineConfig({
   entry: {
@@ -30,8 +30,9 @@ export default defineConfig({
   clean: true,
   treeshake: true,
   sourcemap: false,
-  // Inline the workspace packages; keep declared runtime deps external.
-  noExternal: [/^lakeql-/],
+  // Inline the version-patched Parquet reader so npm consumers receive its
+  // lossless INT96 parser hook; workspace patch settings do not propagate.
+  noExternal: [/^lakeql-/, /^hyparquet(?:\/|$)/],
   external: [
     "@turf/boolean-contains",
     "@turf/boolean-intersects",
@@ -40,7 +41,6 @@ export default defineConfig({
     "fast-xml-parser",
     "fzstd",
     "h3-js",
-    "hyparquet",
     "hyparquet-writer",
   ],
 });

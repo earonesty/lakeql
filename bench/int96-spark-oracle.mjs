@@ -146,7 +146,7 @@ const report = {
   conclusion: `Raw dictionary arithmetic matches all documented values. Row mismatches against documented microseconds: public=${comparisons.public.mismatches.length}, owned=${comparisons.owned.mismatches.length}, DuckDB=${comparisons.duckdb.mismatches.length}.`,
 };
 writeFileSync(
-  "docs/benchmarks/int96-reader-oracle-2026-11-13.json",
+  "docs/benchmarks/int96-public-integrated-2026-11-13.json",
   `${JSON.stringify(report, null, 2)}\n`,
 );
 console.log(report.conclusion);

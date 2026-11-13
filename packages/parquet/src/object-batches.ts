@@ -2,7 +2,7 @@ import { parquetReadObjects, parquetSchema } from "hyparquet";
 import { scopedParquetCompressors } from "./compressors.js";
 import { normalizeDecimalRows, rawDecimalMetadata } from "./decimal.js";
 import { normalizeDecodedRows } from "./decoded-rows.js";
-import { lakeqlParquetParsers } from "./parsers.js";
+import { parquetParsersForMetadata } from "./parsers.js";
 import {
   recordReadColumns,
   recordRowGroupRead,
@@ -54,7 +54,7 @@ export async function* readParquetObjectBatchesFromFile(
         rowFormat: "object",
         rowStart,
         rowEnd,
-        parsers: lakeqlParquetParsers,
+        parsers: parquetParsersForMetadata(metadata),
         utf8: false,
       };
       if (options.columns) readOptions.columns = options.columns;

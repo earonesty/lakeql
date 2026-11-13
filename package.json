@@ -10,7 +10,10 @@
     "onlyBuiltDependencies": [
       "esbuild",
       "webgpu"
-    ]
+    ],
+    "patchedDependencies": {
+      "hyparquet@1.26.0": "patches/hyparquet@1.26.0.patch"
+    }
   },
   "scripts": {
     "build": "tsc -b && pnpm --filter lakeql build && tsc -p fixtures",

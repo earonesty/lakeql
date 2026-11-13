@@ -1,10 +1,16 @@
 import { DEFAULT_PARSERS } from "hyparquet/src/convert.js";
 import { LakeqlError, timestampFromEpoch } from "lakeql-core";
 
+import { int96EpochNanos, resolveInt96Interpretation } from "./int96-interpretation.js";
+import type { ParquetMetadata } from "./types.js";
+
 const stringDecoder = new TextDecoder("utf-8", { ignoreBOM: true });
 
 export const lakeqlParquetParsers = {
   ...DEFAULT_PARSERS,
+  timestampFromInt96(value: bigint) {
+    return timestampFromEpoch(int96EpochNanos(value, "julian-nanos"), "nanos");
+  },
   stringFromBytes(value: Uint8Array | undefined) {
     return value === undefined ? undefined : stringDecoder.decode(value);
   },
@@ -38,4 +44,18 @@ function timestampEpoch(value: bigint | number | Uint8Array): bigint {
     );
   const view = new DataView(value.buffer, value.byteOffset, value.byteLength);
   return (BigInt(view.getInt32(8, true)) << 64n) | view.getBigUint64(0, true);
+}
+
+const sparkParsers = {
+  ...lakeqlParquetParsers,
+  timestampFromInt96(value: bigint) {
+    return timestampFromEpoch(int96EpochNanos(value, "spark-micros"), "nanos");
+  },
+};
+
+/** Resolve writer compatibility once per read; parser tables are shared constants. */
+export function parquetParsersForMetadata(metadata: Pick<ParquetMetadata, "key_value_metadata">) {
+  return resolveInt96Interpretation(metadata) === "spark-micros"
+    ? sparkParsers
+    : lakeqlParquetParsers;
 }

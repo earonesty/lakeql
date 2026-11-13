@@ -1,0 +1,38 @@
+diff --git a/src/convert.js b/src/convert.js
+index a16a55f63edd892868b1f8526365b7743bc92ac1..6d6097797d3e11d2a9a105c35ffd8029af7ae3ff 100644
+--- a/src/convert.js
++++ b/src/convert.js
+@@ -95,6 +95,7 @@ export function convert(data, columnDecoder) {
+     return arr
+   }
+   if (!ctype && type === 'INT96') {
++    if (parsers.timestampFromInt96) return Array.from(data).map(v => parsers.timestampFromInt96(v))
+     return Array.from(data).map(v => parsers.timestampFromNanoseconds(parseInt96Nanos(v)))
+   }
+   if (ctype === 'DATE') {
+diff --git a/src/plain.js b/src/plain.js
+index 7a513d461704772bbde225525ccf4b66aa8b486e..9961ab91923c67cac24771e95ef06faa4db44f46 100644
+--- a/src/plain.js
++++ b/src/plain.js
+@@ -90,7 +90,7 @@ function readPlainInt64(reader, count) {
+ function readPlainInt96(reader, count) {
+   const values = new Array(count)
+   for (let i = 0; i < count; i++) {
+-    const low = reader.view.getBigInt64(reader.offset + i * 12, true)
++    const low = reader.view.getBigUint64(reader.offset + i * 12, true)
+     const high = reader.view.getInt32(reader.offset + i * 12 + 8, true)
+     values[i] = BigInt(high) << 64n | low
+   }
+diff --git a/src/types.d.ts b/src/types.d.ts
+index e374278e193f7c73d18d20481eeb0d3b83eccf87..436640b4efb77de0ba10fcc250a6df00156e568e 100644
+--- a/src/types.d.ts
++++ b/src/types.d.ts
+@@ -3,6 +3,8 @@
+  * Custom parsers for columns
+  */
+ export interface ParquetParsers {
++  /** Signed 96-bit physical carrier before Julian-day interpretation. */
++  timestampFromInt96?(physical: bigint): any
+   timestampFromMilliseconds(millis: bigint): any
+   timestampFromMicroseconds(micros: bigint): any
+   timestampFromNanoseconds(nanos: bigint): any

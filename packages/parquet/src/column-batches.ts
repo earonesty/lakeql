@@ -12,7 +12,7 @@ import { lakeqlParquetCompressors, scopedParquetCompressors } from "./compressor
 import { normalizeDecimalColumns, rawDecimalMetadata } from "./decimal.js";
 import { decodedColumnCacheKey } from "./decoded-column-cache.js";
 import { nestedValueNormalizer } from "./nested-values.js";
-import { lakeqlParquetParsers } from "./parsers.js";
+import { parquetParsersForMetadata } from "./parsers.js";
 import {
   recordReadColumns,
   recordRowGroupRead,
@@ -171,7 +171,7 @@ export async function readParquetColumnBatch(
       decompressionScope === undefined
         ? lakeqlParquetCompressors
         : scopedParquetCompressors(decompressionScope),
-    parsers: lakeqlParquetParsers,
+    parsers: parquetParsersForMetadata(metadata),
     utf8: false,
     onChunk(chunk) {
       appendColumnChunk(columnValues, chunk, rowStart, rowEnd);

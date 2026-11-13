@@ -21,8 +21,17 @@ try {
     `${JSON.stringify({ name: "lakeql-install-smoke", private: true, type: "module" }, null, 2)}\n`,
   );
   writeFileSync(
+    join(consumerDirectory, "int96.parquet"),
+    readFileSync(join(root, "fixtures/external/parquet-testing/data/int96_from_spark.parquet")),
+  );
+  writeFileSync(
     join(consumerDirectory, "smoke.mjs"),
-    `import {
+    `import { readFileSync } from "node:fs";
+import assert from "node:assert/strict";
+import {
+  memoryStore,
+  readParquetObjects,
+  timestampEpochForUnit,
   batchFromVectors,
   gt,
   physicalInputFromBatch,
@@ -31,6 +40,13 @@ import { SUPPORTED_LANCE_STORAGE_VERSION } from "lakeql-lance";
 import { browserWebGpuRuntime } from "lakeql-webgpu/browser";
 import { WebGpuPhysicalBackend } from "lakeql-webgpu";
 
+// Real Spark fixture, tested after npm install outside workspace patch settings.
+const store = memoryStore();
+await store.put("int96.parquet", readFileSync(new URL("int96.parquet", import.meta.url)));
+const rows = await readParquetObjects(store, "int96.parquet", { batchSize: 2 });
+assert.deepEqual(rows.map(({ a }) => a === null ? null : timestampEpochForUnit(a, "nanos")),
+  [1704141296123456000n, 1704070800000000000n, 253402225200000000000n,
+   1735599600000000000n, null, 9089380393200000000000n]);
 const batch = batchFromVectors({
   score: { type: "f32", values: Float32Array.of(0.25, 0.75) },
 });

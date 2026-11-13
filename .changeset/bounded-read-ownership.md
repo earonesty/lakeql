@@ -337,3 +337,5 @@ transfer only requested winner payloads after offsets. Admit read-window plannin
 and shared deferred-join containers, reject malformed late scans, and preserve
 cache reuse by sharing the lake allocation pool with configured caches by default.
 Reuse object planning when emulated-range reads require eager fallback.
+
+Preserve complete INT96 physical values in public and fallback Parquet reads, sharing automatic Spark-writer interpretation with owned decoding. Bundle the pinned reader fix so clean npm installations receive the same behavior.

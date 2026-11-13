@@ -73,8 +73,10 @@ it("preserves owned timestamp values from real FLBA12 and INT96 fixtures", async
       import.meta.url,
     );
     if (!existsSync(fixture)) return skip();
-    const { memoryStore } = await import("lakeql-core");
-    const { createParquetLake, readParquetObjects } = await import("./index.js");
+    const { memoryStore, materializeBatchRows } = await import("lakeql-core");
+    const { createParquetLake, readParquetObjects, readParquetColumnBatches } = await import(
+      "./index.js"
+    );
     const store = memoryStore();
     await store.put("timestamp.parquet", readFileSync(fixture));
     // Spark fixture documentation is the oracle for the overflow value: the
@@ -92,6 +94,15 @@ it("preserves owned timestamp values from real FLBA12 and INT96 fixtures", async
             a: value === null ? null : timestampFromEpoch(value * 1000n, "nanos"),
           }))
         : await readParquetObjects(store, "timestamp.parquet");
+    expect(await readParquetObjects(store, "timestamp.parquet", { batchSize: 2 })).toEqual(
+      expected,
+    );
+    const columnRows = [];
+    for await (const batch of readParquetColumnBatches(store, "timestamp.parquet", {
+      batchSize: 2,
+    }))
+      columnRows.push(...materializeBatchRows(batch.batch));
+    expect(columnRows).toEqual(expected);
     const budget = new MemoryBudget(64 * 1024 * 1024);
     const lake = createParquetLake({ store, memoryPool: budget, scanRangeCache: { maxBytes: 0 } });
     const owner = await lake.path("timestamp.parquet").batchSize(3).run().toOwnedArray();
