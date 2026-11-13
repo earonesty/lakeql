@@ -1,0 +1,21 @@
+{
+  "scope": "Real public R2 HTTP 206 ranges through the internal stage primitive; engine range buffers only. No automatic scan integration, whole-heap bound, or decode working-set claim.",
+  "reports": [
+    {
+      "capacity": 64,
+      "requests": 4,
+      "peakReads": 1,
+      "peakChargedBytes": 64,
+      "finalChargedBytes": 0,
+      "sha256": "2cfec0a4f47064260b26799537642d22c0b125637bdbe70d25cd046576f345a1"
+    },
+    {
+      "capacity": 128,
+      "requests": 4,
+      "peakReads": 2,
+      "peakChargedBytes": 128,
+      "finalChargedBytes": 0,
+      "sha256": "2cfec0a4f47064260b26799537642d22c0b125637bdbe70d25cd046576f345a1"
+    }
+  ]
+}

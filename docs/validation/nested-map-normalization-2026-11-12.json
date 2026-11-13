@@ -1,0 +1,65 @@
+{
+  "scope": "Named failure comparison, not passing-value digests",
+  "failed": 167,
+  "passed": 83,
+  "skipped": 1,
+  "addedFailures": [],
+  "removedFailures": [],
+  "referencePassed": 94,
+  "typedProbe": [
+    {
+      "file": "data/nested_structs.rust.parquet",
+      "publicSchemaGateBypassed": true,
+      "actualRows": 1,
+      "expectedRows": 1,
+      "firstDifference": null,
+      "logicalValuesEqual": true,
+      "upstreamFirstDifference": null,
+      "upstreamLogicalValuesEqual": true
+    },
+    {
+      "file": "data/nonnullable.impala.parquet",
+      "publicSchemaGateBypassed": true,
+      "actualRows": 1,
+      "expectedRows": 1,
+      "firstDifference": null,
+      "logicalValuesEqual": true,
+      "upstreamFirstDifference": null,
+      "upstreamLogicalValuesEqual": true
+    },
+    {
+      "file": "data/nullable.impala.parquet",
+      "publicSchemaGateBypassed": true,
+      "actualRows": 7,
+      "expectedRows": 7,
+      "firstDifference": null,
+      "logicalValuesEqual": true,
+      "upstreamFirstDifference": {
+        "path": "rows.1.int_array_Array.3",
+        "actual": "undefined",
+        "expected": "null"
+      },
+      "upstreamLogicalValuesEqual": false
+    },
+    {
+      "file": "shredded_variant/case-001.parquet",
+      "publicSchemaGateBypassed": true,
+      "actualRows": 1,
+      "expectedRows": 1,
+      "firstDifference": null,
+      "logicalValuesEqual": true,
+      "upstreamFirstDifference": null,
+      "upstreamLogicalValuesEqual": true
+    },
+    {
+      "file": "shredded_variant/case-002.parquet",
+      "publicSchemaGateBypassed": true,
+      "actualRows": 1,
+      "expectedRows": 1,
+      "firstDifference": null,
+      "logicalValuesEqual": true,
+      "upstreamFirstDifference": null,
+      "upstreamLogicalValuesEqual": true
+    }
+  ]
+}

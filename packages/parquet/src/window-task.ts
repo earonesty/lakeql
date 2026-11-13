@@ -71,6 +71,7 @@ export async function windowParquetTasks(
     },
   });
   return evaluateWindowWorkUnitPartials(partials, windows, {
+    ...(options.memoryBudget === undefined ? {} : { memoryBudget: options.memoryBudget }),
     bucketCount,
   });
 }

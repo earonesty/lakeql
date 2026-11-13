@@ -58,3 +58,48 @@ describe("timestamp values", () => {
     );
   });
 });
+
+it("formats negative fractional epochs using the preceding calendar second", () => {
+  expect(timestampFromEpoch(-1n, "millis").toString()).toBe("1969-12-31T23:59:59.999Z");
+  expect(timestampFromEpoch(-1n, "micros").toString()).toBe("1969-12-31T23:59:59.999999Z");
+  expect(timestampFromEpoch(-1n, "nanos").toString()).toBe("1969-12-31T23:59:59.999999999Z");
+});
+
+it("formats outside Date range using exact Gregorian cycles", () => {
+  const cycleNanos = 146097n * 86400n * 1_000_000_000n;
+  for (const date of [
+    "2000-02-29T23:59:59.123Z",
+    "1900-03-01T00:00:00.000Z",
+    "2001-01-01T00:00:00.000Z",
+    "1970-01-01T00:00:00.000Z",
+  ]) {
+    const original = BigInt(Date.parse(date)) * 1_000_000n;
+    for (const cycles of [-1_000_000_000n, -1000n, 1000n, 1_000_000_000n]) {
+      const year = BigInt(date.slice(0, 4)) + cycles * 400n;
+      const expectedYear = `${year < 0n ? "-" : "+"}${(year < 0n ? -year : year).toString().padStart(6, "0")}`;
+      expect(new TimestampValue(original + cycles * cycleNanos, "millis").toString()).toBe(
+        `${expectedYear}${date.slice(4)}`,
+      );
+    }
+  }
+});
+
+it("matches Date within its range and wide conversion after full-cycle shifts", () => {
+  let seed = 123456789;
+  const cycleMillis = 146097n * 86400000n;
+  for (let i = 0; i < 1000; i++) {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    const millis = BigInt((seed % 200000000) - 100000000) * 86400000n + BigInt(i);
+    const oracle = new Date(Number(millis)).toISOString();
+    expect(timestampFromEpoch(millis, "millis").toString()).toBe(oracle);
+    const match = /^([+-]?\d+)(-\d\d-\d\dT.*)$/u.exec(oracle);
+    if (match?.[1] === undefined || match[2] === undefined) throw new Error("Invalid oracle");
+    for (const shift of [-1_000_000n, 1_000_000n]) {
+      const year = BigInt(match[1]) + shift * 400n;
+      const yearText = `${year < 0n ? "-" : "+"}${year < 0n ? -year : year}`;
+      expect(timestampFromEpoch(millis + cycleMillis * shift, "millis").toString()).toBe(
+        `${yearText}${match[2]}`,
+      );
+    }
+  }
+});

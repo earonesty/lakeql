@@ -65,8 +65,8 @@ describe("vector sort kernels", () => {
       }),
     ]);
     expect(materializeBatchRows(mixedTimestampUnits)).toEqual([
-      { at: timestampFromEpoch(1_000n, "millis", true) },
-      { at: timestampFromEpoch(1_000n, "millis", true) },
+      { at: timestampFromEpoch(1_000_000n, "micros", true) },
+      { at: timestampFromEpoch(1_000_000n, "micros", true) },
     ]);
   });
 
@@ -234,8 +234,8 @@ describe("vector sort kernels", () => {
     expect(gathered.columns.id?.type).toBe("f64");
     expect(gathered.columns.big?.type).toBe("i64");
     expect(gathered.columns.flag?.type).toBe("bool");
-    expect(gathered.columns.label?.type).toBe("utf8");
-    expect(gathered.columns.payload?.type).toBe("binary");
+    expect(gathered.columns.label?.type).toBe("dict");
+    expect(gathered.columns.payload?.type).toBe("dict");
     expect(materializeBatchRows(gathered)).toEqual([
       { id: 3, big: 30n, flag: false, label: "c", payload: new Uint8Array([3]) },
       { id: 2, big: 20n, flag: null, label: null, payload: null },
@@ -355,14 +355,14 @@ describe("vector sort kernels", () => {
 
     expect(combined.columns.empty?.type).toBe("null");
     expect(combined.columns.loaded_at?.type).toBe("timestamp");
-    expect(combined.columns.label?.type).toBe("utf8");
+    expect(combined.columns.label?.type).toBe("utf8-view");
     expect(combined.columns.tags?.type).toBe("list");
     expect(combined.columns.attrs?.type).toBe("struct");
-    expect(combined.columns.lookup?.type).toBe("struct");
+    expect(combined.columns.lookup?.type).toBe("map");
     expect(materializeBatchRows(combined)).toEqual([
       {
         empty: null,
-        loaded_at: timestampFromEpoch(1_700_000_000_001n, "millis"),
+        loaded_at: timestampFromEpoch(1_700_000_000_001_000n, "micros"),
         label: "a",
         tags: ["a"],
         attrs: { id: 1 },
@@ -370,7 +370,7 @@ describe("vector sort kernels", () => {
       },
       {
         empty: null,
-        loaded_at: timestampFromEpoch(1_700_000_000_002n, "millis"),
+        loaded_at: timestampFromEpoch(1_700_000_000_002_000n, "micros"),
         label: "b",
         tags: null,
         attrs: null,
@@ -378,7 +378,7 @@ describe("vector sort kernels", () => {
       },
       {
         empty: null,
-        loaded_at: timestampFromEpoch(1_700_000_000_003n, "millis"),
+        loaded_at: timestampFromEpoch(1_700_000_000_003_000n, "micros"),
         label: "c",
         tags: ["b", "c"],
         attrs: { id: 2 },

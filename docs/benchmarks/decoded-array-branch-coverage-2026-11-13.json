@@ -1,0 +1,26 @@
+{
+  "scope": "Targeted decoded-array.test.ts coverage; diagnostic run only, normal full coverage gates run separately.",
+  "testsPassed": 9,
+  "functions": {
+    "arrayFlatVector": 2,
+    "nullableArrayFlatVector": 8
+  },
+  "constructorStatements": [
+    {
+      "line": 1889,
+      "executions": 1
+    },
+    {
+      "line": 1900,
+      "executions": 1
+    },
+    {
+      "line": 1953,
+      "executions": 4
+    },
+    {
+      "line": 1964,
+      "executions": 4
+    }
+  ]
+}

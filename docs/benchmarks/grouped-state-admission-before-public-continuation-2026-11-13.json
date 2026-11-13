@@ -1,0 +1,49 @@
+{
+  "description": "Public grouped and buffering scalar queries using an owned two-row scanner. Diagnostic of missing aggregate-state/output admission, not proof of memory safety. Full group values checked; only scan backing appears in tracked peak.",
+  "results": [
+    {
+      "operation": "grouped-count",
+      "inputRows": 128,
+      "outputGroups": 128,
+      "configuredPoolBytes": 16,
+      "trackedPeakBytes": 16,
+      "remainingTrackedBytes": 0
+    },
+    {
+      "operation": "median",
+      "inputRows": 128,
+      "configuredPoolBytes": 16,
+      "trackedPeakBytes": 16,
+      "remainingTrackedBytes": 0
+    },
+    {
+      "operation": "count_distinct",
+      "inputRows": 128,
+      "configuredPoolBytes": 16,
+      "trackedPeakBytes": 16,
+      "remainingTrackedBytes": 0
+    },
+    {
+      "operation": "grouped-count",
+      "inputRows": 1024,
+      "outputGroups": 1024,
+      "configuredPoolBytes": 16,
+      "trackedPeakBytes": 16,
+      "remainingTrackedBytes": 0
+    },
+    {
+      "operation": "median",
+      "inputRows": 1024,
+      "configuredPoolBytes": 16,
+      "trackedPeakBytes": 16,
+      "remainingTrackedBytes": 0
+    },
+    {
+      "operation": "count_distinct",
+      "inputRows": 1024,
+      "configuredPoolBytes": 16,
+      "trackedPeakBytes": 16,
+      "remainingTrackedBytes": 0
+    }
+  ]
+}

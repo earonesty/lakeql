@@ -1,0 +1,68 @@
+{
+  "scope": "Public schema gate bypassed; local borrowed fixtures; typed logical comparison with DuckDB native values, including exact timestamp epochs and map membership. Timezone annotation and VARIANT physical tags are not compared; embedded VARIANT null is not accepted as equivalent to SQL null. Not allocation-bound validation.",
+  "comparatorTestsPassed": 7,
+  "reports": [
+    {
+      "file": "data/nested_structs.rust.parquet",
+      "publicSchemaGateBypassed": true,
+      "actualRows": 1,
+      "expectedRows": 1,
+      "firstDifference": null,
+      "logicalValuesEqual": true,
+      "upstreamFirstDifference": null,
+      "upstreamLogicalValuesEqual": true
+    },
+    {
+      "file": "data/nonnullable.impala.parquet",
+      "publicSchemaGateBypassed": true,
+      "actualRows": 1,
+      "expectedRows": 1,
+      "firstDifference": {
+        "path": "rows.0.int_map_array.0",
+        "actual": "{\"k1\":null}",
+        "expected": "{\"entries\":[]}"
+      },
+      "logicalValuesEqual": false,
+      "upstreamFirstDifference": null,
+      "upstreamLogicalValuesEqual": true
+    },
+    {
+      "file": "data/nullable.impala.parquet",
+      "publicSchemaGateBypassed": true,
+      "actualRows": 7,
+      "expectedRows": 7,
+      "firstDifference": {
+        "path": "rows.0.int_Map_Array.0",
+        "actual": "{\"k1\":1,\"k3\":null}",
+        "expected": "{\"entries\":[{\"key\":\"k1\",\"value\":1}]}"
+      },
+      "logicalValuesEqual": false,
+      "upstreamFirstDifference": {
+        "path": "rows.1.int_array_Array.3",
+        "actual": "undefined",
+        "expected": "null"
+      },
+      "upstreamLogicalValuesEqual": false
+    },
+    {
+      "file": "shredded_variant/case-001.parquet",
+      "publicSchemaGateBypassed": true,
+      "actualRows": 1,
+      "expectedRows": 1,
+      "firstDifference": null,
+      "logicalValuesEqual": true,
+      "upstreamFirstDifference": null,
+      "upstreamLogicalValuesEqual": true
+    },
+    {
+      "file": "shredded_variant/case-002.parquet",
+      "publicSchemaGateBypassed": true,
+      "actualRows": 1,
+      "expectedRows": 1,
+      "firstDifference": null,
+      "logicalValuesEqual": true,
+      "upstreamFirstDifference": null,
+      "upstreamLogicalValuesEqual": true
+    }
+  ]
+}

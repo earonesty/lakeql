@@ -1,0 +1,6 @@
+{"fixture":"nullable.impala.parquet","codec":"UNCOMPRESSED","rows":7,"admittedBytes":119,"inputBytes":62,"peakBytes":181,"retainedBytes":118,"scope":"Actual external Impala V1 page"}
+{"fixture":"nullable.impala.parquet","codec":"SNAPPY","rows":7,"admittedBytes":181,"inputBytes":53,"peakBytes":234,"retainedBytes":56,"scope":"External Impala V1 page body recompressed locally; not a separately produced compressed Parquet file"}
+{"fixture":"nullable.impala.parquet","codec":"ZSTD","rows":7,"admittedBytes":62575,"inputBytes":44,"peakBytes":62619,"retainedBytes":56,"scope":"External Impala V1 page body recompressed locally; not a separately produced compressed Parquet file"}
+{"fixture":"nonnullable.impala.parquet","codec":"UNCOMPRESSED","rows":1,"admittedBytes":8,"inputBytes":8,"peakBytes":16,"retainedBytes":8,"scope":"Actual external Impala V1 page"}
+{"fixture":"nonnullable.impala.parquet","codec":"SNAPPY","rows":1,"admittedBytes":16,"inputBytes":10,"peakBytes":26,"retainedBytes":8,"scope":"External Impala V1 page body recompressed locally; not a separately produced compressed Parquet file"}
+{"fixture":"nonnullable.impala.parquet","codec":"ZSTD","rows":1,"admittedBytes":62410,"inputBytes":17,"peakBytes":62427,"retainedBytes":8,"scope":"External Impala V1 page body recompressed locally; not a separately produced compressed Parquet file"}

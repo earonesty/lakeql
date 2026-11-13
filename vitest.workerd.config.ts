@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [
     cloudflareTest({
       miniflare: {
+        r2Buckets: ["MEMORY_TEST_BUCKET"],
         compatibilityDate: "2026-06-13",
         compatibilityFlags: ["nodejs_compat"],
       },

@@ -1,0 +1,46 @@
+{
+  "source": "https://pub-9d5bcb33a5384d79875a943eef183b6d.r2.dev/bench/window-events.parquet",
+  "scope": "Actual R2 HTTP 206, internal grouped numeric iterator; excludes metadata/oracle allocation, JS heap and cache reuse; not normal-query scheduler integration",
+  "reports": [
+    {
+      "jobs": 1,
+      "maxConcurrentReads": 1,
+      "peakReads": 1,
+      "reads": 12,
+      "transferredBytes": 2442,
+      "peakBytes": 1328,
+      "poolBytes": 4096,
+      "elapsedMs": 1239.1682030000002
+    },
+    {
+      "jobs": 4,
+      "maxConcurrentReads": 1,
+      "peakReads": 1,
+      "reads": 48,
+      "transferredBytes": 9768,
+      "peakBytes": 5312,
+      "poolBytes": 16384,
+      "elapsedMs": 4351.632393
+    },
+    {
+      "jobs": 1,
+      "maxConcurrentReads": 2,
+      "peakReads": 2,
+      "reads": 12,
+      "transferredBytes": 2442,
+      "peakBytes": 1328,
+      "poolBytes": 4096,
+      "elapsedMs": 854.8462160000008
+    },
+    {
+      "jobs": 4,
+      "maxConcurrentReads": 2,
+      "peakReads": 2,
+      "reads": 48,
+      "transferredBytes": 9768,
+      "peakBytes": 5312,
+      "poolBytes": 16384,
+      "elapsedMs": 2204.2482710000004
+    }
+  ]
+}

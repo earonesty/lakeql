@@ -1,0 +1,45 @@
+{
+  "method": "Sequential same-runtime runs, three warmups and five measured samples; source hashes recorded; timing is observational, not a stable regression threshold",
+  "reports": [
+    {
+      "rows": 1,
+      "stages": 10000,
+      "medianMs": 29.738132000000007,
+      "samples": 5,
+      "budgetSha256": "c5d6ba7cd26ea43379de30eebc09842bf1efe215255957d3f460ad23c993fd82",
+      "node": "v24.18.1",
+      "scope": "three output buffers per admitted scope; current runtime microbenchmark; excludes I/O, decoded inputs, heap-cap proof",
+      "implementation": "copied-ledgers"
+    },
+    {
+      "rows": 128,
+      "stages": 10000,
+      "medianMs": 44.700008000000025,
+      "samples": 5,
+      "budgetSha256": "c5d6ba7cd26ea43379de30eebc09842bf1efe215255957d3f460ad23c993fd82",
+      "node": "v24.18.1",
+      "scope": "three output buffers per admitted scope; current runtime microbenchmark; excludes I/O, decoded inputs, heap-cap proof",
+      "implementation": "copied-ledgers"
+    },
+    {
+      "rows": 1,
+      "stages": 10000,
+      "medianMs": 26.236482999999993,
+      "samples": 5,
+      "budgetSha256": "d5d1bfa6d1f9bfbb5125c5139fbf0e8e2d44965754a61449e68b6c48938afafd",
+      "node": "v24.18.1",
+      "scope": "three output buffers per admitted scope; current runtime microbenchmark; excludes I/O, decoded inputs, heap-cap proof",
+      "implementation": "reused-final-ledger"
+    },
+    {
+      "rows": 128,
+      "stages": 10000,
+      "medianMs": 45.772058999999956,
+      "samples": 5,
+      "budgetSha256": "d5d1bfa6d1f9bfbb5125c5139fbf0e8e2d44965754a61449e68b6c48938afafd",
+      "node": "v24.18.1",
+      "scope": "three output buffers per admitted scope; current runtime microbenchmark; excludes I/O, decoded inputs, heap-cap proof",
+      "implementation": "reused-final-ledger"
+    }
+  ]
+}

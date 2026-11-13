@@ -3,6 +3,7 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { resolve, sep } from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import { MemoryBudget } from "../packages/core/dist/index.js";
 import { httpStore } from "../packages/http/dist/index.js";
 import { openLanceDataset } from "../packages/lance/dist/index.js";
 
@@ -16,10 +17,13 @@ try {
   const trials = [];
   for (let trial = 0; trial < options.trials; trial += 1) {
     const wallStart = performance.now();
+    const memoryBudget = new MemoryBudget(64 * 1024 * 1024);
     const dataset = await openLanceDataset({
       store: httpStore({ baseUrl }),
       path: options.path,
+      memoryBudget,
       budget: {
+        maxAllocatedMemoryBytes: 32 * 1024 * 1024,
         maxBytes: 16 * 1024 * 1024,
         maxRangeRequests: 512,
         maxElapsedMs: 3_000,
@@ -45,8 +49,12 @@ try {
         })}`,
       );
     }
+    if (memoryBudget.usedBytes !== 0)
+      throw new Error("Lance operation retained allocation charges");
     trials.push({
       trial: trial + 1,
+      trackedAllocationPeakBytes: memoryBudget.peakBytes,
+      trackedAllocationFinalBytes: memoryBudget.usedBytes,
       wallMs: performance.now() - wallStart,
       ...result.stats,
     });

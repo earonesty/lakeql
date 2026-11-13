@@ -1,6 +1,7 @@
 import { LakeqlError } from "./errors.js";
 import type { Expr, Scalar } from "./expr.js";
 import { intervalToString, isIntervalValue } from "./interval.js";
+import { setRecordValue } from "./record-value.js";
 import { regexpMatchesValue, regexpReplaceValue } from "./regex-functions.js";
 import { compareTimestampValues, isTimestampValue, timestampValueFromIso } from "./timestamp.js";
 import type { Row } from "./types.js";
@@ -200,7 +201,8 @@ export function jsonSafeValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(jsonSafeValue);
   if (value && typeof value === "object") {
     const out: Record<string, unknown> = {};
-    for (const [key, inner] of Object.entries(value)) out[key] = jsonSafeValue(inner);
+    for (const [key, inner] of Object.entries(value))
+      setRecordValue(out, key, jsonSafeValue(inner));
     return out;
   }
   return value;

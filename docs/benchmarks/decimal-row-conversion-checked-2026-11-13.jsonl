@@ -1,0 +1,4 @@
+{"rows":10000,"mode":"singleton-arrays","medianMs":4.451185999999993,"samples":7,"scope":"decimal row normalization only; output parity checked outside timed region"}
+{"rows":10000,"mode":"shared-scalar","medianMs":0.6095579999999927,"samples":7,"scope":"decimal row normalization only; output parity checked outside timed region"}
+{"rows":100000,"mode":"singleton-arrays","medianMs":44.02779600000008,"samples":7,"scope":"decimal row normalization only; output parity checked outside timed region"}
+{"rows":100000,"mode":"shared-scalar","medianMs":4.973619999999983,"samples":7,"scope":"decimal row normalization only; output parity checked outside timed region"}

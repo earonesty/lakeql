@@ -1,0 +1,77 @@
+{
+  "method": "100 unchanged scope snapshots after initial backing capture; isolated trial frames, one warmup and five samples; prior scope module versus current scope module using the same budget implementation",
+  "reports": [
+    {
+      "implementation": "fresh-backing-capture",
+      "buffers": 10,
+      "mode": "snapshot",
+      "retains": 100,
+      "sourceSha256": "48c74517499aa57e2a6f41dd54ac0f4cb2e65329fb2be8e9eced8e3a5dbba7ce",
+      "node": "v24.18.1",
+      "retainMedianMs": 0.8215080000000086,
+      "heapDeltaMedianBytes": 709360,
+      "samples": 5,
+      "scope": "same-budget ownership snapshots; preexisting backing excluded; Node post-GC heap delta; no I/O or Worker heap-cap claim"
+    },
+    {
+      "implementation": "fresh-backing-capture",
+      "buffers": 100,
+      "mode": "snapshot",
+      "retains": 100,
+      "sourceSha256": "48c74517499aa57e2a6f41dd54ac0f4cb2e65329fb2be8e9eced8e3a5dbba7ce",
+      "node": "v24.18.1",
+      "retainMedianMs": 4.6828160000000025,
+      "heapDeltaMedianBytes": 6728816,
+      "samples": 5,
+      "scope": "same-budget ownership snapshots; preexisting backing excluded; Node post-GC heap delta; no I/O or Worker heap-cap claim"
+    },
+    {
+      "implementation": "fresh-backing-capture",
+      "buffers": 1000,
+      "mode": "snapshot",
+      "retains": 100,
+      "sourceSha256": "48c74517499aa57e2a6f41dd54ac0f4cb2e65329fb2be8e9eced8e3a5dbba7ce",
+      "node": "v24.18.1",
+      "retainMedianMs": 27.98846800000001,
+      "heapDeltaMedianBytes": 66690880,
+      "samples": 5,
+      "scope": "same-budget ownership snapshots; preexisting backing excluded; Node post-GC heap delta; no I/O or Worker heap-cap claim"
+    },
+    {
+      "implementation": "unchanged-snapshot-reuse",
+      "buffers": 10,
+      "mode": "snapshot",
+      "retains": 100,
+      "sourceSha256": "76a15e5cef2410aadde59c5b60c5ba38b01793da0bab0518bec43ea688913e24",
+      "node": "v24.18.1",
+      "retainMedianMs": 0.02143999999999835,
+      "heapDeltaMedianBytes": 34864,
+      "samples": 5,
+      "scope": "same-budget ownership snapshots; preexisting backing excluded; Node post-GC heap delta; no I/O or Worker heap-cap claim"
+    },
+    {
+      "implementation": "unchanged-snapshot-reuse",
+      "buffers": 100,
+      "mode": "snapshot",
+      "retains": 100,
+      "sourceSha256": "76a15e5cef2410aadde59c5b60c5ba38b01793da0bab0518bec43ea688913e24",
+      "node": "v24.18.1",
+      "retainMedianMs": 0.020308999999997468,
+      "heapDeltaMedianBytes": 35744,
+      "samples": 5,
+      "scope": "same-budget ownership snapshots; preexisting backing excluded; Node post-GC heap delta; no I/O or Worker heap-cap claim"
+    },
+    {
+      "implementation": "unchanged-snapshot-reuse",
+      "buffers": 1000,
+      "mode": "snapshot",
+      "retains": 100,
+      "sourceSha256": "76a15e5cef2410aadde59c5b60c5ba38b01793da0bab0518bec43ea688913e24",
+      "node": "v24.18.1",
+      "retainMedianMs": 0.048621999999994614,
+      "heapDeltaMedianBytes": 34632,
+      "samples": 5,
+      "scope": "same-budget ownership snapshots; preexisting backing excluded; Node post-GC heap delta; no I/O or Worker heap-cap claim"
+    }
+  ]
+}

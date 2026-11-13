@@ -1,0 +1,21 @@
+{
+  "version": [
+    {
+      "version": "v1.5.3"
+    }
+  ],
+  "fixtures": [
+    {
+      "name": "map_no_value.parquet",
+      "error": "IO Error: MAP_KEY_VALUE requires two children\n\nLINE 1: SELECT * FROM read_parquet('fixtures/external/parquet-testing/data/map_no...\n                      ^"
+    },
+    {
+      "name": "old_list_structure.parquet",
+      "rows": [
+        {
+          "a": [[1, 2], [3, 4]]
+        }
+      ]
+    }
+  ]
+}

@@ -3,10 +3,14 @@ import {
   type CacheEntry,
   LakeqlError,
   type ListOptions,
+  type MemoryScope,
   type ObjectHead,
   type ObjectInfo,
   type ObjectStore,
+  type OwnedMemory,
   type PutOptions,
+  readOwnedStreamWindow,
+  throwIfAborted,
 } from "lakeql-core";
 
 export const PACKAGE = "lakeql-r2" as const;
@@ -36,6 +40,8 @@ export interface R2ObjectBody {
   etag?: string;
   uploaded?: Date;
   httpMetadata?: { contentType?: string };
+  /** Streaming body required by allocation-aware range reads. */
+  body?: ReadableStream<Uint8Array>;
   arrayBuffer(): Promise<ArrayBuffer>;
 }
 
@@ -167,6 +173,69 @@ export class R2ObjectStore implements ObjectStore {
     const object = await this.bucket.get(path, { range });
     if (!object) throw new LakeqlError("LAKEQL_OBJECT_NOT_FOUND", `No object at ${path}`, { path });
     return new Uint8Array(await object.arrayBuffer());
+  }
+
+  getRangeOwnedAllocation(_path: string, range: { offset: number; length: number }) {
+    return { bytes: range.length, output: "exact-buffer" as const };
+  }
+
+  async getRangeOwned(
+    path: string,
+    range: { offset: number; length: number },
+    scope: MemoryScope,
+  ): Promise<OwnedMemory<Uint8Array>> {
+    if (
+      !Number.isSafeInteger(range.offset) ||
+      range.offset < 0 ||
+      !Number.isSafeInteger(range.length) ||
+      range.length < 0 ||
+      !Number.isSafeInteger(range.offset + range.length)
+    ) {
+      throw new LakeqlError(
+        "LAKEQL_VALIDATION_ERROR",
+        "R2 range must use nonnegative safe integers",
+      );
+    }
+    throwIfAborted(scope.signal);
+    if (range.length === 0) return scope.allocate(0, "empty R2 range", () => new Uint8Array());
+    let reservation = scope.reserve(range.length, "R2 range response");
+    try {
+      const object = await this.bucket.get(path, { range });
+      if (scope.disposed) {
+        await object?.body?.cancel().catch(() => undefined);
+        throwIfAborted(scope.signal);
+      }
+      if (!object)
+        throw new LakeqlError("LAKEQL_OBJECT_NOT_FOUND", `No object at ${path}`, { path });
+      if (object.body === undefined) {
+        throw new LakeqlError(
+          "LAKEQL_VALIDATION_ERROR",
+          "Allocation-aware R2 reads require a streaming body",
+        );
+      }
+      // R2 size describes the whole object, not the returned range.
+      if (!Number.isSafeInteger(object.size) || object.size < 0) {
+        await object.body.cancel().catch(() => undefined);
+        throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Invalid R2 object size");
+      }
+      const length = Math.min(range.length, Math.max(0, object.size - range.offset));
+      if (length < reservation.bytes) {
+        const [body, unused] = reservation.partition([length, reservation.bytes - length]);
+        unused?.release();
+        if (body === undefined)
+          throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Missing R2 body reservation");
+        reservation = body;
+      }
+      return await readOwnedStreamWindow(object.body, scope, {
+        offset: 0,
+        metric: "R2 range bytes",
+        length,
+        maxBytes: length,
+        initialReservation: reservation,
+      });
+    } finally {
+      reservation.release();
+    }
   }
 
   async put(

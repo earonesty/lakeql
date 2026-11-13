@@ -1,0 +1,228 @@
+{
+  "scope": "Isolated local Node processes; generated real Parquet files, two warmup parses, event-loop boundary and double GC, then one retained parse per process. Full retains every group; indexed visits all groups and retains source plus last decoded group and directory. Three processes per case. Post-parse heap delta is not peak; post-GC delta estimates retained V8 heap, not a portable bound. Input/writer generation excluded. No I/O or whole-query memory bound measured; timing includes visiting every group, but not planning.",
+  "node": "v24.18.1",
+  "reports": [
+    {
+      "mode": "full",
+      "width": 32,
+      "groups": 32,
+      "samples": [
+        {
+          "mode": "full",
+          "width": 32,
+          "groups": 32,
+          "inputBytes": 96268,
+          "elapsedMs": 4.69760500000001,
+          "heapAfterParseDelta": 3951560,
+          "retainedHeapDelta": 854992,
+          "arrayBufferDelta": 0
+        },
+        {
+          "mode": "full",
+          "width": 32,
+          "groups": 32,
+          "inputBytes": 96268,
+          "elapsedMs": 5.020333000000008,
+          "heapAfterParseDelta": 3946024,
+          "retainedHeapDelta": 858696,
+          "arrayBufferDelta": 0
+        },
+        {
+          "mode": "full",
+          "width": 32,
+          "groups": 32,
+          "inputBytes": 96268,
+          "elapsedMs": 4.4388079999999945,
+          "heapAfterParseDelta": 4024808,
+          "retainedHeapDelta": 58616,
+          "arrayBufferDelta": 0
+        }
+      ]
+    },
+    {
+      "mode": "indexed",
+      "width": 32,
+      "groups": 32,
+      "samples": [
+        {
+          "mode": "indexed",
+          "width": 32,
+          "groups": 32,
+          "inputBytes": 96268,
+          "elapsedMs": 3.0767999999999915,
+          "heapAfterParseDelta": 4579808,
+          "retainedHeapDelta": 60456,
+          "arrayBufferDelta": 256
+        },
+        {
+          "mode": "indexed",
+          "width": 32,
+          "groups": 32,
+          "inputBytes": 96268,
+          "elapsedMs": 3.1038309999999996,
+          "heapAfterParseDelta": 4576984,
+          "retainedHeapDelta": 60456,
+          "arrayBufferDelta": 256
+        },
+        {
+          "mode": "indexed",
+          "width": 32,
+          "groups": 32,
+          "inputBytes": 96268,
+          "elapsedMs": 3.1099820000000022,
+          "heapAfterParseDelta": 4580224,
+          "retainedHeapDelta": 60456,
+          "arrayBufferDelta": 256
+        }
+      ]
+    },
+    {
+      "mode": "full",
+      "width": 128,
+      "groups": 64,
+      "samples": [
+        {
+          "mode": "full",
+          "width": 128,
+          "groups": 64,
+          "inputBytes": 773450,
+          "elapsedMs": 23.73942999999997,
+          "heapAfterParseDelta": 33816344,
+          "retainedHeapDelta": 6094936,
+          "arrayBufferDelta": 0
+        },
+        {
+          "mode": "full",
+          "width": 128,
+          "groups": 64,
+          "inputBytes": 773450,
+          "elapsedMs": 20.750114999999994,
+          "heapAfterParseDelta": 33557440,
+          "retainedHeapDelta": 6133728,
+          "arrayBufferDelta": 0
+        },
+        {
+          "mode": "full",
+          "width": 128,
+          "groups": 64,
+          "inputBytes": 773450,
+          "elapsedMs": 26.587199,
+          "heapAfterParseDelta": 33739096,
+          "retainedHeapDelta": 6133728,
+          "arrayBufferDelta": 0
+        }
+      ]
+    },
+    {
+      "mode": "indexed",
+      "width": 128,
+      "groups": 64,
+      "samples": [
+        {
+          "mode": "indexed",
+          "width": 128,
+          "groups": 64,
+          "inputBytes": 773450,
+          "elapsedMs": 24.488312000000008,
+          "heapAfterParseDelta": 2150696,
+          "retainedHeapDelta": 165056,
+          "arrayBufferDelta": 512
+        },
+        {
+          "mode": "indexed",
+          "width": 128,
+          "groups": 64,
+          "inputBytes": 773450,
+          "elapsedMs": 28.469446000000005,
+          "heapAfterParseDelta": 2160592,
+          "retainedHeapDelta": 164576,
+          "arrayBufferDelta": 512
+        },
+        {
+          "mode": "indexed",
+          "width": 128,
+          "groups": 64,
+          "inputBytes": 773450,
+          "elapsedMs": 31.172551999999996,
+          "heapAfterParseDelta": 2154152,
+          "retainedHeapDelta": 165200,
+          "arrayBufferDelta": 512
+        }
+      ]
+    },
+    {
+      "mode": "full",
+      "width": 256,
+      "groups": 128,
+      "samples": [
+        {
+          "mode": "full",
+          "width": 256,
+          "groups": 128,
+          "inputBytes": 3106061,
+          "elapsedMs": 83.44458699999996,
+          "heapAfterParseDelta": 26848528,
+          "retainedHeapDelta": 24299976,
+          "arrayBufferDelta": 0
+        },
+        {
+          "mode": "full",
+          "width": 256,
+          "groups": 128,
+          "inputBytes": 3106061,
+          "elapsedMs": 87.22425300000009,
+          "heapAfterParseDelta": 26918696,
+          "retainedHeapDelta": 24298424,
+          "arrayBufferDelta": 0
+        },
+        {
+          "mode": "full",
+          "width": 256,
+          "groups": 128,
+          "inputBytes": 3106061,
+          "elapsedMs": 88.4217000000001,
+          "heapAfterParseDelta": 26595520,
+          "retainedHeapDelta": 24297320,
+          "arrayBufferDelta": 0
+        }
+      ]
+    },
+    {
+      "mode": "indexed",
+      "width": 256,
+      "groups": 128,
+      "samples": [
+        {
+          "mode": "indexed",
+          "width": 256,
+          "groups": 128,
+          "inputBytes": 3106061,
+          "elapsedMs": 84.63713499999994,
+          "heapAfterParseDelta": 5949568,
+          "retainedHeapDelta": 280912,
+          "arrayBufferDelta": 1024
+        },
+        {
+          "mode": "indexed",
+          "width": 256,
+          "groups": 128,
+          "inputBytes": 3106061,
+          "elapsedMs": 84.83011899999997,
+          "heapAfterParseDelta": 5996816,
+          "retainedHeapDelta": 278504,
+          "arrayBufferDelta": 1024
+        },
+        {
+          "mode": "indexed",
+          "width": 256,
+          "groups": 128,
+          "inputBytes": 3106061,
+          "elapsedMs": 82.5776229999999,
+          "heapAfterParseDelta": 5954128,
+          "retainedHeapDelta": 281488,
+          "arrayBufferDelta": 1024
+        }
+      ]
+    }
+  ]
+}

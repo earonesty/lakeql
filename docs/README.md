@@ -57,5 +57,6 @@ Plans and follow-up trackers are contributor notes. They describe design work
 that may already be implemented, superseded, or awaiting another pass.
 
 - [DX follow-ups](./dx-followups.md)
+- [Performance and memory budget audit](./performance-memory-audit.md)
 - [Lance vector search contributor plan](./lance-edge-vector-search.md)
 - [WebGPU-accelerated execution contributor plan](./webgpu-accelerated-execution.md)

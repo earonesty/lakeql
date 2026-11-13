@@ -5,6 +5,7 @@ import type { AggregateOp } from "./query.js";
 import { compareAggregateScalars, numericAggregateValue } from "./scalar-order.js";
 import type { WindowExpr } from "./window.js";
 import { frameSpan } from "./window-frame.js";
+import { WindowPeers } from "./window-peers.js";
 import { filterRow, type WindowRow } from "./window-utils.js";
 
 interface SegmentNode {
@@ -28,6 +29,7 @@ const EMPTY_NODE: SegmentNode = {
 export function segmentTreeAggregateValues(
   partition: readonly WindowRow[],
   expr: WindowExpr,
+  peers = new WindowPeers(partition),
 ): Scalar[] | undefined {
   if (typeof expr.fn !== "object" || expr.distinct === true) return undefined;
   if ((expr.over.frame?.exclude ?? "no-others") !== "no-others") return undefined;
@@ -35,7 +37,7 @@ export function segmentTreeAggregateValues(
   if (!isSegmentAggregate(op)) return undefined;
   const tree = new SegmentTree(partition.map((row) => leafNode(row, expr, op)));
   return partition.map((_row, index) =>
-    aggregateValue(op, tree.query(frameSpan(partition, index, expr))),
+    aggregateValue(op, tree.query(frameSpan(partition, index, expr, peers))),
   );
 }
 

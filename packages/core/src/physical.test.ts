@@ -653,3 +653,142 @@ function clock(): () => number {
     return time;
   };
 }
+
+it("plans owned reduction continuation separately from ordinary fragment allocation", () => {
+  const batch = batchFromColumns({ key: ["a"], value: [1] });
+  const fragment = testFragment(batch, {
+    operators: [
+      { kind: "grouped-reduce", keys: ["key"], aggregates: { n: { op: "sum", column: "value" } } },
+    ],
+    output: { kind: "grouped-aggregate-snapshot" },
+  });
+  const backend = new CpuPhysicalBackend();
+  expect(() =>
+    planPhysicalFragment(fragment, [backend], { requireAllocationScope: true }),
+  ).toThrow();
+  expect(() =>
+    planPhysicalFragment(fragment, [backend], {
+      requireAllocationScope: true,
+      requireReductionContinuation: true,
+    }),
+  ).not.toThrow();
+  expect(() =>
+    planPhysicalFragment(fragment, [backend], {
+      policy: "required",
+      requireReductionContinuation: true,
+    }),
+  ).toThrow();
+  const ordinaryOnly: PhysicalExecutionBackend = {
+    id: "ordinary-only",
+    capabilities: () => backend.capabilities(),
+    assess: (f, c) => backend.assess(f, c),
+    compile: (f) => backend.compile(f),
+    execute: (f, i, c) => backend.execute(f, i, c),
+  };
+  expect(() =>
+    planPhysicalFragment(fragment, [ordinaryOnly], { requireReductionContinuation: true }),
+  ).toThrow();
+});
+
+it("rejects unadmitted expression and column shapes during continuation placement", () => {
+  const batch = batchFromColumns({ value: ["a"] });
+  const backend = new CpuPhysicalBackend();
+  const fragment = testFragment(batch, {
+    operators: [
+      {
+        kind: "reduce",
+        aggregates: {
+          n: {
+            op: "count_distinct",
+            expr: {
+              kind: "call",
+              fn: "regexp_replace",
+              args: [
+                { kind: "column", name: "value" },
+                { kind: "literal", value: "a" },
+                { kind: "literal", value: "b" },
+              ],
+            },
+          },
+        },
+      },
+    ],
+    output: { kind: "aggregate-snapshot" },
+  });
+  expect(() =>
+    planPhysicalFragment(fragment, [backend], { requireReductionContinuation: true }),
+  ).toThrow();
+  const direct = testFragment(batch, {
+    operators: [{ kind: "reduce", aggregates: { n: { op: "count", column: "value" } } }],
+    output: { kind: "aggregate-snapshot" },
+  });
+  if (direct.input.kind !== "batch") throw Error("Missing input");
+  direct.input.columns.value = {
+    shape: "dict",
+    nullable: false,
+    dictionaryValueShape: { shape: "binary", nullable: false },
+  };
+  expect(() =>
+    planPhysicalFragment(direct, [backend], { requireReductionContinuation: true }),
+  ).toThrow();
+});
+
+it("plans nested union children explicitly and rejects changed runtime child shapes", async () => {
+  const batch = batchFromVectors({
+    value: {
+      type: "union",
+      tags: Uint8Array.of(0, 1),
+      offsets: Uint32Array.of(0, 0),
+      children: [
+        { type: "f64", values: Float64Array.of(1) },
+        { type: "dict", indices: Uint32Array.of(0), dictionary: { type: "utf8", values: ["a"] } },
+      ],
+    },
+  });
+  const fragment = testFragment(batch, {
+    operators: [{ kind: "reduce", aggregates: { n: { op: "count_distinct", column: "value" } } }],
+    output: { kind: "aggregate-snapshot" },
+  });
+  expect(fragment.input.kind === "batch" && fragment.input.columns.value).toEqual({
+    shape: "union",
+    nullable: false,
+    unionChildShapes: [
+      { shape: "f64", nullable: false },
+      { shape: "dict", nullable: false, dictionaryValueShape: { shape: "utf8", nullable: false } },
+    ],
+  });
+  const backend = new CpuPhysicalBackend();
+  expect(() =>
+    planPhysicalFragment(fragment, [backend], { requireReductionContinuation: true }),
+  ).not.toThrow();
+  const compiled = await backend.compile(fragment);
+  const changed = batchFromVectors({
+    value: {
+      type: "union",
+      tags: Uint8Array.of(0, 1),
+      offsets: Uint32Array.of(0, 0),
+      children: [
+        { type: "f64", values: Float64Array.of(1) },
+        {
+          type: "dict",
+          indices: Uint32Array.of(0),
+          dictionary: { type: "f64", values: Float64Array.of(2) },
+        },
+      ],
+    },
+  });
+  await expect(backend.execute(compiled, { kind: "batch", batch: changed })).rejects.toThrow(
+    /shape changed/,
+  );
+  if (fragment.input.kind !== "batch") throw Error("Missing batch");
+  const shape = fragment.input.columns.value;
+  if (!shape) throw Error("Missing shape");
+  delete shape.unionChildShapes;
+  expect(() =>
+    planPhysicalFragment(fragment, [backend], { requireReductionContinuation: true }),
+  ).toThrow();
+  shape.unionChildShapes = [{ shape: "binary", nullable: false }];
+  expect(() =>
+    planPhysicalFragment(fragment, [backend], { requireReductionContinuation: true }),
+  ).toThrow();
+});

@@ -4,6 +4,7 @@ import {
   gt,
   jsonWorkUnitBoundary,
   like,
+  MemoryBudget,
   materializeBatchRows,
   memoryStore,
   type TaskInput,
@@ -382,4 +383,49 @@ describe("Parquet task execution", () => {
       ),
     ).rejects.toMatchObject({ code: "LAKEQL_TYPE_ERROR" });
   });
+});
+
+it("shares the caller allocation budget with adaptive GROUPS evaluation after task fan-in", async () => {
+  const store = memoryStore();
+  const keys = Array.from({ length: 800 }, (_, index) => index);
+  await writeParquet(store, "adaptive-window.parquet", {
+    rowGroupSize: [400, 400],
+    columnData: [
+      { name: "key", data: keys },
+      { name: "before", data: keys.map((key) => (key % 2 ? key : 0)) },
+    ],
+  });
+  const tasks: TaskInput[] = [0, 1].map((index) => ({
+    path: "adaptive-window.parquet",
+    rowGroupRanges: [{ start: index, end: index + 1 }],
+    projectedColumns: ["key", "before"],
+    partitionValues: {},
+  }));
+  const windows = {
+    total: {
+      fn: { aggregate: "sum" },
+      args: [col("key")],
+      over: {
+        partitionBy: [],
+        orderBy: [{ expr: col("key") }],
+        frame: {
+          mode: "groups",
+          start: { kind: "preceding", offset: col("before") },
+          end: { kind: "current-row" },
+        },
+      },
+    },
+  } satisfies Record<string, import("lakeql-core").WindowExpr>;
+  for (const cap of [3204, 3203]) {
+    const pool = new MemoryBudget(cap);
+    const output = await windowParquetTasks(store, tasks, windows, {
+      memoryBudget: pool,
+      maxConcurrentTasks: 2,
+    });
+    expect(output.map((row) => row.total)).toEqual(
+      keys.map((key) => (key % 2 ? (key * (key + 1)) / 2 : key)),
+    );
+    expect(pool.peakBytes).toBe(cap === 3204 ? 3204 : 0);
+    expect(pool.usedBytes).toBe(0);
+  }
 });

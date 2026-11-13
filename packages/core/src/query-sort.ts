@@ -35,37 +35,6 @@ export function compareRows(left: Row, right: Row, orderBy: OrderByTerm[]): numb
   return 0;
 }
 
-export function addOrderedMatch(
-  matched: Row[],
-  row: Row,
-  orderBy: OrderByTerm[],
-  topK: number | undefined,
-): void {
-  if (topK === undefined) {
-    matched.push(row);
-    return;
-  }
-  if (topK === 0) return;
-  if (matched.length < topK) {
-    matched.push(row);
-    return;
-  }
-  let worstIndex = 0;
-  for (let index = 1; index < matched.length; index += 1) {
-    const candidate = matched[index];
-    const worst = matched[worstIndex];
-    if (
-      candidate !== undefined &&
-      worst !== undefined &&
-      compareRows(candidate, worst, orderBy) > 0
-    ) {
-      worstIndex = index;
-    }
-  }
-  const worst = matched[worstIndex];
-  if (worst !== undefined && compareRows(row, worst, orderBy) < 0) matched[worstIndex] = row;
-}
-
 export function flushSortRun(runs: Row[][], currentRun: Row[], orderBy: OrderByTerm[]): void {
   if (currentRun.length === 0) return;
   currentRun.sort((left, right) => compareRows(left, right, orderBy));

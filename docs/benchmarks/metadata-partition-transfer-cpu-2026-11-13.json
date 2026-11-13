@@ -1,0 +1,24 @@
+{
+  "node": "v24.18.1",
+  "groups": 256,
+  "repetitions": 4,
+  "warmupRounds": 4,
+  "measuredRounds": 12,
+  "fixtureSha256": "67ccbb9754811bbc6c544e91c57170c2d46df06f4b4928b30ee6f5088722061c",
+  "scope": "Local generated Parquet metadata; alternating modes; same current conversion kernels. Baseline retains all raw allocations; partitioned uses current scratch/alias lifetimes. Includes scope disposal, excludes file reads, envelope and directory. No cloud latency or production heap claim.",
+  "samples": {
+    "retainedRaw": [
+      52.01944000000003, 50.26627599999995, 50.32661800000005, 46.65670599999987, 54.36261599999989,
+      46.40401399999996, 48.35266300000012, 50.24640899999986, 43.11062200000015, 46.70372300000008,
+      40.630942000000005, 51.430431
+    ],
+    "partitioned": [
+      48.33569, 58.619606999999974, 47.50917700000002, 62.31774299999995, 65.22973300000012,
+      47.39084600000001, 59.32531499999982, 49.69050100000004, 60.54013400000008,
+      47.425621999999976, 53.18731200000002, 54.463003999999955
+    ]
+  },
+  "retainedRawMs": 49.29953599999999,
+  "partitionedMs": 53.82515799999999,
+  "ratio": 1.0917984704764767
+}

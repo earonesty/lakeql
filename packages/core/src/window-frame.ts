@@ -9,6 +9,7 @@ import {
 import { isTimestampValue, type TimestampValue } from "./timestamp.js";
 import type { Row } from "./types.js";
 import type { WindowExpr, WindowFrame, WindowFrameBound } from "./window.js";
+import type { WindowPeers } from "./window-peers.js";
 import { samePeer, type WindowRow } from "./window-utils.js";
 
 export interface FrameSpan {
@@ -16,9 +17,14 @@ export interface FrameSpan {
   end: number;
 }
 
-export function frameRows(partition: readonly WindowRow[], index: number, expr: WindowExpr): Row[] {
-  const span = frameSpan(partition, index, expr);
-  const excluded = excludedRows(partition, index, span, expr.over.frame);
+export function frameRows(
+  partition: readonly WindowRow[],
+  index: number,
+  expr: WindowExpr,
+  peers?: WindowPeers,
+): Row[] {
+  const span = frameSpan(partition, index, expr, peers);
+  const excluded = excludedRows(partition, index, span, expr.over.frame, peers);
   const out: Row[] = [];
   for (let rowIndex = span.start; rowIndex < span.end; rowIndex += 1) {
     if (excluded.has(rowIndex)) continue;
@@ -32,15 +38,16 @@ export function frameSpan(
   partition: readonly WindowRow[],
   index: number,
   expr: WindowExpr,
+  peers?: WindowPeers,
 ): FrameSpan {
   const frame = effectiveFrame(expr);
   switch (frame.mode) {
     case "rows":
       return rowsFrameSpan(partition, index, frame);
     case "groups":
-      return groupsFrameSpan(partition, index, frame);
+      return groupsFrameSpan(partition, index, frame, peers);
     case "range":
-      return rangeFrameSpan(partition, index, expr, frame);
+      return rangeFrameSpan(partition, index, expr, frame, peers);
   }
 }
 
@@ -96,18 +103,25 @@ function groupsFrameSpan(
   partition: readonly WindowRow[],
   index: number,
   frame: WindowFrame,
+  peers?: WindowPeers,
 ): FrameSpan {
-  const groups = peerGroups(partition);
-  const groupIndex = groups.findIndex((group) => index >= group.start && index < group.end);
+  const groups = peers === undefined ? peerGroups(partition) : undefined;
+  const groupCount = peers?.groupCount ?? groups?.length ?? 0;
+  if (groupCount === 0) return { start: 0, end: 0 };
+  const groupIndex =
+    peers?.peer(index).group ??
+    groups?.findIndex((group) => index >= group.start && index < group.end) ??
+    -1;
   if (groupIndex === -1) return { start: 0, end: 0 };
-  const startGroup = groupBoundIndex(groups.length, groupIndex, frame.start, partition[index]?.row);
-  const endGroup = groupBoundIndex(groups.length, groupIndex, frame.end, partition[index]?.row);
-  if (endGroup < 0 || startGroup >= groups.length) return { start: 0, end: 0 };
-  const clampedStartGroup = clamp(startGroup, 0, groups.length - 1);
-  const clampedEndGroup = clamp(endGroup, 0, groups.length - 1);
+  const startGroup = groupBoundIndex(groupCount, groupIndex, frame.start, partition[index]?.row);
+  const endGroup = groupBoundIndex(groupCount, groupIndex, frame.end, partition[index]?.row);
+  if (endGroup < 0 || startGroup >= groupCount) return { start: 0, end: 0 };
+  const clampedStartGroup = clamp(startGroup, 0, groupCount - 1);
+  const clampedEndGroup = clamp(endGroup, 0, groupCount - 1);
   return normalizeSpan(partition.length, {
-    start: groups[clampedStartGroup]?.start ?? 0,
-    end: groups[clampedEndGroup]?.end ?? partition.length,
+    start: (peers?.group(clampedStartGroup, "start") ?? groups?.[clampedStartGroup])?.start ?? 0,
+    end:
+      (peers?.group(clampedEndGroup, "end") ?? groups?.[clampedEndGroup])?.end ?? partition.length,
   });
 }
 
@@ -136,11 +150,12 @@ function rangeFrameSpan(
   index: number,
   expr: WindowExpr,
   frame: WindowFrame,
+  peers?: WindowPeers,
 ): FrameSpan {
   if (frame.start.offset !== undefined || frame.end.offset !== undefined) {
     return rangeOffsetFrameSpan(partition, index, expr, frame);
   }
-  const peer = peerSpan(partition, index);
+  const peer = peers?.peer(index) ?? peerSpan(partition, index);
   return normalizeSpan(partition.length, {
     start: rangeEndpoint(partition.length, peer, frame.start, "start"),
     end: rangeEndpoint(partition.length, peer, frame.end, "end") + 1,
@@ -185,22 +200,29 @@ function rangeOffsetFrameSpan(
   const current = rangePoint(partition[index]?.orderKey[0], direction);
   const start = rangeOffsetBound(current, frame.start, partition[index]?.row, direction);
   const end = rangeOffsetBound(current, frame.end, partition[index]?.row, direction);
-  let first = 0;
-  while (
-    first < partition.length &&
-    compareRangeValues(rangePoint(partition[first]?.orderKey[0], direction).normalized, start) < 0
-  ) {
-    first += 1;
-  }
-  let afterLast = first;
-  while (
-    afterLast < partition.length &&
-    compareRangeValues(rangePoint(partition[afterLast]?.orderKey[0], direction).normalized, end) <=
-      0
-  ) {
-    afterLast += 1;
-  }
+  const first = rangeBoundary(partition, direction, start, 0, false);
+  const afterLast = rangeBoundary(partition, direction, end, first, true);
   return normalizeSpan(partition.length, { start: first, end: afterLast });
+}
+
+/** Sorted RANGE endpoints need no partition-sized key cache or monotone offsets. */
+function rangeBoundary(
+  partition: readonly WindowRow[],
+  direction: "asc" | "desc",
+  bound: number | bigint,
+  start: number,
+  inclusive: boolean,
+): number {
+  let low = start;
+  let high = partition.length;
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    const value = rangePoint(partition[middle]?.orderKey[0], direction).normalized;
+    const comparison = compareRangeValues(value, bound);
+    if (comparison < 0 || (inclusive && comparison === 0)) low = middle + 1;
+    else high = middle;
+  }
+  return low;
 }
 
 type RangePoint =
@@ -288,11 +310,12 @@ function excludedRows(
   index: number,
   span: FrameSpan,
   frame: WindowFrame | undefined,
+  peers?: WindowPeers,
 ): Set<number> {
   const exclude = frame?.exclude ?? "no-others";
   const out = new Set<number>();
   if (exclude === "no-others") return out;
-  const peer = peerSpan(partition, index);
+  const peer = peers?.peer(index) ?? peerSpan(partition, index);
   if (exclude === "current-row") {
     out.add(index);
     return out;

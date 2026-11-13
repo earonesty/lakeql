@@ -1,0 +1,569 @@
+{
+  "description": "Budget feasibility sweep, one run per configuration; timings are diagnostic, not comparative benchmarks. Same serialized fixtures and every-value oracle as normal runs. No cache. HTTP range response delay 2 ms. Tracked allocations exclude inputs, metadata, fixture writer, server and untracked runtime heap.",
+  "results": [
+    {
+      "rowCount": 8192,
+      "payloadBytes": 16,
+      "fileBytes": 66928,
+      "batchSize": 128,
+      "transport": "memory",
+      "budgetBytes": 131072,
+      "measurements": {
+        "nested": [
+          {
+            "error": "LakeqlError: Allocation exceeds memory budget",
+            "code": "LAKEQL_BUDGET_EXCEEDED",
+            "details": {
+              "metric": "allocated memory bytes",
+              "limit": 131072,
+              "actual": 156184,
+              "purpose": "nested row offsets"
+            },
+            "peakBytes": 127284,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 8192,
+      "payloadBytes": 16,
+      "fileBytes": 66928,
+      "batchSize": 128,
+      "transport": "memory",
+      "budgetBytes": 262144,
+      "measurements": {
+        "nested": [
+          {
+            "error": "LakeqlError: Allocation exceeds memory budget",
+            "code": "LAKEQL_BUDGET_EXCEEDED",
+            "details": {
+              "metric": "allocated memory bytes",
+              "limit": 262144,
+              "actual": 295736,
+              "purpose": "Snappy page output"
+            },
+            "peakBytes": 164976,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 8192,
+      "payloadBytes": 16,
+      "fileBytes": 66928,
+      "batchSize": 128,
+      "transport": "memory",
+      "budgetBytes": 524288,
+      "measurements": {
+        "nested": [
+          {
+            "ms": 30.976640999999887,
+            "batches": 65,
+            "largestBatch": 128,
+            "peakBytes": 418917,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 8192,
+      "payloadBytes": 16,
+      "fileBytes": 66928,
+      "batchSize": 128,
+      "transport": "memory",
+      "budgetBytes": 1048576,
+      "measurements": {
+        "nested": [
+          {
+            "ms": 22.426649000000026,
+            "batches": 65,
+            "largestBatch": 128,
+            "peakBytes": 418917,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 8192,
+      "payloadBytes": 16,
+      "fileBytes": 66928,
+      "batchSize": 1024,
+      "transport": "memory",
+      "budgetBytes": 131072,
+      "measurements": {
+        "nested": [
+          {
+            "error": "LakeqlError: Allocation exceeds memory budget",
+            "code": "LAKEQL_BUDGET_EXCEEDED",
+            "details": {
+              "metric": "allocated memory bytes",
+              "limit": 131072,
+              "actual": 156184,
+              "purpose": "nested row offsets"
+            },
+            "peakBytes": 127284,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 8192,
+      "payloadBytes": 16,
+      "fileBytes": 66928,
+      "batchSize": 1024,
+      "transport": "memory",
+      "budgetBytes": 262144,
+      "measurements": {
+        "nested": [
+          {
+            "error": "LakeqlError: Allocation exceeds memory budget",
+            "code": "LAKEQL_BUDGET_EXCEEDED",
+            "details": {
+              "metric": "allocated memory bytes",
+              "limit": 262144,
+              "actual": 295736,
+              "purpose": "Snappy page output"
+            },
+            "peakBytes": 164976,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 8192,
+      "payloadBytes": 16,
+      "fileBytes": 66928,
+      "batchSize": 1024,
+      "transport": "memory",
+      "budgetBytes": 524288,
+      "measurements": {
+        "nested": [
+          {
+            "ms": 11.57306799999995,
+            "batches": 9,
+            "largestBatch": 1024,
+            "peakBytes": 439787,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 8192,
+      "payloadBytes": 16,
+      "fileBytes": 66928,
+      "batchSize": 1024,
+      "transport": "memory",
+      "budgetBytes": 1048576,
+      "measurements": {
+        "nested": [
+          {
+            "ms": 9.35779500000001,
+            "batches": 9,
+            "largestBatch": 1024,
+            "peakBytes": 439787,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 8192,
+      "payloadBytes": 16,
+      "fileBytes": 66928,
+      "batchSize": 8192,
+      "transport": "memory",
+      "budgetBytes": 131072,
+      "measurements": {
+        "nested": [
+          {
+            "error": "LakeqlError: Allocation exceeds memory budget",
+            "code": "LAKEQL_BUDGET_EXCEEDED",
+            "details": {
+              "metric": "allocated memory bytes",
+              "limit": 131072,
+              "actual": 156184,
+              "purpose": "nested row offsets"
+            },
+            "peakBytes": 127284,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 8192,
+      "payloadBytes": 16,
+      "fileBytes": 66928,
+      "batchSize": 8192,
+      "transport": "memory",
+      "budgetBytes": 262144,
+      "measurements": {
+        "nested": [
+          {
+            "error": "LakeqlError: Allocation exceeds memory budget",
+            "code": "LAKEQL_BUDGET_EXCEEDED",
+            "details": {
+              "metric": "allocated memory bytes",
+              "limit": 262144,
+              "actual": 295736,
+              "purpose": "Snappy page output"
+            },
+            "peakBytes": 164976,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 8192,
+      "payloadBytes": 16,
+      "fileBytes": 66928,
+      "batchSize": 8192,
+      "transport": "memory",
+      "budgetBytes": 524288,
+      "measurements": {
+        "nested": [
+          {
+            "ms": 6.829503000000102,
+            "batches": 3,
+            "largestBatch": 3596,
+            "peakBytes": 501777,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 8192,
+      "payloadBytes": 16,
+      "fileBytes": 66928,
+      "batchSize": 8192,
+      "transport": "memory",
+      "budgetBytes": 1048576,
+      "measurements": {
+        "nested": [
+          {
+            "ms": 4.737547999999947,
+            "batches": 2,
+            "largestBatch": 7192,
+            "peakBytes": 534150,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 8192,
+      "payloadBytes": 16,
+      "fileBytes": 66928,
+      "batchSize": 128,
+      "transport": "http-2ms",
+      "budgetBytes": 131072,
+      "measurements": {
+        "nested": [
+          {
+            "error": "LakeqlError: Allocation exceeds memory budget",
+            "code": "LAKEQL_BUDGET_EXCEEDED",
+            "details": {
+              "metric": "allocated memory bytes",
+              "limit": 131072,
+              "actual": 156184,
+              "purpose": "nested row offsets"
+            },
+            "peakBytes": 127284,
+            "requests": 8,
+            "transferred": 67416,
+            "peakActive": 2
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 8192,
+      "payloadBytes": 16,
+      "fileBytes": 66928,
+      "batchSize": 128,
+      "transport": "http-2ms",
+      "budgetBytes": 262144,
+      "measurements": {
+        "nested": [
+          {
+            "error": "LakeqlError: Allocation exceeds memory budget",
+            "code": "LAKEQL_BUDGET_EXCEEDED",
+            "details": {
+              "metric": "allocated memory bytes",
+              "limit": 262144,
+              "actual": 296520,
+              "purpose": "Snappy page output"
+            },
+            "peakBytes": 165760,
+            "requests": 8,
+            "transferred": 67416,
+            "peakActive": 2
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 8192,
+      "payloadBytes": 16,
+      "fileBytes": 66928,
+      "batchSize": 128,
+      "transport": "http-2ms",
+      "budgetBytes": 524288,
+      "measurements": {
+        "nested": [
+          {
+            "ms": 32.86922700000014,
+            "batches": 65,
+            "largestBatch": 128,
+            "peakBytes": 418917,
+            "requests": 8,
+            "transferred": 67416,
+            "peakActive": 2
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 8192,
+      "payloadBytes": 16,
+      "fileBytes": 66928,
+      "batchSize": 128,
+      "transport": "http-2ms",
+      "budgetBytes": 1048576,
+      "measurements": {
+        "nested": [
+          {
+            "ms": 44.09435200000041,
+            "batches": 65,
+            "largestBatch": 128,
+            "peakBytes": 418917,
+            "requests": 8,
+            "transferred": 67416,
+            "peakActive": 2
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 8192,
+      "payloadBytes": 16,
+      "fileBytes": 66928,
+      "batchSize": 1024,
+      "transport": "http-2ms",
+      "budgetBytes": 131072,
+      "measurements": {
+        "nested": [
+          {
+            "error": "LakeqlError: Allocation exceeds memory budget",
+            "code": "LAKEQL_BUDGET_EXCEEDED",
+            "details": {
+              "metric": "allocated memory bytes",
+              "limit": 131072,
+              "actual": 156184,
+              "purpose": "nested row offsets"
+            },
+            "peakBytes": 127284,
+            "requests": 8,
+            "transferred": 67416,
+            "peakActive": 2
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 8192,
+      "payloadBytes": 16,
+      "fileBytes": 66928,
+      "batchSize": 1024,
+      "transport": "http-2ms",
+      "budgetBytes": 262144,
+      "measurements": {
+        "nested": [
+          {
+            "error": "LakeqlError: Allocation exceeds memory budget",
+            "code": "LAKEQL_BUDGET_EXCEEDED",
+            "details": {
+              "metric": "allocated memory bytes",
+              "limit": 262144,
+              "actual": 296520,
+              "purpose": "Snappy page output"
+            },
+            "peakBytes": 165760,
+            "requests": 8,
+            "transferred": 67416,
+            "peakActive": 2
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 8192,
+      "payloadBytes": 16,
+      "fileBytes": 66928,
+      "batchSize": 1024,
+      "transport": "http-2ms",
+      "budgetBytes": 524288,
+      "measurements": {
+        "nested": [
+          {
+            "ms": 23.5841759999999,
+            "batches": 9,
+            "largestBatch": 1024,
+            "peakBytes": 439787,
+            "requests": 8,
+            "transferred": 67416,
+            "peakActive": 2
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 8192,
+      "payloadBytes": 16,
+      "fileBytes": 66928,
+      "batchSize": 1024,
+      "transport": "http-2ms",
+      "budgetBytes": 1048576,
+      "measurements": {
+        "nested": [
+          {
+            "ms": 25.7536309999997,
+            "batches": 9,
+            "largestBatch": 1024,
+            "peakBytes": 439787,
+            "requests": 8,
+            "transferred": 67416,
+            "peakActive": 2
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 8192,
+      "payloadBytes": 16,
+      "fileBytes": 66928,
+      "batchSize": 8192,
+      "transport": "http-2ms",
+      "budgetBytes": 131072,
+      "measurements": {
+        "nested": [
+          {
+            "error": "LakeqlError: Allocation exceeds memory budget",
+            "code": "LAKEQL_BUDGET_EXCEEDED",
+            "details": {
+              "metric": "allocated memory bytes",
+              "limit": 131072,
+              "actual": 156184,
+              "purpose": "nested row offsets"
+            },
+            "peakBytes": 127284,
+            "requests": 8,
+            "transferred": 67416,
+            "peakActive": 2
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 8192,
+      "payloadBytes": 16,
+      "fileBytes": 66928,
+      "batchSize": 8192,
+      "transport": "http-2ms",
+      "budgetBytes": 262144,
+      "measurements": {
+        "nested": [
+          {
+            "error": "LakeqlError: Allocation exceeds memory budget",
+            "code": "LAKEQL_BUDGET_EXCEEDED",
+            "details": {
+              "metric": "allocated memory bytes",
+              "limit": 262144,
+              "actual": 296520,
+              "purpose": "Snappy page output"
+            },
+            "peakBytes": 165760,
+            "requests": 8,
+            "transferred": 67416,
+            "peakActive": 2
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 8192,
+      "payloadBytes": 16,
+      "fileBytes": 66928,
+      "batchSize": 8192,
+      "transport": "http-2ms",
+      "budgetBytes": 524288,
+      "measurements": {
+        "nested": [
+          {
+            "ms": 22.216957999999863,
+            "batches": 3,
+            "largestBatch": 3596,
+            "peakBytes": 501777,
+            "requests": 8,
+            "transferred": 67416,
+            "peakActive": 2
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 8192,
+      "payloadBytes": 16,
+      "fileBytes": 66928,
+      "batchSize": 8192,
+      "transport": "http-2ms",
+      "budgetBytes": 1048576,
+      "measurements": {
+        "nested": [
+          {
+            "ms": 19.017218999999955,
+            "batches": 2,
+            "largestBatch": 7192,
+            "peakBytes": 534150,
+            "requests": 8,
+            "transferred": 67416,
+            "peakActive": 2
+          }
+        ]
+      }
+    }
+  ]
+}

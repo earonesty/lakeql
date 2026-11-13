@@ -1,4 +1,6 @@
-import type { BatchExprValues } from "./batch.js";
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
+import { type BatchExprValues, type PackedByteVector, vectorValue } from "./batch.js";
+import { expandDictionaryMask } from "./dictionary-mask.js";
 import { LakeqlError } from "./errors.js";
 import {
   type BBox,
@@ -13,13 +15,17 @@ import {
   toGeometry,
 } from "./evaluator.js";
 import type { Expr, Scalar } from "./expr.js";
+import type { MemoryScope } from "./memory-scope.js";
 import { regexpMatchesValue, regexpReplaceValue } from "./regex-functions.js";
+import { scalarStringWithAdmission } from "./scalar-cast-allocation.js";
+import { replaceAllWithAdmission } from "./string-replacement-allocation.js";
+import { admitVectorBuffer } from "./vector-buffer.js";
 
 export function batchCallExprValues(
   rowCount: number,
   name: string,
   args: BatchExprValues[],
-  compareEq: (left: Scalar, right: Scalar) => boolean | null,
+  compareEq: (left: Scalar, right: Scalar, scope?: MemoryScope) => boolean | null,
 ): BatchExprValues {
   const fn = name.toLowerCase();
   switch (fn) {
@@ -67,20 +73,21 @@ export function batchCallExprValues(
 export function batchCallPredicateMask(
   name: string,
   args: BatchExprValues[],
+  scope?: MemoryScope,
 ): Uint8Array | undefined {
   switch (name.toLowerCase()) {
     case "h3_in":
-      return h3InMask(args);
+      return h3InMask(args, scope);
     case "h3_within":
-      return h3WithinMask(args);
+      return h3WithinMask(args, scope);
     case "st_intersects":
-      return stIntersectsMask(args);
+      return stIntersectsMask(args, scope);
     case "st_contains":
-      return stContainsMask(args);
+      return stContainsMask(args, scope);
     case "st_within":
-      return stWithinMask(args);
+      return stWithinMask(args, scope);
     case "st_dwithin":
-      return stDWithinMask(args);
+      return stDWithinMask(args, scope);
     default:
       return undefined;
   }
@@ -179,25 +186,25 @@ function stPointCallValues(args: BatchExprValues[]): BatchExprValues {
   return { rowCount: args[0]?.rowCount ?? 0, literal: value, valueAt: () => value };
 }
 
-function h3InMask(args: BatchExprValues[]): Uint8Array | undefined {
+function h3InMask(args: BatchExprValues[], scope?: MemoryScope): Uint8Array | undefined {
   const cell = args[0];
   const list = args[1]?.literal;
-  if (cell?.vector !== undefined && list === null) return nullMask(cell.rowCount);
+  if (cell?.vector !== undefined && list === null) return nullMask(cell.rowCount, scope);
   if (cell?.vector === undefined || typeof list !== "string") return undefined;
   const parsed: unknown = JSON.parse(list);
   if (!Array.isArray(parsed) || !parsed.every((value) => typeof value === "string")) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "h3_in() cell list must be a JSON string array");
   }
   const cells = new Set(parsed);
-  return stringVectorMask(cell.vector, (value) => cells.has(value));
+  return stringVectorMask(cell.vector, (value) => cells.has(value), scope);
 }
 
-function h3WithinMask(args: BatchExprValues[]): Uint8Array | undefined {
+function h3WithinMask(args: BatchExprValues[], scope?: MemoryScope): Uint8Array | undefined {
   const cell = args[0];
   const origin = args[1]?.literal;
   const radius = args[2]?.literal;
   if (cell?.vector !== undefined && (origin === null || radius === null))
-    return nullMask(cell.rowCount);
+    return nullMask(cell.rowCount, scope);
   if (cell?.vector === undefined || typeof origin !== "string" || typeof radius !== "number") {
     return undefined;
   }
@@ -209,93 +216,99 @@ function h3WithinMask(args: BatchExprValues[]): Uint8Array | undefined {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "h3 cell origin is invalid", { cell: origin });
   }
   const cells = new Set(geo.gridDisk(origin, radius));
-  return stringVectorMask(cell.vector, (value) => {
-    if (!geo.isValidCell(value)) {
-      throw new LakeqlError("LAKEQL_TYPE_ERROR", "h3 cell cell is invalid", { cell: value });
-    }
-    return cells.has(value);
-  });
+  return stringVectorMask(
+    cell.vector,
+    (value) => {
+      if (!geo.isValidCell(value)) {
+        throw new LakeqlError("LAKEQL_TYPE_ERROR", "h3 cell cell is invalid", { cell: value });
+      }
+      return cells.has(value);
+    },
+    scope,
+  );
 }
 
-function stIntersectsMask(args: BatchExprValues[]): Uint8Array | undefined {
+function stIntersectsMask(args: BatchExprValues[], scope?: MemoryScope): Uint8Array | undefined {
   const left = args[0];
   const right = args[1];
   if (left?.vector !== undefined && right !== undefined) {
-    if (right.literal === null) return nullMask(left.rowCount);
+    if (right.literal === null) return nullMask(left.rowCount, scope);
     const constant = spatialConstant(right);
-    if (constant !== undefined) return geometryVectorIntersectsMask(left.vector, constant, false);
+    if (constant !== undefined)
+      return geometryVectorIntersectsMask(left.vector, constant, false, scope);
   }
   if (right?.vector !== undefined && left !== undefined) {
-    if (left.literal === null) return nullMask(right.rowCount);
+    if (left.literal === null) return nullMask(right.rowCount, scope);
     const constant = spatialConstant(left);
-    if (constant !== undefined) return geometryVectorIntersectsMask(right.vector, constant, true);
+    if (constant !== undefined)
+      return geometryVectorIntersectsMask(right.vector, constant, true, scope);
   }
   return undefined;
 }
 
-function stDWithinMask(args: BatchExprValues[]): Uint8Array | undefined {
+function stDWithinMask(args: BatchExprValues[], scope?: MemoryScope): Uint8Array | undefined {
   const left = args[0];
   const right = args[1];
   const distance = args[2]?.literal;
   if (distance === null && (left?.vector !== undefined || right?.vector !== undefined)) {
-    return nullMask(left?.rowCount ?? right?.rowCount ?? 0);
+    return nullMask(left?.rowCount ?? right?.rowCount ?? 0, scope);
   }
   if (typeof distance !== "number") return undefined;
   if (!Number.isFinite(distance) || distance < 0) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "st_dwithin() expects a non-negative distance");
   }
   if (left?.vector !== undefined && right !== undefined) {
-    if (right.literal === null) return nullMask(left.rowCount);
+    if (right.literal === null) return nullMask(left.rowCount, scope);
     const constant = spatialConstant(right, "st_dwithin");
     if (constant !== undefined) {
-      return geometryVectorDWithinMask(left.vector, constant, distance);
+      return geometryVectorDWithinMask(left.vector, constant, distance, scope);
     }
   }
   if (right?.vector !== undefined && left !== undefined) {
-    if (left.literal === null) return nullMask(right.rowCount);
+    if (left.literal === null) return nullMask(right.rowCount, scope);
     const constant = spatialConstant(left, "st_dwithin");
     if (constant !== undefined) {
-      return geometryVectorDWithinMask(right.vector, constant, distance);
+      return geometryVectorDWithinMask(right.vector, constant, distance, scope);
     }
   }
   return undefined;
 }
 
-function stContainsMask(args: BatchExprValues[]): Uint8Array | undefined {
+function stContainsMask(args: BatchExprValues[], scope?: MemoryScope): Uint8Array | undefined {
   const left = args[0];
   const right = args[1];
   if (left?.vector !== undefined && right !== undefined) {
-    if (right.literal === null) return nullMask(left.rowCount);
+    if (right.literal === null) return nullMask(left.rowCount, scope);
     const constant = spatialConstant(right, "st_contains");
     if (constant !== undefined) {
-      return geometryVectorContainsMask(left.vector, constant, false, "st_contains");
+      return geometryVectorContainsMask(left.vector, constant, false, "st_contains", scope);
     }
   }
   if (right?.vector !== undefined && left !== undefined) {
-    if (left.literal === null) return nullMask(right.rowCount);
+    if (left.literal === null) return nullMask(right.rowCount, scope);
     const constant = spatialConstant(left, "st_contains");
     if (constant !== undefined) {
-      return geometryVectorContainsMask(right.vector, constant, true, "st_contains");
+      return geometryVectorContainsMask(right.vector, constant, true, "st_contains", scope);
     }
   }
   return undefined;
 }
 
-function stWithinMask(args: BatchExprValues[]): Uint8Array | undefined {
+function stWithinMask(args: BatchExprValues[], scope?: MemoryScope): Uint8Array | undefined {
   const left = args[0];
   const right = args[1];
   if (left?.vector !== undefined && right !== undefined) {
-    if (right.literal === null) return nullMask(left.rowCount);
+    if (right.literal === null) return nullMask(left.rowCount, scope);
     const constant = spatialConstant(right, "st_within");
     if (constant !== undefined) {
-      return geometryVectorContainsMask(left.vector, constant, true, "st_within");
+      return geometryVectorContainsMask(left.vector, constant, true, "st_within", scope);
     }
   }
   if (right?.vector !== undefined && left !== undefined) {
-    if (left.literal === null) return nullMask(right.rowCount);
+    if (left.literal === null) return nullMask(right.rowCount, scope);
     const constant = spatialConstant(left, "st_within");
     if (constant !== undefined) {
-      return geometryVectorContainsMask(right.vector, constant, false, "st_within");
+      return geometryVectorContainsMask(right.vector, constant, false, "st_within", scope);
     }
   }
   return undefined;
@@ -321,17 +334,22 @@ function geometryVectorIntersectsMask(
   vector: NonNullable<BatchExprValues["vector"]>,
   constant: SpatialConstant,
   constantFirst: boolean,
+  scope?: MemoryScope,
 ): Uint8Array {
   const geo = requireGeoBackend();
-  return geometryVectorMask(vector, (value) => {
-    const parsed = parseGeometry(value, "st_intersects");
-    const envelope = envelopeFromGeometry(parsed, "st_intersects");
-    if (!bboxIntersects(envelope, constant.envelope)) return false;
-    const geometry = toGeometry(parsed, "st_intersects");
-    return constantFirst
-      ? geo.booleanIntersects(constant.geometry, geometry)
-      : geo.booleanIntersects(geometry, constant.geometry);
-  });
+  return geometryVectorMask(
+    vector,
+    (value) => {
+      const parsed = parseGeometry(value, "st_intersects");
+      const envelope = envelopeFromGeometry(parsed, "st_intersects");
+      if (!bboxIntersects(envelope, constant.envelope)) return false;
+      const geometry = toGeometry(parsed, "st_intersects");
+      return constantFirst
+        ? geo.booleanIntersects(constant.geometry, geometry)
+        : geo.booleanIntersects(geometry, constant.geometry);
+    },
+    scope,
+  );
 }
 
 function geometryVectorContainsMask(
@@ -339,32 +357,42 @@ function geometryVectorContainsMask(
   constant: SpatialConstant,
   constantContainsValue: boolean,
   name: string,
+  scope?: MemoryScope,
 ): Uint8Array {
   const geo = requireGeoBackend();
-  return geometryVectorMask(vector, (value) => {
-    const parsed = parseGeometry(value, name);
-    const envelope = envelopeFromGeometry(parsed, name);
-    if (constantContainsValue) {
-      if (!bboxContainsLocal(constant.envelope, envelope)) return false;
-      return geo.booleanContains(constant.geometry, toGeometry(parsed, name));
-    }
-    if (!bboxContainsLocal(envelope, constant.envelope)) return false;
-    return geo.booleanContains(toGeometry(parsed, name), constant.geometry);
-  });
+  return geometryVectorMask(
+    vector,
+    (value) => {
+      const parsed = parseGeometry(value, name);
+      const envelope = envelopeFromGeometry(parsed, name);
+      if (constantContainsValue) {
+        if (!bboxContainsLocal(constant.envelope, envelope)) return false;
+        return geo.booleanContains(constant.geometry, toGeometry(parsed, name));
+      }
+      if (!bboxContainsLocal(envelope, constant.envelope)) return false;
+      return geo.booleanContains(toGeometry(parsed, name), constant.geometry);
+    },
+    scope,
+  );
 }
 
 function geometryVectorDWithinMask(
   vector: NonNullable<BatchExprValues["vector"]>,
   constant: SpatialConstant,
   distance: number,
+  scope?: MemoryScope,
 ): Uint8Array {
-  return geometryVectorMask(vector, (value) => {
-    const parsed = parseGeometry(value, "st_dwithin");
-    const envelope = envelopeFromGeometry(parsed, "st_dwithin");
-    if (bboxDistance(envelope, constant.envelope) > distance) return false;
-    const geometry = toGeometry(parsed, "st_dwithin");
-    return geometryDistance(geometry, constant.geometry) <= distance;
-  });
+  return geometryVectorMask(
+    vector,
+    (value) => {
+      const parsed = parseGeometry(value, "st_dwithin");
+      const envelope = envelopeFromGeometry(parsed, "st_dwithin");
+      if (bboxDistance(envelope, constant.envelope) > distance) return false;
+      const geometry = toGeometry(parsed, "st_dwithin");
+      return geometryDistance(geometry, constant.geometry) <= distance;
+    },
+    scope,
+  );
 }
 
 function bboxContainsLocal(left: BBox, right: BBox): boolean {
@@ -379,16 +407,21 @@ function bboxContainsLocal(left: BBox, right: BBox): boolean {
 function geometryVectorMask(
   vector: NonNullable<BatchExprValues["vector"]>,
   predicate: (value: string | Uint8Array) => boolean,
+  scope?: MemoryScope,
 ): Uint8Array {
   switch (vector.type) {
     case "null":
-      return nullMask(vector.length);
+      return nullMask(vector.length, scope);
+    case "utf8-view":
+      return packedPredicateMask(vector, (value) => predicate(value as string), scope);
     case "utf8":
-      return utf8VectorMask(vector, predicate);
+      return utf8VectorMask(vector, predicate, scope);
+    case "binary-view":
+      return packedPredicateMask(vector, predicate, scope);
     case "binary":
-      return binaryVectorMask(vector, predicate);
+      return binaryVectorMask(vector, predicate, scope);
     case "dict":
-      return dictGeometryVectorMask(vector, predicate);
+      return dictGeometryVectorMask(vector, predicate, scope);
     default:
       throw new LakeqlError(
         "LAKEQL_TYPE_ERROR",
@@ -403,14 +436,17 @@ function geometryVectorMask(
 function stringVectorMask(
   vector: NonNullable<BatchExprValues["vector"]>,
   predicate: (value: string) => boolean,
+  scope?: MemoryScope,
 ): Uint8Array {
   switch (vector.type) {
     case "null":
-      return nullMask(vector.length);
+      return nullMask(vector.length, scope);
+    case "utf8-view":
+      return packedPredicateMask(vector, (value) => predicate(value as string), scope);
     case "utf8":
-      return utf8VectorMask(vector, predicate);
+      return utf8VectorMask(vector, predicate, scope);
     case "dict":
-      return dictStringVectorMask(vector, predicate);
+      return dictStringVectorMask(vector, predicate, scope);
     default:
       throw new LakeqlError("LAKEQL_TYPE_ERROR", "Vector spatial/H3 predicate requires strings", {
         vectorType: vector.type,
@@ -421,15 +457,24 @@ function stringVectorMask(
 function binaryVectorMask(
   vector: Extract<NonNullable<BatchExprValues["vector"]>, { type: "binary" }>,
   predicate: (value: Uint8Array) => boolean,
+  scope?: MemoryScope,
 ): Uint8Array {
-  const mask = new Uint8Array(vector.values.length);
+  const mask = admitVectorBuffer(
+    scope,
+    vector.values.length,
+    () => new Uint8Array(vector.values.length),
+  );
   const valid = vector.valid;
   for (let index = 0; index < vector.values.length; index += 1) {
     if (valid !== undefined && valid[index] === 0) {
       mask[index] = 2;
       continue;
     }
-    mask[index] = predicate(vector.values[index] ?? new Uint8Array()) ? 1 : 0;
+    mask[index] = predicate(
+      vector.values[index] ?? admitVectorBuffer(scope, 0, () => new Uint8Array()),
+    )
+      ? 1
+      : 0;
   }
   return mask;
 }
@@ -437,8 +482,9 @@ function binaryVectorMask(
 function dictGeometryVectorMask(
   vector: Extract<NonNullable<BatchExprValues["vector"]>, { type: "dict" }>,
   predicate: (value: string | Uint8Array) => boolean,
+  scope?: MemoryScope,
 ): Uint8Array {
-  if (vector.dictionary.type !== "utf8" && vector.dictionary.type !== "binary") {
+  if (!["utf8", "binary", "utf8-view", "binary-view"].includes(vector.dictionary.type)) {
     throw new LakeqlError(
       "LAKEQL_TYPE_ERROR",
       "Dictionary spatial predicate requires geometry values",
@@ -447,27 +493,20 @@ function dictGeometryVectorMask(
       },
     );
   }
-  const dictionaryMask =
-    vector.dictionary.type === "utf8"
-      ? utf8VectorMask(vector.dictionary, predicate)
-      : binaryVectorMask(vector.dictionary, predicate);
-  const mask = new Uint8Array(vector.indices.length);
-  const valid = vector.valid;
-  for (let index = 0; index < vector.indices.length; index += 1) {
-    if (valid !== undefined && valid[index] === 0) {
-      mask[index] = 2;
-      continue;
-    }
-    mask[index] = dictionaryMask[vector.indices[index] ?? 0] ?? 2;
-  }
-  return mask;
+  const dictionaryMask = geometryVectorMask(vector.dictionary, predicate, scope);
+  return expandDictionaryMask(vector, dictionaryMask, scope);
 }
 
 function utf8VectorMask(
   vector: Extract<NonNullable<BatchExprValues["vector"]>, { type: "utf8" }>,
   predicate: (value: string) => boolean,
+  scope?: MemoryScope,
 ): Uint8Array {
-  const mask = new Uint8Array(vector.values.length);
+  const mask = admitVectorBuffer(
+    scope,
+    vector.values.length,
+    () => new Uint8Array(vector.values.length),
+  );
   const valid = vector.valid;
   for (let index = 0; index < vector.values.length; index += 1) {
     if (valid !== undefined && valid[index] === 0) {
@@ -482,27 +521,19 @@ function utf8VectorMask(
 function dictStringVectorMask(
   vector: Extract<NonNullable<BatchExprValues["vector"]>, { type: "dict" }>,
   predicate: (value: string) => boolean,
+  scope?: MemoryScope,
 ): Uint8Array {
-  if (vector.dictionary.type !== "utf8") {
+  if (vector.dictionary.type !== "utf8" && vector.dictionary.type !== "utf8-view") {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Dictionary spatial/H3 predicate requires strings", {
       vectorType: vector.dictionary.type,
     });
   }
-  const dictionaryMask = utf8VectorMask(vector.dictionary, predicate);
-  const mask = new Uint8Array(vector.indices.length);
-  const valid = vector.valid;
-  for (let index = 0; index < vector.indices.length; index += 1) {
-    if (valid !== undefined && valid[index] === 0) {
-      mask[index] = 2;
-      continue;
-    }
-    mask[index] = dictionaryMask[vector.indices[index] ?? 0] ?? 2;
-  }
-  return mask;
+  const dictionaryMask = stringVectorMask(vector.dictionary, predicate, scope);
+  return expandDictionaryMask(vector, dictionaryMask, scope);
 }
 
-function nullMask(rowCount: number): Uint8Array {
-  const mask = new Uint8Array(rowCount);
+function nullMask(rowCount: number, scope?: MemoryScope): Uint8Array {
+  const mask = admitVectorBuffer(scope, rowCount, () => new Uint8Array(rowCount));
   mask.fill(2);
   return mask;
 }
@@ -585,8 +616,23 @@ function literalNonNegativeNumberExpr(expr: Expr | undefined): boolean {
 function coalesceCallValues(rowCount: number, args: BatchExprValues[]): BatchExprValues {
   return {
     rowCount,
-    valueAt(index) {
-      return args.map((arg) => arg.valueAt(index)).find((value) => value !== null) ?? null;
+    valueAt(index, valueScope) {
+      let result: Scalar = null;
+      for (const arg of args) {
+        const scratch = arg.allocationFree ? undefined : valueScope?.childScope();
+        let retained = false;
+        try {
+          const value = arg.valueAt(index, scratch);
+          if (result === null && value !== null) {
+            result = value;
+            retained = true;
+          }
+        } finally {
+          // Preserve eager evaluation, but only the selected argument can escape.
+          if (!retained) scratch?.dispose();
+        }
+      }
+      return result;
     },
   };
 }
@@ -594,15 +640,25 @@ function coalesceCallValues(rowCount: number, args: BatchExprValues[]): BatchExp
 function nullifCallValues(
   rowCount: number,
   args: BatchExprValues[],
-  compareEq: (left: Scalar, right: Scalar) => boolean | null,
+  compareEq: (left: Scalar, right: Scalar, scope?: MemoryScope) => boolean | null,
 ): BatchExprValues {
   requireVectorArgCount("nullif", args, 2);
   return {
     rowCount,
-    valueAt(index) {
-      const left = args[0]?.valueAt(index) ?? null;
-      const right = args[1]?.valueAt(index) ?? null;
-      return compareEq(left, right) === true ? null : left;
+    valueAt(index, valueScope) {
+      const leftScope = args[0]?.allocationFree ? undefined : valueScope?.childScope();
+      const rightScope = args[1]?.allocationFree ? undefined : valueScope?.childScope();
+      let retained = false;
+      try {
+        const left = args[0]?.valueAt(index, leftScope) ?? null;
+        const right = args[1]?.valueAt(index, rightScope) ?? null;
+        if (compareEq(left, right, valueScope) === true) return null;
+        retained = left !== null;
+        return left;
+      } finally {
+        rightScope?.dispose();
+        if (!retained) leftScope?.dispose();
+      }
     },
   };
 }
@@ -616,8 +672,8 @@ function unaryStringCallValues(
   const source = args[0];
   return {
     rowCount: source?.rowCount ?? 0,
-    valueAt(index) {
-      const value = source?.valueAt(index) ?? null;
+    valueAt(index, valueScope) {
+      const value = source?.valueAt(index, valueScope) ?? null;
       if (value === null) return null;
       if (typeof value !== "string") {
         throw new LakeqlError("LAKEQL_TYPE_ERROR", `${name}() expects string`, {
@@ -625,7 +681,10 @@ function unaryStringCallValues(
           actual: typeof value,
         });
       }
-      return cb(value);
+      // Unicode full case mappings can expand a code point; reserve three code
+      // units per input unit for casing, while trimming cannot expand the input.
+      const units = value.length * (name === "trim" ? 1 : 3);
+      return admitVectorBuffer(valueScope, c.string + c.stringCodeUnit * units, () => cb(value));
     },
   };
 }
@@ -639,8 +698,8 @@ function unaryNumberCallValues(
   const source = args[0];
   return {
     rowCount: source?.rowCount ?? 0,
-    valueAt(index) {
-      const value = source?.valueAt(index) ?? null;
+    valueAt(index, valueScope) {
+      const value = source?.valueAt(index, valueScope) ?? null;
       if (value === null) return null;
       if (typeof value !== "number") {
         throw new LakeqlError("LAKEQL_TYPE_ERROR", `${name}() expects number`, {
@@ -660,10 +719,10 @@ function substrCallValues(args: BatchExprValues[]): BatchExprValues {
   const lengthArg = args[2];
   return {
     rowCount: valueArg?.rowCount ?? 0,
-    valueAt(index) {
-      const value = valueArg?.valueAt(index) ?? null;
-      const start = startArg?.valueAt(index) ?? null;
-      const length = lengthArg?.valueAt(index) ?? null;
+    valueAt(index, valueScope) {
+      const value = valueArg?.valueAt(index, valueScope) ?? null;
+      const start = startArg?.valueAt(index, valueScope) ?? null;
+      const length = lengthArg?.valueAt(index, valueScope) ?? null;
       if (value === null || start === null || length === null) return null;
       if (typeof value !== "string") {
         throw new LakeqlError("LAKEQL_TYPE_ERROR", "substr() expects string", {
@@ -674,7 +733,9 @@ function substrCallValues(args: BatchExprValues[]): BatchExprValues {
       if (typeof start !== "number" || typeof length !== "number") {
         throw new LakeqlError("LAKEQL_TYPE_ERROR", "substr() start and length must be numbers");
       }
-      return value.slice(start, start + length);
+      return admitVectorBuffer(valueScope, c.string + c.stringCodeUnit * value.length, () =>
+        value.slice(start, start + length),
+      );
     },
   };
 }
@@ -686,10 +747,10 @@ function replaceCallValues(args: BatchExprValues[]): BatchExprValues {
   const replacementArg = args[2];
   return {
     rowCount: valueArg?.rowCount ?? 0,
-    valueAt(index) {
-      const value = valueArg?.valueAt(index) ?? null;
-      const search = searchArg?.valueAt(index) ?? null;
-      const replacement = replacementArg?.valueAt(index) ?? null;
+    valueAt(index, valueScope) {
+      const value = valueArg?.valueAt(index, valueScope) ?? null;
+      const search = searchArg?.valueAt(index, valueScope) ?? null;
+      const replacement = replacementArg?.valueAt(index, valueScope) ?? null;
       if (value === null || search === null || replacement === null) return null;
       if (typeof value !== "string") {
         throw new LakeqlError("LAKEQL_TYPE_ERROR", "replace() expects string", {
@@ -703,7 +764,7 @@ function replaceCallValues(args: BatchExprValues[]): BatchExprValues {
           "replace() search and replacement must be strings",
         );
       }
-      return value.replaceAll(search, replacement);
+      return replaceAllWithAdmission(value, search, replacement, valueScope);
     },
   };
 }
@@ -719,10 +780,10 @@ function regexpMatchesCallValues(args: BatchExprValues[]): BatchExprValues {
   const optionsArg = args[2];
   return {
     rowCount: valueArg?.rowCount ?? 0,
-    valueAt(index) {
-      const value = valueArg?.valueAt(index) ?? null;
-      const pattern = patternArg?.valueAt(index) ?? null;
-      const options = optionsArg?.valueAt(index) ?? "";
+    valueAt(index, valueScope) {
+      const value = valueArg?.valueAt(index, valueScope) ?? null;
+      const pattern = patternArg?.valueAt(index, valueScope) ?? null;
+      const options = optionsArg?.valueAt(index, valueScope) ?? "";
       if (value === null || pattern === null || options === null) return null;
       if (typeof value !== "string" || typeof pattern !== "string" || typeof options !== "string") {
         throw new LakeqlError(
@@ -747,11 +808,11 @@ function regexpReplaceCallValues(args: BatchExprValues[]): BatchExprValues {
   const optionsArg = args[3];
   return {
     rowCount: valueArg?.rowCount ?? 0,
-    valueAt(index) {
-      const value = valueArg?.valueAt(index) ?? null;
-      const pattern = patternArg?.valueAt(index) ?? null;
-      const replacement = replacementArg?.valueAt(index) ?? null;
-      const options = optionsArg?.valueAt(index) ?? "";
+    valueAt(index, valueScope) {
+      const value = valueArg?.valueAt(index, valueScope) ?? null;
+      const pattern = patternArg?.valueAt(index, valueScope) ?? null;
+      const replacement = replacementArg?.valueAt(index, valueScope) ?? null;
+      const options = optionsArg?.valueAt(index, valueScope) ?? "";
       if (value === null || pattern === null || replacement === null || options === null) {
         return null;
       }
@@ -777,10 +838,10 @@ function castCallValues(args: BatchExprValues[]): BatchExprValues {
   const targetArg = args[1];
   return {
     rowCount: valueArg?.rowCount ?? 0,
-    valueAt(index) {
-      const value = valueArg?.valueAt(index) ?? null;
+    valueAt(index, valueScope) {
+      const value = valueArg?.valueAt(index, valueScope) ?? null;
       if (value === null) return null;
-      const target = targetArg?.valueAt(index) ?? null;
+      const target = targetArg?.valueAt(index, valueScope) ?? null;
       if (typeof target !== "string") {
         throw new LakeqlError("LAKEQL_TYPE_ERROR", "cast() expects string type name", {
           expected: "string type name",
@@ -789,7 +850,7 @@ function castCallValues(args: BatchExprValues[]): BatchExprValues {
       }
       switch (target) {
         case "string":
-          return String(value);
+          return scalarStringWithAdmission(value, valueScope);
         case "float64":
         case "number": {
           const number = Number(value);
@@ -816,9 +877,9 @@ function roundCallValues(args: BatchExprValues[]): BatchExprValues {
   const placesArg = args[1];
   return {
     rowCount: valueArg?.rowCount ?? 0,
-    valueAt(index) {
-      const value = valueArg?.valueAt(index) ?? null;
-      const places = placesArg?.valueAt(index) ?? 0;
+    valueAt(index, valueScope) {
+      const value = valueArg?.valueAt(index, valueScope) ?? null;
+      const places = placesArg?.valueAt(index, valueScope) ?? 0;
       if (value === null) return null;
       if (typeof value !== "number" || typeof places !== "number") {
         throw new LakeqlError("LAKEQL_TYPE_ERROR", "round() arguments must be numbers");
@@ -836,4 +897,17 @@ function requireVectorArgCount(name: string, args: unknown[], expected: number):
       received: args.length,
     });
   }
+}
+
+function packedPredicateMask(
+  vector: PackedByteVector,
+  predicate: (value: string | Uint8Array) => boolean,
+  scope?: MemoryScope,
+): Uint8Array {
+  const mask = admitVectorBuffer(scope, vector.length, () => new Uint8Array(vector.length));
+  for (let row = 0; row < vector.length; row++) {
+    const value = vectorValue(vector, row);
+    mask[row] = value === null ? 2 : predicate(value as string | Uint8Array) ? 1 : 0;
+  }
+  return mask;
 }

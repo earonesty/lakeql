@@ -1,0 +1,180 @@
+{
+  "scope": "Local memory-store owned acquisition and planning on generated real Parquet files. Two warmups and five measured samples per mode; full mode first. Plan parity and tracked cleanup asserted. No cloud latency, JS heap, GC peak, or whole-query memory guarantee.",
+  "node": "v24.18.1",
+  "reports": [
+    {
+      "width": 32,
+      "groups": 32,
+      "mode": "full",
+      "inputBytes": 96268,
+      "capacity": 385328,
+      "samples": [
+        {
+          "milliseconds": 5.797550000000001,
+          "trackedPeakBytes": 65536
+        },
+        {
+          "milliseconds": 4.189007000000004,
+          "trackedPeakBytes": 65536
+        },
+        {
+          "milliseconds": 3.0533259999999984,
+          "trackedPeakBytes": 65536
+        },
+        {
+          "milliseconds": 3.4581489999999917,
+          "trackedPeakBytes": 65536
+        },
+        {
+          "milliseconds": 3.5356359999999967,
+          "trackedPeakBytes": 65536
+        }
+      ]
+    },
+    {
+      "width": 32,
+      "groups": 32,
+      "mode": "indexed",
+      "inputBytes": 96268,
+      "capacity": 385328,
+      "samples": [
+        {
+          "milliseconds": 5.419938000000002,
+          "trackedPeakBytes": 65792
+        },
+        {
+          "milliseconds": 5.019211000000013,
+          "trackedPeakBytes": 65792
+        },
+        {
+          "milliseconds": 4.297220999999979,
+          "trackedPeakBytes": 65792
+        },
+        {
+          "milliseconds": 6.010480999999999,
+          "trackedPeakBytes": 65792
+        },
+        {
+          "milliseconds": 5.173532999999992,
+          "trackedPeakBytes": 65792
+        }
+      ]
+    },
+    {
+      "width": 128,
+      "groups": 64,
+      "mode": "full",
+      "inputBytes": 773450,
+      "capacity": 3094312,
+      "samples": [
+        {
+          "milliseconds": 27.167565000000025,
+          "trackedPeakBytes": 1006220
+        },
+        {
+          "milliseconds": 28.877519000000007,
+          "trackedPeakBytes": 1006220
+        },
+        {
+          "milliseconds": 33.98261199999996,
+          "trackedPeakBytes": 1006220
+        },
+        {
+          "milliseconds": 32.76396499999993,
+          "trackedPeakBytes": 1006220
+        },
+        {
+          "milliseconds": 28.16464499999995,
+          "trackedPeakBytes": 1006220
+        }
+      ]
+    },
+    {
+      "width": 128,
+      "groups": 64,
+      "mode": "indexed",
+      "inputBytes": 773450,
+      "capacity": 3094312,
+      "samples": [
+        {
+          "milliseconds": 31.366850999999997,
+          "trackedPeakBytes": 1006220
+        },
+        {
+          "milliseconds": 31.86418900000001,
+          "trackedPeakBytes": 1006220
+        },
+        {
+          "milliseconds": 30.789353000000006,
+          "trackedPeakBytes": 1006220
+        },
+        {
+          "milliseconds": 29.808763999999996,
+          "trackedPeakBytes": 1006220
+        },
+        {
+          "milliseconds": 33.401377000000025,
+          "trackedPeakBytes": 1006220
+        }
+      ]
+    },
+    {
+      "width": 256,
+      "groups": 128,
+      "mode": "full",
+      "inputBytes": 3106061,
+      "capacity": 12425268,
+      "samples": [
+        {
+          "milliseconds": 100.4362779999999,
+          "trackedPeakBytes": 4049426
+        },
+        {
+          "milliseconds": 94.87499399999979,
+          "trackedPeakBytes": 4049426
+        },
+        {
+          "milliseconds": 96.11031300000013,
+          "trackedPeakBytes": 4049426
+        },
+        {
+          "milliseconds": 103.19555000000037,
+          "trackedPeakBytes": 4049426
+        },
+        {
+          "milliseconds": 98.92514000000028,
+          "trackedPeakBytes": 4049426
+        }
+      ]
+    },
+    {
+      "width": 256,
+      "groups": 128,
+      "mode": "indexed",
+      "inputBytes": 3106061,
+      "capacity": 12425268,
+      "samples": [
+        {
+          "milliseconds": 122.09407599999986,
+          "trackedPeakBytes": 4049426
+        },
+        {
+          "milliseconds": 122.93155500000012,
+          "trackedPeakBytes": 4049426
+        },
+        {
+          "milliseconds": 124.52110300000004,
+          "trackedPeakBytes": 4049426
+        },
+        {
+          "milliseconds": 125.12302599999975,
+          "trackedPeakBytes": 4049426
+        },
+        {
+          "milliseconds": 119.9896090000002,
+          "trackedPeakBytes": 4049426
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+{"rowCount":10000,"lifetime":"scope","peakBytes":60596,"medianMs":1.717491999999993,"samples":5,"transport":"borrowed in-memory file","scope":"typed decode buffers; not whole heap"}
+{"rowCount":10000,"lifetime":"iteration","peakBytes":1398,"medianMs":1.4761759999999953,"samples":5,"transport":"borrowed in-memory file","scope":"typed decode buffers; not whole heap"}
+{"rowCount":100000,"lifetime":"scope","peakBytes":600872,"medianMs":8.379906000000005,"samples":5,"transport":"borrowed in-memory file","scope":"typed decode buffers; not whole heap"}
+{"rowCount":100000,"lifetime":"iteration","peakBytes":1398,"medianMs":9.022188000000028,"samples":5,"transport":"borrowed in-memory file","scope":"typed decode buffers; not whole heap"}

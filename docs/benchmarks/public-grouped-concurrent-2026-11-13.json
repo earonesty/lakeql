@@ -1,0 +1,349 @@
+{
+  "description": "Concurrent public grouped count over owned synthetic scanners. Shared 64/128 MiB pools and 16/32 MiB per-query caps; every successful row checked, every rejection typed, iterator closure and per-query/root cleanup asserted. No decoded cache, cloud transport or whole-heap guarantee is represented.",
+  "results": [
+    {
+      "poolMiB": 64,
+      "perQueryMiB": 16,
+      "jobs": 2,
+      "rowsPerJob": 16000,
+      "batchSize": 128,
+      "elapsedMs": 326.870936,
+      "peakConcurrentScans": 2,
+      "peakAdmittedBytes": 33451046,
+      "remainingBytes": 0,
+      "outcomes": [
+        {
+          "status": "admission-rejected",
+          "code": "LAKEQL_BUDGET_EXCEEDED",
+          "details": {
+            "metric": "allocated memory bytes",
+            "limit": 16777216,
+            "actual": 16779102,
+            "purpose": "aggregate state construction"
+          }
+        },
+        {
+          "status": "admission-rejected",
+          "code": "LAKEQL_BUDGET_EXCEEDED",
+          "details": {
+            "metric": "allocated memory bytes",
+            "limit": 16777216,
+            "actual": 16779102,
+            "purpose": "aggregate state construction"
+          }
+        }
+      ]
+    },
+    {
+      "poolMiB": 64,
+      "perQueryMiB": 16,
+      "jobs": 4,
+      "rowsPerJob": 16000,
+      "batchSize": 128,
+      "elapsedMs": 469.977945,
+      "peakConcurrentScans": 4,
+      "peakAdmittedBytes": 66800230,
+      "remainingBytes": 0,
+      "outcomes": [
+        {
+          "status": "admission-rejected",
+          "code": "LAKEQL_BUDGET_EXCEEDED",
+          "details": {
+            "metric": "allocated memory bytes",
+            "limit": 16777216,
+            "actual": 16779102,
+            "purpose": "aggregate state construction"
+          }
+        },
+        {
+          "status": "admission-rejected",
+          "code": "LAKEQL_BUDGET_EXCEEDED",
+          "details": {
+            "metric": "allocated memory bytes",
+            "limit": 16777216,
+            "actual": 16779102,
+            "purpose": "aggregate state construction"
+          }
+        },
+        {
+          "status": "admission-rejected",
+          "code": "LAKEQL_BUDGET_EXCEEDED",
+          "details": {
+            "metric": "allocated memory bytes",
+            "limit": 16777216,
+            "actual": 16779102,
+            "purpose": "aggregate state construction"
+          }
+        },
+        {
+          "status": "admission-rejected",
+          "code": "LAKEQL_BUDGET_EXCEEDED",
+          "details": {
+            "metric": "allocated memory bytes",
+            "limit": 16777216,
+            "actual": 16779102,
+            "purpose": "aggregate state construction"
+          }
+        }
+      ]
+    },
+    {
+      "poolMiB": 64,
+      "perQueryMiB": 32,
+      "jobs": 2,
+      "rowsPerJob": 16000,
+      "batchSize": 128,
+      "elapsedMs": 675.7894279999999,
+      "peakConcurrentScans": 2,
+      "peakAdmittedBytes": 42048512,
+      "remainingBytes": 0,
+      "outcomes": [
+        {
+          "status": "complete",
+          "elapsedMs": 667.3644169999999,
+          "opens": 1,
+          "appends": 125,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 42048512,
+          "remainingBytes": 0,
+          "queryPeakBytes": 25104288
+        },
+        {
+          "status": "complete",
+          "elapsedMs": 672.708893,
+          "opens": 1,
+          "appends": 125,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 42048512,
+          "remainingBytes": 0,
+          "queryPeakBytes": 25104288
+        }
+      ]
+    },
+    {
+      "poolMiB": 64,
+      "perQueryMiB": 32,
+      "jobs": 4,
+      "rowsPerJob": 16000,
+      "batchSize": 128,
+      "elapsedMs": 1125.2942639999999,
+      "peakConcurrentScans": 4,
+      "peakAdmittedBytes": 67107874,
+      "remainingBytes": 0,
+      "outcomes": [
+        {
+          "status": "complete",
+          "elapsedMs": 1118.156014,
+          "opens": 1,
+          "appends": 125,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 67107874,
+          "remainingBytes": 0,
+          "queryPeakBytes": 25149732
+        },
+        {
+          "status": "complete",
+          "elapsedMs": 1120.583861,
+          "opens": 1,
+          "appends": 125,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 67107874,
+          "remainingBytes": 0,
+          "queryPeakBytes": 25149732
+        },
+        {
+          "status": "complete",
+          "elapsedMs": 1123.2167049999998,
+          "opens": 1,
+          "appends": 125,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 67107874,
+          "remainingBytes": 0,
+          "queryPeakBytes": 25149732
+        },
+        {
+          "status": "admission-rejected",
+          "code": "LAKEQL_BUDGET_EXCEEDED",
+          "details": {
+            "metric": "allocated memory bytes",
+            "limit": 67108864,
+            "actual": 67110522,
+            "purpose": "aggregate state construction"
+          }
+        }
+      ]
+    },
+    {
+      "poolMiB": 128,
+      "perQueryMiB": 16,
+      "jobs": 2,
+      "rowsPerJob": 16000,
+      "batchSize": 128,
+      "elapsedMs": 225.35161900000003,
+      "peakConcurrentScans": 2,
+      "peakAdmittedBytes": 33451046,
+      "remainingBytes": 0,
+      "outcomes": [
+        {
+          "status": "admission-rejected",
+          "code": "LAKEQL_BUDGET_EXCEEDED",
+          "details": {
+            "metric": "allocated memory bytes",
+            "limit": 16777216,
+            "actual": 16779102,
+            "purpose": "aggregate state construction"
+          }
+        },
+        {
+          "status": "admission-rejected",
+          "code": "LAKEQL_BUDGET_EXCEEDED",
+          "details": {
+            "metric": "allocated memory bytes",
+            "limit": 16777216,
+            "actual": 16779102,
+            "purpose": "aggregate state construction"
+          }
+        }
+      ]
+    },
+    {
+      "poolMiB": 128,
+      "perQueryMiB": 16,
+      "jobs": 4,
+      "rowsPerJob": 16000,
+      "batchSize": 128,
+      "elapsedMs": 505.811381,
+      "peakConcurrentScans": 4,
+      "peakAdmittedBytes": 66800230,
+      "remainingBytes": 0,
+      "outcomes": [
+        {
+          "status": "admission-rejected",
+          "code": "LAKEQL_BUDGET_EXCEEDED",
+          "details": {
+            "metric": "allocated memory bytes",
+            "limit": 16777216,
+            "actual": 16779102,
+            "purpose": "aggregate state construction"
+          }
+        },
+        {
+          "status": "admission-rejected",
+          "code": "LAKEQL_BUDGET_EXCEEDED",
+          "details": {
+            "metric": "allocated memory bytes",
+            "limit": 16777216,
+            "actual": 16779102,
+            "purpose": "aggregate state construction"
+          }
+        },
+        {
+          "status": "admission-rejected",
+          "code": "LAKEQL_BUDGET_EXCEEDED",
+          "details": {
+            "metric": "allocated memory bytes",
+            "limit": 16777216,
+            "actual": 16779102,
+            "purpose": "aggregate state construction"
+          }
+        },
+        {
+          "status": "admission-rejected",
+          "code": "LAKEQL_BUDGET_EXCEEDED",
+          "details": {
+            "metric": "allocated memory bytes",
+            "limit": 16777216,
+            "actual": 16779102,
+            "purpose": "aggregate state construction"
+          }
+        }
+      ]
+    },
+    {
+      "poolMiB": 128,
+      "perQueryMiB": 32,
+      "jobs": 2,
+      "rowsPerJob": 16000,
+      "batchSize": 128,
+      "elapsedMs": 691.389193,
+      "peakConcurrentScans": 2,
+      "peakAdmittedBytes": 42048512,
+      "remainingBytes": 0,
+      "outcomes": [
+        {
+          "status": "complete",
+          "elapsedMs": 671.5571689999997,
+          "opens": 1,
+          "appends": 125,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 42048512,
+          "remainingBytes": 0,
+          "queryPeakBytes": 25104288
+        },
+        {
+          "status": "complete",
+          "elapsedMs": 688.3819640000002,
+          "opens": 1,
+          "appends": 125,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 42048512,
+          "remainingBytes": 0,
+          "queryPeakBytes": 25104288
+        }
+      ]
+    },
+    {
+      "poolMiB": 128,
+      "perQueryMiB": 32,
+      "jobs": 4,
+      "rowsPerJob": 16000,
+      "batchSize": 128,
+      "elapsedMs": 1320.6678949999996,
+      "peakConcurrentScans": 4,
+      "peakAdmittedBytes": 75936960,
+      "remainingBytes": 0,
+      "outcomes": [
+        {
+          "status": "complete",
+          "elapsedMs": 1310.4326369999999,
+          "opens": 1,
+          "appends": 125,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 75936960,
+          "remainingBytes": 0,
+          "queryPeakBytes": 25104288
+        },
+        {
+          "status": "complete",
+          "elapsedMs": 1313.1364139999996,
+          "opens": 1,
+          "appends": 125,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 75936960,
+          "remainingBytes": 0,
+          "queryPeakBytes": 25104288
+        },
+        {
+          "status": "complete",
+          "elapsedMs": 1316.7059609999997,
+          "opens": 1,
+          "appends": 125,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 75936960,
+          "remainingBytes": 0,
+          "queryPeakBytes": 25104288
+        },
+        {
+          "status": "complete",
+          "elapsedMs": 1318.659466,
+          "opens": 1,
+          "appends": 125,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 75936960,
+          "remainingBytes": 0,
+          "queryPeakBytes": 25104288
+        }
+      ]
+    }
+  ]
+}

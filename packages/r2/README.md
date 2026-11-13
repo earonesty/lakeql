@@ -15,3 +15,13 @@ intended for Workers and workerd-compatible runtimes.
 
 Range reads are mapped to R2 ranged `get` calls. Object metadata is surfaced through `head` and
 `list` where R2 provides size, ETag, upload time, and content type.
+
+Allocation-aware callers can use `R2ObjectStore.getRangeOwned(path, range, scope)`
+with a core `MemoryScope`. It reserves returned range buffers against the scope,
+streams the response, and rejects a body exceeding the requested range length.
+Closing the scope cancels body consumption; the R2 binding's pending `get()` itself
+has no abort-signal parameter. Partial reads at the object tail reserve only the
+remaining bytes. Custom `R2BucketLike` implementations must expose `body` for this
+method; the adapter does not fall back to unbounded `arrayBuffer()` materialization.
+The existing `getRange()` API retains its byte-returning behavior. These buffer
+charges do not include runtime-owned stream chunks or decoded query objects.

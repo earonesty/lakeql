@@ -3,12 +3,12 @@ import type { ParquetMetadata } from "./types.js";
 
 export interface RejectUnsupportedParquetSchemaOptions {
   columns?: readonly string[] | undefined;
-  /** Permit exact value-checked decoding for top-level scalar INT64 decimal leaves. */
-  allowValueCheckedInt64Decimals?: boolean;
+  /** Permit exact value-checked decoding for top-level scalar decimal leaves. */
+  allowValueCheckedScalarDecimals?: boolean;
 }
 
 export function rejectUnsupportedParquetSchema(
-  metadata: ParquetMetadata,
+  metadata: Pick<ParquetMetadata, "schema">,
   options: RejectUnsupportedParquetSchemaOptions = {},
 ): void {
   const schema = metadata.schema;
@@ -41,17 +41,10 @@ function rejectUnsupportedParquetSchemaNode(
   const childCount = schemaChildCount(element);
   rejectUnsupportedParquetLeaf(element, nodePath, options);
   if (childCount === 0) return index + 1;
-  if (isSupportedNestedParquetGroup(element)) {
-    return rejectUnsupportedNestedParquetDecimals(schema, index, path, options);
-  }
-  throw new LakeqlError(
-    "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
-    "Parquet struct columns are not supported",
-    {
-      column: nodePath.join("."),
-      feature: "struct",
-    },
-  );
+  // Generic batch construction supports struct/list/map shapes. Leaf-specific
+  // conversion restrictions still apply recursively; physical operator dispatch
+  // determines which vector shapes use direct decoding versus owned fallback.
+  return rejectUnsupportedNestedParquetDecimals(schema, index, path, options);
 }
 
 function rejectUnsupportedNestedParquetDecimals(
@@ -91,15 +84,6 @@ function schemaChildCount(element: ParquetSchemaElement | undefined): number {
   return 0;
 }
 
-function isSupportedNestedParquetGroup(element: ParquetSchemaElement): boolean {
-  const convertedType = String(element.converted_type ?? "").toUpperCase();
-  if (convertedType === "LIST" || convertedType === "MAP" || convertedType === "MAP_KEY_VALUE") {
-    return true;
-  }
-  const logicalType = parquetLogicalTypeName(element.logical_type);
-  return logicalType === "LIST" || logicalType === "MAP";
-}
-
 function rejectUnsupportedParquetLeaf(
   element: ParquetSchemaElement,
   path: string[],
@@ -120,9 +104,12 @@ function rejectUnsupportedParquetLeaf(
     decimalPrecision !== undefined &&
     decimalPrecision > 15 &&
     !(
-      options.allowValueCheckedInt64Decimals === true &&
+      options.allowValueCheckedScalarDecimals === true &&
       path.length === 1 &&
-      element.type === "INT64"
+      (element.type === "INT32" ||
+        element.type === "INT64" ||
+        element.type === "BYTE_ARRAY" ||
+        element.type === "FIXED_LEN_BYTE_ARRAY")
     )
   ) {
     throw new LakeqlError(

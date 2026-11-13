@@ -316,6 +316,7 @@ describe("docs recipes", () => {
 });
 
 class RecipeR2Object {
+  readonly body: ReadableStream<Uint8Array>;
   readonly size: number;
   readonly uploaded = new Date("2026-06-15T00:00:00Z");
   readonly httpMetadata = { contentType: "application/octet-stream" };
@@ -324,8 +325,15 @@ class RecipeR2Object {
     readonly key: string,
     private readonly bytes: Uint8Array,
     readonly etag = "etag",
+    objectSize = bytes.byteLength,
   ) {
-    this.size = bytes.byteLength;
+    this.size = objectSize;
+    this.body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes);
+        controller.close();
+      },
+    });
   }
 
   async arrayBuffer(): Promise<ArrayBuffer> {
@@ -345,7 +353,7 @@ class RecipeR2Bucket {
       options?.range === undefined
         ? bytes
         : bytes.slice(options.range.offset, options.range.offset + options.range.length);
-    return new RecipeR2Object(key, ranged);
+    return new RecipeR2Object(key, ranged, undefined, bytes.byteLength);
   }
 
   async head(key: string) {

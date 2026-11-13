@@ -1,9 +1,4 @@
-import {
-  jsonItemBytes,
-  jsonListBytes,
-  jsonListBytesAfterAppend,
-  unmeasuredMemoryBytes,
-} from "./aggregate-memory.js";
+import { bufferedAppendBytes, jsonListBytes, unmeasuredMemoryBytes } from "./aggregate-memory.js";
 import { LakeqlError } from "./errors.js";
 import type { QueryBudget } from "./query.js";
 import type { VectorAggregateValue } from "./vector-aggregate.js";
@@ -23,7 +18,8 @@ export type VectorDistinctAggregateState = {
 export function createDistinctAggregateState(
   op: VectorDistinctAggregateState["op"],
 ): VectorDistinctAggregateState {
-  return { op, values: new Set(), memoryBytes: distinctMemoryBytes(new Set()) };
+  const values = new Set<string>();
+  return { op, values, memoryBytes: distinctMemoryBytes(values) };
 }
 
 export function distinctKey(value: Exclude<VectorAggregateValue, null>): string {
@@ -38,12 +34,9 @@ export function addDistinctValue(
   const values = mutableDistinctValues(state);
   measureDistinctBytes(state, budget);
   if (values.has(key)) return;
+  const bytes = bufferedAppendBytes(state.memoryBytes, values.size, key, budget);
   values.add(key);
-  state.memoryBytes =
-    budget?.maxMemoryBytes === undefined
-      ? unmeasuredMemoryBytes
-      : jsonListBytesAfterAppend(state.memoryBytes, values.size - 1, jsonItemBytes(key));
-  enforceDistinctBudget(state, budget);
+  state.memoryBytes = bytes;
 }
 
 export function addDistinctValues(
@@ -139,7 +132,7 @@ export function distinctSnapshotValues(state: VectorDistinctAggregateState): str
   if (state.sortedRuns !== undefined) return mergeSortedRuns(state.sortedRuns);
   return state.sortedValues === undefined
     ? [...state.values].sort(compareDistinctKeys)
-    : state.sortedValues;
+    : [...state.sortedValues];
 }
 
 export function cloneDistinctAggregateState(
@@ -223,7 +216,9 @@ function visitSortedUniqueRuns(
     const nextIndex = entry.valueIndex + 1;
     const nextValue = run?.[nextIndex];
     if (nextValue !== undefined) {
-      heapPush(heap, { value: nextValue, runIndex: entry.runIndex, valueIndex: nextIndex });
+      entry.value = nextValue;
+      entry.valueIndex = nextIndex;
+      heapPush(heap, entry);
     }
   }
 }

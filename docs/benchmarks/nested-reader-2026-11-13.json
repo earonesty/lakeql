@@ -1,0 +1,677 @@
+{
+  "description": "Serialized optional struct fixtures; two warmups and four alternating samples. Time includes iterator advances and owner release, excludes value verification. No cache; HTTP server delays each range response by 2 ms. Tracked allocation coverage differs from legacy decoding; neither is a whole-heap measurement. Inputs, metadata, fixture writer, and HTTP server heap excluded.",
+  "results": [
+    {
+      "rowCount": 128,
+      "payloadBytes": 16,
+      "fileBytes": 1354,
+      "batchSize": 128,
+      "transport": "memory",
+      "budgetBytes": 67108864,
+      "measurements": {
+        "nested": [
+          {
+            "ms": 1.5573639999999926,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 31014,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          },
+          {
+            "ms": 1.5053880000000106,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 31014,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          },
+          {
+            "ms": 1.3737410000000239,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 31014,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          },
+          {
+            "ms": 0.8673189999999806,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 31014,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          }
+        ],
+        "legacy": [
+          {
+            "ms": 0.6045059999999864,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 8080,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          },
+          {
+            "ms": 0.5998170000000016,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 8080,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          },
+          {
+            "ms": 1.5000180000000114,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 8080,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          },
+          {
+            "ms": 0.41441800000001194,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 8080,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 128,
+      "payloadBytes": 16,
+      "fileBytes": 1354,
+      "batchSize": 128,
+      "transport": "http-2ms",
+      "budgetBytes": 67108864,
+      "measurements": {
+        "nested": [
+          {
+            "ms": 9.390479,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 31014,
+            "requests": 4,
+            "transferred": 1570,
+            "peakActive": 2
+          },
+          {
+            "ms": 9.446872999999982,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 31014,
+            "requests": 4,
+            "transferred": 1570,
+            "peakActive": 2
+          },
+          {
+            "ms": 9.502959000000004,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 31014,
+            "requests": 4,
+            "transferred": 1570,
+            "peakActive": 2
+          },
+          {
+            "ms": 9.982337999999999,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 31014,
+            "requests": 4,
+            "transferred": 1570,
+            "peakActive": 2
+          }
+        ],
+        "legacy": [
+          {
+            "ms": 4.838977999999969,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 8080,
+            "requests": 2,
+            "transferred": 1108,
+            "peakActive": 2
+          },
+          {
+            "ms": 4.756273999999991,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 8080,
+            "requests": 2,
+            "transferred": 1108,
+            "peakActive": 2
+          },
+          {
+            "ms": 4.895864999999986,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 8080,
+            "requests": 2,
+            "transferred": 1108,
+            "peakActive": 2
+          },
+          {
+            "ms": 3.756055000000032,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 8080,
+            "requests": 2,
+            "transferred": 1108,
+            "peakActive": 2
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 128,
+      "payloadBytes": 4096,
+      "fileBytes": 23636,
+      "batchSize": 128,
+      "transport": "memory",
+      "budgetBytes": 67108864,
+      "measurements": {
+        "nested": [
+          {
+            "ms": 1.146993000000009,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 526571,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          },
+          {
+            "ms": 1.489246000000037,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 526571,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          },
+          {
+            "ms": 1.6373649999999884,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 526571,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          },
+          {
+            "ms": 2.0018589999999676,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 526571,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          }
+        ],
+        "legacy": [
+          {
+            "ms": 0.9330439999999953,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 503639,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          },
+          {
+            "ms": 1.0918709999999123,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 503639,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          },
+          {
+            "ms": 1.3735100000000102,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 503639,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          },
+          {
+            "ms": 1.2290100000000166,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 503639,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 128,
+      "payloadBytes": 4096,
+      "fileBytes": 23636,
+      "batchSize": 128,
+      "transport": "http-2ms",
+      "budgetBytes": 67108864,
+      "measurements": {
+        "nested": [
+          {
+            "ms": 10.884644000000037,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 526571,
+            "requests": 4,
+            "transferred": 23847,
+            "peakActive": 2
+          },
+          {
+            "ms": 10.966948000000002,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 526571,
+            "requests": 4,
+            "transferred": 23847,
+            "peakActive": 2
+          },
+          {
+            "ms": 11.548832000000004,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 526571,
+            "requests": 4,
+            "transferred": 23847,
+            "peakActive": 2
+          },
+          {
+            "ms": 9.77637100000004,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 526571,
+            "requests": 4,
+            "transferred": 23847,
+            "peakActive": 2
+          }
+        ],
+        "legacy": [
+          {
+            "ms": 4.983159999999998,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 503639,
+            "requests": 2,
+            "transferred": 23387,
+            "peakActive": 2
+          },
+          {
+            "ms": 6.011148999999989,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 503639,
+            "requests": 2,
+            "transferred": 23387,
+            "peakActive": 2
+          },
+          {
+            "ms": 5.713730999999996,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 503639,
+            "requests": 2,
+            "transferred": 23387,
+            "peakActive": 2
+          },
+          {
+            "ms": 5.3265949999999975,
+            "batches": 1,
+            "largestBatch": 128,
+            "peakBytes": 503639,
+            "requests": 2,
+            "transferred": 23387,
+            "peakActive": 2
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 1024,
+      "payloadBytes": 16,
+      "fileBytes": 8790,
+      "batchSize": 128,
+      "transport": "memory",
+      "budgetBytes": 67108864,
+      "measurements": {
+        "nested": [
+          {
+            "ms": 3.296700999999871,
+            "batches": 9,
+            "largestBatch": 128,
+            "peakBytes": 80281,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          },
+          {
+            "ms": 4.4616000000000895,
+            "batches": 9,
+            "largestBatch": 128,
+            "peakBytes": 80281,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          },
+          {
+            "ms": 3.3384090000000697,
+            "batches": 9,
+            "largestBatch": 128,
+            "peakBytes": 80281,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          },
+          {
+            "ms": 2.6760060000000294,
+            "batches": 9,
+            "largestBatch": 128,
+            "peakBytes": 80281,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          }
+        ],
+        "legacy": [
+          {
+            "ms": 8.140934999999956,
+            "batches": 9,
+            "largestBatch": 128,
+            "peakBytes": 33671,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          },
+          {
+            "ms": 8.996118000000024,
+            "batches": 9,
+            "largestBatch": 128,
+            "peakBytes": 33671,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          },
+          {
+            "ms": 7.483325000000036,
+            "batches": 9,
+            "largestBatch": 128,
+            "peakBytes": 33671,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          },
+          {
+            "ms": 8.124732000000165,
+            "batches": 9,
+            "largestBatch": 128,
+            "peakBytes": 33671,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 1024,
+      "payloadBytes": 16,
+      "fileBytes": 8790,
+      "batchSize": 128,
+      "transport": "http-2ms",
+      "budgetBytes": 67108864,
+      "measurements": {
+        "nested": [
+          {
+            "ms": 17.092454999999973,
+            "batches": 9,
+            "largestBatch": 128,
+            "peakBytes": 80281,
+            "requests": 6,
+            "transferred": 8835,
+            "peakActive": 2
+          },
+          {
+            "ms": 15.445335999999998,
+            "batches": 9,
+            "largestBatch": 128,
+            "peakBytes": 80281,
+            "requests": 6,
+            "transferred": 8835,
+            "peakActive": 2
+          },
+          {
+            "ms": 15.098838999999543,
+            "batches": 9,
+            "largestBatch": 128,
+            "peakBytes": 80281,
+            "requests": 6,
+            "transferred": 8835,
+            "peakActive": 2
+          },
+          {
+            "ms": 15.54230199999995,
+            "batches": 9,
+            "largestBatch": 128,
+            "peakBytes": 80281,
+            "requests": 6,
+            "transferred": 8835,
+            "peakActive": 2
+          }
+        ],
+        "legacy": [
+          {
+            "ms": 41.960724000000255,
+            "batches": 9,
+            "largestBatch": 128,
+            "peakBytes": 33671,
+            "requests": 18,
+            "transferred": 65211,
+            "peakActive": 2
+          },
+          {
+            "ms": 44.57562600000017,
+            "batches": 9,
+            "largestBatch": 128,
+            "peakBytes": 33671,
+            "requests": 18,
+            "transferred": 65211,
+            "peakActive": 2
+          },
+          {
+            "ms": 48.36628299999984,
+            "batches": 9,
+            "largestBatch": 128,
+            "peakBytes": 33671,
+            "requests": 18,
+            "transferred": 65211,
+            "peakActive": 2
+          },
+          {
+            "ms": 43.26253700000052,
+            "batches": 9,
+            "largestBatch": 128,
+            "peakBytes": 33671,
+            "requests": 18,
+            "transferred": 65211,
+            "peakActive": 2
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 1024,
+      "payloadBytes": 4096,
+      "fileBytes": 187848,
+      "batchSize": 128,
+      "transport": "memory",
+      "budgetBytes": 67108864,
+      "measurements": {
+        "nested": [
+          {
+            "ms": 8.651511000000255,
+            "batches": 9,
+            "largestBatch": 128,
+            "peakBytes": 2246918,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          },
+          {
+            "ms": 7.204749999999649,
+            "batches": 9,
+            "largestBatch": 128,
+            "peakBytes": 2246918,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          },
+          {
+            "ms": 7.209588999999937,
+            "batches": 9,
+            "largestBatch": 128,
+            "peakBytes": 2246918,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          },
+          {
+            "ms": 6.4776560000000245,
+            "batches": 9,
+            "largestBatch": 128,
+            "peakBytes": 2246918,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          }
+        ],
+        "legacy": [
+          {
+            "error": "Error: parquet struct parsing error",
+            "peakBytes": 3917362,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          },
+          {
+            "error": "Error: parquet struct parsing error",
+            "peakBytes": 3917362,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          },
+          {
+            "error": "Error: parquet struct parsing error",
+            "peakBytes": 3917362,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          },
+          {
+            "error": "Error: parquet struct parsing error",
+            "peakBytes": 3917362,
+            "requests": 0,
+            "transferred": 0,
+            "peakActive": 0
+          }
+        ]
+      }
+    },
+    {
+      "rowCount": 1024,
+      "payloadBytes": 4096,
+      "fileBytes": 187848,
+      "batchSize": 128,
+      "transport": "http-2ms",
+      "budgetBytes": 67108864,
+      "measurements": {
+        "nested": [
+          {
+            "ms": 45.94061200000033,
+            "batches": 9,
+            "largestBatch": 128,
+            "peakBytes": 2246918,
+            "requests": 13,
+            "transferred": 188753,
+            "peakActive": 2
+          },
+          {
+            "ms": 49.04929600000037,
+            "batches": 9,
+            "largestBatch": 128,
+            "peakBytes": 2246918,
+            "requests": 13,
+            "transferred": 188753,
+            "peakActive": 2
+          },
+          {
+            "ms": 49.91940099999965,
+            "batches": 9,
+            "largestBatch": 128,
+            "peakBytes": 2246918,
+            "requests": 13,
+            "transferred": 188753,
+            "peakActive": 2
+          },
+          {
+            "ms": 47.24972599999978,
+            "batches": 9,
+            "largestBatch": 128,
+            "peakBytes": 2246918,
+            "requests": 13,
+            "transferred": 188753,
+            "peakActive": 2
+          }
+        ],
+        "legacy": [
+          {
+            "error": "Error: parquet struct parsing error",
+            "peakBytes": 3917362,
+            "requests": 8,
+            "transferred": 732360,
+            "peakActive": 2
+          },
+          {
+            "error": "Error: parquet struct parsing error",
+            "peakBytes": 3917362,
+            "requests": 8,
+            "transferred": 732360,
+            "peakActive": 2
+          },
+          {
+            "error": "Error: parquet struct parsing error",
+            "peakBytes": 3917362,
+            "requests": 8,
+            "transferred": 732360,
+            "peakActive": 2
+          },
+          {
+            "error": "Error: parquet struct parsing error",
+            "peakBytes": 3917362,
+            "requests": 8,
+            "transferred": 732360,
+            "peakActive": 2
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -187,3 +187,26 @@ pnpm bench:lance-btree -- \
 
 The runner enforces a 27-request cold ceiling by default and reports cold and shared-cache trials.
 See [`docs/lance-btree-exact-benchmark.md`](../../docs/lance-btree-exact-benchmark.md).
+
+
+Pass `memoryBudget: new MemoryBudget(bytes)` (imported from `lakeql`) to
+`openLanceDataset` to share allocation admission across concurrent operations
+or datasets. Reuse the same pool object for jobs that must compete for capacity.
+`budget.maxAllocatedMemoryBytes` sets each operation's child limit; the existing
+`maxMemoryBytes` limit also remains in force. Pending range reads retain their
+charges until all sibling reads settle, even after a failure.
+
+This pool covers instrumented range, decoded-buffer, and ZSTD workspace
+reservations. It does not bound total JavaScript heap: retained dataset metadata,
+index caches, returned rows, and uninstrumented copies require separate headroom.
+
+
+Stores exposing `getRangeOwned` use allocation-aware transport automatically.
+Their buffers are charged once to the operation pool and released with the
+range lease. Stores exposing only `getRange` retain conservative requested-byte
+reservations; allocations internal to those borrowed adapters are not measured.
+
+Range coalescing adapts to current allocation headroom and remaining byte limits.
+When optional gaps would exceed those limits, reads use exact logical ranges;
+they can coalesce again when capacity becomes available. Exact reads still obey
+request-count and memory limits.

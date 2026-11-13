@@ -1,0 +1,4 @@
+{"rows":10000,"kind":"numeric","arrayMs":0.5814650000000015,"indexedMs":0.3657390000000049}
+{"rows":10000,"kind":"string","arrayMs":1.1098510000000061,"indexedMs":0.4788819999999987}
+{"rows":100000,"kind":"numeric","arrayMs":6.126007999999985,"indexedMs":4.246329000000003}
+{"rows":100000,"kind":"string","arrayMs":9.057679999999948,"indexedMs":5.576724000000013}

@@ -1,0 +1,9 @@
+{"file":"nested_structs.rust.parquet","phase":"decoded-input","difference":null}
+{"file":"nested_structs.rust.parquet","rows":2,"batches":2,"peakTrackedOutputBytes":3456,"dictionaryWrapped":false,"scope":"Internal struct concat, public schema gate bypassed; local fixture/DuckDB, borrowed decoder inputs; not remote or complete heap accounting"}
+{"file":"nested_structs.rust.parquet","rows":2,"batches":2,"peakTrackedOutputBytes":296,"dictionaryWrapped":true,"scope":"Internal struct concat, public schema gate bypassed; local fixture/DuckDB, borrowed decoder inputs; not remote or complete heap accounting"}
+{"file":"nonnullable.impala.parquet","phase":"decoded-input","difference":null}
+{"file":"nonnullable.impala.parquet","rows":2,"batches":2,"peakTrackedOutputBytes":296,"dictionaryWrapped":false,"scope":"Internal struct concat, public schema gate bypassed; local fixture/DuckDB, borrowed decoder inputs; not remote or complete heap accounting"}
+{"file":"nonnullable.impala.parquet","rows":2,"batches":2,"peakTrackedOutputBytes":176,"dictionaryWrapped":true,"scope":"Internal struct concat, public schema gate bypassed; local fixture/DuckDB, borrowed decoder inputs; not remote or complete heap accounting"}
+{"file":"nullable.impala.parquet","phase":"decoded-input","difference":null}
+{"file":"nullable.impala.parquet","rows":14,"batches":6,"peakTrackedOutputBytes":2088,"dictionaryWrapped":false,"scope":"Internal struct concat, public schema gate bypassed; local fixture/DuckDB, borrowed decoder inputs; not remote or complete heap accounting"}
+{"file":"nullable.impala.parquet","rows":14,"batches":6,"peakTrackedOutputBytes":2560,"dictionaryWrapped":true,"scope":"Internal struct concat, public schema gate bypassed; local fixture/DuckDB, borrowed decoder inputs; not remote or complete heap accounting"}

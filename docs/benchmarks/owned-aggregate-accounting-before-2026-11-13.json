@@ -1,0 +1,30 @@
+{
+  "description": "Diagnostic Node retained heap after explicit GC and exact reservation-call counts for owned median growth. One timing sample; not a Worker heap guarantee or public query benchmark.",
+  "node": "v24.18.1",
+  "results": [
+    {
+      "rows": 1024,
+      "growthReservations": 1024,
+      "retainedAdmittedBytes": 33930,
+      "heapGrowthBytes": 2028528,
+      "updateMs": 3.462567000000007,
+      "remainingBytes": 0
+    },
+    {
+      "rows": 8192,
+      "growthReservations": 8192,
+      "retainedAdmittedBytes": 263306,
+      "heapGrowthBytes": 14707000,
+      "updateMs": 27.338035000000005,
+      "remainingBytes": 0
+    },
+    {
+      "rows": 65536,
+      "growthReservations": 65536,
+      "retainedAdmittedBytes": 2098314,
+      "heapGrowthBytes": 117563520,
+      "updateMs": 185.488135,
+      "remainingBytes": 0
+    }
+  ]
+}

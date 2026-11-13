@@ -1,0 +1,282 @@
+{
+  "source": "https://pub-9d5bcb33a5384d79875a943eef183b6d.r2.dev/bench/window-events.parquet",
+  "scope": "Actual R2 HTTP 206 through ordinary owned Parquet scans; excludes metadata/oracle allocation and JS heap; shared-cache accounting included; not whole-query operator coverage",
+  "reports": [
+    {
+      "jobs": 1,
+      "jobBytes": 4096,
+      "cacheBytes": 4096,
+      "decodedCacheEnabled": false,
+      "scheduled": false,
+      "normalScan": true,
+      "temperature": "cold",
+      "retainedCacheBytes": 2838,
+      "maxConcurrentReads": 1,
+      "peakReads": 1,
+      "reads": 8,
+      "transferredBytes": 2838,
+      "ranges": [
+        {
+          "offset": 0,
+          "length": 512
+        },
+        {
+          "offset": 512,
+          "length": 512
+        },
+        {
+          "offset": 1024,
+          "length": 512
+        },
+        {
+          "offset": 1868,
+          "length": 209
+        },
+        {
+          "offset": 1891,
+          "length": 186
+        },
+        {
+          "offset": 2048,
+          "length": 512
+        },
+        {
+          "offset": 2971,
+          "length": 209
+        },
+        {
+          "offset": 2994,
+          "length": 186
+        }
+      ],
+      "peakBytes": 5376,
+      "poolBytes": 8192,
+      "elapsedMs": 736.6154399999998
+    },
+    {
+      "jobs": 1,
+      "jobBytes": 4096,
+      "cacheBytes": 4096,
+      "decodedCacheEnabled": false,
+      "scheduled": false,
+      "normalScan": true,
+      "temperature": "warm",
+      "retainedCacheBytes": 2838,
+      "maxConcurrentReads": 1,
+      "peakReads": 0,
+      "reads": 0,
+      "transferredBytes": 0,
+      "ranges": [],
+      "peakBytes": 6214,
+      "poolBytes": 8192,
+      "elapsedMs": 2.73776799999996
+    },
+    {
+      "jobs": 4,
+      "jobBytes": 4096,
+      "cacheBytes": 4096,
+      "decodedCacheEnabled": false,
+      "scheduled": false,
+      "normalScan": true,
+      "temperature": "cold",
+      "retainedCacheBytes": 2838,
+      "maxConcurrentReads": 1,
+      "peakReads": 1,
+      "reads": 8,
+      "transferredBytes": 2838,
+      "ranges": [
+        {
+          "offset": 0,
+          "length": 512
+        },
+        {
+          "offset": 512,
+          "length": 512
+        },
+        {
+          "offset": 1024,
+          "length": 512
+        },
+        {
+          "offset": 1868,
+          "length": 209
+        },
+        {
+          "offset": 1891,
+          "length": 186
+        },
+        {
+          "offset": 2048,
+          "length": 512
+        },
+        {
+          "offset": 2971,
+          "length": 209
+        },
+        {
+          "offset": 2994,
+          "length": 186
+        }
+      ],
+      "peakBytes": 12992,
+      "poolBytes": 20480,
+      "elapsedMs": 1233.234461
+    },
+    {
+      "jobs": 4,
+      "jobBytes": 4096,
+      "cacheBytes": 4096,
+      "decodedCacheEnabled": false,
+      "scheduled": false,
+      "normalScan": true,
+      "temperature": "warm",
+      "retainedCacheBytes": 2838,
+      "maxConcurrentReads": 1,
+      "peakReads": 0,
+      "reads": 0,
+      "transferredBytes": 0,
+      "ranges": [],
+      "peakBytes": 14806,
+      "poolBytes": 20480,
+      "elapsedMs": 3.5001640000000407
+    },
+    {
+      "jobs": 1,
+      "jobBytes": 4096,
+      "cacheBytes": 4096,
+      "decodedCacheEnabled": false,
+      "scheduled": false,
+      "normalScan": true,
+      "temperature": "cold",
+      "retainedCacheBytes": 2838,
+      "maxConcurrentReads": 2,
+      "peakReads": 2,
+      "reads": 8,
+      "transferredBytes": 2838,
+      "ranges": [
+        {
+          "offset": 0,
+          "length": 512
+        },
+        {
+          "offset": 512,
+          "length": 512
+        },
+        {
+          "offset": 1024,
+          "length": 512
+        },
+        {
+          "offset": 1868,
+          "length": 209
+        },
+        {
+          "offset": 1891,
+          "length": 186
+        },
+        {
+          "offset": 2048,
+          "length": 512
+        },
+        {
+          "offset": 2971,
+          "length": 209
+        },
+        {
+          "offset": 2994,
+          "length": 186
+        }
+      ],
+      "peakBytes": 5376,
+      "poolBytes": 8192,
+      "elapsedMs": 528.272312
+    },
+    {
+      "jobs": 1,
+      "jobBytes": 4096,
+      "cacheBytes": 4096,
+      "decodedCacheEnabled": false,
+      "scheduled": false,
+      "normalScan": true,
+      "temperature": "warm",
+      "retainedCacheBytes": 2838,
+      "maxConcurrentReads": 2,
+      "peakReads": 0,
+      "reads": 0,
+      "transferredBytes": 0,
+      "ranges": [],
+      "peakBytes": 6214,
+      "poolBytes": 8192,
+      "elapsedMs": 1.2680289999998422
+    },
+    {
+      "jobs": 4,
+      "jobBytes": 4096,
+      "cacheBytes": 4096,
+      "decodedCacheEnabled": false,
+      "scheduled": false,
+      "normalScan": true,
+      "temperature": "cold",
+      "retainedCacheBytes": 2838,
+      "maxConcurrentReads": 2,
+      "peakReads": 2,
+      "reads": 8,
+      "transferredBytes": 2838,
+      "ranges": [
+        {
+          "offset": 0,
+          "length": 512
+        },
+        {
+          "offset": 512,
+          "length": 512
+        },
+        {
+          "offset": 1024,
+          "length": 512
+        },
+        {
+          "offset": 1868,
+          "length": 209
+        },
+        {
+          "offset": 1891,
+          "length": 186
+        },
+        {
+          "offset": 2048,
+          "length": 512
+        },
+        {
+          "offset": 2971,
+          "length": 209
+        },
+        {
+          "offset": 2994,
+          "length": 186
+        }
+      ],
+      "peakBytes": 12177,
+      "poolBytes": 20480,
+      "elapsedMs": 555.6730309999998
+    },
+    {
+      "jobs": 4,
+      "jobBytes": 4096,
+      "cacheBytes": 4096,
+      "decodedCacheEnabled": false,
+      "scheduled": false,
+      "normalScan": true,
+      "temperature": "warm",
+      "retainedCacheBytes": 2838,
+      "maxConcurrentReads": 2,
+      "peakReads": 0,
+      "reads": 0,
+      "transferredBytes": 0,
+      "ranges": [],
+      "peakBytes": 13270,
+      "poolBytes": 20480,
+      "elapsedMs": 3.7796800000005533
+    }
+  ]
+}

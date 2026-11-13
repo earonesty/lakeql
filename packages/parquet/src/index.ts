@@ -46,7 +46,11 @@ export {
   aggregateParquetTask,
   aggregateParquetTasks,
 } from "./aggregate-task.js";
-export { encodedParquetMetadataCache } from "./metadata-cache.js";
+export {
+  encodedParquetMetadataCache,
+  type OwnedMetadataCache,
+  sharedParquetMetadataCache,
+} from "./metadata-cache.js";
 export type { ParquetRowGroupPlan, PlannedParquetRowGroup } from "./row-group-plan.js";
 export { planRowGroupsFromMetadata } from "./row-group-plan.js";
 export { rowGroupMayMatch, rowGroupMustMatch } from "./row-group-pruning.js";
@@ -176,6 +180,12 @@ export interface ParquetLakeConfig extends Omit<LakeConfig, "scanner"> {
   batchSize?: number;
   cache?: ObjectStoreCacheOptions;
   metadataCache?: CacheAdapter<ParquetMetadata>;
+  /** Auto uses encoded/indexed task planning unless a custom metadata cache is supplied.
+   * Cached mode reuses decoded metadata; indexed mode reduces decoded group retention.
+   */
+  taskMetadataMode?: "auto" | "indexed" | "cached";
+  /** Auto uses indexed owned scans unless a custom metadata cache is supplied. */
+  scanMetadataMode?: "auto" | "indexed" | "cached";
   scanRangeCache?: RangeCacheOptions;
 }
 
@@ -206,7 +216,7 @@ export async function* readParquetObjectBatches(
     const metadata = await readParquetMetadataFromFile(file);
     rejectUnsupportedParquetSchema(metadata, {
       columns: options.columns,
-      allowValueCheckedInt64Decimals: true,
+      allowValueCheckedScalarDecimals: true,
     });
     yield* readParquetObjectBatchesFromFile(file, metadata, options);
   } catch (cause) {
@@ -225,7 +235,7 @@ export async function* readParquetColumnBatches(
     const metadata = await readParquetMetadataFromFile(file);
     rejectUnsupportedParquetSchema(metadata, {
       columns: options.columns,
-      allowValueCheckedInt64Decimals: true,
+      allowValueCheckedScalarDecimals: true,
     });
     yield* readParquetColumnBatchesFromFile(file, metadata, options);
   } catch (cause) {
@@ -894,7 +904,20 @@ function isPartitionValue(value: unknown): value is string | number | boolean | 
 }
 
 function encodeParquetBytes(options: Omit<WriteParquetOptions, "contentType">): Uint8Array {
-  return new Uint8Array(parquetWriteBuffer(options));
+  // Dictionary encoding is a preference: the writer may decline it based on
+  // cardinality or page size. Its automatic mode emits a matching PLAIN header
+  // on fallback; forwarding an explicit dictionary marker can emit corrupt pages.
+  const columnData = options.columnData.map((column) => {
+    if (column.encoding === "RLE_DICTIONARY") {
+      const { encoding: _encoding, ...adaptive } = column;
+      return adaptive;
+    }
+    if (column.encoding === "PLAIN_DICTIONARY") {
+      return { ...column, encoding: "PLAIN" as const };
+    }
+    return column;
+  });
+  return new Uint8Array(parquetWriteBuffer({ ...options, columnData }));
 }
 
 async function writeEncodedParquet(
@@ -1032,6 +1055,8 @@ export function parquetScanner(
   options: {
     batchSize?: number;
     metadataCache?: CacheAdapter<ParquetMetadata>;
+    taskMetadataMode?: "auto" | "indexed" | "cached";
+    scanMetadataMode?: "auto" | "indexed" | "cached";
     decodedColumnCache?: DecodedColumnCache;
   } = {},
 ): ScanAdapter {
@@ -1043,10 +1068,24 @@ export function createParquetLake(config: ParquetLakeConfig): Lake {
   const scannerOptions: {
     batchSize?: number;
     metadataCache?: CacheAdapter<ParquetMetadata>;
+    taskMetadataMode?: "auto" | "indexed" | "cached";
+    scanMetadataMode?: "auto" | "indexed" | "cached";
     decodedColumnCache?: DecodedColumnCache;
     scanRangeCache?: RangeCacheOptions;
   } = {};
   if (config.batchSize !== undefined) scannerOptions.batchSize = config.batchSize;
+  scannerOptions.taskMetadataMode =
+    config.taskMetadataMode === undefined || config.taskMetadataMode === "auto"
+      ? config.metadataCache === undefined
+        ? "indexed"
+        : "cached"
+      : config.taskMetadataMode;
+  scannerOptions.scanMetadataMode =
+    config.scanMetadataMode === undefined || config.scanMetadataMode === "auto"
+      ? config.metadataCache === undefined
+        ? "indexed"
+        : "cached"
+      : config.scanMetadataMode;
   const scanRangeCache = config.scanRangeCache ?? DEFAULT_SCAN_RANGE_CACHE;
   const scanRangeSharedCache =
     scanRangeCache.sharedCache ??

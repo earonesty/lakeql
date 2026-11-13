@@ -1,3 +1,6 @@
+import { isLakeqlError, LakeqlError } from "./errors.js";
+import type { MemoryBudget, MemoryReservation } from "./memory-budget.js";
+import type { MemoryScope, OwnedMemory } from "./memory-scope.js";
 import type { ListOptions, ObjectHead, ObjectInfo, ObjectStore } from "./store.js";
 
 export interface ObjectStoreCacheOptions {
@@ -7,6 +10,8 @@ export interface ObjectStoreCacheOptions {
   ttlMs?: number;
   /** How LakeQL should spend the cache budget. Defaults to balanced. */
   policy?: CachePolicy;
+  /** Shared allocation pool for retained cache payloads. */
+  memoryBudget?: MemoryBudget;
 }
 
 export type CachePolicy = "balanced" | "io" | "latency";
@@ -21,10 +26,24 @@ interface SharedCacheRecord {
   bytes: number;
   priority: number;
   expiresAt?: number;
+  reservation?: MemoryReservation;
+  owner?: OwnedMemory<unknown>;
+}
+
+export interface SharedCacheLease<T> extends SharedCacheEntry<T> {
+  /** Release after the last use of the borrowed payload. */
+  release(): void;
 }
 
 export interface SharedCacheSetOptions {
   priority?: number;
+}
+
+export interface SharedOwnedCacheSetOptions extends SharedCacheSetOptions {
+  /** Eviction cost including uninstrumented object storage. Must cover owned bytes.
+   * This controls cache capacity; it does not claim physical allocation admission.
+   */
+  cacheBytes?: number;
 }
 
 export class SharedMemoryCache {
@@ -32,12 +51,33 @@ export class SharedMemoryCache {
   private readonly ttlMs: number | undefined;
   private readonly entries = new Map<string, SharedCacheRecord>();
   private cachedBytes = 0;
+  private readonly memoryBudget: MemoryBudget | undefined;
+  private detachReclaimer: (() => void) | undefined;
 
   constructor(options: ObjectStoreCacheOptions = {}) {
     this.maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
     this.ttlMs = options.ttlMs;
+    this.memoryBudget = options.memoryBudget;
   }
 
+  /** Advisory capacity for a new priority class after evicting lower/equal entries.
+   * This is not a reservation; callers still need allocation and insertion admission.
+   * Compute once per speculative window, not once per range.
+   */
+  availableAdmissionBytes(priority = 1): number {
+    const now = Date.now();
+    let protectedBytes = 0;
+    for (const [key, entry] of this.entries) {
+      if (entry.expiresAt !== undefined && entry.expiresAt <= now) {
+        this.delete(key);
+        continue;
+      }
+      if (entry.priority > priority) protectedBytes += entry.bytes;
+    }
+    return Math.max(0, this.maxBytes - protectedBytes);
+  }
+
+  /** Borrow for immediate use. Use acquire when retaining across cache mutation. */
   get<T>(key: string): SharedCacheEntry<T> | undefined {
     const entry = this.entries.get(key);
     if (!entry) return undefined;
@@ -50,19 +90,119 @@ export class SharedMemoryCache {
     return { value: entry.value as T, bytes: entry.bytes };
   }
 
+  /** Charge existing payload retention; use setAllocated to reserve before allocation. */
   set<T>(key: string, value: T, bytes: number, options: SharedCacheSetOptions = {}): void {
-    if (bytes > this.maxBytes) return;
+    this.setAllocated(key, bytes, () => value, options);
+  }
+
+  /** Pin a borrowed payload across eviction or replacement. */
+  acquire<T>(key: string): SharedCacheLease<T> | undefined {
+    const entry = this.get<T>(key);
+    if (entry === undefined) return undefined;
+    const record = this.entries.get(key);
+    const pin = record?.owner?.retain() ?? record?.reservation?.retain();
+    return { ...entry, release: () => pin?.release() };
+  }
+
+  /** Whether this cache can retain allocations from the given pool.
+   * Capability only: capacity and insertion admission are checked separately.
+   */
+  supportsOwnedRetention(budget: MemoryBudget): boolean {
+    return this.memoryBudget !== undefined && budget.sharesPoolWith(this.memoryBudget);
+  }
+
+  /** Retain existing backing with a cache charge in the same allocation pool. */
+  setOwned<T>(
+    key: string,
+    owner: OwnedMemory<T>,
+    options: SharedOwnedCacheSetOptions = {},
+  ): boolean {
+    const cacheBytes = options.cacheBytes ?? owner.bytes;
+    if (!Number.isSafeInteger(cacheBytes) || cacheBytes < owner.bytes) {
+      throw new LakeqlError(
+        "LAKEQL_VALIDATION_ERROR",
+        "Owned cache cost must cover its backing bytes",
+      );
+    }
+    if (
+      this.memoryBudget === undefined ||
+      !owner.budget.sharesPoolWith(this.memoryBudget) ||
+      cacheBytes > this.maxBytes
+    )
+      return false;
+    let retained: OwnedMemory<T>;
+    try {
+      retained = owner.retainIn(this.memoryBudget);
+    } catch (error) {
+      if (isLakeqlError(error) && error.code === "LAKEQL_BUDGET_EXCEEDED") return false;
+      throw error;
+    }
     this.delete(key);
+    return this.insert(key, {
+      value: retained.value,
+      bytes: cacheBytes,
+      priority: options.priority ?? 1,
+      owner: retained,
+    });
+  }
+
+  /** Returns independent ownership; ordinary unowned entries cannot satisfy this contract. */
+  acquireOwned<T>(key: string, budget?: MemoryBudget): OwnedMemory<T> | undefined {
+    if (this.get<T>(key) === undefined) return undefined;
+    const owner = this.entries.get(key)?.owner;
+    if (owner === undefined) return undefined;
+    if (budget !== undefined && !owner.budget.sharesPoolWith(budget)) return undefined;
+    return (budget === undefined ? owner.retain() : owner.retainIn(budget)) as OwnedMemory<T>;
+  }
+
+  /** Admit and reserve before invoking a synchronous allocation factory. */
+  setAllocated<T>(
+    key: string,
+    bytes: number,
+    allocate: () => T,
+    options: SharedCacheSetOptions = {},
+  ): boolean {
+    if (!Number.isSafeInteger(bytes) || bytes < 0) {
+      throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Invalid cache byte count", { bytes });
+    }
+    if (bytes > this.maxBytes) return false;
+    this.delete(key);
+    const reservation = this.memoryBudget?.tryReserve(bytes, "cache payload");
+    if (this.memoryBudget !== undefined && reservation === undefined) return false;
+    let value: T;
+    try {
+      value = allocate();
+    } catch (error) {
+      reservation?.release();
+      throw error;
+    }
     const entry: SharedCacheRecord = {
       value,
       bytes,
       priority: options.priority ?? 1,
+      ...(reservation === undefined ? {} : { reservation }),
     };
+    return this.insert(key, entry);
+  }
+
+  private insert(key: string, entry: SharedCacheRecord): boolean {
     const expiry = this.expiresAt();
     if (expiry !== undefined) entry.expiresAt = expiry;
     this.entries.set(key, entry);
-    this.cachedBytes += bytes;
+    this.cachedBytes += entry.bytes;
+    if (this.detachReclaimer === undefined && this.memoryBudget !== undefined) {
+      const budget = this.memoryBudget;
+      this.detachReclaimer = budget.registerReclaimer((needed) => {
+        const target = budget.usedBytes - needed;
+        while (budget.usedBytes > target) {
+          const key = this.evictKey();
+          if (key === undefined) break;
+          this.delete(key);
+        }
+      });
+    }
     this.evict();
+    return this.entries.get(key) === entry;
   }
 
   delete(key: string): void {
@@ -70,13 +210,18 @@ export class SharedMemoryCache {
     if (!entry) return;
     this.entries.delete(key);
     this.cachedBytes -= entry.bytes;
+    entry.reservation?.release();
+    entry.owner?.release();
+    if (this.entries.size === 0) {
+      this.detachReclaimer?.();
+      this.detachReclaimer = undefined;
+    }
   }
 
   deleteWhere(predicate: (value: unknown) => boolean): void {
     for (const [key, entry] of this.entries) {
       if (!predicate(entry.value)) continue;
-      this.entries.delete(key);
-      this.cachedBytes -= entry.bytes;
+      this.delete(key);
     }
   }
 
@@ -123,7 +268,7 @@ export function cachedObjectStore(
 
   function set(key: string, value: CacheValue): void {
     const bytes = valueBytes(value);
-    sharedCache.set(key, cloneValue(value), bytes, {
+    sharedCache.setAllocated(key, bytes, () => cloneValue(value), {
       priority: objectCachePriority(value, options),
     });
   }
@@ -132,7 +277,51 @@ export function cachedObjectStore(
     sharedCache.deleteWhere((value) => isCacheValue(value) && value.path === path);
   }
 
+  const ownedRead = inner.getRangeOwned?.bind(inner);
+  const allocation = inner.getRangeOwnedAllocation?.bind(inner);
   return {
+    ...(ownedRead === undefined || allocation === undefined
+      ? {}
+      : {
+          getRangeOwnedAllocation(path: string, range: { offset: number; length: number }) {
+            const forecast = allocation(path, range);
+            // Cold reads may retain a cache copy alongside the source output. Hits
+            // allocate only the output copy, covered by this conservative forecast.
+            return { bytes: forecast.bytes + range.length, output: forecast.output };
+          },
+        }),
+    ...(ownedRead === undefined
+      ? {}
+      : {
+          async getRangeOwned(
+            path: string,
+            range: { offset: number; length: number },
+            scope: MemoryScope,
+          ) {
+            const key = rangeKey(path, range);
+            const cached = sharedCache.acquire<CacheValue>(key);
+            if (cached !== undefined) {
+              try {
+                if (cached.value.kind === "range") {
+                  const bytes = cached.value.value;
+                  return scope.allocate(bytes.byteLength, "cached range output", () =>
+                    copyBytes(bytes),
+                  );
+                }
+              } finally {
+                cached.release();
+              }
+            }
+            const owner = await ownedRead(path, range, scope);
+            try {
+              set(key, { kind: "range", path, value: owner.value });
+              return owner;
+            } catch (error) {
+              owner.release();
+              throw error;
+            }
+          },
+        }),
     async get(path) {
       const key = objectKey(path);
       const cached = get(key);

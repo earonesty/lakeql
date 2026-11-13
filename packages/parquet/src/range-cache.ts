@@ -1,4 +1,11 @@
-import type { CachePolicy, ObjectStoreCacheOptions, SharedMemoryCache } from "lakeql-core";
+import {
+  type CachePolicy,
+  LakeqlError,
+  mapConcurrent,
+  type ObjectStoreCacheOptions,
+  type SharedMemoryCache,
+} from "lakeql-core";
+import { withOwnedRangeCache } from "./range-cache-owned.js";
 import type { StoreAsyncBuffer } from "./types.js";
 
 const DEFAULT_MAX_ENTRY_BYTES = 16 * 1024 * 1024;
@@ -7,6 +14,8 @@ const DEFAULT_COALESCE_BYTES = 256 * 1024;
 export interface RangeCacheOptions {
   maxBytes: number;
   maxEntryBytes?: number;
+  /** Pending read-ahead callbacks per invocation. Defaults to four. */
+  maxConcurrentPrefetchReads?: number;
   /**
    * Fetch small adjacent slices through aligned windows of this size. This turns
    * Parquet page-header/page-body read pairs into one object-store range read.
@@ -21,9 +30,26 @@ interface RangeCacheEntry {
   byteLength: number;
   start: number;
   end: number;
+  release?: () => void;
 }
 
 export function cachedRangeBuffer(
+  file: StoreAsyncBuffer,
+  options: RangeCacheOptions,
+  cacheKey: string,
+): StoreAsyncBuffer {
+  const concurrency = options.maxConcurrentPrefetchReads ?? 4;
+  if (!Number.isSafeInteger(concurrency) || concurrency < 1) {
+    throw new LakeqlError(
+      "LAKEQL_VALIDATION_ERROR",
+      "maxConcurrentPrefetchReads must be a positive safe integer",
+    );
+  }
+  const cached = legacyCachedRangeBuffer(file, options, cacheKey);
+  return withOwnedRangeCache(file, cached, options, cacheKey);
+}
+
+function legacyCachedRangeBuffer(
   file: StoreAsyncBuffer,
   options: RangeCacheOptions,
   cacheKey: string,
@@ -42,6 +68,7 @@ export function cachedRangeBuffer(
         maxBytes,
         maxEntryBytes,
         coalesceBytes,
+        maxConcurrentPrefetchReads: options.maxConcurrentPrefetchReads ?? 4,
       },
     );
   }
@@ -49,58 +76,61 @@ export function cachedRangeBuffer(
   const pending = new Map<string, Promise<RangeCacheEntry>>();
   let cachedBytes = 0;
 
-  const buffer: StoreAsyncBuffer = {
+  async function ensureRange(start: number, end: number): Promise<RangeCacheEntry> {
+    const normalizedEnd = end;
+    const request = coalescedRange(file.byteLength, start, normalizedEnd, coalesceBytes);
+    const key = `${request.start}:${request.end}`;
+    const cached = cache.get(key);
+    if (cached !== undefined) {
+      cache.delete(key);
+      cache.set(key, cached);
+      return cached;
+    }
+    const inflight = pending.get(key);
+    if (inflight !== undefined) {
+      return inflight;
+    }
+
+    const read = file.slice(request.start, request.end).then((bytes) => ({
+      bytes,
+      byteLength: bytes.byteLength,
+      start: request.start,
+      end: request.end,
+    }));
+    pending.set(key, read);
+    let entry: RangeCacheEntry;
+    try {
+      entry = await read;
+    } finally {
+      pending.delete(key);
+    }
+    if (entry.byteLength <= maxEntryBytes && entry.byteLength <= maxBytes) {
+      cache.set(key, entry);
+      cachedBytes += entry.byteLength;
+      while (cachedBytes > maxBytes) {
+        const oldestKey = cache.keys().next().value;
+        if (oldestKey === undefined) break;
+        const oldest = cache.get(oldestKey);
+        cache.delete(oldestKey);
+        cachedBytes -= oldest?.byteLength ?? 0;
+      }
+    }
+    return entry;
+  }
+  return {
     byteLength: file.byteLength,
     ...(file.etag === undefined ? {} : { etag: file.etag }),
-    async slice(start, end) {
-      const normalizedEnd = end ?? file.byteLength;
-      const request = coalescedRange(file.byteLength, start, normalizedEnd, coalesceBytes);
-      const key = `${request.start}:${request.end}`;
-      const cached = cache.get(key);
-      if (cached !== undefined) {
-        cache.delete(key);
-        cache.set(key, cached);
-        return sliceEntry(cached, start, normalizedEnd);
-      }
-      const inflight = pending.get(key);
-      if (inflight !== undefined) {
-        return sliceEntry(await inflight, start, normalizedEnd);
-      }
-
-      const read = file.slice(request.start, request.end).then((bytes) => ({
-        bytes,
-        byteLength: bytes.byteLength,
-        start: request.start,
-        end: request.end,
-      }));
-      pending.set(key, read);
-      let entry: RangeCacheEntry;
-      try {
-        entry = await read;
-      } finally {
-        pending.delete(key);
-      }
-      if (entry.byteLength <= maxEntryBytes && entry.byteLength <= maxBytes) {
-        cache.set(key, entry);
-        cachedBytes += entry.byteLength;
-        while (cachedBytes > maxBytes) {
-          const oldestKey = cache.keys().next().value;
-          if (oldestKey === undefined) break;
-          const oldest = cache.get(oldestKey);
-          cache.delete(oldestKey);
-          cachedBytes -= oldest?.byteLength ?? 0;
-        }
-      }
-      return sliceEntry(entry, start, normalizedEnd);
+    async slice(start, end = file.byteLength) {
+      return sliceEntry(await ensureRange(start, end), start, end);
     },
+    prefetch: (ranges) =>
+      prefetchRetainableRanges(ensureRange, ranges, file.byteLength, {
+        maxBytes,
+        maxEntryBytes,
+        coalesceBytes,
+        maxConcurrentPrefetchReads: options.maxConcurrentPrefetchReads ?? 4,
+      }),
   };
-  buffer.prefetch = (ranges) =>
-    prefetchRetainableRanges(buffer, ranges, file.byteLength, {
-      maxBytes,
-      maxEntryBytes,
-      coalesceBytes,
-    });
-  return buffer;
 }
 
 function sharedCachedRangeBuffer(
@@ -108,50 +138,79 @@ function sharedCachedRangeBuffer(
   cacheKey: string,
   cache: SharedMemoryCache,
   cacheOptions: ObjectStoreCacheOptions,
-  options: { maxBytes: number; maxEntryBytes: number; coalesceBytes: number },
+  options: {
+    maxBytes: number;
+    maxEntryBytes: number;
+    coalesceBytes: number;
+    maxConcurrentPrefetchReads: number;
+  },
 ): StoreAsyncBuffer {
   const pending = new Map<string, Promise<ArrayBuffer>>();
-  const buffer: StoreAsyncBuffer = {
+  async function ensureRange(start: number, end: number): Promise<RangeCacheEntry> {
+    const normalizedEnd = end;
+    const request = coalescedRange(file.byteLength, start, normalizedEnd, options.coalesceBytes);
+    const key = sharedRangeKey(file, cacheKey, request.start, request.end);
+    const cached = cache.acquire<ArrayBuffer>(key);
+    if (cached !== undefined) {
+      return {
+        bytes: cached.value,
+        byteLength: cached.value.byteLength,
+        ...request,
+        release: cached.release,
+      };
+    }
+    const inflight = pending.get(key);
+    if (inflight !== undefined) {
+      const bytes = await inflight;
+      const lease = cache.acquire<ArrayBuffer>(key);
+      return {
+        bytes,
+        byteLength: bytes.byteLength,
+        ...request,
+        ...(lease === undefined ? {} : { release: lease.release }),
+      };
+    }
+    const read = file.slice(request.start, request.end);
+    pending.set(key, read);
+    let bytes: ArrayBuffer;
+    try {
+      bytes = await read;
+    } finally {
+      pending.delete(key);
+    }
+    if (bytes.byteLength <= options.maxEntryBytes && bytes.byteLength <= options.maxBytes) {
+      cache.set(key, bytes, bytes.byteLength, {
+        priority: scanRangePriority(cacheOptions.policy ?? "balanced"),
+      });
+    }
+    const lease = cache.acquire<ArrayBuffer>(key);
+    return {
+      bytes,
+      byteLength: bytes.byteLength,
+      ...request,
+      ...(lease === undefined ? {} : { release: lease.release }),
+    };
+  }
+  return {
     byteLength: file.byteLength,
     ...(file.etag === undefined ? {} : { etag: file.etag }),
-    async slice(start, end) {
-      const normalizedEnd = end ?? file.byteLength;
-      const request = coalescedRange(file.byteLength, start, normalizedEnd, options.coalesceBytes);
-      const key = sharedRangeKey(file, cacheKey, request.start, request.end);
-      const cached = cache.get<ArrayBuffer>(key);
-      if (cached !== undefined) {
-        return sliceBuffer(cached.value, start - request.start, normalizedEnd - request.start);
-      }
-      const inflight = pending.get(key);
-      if (inflight !== undefined) {
-        const bytes = await inflight;
-        return sliceBuffer(bytes, start - request.start, normalizedEnd - request.start);
-      }
-      const read = file.slice(request.start, request.end);
-      pending.set(key, read);
-      let bytes: ArrayBuffer;
-      try {
-        bytes = await read;
-      } finally {
-        pending.delete(key);
-      }
-      if (bytes.byteLength <= options.maxEntryBytes && bytes.byteLength <= options.maxBytes) {
-        cache.set(key, bytes, bytes.byteLength, {
-          priority: scanRangePriority(cacheOptions.policy ?? "balanced"),
-        });
-      }
-      return sliceBuffer(bytes, start - request.start, normalizedEnd - request.start);
+    async slice(start, end = file.byteLength) {
+      return sliceEntry(await ensureRange(start, end), start, end);
     },
+    prefetch: (ranges) => prefetchRetainableRanges(ensureRange, ranges, file.byteLength, options),
   };
-  buffer.prefetch = (ranges) => prefetchRetainableRanges(buffer, ranges, file.byteLength, options);
-  return buffer;
 }
 
 async function prefetchRetainableRanges(
-  file: StoreAsyncBuffer,
+  ensureRange: (start: number, end: number) => Promise<RangeCacheEntry>,
   ranges: readonly { start: number; end: number }[],
   fileLength: number,
-  options: { maxBytes: number; maxEntryBytes: number; coalesceBytes: number },
+  options: {
+    maxBytes: number;
+    maxEntryBytes: number;
+    coalesceBytes: number;
+    maxConcurrentPrefetchReads: number;
+  },
 ): Promise<void> {
   const retained: { start: number; end: number }[] = [];
   const seen = new Set<string>();
@@ -172,12 +231,13 @@ async function prefetchRetainableRanges(
     retained.push(request);
     retainedBytes += bytes;
   }
-  await Promise.all(
-    retained.map((range) => file.slice(range.start, range.end).then(() => undefined)),
-  );
+  await mapConcurrent(retained, options.maxConcurrentPrefetchReads, async (range) => {
+    const entry = await ensureRange(range.start, range.end);
+    entry.release?.();
+  });
 }
 
-function coalescedRange(
+export function coalescedRange(
   fileLength: number,
   start: number,
   end: number,
@@ -195,7 +255,11 @@ function coalescedRange(
 }
 
 function sliceEntry(entry: RangeCacheEntry, start: number, end: number): ArrayBuffer {
-  return sliceBuffer(entry.bytes, start - entry.start, end - entry.start);
+  try {
+    return sliceBuffer(entry.bytes, start - entry.start, end - entry.start);
+  } finally {
+    entry.release?.();
+  }
 }
 
 function sliceBuffer(bytes: ArrayBuffer, start: number, end: number): ArrayBuffer {

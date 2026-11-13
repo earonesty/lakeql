@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { LakeqlError } from "./errors.js";
+import { MemoryBudget } from "./memory-budget.js";
+import { MemoryScope } from "./memory-scope.js";
 import { memoryStore } from "./memory-store.js";
 import type { ObjectStore } from "./store.js";
 import { readControlSignal, throwIfAborted, withObjectStoreReadControls } from "./store.js";
@@ -250,4 +252,106 @@ describe("MemoryObjectStore", () => {
       }
     }).rejects.toMatchObject({ code: "LAKEQL_ABORTED" });
   });
+});
+
+it("reserves memory-store range copies and isolates subclass-backed input", async () => {
+  class ViewSliceBytes extends Uint8Array {
+    override slice(start?: number, end?: number): Uint8Array {
+      return this.subarray(start, end);
+    }
+  }
+  const store = memoryStore();
+  const input = new ViewSliceBytes([1, 2, 3, 4]);
+  await store.put("input", input);
+  const scope = new MemoryScope(new MemoryBudget(2));
+  const owner = await store.getRangeOwned?.("input", { offset: 1, length: 2 }, scope);
+  expect(owner?.value).toEqual(Uint8Array.of(2, 3));
+  owner?.value.fill(9);
+  expect(input).toEqual(new ViewSliceBytes([1, 2, 3, 4]));
+  await expect(
+    store.getRangeOwned?.("input", { offset: 0, length: 1 }, scope),
+  ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  expect(scope.budget.peakBytes).toBe(2);
+  scope.dispose();
+  expect(scope.budget.usedBytes).toBe(0);
+  const ordinary = await store.getRange("input", { offset: 1, length: 2 });
+  ordinary.fill(8);
+  expect(input[1]).toBe(2);
+});
+
+it("rejects malformed range shapes before allocating owned or ordinary outputs", async () => {
+  const store = memoryStore();
+  await store.put("input", Uint8Array.of(1, 2));
+  const scope = new MemoryScope(new MemoryBudget(2));
+  for (const range of [
+    { offset: NaN, length: 1 },
+    { offset: 0, length: Infinity },
+    { offset: 0.5, length: 1 },
+    { offset: 0, length: -1 },
+    { offset: 2, length: 1 },
+  ]) {
+    await expect(store.getRange("input", range)).rejects.toThrow();
+    await expect(store.getRangeOwned?.("input", range, scope)).rejects.toThrow();
+  }
+  const empty = await store.getRangeOwned?.("input", { offset: 2, length: 0 }, scope);
+  expect(empty?.value.length).toBe(0);
+  expect(scope.budget.peakBytes).toBe(0);
+  scope.dispose();
+});
+
+it("preserves precise owned allocation forecasts through path and read-control wrappers", async () => {
+  const { uriObjectStore, withObjectStoreReadControls } = await import("./store.js");
+  const store = memoryStore();
+  await store.put("input", Uint8Array.of(1, 2, 3));
+  const controlled = withObjectStoreReadControls(
+    uriObjectStore(store, { scheme: "s3", authority: "bucket" }),
+    { maxConcurrentReads: 1 },
+  );
+  expect(controlled.getRangeOwnedAllocation?.("input", { offset: 1, length: 2 })).toEqual({
+    bytes: 2,
+    output: "exact-buffer",
+  });
+});
+
+it("shares discovery slots with payload reads and cancels queued discovery", async () => {
+  const controller = new AbortController();
+  let release!: () => void;
+  let markStarted!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  let heads = 0;
+  let ranges = 0;
+  const base = memoryStore();
+  const controlled = withObjectStoreReadControls(
+    {
+      ...base,
+      async head() {
+        heads++;
+        markStarted();
+        await gate;
+        return { size: 1 };
+      },
+      async getRange() {
+        ranges++;
+        return Uint8Array.of(1);
+      },
+    },
+    { maxConcurrentReads: 1, signal: controller.signal },
+  );
+  const first = controlled.head("first");
+  await started;
+  const queuedHead = controlled.head("second");
+  const queuedRange = controlled.getRange("first", { offset: 0, length: 1 });
+  const failures = [first, queuedHead, queuedRange].map((promise) =>
+    expect(promise).rejects.toMatchObject({ code: "LAKEQL_ABORTED" }),
+  );
+  controller.abort("cancel queued discovery");
+  release();
+  await Promise.all(failures);
+  expect(heads).toBe(1);
+  expect(ranges).toBe(0);
 });

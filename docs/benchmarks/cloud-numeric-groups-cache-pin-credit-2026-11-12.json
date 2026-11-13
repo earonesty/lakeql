@@ -1,0 +1,258 @@
+{
+  "source": "https://pub-9d5bcb33a5384d79875a943eef183b6d.r2.dev/bench/window-events.parquet",
+  "scope": "Actual R2 HTTP 206, internal grouped numeric iterator; excludes metadata/oracle allocation and JS heap; optional shared-cache accounting is reported separately; not normal-query scheduler integration",
+  "reports": [
+    {
+      "jobs": 1,
+      "jobBytes": 4096,
+      "cacheBytes": 4096,
+      "temperature": "cold",
+      "retainedCacheBytes": 2838,
+      "maxConcurrentReads": 1,
+      "peakReads": 1,
+      "reads": 8,
+      "transferredBytes": 2838,
+      "ranges": [
+        {
+          "offset": 0,
+          "length": 512
+        },
+        {
+          "offset": 512,
+          "length": 512
+        },
+        {
+          "offset": 1024,
+          "length": 512
+        },
+        {
+          "offset": 1868,
+          "length": 209
+        },
+        {
+          "offset": 1891,
+          "length": 186
+        },
+        {
+          "offset": 2048,
+          "length": 512
+        },
+        {
+          "offset": 2971,
+          "length": 209
+        },
+        {
+          "offset": 2994,
+          "length": 186
+        }
+      ],
+      "peakBytes": 5376,
+      "poolBytes": 8192,
+      "elapsedMs": 874.6260650000002
+    },
+    {
+      "jobs": 1,
+      "jobBytes": 4096,
+      "cacheBytes": 4096,
+      "temperature": "warm",
+      "retainedCacheBytes": 2838,
+      "maxConcurrentReads": 1,
+      "peakReads": 0,
+      "reads": 0,
+      "transferredBytes": 0,
+      "ranges": [],
+      "peakBytes": 6214,
+      "poolBytes": 8192,
+      "elapsedMs": 1.2654339999999138
+    },
+    {
+      "jobs": 4,
+      "jobBytes": 4096,
+      "cacheBytes": 4096,
+      "temperature": "cold",
+      "retainedCacheBytes": 2838,
+      "maxConcurrentReads": 1,
+      "peakReads": 1,
+      "reads": 8,
+      "transferredBytes": 2838,
+      "ranges": [
+        {
+          "offset": 0,
+          "length": 512
+        },
+        {
+          "offset": 512,
+          "length": 512
+        },
+        {
+          "offset": 1024,
+          "length": 512
+        },
+        {
+          "offset": 1868,
+          "length": 209
+        },
+        {
+          "offset": 1891,
+          "length": 186
+        },
+        {
+          "offset": 2048,
+          "length": 512
+        },
+        {
+          "offset": 2971,
+          "length": 209
+        },
+        {
+          "offset": 2994,
+          "length": 186
+        }
+      ],
+      "peakBytes": 12012,
+      "poolBytes": 20480,
+      "elapsedMs": 776.9003869999997
+    },
+    {
+      "jobs": 4,
+      "jobBytes": 4096,
+      "cacheBytes": 4096,
+      "temperature": "warm",
+      "retainedCacheBytes": 2838,
+      "maxConcurrentReads": 1,
+      "peakReads": 0,
+      "reads": 0,
+      "transferredBytes": 0,
+      "ranges": [],
+      "peakBytes": 13270,
+      "poolBytes": 20480,
+      "elapsedMs": 2.1910879999995814
+    },
+    {
+      "jobs": 1,
+      "jobBytes": 4096,
+      "cacheBytes": 4096,
+      "temperature": "cold",
+      "retainedCacheBytes": 2838,
+      "maxConcurrentReads": 2,
+      "peakReads": 1,
+      "reads": 8,
+      "transferredBytes": 2838,
+      "ranges": [
+        {
+          "offset": 0,
+          "length": 512
+        },
+        {
+          "offset": 512,
+          "length": 512
+        },
+        {
+          "offset": 1024,
+          "length": 512
+        },
+        {
+          "offset": 1868,
+          "length": 209
+        },
+        {
+          "offset": 1891,
+          "length": 186
+        },
+        {
+          "offset": 2048,
+          "length": 512
+        },
+        {
+          "offset": 2971,
+          "length": 209
+        },
+        {
+          "offset": 2994,
+          "length": 186
+        }
+      ],
+      "peakBytes": 5376,
+      "poolBytes": 8192,
+      "elapsedMs": 753.2503000000002
+    },
+    {
+      "jobs": 1,
+      "jobBytes": 4096,
+      "cacheBytes": 4096,
+      "temperature": "warm",
+      "retainedCacheBytes": 2838,
+      "maxConcurrentReads": 2,
+      "peakReads": 0,
+      "reads": 0,
+      "transferredBytes": 0,
+      "ranges": [],
+      "peakBytes": 6214,
+      "poolBytes": 8192,
+      "elapsedMs": 0.9725419999999758
+    },
+    {
+      "jobs": 4,
+      "jobBytes": 4096,
+      "cacheBytes": 4096,
+      "temperature": "cold",
+      "retainedCacheBytes": 2838,
+      "maxConcurrentReads": 2,
+      "peakReads": 1,
+      "reads": 8,
+      "transferredBytes": 2838,
+      "ranges": [
+        {
+          "offset": 0,
+          "length": 512
+        },
+        {
+          "offset": 512,
+          "length": 512
+        },
+        {
+          "offset": 1024,
+          "length": 512
+        },
+        {
+          "offset": 1868,
+          "length": 209
+        },
+        {
+          "offset": 1891,
+          "length": 186
+        },
+        {
+          "offset": 2048,
+          "length": 512
+        },
+        {
+          "offset": 2971,
+          "length": 209
+        },
+        {
+          "offset": 2994,
+          "length": 186
+        }
+      ],
+      "peakBytes": 12012,
+      "poolBytes": 20480,
+      "elapsedMs": 772.4922529999999
+    },
+    {
+      "jobs": 4,
+      "jobBytes": 4096,
+      "cacheBytes": 4096,
+      "temperature": "warm",
+      "retainedCacheBytes": 2838,
+      "maxConcurrentReads": 2,
+      "peakReads": 0,
+      "reads": 0,
+      "transferredBytes": 0,
+      "ranges": [],
+      "peakBytes": 13270,
+      "poolBytes": 20480,
+      "elapsedMs": 3.396128000000317
+    }
+  ]
+}

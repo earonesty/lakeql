@@ -1,0 +1,31 @@
+{
+  "scope": "Current local conformance and public-reader diagnostics after ownership and nested descriptor changes. Existing failures remain failures; no expected-failure or skip reclassification. Decode completion is not value or memory-bound verification.",
+  "testPassed": 232,
+  "testFailed": 18,
+  "testSkipped": 1,
+  "fixtureDecoded": 225,
+  "fixtureRejected": 18,
+  "newFailures": [],
+  "resolvedFailures": [],
+  "failingFixtures": [
+    "bad_data/ARROW-GH-41317.parquet",
+    "bad_data/ARROW-GH-41321.parquet",
+    "bad_data/ARROW-GH-45185.parquet",
+    "bad_data/ARROW-GH-47662.parquet",
+    "bad_data/ARROW-RS-GH-11261-FLBA-DICT.parquet",
+    "bad_data/ARROW-RS-GH-6229-DICTHEADER.parquet",
+    "bad_data/ARROW-RS-GH-6229-LEVELS.parquet",
+    "bad_data/PARQUET-1481.parquet",
+    "data/alp_extended.zstd.parquet",
+    "data/bson.parquet",
+    "data/fixed_length_decimal.parquet",
+    "data/large_string_map.brotli.parquet",
+    "data/nation.dict-malformed.parquet",
+    "shredded_variant/case-026.parquet",
+    "shredded_variant/case-027.parquet",
+    "shredded_variant/case-028.parquet",
+    "shredded_variant/case-029.parquet",
+    "shredded_variant/case-030.parquet"
+  ],
+  "diagnostics": "docs/benchmarks/parquet-conformance-ownership-refresh-2026-11-13.json"
+}

@@ -1,0 +1,25 @@
+{
+  "scope": "Proposed PR worktree after excluding unused deferred-ranking helpers",
+  "build": "passed",
+  "lint": "passed",
+  "typecheck": "passed",
+  "compatibility": "passed",
+  "largeFiles": "passed",
+  "packageInstall": "passed",
+  "fixtures": "passed",
+  "tests": {
+    "defaultPassed": 2670,
+    "defaultSkipped": 598,
+    "workersPassed": 49,
+    "referencePassed": 104,
+    "focusedOwnedOutputPassed": 16
+  },
+  "coveragePercent": {
+    "statements": 91.48,
+    "branches": 85.21,
+    "functions": 95.73,
+    "lines": 93.62
+  },
+  "externalConformance": "Not rerun in this refresh; last recorded result 467 passed, 18 failed, 1 skipped",
+  "goalComplete": false
+}

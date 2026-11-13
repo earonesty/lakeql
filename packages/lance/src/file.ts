@@ -1,5 +1,6 @@
 import {
   LakeqlError,
+  mapConcurrent,
   type ObjectHead,
   type Row,
   type TimestampUnit,
@@ -225,8 +226,11 @@ export async function materializeFragmentRows(options: {
     selections.push({ field, columnIndex: location.columnIndex });
     fileSelections.set(location.file, selections);
   }
-  await Promise.all(
-    [...fileSelections].map(async ([file, selections]) => {
+  await mapConcurrent(
+    [...fileSelections],
+    context.budget.maxConcurrentReads ?? 4,
+    async ([file, selections]) => {
+      context.check();
       const values = await materializeDataFile({
         context,
         root: options.root,
@@ -240,7 +244,7 @@ export async function materializeFragmentRows(options: {
           corrupt("Materialized an unexpected Lance row offset", { rowOffset });
         Object.assign(row, valuesByColumn);
       }
-    }),
+    },
   );
   return rows;
 }

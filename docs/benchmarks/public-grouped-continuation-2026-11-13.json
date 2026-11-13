@@ -1,0 +1,194 @@
+{
+  "description": "Public grouped count over an owned synthetic scanner. One warmup and three sequential samples per case; optional GC before timed samples. Exact values, zero inter-batch checkpoints, scan closure and final pool cleanup asserted. This is local CPU scaling evidence, not cloud latency or total heap measurement.",
+  "node": "v24.18.1",
+  "gcAvailable": true,
+  "poolBytes": 67108864,
+  "results": [
+    {
+      "rows": 2000,
+      "batchSize": 128,
+      "medianMs": 42.80325799999997,
+      "samples": [
+        {
+          "elapsedMs": 74.94478899999999,
+          "opens": 1,
+          "appends": 16,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 3213536,
+          "remainingBytes": 0
+        },
+        {
+          "elapsedMs": 42.34985199999997,
+          "opens": 1,
+          "appends": 16,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 3213536,
+          "remainingBytes": 0
+        },
+        {
+          "elapsedMs": 42.80325799999997,
+          "opens": 1,
+          "appends": 16,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 3213536,
+          "remainingBytes": 0
+        }
+      ]
+    },
+    {
+      "rows": 2000,
+      "batchSize": 512,
+      "medianMs": 34.25899499999997,
+      "samples": [
+        {
+          "elapsedMs": 33.608727999999985,
+          "opens": 1,
+          "appends": 4,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 3213536,
+          "remainingBytes": 0
+        },
+        {
+          "elapsedMs": 41.99845000000005,
+          "opens": 1,
+          "appends": 4,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 3213536,
+          "remainingBytes": 0
+        },
+        {
+          "elapsedMs": 34.25899499999997,
+          "opens": 1,
+          "appends": 4,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 3213536,
+          "remainingBytes": 0
+        }
+      ]
+    },
+    {
+      "rows": 4000,
+      "batchSize": 128,
+      "medianMs": 91.25153,
+      "samples": [
+        {
+          "elapsedMs": 102.80749199999991,
+          "opens": 1,
+          "appends": 32,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 6331120,
+          "remainingBytes": 0
+        },
+        {
+          "elapsedMs": 91.25153,
+          "opens": 1,
+          "appends": 32,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 6331120,
+          "remainingBytes": 0
+        },
+        {
+          "elapsedMs": 89.38331600000004,
+          "opens": 1,
+          "appends": 32,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 6331120,
+          "remainingBytes": 0
+        }
+      ]
+    },
+    {
+      "rows": 4000,
+      "batchSize": 512,
+      "medianMs": 84.20026299999995,
+      "samples": [
+        {
+          "elapsedMs": 85.1906110000001,
+          "opens": 1,
+          "appends": 8,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 6331120,
+          "remainingBytes": 0
+        },
+        {
+          "elapsedMs": 78.41798900000003,
+          "opens": 1,
+          "appends": 8,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 6331120,
+          "remainingBytes": 0
+        },
+        {
+          "elapsedMs": 84.20026299999995,
+          "opens": 1,
+          "appends": 8,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 6331120,
+          "remainingBytes": 0
+        }
+      ]
+    },
+    {
+      "rows": 8000,
+      "batchSize": 128,
+      "medianMs": 181.84210300000018,
+      "samples": [
+        {
+          "elapsedMs": 159.1422459999999,
+          "opens": 1,
+          "appends": 63,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 12633952,
+          "remainingBytes": 0
+        },
+        {
+          "elapsedMs": 192.76019199999996,
+          "opens": 1,
+          "appends": 63,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 12633952,
+          "remainingBytes": 0
+        },
+        {
+          "elapsedMs": 181.84210300000018,
+          "opens": 1,
+          "appends": 63,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 12633952,
+          "remainingBytes": 0
+        }
+      ]
+    },
+    {
+      "rows": 8000,
+      "batchSize": 512,
+      "medianMs": 166.7450530000001,
+      "samples": [
+        {
+          "elapsedMs": 162.92128299999968,
+          "opens": 1,
+          "appends": 16,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 12633952,
+          "remainingBytes": 0
+        },
+        {
+          "elapsedMs": 174.45119599999998,
+          "opens": 1,
+          "appends": 16,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 12633952,
+          "remainingBytes": 0
+        },
+        {
+          "elapsedMs": 166.7450530000001,
+          "opens": 1,
+          "appends": 16,
+          "checkpoints": 0,
+          "peakAdmittedBytes": 12633952,
+          "remainingBytes": 0
+        }
+      ]
+    }
+  ]
+}

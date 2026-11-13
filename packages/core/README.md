@@ -22,3 +22,13 @@ adapter, scan adapter, or lower-level integration.
 - Manifests and resumability: output manifests, task checkpoints, bookmarks,
   and sidecar indexes.
 - Errors: `LakeqlError`, stable error codes, and `isLakeqlError`.
+
+Allocation-aware adapters receive a query child budget as `ScanOptions.memoryBudget`.
+`LakeConfig.memoryPool` can share a `MemoryBudget` across concurrent jobs or Lakes;
+`budget.maxAllocatedMemoryBytes` sets each query's ceiling. The default internal
+pool uses that limit, then `maxMemoryBytes`, then 64 MiB. A supplied pool provides
+the default child ceiling. Use `MemoryScope` for admitted allocations and release
+scratch in iterator cleanup; explicitly retain ownership for backing that escapes.
+These limits currently govern participating allocations, not all decoded objects,
+operator state, returned rows, or the process heap. `maxMemoryBytes` continues to
+have its separate serialized operator-state meaning.

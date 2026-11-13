@@ -42,6 +42,7 @@ describe("httpStore", () => {
 
     await expect(store.head("file.parquet")).resolves.toMatchObject({
       size: 5,
+      rangeReadMode: "native",
       etag: "v1",
       contentType: "application/octet-stream",
     });
@@ -184,7 +185,10 @@ describe("httpStore", () => {
       },
     });
 
-    await expect(store.head("file.parquet")).resolves.toMatchObject({ size: whole.byteLength });
+    await expect(store.head("file.parquet")).resolves.toMatchObject({
+      size: whole.byteLength,
+      rangeReadMode: "emulated",
+    });
     await expect(store.getRange("file.parquet", { offset: 4, length: 7 })).resolves.toEqual(
       enc.encode("decoded"),
     );
@@ -235,6 +239,9 @@ describe("httpStore", () => {
       },
     });
 
-    await expect(store.head("file.parquet")).resolves.toMatchObject({ size: whole.byteLength });
+    await expect(store.head("file.parquet")).resolves.toMatchObject({
+      size: whole.byteLength,
+      rangeReadMode: "emulated",
+    });
   });
 });

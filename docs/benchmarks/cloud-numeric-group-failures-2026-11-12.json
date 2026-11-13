@@ -1,0 +1,24 @@
+{
+  "source": "https://pub-9d5bcb33a5384d79875a943eef183b6d.r2.dev/bench/window-events.parquet",
+  "scope": "Real HTTP 206 body reads; injected post-response adapter failure/delay; not a server outage or mid-network disconnect; excludes metadata and JS heap",
+  "reports": [
+    {
+      "mode": "peer-failure",
+      "responses": 2,
+      "heldBytes": [198, 186],
+      "heldAfterAbort": 186,
+      "peakBytes": 1712,
+      "admittedBytes": 1712,
+      "releasedBytes": 0
+    },
+    {
+      "mode": "cancel",
+      "responses": 2,
+      "heldBytes": [186, 198],
+      "heldAfterAbort": 384,
+      "peakBytes": 1712,
+      "admittedBytes": 1712,
+      "releasedBytes": 0
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "scope": "Local routing construction only; explicit allocation accounting, not measured VM heap. Four warmups and twelve measured rounds per mode, not interleaved. Validate every tag/offset outside timing. Both modes use the current implementation; compare retaining versus releasing construction-only indices, not historical CPU performance. Child payloads and cloud transport excluded.",
+  "results": [
+    {
+      "rows": 1024,
+      "domains": 10,
+      "modes": {
+        "retainedConstructionScratch": {
+          "retainedBytes": 10092,
+          "peakBytes": 10260,
+          "medianMs": 0.13440700000000305
+        },
+        "releasedConstructionScratch": {
+          "retainedBytes": 5376,
+          "peakBytes": 10260,
+          "medianMs": 0.13467250000000064
+        }
+      }
+    },
+    {
+      "rows": 8192,
+      "domains": 10,
+      "modes": {
+        "retainedConstructionScratch": {
+          "retainedBytes": 74604,
+          "peakBytes": 74772,
+          "medianMs": 0.8667059999999935
+        },
+        "releasedConstructionScratch": {
+          "retainedBytes": 41216,
+          "peakBytes": 74772,
+          "medianMs": 0.9262419999999949
+        }
+      }
+    },
+    {
+      "rows": 65536,
+      "domains": 10,
+      "modes": {
+        "retainedConstructionScratch": {
+          "retainedBytes": 590700,
+          "peakBytes": 590868,
+          "medianMs": 6.892067999999995
+        },
+        "releasedConstructionScratch": {
+          "retainedBytes": 327936,
+          "peakBytes": 590868,
+          "medianMs": 6.617098000000027
+        }
+      }
+    }
+  ]
+}

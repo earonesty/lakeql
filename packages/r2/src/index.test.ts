@@ -1,3 +1,4 @@
+import { MemoryBudget, MemoryScope } from "lakeql-core";
 import { describe, expect, it } from "vitest";
 import {
   cloudflareD1JsonCache,
@@ -5,6 +6,7 @@ import {
   type D1PreparedStatementLike,
   type R2BucketLike,
   type R2ObjectBody,
+  R2ObjectStore,
   r2Store,
 } from "./index.js";
 
@@ -246,4 +248,145 @@ describe("r2Store", () => {
     for await (const object of store.list("")) listed.push(object);
     expect(listed[0]).toMatchObject({ path: "stream.txt", size: 6 });
   });
+});
+
+describe("owned R2 ranges", () => {
+  it("rejects invalid ranges before I/O and returns empty ranges without I/O", async () => {
+    const bucket = new FakeBucket();
+    let gets = 0;
+    bucket.get = async () => {
+      gets += 1;
+      return null;
+    };
+    const store = new R2ObjectStore(bucket);
+    const scope = new MemoryScope(new MemoryBudget(0));
+    for (const range of [
+      { offset: -1, length: 1 },
+      { offset: 0, length: Infinity },
+      { offset: Number.MAX_SAFE_INTEGER, length: 1 },
+    ]) {
+      await expect(store.getRangeOwned("file", range, scope)).rejects.toMatchObject({
+        code: "LAKEQL_VALIDATION_ERROR",
+      });
+    }
+    expect((await store.getRangeOwned("file", { offset: 0, length: 0 }, scope)).bytes).toBe(0);
+    expect(gets).toBe(0);
+    scope.dispose();
+  });
+
+  it("cancels oversized bodies and never calls arrayBuffer", async () => {
+    const bucket = new FakeBucket();
+    let cancelled = false;
+    let materialized = false;
+    bucket.get = async () => ({
+      key: "file",
+      size: 100,
+      body: new ReadableStream({
+        start(c) {
+          c.enqueue(new Uint8Array(5));
+        },
+        cancel() {
+          cancelled = true;
+        },
+      }),
+      async arrayBuffer() {
+        materialized = true;
+        return new ArrayBuffer(100);
+      },
+    });
+    const scope = new MemoryScope(new MemoryBudget(4));
+    await expect(
+      new R2ObjectStore(bucket).getRangeOwned("file", { offset: 0, length: 4 }, scope),
+    ).rejects.toMatchObject({
+      code: "LAKEQL_BUDGET_EXCEEDED",
+      details: { metric: "R2 range bytes", actual: 5 },
+    });
+    expect(cancelled).toBe(true);
+    expect(materialized).toBe(false);
+    expect(scope.budget.usedBytes).toBe(0);
+    scope.dispose();
+  });
+
+  it("cancels a body arriving after the caller closes its scope", async () => {
+    const bucket = new FakeBucket();
+    const scope = new MemoryScope(new MemoryBudget(4));
+    let cancelled = false;
+    bucket.get = async () => {
+      scope.dispose();
+      return {
+        key: "file",
+        size: 4,
+        body: new ReadableStream({
+          cancel() {
+            cancelled = true;
+          },
+        }),
+        async arrayBuffer() {
+          throw new Error("must stream");
+        },
+      };
+    };
+    await expect(
+      new R2ObjectStore(bucket).getRangeOwned("file", { offset: 0, length: 4 }, scope),
+    ).rejects.toMatchObject({ code: "LAKEQL_ABORTED" });
+    expect(cancelled).toBe(true);
+    expect(scope.budget.peakBytes).toBe(4);
+    expect(scope.budget.usedBytes).toBe(0);
+  });
+});
+
+it("holds R2 admission until pending bucket I/O settles after cancellation", async () => {
+  const bucket = new FakeBucket();
+  const budget = new MemoryBudget(4);
+  const scope = new MemoryScope(budget);
+  let finish: (() => void) | undefined;
+  const pending = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  let gets = 0;
+  bucket.get = async () => {
+    gets++;
+    await pending;
+    return null;
+  };
+  const store = new R2ObjectStore(bucket);
+  const read = store.getRangeOwned("file", { offset: 0, length: 4 }, scope);
+  expect(budget.usedBytes).toBe(4);
+  const rejected = expect(read).rejects.toMatchObject({ code: "LAKEQL_ABORTED" });
+  scope.dispose();
+  expect(budget.usedBytes).toBe(4);
+  const other = new MemoryScope(budget);
+  await expect(store.getRangeOwned("file", { offset: 0, length: 1 }, other)).rejects.toMatchObject({
+    code: "LAKEQL_BUDGET_EXCEEDED",
+  });
+  expect(gets).toBe(1);
+  finish?.();
+  await rejected;
+  expect(budget.usedBytes).toBe(0);
+  other.dispose();
+});
+
+it("rejects inconsistent R2 sizes and truncated bodies without retaining allocations", async () => {
+  for (const size of [NaN, -1, 1.5, 8]) {
+    const bucket = new FakeBucket();
+    bucket.get = async () => ({
+      key: "file",
+      size,
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(Uint8Array.of(1, 2));
+          controller.close();
+        },
+      }),
+      async arrayBuffer() {
+        throw new Error("Must use streaming body");
+      },
+    });
+    const scope = new MemoryScope(new MemoryBudget(4));
+    await expect(
+      new R2ObjectStore(bucket).getRangeOwned("file", { offset: 0, length: 4 }, scope),
+    ).rejects.toThrow();
+    expect(scope.budget.usedBytes).toBe(0);
+    scope.dispose();
+  }
 });

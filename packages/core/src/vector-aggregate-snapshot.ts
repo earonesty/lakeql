@@ -1,3 +1,4 @@
+import { unmeasuredMemoryBytes } from "./aggregate-memory.js";
 import { isTimestampValue, TimestampValue } from "./timestamp.js";
 import type {
   VectorAggregateSnapshotValue,
@@ -32,15 +33,13 @@ export function snapshotVectorAggregateState(
     case "count_distinct":
     case "approx_count_distinct":
       return { op: state.op, values: distinctSnapshotValues(state) };
-    case "mode":
-      return {
-        op: "mode",
-        values: [...state.values.entries()].map(([key, entry]) => ({
-          key,
-          value: snapshotValue(entry.value),
-          count: entry.count,
-        })),
-      };
+    case "mode": {
+      const values: Extract<VectorAggregateStateSnapshot, { op: "mode" }>["values"] = [];
+      for (const [key, entry] of state.values) {
+        values.push({ key, value: snapshotValue(entry.value), count: entry.count });
+      }
+      return { op: "mode", values };
+    }
     case "first":
     case "last":
     case "any":
@@ -81,16 +80,14 @@ export function vectorAggregateStateFromSnapshot(
       return { op: snapshot.op, values, memoryBytes: distinctMemoryBytes(values) };
     }
     case "mode": {
-      const values = new Map(
-        snapshot.values.map((entry) => [
-          entry.key,
-          {
-            value: restoreValue(entry.value) as Exclude<VectorAggregateValue, null>,
-            count: entry.count,
-          },
-        ]),
-      );
-      return { op: "mode", values, memoryBytes: distinctMemoryBytes(new Set(values.keys())) };
+      const values: Extract<VectorAggregateState, { op: "mode" }>["values"] = new Map();
+      for (const entry of snapshot.values) {
+        values.set(entry.key, {
+          value: restoreValue(entry.value) as Exclude<VectorAggregateValue, null>,
+          count: entry.count,
+        });
+      }
+      return { op: "mode", values, memoryBytes: values.size === 0 ? 2 : unmeasuredMemoryBytes };
     }
     case "first":
     case "last":

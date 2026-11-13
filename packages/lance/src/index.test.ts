@@ -1,7 +1,13 @@
 import { readdir, readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { resolve } from "node:path";
-import { memoryCache, memoryStore, type ObjectStore, SharedMemoryCache } from "lakeql-core";
+import {
+  MemoryBudget,
+  memoryCache,
+  memoryStore,
+  type ObjectStore,
+  SharedMemoryCache,
+} from "lakeql-core";
 import { httpStore } from "lakeql-http";
 import { afterEach, describe, expect, it } from "vitest";
 import { openLanceDataset } from "./index.js";
@@ -33,8 +39,10 @@ describe("lakeql-lance takeRows", () => {
   it("materializes one projected row without a full data-file read", async () => {
     const fixture = await fixtureStore();
     const observed = recordingStore(fixture.store);
+    const memoryBudget = new MemoryBudget(1024 * 1024);
     const dataset = await openLanceDataset({
       store: observed.store,
+      memoryBudget,
       path: DATASET_PATH,
       budget: generousBudget(),
     });
@@ -44,6 +52,8 @@ describe("lakeql-lance takeRows", () => {
       select: ["serial", "mark_text", "active"],
     });
 
+    expect(memoryBudget.usedBytes).toBe(0);
+    expect(memoryBudget.peakBytes).toBeGreaterThan(0);
     expect(result.rows).toEqual([{ serial: 10000017, mark_text: "MARK 017", active: false }]);
     expect(result.stats).toMatchObject({
       snapshotVersion: "1",
@@ -53,9 +63,74 @@ describe("lakeql-lance takeRows", () => {
       pagesTouched: 3,
       selectedColumns: ["serial", "mark_text", "active"],
     });
+    const siblings = await Promise.all(
+      [17n, 18n].map((rowId) =>
+        dataset.takeRows({
+          snapshotId: dataset.snapshotId,
+          rowIds: [rowId],
+          select: ["serial"],
+        }),
+      ),
+    );
+    expect(siblings.map((result) => result.rows)).toEqual([
+      [{ serial: 10000017 }],
+      [{ serial: 10000018 }],
+    ]);
+    expect(memoryBudget.usedBytes).toBe(0);
+    await expect(
+      openLanceDataset({
+        store: observed.store,
+        path: DATASET_PATH,
+        memoryBudget,
+        budget: { maxAllocatedMemoryBytes: 0 },
+      }),
+    ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+    expect(memoryBudget.usedBytes).toBe(0);
     expect(result.stats.physicalBytesRequested).toBeLessThan(5_000);
     expect(observed.fullDataGets).toBe(0);
     expect(observed.dataRanges.every((range) => range.length < range.fileSize)).toBe(true);
+  });
+
+  it.each([false, true])("admits manifest copies at the measured cap, large=%s", async (large) => {
+    const fixture = await fixtureStore();
+    if (large) {
+      // Extend the real producer fixture with an unknown protobuf bytes field.
+      // This preserves its known fields while forcing the prefix-plus-tail path.
+      const path = `${DATASET_PATH}/_versions/18446744073709551614.manifest`;
+      const original = await fixture.store.get(path);
+      if (original === null) throw new Error("fixture manifest missing");
+      const footer = original.byteLength - 16;
+      const view = new DataView(original.buffer, original.byteOffset, original.byteLength);
+      const offset = Number(view.getBigUint64(footer, true));
+      const extension = new Uint8Array(5 + 65536);
+      extension.set([194, 62, 128, 128, 4]); // field 1000, wire 2, length 65536
+      const expanded = new Uint8Array(original.byteLength + extension.byteLength);
+      expanded.set(original.subarray(0, footer));
+      expanded.set(extension, footer);
+      expanded.set(original.subarray(footer), footer + extension.byteLength);
+      new DataView(expanded.buffer).setUint32(
+        offset,
+        view.getUint32(offset, true) + extension.byteLength,
+        true,
+      );
+      await fixture.store.put(path, expanded);
+    }
+    const measured = new MemoryBudget(1024 * 1024);
+    const options = { store: fixture.store, path: DATASET_PATH, version: 1n };
+    const expected = await openLanceDataset({ ...options, memoryBudget: measured });
+    expect(measured.usedBytes).toBe(0);
+    expect(measured.peakBytes).toBeGreaterThan(0);
+    for (const limit of [measured.peakBytes, measured.peakBytes - 1]) {
+      const pool = new MemoryBudget(limit);
+      const opening = openLanceDataset({ ...options, memoryBudget: pool });
+      if (limit === measured.peakBytes) {
+        expect((await opening).snapshotId).toBe(expected.snapshotId);
+      } else {
+        await expect(opening).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+      }
+      expect(pool.usedBytes).toBe(0);
+      expect(pool.peakBytes).toBeLessThanOrEqual(limit);
+    }
   });
 
   it("preserves caller order, duplicates, projections, and nulls", async () => {
@@ -82,6 +157,57 @@ describe("lakeql-lance takeRows", () => {
     expect(result.stats.rowsRequested).toBe(5);
     expect(result.stats.rowsMaterialized).toBe(5);
     expect(result.stats.fragmentsTouched).toBe(3);
+  });
+
+  it("drains active fragment reads before reporting a sibling failure", async () => {
+    const fixture = await fixtureStore();
+    const pool = new MemoryBudget(1024 * 1024);
+    const failed = Promise.withResolvers<void>();
+    const pending = Promise.withResolvers<void>();
+    const started: string[] = [];
+    const store = wrapStore(fixture.store, {
+      async getRange(path, range) {
+        if (path.endsWith(".lance")) {
+          started.push(path);
+          await (started.length === 1 ? failed.promise : pending.promise);
+        }
+        return await fixture.store.getRange(path, range);
+      },
+    });
+    const dataset = await openLanceDataset({
+      store,
+      path: DATASET_PATH,
+      memoryBudget: pool,
+      budget: { ...generousBudget(), maxConcurrentReads: 2 },
+    });
+    const expected = JSON.parse(await readFile(resolve(FIXTURE_ROOT, "expected.json"), "utf8"))
+      .sampleProjection as { rowIds: string[]; select: string[] };
+    let settled = false;
+    const result = dataset
+      .takeRows({
+        snapshotId: dataset.snapshotId,
+        rowIds: expected.rowIds,
+        select: expected.select,
+      })
+      .then(
+        () => {
+          throw new Error("expected failure");
+        },
+        (error: unknown) => {
+          settled = true;
+          return error;
+        },
+      );
+    await expect.poll(() => started.length).toBe(2);
+    const cause = new Error("fragment transport failed");
+    failed.reject(cause);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+    expect(pool.usedBytes).toBeGreaterThan(0);
+    pending.resolve();
+    expect(await result).toBe(cause);
+    expect(pool.usedBytes).toBe(0);
+    expect(new Set(started).size).toBe(2);
   });
 
   it("materializes the supported scalar, binary, date, and timestamp type matrix", async () => {
@@ -1153,6 +1279,7 @@ describe("lakeql-lance takeRows", () => {
   });
 
   it("rejects corrupt manifests and data-file offsets with typed errors", async () => {
+    const corruptPool = new MemoryBudget(1024 * 1024);
     const manifestCorrupt = await fixtureStore();
     const manifestPath = `${DATASET_PATH}/_versions/18446744073709551614.manifest`;
     const manifest = await manifestCorrupt.store.get(manifestPath);
@@ -1162,11 +1289,13 @@ describe("lakeql-lance takeRows", () => {
     await expect(
       openLanceDataset({
         store: manifestCorrupt.store,
+        memoryBudget: corruptPool,
         path: DATASET_PATH,
         budget: generousBudget(),
       }),
     ).rejects.toMatchObject({ code: "LAKEQL_LANCE_READ_ERROR" });
 
+    expect(corruptPool.usedBytes).toBe(0);
     const dataCorrupt = await fixtureStore();
     for (const dataPath of [...dataCorrupt.files.keys()].filter((path) =>
       path.endsWith(".lance"),
@@ -1226,7 +1355,9 @@ describe("lakeql-lance takeRows", () => {
       close: () => new Promise((resolveClose) => server.close(() => resolveClose())),
     });
 
+    const memoryBudget = new MemoryBudget(1024 * 1024);
     const dataset = await openLanceDataset({
+      memoryBudget,
       store: httpStore({ baseUrl: `http://127.0.0.1:${address.port}/` }),
       path: DATASET_PATH,
       budget: generousBudget(),
@@ -1241,6 +1372,8 @@ describe("lakeql-lance takeRows", () => {
       { serial: 10000000, mark_text: "MARK 000" },
       { serial: 10000063, mark_text: "MARK 063" },
     ]);
+    expect(memoryBudget.usedBytes).toBe(0);
+    expect(memoryBudget.peakBytes).toBeGreaterThan(0);
     expect(requests.length).toBeGreaterThan(0);
     expect(requests.every((range) => range.startsWith("bytes="))).toBe(true);
   });

@@ -51,6 +51,37 @@ describe("Lance Arrow deletion vectors", () => {
     expect(decodeArrowBuffer(raw, undefined)).toBe(raw);
     expect(decodeArrowBuffer(passthrough, 1)).toEqual(raw);
     expect(decodeArrowBuffer(envelope(12n, zstd), 1)).toEqual(raw);
+    for (const length of [11n, 13n]) {
+      expect(() => decodeArrowBuffer(envelope(length, zstd), 1)).toThrow();
+    }
+    for (const limit of [23, 24]) {
+      const stats = emptyStats();
+      const context = new LanceReadContext(
+        memoryStore({}),
+        { maxMemoryBytes: limit },
+        stats,
+        0,
+        () => 0,
+        { coalesceGapBytes: 0, maxCoalescedRangeBytes: 1024 },
+      );
+      const output = context.leaseDecodedMemory(12);
+      try {
+        if (limit === 24) {
+          expect(decodeArrowBuffer(envelope(12n, zstd), 1, context)).toEqual(raw);
+          expect(stats.peakMemoryBytes).toBe(24);
+          expect(() =>
+            decodeArrowBuffer(envelope(12n, zstd.subarray(0, -1)), 1, context),
+          ).toThrow();
+        } else {
+          expect(() => decodeArrowBuffer(envelope(12n, zstd), 1, context)).toThrow();
+        }
+      } finally {
+        output.release();
+      }
+      // Both success and rejection must return all decoder reservations.
+      context.leaseDecodedMemory(limit).release();
+    }
+
     expect(() => decodeArrowBuffer(Uint8Array.of(1), 1)).toThrowError(
       expect.objectContaining({ code: "LAKEQL_LANCE_READ_ERROR" }),
     );
@@ -205,6 +236,23 @@ describe("Lance Arrow deletion vectors", () => {
     await expect(
       readDeletedRowOffsets(context, "root", fragment, new Set([2, 3, 13])),
     ).resolves.toEqual(new Set([2, 13]));
+    const peak = context.stats.peakMemoryBytes;
+    expect(peak).toBeGreaterThan(0);
+    for (const cap of [peak, peak - 1]) {
+      const bounded = new LanceReadContext(
+        observed,
+        { maxMemoryBytes: cap },
+        emptyStats(),
+        0,
+        () => 0,
+        { coalesceGapBytes: 0, maxCoalescedRangeBytes: 1024 },
+      );
+      const result = readDeletedRowOffsets(bounded, "root", fragment, new Set([2, 3, 13]));
+      if (cap === peak) await expect(result).resolves.toEqual(new Set([2, 13]));
+      else await expect(result).rejects.toThrow();
+      bounded.releaseDecodedMemory();
+      bounded.leaseDecodedMemory(cap).release();
+    }
     expect(ranges.length).toBeGreaterThan(2);
     expect(ranges.every(({ offset, length }) => offset !== 0 || length < fixture.byteLength)).toBe(
       true,

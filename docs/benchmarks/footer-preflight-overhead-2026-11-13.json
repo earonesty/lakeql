@@ -1,0 +1,60 @@
+{
+  "scope": "Local external footer parse benchmark; optional preflight plus upstream parse, alternating order, two warmups/five samples each 100 parses. Excludes I/O and LakeQL normalization; not heap or cloud performance.",
+  "node": "v24.18.1",
+  "reports": [
+    {
+      "name": "byte_stream_split_extended.gzip.parquet",
+      "footerBytes": 3033,
+      "samplesMs": {
+        "baseline": [
+          0.032693590000000085, 0.04311762999999999, 0.05010710000000003, 0.029383959999999973,
+          0.02991355000000013
+        ],
+        "preflight": [
+          0.04786706999999993, 0.03832640000000012, 0.03947375999999991, 0.036802430000000046,
+          0.03566498999999993
+        ]
+      },
+      "medianMs": {
+        "baseline": 0.032693590000000085,
+        "preflight": 0.03832640000000012
+      }
+    },
+    {
+      "name": "concatenated_gzip_members.parquet",
+      "footerBytes": 115,
+      "samplesMs": {
+        "baseline": [
+          0.0040427099999999425, 0.004871780000000001, 0.003778420000000011, 0.003711590000000058,
+          0.004586939999999941
+        ],
+        "preflight": [
+          0.005519499999999908, 0.004936309999999935, 0.005310500000000076, 0.007326400000000035,
+          0.006142980000000051
+        ]
+      },
+      "medianMs": {
+        "baseline": 0.0040427099999999425,
+        "preflight": 0.005519499999999908
+      }
+    },
+    {
+      "name": "rle_boolean_encoding.parquet",
+      "footerBytes": 111,
+      "samplesMs": {
+        "baseline": [
+          0.0028297299999999834, 0.002632460000000094, 0.00258466999999996, 0.002529469999999776,
+          0.0025140400000000797
+        ],
+        "preflight": [
+          0.004610589999999917, 0.003443890000000067, 0.004945210000000202, 0.0033629300000001193,
+          0.003315749999999866
+        ]
+      },
+      "medianMs": {
+        "baseline": 0.00258466999999996,
+        "preflight": 0.003443890000000067
+      }
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "checkpoint": "ownership snapshot reuse",
+  "date": "2026-11-12",
+  "defaultTests": {
+    "passed": 1396,
+    "skipped": 351,
+    "passingFiles": 137
+  },
+  "coveragePercent": {
+    "statements": 91.0,
+    "branches": 84.74,
+    "functions": 95.14,
+    "lines": 92.96
+  },
+  "referenceTestsPassed": 92,
+  "workerTestsPassed": 18,
+  "gatesPassed": [
+    "coverage",
+    "workerd",
+    "reference",
+    "dedicated typecheck",
+    "package-install validation",
+    "tracked-file size",
+    "full lint",
+    "compatibility metadata",
+    "fixture integrity and regeneration"
+  ],
+  "notes": [
+    "Tracked-file size initially hit sandbox git subprocess EPERM and passed with read-only subprocess permission.",
+    "Full lint initially rejected formatting of the remote benchmark JSON; formatting was fixed without changing data.",
+    "Reference result is the prior unchanged snapshot implementation run; no implementation changes occurred during this gate refresh.",
+    "External conformance remains red at its latest run: 167 failed, 83 passed, 1 skipped.",
+    "Public R2 evidence predates composite/snapshot ownership changes.",
+    "These gates do not prove a whole-runtime memory cap or complete mandatory byte-aware scheduling."
+  ]
+}

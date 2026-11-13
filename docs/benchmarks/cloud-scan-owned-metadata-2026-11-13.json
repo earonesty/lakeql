@@ -1,0 +1,902 @@
+{
+  "source": "https://pub-9d5bcb33a5384d79875a943eef183b6d.r2.dev/bench/window-events.parquet",
+  "scope": "Public numeric scans over actual R2 HTTP 206; shared max-two read control, cold/warm rounds and independent fixture row parity. Single round per case, not stable latency estimates. Tracked allocations exclude decoded JS and runtime transport heap; 64/128 MiB are configured pools, not observed whole-Worker heap caps.",
+  "reports": [
+    {
+      "memoryMiB": 64,
+      "jobs": 1,
+      "mode": "auto",
+      "rounds": [
+        {
+          "temperature": "cold",
+          "milliseconds": 1245.465555,
+          "jobStats": [
+            {
+              "cacheHits": 0,
+              "cacheMisses": 1,
+              "rowsReturned": 144
+            }
+          ],
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=0-4853",
+              "bytes": 4854
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=762-970",
+              "bytes": 209
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=4-224",
+              "bytes": 221
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=1868-2076",
+              "bytes": 209
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=1110-1330",
+              "bytes": 221
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=2216-2436",
+              "bytes": 221
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=2971-3179",
+              "bytes": 209
+            }
+          ],
+          "trackedPeakBytes": 12076,
+          "retainedTrackedBytes": 6144
+        },
+        {
+          "temperature": "warm",
+          "milliseconds": 191.13223299999981,
+          "jobStats": [
+            {
+              "cacheHits": 1,
+              "cacheMisses": 0,
+              "rowsReturned": 144
+            }
+          ],
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            }
+          ],
+          "trackedPeakBytes": 12076,
+          "retainedTrackedBytes": 6144
+        }
+      ]
+    },
+    {
+      "memoryMiB": 64,
+      "jobs": 1,
+      "mode": "cached",
+      "rounds": [
+        {
+          "temperature": "cold",
+          "milliseconds": 969.0970199999999,
+          "jobStats": [
+            {
+              "cacheHits": 0,
+              "cacheMisses": 1,
+              "rowsReturned": 144
+            }
+          ],
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=0-4853",
+              "bytes": 4854
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=4-224",
+              "bytes": 221
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=762-970",
+              "bytes": 209
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=1868-2076",
+              "bytes": 209
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=1110-1330",
+              "bytes": 221
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=2216-2436",
+              "bytes": 221
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=2971-3179",
+              "bytes": 209
+            }
+          ],
+          "trackedPeakBytes": 12052,
+          "retainedTrackedBytes": 10998
+        },
+        {
+          "temperature": "warm",
+          "milliseconds": 185.63768200000004,
+          "jobStats": [
+            {
+              "cacheHits": 1,
+              "cacheMisses": 0,
+              "rowsReturned": 144
+            }
+          ],
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            }
+          ],
+          "trackedPeakBytes": 12052,
+          "retainedTrackedBytes": 10998
+        }
+      ]
+    },
+    {
+      "memoryMiB": 64,
+      "jobs": 4,
+      "mode": "auto",
+      "rounds": [
+        {
+          "temperature": "cold",
+          "milliseconds": 923.1355269999999,
+          "jobStats": [
+            {
+              "cacheHits": 1,
+              "cacheMisses": 0,
+              "rowsReturned": 144
+            },
+            {
+              "cacheHits": 0,
+              "cacheMisses": 1,
+              "rowsReturned": 144
+            },
+            {
+              "cacheHits": 1,
+              "cacheMisses": 0,
+              "rowsReturned": 144
+            },
+            {
+              "cacheHits": 1,
+              "cacheMisses": 0,
+              "rowsReturned": 144
+            }
+          ],
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=0-4853",
+              "bytes": 4854
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=4-224",
+              "bytes": 221
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=762-970",
+              "bytes": 209
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=1868-2076",
+              "bytes": 209
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=1110-1330",
+              "bytes": 221
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=2971-3179",
+              "bytes": 209
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=2216-2436",
+              "bytes": 221
+            }
+          ],
+          "trackedPeakBytes": 29872,
+          "retainedTrackedBytes": 6144
+        },
+        {
+          "temperature": "warm",
+          "milliseconds": 208.38704599999983,
+          "jobStats": [
+            {
+              "cacheHits": 1,
+              "cacheMisses": 0,
+              "rowsReturned": 144
+            },
+            {
+              "cacheHits": 1,
+              "cacheMisses": 0,
+              "rowsReturned": 144
+            },
+            {
+              "cacheHits": 1,
+              "cacheMisses": 0,
+              "rowsReturned": 144
+            },
+            {
+              "cacheHits": 1,
+              "cacheMisses": 0,
+              "rowsReturned": 144
+            }
+          ],
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            }
+          ],
+          "trackedPeakBytes": 29872,
+          "retainedTrackedBytes": 6144
+        }
+      ]
+    },
+    {
+      "memoryMiB": 64,
+      "jobs": 4,
+      "mode": "cached",
+      "rounds": [
+        {
+          "temperature": "cold",
+          "milliseconds": 982.4463579999997,
+          "jobStats": [
+            {
+              "cacheHits": 0,
+              "cacheMisses": 1,
+              "rowsReturned": 144
+            },
+            {
+              "cacheHits": 0,
+              "cacheMisses": 1,
+              "rowsReturned": 144
+            },
+            {
+              "cacheHits": 0,
+              "cacheMisses": 1,
+              "rowsReturned": 144
+            },
+            {
+              "cacheHits": 0,
+              "cacheMisses": 1,
+              "rowsReturned": 144
+            }
+          ],
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=0-4853",
+              "bytes": 4854
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=4-224",
+              "bytes": 221
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=762-970",
+              "bytes": 209
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=1868-2076",
+              "bytes": 209
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=1110-1330",
+              "bytes": 221
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=2216-2436",
+              "bytes": 221
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=2971-3179",
+              "bytes": 209
+            }
+          ],
+          "trackedPeakBytes": 29776,
+          "retainedTrackedBytes": 10998
+        },
+        {
+          "temperature": "warm",
+          "milliseconds": 194.4402229999996,
+          "jobStats": [
+            {
+              "cacheHits": 1,
+              "cacheMisses": 0,
+              "rowsReturned": 144
+            },
+            {
+              "cacheHits": 1,
+              "cacheMisses": 0,
+              "rowsReturned": 144
+            },
+            {
+              "cacheHits": 1,
+              "cacheMisses": 0,
+              "rowsReturned": 144
+            },
+            {
+              "cacheHits": 1,
+              "cacheMisses": 0,
+              "rowsReturned": 144
+            }
+          ],
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            }
+          ],
+          "trackedPeakBytes": 29776,
+          "retainedTrackedBytes": 10998
+        }
+      ]
+    },
+    {
+      "memoryMiB": 128,
+      "jobs": 1,
+      "mode": "auto",
+      "rounds": [
+        {
+          "temperature": "cold",
+          "milliseconds": 1252.5617160000002,
+          "jobStats": [
+            {
+              "cacheHits": 0,
+              "cacheMisses": 1,
+              "rowsReturned": 144
+            }
+          ],
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=0-4853",
+              "bytes": 4854
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=4-224",
+              "bytes": 221
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=762-970",
+              "bytes": 209
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=1868-2076",
+              "bytes": 209
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=1110-1330",
+              "bytes": 221
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=2216-2436",
+              "bytes": 221
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=2971-3179",
+              "bytes": 209
+            }
+          ],
+          "trackedPeakBytes": 12076,
+          "retainedTrackedBytes": 6144
+        },
+        {
+          "temperature": "warm",
+          "milliseconds": 193.2505739999997,
+          "jobStats": [
+            {
+              "cacheHits": 1,
+              "cacheMisses": 0,
+              "rowsReturned": 144
+            }
+          ],
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            }
+          ],
+          "trackedPeakBytes": 12076,
+          "retainedTrackedBytes": 6144
+        }
+      ]
+    },
+    {
+      "memoryMiB": 128,
+      "jobs": 1,
+      "mode": "cached",
+      "rounds": [
+        {
+          "temperature": "cold",
+          "milliseconds": 926.4534059999996,
+          "jobStats": [
+            {
+              "cacheHits": 0,
+              "cacheMisses": 1,
+              "rowsReturned": 144
+            }
+          ],
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=0-4853",
+              "bytes": 4854
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=4-224",
+              "bytes": 221
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=762-970",
+              "bytes": 209
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=1110-1330",
+              "bytes": 221
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=1868-2076",
+              "bytes": 209
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=2971-3179",
+              "bytes": 209
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=2216-2436",
+              "bytes": 221
+            }
+          ],
+          "trackedPeakBytes": 12052,
+          "retainedTrackedBytes": 10998
+        },
+        {
+          "temperature": "warm",
+          "milliseconds": 127.67919299999994,
+          "jobStats": [
+            {
+              "cacheHits": 1,
+              "cacheMisses": 0,
+              "rowsReturned": 144
+            }
+          ],
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            }
+          ],
+          "trackedPeakBytes": 12052,
+          "retainedTrackedBytes": 10998
+        }
+      ]
+    },
+    {
+      "memoryMiB": 128,
+      "jobs": 4,
+      "mode": "auto",
+      "rounds": [
+        {
+          "temperature": "cold",
+          "milliseconds": 936.8617619999995,
+          "jobStats": [
+            {
+              "cacheHits": 0,
+              "cacheMisses": 1,
+              "rowsReturned": 144
+            },
+            {
+              "cacheHits": 1,
+              "cacheMisses": 0,
+              "rowsReturned": 144
+            },
+            {
+              "cacheHits": 1,
+              "cacheMisses": 0,
+              "rowsReturned": 144
+            },
+            {
+              "cacheHits": 1,
+              "cacheMisses": 0,
+              "rowsReturned": 144
+            }
+          ],
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=0-4853",
+              "bytes": 4854
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=762-970",
+              "bytes": 209
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=4-224",
+              "bytes": 221
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=1868-2076",
+              "bytes": 209
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=1110-1330",
+              "bytes": 221
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=2216-2436",
+              "bytes": 221
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=2971-3179",
+              "bytes": 209
+            }
+          ],
+          "trackedPeakBytes": 29872,
+          "retainedTrackedBytes": 6144
+        },
+        {
+          "temperature": "warm",
+          "milliseconds": 212.23034299999927,
+          "jobStats": [
+            {
+              "cacheHits": 1,
+              "cacheMisses": 0,
+              "rowsReturned": 144
+            },
+            {
+              "cacheHits": 1,
+              "cacheMisses": 0,
+              "rowsReturned": 144
+            },
+            {
+              "cacheHits": 1,
+              "cacheMisses": 0,
+              "rowsReturned": 144
+            },
+            {
+              "cacheHits": 1,
+              "cacheMisses": 0,
+              "rowsReturned": 144
+            }
+          ],
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            }
+          ],
+          "trackedPeakBytes": 29872,
+          "retainedTrackedBytes": 6144
+        }
+      ]
+    },
+    {
+      "memoryMiB": 128,
+      "jobs": 4,
+      "mode": "cached",
+      "rounds": [
+        {
+          "temperature": "cold",
+          "milliseconds": 760.0925339999994,
+          "jobStats": [
+            {
+              "cacheHits": 0,
+              "cacheMisses": 1,
+              "rowsReturned": 144
+            },
+            {
+              "cacheHits": 0,
+              "cacheMisses": 1,
+              "rowsReturned": 144
+            },
+            {
+              "cacheHits": 0,
+              "cacheMisses": 1,
+              "rowsReturned": 144
+            },
+            {
+              "cacheHits": 0,
+              "cacheMisses": 1,
+              "rowsReturned": 144
+            }
+          ],
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=0-4853",
+              "bytes": 4854
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=762-970",
+              "bytes": 209
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=4-224",
+              "bytes": 221
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=1868-2076",
+              "bytes": 209
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=1110-1330",
+              "bytes": 221
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=2971-3179",
+              "bytes": 209
+            },
+            {
+              "kind": "scan-range",
+              "range": "bytes=2216-2436",
+              "bytes": 221
+            }
+          ],
+          "trackedPeakBytes": 29776,
+          "retainedTrackedBytes": 10998
+        },
+        {
+          "temperature": "warm",
+          "milliseconds": 205.07169799999974,
+          "jobStats": [
+            {
+              "cacheHits": 1,
+              "cacheMisses": 0,
+              "rowsReturned": 144
+            },
+            {
+              "cacheHits": 1,
+              "cacheMisses": 0,
+              "rowsReturned": 144
+            },
+            {
+              "cacheHits": 1,
+              "cacheMisses": 0,
+              "rowsReturned": 144
+            },
+            {
+              "cacheHits": 1,
+              "cacheMisses": 0,
+              "rowsReturned": 144
+            }
+          ],
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            }
+          ],
+          "trackedPeakBytes": 29776,
+          "retainedTrackedBytes": 10998
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,3893 @@
+{
+  "scope": "Local external-file compact footer structural preflight; no decoded metadata tree retained. Counts are not measured heap bytes or full file conformance.",
+  "results": [
+    {
+      "path": "bad_data/ARROW-GH-41317.parquet",
+      "sha256": "a9c2b53992b6c017d3cbe44b9d3a0b2ebbb0f68c8eda424f11942d3313bd5696",
+      "status": "validated",
+      "footerBytes": 37457,
+      "counts": {
+        "structs": 1724,
+        "fields": 5892,
+        "lists": 636,
+        "listItems": 2074,
+        "binaryValues": 1240,
+        "binaryBytes": 22233,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 2
+    },
+    {
+      "path": "bad_data/ARROW-GH-41321.parquet",
+      "sha256": "9539e0925ddb0b52a467cfe5535455be26869bb9bf3b5e48a255c7e2c1973537",
+      "status": "validated",
+      "footerBytes": 37457,
+      "counts": {
+        "structs": 1724,
+        "fields": 5892,
+        "lists": 636,
+        "listItems": 2074,
+        "binaryValues": 1240,
+        "binaryBytes": 22233,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 2
+    },
+    {
+      "path": "bad_data/ARROW-GH-43605.parquet",
+      "sha256": "9f81fe00d9b9732ecb17375c6997c85f8ad52a90709ef3cd72dfcdb458fd7248",
+      "status": "validated",
+      "footerBytes": 305,
+      "counts": {
+        "structs": 11,
+        "fields": 38,
+        "lists": 7,
+        "listItems": 10,
+        "binaryValues": 6,
+        "binaryBytes": 206,
+        "maxDepth": 6
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "bad_data/ARROW-GH-45185.parquet",
+      "sha256": "62f64f2d7eb04ccb8188a61cad402819905426e867adaff134e850d055997e2e",
+      "status": "validated",
+      "footerBytes": 180,
+      "counts": {
+        "structs": 15,
+        "fields": 47,
+        "lists": 7,
+        "listItems": 13,
+        "binaryValues": 8,
+        "binaryBytes": 69,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "bad_data/ARROW-GH-47662.parquet",
+      "sha256": "00804313753fa04c3ef662e436da221e9a61d1732db020cdfe351c188f240391",
+      "status": "validated",
+      "footerBytes": 252,
+      "counts": {
+        "structs": 11,
+        "fields": 44,
+        "lists": 8,
+        "listItems": 10,
+        "binaryValues": 8,
+        "binaryBytes": 141,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "bad_data/ARROW-RS-GH-11261-FLBA-DICT.parquet",
+      "sha256": "89ae3906f61fbaab8d4ca08df6ff944188d3c15bc3ac13f37e1839434be58e46",
+      "status": "validated",
+      "footerBytes": 3010,
+      "counts": {
+        "structs": 186,
+        "fields": 827,
+        "lists": 134,
+        "listItems": 337,
+        "binaryValues": 112,
+        "binaryBytes": 937,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 13
+    },
+    {
+      "path": "bad_data/ARROW-RS-GH-6229-DICTHEADER.parquet",
+      "sha256": "cbc54d6738ea0bf9c941151b5b59cd71597beb0517d949539db59f99c18e9998",
+      "status": "validated",
+      "footerBytes": 234,
+      "counts": {
+        "structs": 15,
+        "fields": 62,
+        "lists": 11,
+        "listItems": 14,
+        "binaryValues": 10,
+        "binaryBytes": 81,
+        "maxDepth": 6
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "bad_data/ARROW-RS-GH-6229-LEVELS.parquet",
+      "sha256": "28d689c63418273b3dfe51ea971ff321c090413bfec66da379aa602165ecb5dd",
+      "status": "validated",
+      "footerBytes": 488,
+      "counts": {
+        "structs": 18,
+        "fields": 54,
+        "lists": 8,
+        "listItems": 18,
+        "binaryValues": 12,
+        "binaryBytes": 360,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "bad_data/PARQUET-1481.parquet",
+      "sha256": "65dfd7e8fa9284a3e4c79bf72bb73e4297f457069df9f47cff5880701da6d71c",
+      "status": "validated",
+      "footerBytes": 154,
+      "counts": {
+        "structs": 9,
+        "fields": 33,
+        "lists": 6,
+        "listItems": 8,
+        "binaryValues": 8,
+        "binaryBytes": 75,
+        "maxDepth": 6
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "bad_data/variants/duplicate_field_offsets.parquet",
+      "sha256": "e7837d417f3295fed374a7668cbef15c35bd4297cca8120c54e0f66eb6ab5820",
+      "status": "validated",
+      "footerBytes": 385,
+      "counts": {
+        "structs": 20,
+        "fields": 77,
+        "lists": 11,
+        "listItems": 17,
+        "binaryValues": 16,
+        "binaryBytes": 207,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "bad_data/variants/field_id_out_of_range.parquet",
+      "sha256": "edfe86a6a7c556d03c13fe22f5fbe496531c2d61aabcea3950e6994372df0db6",
+      "status": "validated",
+      "footerBytes": 369,
+      "counts": {
+        "structs": 20,
+        "fields": 77,
+        "lists": 11,
+        "listItems": 17,
+        "binaryValues": 16,
+        "binaryBytes": 191,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "bad_data/variants/int_overflow_in_bounds_check.parquet",
+      "sha256": "c5626c2c381ea455236135057ad2aa5e4a5adf29392d1e327448e039cb54a272",
+      "status": "validated",
+      "footerBytes": 355,
+      "counts": {
+        "structs": 20,
+        "fields": 77,
+        "lists": 11,
+        "listItems": 17,
+        "binaryValues": 16,
+        "binaryBytes": 179,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "bad_data/variants/malformed_child_inside_well_formed_parent.parquet",
+      "sha256": "23bd967b1d8e8b6da408c154182f8bfd2dc5ce0aa9aed50e01df26896e8b9dc5",
+      "status": "validated",
+      "footerBytes": 377,
+      "counts": {
+        "structs": 20,
+        "fields": 77,
+        "lists": 11,
+        "listItems": 17,
+        "binaryValues": 16,
+        "binaryBytes": 199,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "bad_data/variants/negative_dictionary_size.parquet",
+      "sha256": "e73c6e0aac4d7acaf485b9946c9f3c9af04ee308a76c2efc240d1a534f76d231",
+      "status": "validated",
+      "footerBytes": 365,
+      "counts": {
+        "structs": 20,
+        "fields": 77,
+        "lists": 11,
+        "listItems": 17,
+        "binaryValues": 16,
+        "binaryBytes": 187,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "bad_data/variants/out_of_range_child_offset.parquet",
+      "sha256": "08060a05c72bd34afbe1ad5bc21c5e580fc6ee4abaff09bf77fe940c40e689dd",
+      "status": "validated",
+      "footerBytes": 355,
+      "counts": {
+        "structs": 20,
+        "fields": 77,
+        "lists": 11,
+        "listItems": 17,
+        "binaryValues": 16,
+        "binaryBytes": 179,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "bad_data/variants/out_of_range_dictionary_size.parquet",
+      "sha256": "35fdb391e68d433bdb62b6c4caf4dfbe95dda8582011f15f492323c6c3545c47",
+      "status": "validated",
+      "footerBytes": 355,
+      "counts": {
+        "structs": 20,
+        "fields": 77,
+        "lists": 11,
+        "listItems": 17,
+        "binaryValues": 16,
+        "binaryBytes": 179,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "bad_data/variants/out_of_range_element_count.parquet",
+      "sha256": "e6896a9ef1b7b0f9acf36c0becbc81de771a2d1245681db1efeee1e5ba4b833d",
+      "status": "validated",
+      "footerBytes": 359,
+      "counts": {
+        "structs": 20,
+        "fields": 77,
+        "lists": 11,
+        "listItems": 17,
+        "binaryValues": 16,
+        "binaryBytes": 183,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "bad_data/variants/over_deep_nested_children.parquet",
+      "sha256": "39050e4bfcfd251c71ad3c4e7691c1318cc725f93e104c8665c9209ec5da4d8b",
+      "status": "validated",
+      "footerBytes": 331,
+      "counts": {
+        "structs": 20,
+        "fields": 72,
+        "lists": 11,
+        "listItems": 17,
+        "binaryValues": 12,
+        "binaryBytes": 159,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "bad_data/variants/oversized_primitive_size.parquet",
+      "sha256": "015613512b9e656a2c9e6628bacdb6940ea5bf96f3e1dca5051f5760e8a76085",
+      "status": "validated",
+      "footerBytes": 355,
+      "counts": {
+        "structs": 20,
+        "fields": 77,
+        "lists": 11,
+        "listItems": 17,
+        "binaryValues": 16,
+        "binaryBytes": 179,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "bad_data/variants/short_string_length_exceeds_buffer.parquet",
+      "sha256": "b2c4815ae82077649eaaef369fdc4be1d04448ad416cc98e67fd61adba1c6817",
+      "status": "validated",
+      "footerBytes": 338,
+      "counts": {
+        "structs": 20,
+        "fields": 77,
+        "lists": 11,
+        "listItems": 17,
+        "binaryValues": 16,
+        "binaryBytes": 163,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "bad_data/variants/truncated_primitive_size.parquet",
+      "sha256": "3c0a4c018ab6f983fd6c7e14b0e0448a87a3f373c6db842bc868b8df89742c88",
+      "status": "validated",
+      "footerBytes": 338,
+      "counts": {
+        "structs": 20,
+        "fields": 77,
+        "lists": 11,
+        "listItems": 17,
+        "binaryValues": 16,
+        "binaryBytes": 163,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "bad_data/variants/unknown_primitive_type.parquet",
+      "sha256": "bd9225fd04fa12dd60a1d001917eaf1615b3edc0a1f93bb07008c1e12b765a2d",
+      "status": "validated",
+      "footerBytes": 381,
+      "counts": {
+        "structs": 20,
+        "fields": 77,
+        "lists": 11,
+        "listItems": 17,
+        "binaryValues": 16,
+        "binaryBytes": 203,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "bad_data/variants/variant_version_2_header.parquet",
+      "sha256": "4cdadc903fc98f4f295cb995faeca56660b6858f89ba80fa3492d25d9f5639fa",
+      "status": "validated",
+      "footerBytes": 355,
+      "counts": {
+        "structs": 20,
+        "fields": 77,
+        "lists": 11,
+        "listItems": 17,
+        "binaryValues": 16,
+        "binaryBytes": 179,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/alltypes_dictionary.parquet",
+      "sha256": "7b58c33503858c533e1521b3022b85a0de23e5a144420d7a3c1c426929e5f6fb",
+      "status": "validated",
+      "footerBytes": 723,
+      "counts": {
+        "structs": 36,
+        "fields": 163,
+        "lists": 25,
+        "listItems": 68,
+        "binaryValues": 24,
+        "binaryBytes": 298,
+        "maxDepth": 6
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/alltypes_plain.parquet",
+      "sha256": "12a618d20a59ee0967fef45e7ec1ff6d451e724838edc1bbeac780ca15e8fcc4",
+      "status": "validated",
+      "footerBytes": 730,
+      "counts": {
+        "structs": 36,
+        "fields": 163,
+        "lists": 25,
+        "listItems": 68,
+        "binaryValues": 24,
+        "binaryBytes": 298,
+        "maxDepth": 6
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/alltypes_plain.snappy.parquet",
+      "sha256": "9f8c5d74012498235eea4431035484dc61a76f8ad2b2b9cb5ac6972db43de591",
+      "status": "validated",
+      "footerBytes": 723,
+      "counts": {
+        "structs": 36,
+        "fields": 163,
+        "lists": 25,
+        "listItems": 68,
+        "binaryValues": 24,
+        "binaryBytes": 298,
+        "maxDepth": 6
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/alltypes_tiny_pages.parquet",
+      "sha256": "f7a7678a53bfdb434d9a51f7f42a71365eae807b3f8e16bfcad67cd623748228",
+      "status": "validated",
+      "footerBytes": 1721,
+      "counts": {
+        "structs": 114,
+        "fields": 417,
+        "lists": 44,
+        "listItems": 118,
+        "binaryValues": 74,
+        "binaryBytes": 562,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/alltypes_tiny_pages_plain.parquet",
+      "sha256": "230de2820634cc7cffb1a654315dccb2fbbd5cfc66387c1f372263d54672fa71",
+      "status": "validated",
+      "footerBytes": 1644,
+      "counts": {
+        "structs": 103,
+        "fields": 384,
+        "lists": 44,
+        "listItems": 107,
+        "binaryValues": 74,
+        "binaryBytes": 562,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/alp_extended.zstd.parquet",
+      "sha256": "b14ebd02c6584a451a9d1ca2d09504156254a7fb7316d0abb0efce38590bedb0",
+      "status": "validated",
+      "footerBytes": 4739,
+      "counts": {
+        "structs": 231,
+        "fields": 1226,
+        "lists": 208,
+        "listItems": 302,
+        "binaryValues": 210,
+        "binaryBytes": 1643,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 5
+    },
+    {
+      "path": "data/binary.parquet",
+      "sha256": "b48b756e48a13f58e1234a8588c507a06a7a9bcdfb63994c86fe19d22864be8b",
+      "status": "validated",
+      "footerBytes": 371,
+      "counts": {
+        "structs": 13,
+        "fields": 41,
+        "lists": 8,
+        "listItems": 13,
+        "binaryValues": 12,
+        "binaryBytes": 272,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/binary_truncated_min_max.parquet",
+      "sha256": "94a1e9ef0cd5104168c1e80480fac8918a962a355d9ab33bca3e13ff4402b201",
+      "status": "validated",
+      "footerBytes": 1358,
+      "counts": {
+        "structs": 52,
+        "fields": 182,
+        "lists": 17,
+        "listItems": 39,
+        "binaryValues": 28,
+        "binaryBytes": 928,
+        "maxDepth": 6
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/bson.parquet",
+      "sha256": "44b503ac1ecb70627b29fbce2d3109cd161afe5c0f72b556978b454fc64cb129",
+      "status": "validated",
+      "footerBytes": 280,
+      "counts": {
+        "structs": 14,
+        "fields": 48,
+        "lists": 8,
+        "listItems": 11,
+        "binaryValues": 8,
+        "binaryBytes": 166,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/byte_array_decimal.parquet",
+      "sha256": "9e3ccb253adc5881521b952f7b621954551df1e48dfda19e9b02126aca9b127d",
+      "status": "validated",
+      "footerBytes": 119,
+      "counts": {
+        "structs": 6,
+        "fields": 28,
+        "lists": 5,
+        "listItems": 5,
+        "binaryValues": 4,
+        "binaryBytes": 54,
+        "maxDepth": 6
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/byte_stream_split.zstd.parquet",
+      "sha256": "64df58cf9a13672749cf8c852840553301f48cc45604c68b62ea8dc9437671b5",
+      "status": "validated",
+      "footerBytes": 498,
+      "counts": {
+        "structs": 18,
+        "fields": 66,
+        "lists": 11,
+        "listItems": 17,
+        "binaryValues": 16,
+        "binaryBytes": 334,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/byte_stream_split_extended.gzip.parquet",
+      "sha256": "86a96259c2c82e50aa2826b91d6de9514e538235343eed9c2a98318424b46cd8",
+      "status": "validated",
+      "footerBytes": 3033,
+      "counts": {
+        "structs": 110,
+        "fields": 374,
+        "lists": 47,
+        "listItems": 101,
+        "binaryValues": 84,
+        "binaryBytes": 2095,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/column_chunk_key_value_metadata.parquet",
+      "sha256": "21d0e70a750f70428ddda3ea68640c3e5753eab2311fddb1a1aefcbe428e61d0",
+      "status": "validated",
+      "footerBytes": 237,
+      "counts": {
+        "structs": 17,
+        "fields": 57,
+        "lists": 11,
+        "listItems": 18,
+        "binaryValues": 9,
+        "binaryBytes": 102,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/concatenated_gzip_members.parquet",
+      "sha256": "92b6af9b766dc3e46413794ed4df009e0584b8fdca106ade1a9a1ed955d32771",
+      "status": "validated",
+      "footerBytes": 115,
+      "counts": {
+        "structs": 9,
+        "fields": 32,
+        "lists": 5,
+        "listItems": 7,
+        "binaryValues": 5,
+        "binaryBytes": 36,
+        "maxDepth": 6
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/data_index_bloom_encoding_stats.parquet",
+      "sha256": "66d53151197819919343972c997837845503ce82665c9c4481c866ef57dde0eb",
+      "status": "validated",
+      "footerBytes": 403,
+      "counts": {
+        "structs": 14,
+        "fields": 49,
+        "lists": 8,
+        "listItems": 12,
+        "binaryValues": 10,
+        "binaryBytes": 284,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/data_index_bloom_encoding_with_length.parquet",
+      "sha256": "d4b249e678359ba10739535ea04b082b193008baef157aadc18d20435c9c5fa5",
+      "status": "validated",
+      "footerBytes": 524,
+      "counts": {
+        "structs": 12,
+        "fields": 48,
+        "lists": 6,
+        "listItems": 11,
+        "binaryValues": 12,
+        "binaryBytes": 406,
+        "maxDepth": 6
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/datapage_v1-corrupt-checksum.parquet",
+      "sha256": "b337106431c826e3326ab8fecfa5560688aa57549fd46e0fa7cfcf99cd4e2c9e",
+      "status": "validated",
+      "footerBytes": 249,
+      "counts": {
+        "structs": 15,
+        "fields": 58,
+        "lists": 10,
+        "listItems": 16,
+        "binaryValues": 6,
+        "binaryBytes": 88,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/datapage_v1-snappy-compressed-checksum.parquet",
+      "sha256": "f06df378ad412ace763d129f317c52236230b2fb24073c32d2c2d5fc1ef9d697",
+      "status": "validated",
+      "footerBytes": 240,
+      "counts": {
+        "structs": 15,
+        "fields": 58,
+        "lists": 10,
+        "listItems": 16,
+        "binaryValues": 6,
+        "binaryBytes": 88,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/datapage_v1-uncompressed-checksum.parquet",
+      "sha256": "b1d664eaba82d89b4107a2dc2b953ec33566b3bb4f902b79ed6ced7b9fff5664",
+      "status": "validated",
+      "footerBytes": 249,
+      "counts": {
+        "structs": 15,
+        "fields": 58,
+        "lists": 10,
+        "listItems": 16,
+        "binaryValues": 6,
+        "binaryBytes": 88,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/datapage_v2.snappy.parquet",
+      "sha256": "44f29191b5fa8cfe0ab848495bd8ef89344ac0d8f87b3dff12e267631e2b5c03",
+      "status": "validated",
+      "footerBytes": 836,
+      "counts": {
+        "structs": 26,
+        "fields": 106,
+        "lists": 14,
+        "listItems": 30,
+        "binaryValues": 28,
+        "binaryBytes": 579,
+        "maxDepth": 6
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/datapage_v2_empty_datapage.snappy.parquet",
+      "sha256": "c93d4d6ace5ac92d3bc0ba04f44077f6fb7019cbe4f3982f204d666653fc0514",
+      "status": "validated",
+      "footerBytes": 353,
+      "counts": {
+        "structs": 12,
+        "fields": 43,
+        "lists": 8,
+        "listItems": 10,
+        "binaryValues": 8,
+        "binaryBytes": 256,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/delta_binary_packed.parquet",
+      "sha256": "d1c2173fe97255959e3d087b3fa5b7b5c27b2aac135337b2896772d7bbdc31b4",
+      "status": "validated",
+      "footerBytes": 7492,
+      "counts": {
+        "structs": 465,
+        "fields": 1595,
+        "lists": 202,
+        "listItems": 398,
+        "binaryValues": 398,
+        "binaryBytes": 3479,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/delta_byte_array.parquet",
+      "sha256": "a400b789aef5cde88551f25cdd9bba8f0ff0fe01c48ddc5303c26edf119ee279",
+      "status": "validated",
+      "footerBytes": 1046,
+      "counts": {
+        "structs": 66,
+        "fields": 216,
+        "lists": 31,
+        "listItems": 56,
+        "binaryValues": 36,
+        "binaryBytes": 489,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/delta_encoding_optional_column.parquet",
+      "sha256": "71f8f00b00ecc132a1cc5d534acca900d02d0fe4ba3525607b03b2bd06a56f1a",
+      "status": "validated",
+      "footerBytes": 2070,
+      "counts": {
+        "structs": 122,
+        "fields": 411,
+        "lists": 55,
+        "listItems": 104,
+        "binaryValues": 88,
+        "binaryBytes": 1051,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/delta_encoding_required_column.parquet",
+      "sha256": "36ddcb79799d56d5098f4cdb42777873a5ddd9ae6f40d8cfa316abafde6c658a",
+      "status": "validated",
+      "footerBytes": 3604,
+      "counts": {
+        "structs": 140,
+        "fields": 503,
+        "lists": 56,
+        "listItems": 106,
+        "binaryValues": 92,
+        "binaryBytes": 2331,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/delta_length_byte_array.parquet",
+      "sha256": "efef768997748d27596a5c001ccd24eae42adf2825ca4d909e8fa8eb1d89f386",
+      "status": "validated",
+      "footerBytes": 105,
+      "counts": {
+        "structs": 9,
+        "fields": 35,
+        "lists": 6,
+        "listItems": 8,
+        "binaryValues": 3,
+        "binaryBytes": 16,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/dict-page-offset-zero.parquet",
+      "sha256": "6d043ed7c37b9f00aedfd4b134f282a0fe17959e731d44650ea808257438c6e6",
+      "status": "validated",
+      "footerBytes": 550,
+      "counts": {
+        "structs": 16,
+        "fields": 58,
+        "lists": 9,
+        "listItems": 14,
+        "binaryValues": 14,
+        "binaryBytes": 414,
+        "maxDepth": 9
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/empty_data_pages_v1.parquet",
+      "sha256": "54af0c8e8a9b1596fb2f49e84530554d18336778c84ac39ab4bb380f29a3391e",
+      "status": "validated",
+      "footerBytes": 126,
+      "counts": {
+        "structs": 9,
+        "fields": 32,
+        "lists": 7,
+        "listItems": 9,
+        "binaryValues": 4,
+        "binaryBytes": 48,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/empty_data_pages_v2.parquet",
+      "sha256": "0dac5386127c2acd00af7b28495e53bfbd050615f11bcd0f3324b96c5113329f",
+      "status": "validated",
+      "footerBytes": 126,
+      "counts": {
+        "structs": 9,
+        "fields": 32,
+        "lists": 7,
+        "listItems": 9,
+        "binaryValues": 4,
+        "binaryBytes": 48,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/fixed_length_byte_array.parquet",
+      "sha256": "a5a24cfabf2d8882db861502a0fe1e4539a80772f472f014637a0d01519836a7",
+      "status": "validated",
+      "footerBytes": 253,
+      "counts": {
+        "structs": 11,
+        "fields": 44,
+        "lists": 8,
+        "listItems": 11,
+        "binaryValues": 8,
+        "binaryBytes": 141,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/fixed_length_decimal.parquet",
+      "sha256": "67e61d18ecca6027731faf397c5981b29d863f9eef68e3644501588663e1bfd2",
+      "status": "validated",
+      "footerBytes": 346,
+      "counts": {
+        "structs": 9,
+        "fields": 38,
+        "lists": 7,
+        "listItems": 10,
+        "binaryValues": 8,
+        "binaryBytes": 256,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/fixed_length_decimal_legacy.parquet",
+      "sha256": "323ff9d3379903d528cbf7b00f93e4598ed71d39aa6eeff3d322fff541c1fb2a",
+      "status": "validated",
+      "footerBytes": 336,
+      "counts": {
+        "structs": 9,
+        "fields": 38,
+        "lists": 7,
+        "listItems": 10,
+        "binaryValues": 8,
+        "binaryBytes": 246,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/flba12_timestamp.parquet",
+      "sha256": "0e6b5a9552969394a42b67fb9bf17031b677909a698945fcc9ea77acfb056529",
+      "status": "validated",
+      "footerBytes": 646,
+      "counts": {
+        "structs": 40,
+        "fields": 122,
+        "lists": 14,
+        "listItems": 27,
+        "binaryValues": 22,
+        "binaryBytes": 361,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/float16_nonzeros_and_nans.parquet",
+      "sha256": "d0117dd9655992b869f8207235526a7d8931e079fd68d68c88c0170faa1f11ee",
+      "status": "validated",
+      "footerBytes": 346,
+      "counts": {
+        "structs": 14,
+        "fields": 49,
+        "lists": 8,
+        "listItems": 12,
+        "binaryValues": 10,
+        "binaryBytes": 229,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/float16_zeros_and_nans.parquet",
+      "sha256": "4901850e7dcd64588a49391fa1dddca514b598e6f4266239033ea73513850f47",
+      "status": "validated",
+      "footerBytes": 346,
+      "counts": {
+        "structs": 14,
+        "fields": 49,
+        "lists": 8,
+        "listItems": 12,
+        "binaryValues": 10,
+        "binaryBytes": 229,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/floating_orders_nan_count.parquet",
+      "sha256": "17f7d7655a089b9504a828dffaccd72225a9a6fd2a697099b5336ab274386f0a",
+      "status": "validated",
+      "footerBytes": 3026,
+      "counts": {
+        "structs": 151,
+        "fields": 787,
+        "lists": 99,
+        "listItems": 170,
+        "binaryValues": 138,
+        "binaryBytes": 1164,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 5
+    },
+    {
+      "path": "data/geospatial/crs-arbitrary-value.parquet",
+      "sha256": "e51e21213d323ddc834bec2bc4280c1999fc0696cb968f86fa7581658b1add0e",
+      "status": "validated",
+      "footerBytes": 2622,
+      "counts": {
+        "structs": 26,
+        "fields": 81,
+        "lists": 15,
+        "listItems": 25,
+        "binaryValues": 7,
+        "binaryBytes": 2385,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/geospatial/crs-default.parquet",
+      "sha256": "b3c03afba58d9bb45e82bd887a809d661bd55342759b7c82dde7e190e054d612",
+      "status": "validated",
+      "footerBytes": 5094,
+      "counts": {
+        "structs": 26,
+        "fields": 82,
+        "lists": 15,
+        "listItems": 25,
+        "binaryValues": 8,
+        "binaryBytes": 4859,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/geospatial/crs-geography.parquet",
+      "sha256": "1dd1eee6a85f5d4cdcbef7d7f3022f05599f93c2d1b8ab7f10fe71b12b3b3adb",
+      "status": "validated",
+      "footerBytes": 5053,
+      "counts": {
+        "structs": 24,
+        "fields": 75,
+        "lists": 14,
+        "listItems": 24,
+        "binaryValues": 8,
+        "binaryBytes": 4861,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/geospatial/crs-projjson.parquet",
+      "sha256": "28f77022fdc482a8cb20e96ea95835eba5a1f97a48dddac3355ac8fde6a096bd",
+      "status": "validated",
+      "footerBytes": 3172,
+      "counts": {
+        "structs": 28,
+        "fields": 86,
+        "lists": 16,
+        "listItems": 27,
+        "binaryValues": 11,
+        "binaryBytes": 2922,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/geospatial/crs-srid.parquet",
+      "sha256": "9749397b30effb321657ce1de033b3df1e2c924b6d84e64e779fdae3c41df873",
+      "status": "validated",
+      "footerBytes": 314,
+      "counts": {
+        "structs": 26,
+        "fields": 81,
+        "lists": 15,
+        "listItems": 25,
+        "binaryValues": 7,
+        "binaryBytes": 78,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/geospatial/geography-lines.parquet",
+      "sha256": "323dfd3473d43138296b250c23844ef639ebaab707a7a93e72ac016a31872e32",
+      "status": "validated",
+      "footerBytes": 12637,
+      "counts": {
+        "structs": 760,
+        "fields": 3619,
+        "lists": 503,
+        "listItems": 1005,
+        "binaryValues": 304,
+        "binaryBytes": 2147,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 50
+    },
+    {
+      "path": "data/geospatial/geography-points.parquet",
+      "sha256": "67963b7d615e82c7238dca43d64353593e866f666eedd802804f85507c6fe08e",
+      "status": "validated",
+      "footerBytes": 12622,
+      "counts": {
+        "structs": 760,
+        "fields": 3619,
+        "lists": 503,
+        "listItems": 1005,
+        "binaryValues": 304,
+        "binaryBytes": 2147,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 50
+    },
+    {
+      "path": "data/geospatial/geography-polygons.parquet",
+      "sha256": "f766f1a251b333aa0c14615e4b3599a33aee864962f060b768987f5bda6479c7",
+      "status": "validated",
+      "footerBytes": 12692,
+      "counts": {
+        "structs": 760,
+        "fields": 3619,
+        "lists": 503,
+        "listItems": 1005,
+        "binaryValues": 304,
+        "binaryBytes": 2147,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 50
+    },
+    {
+      "path": "data/geospatial/geospatial-with-nan.parquet",
+      "sha256": "4ea25cb02d8f1d04205380893ebf3f500524818f11b12bfc4a5aa169386e6c3a",
+      "status": "validated",
+      "footerBytes": 530,
+      "counts": {
+        "structs": 37,
+        "fields": 119,
+        "lists": 20,
+        "listItems": 37,
+        "binaryValues": 12,
+        "binaryBytes": 181,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/geospatial/geospatial.parquet",
+      "sha256": "fb553930700f5173c741ece8a9b678136ba17b74d9b80ff120d3f2e4b37a724a",
+      "status": "validated",
+      "footerBytes": 12400,
+      "counts": {
+        "structs": 635,
+        "fields": 2743,
+        "lists": 530,
+        "listItems": 959,
+        "binaryValues": 220,
+        "binaryBytes": 3926,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 31
+    },
+    {
+      "path": "data/hadoop_lz4_compressed.parquet",
+      "sha256": "b43a31978e5c28c251523ab4610989881175c5ea84c8e533c22286c0f193a77a",
+      "status": "validated",
+      "footerBytes": 376,
+      "counts": {
+        "structs": 27,
+        "fields": 90,
+        "lists": 13,
+        "listItems": 27,
+        "binaryValues": 18,
+        "binaryBytes": 158,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/hadoop_lz4_compressed_larger.parquet",
+      "sha256": "561120a3094ee4513ba619b518c7a6093fe4e38398219ad172fb75373c3360b8",
+      "status": "validated",
+      "footerBytes": 397,
+      "counts": {
+        "structs": 14,
+        "fields": 45,
+        "lists": 8,
+        "listItems": 11,
+        "binaryValues": 10,
+        "binaryBytes": 278,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/incorrect_map_schema.parquet",
+      "sha256": "5591dde252b46bc238a88e9c02e35780c5eb086e2677df105aaa91ff1fde8fba",
+      "status": "validated",
+      "footerBytes": 366,
+      "counts": {
+        "structs": 25,
+        "fields": 82,
+        "lists": 10,
+        "listItems": 22,
+        "binaryValues": 16,
+        "binaryBytes": 169,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/int32_decimal.parquet",
+      "sha256": "3441daea2c44032a78a3615b82373f34575ba7d820541e821f86d8cc143653f9",
+      "status": "validated",
+      "footerBytes": 329,
+      "counts": {
+        "structs": 9,
+        "fields": 37,
+        "lists": 7,
+        "listItems": 10,
+        "binaryValues": 8,
+        "binaryBytes": 241,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/int32_with_null_pages.parquet",
+      "sha256": "392046fe71c7bdf7ea59e258596b5e6919f01f65f702a27ca56d8763d2e9f9b7",
+      "status": "validated",
+      "footerBytes": 265,
+      "counts": {
+        "structs": 11,
+        "fields": 45,
+        "lists": 8,
+        "listItems": 11,
+        "binaryValues": 10,
+        "binaryBytes": 151,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/int32_with_uuid_logical_type.parquet",
+      "sha256": "7289902a2c914e220888b57393ccf1292bc2091d1732d1b6c229098869a20f82",
+      "status": "validated",
+      "footerBytes": 245,
+      "counts": {
+        "structs": 14,
+        "fields": 47,
+        "lists": 8,
+        "listItems": 10,
+        "binaryValues": 8,
+        "binaryBytes": 138,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/int64_decimal.parquet",
+      "sha256": "e24dcf95589ee230636e228ad75aa0496eca7e8f97339d9bb6ec5c8f7ab0ef56",
+      "status": "validated",
+      "footerBytes": 338,
+      "counts": {
+        "structs": 9,
+        "fields": 37,
+        "lists": 7,
+        "listItems": 10,
+        "binaryValues": 8,
+        "binaryBytes": 250,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/int96_from_spark.parquet",
+      "sha256": "e769aaa996dee57f1104470dcce16d6871cd720d314c13361db16bf9e49f5c97",
+      "status": "validated",
+      "footerBytes": 359,
+      "counts": {
+        "structs": 13,
+        "fields": 45,
+        "lists": 8,
+        "listItems": 13,
+        "binaryValues": 8,
+        "binaryBytes": 248,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/int96_timestamp_order.parquet",
+      "sha256": "e35f8748d286a729e719a01c5411f81c79802d61a55046d5cf9a663918a14644",
+      "status": "validated",
+      "footerBytes": 271,
+      "counts": {
+        "structs": 13,
+        "fields": 48,
+        "lists": 8,
+        "listItems": 11,
+        "binaryValues": 8,
+        "binaryBytes": 156,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/json.parquet",
+      "sha256": "594f8dca52a6428e4350d12faeaca9e2155c77511abb9122b935bd5be1a26bf5",
+      "status": "validated",
+      "footerBytes": 270,
+      "counts": {
+        "structs": 14,
+        "fields": 48,
+        "lists": 8,
+        "listItems": 11,
+        "binaryValues": 8,
+        "binaryBytes": 156,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/large_string_map.brotli.parquet",
+      "sha256": "1ce6839f093ebc0699b1e2769ed04036bab40405bacbb5dacdd376dd94c13451",
+      "status": "validated",
+      "footerBytes": 712,
+      "counts": {
+        "structs": 27,
+        "fields": 85,
+        "lists": 11,
+        "listItems": 29,
+        "binaryValues": 18,
+        "binaryBytes": 494,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/list_columns.parquet",
+      "sha256": "5988ab91b6cb7efa7bf6a77f789b40929212280519be6c9daad56e01d5ceb218",
+      "status": "validated",
+      "footerBytes": 2140,
+      "counts": {
+        "structs": 27,
+        "fields": 78,
+        "lists": 9,
+        "listItems": 26,
+        "binaryValues": 24,
+        "binaryBytes": 1946,
+        "maxDepth": 6
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/lz4_raw_compressed.parquet",
+      "sha256": "d509774f6ba2f7fa2984308e64509c97a7a69ab94d5ab017211219b9812ef551",
+      "status": "validated",
+      "footerBytes": 330,
+      "counts": {
+        "structs": 24,
+        "fields": 85,
+        "lists": 13,
+        "listItems": 23,
+        "binaryValues": 18,
+        "binaryBytes": 124,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/lz4_raw_compressed_larger.parquet",
+      "sha256": "2c65cd301a9d8b4b4ff408089113ed5a91a99aaeb70ecf587018f3c4f6c1d01e",
+      "status": "validated",
+      "footerBytes": 222,
+      "counts": {
+        "structs": 12,
+        "fields": 40,
+        "lists": 7,
+        "listItems": 9,
+        "binaryValues": 6,
+        "binaryBytes": 114,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/map_no_value.parquet",
+      "sha256": "5c4fc6c13fe7308acb2fd317a3bd59e5b9c9c206c005e863ae0a1abdbbf5e2ea",
+      "status": "validated",
+      "footerBytes": 455,
+      "counts": {
+        "structs": 35,
+        "fields": 109,
+        "lists": 12,
+        "listItems": 44,
+        "binaryValues": 24,
+        "binaryBytes": 174,
+        "maxDepth": 6
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/nan_in_stats.parquet",
+      "sha256": "77d921ab7bed54232da778f920f423bd821075353b6147e3680f5b20c85f6337",
+      "status": "validated",
+      "footerBytes": 156,
+      "counts": {
+        "structs": 9,
+        "fields": 34,
+        "lists": 6,
+        "listItems": 9,
+        "binaryValues": 8,
+        "binaryBytes": 74,
+        "maxDepth": 6
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/nation.dict-malformed.parquet",
+      "sha256": "245c025fe866c7a55612bf0848034e6cb7b33965668e9244bc007ab0eb61034d",
+      "status": "validated",
+      "footerBytes": 234,
+      "counts": {
+        "structs": 15,
+        "fields": 62,
+        "lists": 11,
+        "listItems": 14,
+        "binaryValues": 10,
+        "binaryBytes": 81,
+        "maxDepth": 6
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/nested_lists.snappy.parquet",
+      "sha256": "2cb2cc0564486a28550429a8b6d0907bbb41e138546797bc91a4ebd850edd5a5",
+      "status": "validated",
+      "footerBytes": 709,
+      "counts": {
+        "structs": 22,
+        "fields": 83,
+        "lists": 10,
+        "listItems": 29,
+        "binaryValues": 24,
+        "binaryBytes": 507,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/nested_maps.snappy.parquet",
+      "sha256": "db1a493003a7dcd2011bf89e460fed007903fcdeb58f53df29387b4e908e2a6d",
+      "status": "validated",
+      "footerBytes": 974,
+      "counts": {
+        "structs": 36,
+        "fields": 142,
+        "lists": 19,
+        "listItems": 50,
+        "binaryValues": 38,
+        "binaryBytes": 623,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/nested_structs.rust.parquet",
+      "sha256": "48427178bfef9e6edd9018f2ef7b084077c00057234a780271a8220ca53b33da",
+      "status": "validated",
+      "footerBytes": 19372,
+      "counts": {
+        "structs": 903,
+        "fields": 3911,
+        "lists": 435,
+        "listItems": 1550,
+        "binaryValues": 1118,
+        "binaryBytes": 8431,
+        "maxDepth": 6
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/non_hadoop_lz4_compressed.parquet",
+      "sha256": "32fd9bbeffcad29dbefa73f46d0a88d0abd220ad6eeb80e5090ad8fa20d2b901",
+      "status": "validated",
+      "footerBytes": 684,
+      "counts": {
+        "structs": 28,
+        "fields": 100,
+        "lists": 14,
+        "listItems": 30,
+        "binaryValues": 20,
+        "binaryBytes": 436,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/nonnullable.impala.parquet",
+      "sha256": "e7927cde24c083e42a3d4b37ac962d34381f71c2d252169b627dd8459a5880e3",
+      "status": "validated",
+      "footerBytes": 2544,
+      "counts": {
+        "structs": 83,
+        "fields": 329,
+        "lists": 30,
+        "listItems": 141,
+        "binaryValues": 125,
+        "binaryBytes": 1717,
+        "maxDepth": 6
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/null_list.parquet",
+      "sha256": "e64a64ff130c8dff64a6bc41480c51c87918d5e63bc75167b58524aa0fa01496",
+      "status": "validated",
+      "footerBytes": 414,
+      "counts": {
+        "structs": 14,
+        "fields": 39,
+        "lists": 6,
+        "listItems": 12,
+        "binaryValues": 10,
+        "binaryBytes": 322,
+        "maxDepth": 6
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/nullable.impala.parquet",
+      "sha256": "de9102a599d852be3af1d2af5d3498d8e019c329096a6f2d260f55ae2d6ed0ae",
+      "status": "validated",
+      "footerBytes": 2811,
+      "counts": {
+        "structs": 83,
+        "fields": 333,
+        "lists": 30,
+        "listItems": 143,
+        "binaryValues": 129,
+        "binaryBytes": 1954,
+        "maxDepth": 6
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/nulls.snappy.parquet",
+      "sha256": "40192e879fe7905d1341b495d06f8470e2fd02608bf8f9e6a71b2b774acc5252",
+      "status": "validated",
+      "footerBytes": 420,
+      "counts": {
+        "structs": 10,
+        "fields": 35,
+        "lists": 7,
+        "listItems": 12,
+        "binaryValues": 8,
+        "binaryBytes": 336,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/old_list_structure.parquet",
+      "sha256": "065b336c65885ab9dfd97cf85ce39a45488ed12d0183917db0a11621b0711e3b",
+      "status": "validated",
+      "footerBytes": 431,
+      "counts": {
+        "structs": 19,
+        "fields": 62,
+        "lists": 10,
+        "listItems": 21,
+        "binaryValues": 16,
+        "binaryBytes": 284,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/overflow_i16_page_cnt.parquet",
+      "sha256": "8121df53dafa145cfdd37fa7b103ad6241fb2d00d4f6d698a31eaa51a7222d4d",
+      "status": "validated",
+      "footerBytes": 382,
+      "counts": {
+        "structs": 11,
+        "fields": 43,
+        "lists": 9,
+        "listItems": 10,
+        "binaryValues": 10,
+        "binaryBytes": 266,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/page_v2_empty_compressed.parquet",
+      "sha256": "5d56ca84e4fc4e77fdc713dbb9aff6f3a6c4727083628945ea5cfcb39b56aa65",
+      "status": "validated",
+      "footerBytes": 369,
+      "counts": {
+        "structs": 12,
+        "fields": 42,
+        "lists": 8,
+        "listItems": 12,
+        "binaryValues": 6,
+        "binaryBytes": 270,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/plain-dict-uncompressed-checksum.parquet",
+      "sha256": "4c8abc17ad0354dc540b0ad2c519d998ffb4a1a5997471b4313864852d82dccc",
+      "status": "validated",
+      "footerBytes": 525,
+      "counts": {
+        "structs": 20,
+        "fields": 81,
+        "lists": 11,
+        "listItems": 19,
+        "binaryValues": 16,
+        "binaryBytes": 328,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/repeated_no_annotation.parquet",
+      "sha256": "97d35acb9721e40fc0f66fba916a442c4a1cf77a35992dc891ad0cdcc5a24cfb",
+      "status": "validated",
+      "footerBytes": 306,
+      "counts": {
+        "structs": 14,
+        "fields": 59,
+        "lists": 9,
+        "listItems": 23,
+        "binaryValues": 14,
+        "binaryBytes": 152,
+        "maxDepth": 6
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/repeated_primitive_no_list.parquet",
+      "sha256": "fcd6152058b8b8259a516105da5919b23cb8ccfc42258de0fe20e3107f8ef809",
+      "status": "validated",
+      "footerBytes": 583,
+      "counts": {
+        "structs": 32,
+        "fields": 137,
+        "lists": 20,
+        "listItems": 49,
+        "binaryValues": 25,
+        "binaryBytes": 243,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/rle-dict-snappy-checksum.parquet",
+      "sha256": "bb9de5fd817da4c403992ce2ee2c9dc93d4444f936e1a64722c65dd98d208578",
+      "status": "validated",
+      "footerBytes": 525,
+      "counts": {
+        "structs": 20,
+        "fields": 81,
+        "lists": 11,
+        "listItems": 19,
+        "binaryValues": 16,
+        "binaryBytes": 328,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/rle-dict-uncompressed-corrupt-checksum.parquet",
+      "sha256": "b96f9198a18ec7a389f989c7d2a170ddad74a664ddd4e009a240f21c83cceddf",
+      "status": "validated",
+      "footerBytes": 525,
+      "counts": {
+        "structs": 20,
+        "fields": 81,
+        "lists": 11,
+        "listItems": 19,
+        "binaryValues": 16,
+        "binaryBytes": 328,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/rle_boolean_encoding.parquet",
+      "sha256": "585e22b54c482befc54fc6caaea5efce788f1d0737505c2d8b121da8ac0c7d76",
+      "status": "validated",
+      "footerBytes": 111,
+      "counts": {
+        "structs": 7,
+        "fields": 29,
+        "lists": 5,
+        "listItems": 6,
+        "binaryValues": 7,
+        "binaryBytes": 41,
+        "maxDepth": 6
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/single_nan.parquet",
+      "sha256": "ea3371c44ed1794843a2f529888120537f68aedcb80d6fbe32cea1003ab5769e",
+      "status": "validated",
+      "footerBytes": 567,
+      "counts": {
+        "structs": 10,
+        "fields": 32,
+        "lists": 7,
+        "listItems": 10,
+        "binaryValues": 6,
+        "binaryBytes": 491,
+        "maxDepth": 6
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "data/sort_columns.parquet",
+      "sha256": "6fa8ce56cf7848e5f6a07191f7a1f1520a52f9e0983fa809bf90babf32b9525b",
+      "status": "validated",
+      "footerBytes": 699,
+      "counts": {
+        "structs": 37,
+        "fields": 141,
+        "lists": 20,
+        "listItems": 40,
+        "binaryValues": 22,
+        "binaryBytes": 360,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 2
+    },
+    {
+      "path": "data/unknown-logical-type.parquet",
+      "sha256": "7febd4a6163c591dc6e28f408c0882b011b72cfe95c8a0bc57382feefaff4e33",
+      "status": "validated",
+      "footerBytes": 852,
+      "counts": {
+        "structs": 25,
+        "fields": 78,
+        "lists": 15,
+        "listItems": 25,
+        "binaryValues": 10,
+        "binaryBytes": 659,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-001.parquet",
+      "sha256": "7c49b25af9a687f97477c66e7af9182f16a7f25b5bce5ef005bc3e7a929fd4a9",
+      "status": "validated",
+      "footerBytes": 1265,
+      "counts": {
+        "structs": 55,
+        "fields": 186,
+        "lists": 25,
+        "listItems": 72,
+        "binaryValues": 40,
+        "binaryBytes": 803,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-002.parquet",
+      "sha256": "0f3ef1116d91272a0109d18f2afcaac294217517594252265ac55a67eaed5558",
+      "status": "validated",
+      "footerBytes": 1250,
+      "counts": {
+        "structs": 55,
+        "fields": 184,
+        "lists": 25,
+        "listItems": 72,
+        "binaryValues": 38,
+        "binaryBytes": 792,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-004.parquet",
+      "sha256": "9c4440e6d070b47c287550dce9a863c2d8e12295c2828af4a371c2779e7a2c71",
+      "status": "validated",
+      "footerBytes": 883,
+      "counts": {
+        "structs": 40,
+        "fields": 143,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 537,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-005.parquet",
+      "sha256": "8c0833ee8ec5ecdeea5fb0be10186f1ac6ec4b83aae12577978e8379691e4c7e",
+      "status": "validated",
+      "footerBytes": 883,
+      "counts": {
+        "structs": 40,
+        "fields": 143,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 537,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-006.parquet",
+      "sha256": "e7fc4cfcfb08018937f1f905c87524c55f8f53746affaa40b2d278d9e4fa6761",
+      "status": "validated",
+      "footerBytes": 900,
+      "counts": {
+        "structs": 42,
+        "fields": 148,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 545,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-007.parquet",
+      "sha256": "056484ba07ca056e0ab018cf6f902d7dbfd3758d6601d47f3b5497d511084a15",
+      "status": "validated",
+      "footerBytes": 900,
+      "counts": {
+        "structs": 42,
+        "fields": 148,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 545,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-008.parquet",
+      "sha256": "d99f477e32bc4ce5c5f37ffaff98ab0e3bb23f197d7059795c2fbc1544554eef",
+      "status": "validated",
+      "footerBytes": 900,
+      "counts": {
+        "structs": 42,
+        "fields": 148,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 545,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-009.parquet",
+      "sha256": "0cfcd45aa6fff26424e39395f1ca7df16ca46632054ba5f769ef39b3ed556b7e",
+      "status": "validated",
+      "footerBytes": 900,
+      "counts": {
+        "structs": 42,
+        "fields": 148,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 545,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-010.parquet",
+      "sha256": "fd96024202ecf44749f87317fcb3be498194f4946c8460f9429d178f3ef8cbad",
+      "status": "validated",
+      "footerBytes": 891,
+      "counts": {
+        "structs": 40,
+        "fields": 143,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 545,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-011.parquet",
+      "sha256": "b1143ae3efe916afdfb74b12ba0a672a1a8692a0629fc60d2e1f9657180685e8",
+      "status": "validated",
+      "footerBytes": 891,
+      "counts": {
+        "structs": 40,
+        "fields": 143,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 545,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-012.parquet",
+      "sha256": "71e232316a85efaa22062c5be1599eb66fcdc5468f828df21357099dd8305ed5",
+      "status": "validated",
+      "footerBytes": 908,
+      "counts": {
+        "structs": 40,
+        "fields": 143,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 562,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-013.parquet",
+      "sha256": "61432a709d2d0f40d5700694ca34dab3ce8e2b547ff76bfe87d8b1919ac9a9dd",
+      "status": "validated",
+      "footerBytes": 908,
+      "counts": {
+        "structs": 40,
+        "fields": 143,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 562,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-014.parquet",
+      "sha256": "753cc339b8811101e39551e08cc6888d0d75e0310f26b64e05a1da7d1ff917dd",
+      "status": "validated",
+      "footerBytes": 893,
+      "counts": {
+        "structs": 40,
+        "fields": 143,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 547,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-015.parquet",
+      "sha256": "979740b27a93f3e2b9cba58df9b54003d37ec206723fcd8030d9133e05a191d5",
+      "status": "validated",
+      "footerBytes": 893,
+      "counts": {
+        "structs": 40,
+        "fields": 143,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 547,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-016.parquet",
+      "sha256": "2e2381206af22ecc613fadd53fe5e0581d40db3ce1aba310dcb753765efa0cbb",
+      "status": "validated",
+      "footerBytes": 910,
+      "counts": {
+        "structs": 40,
+        "fields": 143,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 564,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-017.parquet",
+      "sha256": "3fe50350f1909e930651d9789922da12a7de1853563134cab13d9b591887d00d",
+      "status": "validated",
+      "footerBytes": 910,
+      "counts": {
+        "structs": 40,
+        "fields": 143,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 564,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-018.parquet",
+      "sha256": "420ee6e1d9175dbe55cc34e104550e09b4946c26341f5aaef150939b96d51a8d",
+      "status": "validated",
+      "footerBytes": 927,
+      "counts": {
+        "structs": 42,
+        "fields": 146,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 575,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-019.parquet",
+      "sha256": "07d17f8f331260d84d9ef30f84da767d413afa4ae3cc842921073196d003f49a",
+      "status": "validated",
+      "footerBytes": 927,
+      "counts": {
+        "structs": 42,
+        "fields": 146,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 575,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-020.parquet",
+      "sha256": "cff411227050f458af0cced1a34aaef215b9ef032b40c52e5f0398c46b7e8d83",
+      "status": "validated",
+      "footerBytes": 961,
+      "counts": {
+        "structs": 44,
+        "fields": 149,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 604,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-021.parquet",
+      "sha256": "7571b7422028855b1a5d73f9e16bcd3627cb9f0773caa449ef2dd5a7f83114c1",
+      "status": "validated",
+      "footerBytes": 961,
+      "counts": {
+        "structs": 44,
+        "fields": 149,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 604,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-022.parquet",
+      "sha256": "93cf63e7bc9e6ed0064aefc543947b70c69616f3f0c1a7f0ac0fa0b1e7cdd9d7",
+      "status": "validated",
+      "footerBytes": 967,
+      "counts": {
+        "structs": 44,
+        "fields": 149,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 610,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-023.parquet",
+      "sha256": "5e033b78b8772505ad443c5a825f475a960e7e2cd3bebeaa1d483c5711a0530b",
+      "status": "validated",
+      "footerBytes": 967,
+      "counts": {
+        "structs": 44,
+        "fields": 149,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 610,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-024.parquet",
+      "sha256": "f5082f23f79ab299e19c2f44e7db2517eb8ecf4a7e3da1f18d17df095c5eb834",
+      "status": "validated",
+      "footerBytes": 905,
+      "counts": {
+        "structs": 42,
+        "fields": 150,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 545,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-025.parquet",
+      "sha256": "676be7059cb59645b6ab4fc980c7c9cd3354f7a051c41e52d18d51f6c3ec2476",
+      "status": "validated",
+      "footerBytes": 905,
+      "counts": {
+        "structs": 42,
+        "fields": 150,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 545,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-026.parquet",
+      "sha256": "f58a56e66d8eb3123879083a82b9734d398a101274b9ad5076b89fc200d99332",
+      "status": "validated",
+      "footerBytes": 922,
+      "counts": {
+        "structs": 42,
+        "fields": 150,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 562,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-027.parquet",
+      "sha256": "0c99e793b6718c735a08b7f20f80abad7cbab1a81d606b0b49267aef97699570",
+      "status": "validated",
+      "footerBytes": 922,
+      "counts": {
+        "structs": 42,
+        "fields": 150,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 562,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-028.parquet",
+      "sha256": "fc9feb0b312c848e88f003969bc12f50d2477fbfb9e79b5468c053653d1cd78e",
+      "status": "validated",
+      "footerBytes": 987,
+      "counts": {
+        "structs": 42,
+        "fields": 151,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 625,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-029.parquet",
+      "sha256": "86235e6e00728d5e96af8afb35e4e4206f9091d7c20a6f6a241e5618f2803ab2",
+      "status": "validated",
+      "footerBytes": 987,
+      "counts": {
+        "structs": 42,
+        "fields": 151,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 625,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-030.parquet",
+      "sha256": "621dc23161852e39b3cb9ef74c31b3ed2538ca90a626aa8725695fd3bc8b75dd",
+      "status": "validated",
+      "footerBytes": 895,
+      "counts": {
+        "structs": 40,
+        "fields": 144,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 547,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-031.parquet",
+      "sha256": "aae6700687804a857051d60716b65d573f276823407c5fe1bcf720cd57c462d5",
+      "status": "validated",
+      "footerBytes": 914,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 560,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-032.parquet",
+      "sha256": "9f543efd76c47028e0acc58641c91d03c06abdf8859abda1ce615f5eae124a51",
+      "status": "validated",
+      "footerBytes": 956,
+      "counts": {
+        "structs": 44,
+        "fields": 149,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 599,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-033.parquet",
+      "sha256": "1657840bae30e5aa311e9bd96765c579d8eb98f583450b25b48284b636c59484",
+      "status": "validated",
+      "footerBytes": 917,
+      "counts": {
+        "structs": 44,
+        "fields": 148,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 562,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-034.parquet",
+      "sha256": "3e42d85fc6bd67a26414c8ca45c1daf216c970da96ebf300d1dcbd8ae13e5cd6",
+      "status": "validated",
+      "footerBytes": 917,
+      "counts": {
+        "structs": 44,
+        "fields": 148,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 562,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-035.parquet",
+      "sha256": "c9ac133038ff84b60ca7cf14a8ecdbbb843faa19255a321dd45e99026f23d782",
+      "status": "validated",
+      "footerBytes": 917,
+      "counts": {
+        "structs": 44,
+        "fields": 148,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 562,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-036.parquet",
+      "sha256": "84c7176f80df56152dbe14ab0dac0a249cc95b6c3c5760575af98d640aad09e2",
+      "status": "validated",
+      "footerBytes": 917,
+      "counts": {
+        "structs": 44,
+        "fields": 148,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 562,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-037.parquet",
+      "sha256": "796bdf8006813e8f321d5c637f51e3221a9102472ccbeb9a0971b338230de39b",
+      "status": "validated",
+      "footerBytes": 978,
+      "counts": {
+        "structs": 42,
+        "fields": 146,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 626,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-038.parquet",
+      "sha256": "1e34ab52f202577fdf23434581cf36326b8314a66f620ab58845393fc595c2ef",
+      "status": "validated",
+      "footerBytes": 1359,
+      "counts": {
+        "structs": 51,
+        "fields": 180,
+        "lists": 23,
+        "listItems": 66,
+        "binaryValues": 40,
+        "binaryBytes": 915,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-039.parquet",
+      "sha256": "e1c6e41ab2efad51bf9920c2e21c7a196e6d89116638b728bc66a1e62c66f28c",
+      "status": "validated",
+      "footerBytes": 1692,
+      "counts": {
+        "structs": 69,
+        "fields": 236,
+        "lists": 31,
+        "listItems": 96,
+        "binaryValues": 50,
+        "binaryBytes": 1100,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-040.parquet",
+      "sha256": "47ec0bc5a2055a9cf3377993c702e29a773b5276fcc35f74bacf582cf8977119",
+      "status": "validated",
+      "footerBytes": 1310,
+      "counts": {
+        "structs": 55,
+        "fields": 192,
+        "lists": 25,
+        "listItems": 72,
+        "binaryValues": 46,
+        "binaryBytes": 836,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-041-INVALID.parquet",
+      "sha256": "919ff7e7390d801c77554b055f98b100d1f9ea4d659b1a26a3da68b272242e6b",
+      "status": "validated",
+      "footerBytes": 1127,
+      "counts": {
+        "structs": 47,
+        "fields": 159,
+        "lists": 21,
+        "listItems": 60,
+        "binaryValues": 37,
+        "binaryBytes": 734,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-042.parquet",
+      "sha256": "84ad8f6d5b3e5076325fb3fa9cb3ace9a812496864e13fd5356ef5799a9be205",
+      "status": "validated",
+      "footerBytes": 915,
+      "counts": {
+        "structs": 40,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 34,
+        "binaryBytes": 561,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-043-INVALID.parquet",
+      "sha256": "ae5356e640a704b26fdecc4a7615ba368795d295bcb7d1a3e47d96901573f328",
+      "status": "validated",
+      "footerBytes": 1724,
+      "counts": {
+        "structs": 69,
+        "fields": 240,
+        "lists": 31,
+        "listItems": 96,
+        "binaryValues": 54,
+        "binaryBytes": 1124,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-044.parquet",
+      "sha256": "9a1e9e1d4e2842e89f1bd520e7fc67a5796a245afc13681926fd49e91337ba32",
+      "status": "validated",
+      "footerBytes": 2616,
+      "counts": {
+        "structs": 96,
+        "fields": 333,
+        "lists": 43,
+        "listItems": 156,
+        "binaryValues": 84,
+        "binaryBytes": 1760,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-045.parquet",
+      "sha256": "a5e6489f5bcc1e370a3fb2d302bdd413ba3c4b1ced27073e9331f972737abee7",
+      "status": "validated",
+      "footerBytes": 1305,
+      "counts": {
+        "structs": 56,
+        "fields": 190,
+        "lists": 25,
+        "listItems": 73,
+        "binaryValues": 40,
+        "binaryBytes": 829,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-046.parquet",
+      "sha256": "a2dd64f9f7b5b44a91328924d4a57697827aa901852344d14bb7bd9c2881515d",
+      "status": "validated",
+      "footerBytes": 1684,
+      "counts": {
+        "structs": 69,
+        "fields": 240,
+        "lists": 31,
+        "listItems": 96,
+        "binaryValues": 54,
+        "binaryBytes": 1084,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-047.parquet",
+      "sha256": "ebf8ce5641a64d33b50016189532a31847cbc1f1184c27b23bbf27ce71c0fd76",
+      "status": "validated",
+      "footerBytes": 671,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 400,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-048.parquet",
+      "sha256": "d92c215b86a74745334c0dd078dc364ebf31d21ad7fe8930839c16c988df2976",
+      "status": "validated",
+      "footerBytes": 671,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 400,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-049.parquet",
+      "sha256": "bd7e06df5287312638f3da38b25a26b3e1079dad34a5e359b8aea8114b0b27e3",
+      "status": "validated",
+      "footerBytes": 671,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 400,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-050.parquet",
+      "sha256": "16fef4482a9b85a523d4b5e58b3cccbe26024e22a4a3571686b142cd19766140",
+      "status": "validated",
+      "footerBytes": 675,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 404,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-051.parquet",
+      "sha256": "11547ba0f4438747bb05915965932f6985cc185fb05c2f33f042014c9bf66cc0",
+      "status": "validated",
+      "footerBytes": 675,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 404,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-052.parquet",
+      "sha256": "3bb466aa40e283d9bff7457d5cdfc9b37f4b5fe712226e27efd2647b731796e9",
+      "status": "validated",
+      "footerBytes": 679,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 408,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-053.parquet",
+      "sha256": "483ec455d52e6fdfe9ad46a6e0efc1ad3b8c0727b65fcee25b98f770c1e3e330",
+      "status": "validated",
+      "footerBytes": 679,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 408,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-054.parquet",
+      "sha256": "62d97f2fdfe8d06f4d63e19db27a4cb7278dafd2e2888e32f42b59b9e275cbe9",
+      "status": "validated",
+      "footerBytes": 687,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 416,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-055.parquet",
+      "sha256": "d78a4822ddd4de6e2865b1bce6943f5519a024edf49372e9f12031b9b4575e95",
+      "status": "validated",
+      "footerBytes": 687,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 416,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-056.parquet",
+      "sha256": "1f078ffc90f48f984a299d828efd9f038f5fd8c8ae0a0549f574971149324d82",
+      "status": "validated",
+      "footerBytes": 703,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 432,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-057.parquet",
+      "sha256": "c94dd4a51ad171801c2da6040bbe9566734fe27204c1948fe0a372fc6cd2db6f",
+      "status": "validated",
+      "footerBytes": 703,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 432,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-058.parquet",
+      "sha256": "7b83df7066bdbe5f0b977b5d53df8fbc6ce38f761399336fbca0c38ce2309fa1",
+      "status": "validated",
+      "footerBytes": 687,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 416,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-059.parquet",
+      "sha256": "9c2d6ea72d8e41bf5015765793780c2b7c9bfb019087774e6c7e08914bfa9570",
+      "status": "validated",
+      "footerBytes": 687,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 416,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-060.parquet",
+      "sha256": "0f5a951ab0df0dc5adf003f2e6b75323f5eda6b50b390301255c51aa8b0218f7",
+      "status": "validated",
+      "footerBytes": 703,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 432,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-061.parquet",
+      "sha256": "1ad3d104430a002fe937d2f73ff0dd1878cd0ebafe359a0cbf3e20fd2cd17f49",
+      "status": "validated",
+      "footerBytes": 703,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 432,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-062.parquet",
+      "sha256": "52e895ea3d9c8e3830974e1f0fba5420713bf04b31f196711ab3ecc7ce75b5c0",
+      "status": "validated",
+      "footerBytes": 687,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 416,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-063.parquet",
+      "sha256": "fc3adb15b73487099de528d9c18945c01522539e64fa6a9551c5239ac307a2dc",
+      "status": "validated",
+      "footerBytes": 687,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 416,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-064.parquet",
+      "sha256": "bd001d529dc63ae17587e85f0bdd9d686e2f72b921ff22df43c2ba9712673415",
+      "status": "validated",
+      "footerBytes": 703,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 432,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-065.parquet",
+      "sha256": "05cb0f7fed70350a7f18cbf1b258a44e8b90b07fd30809ce9e7d6b9f192d96ac",
+      "status": "validated",
+      "footerBytes": 703,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 432,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-066.parquet",
+      "sha256": "74ae50e71a5c904813b6e9c91da4573704d6bb643b606eecf325c407efd9ebf0",
+      "status": "validated",
+      "footerBytes": 703,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 432,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-067.parquet",
+      "sha256": "ef26e5b2eb020dafbc1ac14ee0694cffa93fe011e194811cfb37dccf7a76ad70",
+      "status": "validated",
+      "footerBytes": 703,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 432,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-068.parquet",
+      "sha256": "00959db1af36308870d4099de0078d36ddb0bfe1b86adf53c3d0adc5bd2e2495",
+      "status": "validated",
+      "footerBytes": 691,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 420,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-069.parquet",
+      "sha256": "e95cbf29eba8e16a95cb0f60ac3810f1faf483e49b48030f7d22e1b85461cf2d",
+      "status": "validated",
+      "footerBytes": 691,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 420,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-070.parquet",
+      "sha256": "d27a1b4dd40fcfb66cb5dff130740c4db5beadc2bf58a1b3d37ca2e58d830a56",
+      "status": "validated",
+      "footerBytes": 707,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 436,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-071.parquet",
+      "sha256": "7dfbf9bacf124ad54ebd516e81522b2c5a1e60381edbf11a31e9d0177f99a00c",
+      "status": "validated",
+      "footerBytes": 707,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 436,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-072.parquet",
+      "sha256": "f5b30350e4ea2a2e50d98785aba1e06a648a253297391c95848cc072860425b2",
+      "status": "validated",
+      "footerBytes": 739,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 468,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-073.parquet",
+      "sha256": "178ee2a8a0f1aabf187a4bcbbf6b676ff066024b53ed5c9e6ce810c25e2331e9",
+      "status": "validated",
+      "footerBytes": 739,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 468,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-074.parquet",
+      "sha256": "f23f06f7604357fc46540bf220c0a60f91e4a39382a4feeb5692738ab83d5047",
+      "status": "validated",
+      "footerBytes": 703,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 432,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-075.parquet",
+      "sha256": "6e0f3f14804dfb7fafbf30c1b68324b4770f03d76ce6e61ce5907c8598a7a217",
+      "status": "validated",
+      "footerBytes": 699,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 428,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-076.parquet",
+      "sha256": "413ce575a4691871a417845598ea560c4e0168b5dde61bf51c162d6d3e041829",
+      "status": "validated",
+      "footerBytes": 703,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 432,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-077.parquet",
+      "sha256": "05ab163b1195e5b23ed05eaed0c2faff346758723e3bee800828a662675592b5",
+      "status": "validated",
+      "footerBytes": 703,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 432,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-078.parquet",
+      "sha256": "98811dfafaad092a27502be9bd26977a6de0c153f08834c94f10c016d80065ba",
+      "status": "validated",
+      "footerBytes": 703,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 432,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-079.parquet",
+      "sha256": "ffe20e153226f08a35203404956b7a41ddb80d41f82048a4b5596d66834bf066",
+      "status": "validated",
+      "footerBytes": 703,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 432,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-080.parquet",
+      "sha256": "eddad3177caf5565a3ce7597f1870cdd00c6692f6c7281240166fc87c3aed5f9",
+      "status": "validated",
+      "footerBytes": 703,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 432,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-081.parquet",
+      "sha256": "72af0f5881155416b4fc472d368a7dbe071065a349e5c146d68008d3981d3e60",
+      "status": "validated",
+      "footerBytes": 735,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 464,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-082.parquet",
+      "sha256": "b8de0e7d88c67ec342e3ac23bdd580bbb3c64b8bc1a3c326fcbef72bfa18e365",
+      "status": "validated",
+      "footerBytes": 772,
+      "counts": {
+        "structs": 32,
+        "fields": 116,
+        "lists": 14,
+        "listItems": 28,
+        "binaryValues": 27,
+        "binaryBytes": 500,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-083.parquet",
+      "sha256": "c3eb932622a35054253d922c228add9aee63ff60c526c1422f6c85651cc86796",
+      "status": "validated",
+      "footerBytes": 2656,
+      "counts": {
+        "structs": 97,
+        "fields": 345,
+        "lists": 43,
+        "listItems": 157,
+        "binaryValues": 92,
+        "binaryBytes": 1772,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-084-INVALID.parquet",
+      "sha256": "8546f998cff21cff4ba4af0606d1593856589ba7cd109ce0993bdfa20db05db6",
+      "status": "validated",
+      "footerBytes": 2616,
+      "counts": {
+        "structs": 103,
+        "fields": 352,
+        "lists": 47,
+        "listItems": 166,
+        "binaryValues": 76,
+        "binaryBytes": 1709,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-085.parquet",
+      "sha256": "653e679cd56fe93d660f6f7616630442801fac4da4521c0e533d23258aaa3923",
+      "status": "validated",
+      "footerBytes": 1250,
+      "counts": {
+        "structs": 55,
+        "fields": 184,
+        "lists": 25,
+        "listItems": 72,
+        "binaryValues": 38,
+        "binaryBytes": 792,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-086.parquet",
+      "sha256": "f2d666613f97eaf008801473b02bec686c2c128bca9e6ed46f31735e150a1401",
+      "status": "validated",
+      "footerBytes": 1277,
+      "counts": {
+        "structs": 55,
+        "fields": 190,
+        "lists": 25,
+        "listItems": 72,
+        "binaryValues": 44,
+        "binaryBytes": 807,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-087.parquet",
+      "sha256": "b1e520b3ef03b5e51b74e129704bad21933abe12e7453bdc79db9f34bce184f8",
+      "status": "validated",
+      "footerBytes": 1748,
+      "counts": {
+        "structs": 69,
+        "fields": 244,
+        "lists": 31,
+        "listItems": 96,
+        "binaryValues": 58,
+        "binaryBytes": 1140,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-088.parquet",
+      "sha256": "2bb3e8fbc7736d588cbd377831d084e89a9d5de5ff36385393336664b0bbd10b",
+      "status": "validated",
+      "footerBytes": 1097,
+      "counts": {
+        "structs": 47,
+        "fields": 158,
+        "lists": 20,
+        "listItems": 54,
+        "binaryValues": 34,
+        "binaryBytes": 712,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-089.parquet",
+      "sha256": "681c48dcfd154c1ee7b70a6dd3136aa0ce2f2522295b0e26d259cd95d172702e",
+      "status": "validated",
+      "footerBytes": 890,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 536,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-090.parquet",
+      "sha256": "ab6610026714ae9ceb059c65f3dd6930efd1bbe82db0a12843bc146ee6f9e375",
+      "status": "validated",
+      "footerBytes": 890,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 536,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-091.parquet",
+      "sha256": "acb064f2a5e21ca276b019ee8f24e3ba00de18a10eec8b3f304c0b8252cd2fce",
+      "status": "validated",
+      "footerBytes": 890,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 536,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-092.parquet",
+      "sha256": "50231517c05df7be0eddf2a4f9fbf31cc2c1493ea5ee2c78073709b40a184b9f",
+      "status": "validated",
+      "footerBytes": 894,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 540,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-093.parquet",
+      "sha256": "ca50c4557719b91ba6a71145cd1f2c06c668d7d0e1d8ff7010678b02d7a4e1b1",
+      "status": "validated",
+      "footerBytes": 894,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 540,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-094.parquet",
+      "sha256": "a2b2e68ac8673a1a7e54067f2b3f033fc537d05af08fcc25d729f50b259dcab6",
+      "status": "validated",
+      "footerBytes": 898,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 544,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-095.parquet",
+      "sha256": "943153782648e7677004974e5f17e0318543ea0e98b4ce8b3a711a7ebe2d4268",
+      "status": "validated",
+      "footerBytes": 898,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 544,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-096.parquet",
+      "sha256": "ae9ed8c7361972b91abcb88dace545679c6fb3e62aea3b515f9b0442be1228e2",
+      "status": "validated",
+      "footerBytes": 906,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 552,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-097.parquet",
+      "sha256": "c67f59ebf3428cd89c42e1a73ec85a264dda78b6667efcffa023b7b93aee9fc9",
+      "status": "validated",
+      "footerBytes": 906,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 552,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-098.parquet",
+      "sha256": "c436082628a31f17391177621555c801e8264f32c1bcfcab67c7b634f259961b",
+      "status": "validated",
+      "footerBytes": 922,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 568,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-099.parquet",
+      "sha256": "55d23b5ff02c8560e6c8f52794354c6d68b721fa6c6f0e41f59fbdf1553d3b6e",
+      "status": "validated",
+      "footerBytes": 922,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 568,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-100.parquet",
+      "sha256": "ed13c968161985546b7ef9bade89fb204fc2ae8524c3ddc4368b82630ebc0960",
+      "status": "validated",
+      "footerBytes": 906,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 552,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-101.parquet",
+      "sha256": "b20ac365c2a41d4a0b95339ada3f427086c6e999f731ca509f6dac9696010051",
+      "status": "validated",
+      "footerBytes": 906,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 552,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-102.parquet",
+      "sha256": "1afc7797425f6571c3be47d526c973f0897738716884034571a5f0e92b315647",
+      "status": "validated",
+      "footerBytes": 922,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 568,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-103.parquet",
+      "sha256": "30134986f3bf8c307a171606f31159befd347b14a7be66c627290c18063a69f3",
+      "status": "validated",
+      "footerBytes": 922,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 568,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-104.parquet",
+      "sha256": "0331b5736414bfd5869034b7727568ba852f78b5ae018d630c59c68c39bae2cb",
+      "status": "validated",
+      "footerBytes": 906,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 552,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-105.parquet",
+      "sha256": "98d5ce6bcc7898c6a57a55d4866e7b6b17292b7b0c9ac02487116931dcca91a1",
+      "status": "validated",
+      "footerBytes": 906,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 552,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-106.parquet",
+      "sha256": "3b44a63b00e943c820a214498746a52865e619cbb5e2d771bd7e0c83924d3b3f",
+      "status": "validated",
+      "footerBytes": 922,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 568,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-107.parquet",
+      "sha256": "1a1d40c1c9d951e35f068e73549de9466474ded5258ee8091fe0ea9088e730bf",
+      "status": "validated",
+      "footerBytes": 922,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 568,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-108.parquet",
+      "sha256": "f57bac06f8c8bd93ad5237f9695c8a51a79f2b314094e94e4f1c33d05f09d1c7",
+      "status": "validated",
+      "footerBytes": 922,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 568,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-109.parquet",
+      "sha256": "e69390e29efab62357fedf61fbbef29ffefec5f694dc582749959aec2b247f29",
+      "status": "validated",
+      "footerBytes": 922,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 568,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-110.parquet",
+      "sha256": "98e98dc2fdc190d86818c911d888cb85124fb95b400202cd29ddcd3db96b78b5",
+      "status": "validated",
+      "footerBytes": 910,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 556,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-111.parquet",
+      "sha256": "7daec27679f837f5de671e0fb02b458fbc1a64fb401e6dd140cbd6addf34b509",
+      "status": "validated",
+      "footerBytes": 910,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 556,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-112.parquet",
+      "sha256": "911744e29242bc6cc6fd1a30b2fbc7a8f342bed1bccf7c5b94bbc5aa18a035f4",
+      "status": "validated",
+      "footerBytes": 926,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 572,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-113.parquet",
+      "sha256": "8d449d133a05b2babf841c2f43d4ad787ef3a19779a1e59ad331c34976f7daa0",
+      "status": "validated",
+      "footerBytes": 926,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 572,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-114.parquet",
+      "sha256": "df4d8b24f427ac3fdac50dce7031441ddf2155df4220a47efc36776cee9036d8",
+      "status": "validated",
+      "footerBytes": 958,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 604,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-115.parquet",
+      "sha256": "fb395a3fbfe356ea3724590c58a1a2da72e2db1ac017dcabc36b7601464e45df",
+      "status": "validated",
+      "footerBytes": 958,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 604,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-116.parquet",
+      "sha256": "6acfc4b54c307ad80550c1b77813f86c6462b63174731789dca0cf4c2bf92a8d",
+      "status": "validated",
+      "footerBytes": 922,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 568,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-117.parquet",
+      "sha256": "aaa003e1dec200a38f139292a4fa1151617df3b943bf4aa822b6d5389bdec51a",
+      "status": "validated",
+      "footerBytes": 918,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 564,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-118.parquet",
+      "sha256": "735f8fdc77b034791ed29cab47d72de9c0c8b8a0c0acab5dd1119af063fea8ed",
+      "status": "validated",
+      "footerBytes": 922,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 568,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-119.parquet",
+      "sha256": "19859ce21e3d45f56c56e1597c3b41545499cff2a33f3b589519829f3f06bdf4",
+      "status": "validated",
+      "footerBytes": 922,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 568,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-120.parquet",
+      "sha256": "0caca98ef35deba7d15ee7820b803db948c4ece2d4b05681a8002fa8517885ac",
+      "status": "validated",
+      "footerBytes": 922,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 568,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-121.parquet",
+      "sha256": "422eadbdf2b671e21b4cbfa086d2eceea37ed703c633225ec776e8f1756d293f",
+      "status": "validated",
+      "footerBytes": 922,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 568,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-122.parquet",
+      "sha256": "563b9ce7dfa6a72b90038a22e14b8cce3ead6dfa3287242baab3387002d7fa81",
+      "status": "validated",
+      "footerBytes": 922,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 568,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-123.parquet",
+      "sha256": "b942eda1d5dd11385413e93d5b9aa68e4ee261c3c612d43a648993899337a88b",
+      "status": "validated",
+      "footerBytes": 954,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 600,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-124.parquet",
+      "sha256": "d5060b9c0602e413093a52635531be04e44e91a7a43361ca152ba9c5af5aa07e",
+      "status": "validated",
+      "footerBytes": 990,
+      "counts": {
+        "structs": 42,
+        "fields": 147,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 30,
+        "binaryBytes": 636,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-125-INVALID.parquet",
+      "sha256": "0d137fe386fc28b81cddf3ac1a9d2467e9fc14554fa4fb749fb0d5afe898dd5c",
+      "status": "validated",
+      "footerBytes": 1760,
+      "counts": {
+        "structs": 69,
+        "fields": 244,
+        "lists": 31,
+        "listItems": 96,
+        "binaryValues": 58,
+        "binaryBytes": 1152,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-126.parquet",
+      "sha256": "b680917d79144abcc596f72614a46e173fa3694bca570ef5817846ee30272015",
+      "status": "validated",
+      "footerBytes": 2206,
+      "counts": {
+        "structs": 83,
+        "fields": 288,
+        "lists": 40,
+        "listItems": 142,
+        "binaryValues": 75,
+        "binaryBytes": 1453,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-127.parquet",
+      "sha256": "1c7eb444f1503cc1ab73e9b88e19ad57887883e6858e9fbce545343f7890c22b",
+      "status": "validated",
+      "footerBytes": 876,
+      "counts": {
+        "structs": 42,
+        "fields": 144,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 26,
+        "binaryBytes": 529,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-128.parquet",
+      "sha256": "e24227334e04f729c78db99dd882cdb21f57b814dbb67c91c9e7a2666631e778",
+      "status": "validated",
+      "footerBytes": 1676,
+      "counts": {
+        "structs": 69,
+        "fields": 236,
+        "lists": 31,
+        "listItems": 96,
+        "binaryValues": 50,
+        "binaryBytes": 1084,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-129.parquet",
+      "sha256": "6cec54b5f8fe43795dbabbcf5dc7020bf3ff516ce5ec8d439506effa9b095fe2",
+      "status": "validated",
+      "footerBytes": 867,
+      "counts": {
+        "structs": 40,
+        "fields": 139,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 26,
+        "binaryBytes": 529,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-130.parquet",
+      "sha256": "7f0ef89aa30499f03db4faba1e4fba4a8bc1af43a0d4febd94fb80c086544518",
+      "status": "validated",
+      "footerBytes": 1664,
+      "counts": {
+        "structs": 69,
+        "fields": 232,
+        "lists": 31,
+        "listItems": 96,
+        "binaryValues": 46,
+        "binaryBytes": 1080,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-131-INVALID.parquet",
+      "sha256": "9ac3b003b2efb3c87748037f78cb769e2aa27cb9c8a4a8b6e694997d5893897f",
+      "status": "validated",
+      "footerBytes": 722,
+      "counts": {
+        "structs": 32,
+        "fields": 115,
+        "lists": 14,
+        "listItems": 29,
+        "binaryValues": 27,
+        "binaryBytes": 452,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-132-INVALID.parquet",
+      "sha256": "6fca1bed0814cb3da0c0bd15af3e1ede37c9bbb1614a856faf49907eef85cca8",
+      "status": "validated",
+      "footerBytes": 1394,
+      "counts": {
+        "structs": 53,
+        "fields": 182,
+        "lists": 23,
+        "listItems": 66,
+        "binaryValues": 40,
+        "binaryBytes": 946,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-133.parquet",
+      "sha256": "aed3956b4d75e647ea68d05683fffe236e7997997dee8741d88c26c19dabd4e8",
+      "status": "validated",
+      "footerBytes": 1676,
+      "counts": {
+        "structs": 69,
+        "fields": 236,
+        "lists": 31,
+        "listItems": 96,
+        "binaryValues": 50,
+        "binaryBytes": 1084,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-134.parquet",
+      "sha256": "27f8617ed0968bed1ad47cb123d64262adad518f70198cd135a1ea2eab8b4d48",
+      "status": "validated",
+      "footerBytes": 1760,
+      "counts": {
+        "structs": 69,
+        "fields": 244,
+        "lists": 31,
+        "listItems": 96,
+        "binaryValues": 58,
+        "binaryBytes": 1152,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-135.parquet",
+      "sha256": "d702405eb95e9ba5d121bfa852457a63dfbb121e9c9b551089b9feeb89b622c4",
+      "status": "validated",
+      "footerBytes": 1262,
+      "counts": {
+        "structs": 55,
+        "fields": 188,
+        "lists": 25,
+        "listItems": 72,
+        "binaryValues": 42,
+        "binaryBytes": 796,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-136.parquet",
+      "sha256": "7024695e1af0cff1c8d73ce18dca16dfa94e7123b285c7fd99ebb537f0f5a6f7",
+      "status": "validated",
+      "footerBytes": 1686,
+      "counts": {
+        "structs": 68,
+        "fields": 226,
+        "lists": 30,
+        "listItems": 105,
+        "binaryValues": 55,
+        "binaryBytes": 1108,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-137.parquet",
+      "sha256": "8c65160a9015483d44aa039fd74a4d8802393c94a5020a83cd877dc5c0593217",
+      "status": "validated",
+      "footerBytes": 910,
+      "counts": {
+        "structs": 40,
+        "fields": 140,
+        "lists": 19,
+        "listItems": 45,
+        "binaryValues": 26,
+        "binaryBytes": 570,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    },
+    {
+      "path": "shredded_variant/case-138-INVALID.parquet",
+      "sha256": "eb768513afabe6a656d99b6ea87266bca369de4b850928877f182ed57f0a0bdf",
+      "status": "validated",
+      "footerBytes": 1553,
+      "counts": {
+        "structs": 61,
+        "fields": 213,
+        "lists": 27,
+        "listItems": 79,
+        "binaryValues": 51,
+        "binaryBytes": 1027,
+        "maxDepth": 7
+      },
+      "rowGroupsCompared": 1
+    }
+  ]
+}

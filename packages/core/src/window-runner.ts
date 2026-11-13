@@ -4,7 +4,9 @@ import {
   predicateSelection,
   selectedRowCount,
 } from "./batch.js";
+import { BufferMemory } from "./buffer-memory.js";
 import { matches } from "./evaluator.js";
+import type { MemoryBudget } from "./memory-budget.js";
 import type {
   PathQueryInit,
   QueryBudget,
@@ -40,6 +42,7 @@ export interface WindowRunnerConfig extends PathQueryInit {
 }
 
 export interface WindowRunnerOptions {
+  memoryBudget?: MemoryBudget;
   config: WindowRunnerConfig;
   stats: QueryStats;
   planObjects(): Promise<{ planned: ObjectInfo[]; skipped: number }>;
@@ -52,6 +55,8 @@ export interface WindowRunnerOptions {
   enforceWindowPartitionRows(budget: QueryBudget, rows: number): void;
   enforceMemoryBytes(budget: QueryBudget, bytes: number): void;
   estimateMemoryBytes(value: unknown): number;
+  /** Serialized size of one list item, excluding list brackets and separators. */
+  estimateBufferItemBytes?(row: Row): number;
   batchExecution: Omit<
     WindowBatchExecutionOptions,
     | "config"
@@ -158,6 +163,7 @@ export async function collectWindowMatches(
   startedAt: number,
 ): Promise<WindowExecutionMode> {
   const { config, stats } = options;
+  const buffer = new WindowRowBuffer(options, matched);
   const { planned: paths, skipped: skippedFiles } = await options.planObjects();
   stats.filesSkipped = skippedFiles;
   const columns = windowReadColumns(config);
@@ -180,9 +186,7 @@ export async function collectWindowMatches(
         options.enforceBudget(config.budget, stats, config.now, startedAt);
         if (!matches(config.where, row)) continue;
         stats.rowsMatched += 1;
-        matched.push(row);
-        options.enforceBufferedRows(config.budget, matched.length);
-        options.enforceMemoryBytes(config.budget, options.estimateMemoryBytes(matched));
+        buffer.append(row);
       }
     }
   }
@@ -195,7 +199,7 @@ export async function collectWindowRuns(
   runs: Row[][],
   startedAt: number,
 ): Promise<WindowExecutionMode> {
-  const currentRun: Row[] = [];
+  const currentRun = new WindowRowBuffer(options);
   const execution = (await collectVectorWindowRunMatches(options, runs, currentRun, startedAt))
     ? "vector-window"
     : await collectRowWindowRunMatches(options, runs, currentRun, startedAt);
@@ -223,6 +227,7 @@ async function collectWindowTaskMatches(
     options.enforceBudget(config.budget, stats, config.now, startedAt);
   }
   return config.scanner.executeWindowTasks(tasks, config.windows, {
+    ...(options.memoryBudget === undefined ? {} : { memoryBudget: options.memoryBudget }),
     budget: config.budget,
     stats,
     now: config.now,
@@ -262,6 +267,7 @@ async function collectVectorWindowRows(
   }
   stats.elapsedMs = config.now() - startedAt;
   return applyWindowsToVectorBatches(inputs, config.windows ?? {}, {
+    ...(options.memoryBudget === undefined ? {} : { memoryBudget: options.memoryBudget }),
     estimateMemoryBytes: options.estimateMemoryBytes,
     enforceBufferedRows: (rows) => options.enforceBufferedRows(config.budget, rows),
     enforceWindowPartitionRows: (rows) => options.enforceWindowPartitionRows(config.budget, rows),
@@ -272,7 +278,7 @@ async function collectVectorWindowRows(
 async function collectVectorWindowRunMatches(
   options: WindowRunnerOptions,
   runs: Row[][],
-  currentRun: Row[],
+  currentRun: WindowRowBuffer,
   startedAt: number,
 ): Promise<boolean> {
   const { config, stats } = options;
@@ -311,7 +317,7 @@ async function collectVectorWindowRunMatches(
 async function collectRowWindowRunMatches(
   options: WindowRunnerOptions,
   runs: Row[][],
-  currentRun: Row[],
+  currentRun: WindowRowBuffer,
   startedAt: number,
 ): Promise<WindowExecutionMode> {
   const { config, stats } = options;
@@ -359,6 +365,7 @@ function windowBatchOptions(
 ): Omit<WindowBatchExecutionOptions, "matched"> {
   return {
     config: options.config,
+    ...(options.memoryBudget === undefined ? {} : { memoryBudget: options.memoryBudget }),
     stats: options.stats,
     startedAt,
     ...options.batchExecution,
@@ -374,6 +381,7 @@ function rowScanOptions(options: WindowRunnerOptions, startedAt: number): ScanOp
   return {
     batchSize: options.config.batchSize ?? 4096,
     stats: options.stats,
+    ...(options.memoryBudget === undefined ? {} : { memoryBudget: options.memoryBudget }),
     budget: options.config.budget,
     now: options.config.now,
     startedAt,
@@ -384,6 +392,7 @@ function vectorScanOptions(options: WindowRunnerOptions, startedAt: number): Sca
   return {
     batchSize: options.columnarBatchSize(options.config.batchSize),
     stats: options.stats,
+    ...(options.memoryBudget === undefined ? {} : { memoryBudget: options.memoryBudget }),
     budget: options.config.budget,
     now: options.config.now,
     startedAt,
@@ -393,12 +402,10 @@ function vectorScanOptions(options: WindowRunnerOptions, startedAt: number): Sca
 function pushWindowRunRow(
   options: WindowRunnerOptions,
   runs: Row[][],
-  currentRun: Row[],
+  currentRun: WindowRowBuffer,
   row: Row,
 ): void {
-  currentRun.push(row);
-  options.enforceBufferedRows(options.config.budget, currentRun.length);
-  options.enforceMemoryBytes(options.config.budget, options.estimateMemoryBytes(currentRun));
+  currentRun.append(row);
   if (currentRun.length >= windowRunCapacity(options.config.budget)) {
     flushWindowRun(runs, currentRun);
   }
@@ -414,11 +421,49 @@ function chunkRowsForRuns(rows: Row[], budget: QueryBudget): Row[][] {
   return runs;
 }
 
-function flushWindowRun(runs: Row[][], currentRun: Row[]): void {
-  if (currentRun.length === 0) return;
-  runs.push(currentRun.splice(0, currentRun.length));
+function flushWindowRun(runs: Row[][], currentRun: WindowRowBuffer): void {
+  currentRun.flush(runs);
 }
 
 function windowRunCapacity(budget: QueryBudget): number {
   return Math.max(1, budget.maxBufferedRows ?? Number.POSITIVE_INFINITY);
+}
+
+/** Buffer-local accounting follows append/flush ownership rather than rescanning each row. */
+class WindowRowBuffer {
+  private readonly memory: BufferMemory<Row> | undefined;
+
+  constructor(
+    private readonly options: WindowRunnerOptions,
+    private readonly rows: Row[] = [],
+  ) {
+    this.memory =
+      options.config.budget.maxMemoryBytes !== undefined &&
+      options.estimateBufferItemBytes !== undefined
+        ? new BufferMemory(options.estimateBufferItemBytes, rows)
+        : undefined;
+  }
+
+  get length(): number {
+    return this.rows.length;
+  }
+
+  append(row: Row): void {
+    this.rows.push(row);
+    this.memory?.add(row);
+    const budget = this.options.config.budget;
+    this.options.enforceBufferedRows(budget, this.rows.length);
+    if (budget.maxMemoryBytes !== undefined) {
+      this.options.enforceMemoryBytes(
+        budget,
+        this.memory?.bytes ?? this.options.estimateMemoryBytes(this.rows),
+      );
+    }
+  }
+
+  flush(runs: Row[][]): void {
+    if (this.rows.length === 0) return;
+    runs.push(this.rows.splice(0, this.rows.length));
+    this.memory?.clear();
+  }
 }

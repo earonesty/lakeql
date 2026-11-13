@@ -3,6 +3,7 @@ import {
   type CacheAdapter,
   type Expr,
   LakeqlError,
+  type MemoryBudget,
   type OrderByTerm,
   type QueryBudget,
   type QueryStats,
@@ -14,6 +15,7 @@ import {
 import type { ParquetMetadata } from "./types.js";
 
 export interface ScanParquetTaskOptions {
+  memoryBudget?: MemoryBudget;
   batchSize?: number;
   stats?: QueryStats;
   metadataCache?: CacheAdapter<ParquetMetadata>;
@@ -98,8 +100,14 @@ export function taskReadOptions(
 export function aggregateScanOptions(
   options: AggregateParquetTaskOptions,
 ): ScanOptions | undefined {
-  if (options.budget === undefined && options.stats === undefined) return undefined;
+  if (
+    options.budget === undefined &&
+    options.stats === undefined &&
+    options.memoryBudget === undefined
+  )
+    return undefined;
   return {
+    ...(options.memoryBudget === undefined ? {} : { memoryBudget: options.memoryBudget }),
     batchSize: options.batchSize ?? 4096,
     stats: options.stats ?? aggregateTaskStats(),
     budget: options.budget ?? {},

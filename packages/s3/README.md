@@ -33,3 +33,12 @@ S3 hardening replaced bespoke signing/XML code with focused runtime dependencies
 | `fast-xml-parser@5.9.0` | `ListObjectsV2` XML parsing | 1.4 MB unpacked | 75.9 KB minified bundle |
 
 These are runtime package sizes from the pinned lockfile, not application-specific bundled output.
+
+Allocation-aware range callers can use `S3ObjectStore.getRangeOwned(path, range,
+scope)` with a core `MemoryScope`. The adapter reserves response buffers before
+allocation, streams into them, and passes scope cancellation to fetch. This method
+requires an identity-encoded `206` response with a matching `Content-Range` and
+exact body length (including partial object tails). Endpoints that ignore Range
+are rejected instead of materializing whole objects. The existing byte-returning
+`getRange` method retains its behavior. Charges cover engine buffers, not
+runtime-owned incoming chunks or decoded query objects.

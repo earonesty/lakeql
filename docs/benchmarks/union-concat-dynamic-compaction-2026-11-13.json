@@ -1,0 +1,59 @@
+{
+  "scope": "Local owned concatenation including source construction; explicit allocation accounting, not measured VM heap. One diagnostic run per case, no timing speedup claim. Every output value checked after timing; all owners release to zero. Compare one-shot versus repeated appends with identical values. No cloud transport.",
+  "results": [
+    {
+      "appends": 32,
+      "rows": 34,
+      "modes": {
+        "oneShot": {
+          "elapsedMs": 2.9196660000000065,
+          "retainedBytes": 2876,
+          "peakBytes": 2876,
+          "unionDepth": 2
+        },
+        "incremental": {
+          "elapsedMs": 9.947857000000006,
+          "retainedBytes": 7730,
+          "peakBytes": 20793,
+          "unionDepth": 6
+        }
+      }
+    },
+    {
+      "appends": 128,
+      "rows": 130,
+      "modes": {
+        "oneShot": {
+          "elapsedMs": 1.6703490000000016,
+          "retainedBytes": 5660,
+          "peakBytes": 5660,
+          "unionDepth": 2
+        },
+        "incremental": {
+          "elapsedMs": 55.804027,
+          "retainedBytes": 21368,
+          "peakBytes": 59474,
+          "unionDepth": 10
+        }
+      }
+    },
+    {
+      "appends": 512,
+      "rows": 514,
+      "modes": {
+        "oneShot": {
+          "elapsedMs": 7.824888000000001,
+          "retainedBytes": 20673,
+          "peakBytes": 20673,
+          "unionDepth": 3
+        },
+        "incremental": {
+          "elapsedMs": 412.506439,
+          "retainedBytes": 52712,
+          "peakBytes": 224658,
+          "unionDepth": 7
+        }
+      }
+    }
+  ]
+}

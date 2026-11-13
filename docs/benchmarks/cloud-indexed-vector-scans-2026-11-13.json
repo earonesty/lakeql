@@ -1,0 +1,282 @@
+{
+  "source": "https://pub-9d5bcb33a5384d79875a943eef183b6d.r2.dev/bench/window-events.parquet",
+  "scope": "Actual R2 HTTP 206 owned vector scans with indexed footer acquisition inside each job budget; oracle and decoded JS excluded; shared cache accounting included; not whole-query heap coverage",
+  "reports": [
+    {
+      "jobs": 1,
+      "jobBytes": 16384,
+      "cacheBytes": 8192,
+      "decodedCacheEnabled": false,
+      "scheduled": false,
+      "normalScan": true,
+      "indexedMetadata": true,
+      "temperature": "cold",
+      "retainedCacheBytes": 7320,
+      "maxConcurrentReads": 1,
+      "peakReads": 1,
+      "reads": 7,
+      "transferredBytes": 7320,
+      "ranges": [
+        {
+          "offset": 0,
+          "length": 4854
+        },
+        {
+          "offset": 0,
+          "length": 512
+        },
+        {
+          "offset": 512,
+          "length": 512
+        },
+        {
+          "offset": 1024,
+          "length": 512
+        },
+        {
+          "offset": 1868,
+          "length": 209
+        },
+        {
+          "offset": 2048,
+          "length": 512
+        },
+        {
+          "offset": 2971,
+          "length": 209
+        }
+      ],
+      "peakBytes": 13572,
+      "poolBytes": 24576,
+      "elapsedMs": 1489.379704
+    },
+    {
+      "jobs": 1,
+      "jobBytes": 16384,
+      "cacheBytes": 8192,
+      "decodedCacheEnabled": false,
+      "scheduled": false,
+      "normalScan": true,
+      "indexedMetadata": true,
+      "temperature": "warm",
+      "retainedCacheBytes": 7320,
+      "maxConcurrentReads": 1,
+      "peakReads": 0,
+      "reads": 0,
+      "transferredBytes": 0,
+      "ranges": [],
+      "peakBytes": 13572,
+      "poolBytes": 24576,
+      "elapsedMs": 1.6821909999998752
+    },
+    {
+      "jobs": 4,
+      "jobBytes": 16384,
+      "cacheBytes": 8192,
+      "decodedCacheEnabled": false,
+      "scheduled": false,
+      "normalScan": true,
+      "indexedMetadata": true,
+      "temperature": "cold",
+      "retainedCacheBytes": 7506,
+      "maxConcurrentReads": 1,
+      "peakReads": 1,
+      "reads": 8,
+      "transferredBytes": 7506,
+      "ranges": [
+        {
+          "offset": 0,
+          "length": 4854
+        },
+        {
+          "offset": 0,
+          "length": 512
+        },
+        {
+          "offset": 512,
+          "length": 512
+        },
+        {
+          "offset": 1024,
+          "length": 512
+        },
+        {
+          "offset": 1868,
+          "length": 209
+        },
+        {
+          "offset": 2048,
+          "length": 512
+        },
+        {
+          "offset": 2971,
+          "length": 209
+        },
+        {
+          "offset": 2994,
+          "length": 186
+        }
+      ],
+      "peakBytes": 33876,
+      "poolBytes": 73728,
+      "elapsedMs": 1612.0360579999997
+    },
+    {
+      "jobs": 4,
+      "jobBytes": 16384,
+      "cacheBytes": 8192,
+      "decodedCacheEnabled": false,
+      "scheduled": false,
+      "normalScan": true,
+      "indexedMetadata": true,
+      "temperature": "warm",
+      "retainedCacheBytes": 7506,
+      "maxConcurrentReads": 1,
+      "peakReads": 0,
+      "reads": 0,
+      "transferredBytes": 0,
+      "ranges": [],
+      "peakBytes": 35366,
+      "poolBytes": 73728,
+      "elapsedMs": 6.48967200000061
+    },
+    {
+      "jobs": 1,
+      "jobBytes": 16384,
+      "cacheBytes": 8192,
+      "decodedCacheEnabled": false,
+      "scheduled": false,
+      "normalScan": true,
+      "indexedMetadata": true,
+      "temperature": "cold",
+      "retainedCacheBytes": 7320,
+      "maxConcurrentReads": 2,
+      "peakReads": 2,
+      "reads": 7,
+      "transferredBytes": 7320,
+      "ranges": [
+        {
+          "offset": 0,
+          "length": 4854
+        },
+        {
+          "offset": 0,
+          "length": 512
+        },
+        {
+          "offset": 512,
+          "length": 512
+        },
+        {
+          "offset": 1024,
+          "length": 512
+        },
+        {
+          "offset": 1868,
+          "length": 209
+        },
+        {
+          "offset": 2048,
+          "length": 512
+        },
+        {
+          "offset": 2971,
+          "length": 209
+        }
+      ],
+      "peakBytes": 13572,
+      "poolBytes": 24576,
+      "elapsedMs": 1396.8964269999997
+    },
+    {
+      "jobs": 1,
+      "jobBytes": 16384,
+      "cacheBytes": 8192,
+      "decodedCacheEnabled": false,
+      "scheduled": false,
+      "normalScan": true,
+      "indexedMetadata": true,
+      "temperature": "warm",
+      "retainedCacheBytes": 7320,
+      "maxConcurrentReads": 2,
+      "peakReads": 0,
+      "reads": 0,
+      "transferredBytes": 0,
+      "ranges": [],
+      "peakBytes": 13572,
+      "poolBytes": 24576,
+      "elapsedMs": 0.9605799999999363
+    },
+    {
+      "jobs": 4,
+      "jobBytes": 16384,
+      "cacheBytes": 8192,
+      "decodedCacheEnabled": false,
+      "scheduled": false,
+      "normalScan": true,
+      "indexedMetadata": true,
+      "temperature": "cold",
+      "retainedCacheBytes": 7506,
+      "maxConcurrentReads": 2,
+      "peakReads": 2,
+      "reads": 8,
+      "transferredBytes": 7506,
+      "ranges": [
+        {
+          "offset": 0,
+          "length": 4854
+        },
+        {
+          "offset": 0,
+          "length": 512
+        },
+        {
+          "offset": 512,
+          "length": 512
+        },
+        {
+          "offset": 1024,
+          "length": 512
+        },
+        {
+          "offset": 1868,
+          "length": 209
+        },
+        {
+          "offset": 2048,
+          "length": 512
+        },
+        {
+          "offset": 2971,
+          "length": 209
+        },
+        {
+          "offset": 2994,
+          "length": 186
+        }
+      ],
+      "peakBytes": 33947,
+      "poolBytes": 73728,
+      "elapsedMs": 954.6665319999993
+    },
+    {
+      "jobs": 4,
+      "jobBytes": 16384,
+      "cacheBytes": 8192,
+      "decodedCacheEnabled": false,
+      "scheduled": false,
+      "normalScan": true,
+      "indexedMetadata": true,
+      "temperature": "warm",
+      "retainedCacheBytes": 7506,
+      "maxConcurrentReads": 2,
+      "peakReads": 0,
+      "reads": 0,
+      "transferredBytes": 0,
+      "ranges": [],
+      "peakBytes": 34854,
+      "poolBytes": 73728,
+      "elapsedMs": 5.105471999999281
+    }
+  ]
+}

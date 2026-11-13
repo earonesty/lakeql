@@ -1,0 +1,4 @@
+{"count":10000,"mode":"array-then-vector","medianMs":0.5124560000000002,"samples":7,"outputBytes":80000,"scope":"Local dense integer-decimal conversion; borrowed input; baseline intermediate JS array untracked; not cloud or whole-heap evidence"}
+{"count":10000,"mode":"owned-typed","medianMs":0.513736999999999,"samples":7,"outputBytes":80000,"scope":"Local dense integer-decimal conversion; borrowed input; baseline intermediate JS array untracked; not cloud or whole-heap evidence"}
+{"count":100000,"mode":"array-then-vector","medianMs":5.059672000000006,"samples":7,"outputBytes":800000,"scope":"Local dense integer-decimal conversion; borrowed input; baseline intermediate JS array untracked; not cloud or whole-heap evidence"}
+{"count":100000,"mode":"owned-typed","medianMs":2.8212850000000174,"samples":7,"outputBytes":800000,"scope":"Local dense integer-decimal conversion; borrowed input; baseline intermediate JS array untracked; not cloud or whole-heap evidence"}

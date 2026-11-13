@@ -1,0 +1,113 @@
+{
+  "scope": "Local owned concatenation including source construction; explicit allocation accounting, not measured VM heap. One diagnostic run per case, no timing speedup claim. Every output value checked after timing; all owners release to zero. Repeated append followed by selecting [newest, previous] to keep exactly two rows. No cloud transport.",
+  "results": [
+    {
+      "appends": 32,
+      "rows": 2,
+      "modes": {
+        "selected": {
+          "elapsedMs": 15.930242,
+          "retainedBytes": 2175,
+          "peakBytes": 7580,
+          "unionDepth": 2
+        },
+        "strings": {
+          "elapsedMs": 7.7700729999999965,
+          "retainedBytes": 2391,
+          "peakBytes": 7676,
+          "unionDepth": 2
+        },
+        "binary": {
+          "elapsedMs": 9.055649000000003,
+          "retainedBytes": 2559,
+          "peakBytes": 8340,
+          "unionDepth": 2
+        },
+        "struct": {
+          "elapsedMs": 25.954778000000005,
+          "retainedBytes": 35468,
+          "peakBytes": 47617,
+          "unionDepth": 2
+        },
+        "list": {
+          "elapsedMs": 23.72262599999999,
+          "retainedBytes": 33026,
+          "peakBytes": 43033,
+          "unionDepth": 2
+        }
+      }
+    },
+    {
+      "appends": 128,
+      "rows": 2,
+      "modes": {
+        "selected": {
+          "elapsedMs": 27.925167000000016,
+          "retainedBytes": 2175,
+          "peakBytes": 7580,
+          "unionDepth": 2
+        },
+        "strings": {
+          "elapsedMs": 22.802118999999976,
+          "retainedBytes": 2391,
+          "peakBytes": 7676,
+          "unionDepth": 2
+        },
+        "binary": {
+          "elapsedMs": 24.562831000000017,
+          "retainedBytes": 2559,
+          "peakBytes": 8340,
+          "unionDepth": 2
+        },
+        "struct": {
+          "elapsedMs": 125.40707,
+          "retainedBytes": 124556,
+          "peakBytes": 136705,
+          "unionDepth": 2
+        },
+        "list": {
+          "elapsedMs": 86.03828999999996,
+          "retainedBytes": 122114,
+          "peakBytes": 132121,
+          "unionDepth": 2
+        }
+      }
+    },
+    {
+      "appends": 512,
+      "rows": 2,
+      "modes": {
+        "selected": {
+          "elapsedMs": 55.91783000000004,
+          "retainedBytes": 2175,
+          "peakBytes": 7580,
+          "unionDepth": 2
+        },
+        "strings": {
+          "elapsedMs": 55.76287800000006,
+          "retainedBytes": 2391,
+          "peakBytes": 7676,
+          "unionDepth": 2
+        },
+        "binary": {
+          "elapsedMs": 72.56553600000007,
+          "retainedBytes": 2559,
+          "peakBytes": 8340,
+          "unionDepth": 2
+        },
+        "struct": {
+          "elapsedMs": 876.74483,
+          "retainedBytes": 480908,
+          "peakBytes": 493057,
+          "unionDepth": 2
+        },
+        "list": {
+          "elapsedMs": 897.6233220000001,
+          "retainedBytes": 478466,
+          "peakBytes": 488473,
+          "unionDepth": 2
+        }
+      }
+    }
+  ]
+}

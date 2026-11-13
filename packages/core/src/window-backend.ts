@@ -1,9 +1,11 @@
 import { LakeqlError } from "./errors.js";
 import { evaluate } from "./evaluator.js";
+import type { MemoryBudget } from "./memory-budget.js";
 import type { Row } from "./types.js";
 import type { WindowExpr } from "./window.js";
 import { aggregateWindowValue } from "./window-aggregate.js";
 import { frameRows } from "./window-frame.js";
+import { WindowPeers } from "./window-peers.js";
 import { compatibleWindowSortGroups } from "./window-query.js";
 import { segmentTreeAggregateValues } from "./window-segment-tree.js";
 import {
@@ -19,6 +21,7 @@ import {
 } from "./window-utils.js";
 
 export interface WindowExecutionOptions {
+  memoryBudget?: MemoryBudget;
   estimateMemoryBytes?: (value: unknown) => number;
   enforceBufferedRows?: (rows: number) => void;
   enforceWindowPartitionRows?: (rows: number) => void;
@@ -75,7 +78,7 @@ export function applyWindowsToRuns(
       }
       for (const { alias, expr } of group.items) {
         const windowRows = windowRowsForExpr(partition, expr, group.sortExpr);
-        const values = evaluatePartition(windowRows, expr);
+        const values = evaluatePartition(windowRows, expr, options);
         for (let index = 0; index < windowRows.length; index += 1) {
           const item = windowRows[index];
           if (item === undefined) continue;
@@ -183,7 +186,7 @@ export function evaluateWindowRows(
   for (const span of spans) {
     const partition = sorted.slice(span.start, span.end);
     options.enforceWindowPartitionRows?.(partition.length);
-    const values = evaluatePartition(partition, expr);
+    const values = evaluatePartition(partition, expr, options);
     for (let index = 0; index < partition.length; index += 1) {
       const item = partition[index];
       if (item !== undefined) output[item.originalIndex] = values[index] ?? null;
@@ -192,14 +195,31 @@ export function evaluateWindowRows(
   return output;
 }
 
-function evaluatePartition(partition: readonly WindowRow[], expr: WindowExpr): unknown[] {
+function evaluatePartition(
+  partition: readonly WindowRow[],
+  expr: WindowExpr,
+  options: WindowExecutionOptions,
+): unknown[] {
+  const peers = new WindowPeers(partition, options.memoryBudget);
+  try {
+    return evaluatePartitionWithPeers(partition, expr, peers);
+  } finally {
+    peers.dispose();
+  }
+}
+
+function evaluatePartitionWithPeers(
+  partition: readonly WindowRow[],
+  expr: WindowExpr,
+  peers: WindowPeers,
+): unknown[] {
   const rows = partition.map((item) => item.row);
   const fn = normalizedWindowName(expr.fn);
   if (isAggregateWindow(expr.fn)) {
-    const segmentValues = segmentTreeAggregateValues(partition, expr);
+    const segmentValues = segmentTreeAggregateValues(partition, expr, peers);
     if (segmentValues !== undefined) return segmentValues;
     return partition.map((_item, index) =>
-      aggregateWindowValue(frameRows(partition, index, expr), expr),
+      aggregateWindowValue(frameRows(partition, index, expr, peers), expr),
     );
   }
   switch (fn) {
@@ -224,16 +244,16 @@ function evaluatePartition(partition: readonly WindowRow[], expr: WindowExpr): u
       return offsetValues(rows, expr, 1);
     case "first_value":
       return partition.map((_item, index) => {
-        const row = firstFrameValue(frameRows(partition, index, expr), expr);
+        const row = firstFrameValue(frameRows(partition, index, expr, peers), expr);
         return row === undefined ? null : evaluate(valueArg(expr), row);
       });
     case "last_value":
       return partition.map((_item, index) => {
-        const row = lastFrameValue(frameRows(partition, index, expr), expr);
+        const row = lastFrameValue(frameRows(partition, index, expr, peers), expr);
         return row === undefined ? null : evaluate(valueArg(expr), row);
       });
     case "nth_value":
-      return nthValue(partition, expr);
+      return nthValue(partition, expr, peers);
     default:
       throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", `Unsupported window function ${fn}`, {
         function: fn,
@@ -331,13 +351,17 @@ function offsetIgnoringNulls(
   });
 }
 
-function nthValue(partition: readonly WindowRow[], expr: WindowExpr): unknown[] {
+function nthValue(
+  partition: readonly WindowRow[],
+  expr: WindowExpr,
+  peers: WindowPeers,
+): unknown[] {
   const nth = numericArg(expr, 1, 1);
   if (!Number.isInteger(nth) || nth <= 0) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "nth_value requires a positive integer position");
   }
   return partition.map((_item, index) => {
-    const rows = frameValueRows(frameRows(partition, index, expr), expr);
+    const rows = frameValueRows(frameRows(partition, index, expr, peers), expr);
     const target = rows[nth - 1];
     return target === undefined ? null : evaluate(valueArg(expr), target);
   });

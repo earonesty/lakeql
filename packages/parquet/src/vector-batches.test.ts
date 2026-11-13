@@ -3,6 +3,8 @@ import {
   fn,
   gt,
   lit,
+  MemoryBudget,
+  MemoryScope,
   materializeBatchRows,
   memoryCache,
   memoryStore,
@@ -12,8 +14,49 @@ import {
 import { describe, expect, it } from "vitest";
 import { DecodedColumnCache } from "./decoded-column-cache.js";
 import { createParquetLake, readParquetMetadata, writeParquet } from "./index.js";
+import { ParquetReadScope } from "./read-scope.js";
+import { asyncBufferFromStore } from "./store-buffer.js";
 import type { StoreAsyncBuffer } from "./types.js";
 import { canReadParquetVectorBatches, readParquetVectorBatchesFromFile } from "./vector-batches.js";
+
+it.each([
+  false,
+  true,
+])("consumes parent admission across real page decoding with early stop=%s", async (canStopEarly) => {
+  const store = memoryStore();
+  const values = Array.from({ length: 100 }, (_, index) => (index % 7 === 0 ? null : index));
+  await writeParquet(store, "admitted.parquet", {
+    codec: "SNAPPY",
+    pageSize: 64,
+    columnData: [{ name: "value", type: "INT32", encoding: "PLAIN", data: values }],
+  });
+  const file = await asyncBufferFromStore(store, "admitted.parquet");
+  const metadata = await readParquetMetadata(store, "admitted.parquet");
+  const run = async (extent: number) => {
+    const scope = new MemoryScope(new MemoryBudget(extent));
+    scope.admit(extent, "complete decode allocation extent");
+    const transport = new ParquetReadScope(file, scope);
+    try {
+      const rows = await collectVectorRows(transport.file, metadata, {
+        columns: ["value"],
+        batchSize: 7,
+        canStopEarly,
+        pageAllocationLifetime: "iteration",
+        allocationScope: scope,
+      });
+      expect(rows).toEqual(values.map((value) => ({ value })));
+      return extent - scope.availableAllocationBytes;
+    } finally {
+      transport.dispose();
+      scope.dispose();
+      expect(scope.budget.usedBytes).toBe(0);
+    }
+  };
+  const measured = await run(1024 * 1024);
+  expect(measured).toBeGreaterThan(0);
+  expect(await run(measured)).toBe(measured);
+  await expect(run(measured - 1)).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+});
 
 describe("direct Parquet vector batches", () => {
   it("reads supported nested Parquet columns as aligned vector batches", async () => {
@@ -262,15 +305,15 @@ describe("direct Parquet vector batches", () => {
     });
     expect(batches[0]?.columns.plain_label).toMatchObject({
       type: "utf8",
-      valid: new Uint8Array([0, 1, 1, 0, 1]),
+      valid: new Uint8Array([0, 1]),
     });
     expect(batches[0]?.columns.maybe_bool).toMatchObject({
       type: "null",
-      length: 5,
+      length: 2,
     });
     expect(batches[0]?.columns.empty_text).toMatchObject({
       type: "null",
-      length: 5,
+      length: 2,
     });
 
     const malformedDictionaryMetadata = structuredClone(metadata);
@@ -366,23 +409,23 @@ describe("direct Parquet vector batches", () => {
     })) {
       batches.push(batch);
     }
-    expect(batches).toHaveLength(1);
+    expect(batches).toHaveLength(2);
     const batch = batches[0]?.batch;
     if (batch === undefined) throw new Error("missing vector batch");
     expect(batch.columns.f64).toMatchObject({ type: "f64" });
     expect(batch.columns.i64).toMatchObject({
       type: "i64",
-      valid: new Uint8Array([1, 0, 1, 1, 1, 0]),
+      valid: new Uint8Array([1, 0, 1]),
     });
     expect(batch.columns.loaded_at).toMatchObject({
       type: "timestamp",
       unit: "micros",
       isAdjustedToUTC: true,
-      valid: new Uint8Array([0, 1, 1, 1, 0, 1]),
+      valid: new Uint8Array([0, 1, 1]),
     });
     expect(batch.columns.flag).toMatchObject({
       type: "bool",
-      valid: new Uint8Array([1, 1, 0, 1, 1, 1]),
+      valid: new Uint8Array([1, 1, 0]),
     });
     expect(batch.columns.label).toMatchObject({
       type: "dict",
@@ -390,9 +433,9 @@ describe("direct Parquet vector batches", () => {
     });
     expect(batch.columns.plain_name).toMatchObject({
       type: "utf8",
-      valid: new Uint8Array([0, 1, 1, 1, 1, 0]),
+      valid: new Uint8Array([0, 1, 1]),
     });
-    expect(materializeBatchRows(batch)).toEqual([
+    expect(batches.flatMap(({ batch }) => materializeBatchRows(batch))).toEqual([
       { f64: 2.5, i64: 2n, loaded_at: null, flag: false, label: "b", plain_name: null },
       {
         f64: 3.5,
@@ -678,6 +721,7 @@ describe("direct Parquet vector batches", () => {
     expect(
       canReadParquetVectorBatches(metadata, { columns: ["payload", "event_time", "raw"] }),
     ).toBe(true);
+    expect(canReadParquetVectorBatches(metadata, { columns: ["event_time", "raw"] })).toBe(true);
 
     const unsignedLogical = structuredClone(metadata);
     const idLeaf = unsignedLogical.schema.find((entry) => entry.name === "id");
@@ -766,28 +810,28 @@ describe("direct Parquet vector batches", () => {
       batches.push(batch.batch);
     }
 
-    expect(batches).toHaveLength(1);
+    expect(batches).toHaveLength(2);
     const batch = batches[0];
     if (batch === undefined) throw new Error("missing narrow numeric vector batch");
     expect(batch.columns.f32).toMatchObject({
       type: "f32",
-      valid: new Uint8Array([0, 1, 1, 1]),
+      valid: new Uint8Array([0, 1]),
     });
     expect(batch.columns.i32).toMatchObject({
       type: "i32",
-      valid: new Uint8Array([1, 0, 1, 1]),
+      valid: new Uint8Array([1, 0]),
     });
     expect(batch.columns.u32).toMatchObject({
       type: "u32",
-      valid: new Uint8Array([0, 1, 1, 1]),
+      valid: new Uint8Array([0, 1]),
     });
     expect(batch.columns.required_f32).toMatchObject({ type: "f32" });
     expect(batch.columns.required_u32).toMatchObject({ type: "u32" });
     expect(batch.columns.u64).toMatchObject({
       type: "u64",
-      valid: new Uint8Array([0, 1, 1, 1]),
+      valid: new Uint8Array([0, 1]),
     });
-    expect(materializeBatchRows(batch)).toEqual([
+    expect(batches.flatMap(materializeBatchRows)).toEqual([
       {
         f32: null,
         i32: -1,
@@ -1053,7 +1097,7 @@ describe("direct Parquet vector batches", () => {
           unit: "micros",
           isAdjustedToUTC: true,
         }),
-        raw: "\x03",
+        raw: Uint8Array.of(3),
         label: "b",
       },
       {
@@ -1066,7 +1110,7 @@ describe("direct Parquet vector batches", () => {
         raw: null,
         label: "b",
       },
-      { id: 5, loaded_at: null, raw: "\x05", label: "c" },
+      { id: 5, loaded_at: null, raw: Uint8Array.of(5), label: "c" },
       {
         id: 6,
         loaded_at: expect.objectContaining({
@@ -1074,7 +1118,7 @@ describe("direct Parquet vector batches", () => {
           unit: "micros",
           isAdjustedToUTC: true,
         }),
-        raw: "\x06",
+        raw: Uint8Array.of(6),
         label: "c",
       },
     ]);
@@ -1170,3 +1214,507 @@ function wkbPolygon(points: readonly (readonly [number, number])[]): Uint8Array 
   }
   return bytes;
 }
+
+it.each([
+  false,
+  true,
+])("admits decompression output before decoding real Snappy pages (window=%s)", async (canStopEarly) => {
+  const store = memoryStore();
+  await writeParquet(store, "scoped.parquet", {
+    codec: "SNAPPY",
+    columnData: [{ name: "id", data: [1, 2, 3, 4] }],
+  });
+  const file = await fileBuffer(store, "scoped.parquet");
+  const metadata = await readParquetMetadata(store, "scoped.parquet");
+  const scope = new MemoryScope(new MemoryBudget(64 * 1024));
+  const rows = await collectVectorRows(file, metadata, {
+    columns: ["id"],
+    batchSize: 2,
+    canStopEarly,
+    allocationScope: scope,
+  });
+  expect(rows).toEqual([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
+  expect(scope.budget.usedBytes).toBeGreaterThan(0);
+  scope.dispose();
+  expect(scope.budget.usedBytes).toBe(0);
+  const rejected = new MemoryScope(new MemoryBudget(0));
+  await expect(
+    collectVectorRows(file, metadata, {
+      columns: ["id"],
+      canStopEarly,
+      allocationScope: rejected,
+    }),
+  ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  expect(rejected.budget.peakBytes).toBe(0);
+});
+
+it.each([
+  false,
+  true,
+])("admits nullable typed output buffers before allocation (window=%s)", async (canStopEarly) => {
+  const store = memoryStore();
+  await writeParquet(store, "nullable-scoped.parquet", {
+    codec: "UNCOMPRESSED",
+    columnData: [{ name: "id", type: "INT32", data: [1, null, 3, null] }],
+  });
+  const file = await fileBuffer(store, "nullable-scoped.parquet");
+  const metadata = await readParquetMetadata(store, "nullable-scoped.parquet");
+  const scope = new MemoryScope(new MemoryBudget(28));
+  const rows = await collectVectorRows(file, metadata, {
+    columns: ["id"],
+    batchSize: 2,
+    canStopEarly,
+    allocationScope: scope,
+  });
+  expect(rows).toEqual([{ id: 1 }, { id: null }, { id: 3 }, { id: null }]);
+  // Four levels reused as validity overlap eight alignment bytes and 16 output bytes.
+  expect(scope.budget.usedBytes).toBe(20);
+  scope.dispose();
+  expect(scope.budget.usedBytes).toBe(0);
+  const rejected = new MemoryScope(new MemoryBudget(27));
+  await expect(
+    collectVectorRows(file, metadata, {
+      columns: ["id"],
+      canStopEarly,
+      allocationScope: rejected,
+    }),
+  ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  expect(rejected.budget.peakBytes).toBe(12);
+  rejected.dispose();
+  expect(rejected.budget.usedBytes).toBe(0);
+});
+
+it.each([
+  { type: "FLOAT" as const, values: [1.5, null, -2.5, null], bytes: 28, retained: 20 },
+  { type: "DOUBLE" as const, values: [1.5, null, -2.5, null], bytes: 52, retained: 36 },
+  { type: "INT64" as const, values: [1n, null, -2n, null], bytes: 52, retained: 36 },
+  { type: "BOOLEAN" as const, values: [true, null, false, null], bytes: 10, retained: 8 },
+])("accounts typed nullable $type outputs at their actual widths", async ({
+  type,
+  values,
+  bytes,
+  retained,
+}) => {
+  const store = memoryStore();
+  await writeParquet(store, "width.parquet", {
+    codec: "UNCOMPRESSED",
+    columnData: [{ name: "value", type, data: values }],
+  });
+  const file = await fileBuffer(store, "width.parquet");
+  const metadata = await readParquetMetadata(store, "width.parquet");
+  const scope = new MemoryScope(new MemoryBudget(bytes));
+  const batches = [];
+  for await (const { batch } of readParquetVectorBatchesFromFile(file, metadata, {
+    columns: ["value"],
+    allocationScope: scope,
+  }))
+    batches.push(batch);
+  expect(batches.flatMap(materializeBatchRows)).toEqual(values.map((value) => ({ value })));
+  expect(scope.budget.peakBytes).toBe(bytes);
+  expect(scope.budget.usedBytes).toBe(retained);
+  const owner = scope.retainAllocations(batches);
+  scope.dispose();
+  expect(scope.budget.usedBytes).toBe(retained);
+  expect(owner.value.flatMap(materializeBatchRows)).toEqual(values.map((value) => ({ value })));
+  owner.release();
+  expect(scope.budget.usedBytes).toBe(0);
+});
+
+it("decodes a real numeric dictionary with admitted alignment backing", async () => {
+  const store = memoryStore();
+  await writeParquet(store, "numeric-dictionary.parquet", {
+    codec: "UNCOMPRESSED",
+    columnData: [
+      {
+        name: "value",
+        type: "INT64",
+        encoding: "RLE_DICTIONARY",
+        data: [1n, 9007199254740993n, 1n, 9007199254740993n],
+      },
+    ],
+  });
+  const file = await fileBuffer(store, "numeric-dictionary.parquet");
+  const metadata = await readParquetMetadata(store, "numeric-dictionary.parquet");
+  const purposes: string[] = [];
+  class RecordingBudget extends MemoryBudget {
+    override reserve(bytes: number, purpose: string) {
+      purposes.push(purpose);
+      return super.reserve(bytes, purpose);
+    }
+  }
+  const scope = new MemoryScope(new RecordingBudget(1024));
+  const rows = await collectVectorRows(file, metadata, {
+    columns: ["value"],
+    allocationScope: scope,
+  });
+  expect(rows).toEqual([1n, 9007199254740993n, 1n, 9007199254740993n].map((value) => ({ value })));
+  expect(purposes).toContain("Parquet PLAIN alignment");
+  expect(purposes).toContain("Parquet dictionary indices");
+  expect(purposes).not.toContain("Parquet vector buffer");
+  scope.dispose();
+  expect(scope.budget.usedBytes).toBe(0);
+});
+
+it.each([false, true])("admits real byte-stream-split pages (window=%s)", async (canStopEarly) => {
+  const store = memoryStore();
+  await writeParquet(store, "split.parquet", {
+    codec: "SNAPPY",
+    columnData: [
+      {
+        name: "value",
+        type: "FLOAT",
+        encoding: "BYTE_STREAM_SPLIT",
+        data: [1.5, null, 2.25, null],
+      },
+    ],
+  });
+  const file = await fileBuffer(store, "split.parquet");
+  const metadata = await readParquetMetadata(store, "split.parquet");
+  const scope = new MemoryScope(new MemoryBudget(28));
+  const rows = await collectVectorRows(file, metadata, {
+    columns: ["value"],
+    canStopEarly,
+    allocationScope: scope,
+  });
+  expect(rows).toEqual([{ value: 1.5 }, { value: null }, { value: 2.25 }, { value: null }]);
+  // Release eight decompressed bytes before constructing nullable output.
+  // Peak: four levels, eight transposed bytes and sixteen output bytes.
+  expect(scope.budget.peakBytes).toBe(28);
+  expect(scope.budget.usedBytes).toBe(20);
+  scope.dispose();
+  const rejected = new MemoryScope(new MemoryBudget(27));
+  await expect(
+    collectVectorRows(file, metadata, {
+      columns: ["value"],
+      canStopEarly,
+      allocationScope: rejected,
+    }),
+  ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  expect(rejected.budget.peakBytes).toBe(20);
+  rejected.dispose();
+  expect(rejected.budget.usedBytes).toBe(0);
+});
+
+it.each([
+  { canStopEarly: false, int64: false },
+  { canStopEarly: true, int64: false },
+  { canStopEarly: false, int64: true },
+  { canStopEarly: true, int64: true },
+])("admits real multi-block integer delta pages %j", async ({ canStopEarly, int64 }) => {
+  const store = memoryStore();
+  const values = Array.from({ length: 300 }, (_, index) =>
+    index % 7 === 0
+      ? null
+      : int64
+        ? 9007199254740993n + BigInt(index * index)
+        : index * index - 500,
+  );
+  await writeParquet(store, "delta.parquet", {
+    codec: "SNAPPY",
+    columnData: [
+      {
+        name: "value",
+        type: int64 ? "INT64" : "INT32",
+        encoding: "DELTA_BINARY_PACKED",
+        data: values,
+      },
+    ],
+  });
+  const file = await fileBuffer(store, "delta.parquet");
+  const metadata = await readParquetMetadata(store, "delta.parquet");
+  const scope = new MemoryScope(new MemoryBudget(64 * 1024));
+  const rows = await collectVectorRows(file, metadata, {
+    columns: ["value"],
+    batchSize: 17,
+    canStopEarly,
+    allocationScope: scope,
+  });
+  expect(rows).toEqual(values.map((value) => ({ value })));
+  const exact = scope.budget.peakBytes;
+  scope.dispose();
+  expect(scope.budget.usedBytes).toBe(0);
+  const bounded = new MemoryScope(new MemoryBudget(exact));
+  expect(
+    await collectVectorRows(file, metadata, {
+      columns: ["value"],
+      canStopEarly,
+      allocationScope: bounded,
+    }),
+  ).toEqual(rows);
+  bounded.dispose();
+  const tight = new MemoryScope(new MemoryBudget(exact - 1));
+  await expect(
+    collectVectorRows(file, metadata, { columns: ["value"], canStopEarly, allocationScope: tight }),
+  ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  tight.dispose();
+  expect(tight.budget.usedBytes).toBe(0);
+});
+
+it.each([
+  { encoding: "PLAIN" as const, canStopEarly: false },
+  { encoding: "PLAIN" as const, canStopEarly: true },
+  { encoding: "RLE" as const, canStopEarly: false },
+  { encoding: "RLE" as const, canStopEarly: true },
+])("admits boolean values while preserving boolean vector semantics %j", async ({
+  encoding,
+  canStopEarly,
+}) => {
+  const store = memoryStore();
+  const values = [true, false, null, true, null, false];
+  await writeParquet(store, "bool.parquet", {
+    codec: "UNCOMPRESSED",
+    columnData: [{ name: "value", type: "BOOLEAN", encoding, data: values }],
+  });
+  const file = await fileBuffer(store, "bool.parquet");
+  const metadata = await readParquetMetadata(store, "bool.parquet");
+  const scope = new MemoryScope(new MemoryBudget(16));
+  expect(
+    await collectVectorRows(file, metadata, {
+      columns: ["value"],
+      batchSize: 2,
+      canStopEarly,
+      allocationScope: scope,
+    }),
+  ).toEqual(values.map((value) => ({ value })));
+  expect(scope.budget.usedBytes).toBe(12);
+  scope.dispose();
+  const tight = new MemoryScope(new MemoryBudget(15));
+  await expect(
+    collectVectorRows(file, metadata, { columns: ["value"], canStopEarly, allocationScope: tight }),
+  ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  tight.dispose();
+  expect(tight.budget.usedBytes).toBe(0);
+});
+
+it.each([
+  { text: true, canStopEarly: false },
+  { text: true, canStopEarly: true },
+  { text: false, canStopEarly: false },
+  { text: false, canStopEarly: true },
+])("reads packed PLAIN byte pages with admitted nullable storage %j", async ({
+  text,
+  canStopEarly,
+}) => {
+  const store = memoryStore();
+  const strings = ["é", null, "", "猫", null, "end"];
+  const values = text
+    ? strings
+    : strings.map((value) => (value === null ? null : new TextEncoder().encode(value)));
+  await writeParquet(store, "packed.parquet", {
+    codec: "UNCOMPRESSED",
+    schema: [
+      { name: "root", num_children: 1 },
+      {
+        name: "value",
+        type: "BYTE_ARRAY",
+        repetition_type: "OPTIONAL",
+        ...(text ? { converted_type: "UTF8" as const } : {}),
+      },
+    ],
+    columnData: [{ name: "value", encoding: "PLAIN", data: values }],
+  });
+  const file = await fileBuffer(store, "packed.parquet");
+  const metadata = await readParquetMetadata(store, "packed.parquet");
+  // Six definition bytes reused as validity, four start/length pairs and six indices.
+  const scope = new MemoryScope(new MemoryBudget(62));
+  const batches = [];
+  for await (const { batch } of readParquetVectorBatchesFromFile(file, metadata, {
+    columns: ["value"],
+    batchSize: 2,
+    canStopEarly,
+    allocationScope: scope,
+  }))
+    batches.push(batch);
+  expect(batches.flatMap(materializeBatchRows)).toEqual(values.map((value) => ({ value })));
+  expect(batches[0]?.columns.value).toMatchObject({
+    type: "dict",
+    dictionary: { type: text ? "utf8-view" : "binary-view" },
+  });
+  expect(scope.budget.peakBytes).toBe(62);
+  scope.dispose();
+  expect(scope.budget.usedBytes).toBe(0);
+  const sliced = new MemoryScope(new MemoryBudget(62));
+  expect(
+    await collectVectorRows(file, metadata, {
+      columns: ["value"],
+      rowStart: 1,
+      rowEnd: 5,
+      batchSize: 1,
+      canStopEarly,
+      allocationScope: sliced,
+    }),
+  ).toEqual(values.slice(1, 5).map((value) => ({ value })));
+  sliced.dispose();
+  const tight = new MemoryScope(new MemoryBudget(61));
+  await expect(
+    collectVectorRows(file, metadata, {
+      columns: ["value"],
+      canStopEarly,
+      allocationScope: tight,
+    }),
+  ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  tight.dispose();
+  expect(tight.budget.usedBytes).toBe(0);
+});
+
+it.each([
+  { required: true, values: ["é", "", "猫", "end"], bytes: 32 },
+  { required: false, values: ["é", "", "猫", "end"], bytes: 32 },
+  { required: false, values: [null, null, null, null], bytes: 20 },
+])("handles packed page presence extremes %j", async ({ required, values, bytes }) => {
+  const store = memoryStore();
+  await writeParquet(store, "presence.parquet", {
+    codec: "UNCOMPRESSED",
+    schema: [
+      { name: "root", num_children: 1 },
+      {
+        name: "value",
+        type: "BYTE_ARRAY",
+        converted_type: "UTF8",
+        repetition_type: required ? "REQUIRED" : "OPTIONAL",
+      },
+    ],
+    columnData: [{ name: "value", encoding: "PLAIN", data: values }],
+  });
+  const file = await fileBuffer(store, "presence.parquet");
+  const metadata = await readParquetMetadata(store, "presence.parquet");
+  for (const canStopEarly of [false, true]) {
+    const scope = new MemoryScope(new MemoryBudget(bytes));
+    expect(
+      await collectVectorRows(file, metadata, {
+        columns: ["value"],
+        rowStart: 1,
+        rowEnd: 4,
+        batchSize: 1,
+        canStopEarly,
+        allocationScope: scope,
+      }),
+    ).toEqual(values.slice(1).map((value) => ({ value })));
+    expect(scope.budget.peakBytes).toBe(bytes);
+    scope.dispose();
+    expect(scope.budget.usedBytes).toBe(0);
+  }
+});
+
+it.each([
+  false,
+  true,
+])("bounds output rows without copying numeric page backing (early=%s)", async (canStopEarly) => {
+  const store = memoryStore();
+  const values = Array.from({ length: 19 }, (_, index) => index);
+  await writeParquet(store, "bounded-batches.parquet", {
+    codec: "UNCOMPRESSED",
+    columnData: [{ name: "id", type: "INT32", encoding: "PLAIN", data: values }],
+  });
+  const file = await fileBuffer(store, "bounded-batches.parquet");
+  const metadata = await readParquetMetadata(store, "bounded-batches.parquet");
+  const batches = [];
+  for await (const output of readParquetVectorBatchesFromFile(file, metadata, {
+    columns: ["id"],
+    rowStart: 2,
+    rowEnd: 18,
+    batchSize: 3,
+    canStopEarly,
+  }))
+    batches.push(output);
+  expect(batches.map((output) => output.rowOffset)).toEqual([2, 5, 8, 11, 14, 17]);
+  expect(batches.map((output) => output.batch.rowCount)).toEqual([3, 3, 3, 3, 3, 1]);
+  expect(batches.flatMap((output) => materializeBatchRows(output.batch))).toEqual(
+    values.slice(2, 18).map((id) => ({ id })),
+  );
+  const backings = batches.map((output) => {
+    const vector = output.batch.columns.id;
+    if (vector?.type !== "i32") throw new Error("expected i32 fixture");
+    return vector.values.buffer;
+  });
+  expect(new Set(backings).size).toBe(1);
+});
+
+it.each([
+  0,
+  -1,
+  1.5,
+  Infinity,
+  NaN,
+  Number.MAX_SAFE_INTEGER + 1,
+])("rejects invalid batch size %s before reading", async (batchSize) => {
+  const store = memoryStore();
+  await writeParquet(store, "invalid-batch.parquet", {
+    columnData: [{ name: "id", type: "INT32", data: [1] }],
+  });
+  const metadata = await readParquetMetadata(store, "invalid-batch.parquet");
+  let reads = 0;
+  const source: StoreAsyncBuffer = {
+    byteLength: 100,
+    async slice() {
+      reads += 1;
+      throw new Error("unexpected read");
+    },
+  };
+  await expect(
+    collectVectorRows(source, metadata, { columns: ["id"], batchSize }),
+  ).rejects.toMatchObject({ code: "LAKEQL_VALIDATION_ERROR" });
+  expect(reads).toBe(0);
+});
+
+it("plans normal-reader prefetch lazily and stops at early output exit", async () => {
+  const store = memoryStore();
+  await writeParquet(store, "lazy-prefetch.parquet", {
+    rowGroupSize: [2, 2, 2, 2],
+    columnData: [{ name: "id", type: "INT32", data: [0, 1, 2, 3, 4, 5, 6, 7] }],
+  });
+  const file = await fileBuffer(store, "lazy-prefetch.parquet");
+  const metadata = await readParquetMetadata(store, "lazy-prefetch.parquet");
+  const third = metadata.row_groups[2];
+  if (!third) throw new Error("missing group");
+  Object.defineProperty(third, "columns", {
+    get() {
+      throw new Error("planned past window");
+    },
+  });
+  const windows: number[] = [];
+  for await (const output of readParquetVectorBatchesFromFile(
+    {
+      ...file,
+      async prefetch(ranges) {
+        windows.push(ranges.length);
+      },
+    },
+    metadata,
+    { columns: ["id"], maxConcurrentReads: 2, batchSize: 1 },
+  )) {
+    expect(materializeBatchRows(output.batch)).toEqual([{ id: 0 }]);
+    break;
+  }
+  expect(windows).toEqual([2]);
+});
+
+it("keeps lazy prefetch windows aligned with predicate-pruned groups", async () => {
+  const store = memoryStore();
+  await writeParquet(store, "pruned-prefetch.parquet", {
+    rowGroupSize: [2, 2, 2, 2, 2],
+    columnData: [{ name: "id", type: "INT32", data: [0, 1, 10, 11, 2, 3, 20, 21, 30, 31] }],
+  });
+  const file = await fileBuffer(store, "pruned-prefetch.parquet");
+  const metadata = await readParquetMetadata(store, "pruned-prefetch.parquet");
+  const windows: number[] = [];
+  const stats = queryStats();
+  const rows = await collectVectorRows(
+    {
+      ...file,
+      async prefetch(ranges) {
+        windows.push(ranges.length);
+      },
+    },
+    metadata,
+    {
+      columns: ["id"],
+      maxConcurrentReads: 2,
+      batchSize: 1,
+      where: gt("id", 5),
+      stats,
+    },
+  );
+  expect(rows).toEqual([10, 11, 20, 21, 30, 31].map((id) => ({ id })));
+  expect(windows).toEqual([2, 1]);
+});

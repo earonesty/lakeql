@@ -1315,7 +1315,7 @@ describe("createParquetLake", () => {
     await writeParquet(schemaStore, "schemas/compatible/a.parquet", {
       columnData: [
         { name: "id", data: [1], type: "INT32" },
-        { name: "extra", data: ["a"], type: "BYTE_ARRAY", converted_type: "UTF8" },
+        { name: "extra", data: ["a"], type: "STRING" },
       ],
     });
     await writeParquet(schemaStore, "schemas/compatible/b.parquet", {
@@ -2621,6 +2621,37 @@ describe("timestamp logical values", () => {
         .select(["id"])
         .toArray(),
     ).resolves.toEqual([{ id: 2 }]);
+    // A nanosecond literal between stored microsecond ticks must not be rounded
+    // to the first row's timestamp by the vector comparison fast path.
+    await expect(
+      lake
+        .path(path)
+        .where(lt("loaded_at", "2023-11-14T22:13:20.000001001Z"))
+        .select(["id"])
+        .toArray(),
+    ).resolves.toEqual([{ id: 1 }]);
+    await expect(
+      lake
+        .path(path)
+        .where(eq("loaded_at", "2023-11-14T22:13:20.000001001Z"))
+        .select(["id"])
+        .toArray(),
+    ).resolves.toEqual([]);
+    await expect(
+      lake
+        .path(path)
+        .groupBy([])
+        .aggregate({
+          matching: {
+            op: "sum",
+            expr: {
+              kind: "case",
+              whens: [{ when: lt("loaded_at", "2023-11-14T22:13:20.000001001Z"), value: lit(1) }],
+              else: lit(0),
+            },
+          },
+        }),
+    ).resolves.toEqual([{ matching: 1 }]);
   });
 });
 
@@ -2632,7 +2663,7 @@ describe("rejectUnsupportedParquetSchema", () => {
     ).not.toThrow();
   });
 
-  it("rejects unannotated Parquet groups as unsupported structs", () => {
+  it("accepts unannotated groups supported by generic struct vectors", () => {
     expect(() =>
       rejectUnsupportedParquetSchema(
         metadataWithSchema([
@@ -2641,19 +2672,10 @@ describe("rejectUnsupportedParquetSchema", () => {
           { name: "street", type: "BYTE_ARRAY", converted_type: "UTF8" },
         ]),
       ),
-    ).toThrowError(LakeqlError);
-    expect(() =>
-      rejectUnsupportedParquetSchema(
-        metadataWithSchema([
-          { name: "root", num_children: 1 },
-          { name: "address", num_children: 1, repetition_type: "OPTIONAL" },
-          { name: "street", type: "BYTE_ARRAY", converted_type: "UTF8" },
-        ]),
-      ),
-    ).toThrow(/struct/u);
+    ).not.toThrow();
   });
 
-  it("allows projected scalar columns when unprojected columns are unsupported structs", () => {
+  it("accepts scalar and struct projections through generic vector capabilities", () => {
     const metadata = metadataWithSchema([
       { name: "root", num_children: 2 },
       { name: "id", type: "INT32" },
@@ -2665,10 +2687,8 @@ describe("rejectUnsupportedParquetSchema", () => {
     ]);
 
     expect(() => rejectUnsupportedParquetSchema(metadata, { columns: ["id"] })).not.toThrow();
-    expect(() => rejectUnsupportedParquetSchema(metadata, { columns: ["bbox"] })).toThrowError(
-      LakeqlError,
-    );
-    expect(() => rejectUnsupportedParquetSchema(metadata)).toThrowError(LakeqlError);
+    expect(() => rejectUnsupportedParquetSchema(metadata, { columns: ["bbox"] })).not.toThrow();
+    expect(() => rejectUnsupportedParquetSchema(metadata)).not.toThrow();
   });
 
   it("rejects unsupported precision-sensitive decimals without rejecting timestamps", () => {
@@ -2698,7 +2718,7 @@ describe("rejectUnsupportedParquetSchema", () => {
             scale: 4,
           },
         ]),
-        { allowValueCheckedInt64Decimals: true },
+        { allowValueCheckedScalarDecimals: true },
       ),
     ).not.toThrow();
     expect(() =>
@@ -2714,9 +2734,9 @@ describe("rejectUnsupportedParquetSchema", () => {
             scale: 4,
           },
         ]),
-        { allowValueCheckedInt64Decimals: true },
+        { allowValueCheckedScalarDecimals: true },
       ),
-    ).toThrow(/precision 15/u);
+    ).not.toThrow();
     expect(() =>
       rejectUnsupportedParquetSchema(
         metadataWithSchema([
@@ -2779,7 +2799,7 @@ describe("rejectUnsupportedParquetSchema", () => {
             scale: 4,
           },
         ]),
-        { allowValueCheckedInt64Decimals: true },
+        { allowValueCheckedScalarDecimals: true },
       ),
     ).toThrowError(
       expect.objectContaining({
@@ -2799,7 +2819,7 @@ describe("rejectUnsupportedParquetSchema", () => {
             logical_type: { type: "DECIMAL", precision: 18, scale: 4 },
           },
         ]),
-        { allowValueCheckedInt64Decimals: true },
+        { allowValueCheckedScalarDecimals: true },
       ),
     ).toThrowError(
       expect.objectContaining({
@@ -2809,7 +2829,7 @@ describe("rejectUnsupportedParquetSchema", () => {
     );
   });
 
-  it("applies the struct rejection before row-group planning", () => {
+  it("allows generic struct shapes during row-group planning", () => {
     expect(() =>
       planRowGroupsFromMetadata(
         metadataWithSchema([
@@ -2819,7 +2839,7 @@ describe("rejectUnsupportedParquetSchema", () => {
         ]),
         undefined,
       ),
-    ).toThrowError(LakeqlError);
+    ).not.toThrow();
   });
 });
 

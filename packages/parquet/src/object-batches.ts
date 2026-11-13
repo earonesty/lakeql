@@ -1,5 +1,6 @@
 import { parquetReadObjects, parquetSchema } from "hyparquet";
-import { normalizeIntegerDecimalRows, rawIntegerDecimalMetadata } from "./decimal.js";
+import { scopedParquetCompressors } from "./compressors.js";
+import { normalizeDecimalRows, rawDecimalMetadata } from "./decimal.js";
 import { normalizeDecodedRows } from "./decoded-rows.js";
 import { lakeqlParquetParsers } from "./parsers.js";
 import {
@@ -46,15 +47,19 @@ export async function* readParquetObjectBatchesFromFile(
       const rowEnd = Math.min(rowStart + batchSize, end);
       const readOptions: Parameters<typeof parquetReadObjects>[0] = {
         file,
-        metadata: rawIntegerDecimalMetadata(metadata, columns),
+        compressors: scopedParquetCompressors(
+          options.allocationScope ?? options.decompressionScope,
+        ),
+        metadata: rawDecimalMetadata(metadata, columns),
         rowFormat: "object",
         rowStart,
         rowEnd,
         parsers: lakeqlParquetParsers,
+        utf8: false,
       };
       if (options.columns) readOptions.columns = options.columns;
       const rows = normalizeDecodedRows(
-        normalizeIntegerDecimalRows(metadata, columns, await parquetReadObjects(readOptions)),
+        normalizeDecimalRows(metadata, columns, await parquetReadObjects(readOptions)),
       );
       recordRowsDecoded(options.stats, rows.length);
       yield {

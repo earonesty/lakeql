@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Bookmark, RuntimeSubstrate } from "./cloudflare.js";
 
 class FakeR2Object {
+  readonly body: ReadableStream<Uint8Array>;
   readonly size: number;
   readonly uploaded = new Date("2026-06-14T00:00:00Z");
   readonly httpMetadata = { contentType: "application/vnd.apache.parquet" };
@@ -10,8 +11,15 @@ class FakeR2Object {
     readonly key: string,
     private readonly bytes: Uint8Array,
     readonly etag = "etag",
+    objectSize = bytes.byteLength,
   ) {
-    this.size = bytes.byteLength;
+    this.size = objectSize;
+    this.body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes);
+        controller.close();
+      },
+    });
   }
 
   async arrayBuffer(): Promise<ArrayBuffer> {
@@ -30,7 +38,7 @@ class FakeR2Bucket {
     const ranged = options?.range
       ? bytes.slice(options.range.offset, options.range.offset + options.range.length)
       : bytes;
-    return new FakeR2Object(key, ranged);
+    return new FakeR2Object(key, ranged, undefined, bytes.byteLength);
   }
 
   async head(key: string) {

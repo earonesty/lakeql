@@ -6,9 +6,8 @@ import { RecordBatch } from "apache-arrow/fb/record-batch";
 import { Footer } from "apache-arrow/ipc/metadata/file";
 import "apache-arrow/ipc/metadata/message";
 import { ByteBuffer } from "flatbuffers";
-import { decompress } from "fzstd";
-import { LakeqlError } from "lakeql";
-import type { LanceReadContext } from "./io.js";
+import { decompressZstdInto, LakeqlError } from "lakeql";
+import type { LanceReadContext, MemoryLease } from "./io.js";
 import type { LanceFragment } from "./proto.js";
 
 export async function readDeletedRowOffsets(
@@ -161,7 +160,10 @@ async function readRequestedDeletionOffsets(options: {
         decodedArrowBufferAllocationBytes(encoded, codec),
       );
       try {
-        validateDeletionValidity(decodeArrowBuffer(encoded, codec), options.expectedRows);
+        validateDeletionValidity(
+          decodeArrowBuffer(encoded, codec, options.context),
+          options.expectedRows,
+        );
       } finally {
         memory.release();
       }
@@ -179,7 +181,7 @@ async function readRequestedDeletionOffsets(options: {
     );
     try {
       matches = decodeDeletionValues(
-        decodeArrowBuffer(encoded, codec),
+        decodeArrowBuffer(encoded, codec, options.context),
         options.physicalRows,
         options.expectedRows,
         options.requestedOffsets,
@@ -336,7 +338,11 @@ function compressionCodec(batch: RecordBatch): number | undefined {
   return batch.compression(new BodyCompression())?.codec();
 }
 
-export function decodeArrowBuffer(bytes: Uint8Array, codec: number | undefined): Uint8Array {
+export function decodeArrowBuffer(
+  bytes: Uint8Array,
+  codec: number | undefined,
+  context?: LanceReadContext,
+): Uint8Array {
   if (codec === undefined) return bytes;
   if (bytes.byteLength < 8) corrupt("Compressed Arrow buffer is truncated");
   const uncompressedLength = dataView(bytes).getBigInt64(0, true);
@@ -349,9 +355,43 @@ export function decodeArrowBuffer(bytes: Uint8Array, codec: number | undefined):
       { codec },
     );
   }
-  const output = decompress(bytes.subarray(8), new Uint8Array(length));
-  if (output.byteLength !== length) corrupt("Arrow deletion buffer decompressed length mismatch");
-  return output;
+  // The caller leases the output for its consumption lifetime. Only decoder
+  // workspace is leased here, and replaced tables are released between blocks.
+  const workspace = new Map<ArrayBufferLike, MemoryLease>();
+  const releaseFrame = () => {
+    for (const lease of workspace.values()) lease.release();
+    workspace.clear();
+  };
+  try {
+    return decompressZstdInto(
+      bytes.subarray(8),
+      new Uint8Array(length),
+      context === undefined
+        ? undefined
+        : (size) => {
+            const lease = context.leaseDecodedMemory(size);
+            try {
+              const buffer = new Uint8Array(size);
+              workspace.set(buffer.buffer, lease);
+              return buffer;
+            } catch (error) {
+              lease.release();
+              throw error;
+            }
+          },
+      releaseFrame,
+      (live) => {
+        for (const [backing, lease] of workspace) {
+          if (!live.includes(backing)) {
+            lease.release();
+            workspace.delete(backing);
+          }
+        }
+      },
+    );
+  } finally {
+    releaseFrame();
+  }
 }
 
 function decodedArrowBufferAllocationBytes(bytes: Uint8Array, codec: number | undefined): number {

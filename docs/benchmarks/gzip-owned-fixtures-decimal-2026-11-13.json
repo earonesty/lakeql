@@ -1,0 +1,117 @@
+{
+  "scope": "Local external GZIP files through owned reader with independent DuckDB values; diagnostic failures are unresolved, not expected passes; tracks engine backing but excludes uninstrumented nested/JS allocations and oracle storage",
+  "reports": [
+    {
+      "name": "byte_stream_split_extended.gzip.parquet",
+      "batchSize": 1,
+      "status": "matches-reference",
+      "fullProjectionError": "Invalid Error: BYTE_STREAM_SPLIT encoding is only supported for FLOAT or DOUBLE data",
+      "referenceMode": "documented-plain-twins-with-decimal-cast-to-double",
+      "difference": null,
+      "referenceRows": 200,
+      "actualRows": 200,
+      "peakBytes": 27654,
+      "releasedBytes": 0
+    },
+    {
+      "name": "byte_stream_split_extended.gzip.parquet",
+      "batchSize": 127,
+      "status": "matches-reference",
+      "fullProjectionError": "Invalid Error: BYTE_STREAM_SPLIT encoding is only supported for FLOAT or DOUBLE data",
+      "referenceMode": "documented-plain-twins-with-decimal-cast-to-double",
+      "difference": null,
+      "referenceRows": 200,
+      "actualRows": 200,
+      "peakBytes": 40996,
+      "releasedBytes": 0
+    },
+    {
+      "name": "concatenated_gzip_members.parquet",
+      "batchSize": 1,
+      "status": "matches-reference",
+      "referenceMode": "full-projection",
+      "difference": null,
+      "referenceRows": 513,
+      "actualRows": 513,
+      "peakBytes": 7675,
+      "releasedBytes": 0
+    },
+    {
+      "name": "concatenated_gzip_members.parquet",
+      "batchSize": 127,
+      "status": "matches-reference",
+      "referenceMode": "full-projection",
+      "difference": null,
+      "referenceRows": 513,
+      "actualRows": 513,
+      "peakBytes": 7675,
+      "releasedBytes": 0
+    },
+    {
+      "name": "data_index_bloom_encoding_stats.parquet",
+      "batchSize": 1,
+      "status": "matches-reference",
+      "referenceMode": "full-projection",
+      "difference": null,
+      "referenceRows": 14,
+      "actualRows": 14,
+      "peakBytes": 2417,
+      "releasedBytes": 0
+    },
+    {
+      "name": "data_index_bloom_encoding_stats.parquet",
+      "batchSize": 127,
+      "status": "matches-reference",
+      "referenceMode": "full-projection",
+      "difference": null,
+      "referenceRows": 14,
+      "actualRows": 14,
+      "peakBytes": 2417,
+      "releasedBytes": 0
+    },
+    {
+      "name": "incorrect_map_schema.parquet",
+      "batchSize": 1,
+      "status": "matches-reference",
+      "referenceMode": "full-projection",
+      "difference": null,
+      "referenceRows": 1,
+      "actualRows": 1,
+      "peakBytes": 2358,
+      "releasedBytes": 0
+    },
+    {
+      "name": "incorrect_map_schema.parquet",
+      "batchSize": 127,
+      "status": "matches-reference",
+      "referenceMode": "full-projection",
+      "difference": null,
+      "referenceRows": 1,
+      "actualRows": 1,
+      "peakBytes": 2358,
+      "releasedBytes": 0
+    },
+    {
+      "name": "rle_boolean_encoding.parquet",
+      "batchSize": 1,
+      "status": "matches-reference",
+      "referenceMode": "full-projection",
+      "difference": null,
+      "referenceRows": 68,
+      "actualRows": 68,
+      "peakBytes": 2409,
+      "releasedBytes": 0
+    },
+    {
+      "name": "rle_boolean_encoding.parquet",
+      "batchSize": 127,
+      "status": "matches-reference",
+      "referenceMode": "full-projection",
+      "difference": null,
+      "referenceRows": 68,
+      "actualRows": 68,
+      "peakBytes": 2409,
+      "releasedBytes": 0
+    }
+  ]
+}

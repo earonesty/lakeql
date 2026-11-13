@@ -1,0 +1,69 @@
+{
+  "description": "Real sales Parquet fixture through owned decoding and the CPU physical reduction continuation. HTTP is a local range-server simulation; publicQuery selects the public columnar query route with an owned-only Parquet scanner. This is not a Worker heap measurement.",
+  "grouped": false,
+  "publicQuery": true,
+  "expected": [
+    {
+      "rows": 100,
+      "sum": 48199.5,
+      "median": 479.305,
+      "regions": 4
+    }
+  ],
+  "results": [
+    {
+      "transport": "memory",
+      "batchSize": 1,
+      "batches": 100,
+      "requests": 0,
+      "transferredBytes": 0,
+      "peakAdmittedBytes": 21384,
+      "remainingBytes": 0
+    },
+    {
+      "transport": "memory",
+      "batchSize": 7,
+      "batches": 15,
+      "requests": 0,
+      "transferredBytes": 0,
+      "peakAdmittedBytes": 21384,
+      "remainingBytes": 0
+    },
+    {
+      "transport": "memory",
+      "batchSize": 64,
+      "batches": 3,
+      "requests": 0,
+      "transferredBytes": 0,
+      "peakAdmittedBytes": 21384,
+      "remainingBytes": 0
+    },
+    {
+      "transport": "http-206",
+      "batchSize": 1,
+      "batches": 100,
+      "requests": 8,
+      "transferredBytes": 1015,
+      "peakAdmittedBytes": 21384,
+      "remainingBytes": 0
+    },
+    {
+      "transport": "http-206",
+      "batchSize": 7,
+      "batches": 15,
+      "requests": 8,
+      "transferredBytes": 1015,
+      "peakAdmittedBytes": 21384,
+      "remainingBytes": 0
+    },
+    {
+      "transport": "http-206",
+      "batchSize": 64,
+      "batches": 3,
+      "requests": 8,
+      "transferredBytes": 1015,
+      "peakAdmittedBytes": 21384,
+      "remainingBytes": 0
+    }
+  ]
+}

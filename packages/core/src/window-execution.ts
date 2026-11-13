@@ -1,8 +1,10 @@
 import { matches } from "./evaluator.js";
+import type { MemoryBudget } from "./memory-budget.js";
 import type { PathQueryInit, QueryBudget } from "./query.js";
 import type { QueryStats, Row } from "./types.js";
 
 export interface WindowBatchExecutionOptions {
+  memoryBudget?: MemoryBudget;
   config: PathQueryInit & {
     budget: QueryBudget;
     now: () => number;
@@ -38,6 +40,7 @@ export async function* windowedQueryBatches(
   const { config } = options;
   const { applyWindowsToRows } = await import("./window-backend.js");
   const rows = applyWindowsToRows(options.matched, config.windows ?? {}, {
+    ...(options.memoryBudget === undefined ? {} : { memoryBudget: options.memoryBudget }),
     estimateMemoryBytes: options.estimateMemoryBytes,
     enforceBufferedRows: (rows) => options.enforceBufferedRows(config.budget, rows),
     enforceWindowPartitionRows: (rows) => options.enforceWindowPartitionRows(config.budget, rows),
@@ -52,6 +55,7 @@ export async function* windowedRunQueryBatches(
   const { config } = options;
   const { applyWindowsToRuns } = await import("./window-backend.js");
   const runs = applyWindowsToRuns(options.runs, config.windows ?? {}, {
+    ...(options.memoryBudget === undefined ? {} : { memoryBudget: options.memoryBudget }),
     estimateMemoryBytes: options.estimateMemoryBytes,
     enforceBufferedRows: (rows) => options.enforceBufferedRows(config.budget, rows),
     enforceWindowPartitionRows: (rows) => options.enforceWindowPartitionRows(config.budget, rows),

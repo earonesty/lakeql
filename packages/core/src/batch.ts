@@ -1,6 +1,14 @@
 import { batchCallExprValues, batchCallPredicateMask } from "./batch-call.js";
+import { registerCompactionMetadata } from "./compaction-metadata.js";
+import { expandDictionaryMask } from "./dictionary-mask.js";
 import { LakeqlError } from "./errors.js";
 import type { CompareOp, Expr, Scalar } from "./expr.js";
+import { heapSort } from "./heap-sort.js";
+import { allocateInt96Storage, readInt96, writeInt96 } from "./int96-storage.js";
+import { MATERIALIZATION_CHARGES as c } from "./materialization-plan.js";
+import { MemoryBudget } from "./memory-budget.js";
+import { MemoryScope } from "./memory-scope.js";
+import { setRecordValue } from "./record-value.js";
 import {
   compareTimestampValues,
   isTimestampValue,
@@ -10,8 +18,50 @@ import {
   timestampValueFromIso,
 } from "./timestamp.js";
 import type { Row } from "./types.js";
+import { buildUnionChildren } from "./union-construction.js";
+import { admitVectorBuffer } from "./vector-buffer.js";
+
+const UNION_DOMAINS = [
+  "null",
+  "f64",
+  "i64",
+  "timestamp",
+  "bool",
+  "utf8",
+  "binary",
+  "list",
+  "struct",
+  "map",
+] as const;
+
+const MIN_TIMESTAMP_VECTOR_EPOCH = -(1n << 63n);
+const MAX_TIMESTAMP_VECTOR_EPOCH = (1n << 63n) - 1n;
+
+export interface PackedByteVector {
+  type: "binary-view" | "utf8-view";
+  data: Uint8Array;
+  ranges?: Uint32Array;
+  fixedLength?: number;
+  rowOffset?: number;
+  length: number;
+  valid?: Uint8Array;
+}
+
+// Packed values are individual strings, not streams with an encoding signature.
+const packedTextDecoder = new TextDecoder("utf-8", { ignoreBOM: true });
+
+function packedByteValue(vector: PackedByteVector, index: number): Uint8Array {
+  const row = (vector.rowOffset ?? 0) + index;
+  const start =
+    vector.ranges === undefined ? row * (vector.fixedLength ?? 0) : (vector.ranges[row * 2] ?? 0);
+  const length =
+    vector.ranges === undefined ? (vector.fixedLength ?? 0) : (vector.ranges[row * 2 + 1] ?? 0);
+  return vector.data.subarray(start, start + length);
+}
 
 export type Vector =
+  | { type: "union"; tags: Uint8Array; offsets: Uint32Array; children: readonly Vector[] }
+  | PackedByteVector
   | { type: "null"; length: number }
   | { type: "f32"; values: Float32Array; valid?: Uint8Array }
   | { type: "f64"; values: Float64Array; valid?: Uint8Array }
@@ -23,6 +73,14 @@ export type Vector =
   | {
       type: "timestamp";
       values: BigInt64Array;
+      unit: TimestampUnit;
+      isAdjustedToUTC: boolean;
+      valid?: Uint8Array;
+    }
+  | {
+      type: "timestamp96";
+      low: BigUint64Array;
+      high: Int32Array;
       unit: TimestampUnit;
       isAdjustedToUTC: boolean;
       valid?: Uint8Array;
@@ -43,11 +101,17 @@ export interface Batch {
 export type Selection = Uint8Array;
 
 type VectorValue = unknown;
-type VectorShape = Exclude<Vector["type"], "dict" | "f32" | "i32" | "u32" | "u8">;
+type VectorShape = Exclude<
+  Vector["type"],
+  "timestamp96" | "dict" | "f32" | "i32" | "u32" | "u8" | "binary-view" | "utf8-view"
+>;
 
-export function batchFromColumns(columns: Record<string, ArrayLike<VectorValue>>): Batch {
+export function batchFromColumns(
+  columns: Record<string, ArrayLike<VectorValue>>,
+  scope?: MemoryScope,
+): Batch {
   let rowCount: number | undefined;
-  const vectors: Record<string, Vector> = {};
+  const vectors: Record<string, Vector> = Object.create(null);
   for (const [name, values] of Object.entries(columns)) {
     if (rowCount === undefined) rowCount = values.length;
     else if (values.length !== rowCount) {
@@ -57,7 +121,7 @@ export function batchFromColumns(columns: Record<string, ArrayLike<VectorValue>>
         actualRows: values.length,
       });
     }
-    vectors[name] = vectorFromValues(values);
+    vectors[name] = vectorFromValues(values, scope);
   }
   return { rowCount: rowCount ?? 0, columns: vectors };
 }
@@ -78,33 +142,94 @@ export function batchFromVectors(columns: Record<string, Vector>): Batch {
   return { rowCount: rowCount ?? 0, columns };
 }
 
-export function vectorFromValues(values: ArrayLike<VectorValue>): Vector {
-  const { type, valid } = vectorShape(values);
+export function vectorFromValues(values: ArrayLike<VectorValue>, scope?: MemoryScope): Vector {
+  return vectorFromSource({ length: values.length, get: (index) => values[index] }, scope);
+}
+
+/** Indexed values must remain stable across inference and construction passes. */
+export interface VectorSource {
+  readonly length: number;
+  get(index: number): VectorValue;
+}
+
+export function vectorFromSource(values: VectorSource, scope?: MemoryScope): Vector {
+  if (!Number.isSafeInteger(values.length) || values.length < 0) {
+    throw new LakeqlError(
+      "LAKEQL_VALIDATION_ERROR",
+      "Vector source length must be a non-negative safe integer",
+    );
+  }
+  const { type, valid, strings } = vectorShape(values, scope);
   switch (type) {
+    case "union": {
+      const ownedScope =
+        scope?.childScope() ?? new MemoryScope(new MemoryBudget(Number.MAX_SAFE_INTEGER));
+      try {
+        const built = buildUnionChildren(
+          values,
+          UNION_DOMAINS.length,
+          (row) => {
+            const value = values.get(row);
+            return UNION_DOMAINS.indexOf(
+              (value == null
+                ? "null"
+                : vectorShapeForValue(value)) as (typeof UNION_DOMAINS)[number],
+            );
+          },
+          ownedScope,
+        );
+        const output = ownedScope.allocate(
+          c.object + 4 * c.property,
+          "union vector descriptor",
+          () => ({
+            type: "union" as const,
+            tags: built.routing.tags,
+            offsets: built.routing.offsets,
+            children: built.children,
+          }),
+        ).value;
+        registerCompactionMetadata(output, "vector");
+        if (scope !== undefined) scope.adopt(ownedScope.retainAllocations(undefined));
+        return output;
+      } finally {
+        ownedScope.dispose();
+      }
+    }
     case "null":
       return { type, length: values.length };
     case "f64":
-      return optionalValidity({ type, values: f64Values(values) }, valid);
+      return optionalValidity({ type, values: f64Values(values, scope) }, valid);
     case "i64":
-      return optionalValidity({ type, values: i64Values(values) }, valid);
+      return optionalValidity({ type, values: i64Values(values, scope) }, valid);
     case "u64":
-      return optionalValidity({ type, values: u64Values(values) }, valid);
+      return optionalValidity({ type, values: u64Values(values, scope) }, valid);
     case "timestamp": {
-      const timestamp = timestampValues(values);
-      return optionalValidity({ type, ...timestamp }, valid);
+      const timestamp = timestampValues(values, scope);
+      return optionalValidity(timestamp, valid);
     }
     case "bool":
-      return optionalValidity({ type, values: boolValues(values) }, valid);
+      return optionalValidity({ type, values: boolValues(values, scope) }, valid);
     case "utf8":
-      return optionalValidity({ type, values: utf8Values(values) }, valid);
+      return optionalValidity({ type, values: strings ?? [] }, valid);
     case "binary":
-      return optionalValidity({ type, values: binaryValues(values) }, valid);
+      return optionalValidity(
+        scope === undefined
+          ? { type, values: binaryValues(values) }
+          : packedBinaryValues(values, scope),
+        valid,
+      );
     case "list":
-      return optionalValidity(listValues(values), valid);
+      return optionalValidity(
+        constructNestedVector(scope, 3, (nested) => listValues(values, nested)),
+        valid,
+      );
     case "struct":
-      return optionalValidity(structValues(values), valid);
+      return optionalValidity(structValues(values, scope), valid);
     case "map":
-      return optionalValidity(mapValues(values), valid);
+      return optionalValidity(
+        constructNestedVector(scope, 4, (nested) => mapValues(values, nested)),
+        valid,
+      );
   }
 }
 
@@ -121,7 +246,7 @@ export function materializeBatchRow(batch: Batch, index: number): Row {
   }
   const row: Row = {};
   for (const [name, vector] of Object.entries(batch.columns))
-    row[name] = vectorValue(vector, index);
+    setRecordValue(row, name, vectorValue(vector, index));
   return row;
 }
 
@@ -132,7 +257,7 @@ export function materializeSelectedBatchRows(batch: Batch, selection?: Selection
     if (selection !== undefined && selection[index] !== 1) continue;
     const row: Row = {};
     for (const [name, vector] of columns) {
-      row[name] = vectorValue(vector, index);
+      setRecordValue(row, name, vectorValue(vector, index));
     }
     rows.push(row);
   }
@@ -153,6 +278,27 @@ export function selectedRowIndices(rowCount: number, selection?: Selection): Ite
   return selectedSelectionRowIndices(rowCount, selection);
 }
 
+/** Materialize selection indices directly into admitted u32 backing. */
+export function selectedRowIndexBuffer(
+  rowCount: number,
+  selection?: Selection,
+  scope?: MemoryScope,
+): Uint32Array {
+  if (!Number.isSafeInteger(rowCount) || rowCount < 0 || rowCount > 0x100000000) {
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Selection row count exceeds u32 index capacity");
+  }
+  if (selection !== undefined && selection.length !== rowCount) {
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Selection length does not match row count");
+  }
+  const count = selectedRowCount(rowCount, selection);
+  const indices = admitVectorBuffer(scope, count * 4, () => new Uint32Array(count));
+  let target = 0;
+  for (let index = 0; index < rowCount; index += 1) {
+    if (selection === undefined || selection[index] === 1) indices[target++] = index;
+  }
+  return indices;
+}
+
 function* selectedSelectionRowIndices(rowCount: number, selection: Selection): Iterable<number> {
   for (let index = 0; index < rowCount; index += 1) {
     if (selection[index] === 1) yield index;
@@ -163,14 +309,33 @@ function* allRowIndices(rowCount: number): Iterable<number> {
   for (let index = 0; index < rowCount; index += 1) yield index;
 }
 
-export function predicateSelection(batch: Batch, expr: Expr | undefined): Selection {
-  if (expr === undefined) return allSelected(batch.rowCount);
-  return predicateMask(batch, expr);
+export function predicateSelection(
+  batch: Batch,
+  expr: Expr | undefined,
+  scope?: MemoryScope,
+): Selection {
+  if (scope === undefined) {
+    return expr === undefined ? allSelected(batch.rowCount) : predicateMask(batch, expr);
+  }
+  const evaluation = new MemoryScope(scope.budget, [scope.signal]);
+  try {
+    const mask =
+      expr === undefined
+        ? allSelected(batch.rowCount, evaluation)
+        : predicateMask(batch, expr, evaluation);
+    return scope.adopt(evaluation.retainAllocation(mask)).value;
+  } finally {
+    evaluation.dispose();
+  }
 }
 
-export function tryPredicateSelection(batch: Batch, expr: Expr | undefined): Selection | undefined {
+export function tryPredicateSelection(
+  batch: Batch,
+  expr: Expr | undefined,
+  scope?: MemoryScope,
+): Selection | undefined {
   try {
-    return predicateSelection(batch, expr);
+    return predicateSelection(batch, expr, scope);
   } catch (error) {
     if (
       error instanceof LakeqlError &&
@@ -203,6 +368,13 @@ export function vectorValue(
   }
   if ("valid" in vector && vector.valid !== undefined && vector.valid[index] === 0) return null;
   switch (vector.type) {
+    case "union": {
+      const child = vector.children[vector.tags[index] ?? -1];
+      const offset = vector.offsets[index];
+      if (child === undefined || offset === undefined)
+        throw new LakeqlError("LAKEQL_TYPE_ERROR", "Invalid union row");
+      return vectorValue(child, offset);
+    }
     case "null":
       return null;
     case "f32":
@@ -214,6 +386,12 @@ export function vectorValue(
     case "i64":
     case "u64":
       return vector.values[index] ?? 0n;
+    case "timestamp96":
+      return new TimestampValue(
+        timestampNanos(readInt96(vector, index), vector.unit),
+        vector.unit,
+        vector.isAdjustedToUTC,
+      );
     case "timestamp":
       return new TimestampValue(
         timestampNanos(vector.values[index] ?? 0n, vector.unit),
@@ -224,6 +402,10 @@ export function vectorValue(
       return vector.values[index] === 1;
     case "utf8":
       return vector.values[index] ?? "";
+    case "binary-view":
+      return packedByteValue(vector, index);
+    case "utf8-view":
+      return packedTextDecoder.decode(packedByteValue(vector, index));
     case "binary":
       return vector.values[index] ?? new Uint8Array();
     case "dict":
@@ -239,8 +421,9 @@ export function vectorValue(
     }
     case "struct": {
       const out: Record<string, unknown> = {};
-      for (const [name, field] of Object.entries(vector.fields)) {
-        out[name] = vectorValue(field, index);
+      for (const name in vector.fields) {
+        if (Object.hasOwn(vector.fields, name))
+          setRecordValue(out, name, vectorValue(vector.fields[name] as Vector, index));
       }
       return out;
     }
@@ -251,7 +434,7 @@ export function vectorValue(
       for (let childIndex = start; childIndex < end; childIndex += 1) {
         const key = vectorValue(vector.keys, childIndex);
         if (key === null) continue;
-        out[String(key)] = vectorValue(vector.values, childIndex);
+        setRecordValue(out, String(key), vectorValue(vector.values, childIndex));
       }
       return out;
     }
@@ -260,8 +443,12 @@ export function vectorValue(
 
 export function vectorLength(vector: Vector): number {
   switch (vector.type) {
+    case "union":
+      return vector.tags.length;
     case "null":
     case "struct":
+    case "binary-view":
+    case "utf8-view":
       return vector.length;
     case "list":
     case "map":
@@ -278,22 +465,48 @@ export function vectorLength(vector: Vector): number {
     case "utf8":
     case "binary":
       return vector.values.length;
+    case "timestamp96":
+      return vector.low.length;
     case "dict":
       return vector.indices.length;
   }
 }
 
-function vectorShape(values: ArrayLike<VectorValue>): {
+function vectorShape(
+  values: VectorSource,
+  scope?: MemoryScope,
+): {
   type: VectorShape;
   valid?: Uint8Array;
+  strings?: string[];
+} {
+  const construction = scope?.childScope();
+  try {
+    const result = inferVectorShape(values, construction);
+    if (construction !== undefined && result.type !== "union")
+      scope?.adopt(construction.retainAllocations(undefined));
+    return result;
+  } finally {
+    construction?.dispose();
+  }
+}
+
+function inferVectorShape(
+  values: VectorSource,
+  scope?: MemoryScope,
+): {
+  type: VectorShape;
+  valid?: Uint8Array;
+  strings?: string[];
 } {
   let type: VectorShape | undefined;
+  let strings: string[] | undefined;
   let valid: Uint8Array | undefined;
   for (let index = 0; index < values.length; index += 1) {
-    const value = values[index];
+    const value = values.get(index);
     if (value == null) {
       if (valid === undefined) {
-        valid = new Uint8Array(values.length);
+        valid = admitVectorBuffer(scope, values.length, () => new Uint8Array(values.length));
         valid.fill(1, 0, index);
       }
       valid[index] = 0;
@@ -301,23 +514,26 @@ function vectorShape(values: ArrayLike<VectorValue>): {
     }
     if (valid !== undefined) valid[index] = 1;
     const next = vectorShapeForValue(value);
+    if (next === "utf8") {
+      if (strings === undefined) {
+        strings = admitVectorBuffer(scope, c.array + values.length * c.arraySlot, () =>
+          new Array<string>(values.length).fill(""),
+        );
+        registerCompactionMetadata(strings, "slots");
+      }
+      strings[index] = value as string;
+    }
     if (type === undefined) {
       type = next;
       continue;
     }
-    if (type !== next) {
-      throw new LakeqlError("LAKEQL_TYPE_ERROR", "Column contains mixed vector types", {
-        expected: type,
-        actual: next,
-        index,
-      });
-    }
+    if (type !== next) return { type: "union" };
   }
   if (type === "i64") {
     let requiresUnsigned = false;
     let hasNegative = false;
     for (let index = 0; index < values.length; index += 1) {
-      const value = values[index];
+      const value = values.get(index);
       if (typeof value !== "bigint") continue;
       if (value < 0n) hasNegative = true;
       if (value > 0x7fff_ffff_ffff_ffffn) requiresUnsigned = true;
@@ -336,8 +552,11 @@ function vectorShape(values: ArrayLike<VectorValue>): {
     }
     if (requiresUnsigned) type = "u64";
   }
-  const shape: { type: VectorShape; valid?: Uint8Array } = { type: type ?? "null" };
+  const shape: { type: VectorShape; valid?: Uint8Array; strings?: string[] } = {
+    type: type ?? "null",
+  };
   if (valid !== undefined) shape.valid = valid;
+  if (strings !== undefined) shape.strings = strings;
   return shape;
 }
 
@@ -365,33 +584,77 @@ function vectorShapeForValue(value: Exclude<VectorValue, null | undefined>): Vec
   }
 }
 
-function timestampValues(values: ArrayLike<VectorValue>): {
-  values: BigInt64Array;
-  unit: TimestampUnit;
-  isAdjustedToUTC: boolean;
-} {
+function timestampValues(
+  values: VectorSource,
+  scope?: MemoryScope,
+): Extract<Vector, { type: "timestamp" | "timestamp96" }> {
+  let minNanos = 0n,
+    maxNanos = 0n;
   let unit: TimestampUnit | undefined;
   let isAdjustedToUTC = true;
-  const out = new BigInt64Array(values.length);
+  // Resolve the batch representation before allocating its backing. A later value
+  // must never lose precision because an earlier row declared a coarser unit.
   for (let index = 0; index < values.length; index += 1) {
-    const value = values[index];
+    const value = values.get(index);
     if (value == null) continue;
-    if (!(value instanceof Date) && !isTimestampValue(value)) {
-      throw new LakeqlError("LAKEQL_TYPE_ERROR", "Expected timestamp vector value", {
-        type: typeof value,
+    const timestamp = timestampSourceValue(value);
+    if (timestamp.epochNanoseconds < minNanos) minNanos = timestamp.epochNanoseconds;
+    if (timestamp.epochNanoseconds > maxNanos) maxNanos = timestamp.epochNanoseconds;
+    if (unit !== undefined && isAdjustedToUTC !== timestamp.isAdjustedToUTC)
+      throw new LakeqlError("LAKEQL_TYPE_ERROR", "Incompatible timestamp UTC semantics", {
+        index,
       });
-    }
-    const timestamp =
-      value instanceof Date
-        ? new TimestampValue(BigInt(value.getTime()) * 1_000_000n, "millis", true)
-        : value;
-    if (unit === undefined) {
-      unit = timestamp.unit;
-      isAdjustedToUTC = timestamp.isAdjustedToUTC;
-    }
-    out[index] = timestampEpochForUnit(timestamp, unit);
+    isAdjustedToUTC = timestamp.isAdjustedToUTC;
+    const requiredUnit =
+      timestamp.epochNanoseconds % 1_000n !== 0n
+        ? "nanos"
+        : timestamp.epochNanoseconds % 1_000_000n !== 0n
+          ? "micros"
+          : timestamp.unit;
+    if (unit === "nanos" || timestamp.unit === "nanos" || requiredUnit === "nanos") unit = "nanos";
+    else if (unit === "micros" || timestamp.unit === "micros" || requiredUnit === "micros")
+      unit = "micros";
+    else unit = "millis";
   }
-  return { values: out, unit: unit ?? "millis", isAdjustedToUTC };
+  unit ??= "millis";
+  const divisor = unit === "millis" ? 1_000_000n : unit === "micros" ? 1000n : 1n;
+  const min = minNanos / divisor,
+    max = maxNanos / divisor;
+  if (min < -(1n << 95n) || max > (1n << 95n) - 1n)
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Timestamp exceeds signed 96-bit vector capacity", {
+      vectorShape: "timestamp96",
+      storageBits: 96,
+      unit,
+    });
+  const wide = min < MIN_TIMESTAMP_VECTOR_EPOCH || max > MAX_TIMESTAMP_VECTOR_EPOCH;
+  const output: Extract<Vector, { type: "timestamp" | "timestamp96" }> = wide
+    ? { type: "timestamp96", ...allocateInt96Storage(values.length, scope), unit, isAdjustedToUTC }
+    : {
+        type: "timestamp",
+        values: admitVectorBuffer(scope, values.length * 8, () => new BigInt64Array(values.length)),
+        unit,
+        isAdjustedToUTC,
+      };
+  for (let index = 0; index < values.length; index += 1) {
+    const value = values.get(index);
+    if (value == null) continue;
+    const epoch = timestampEpochForUnit(timestampSourceValue(value), unit);
+    if (output.type === "timestamp96") writeInt96(output, index, epoch);
+    else output.values[index] = epoch;
+  }
+  return output;
+}
+
+function timestampSourceValue(value: VectorValue): TimestampValue {
+  if (value instanceof Date) {
+    if (!Number.isFinite(value.getTime()))
+      throw new LakeqlError("LAKEQL_TYPE_ERROR", "Invalid timestamp date");
+    return new TimestampValue(BigInt(value.getTime()) * 1_000_000n, "millis", true);
+  }
+  if (isTimestampValue(value)) return value;
+  throw new LakeqlError("LAKEQL_TYPE_ERROR", "Expected timestamp vector value", {
+    type: typeof value,
+  });
 }
 
 function bigintValue(value: VectorValue): bigint {
@@ -404,26 +667,26 @@ function bigintValue(value: VectorValue): bigint {
   return value;
 }
 
-function f64Values(values: ArrayLike<VectorValue>): Float64Array {
-  const out = new Float64Array(values.length);
+function f64Values(values: VectorSource, scope?: MemoryScope): Float64Array {
+  const out = admitVectorBuffer(scope, values.length * 8, () => new Float64Array(values.length));
   for (let index = 0; index < values.length; index += 1) {
-    out[index] = Number(values[index] ?? 0);
+    out[index] = Number(values.get(index) ?? 0);
   }
   return out;
 }
 
-function i64Values(values: ArrayLike<VectorValue>): BigInt64Array {
-  const out = new BigInt64Array(values.length);
+function i64Values(values: VectorSource, scope?: MemoryScope): BigInt64Array {
+  const out = admitVectorBuffer(scope, values.length * 8, () => new BigInt64Array(values.length));
   for (let index = 0; index < values.length; index += 1) {
-    out[index] = bigintValue(values[index]);
+    out[index] = bigintValue(values.get(index));
   }
   return out;
 }
 
-function u64Values(values: ArrayLike<VectorValue>): BigUint64Array {
-  const out = new BigUint64Array(values.length);
+function u64Values(values: VectorSource, scope?: MemoryScope): BigUint64Array {
+  const out = admitVectorBuffer(scope, values.length * 8, () => new BigUint64Array(values.length));
   for (let index = 0; index < values.length; index += 1) {
-    const value = bigintValue(values[index]);
+    const value = bigintValue(values.get(index));
     if (value < 0n || value > 0xffff_ffff_ffff_ffffn) {
       throw new LakeqlError("LAKEQL_TYPE_ERROR", "Expected unsigned 64-bit vector value", {
         index,
@@ -435,36 +698,82 @@ function u64Values(values: ArrayLike<VectorValue>): BigUint64Array {
   return out;
 }
 
-function boolValues(values: ArrayLike<VectorValue>): Uint8Array {
-  const out = new Uint8Array(values.length);
+function boolValues(values: VectorSource, scope?: MemoryScope): Uint8Array {
+  const out = admitVectorBuffer(scope, values.length * 1, () => new Uint8Array(values.length));
   for (let index = 0; index < values.length; index += 1) {
-    out[index] = values[index] === true ? 1 : 0;
+    out[index] = values.get(index) === true ? 1 : 0;
   }
   return out;
 }
 
-function utf8Values(values: ArrayLike<VectorValue>): string[] {
-  const out = new Array<string>(values.length);
-  for (let index = 0; index < values.length; index += 1) {
-    out[index] = values[index] == null ? "" : String(values[index]);
-  }
-  return out;
-}
-
-function binaryValues(values: ArrayLike<VectorValue>): Uint8Array[] {
+function binaryValues(values: VectorSource): Uint8Array[] {
   const out = new Array<Uint8Array>(values.length);
   for (let index = 0; index < values.length; index += 1) {
-    const value = values[index];
+    const value = values.get(index);
     out[index] = value instanceof Uint8Array ? value : new Uint8Array();
   }
   return out;
 }
 
-function listValues(values: ArrayLike<VectorValue>): Extract<Vector, { type: "list" }> {
-  const offsets = new Int32Array(values.length + 1);
-  const childValues: unknown[] = [];
+function packedBinaryValues(values: VectorSource, scope: MemoryScope): PackedByteVector {
+  let bytes = 0;
   for (let index = 0; index < values.length; index += 1) {
-    const value = values[index];
+    const value = values.get(index);
+    if (value instanceof Uint8Array) bytes += value.byteLength;
+    if (!Number.isSafeInteger(bytes) || bytes > 0xffffffff) {
+      throw new LakeqlError("LAKEQL_TYPE_ERROR", "Binary payload exceeds Uint32 range capacity");
+    }
+  }
+  const ranges = admitVectorBuffer(
+    scope,
+    values.length * 8,
+    () => new Uint32Array(values.length * 2),
+  );
+  const data = admitVectorBuffer(scope, bytes, () => new Uint8Array(bytes));
+  let offset = 0;
+  for (let index = 0; index < values.length; index += 1) {
+    const value = values.get(index);
+    ranges[index * 2] = offset;
+    if (value instanceof Uint8Array) {
+      data.set(value, offset);
+      ranges[index * 2 + 1] = value.byteLength;
+      offset += value.byteLength;
+    }
+  }
+  return { type: "binary-view", data, ranges, length: values.length };
+}
+
+/** A nested descriptor and its new backing transfer atomically. */
+function constructNestedVector<T extends Vector>(
+  scope: MemoryScope | undefined,
+  properties: number,
+  build: (construction: MemoryScope) => T,
+): T {
+  const construction =
+    scope?.childScope() ?? new MemoryScope(new MemoryBudget(Number.MAX_SAFE_INTEGER));
+  try {
+    const output = construction.allocate(
+      c.object + properties * c.property,
+      "nested vector descriptor",
+      () => build(construction),
+    ).value;
+    registerCompactionMetadata(output, "vector");
+    scope?.adopt(construction.retainAllocations(undefined));
+    return output;
+  } finally {
+    construction.dispose();
+  }
+}
+
+function listValues(values: VectorSource, scope?: MemoryScope): Extract<Vector, { type: "list" }> {
+  const offsets = admitVectorBuffer(
+    scope,
+    (values.length + 1) * 4,
+    () => new Int32Array(values.length + 1),
+  );
+  let childCount = 0;
+  for (let index = 0; index < values.length; index += 1) {
+    const value = values.get(index);
     if (value != null) {
       if (!Array.isArray(value)) {
         throw new LakeqlError("LAKEQL_TYPE_ERROR", "List vector values must be arrays", {
@@ -472,44 +781,104 @@ function listValues(values: ArrayLike<VectorValue>): Extract<Vector, { type: "li
           type: typeof value,
         });
       }
-      childValues.push(...value);
+      if (value.length > 0x7fffffff - childCount) {
+        throw new LakeqlError("LAKEQL_TYPE_ERROR", "List children exceed Int32 offset capacity", {
+          children: childCount + value.length,
+        });
+      }
+      childCount += value.length;
     }
-    offsets[index + 1] = childValues.length;
+    offsets[index + 1] = childCount;
   }
-  return { type: "list", offsets, child: vectorFromValues(childValues) };
+  let row = 0;
+  const children: VectorSource = {
+    length: childCount,
+    get(index) {
+      if (index < (offsets[row] ?? 0)) row = 0;
+      while (row < values.length && index >= (offsets[row + 1] ?? childCount)) row += 1;
+      const list = values.get(row);
+      return Array.isArray(list) ? list[index - (offsets[row] ?? 0)] : undefined;
+    },
+  };
+  return { type: "list", offsets, child: vectorFromSource(children, scope) };
 }
 
-function structValues(values: ArrayLike<VectorValue>): Extract<Vector, { type: "struct" }> {
-  const fieldNames = new Set<string>();
-  for (let index = 0; index < values.length; index += 1) {
-    const value = values[index];
-    if (value == null) continue;
-    if (!isPlainRecord(value)) {
-      throw new LakeqlError("LAKEQL_TYPE_ERROR", "Struct vector values must be records", {
-        index,
-        type: typeof value,
-      });
-    }
-    for (const field of Object.keys(value)) fieldNames.add(field);
-  }
-  const fields: Record<string, Vector> = {};
-  for (const field of [...fieldNames].sort()) {
-    const fieldValues = new Array<unknown>(values.length);
+function structValues(
+  values: VectorSource,
+  scope?: MemoryScope,
+): Extract<Vector, { type: "struct" }> {
+  const construction =
+    scope?.childScope() ?? new MemoryScope(new MemoryBudget(Number.MAX_SAFE_INTEGER));
+  const scratch = construction.childScope();
+  try {
+    const fieldNames = scratch.allocate(
+      c.object,
+      "struct field discovery",
+      () => new Set<string>(),
+    ).value;
     for (let index = 0; index < values.length; index += 1) {
-      const value = values[index];
-      fieldValues[index] = isPlainRecord(value) && field in value ? value[field] : null;
+      const value = values.get(index);
+      if (value == null) continue;
+      if (!isPlainRecord(value)) {
+        throw new LakeqlError("LAKEQL_TYPE_ERROR", "Struct vector values must be records", {
+          index,
+          type: typeof value,
+        });
+      }
+      for (const field in value) {
+        if (!Object.hasOwn(value, field) || fieldNames.has(field)) continue;
+        scratch.allocate(c.property, "struct field discovery entry", () => {
+          fieldNames.add(field);
+        });
+      }
     }
-    fields[field] = vectorFromValues(fieldValues);
+    const names = scratch.allocate(
+      c.array + fieldNames.size * c.arraySlot,
+      "struct field order",
+      () => [...fieldNames],
+    ).value;
+    heapSort(names, (a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    const fields = construction.allocate(
+      c.object + fieldNames.size * c.property,
+      "struct fields",
+      () => Object.create(null) as Record<string, Vector>,
+    ).value;
+    registerCompactionMetadata(fields, "columns");
+    for (const field of names) {
+      fields[field] = vectorFromSource(
+        {
+          length: values.length,
+          get(index) {
+            const value = values.get(index);
+            return isPlainRecord(value) && field in value ? value[field] : null;
+          },
+        },
+        construction,
+      );
+    }
+    const output = construction.allocate(
+      c.object + 3 * c.property,
+      "struct vector descriptor",
+      () => ({ type: "struct" as const, fields, length: values.length }),
+    ).value;
+    registerCompactionMetadata(output, "vector");
+    scratch.dispose();
+    scope?.adopt(construction.retainAllocations(undefined));
+    return output;
+  } finally {
+    construction.dispose();
   }
-  return { type: "struct", fields, length: values.length };
 }
 
-function mapValues(values: ArrayLike<VectorValue>): Extract<Vector, { type: "map" }> {
-  const offsets = new Int32Array(values.length + 1);
-  const keys: unknown[] = [];
-  const mapValues: unknown[] = [];
+function mapValues(values: VectorSource, scope?: MemoryScope): Extract<Vector, { type: "map" }> {
+  const offsets = admitVectorBuffer(
+    scope,
+    (values.length + 1) * 4,
+    () => new Int32Array(values.length + 1),
+  );
+  let count = 0;
   for (let index = 0; index < values.length; index += 1) {
-    const value = values[index];
+    const value = values.get(index);
     if (value != null) {
       if (!(value instanceof Map)) {
         throw new LakeqlError("LAKEQL_TYPE_ERROR", "Map vector values must be Map instances", {
@@ -517,18 +886,53 @@ function mapValues(values: ArrayLike<VectorValue>): Extract<Vector, { type: "map
           type: typeof value,
         });
       }
-      for (const [key, inner] of value.entries()) {
-        keys.push(key);
-        mapValues.push(inner);
+      if (value.size > 0x7fffffff - count) {
+        throw new LakeqlError("LAKEQL_TYPE_ERROR", "Map entries exceed Int32 offset capacity");
       }
+      count += value.size;
     }
-    offsets[index + 1] = keys.length;
+    offsets[index + 1] = count;
   }
   return {
     type: "map",
     offsets,
-    keys: vectorFromValues(keys),
-    values: vectorFromValues(mapValues),
+    keys: vectorFromSource(mapEntrySource(values, count, 0), scope),
+    values: vectorFromSource(mapEntrySource(values, count, 1), scope),
+  };
+}
+
+/** Constant retained workspace; inference and conversion may restart their scan. */
+function mapEntrySource(values: VectorSource, length: number, component: 0 | 1): VectorSource {
+  let row = 0;
+  let position = -1;
+  let iterator: Iterator<[unknown, unknown]> | undefined;
+  let entry: [unknown, unknown] | undefined;
+  return {
+    length,
+    get(index) {
+      if (index < position) {
+        row = 0;
+        position = -1;
+        iterator = undefined;
+        entry = undefined;
+      }
+      while (position < index) {
+        if (iterator === undefined) {
+          if (row >= values.length) return undefined;
+          const value = values.get(row++);
+          if (!(value instanceof Map)) continue;
+          iterator = value.entries();
+        }
+        const next = iterator.next();
+        if (next.done) {
+          iterator = undefined;
+          continue;
+        }
+        entry = next.value;
+        position += 1;
+      }
+      return entry?.[component];
+    },
   };
 }
 
@@ -545,35 +949,38 @@ function optionalValidity<T extends Vector>(vector: T, valid: Uint8Array | undef
 
 type SqlMaskValue = 0 | 1 | 2;
 
-function allSelected(rowCount: number): Selection {
-  const selection = new Uint8Array(rowCount);
+function allSelected(rowCount: number, scope?: MemoryScope): Selection {
+  const selection = admitVectorBuffer(scope, rowCount, () => new Uint8Array(rowCount));
   selection.fill(1);
   return selection;
 }
 
-function predicateMask(batch: Batch, expr: Expr): Uint8Array {
+function predicateMask(batch: Batch, expr: Expr, scope?: MemoryScope): Uint8Array {
   switch (expr.kind) {
     case "literal":
     case "column":
     case "arithmetic":
-      return scalarToPredicateMask(batchExprValues(batch, expr));
+      return scalarToPredicateMask(batchExprValues(batch, expr, scope), scope);
     case "compare":
       return compareMasks(
         expr.op,
-        batchExprValues(batch, expr.left),
-        batchExprValues(batch, expr.right),
+        batchExprValues(batch, expr.left, scope),
+        batchExprValues(batch, expr.right, scope),
+        scope,
       );
     case "in":
       return inMask(
-        batchExprValues(batch, expr.target),
-        expr.values.map((value) => batchExprValues(batch, value)),
+        batchExprValues(batch, expr.target, scope),
+        expr.values.map((value) => batchExprValues(batch, value, scope)),
         expr.negated,
+        scope,
       );
     case "between": {
-      const target = batchExprValues(batch, expr.target);
+      const target = batchExprValues(batch, expr.target, scope);
       return sqlAndMasks(
-        compareMasks("gte", target, batchExprValues(batch, expr.low)),
-        compareMasks("lte", target, batchExprValues(batch, expr.high)),
+        compareMasks("gte", target, batchExprValues(batch, expr.low, scope), scope),
+        compareMasks("lte", target, batchExprValues(batch, expr.high, scope), scope),
+        scope,
       );
     }
     case "null-check":
@@ -584,27 +991,38 @@ function predicateMask(batch: Batch, expr: Expr): Uint8Array {
             column: expr.target.name,
           });
         }
-        return vectorNullCheckMask(vector, expr.negated);
+        return vectorNullCheckMask(vector, expr.negated, scope);
       }
-      return nullCheckMask(batchExprValues(batch, expr.target), expr.negated);
+      return nullCheckMask(batchExprValues(batch, expr.target, scope), expr.negated, scope);
     case "logical": {
-      const masks = expr.operands.map((operand) => predicateMask(batch, operand));
-      return expr.op === "and" ? masks.reduce(sqlAndMasks) : masks.reduce(sqlOrMasks);
+      const first = expr.operands[0];
+      if (first === undefined) {
+        throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Logical predicate requires operands");
+      }
+      let mask = predicateMask(batch, first, scope);
+      for (let index = 1; index < expr.operands.length; index++) {
+        const operand = expr.operands[index];
+        if (operand === undefined) continue;
+        const right = predicateMask(batch, operand, scope);
+        mask = expr.op === "and" ? sqlAndMasks(mask, right, scope) : sqlOrMasks(mask, right, scope);
+      }
+      return mask;
     }
     case "not":
-      return sqlNotMask(predicateMask(batch, expr.operand));
+      return sqlNotMask(predicateMask(batch, expr.operand, scope), scope);
     case "call": {
-      const args = expr.args.map((arg) => batchExprValues(batch, arg));
-      const mask = batchCallPredicateMask(expr.fn, args);
+      const args = expr.args.map((arg) => batchExprValues(batch, arg, scope));
+      const mask = batchCallPredicateMask(expr.fn, args, scope);
       if (mask !== undefined) return mask;
       return scalarToPredicateMask(
-        batchCallExprValues(batch.rowCount, expr.fn, args, (left, right) =>
-          compareValue("eq", left, right),
+        batchCallExprValues(batch.rowCount, expr.fn, args, (left, right, valueScope) =>
+          compareValue("eq", left, right, valueScope),
         ),
+        scope,
       );
     }
     case "case":
-      return scalarToPredicateMask(batchExprValues(batch, expr));
+      return scalarToPredicateMask(batchExprValues(batch, expr, scope), scope);
     case "like":
       throwUnsupportedVectorPredicate(expr.kind);
   }
@@ -612,12 +1030,15 @@ function predicateMask(batch: Batch, expr: Expr): Uint8Array {
 
 export interface BatchExprValues {
   rowCount: number;
+  /** True only when scalar reads allocate no payload; absent means scratch is required. */
+  allocationFree?: boolean;
   vector?: Vector;
   literal?: Scalar;
-  valueAt(index: number): Scalar;
+  /** Optional per-value scratch lifetime, distinct from compiled batch masks. */
+  valueAt(index: number, valueScope?: MemoryScope): Scalar;
 }
 
-export function batchExprValues(batch: Batch, expr: Expr): BatchExprValues {
+export function batchExprValues(batch: Batch, expr: Expr, scope?: MemoryScope): BatchExprValues {
   switch (expr.kind) {
     case "literal":
       return literalValues(batch.rowCount, expr.value);
@@ -631,41 +1052,72 @@ export function batchExprValues(batch: Batch, expr: Expr): BatchExprValues {
       return {
         rowCount: batch.rowCount,
         vector,
-        valueAt(index) {
-          return scalarVectorValue(vector, index);
+        allocationFree: scalarReadAllocationFree(vector),
+        valueAt(index, valueScope) {
+          return scalarVectorValue(vector, index, valueScope);
         },
       };
     }
     case "arithmetic": {
-      const left = batchExprValues(batch, expr.left);
-      const right = batchExprValues(batch, expr.right);
+      const left = batchExprValues(batch, expr.left, scope);
+      const right = batchExprValues(batch, expr.right, scope);
       return {
         rowCount: batch.rowCount,
-        valueAt(index) {
-          return arithmeticValue(expr.op, left.valueAt(index), right.valueAt(index));
+        valueAt(index, valueScope) {
+          return arithmeticValue(
+            expr.op,
+            left.valueAt(index, valueScope),
+            right.valueAt(index, valueScope),
+          );
         },
       };
     }
     case "case": {
-      const whens = expr.whens.map((branch) => ({
-        mask: predicateMask(batch, branch.when),
-        values: batchExprValues(batch, branch.value),
-      }));
-      const elseValues = expr.else === undefined ? undefined : batchExprValues(batch, expr.else);
+      const count = expr.whens.length;
+      const Constructor = count <= 255 ? Uint8Array : count <= 65535 ? Uint16Array : Uint32Array;
+      let choices: Uint8Array | Uint16Array | Uint32Array | undefined;
+      const whens = expr.whens.map((branch, branchIndex) => {
+        const mask = predicateSelection(batch, branch.when, scope);
+        try {
+          if (choices === undefined && Constructor === Uint8Array) {
+            // The first private truth mask already has the required shape.
+            choices = mask;
+            for (let index = 0; index < batch.rowCount; index++) {
+              choices[index] = mask[index] === 1 ? branchIndex : count;
+            }
+          } else {
+            if (choices === undefined) {
+              choices = admitVectorBuffer(
+                scope,
+                batch.rowCount * Constructor.BYTES_PER_ELEMENT,
+                () => new Constructor(batch.rowCount),
+              );
+              choices.fill(count);
+            }
+            for (let index = 0; index < batch.rowCount; index++) {
+              if (choices[index] === count && mask[index] === 1) choices[index] = branchIndex;
+            }
+          }
+        } finally {
+          if (mask !== choices) scope?.releaseAllocation(mask);
+        }
+        return batchExprValues(batch, branch.value, scope);
+      });
+      const elseValues =
+        expr.else === undefined ? undefined : batchExprValues(batch, expr.else, scope);
       return {
         rowCount: batch.rowCount,
-        valueAt(index) {
-          for (const branch of whens) {
-            if (branch.mask[index] === 1) return branch.values.valueAt(index);
-          }
-          return elseValues === undefined ? null : elseValues.valueAt(index);
+        valueAt(index, valueScope) {
+          const branch = whens[choices?.[index] ?? count];
+          if (branch !== undefined) return branch.valueAt(index, valueScope);
+          return elseValues === undefined ? null : elseValues.valueAt(index, valueScope);
         },
       };
     }
     case "call": {
-      const args = expr.args.map((arg) => batchExprValues(batch, arg));
-      return batchCallExprValues(batch.rowCount, expr.fn, args, (left, right) =>
-        compareValue("eq", left, right),
+      const args = expr.args.map((arg) => batchExprValues(batch, arg, scope));
+      return batchCallExprValues(batch.rowCount, expr.fn, args, (left, right, valueScope) =>
+        compareValue("eq", left, right, valueScope),
       );
     }
     case "compare":
@@ -679,7 +1131,7 @@ export function batchExprValues(batch: Batch, expr: Expr): BatchExprValues {
   }
 }
 
-export function scalarVectorValue(vector: Vector, index: number): Scalar {
+export function scalarVectorValue(vector: Vector, index: number, scope?: MemoryScope): Scalar {
   if (index < 0 || index >= vectorLength(vector)) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Vector index is out of bounds", {
       index,
@@ -688,6 +1140,13 @@ export function scalarVectorValue(vector: Vector, index: number): Scalar {
   }
   if ("valid" in vector && vector.valid !== undefined && vector.valid[index] === 0) return null;
   switch (vector.type) {
+    case "union": {
+      const child = vector.children[vector.tags[index] ?? -1];
+      const offset = vector.offsets[index];
+      if (child === undefined || offset === undefined)
+        throw new LakeqlError("LAKEQL_TYPE_ERROR", "Invalid union row");
+      return scalarVectorValue(child, offset, scope);
+    }
     case "null":
       return null;
     case "f32":
@@ -698,21 +1157,49 @@ export function scalarVectorValue(vector: Vector, index: number): Scalar {
       return vector.values[index] ?? 0;
     case "i64":
     case "u64":
-      return vector.values[index] ?? 0n;
+      return admitVectorBuffer(scope, c.bigint, () => vector.values[index] ?? 0n);
+    case "timestamp96":
+      return admitVectorBuffer(
+        scope,
+        c.timestamp + c.bigint + c.object,
+        () =>
+          new TimestampValue(
+            timestampNanos(readInt96(vector, index), vector.unit),
+            vector.unit,
+            vector.isAdjustedToUTC,
+          ),
+      );
     case "timestamp":
-      return new TimestampValue(
-        timestampNanos(vector.values[index] ?? 0n, vector.unit),
-        vector.unit,
-        vector.isAdjustedToUTC,
+      return admitVectorBuffer(
+        scope,
+        c.timestamp + c.bigint,
+        () =>
+          new TimestampValue(
+            timestampNanos(vector.values[index] ?? 0n, vector.unit),
+            vector.unit,
+            vector.isAdjustedToUTC,
+          ),
       );
     case "bool":
       return vector.values[index] === 1;
     case "utf8":
       return vector.values[index] ?? "";
+    case "binary-view":
+      return admitVectorBuffer(scope, c.view, () => packedByteValue(vector, index));
+    case "utf8-view": {
+      const row = (vector.rowOffset ?? 0) + index;
+      const length =
+        vector.ranges === undefined ? (vector.fixedLength ?? 0) : (vector.ranges[row * 2 + 1] ?? 0);
+      return admitVectorBuffer(
+        scope,
+        c.view + c.string + c.stringCodeUnit * Math.max(0, length),
+        () => packedTextDecoder.decode(packedByteValue(vector, index)),
+      );
+    }
     case "binary":
-      return vector.values[index] ?? new Uint8Array();
+      return vector.values[index] ?? admitVectorBuffer(scope, c.view, () => new Uint8Array());
     case "dict":
-      return scalarVectorValue(vector.dictionary, vector.indices[index] ?? 0);
+      return scalarVectorValue(vector.dictionary, vector.indices[index] ?? 0, scope);
     case "list":
     case "struct":
     case "map":
@@ -722,31 +1209,78 @@ export function scalarVectorValue(vector: Vector, index: number): Scalar {
   }
 }
 
-function literalValues(rowCount: number, value: Scalar): BatchExprValues {
-  return { rowCount, literal: value, valueAt: () => value };
+function scalarReadAllocationFree(vector: Vector): boolean {
+  switch (vector.type) {
+    case "null":
+    case "f32":
+    case "f64":
+    case "i32":
+    case "u32":
+    case "u8":
+    case "bool":
+    case "utf8":
+      return true;
+    case "dict":
+      return scalarReadAllocationFree(vector.dictionary);
+    case "union":
+      return vector.children.every(scalarReadAllocationFree);
+    default:
+      return false;
+  }
 }
 
-function scalarToPredicateMask(values: BatchExprValues): Uint8Array {
-  const mask = new Uint8Array(values.rowCount);
+function literalValues(rowCount: number, value: Scalar): BatchExprValues {
+  return { rowCount, literal: value, allocationFree: true, valueAt: () => value };
+}
+
+function scalarToPredicateMask(values: BatchExprValues, scope?: MemoryScope): Uint8Array {
+  const mask = admitVectorBuffer(scope, values.rowCount, () => new Uint8Array(values.rowCount));
   for (let index = 0; index < values.rowCount; index += 1) {
-    const value = values.valueAt(index);
-    if (value === null) mask[index] = 2;
-    else if (typeof value === "boolean") mask[index] = value ? 1 : 0;
-    else {
-      throw new LakeqlError("LAKEQL_TYPE_ERROR", "Predicate expression must evaluate to boolean", {
-        value,
-      });
+    const scratch = values.allocationFree ? undefined : scope?.childScope();
+    try {
+      const value = values.valueAt(index, scratch);
+      if (value === null) mask[index] = 2;
+      else if (typeof value === "boolean") mask[index] = value ? 1 : 0;
+      else {
+        throw new LakeqlError(
+          "LAKEQL_TYPE_ERROR",
+          "Predicate expression must evaluate to boolean",
+          {
+            value,
+          },
+        );
+      }
+    } finally {
+      scratch?.dispose();
     }
   }
   return mask;
 }
 
-function compareMasks(op: CompareOp, left: BatchExprValues, right: BatchExprValues): Uint8Array {
-  const fast = fastCompareMasks(op, left, right);
+function compareMasks(
+  op: CompareOp,
+  left: BatchExprValues,
+  right: BatchExprValues,
+  scope?: MemoryScope,
+): Uint8Array {
+  const fast = fastCompareMasks(op, left, right, scope);
   if (fast !== undefined) return fast;
-  const mask = new Uint8Array(left.rowCount);
+  const mask = admitVectorBuffer(scope, left.rowCount, () => new Uint8Array(left.rowCount));
+  const allocationFree = left.allocationFree && right.allocationFree;
   for (let index = 0; index < left.rowCount; index += 1) {
-    mask[index] = sqlMaskValue(compareValue(op, left.valueAt(index), right.valueAt(index)));
+    const scratch = allocationFree ? undefined : scope?.childScope();
+    try {
+      mask[index] = sqlMaskValue(
+        compareValue(
+          op,
+          left.valueAt(index, scratch),
+          right.valueAt(index, scratch),
+          scratch ?? scope,
+        ),
+      );
+    } finally {
+      scratch?.dispose();
+    }
   }
   return mask;
 }
@@ -755,12 +1289,13 @@ function fastCompareMasks(
   op: CompareOp,
   left: BatchExprValues,
   right: BatchExprValues,
+  scope?: MemoryScope,
 ): Uint8Array | undefined {
   if (left.vector !== undefined && right.literal !== undefined) {
-    return compareVectorLiteralMasks(op, left.vector, right.literal);
+    return compareVectorLiteralMasks(op, left.vector, right.literal, scope);
   }
   if (left.literal !== undefined && right.vector !== undefined) {
-    return compareVectorLiteralMasks(flipCompareOp(op), right.vector, left.literal);
+    return compareVectorLiteralMasks(flipCompareOp(op), right.vector, left.literal, scope);
   }
   return undefined;
 }
@@ -769,25 +1304,32 @@ function compareVectorLiteralMasks(
   op: CompareOp,
   vector: Vector,
   literal: Scalar,
+  scope?: MemoryScope,
 ): Uint8Array | undefined {
-  if (literal === null) return nullCompareMask(vectorLength(vector));
-  if (vector.type === "dict") return compareDictLiteralMasks(op, vector, literal);
+  if (literal === null) return nullCompareMask(vectorLength(vector), scope);
+  if (vector.type === "dict") return compareDictLiteralMasks(op, vector, literal, scope);
   if (isNumberVector(vector) && typeof literal === "number") {
-    return compareNumberLiteralMasks(op, vector, literal);
+    return compareNumberLiteralMasks(op, vector, literal, scope);
   }
   if ((vector.type === "i64" || vector.type === "u64") && typeof literal === "bigint") {
-    return compareBigIntLiteralMasks(op, vector, literal);
+    return compareBigIntLiteralMasks(op, vector, literal, scope);
   }
   if (
     (vector.type === "i64" || vector.type === "u64") &&
     typeof literal === "number" &&
     Number.isSafeInteger(literal)
   ) {
-    return compareBigIntLiteralMasks(op, vector, BigInt(literal));
+    return compareBigIntLiteralMasks(op, vector, literal, scope);
   }
   if (vector.type === "timestamp") {
-    const timestamp = timestampLiteral(literal);
-    if (timestamp !== undefined) return compareTimestampLiteralMasks(op, vector, timestamp);
+    const parsing = scope?.childScope();
+    try {
+      const timestamp = timestampLiteral(literal, parsing);
+      if (timestamp !== undefined)
+        return compareTimestampLiteralMasks(op, vector, timestamp, scope);
+    } finally {
+      parsing?.dispose();
+    }
   }
   return undefined;
 }
@@ -796,19 +1338,11 @@ function compareDictLiteralMasks(
   op: CompareOp,
   vector: Extract<Vector, { type: "dict" }>,
   literal: Scalar,
+  scope?: MemoryScope,
 ): Uint8Array | undefined {
-  const dictionaryMask = compareVectorLiteralMasks(op, vector.dictionary, literal);
+  const dictionaryMask = compareVectorLiteralMasks(op, vector.dictionary, literal, scope);
   if (dictionaryMask === undefined) return undefined;
-  const mask = new Uint8Array(vector.indices.length);
-  const valid = vector.valid;
-  for (let index = 0; index < vector.indices.length; index += 1) {
-    if (valid !== undefined && valid[index] === 0) {
-      mask[index] = 2;
-      continue;
-    }
-    mask[index] = dictionaryMask[vector.indices[index] ?? 0] ?? 2;
-  }
-  return mask;
+  return expandDictionaryMask(vector, dictionaryMask, scope);
 }
 
 type NumberVector = Extract<Vector, { type: "f32" | "f64" | "i32" | "u32" | "u8" }>;
@@ -827,8 +1361,13 @@ function compareNumberLiteralMasks(
   op: CompareOp,
   vector: NumberVector,
   literal: number,
+  scope?: MemoryScope,
 ): Uint8Array {
-  const mask = new Uint8Array(vector.values.length);
+  const mask = admitVectorBuffer(
+    scope,
+    vector.values.length,
+    () => new Uint8Array(vector.values.length),
+  );
   const valid = vector.valid;
   for (let index = 0; index < vector.values.length; index += 1) {
     if (valid !== undefined && valid[index] === 0) {
@@ -844,38 +1383,69 @@ function compareNumberLiteralMasks(
 function compareBigIntLiteralMasks(
   op: CompareOp,
   vector: Extract<Vector, { type: "i64" | "u64" }>,
-  literal: bigint,
+  literal: bigint | number,
+  scope?: MemoryScope,
 ): Uint8Array {
-  const mask = new Uint8Array(vector.values.length);
-  const valid = vector.valid;
-  for (let index = 0; index < vector.values.length; index += 1) {
-    if (valid !== undefined && valid[index] === 0) {
-      mask[index] = 2;
-      continue;
+  const mask = admitVectorBuffer(
+    scope,
+    vector.values.length,
+    () => new Uint8Array(vector.values.length),
+  );
+  // Reading a bigint typed-array element creates a scalar. Only one is live
+  // at a time; relational comparison also accepts safe integer number literals.
+  const scratch = scope?.reserve(
+    vector.values.length === 0 ? 0 : c.bigint,
+    "bigint comparison scalar",
+  );
+  try {
+    const valid = vector.valid;
+    for (let index = 0; index < vector.values.length; index += 1) {
+      if (valid !== undefined && valid[index] === 0) {
+        mask[index] = 2;
+        continue;
+      }
+      const value = vector.values[index] ?? 0n;
+      mask[index] = compareNumberMaskValue(op, value < literal ? -1 : value > literal ? 1 : 0, 0);
     }
-    const value = vector.values[index] ?? 0n;
-    mask[index] = compareNumberMaskValue(op, value < literal ? -1 : value > literal ? 1 : 0, 0);
+    return mask;
+  } finally {
+    scratch?.release();
   }
-  return mask;
 }
 
 function compareTimestampLiteralMasks(
   op: CompareOp,
   vector: Extract<Vector, { type: "timestamp" }>,
   literal: TimestampValue,
+  scope?: MemoryScope,
 ): Uint8Array {
-  const mask = new Uint8Array(vector.values.length);
-  const valid = vector.valid;
-  const target = timestampEpochForUnit(literal, vector.unit);
-  for (let index = 0; index < vector.values.length; index += 1) {
-    if (valid !== undefined && valid[index] === 0) {
-      mask[index] = 2;
-      continue;
+  const mask = admitVectorBuffer(
+    scope,
+    vector.values.length,
+    () => new Uint8Array(vector.values.length),
+  );
+  if (vector.values.length === 0) return mask;
+  const scratch = scope?.reserve(4 * c.bigint, "timestamp comparison workspace");
+  try {
+    const valid = vector.valid;
+    const target = timestampEpochForUnit(literal, vector.unit);
+    const remainder = literal.epochNanoseconds - timestampNanos(target, vector.unit);
+    // Division truncates toward zero. When stored ticks equal the quotient,
+    // the signed remainder determines their exact order relative to the literal.
+    const equalTickOrder = remainder > 0n ? -1 : remainder < 0n ? 1 : 0;
+    for (let index = 0; index < vector.values.length; index += 1) {
+      if (valid !== undefined && valid[index] === 0) {
+        mask[index] = 2;
+        continue;
+      }
+      const value = vector.values[index] ?? 0n;
+      const order = value < target ? -1 : value > target ? 1 : equalTickOrder;
+      mask[index] = compareNumberMaskValue(op, order, 0);
     }
-    const value = vector.values[index] ?? 0n;
-    mask[index] = compareNumberMaskValue(op, value < target ? -1 : value > target ? 1 : 0, 0);
+    return mask;
+  } finally {
+    scratch?.release();
   }
-  return mask;
 }
 
 function compareNumberMaskValue(op: CompareOp, left: number, right: number): SqlMaskValue {
@@ -895,8 +1465,8 @@ function compareNumberMaskValue(op: CompareOp, left: number, right: number): Sql
   }
 }
 
-function nullCompareMask(rowCount: number): Uint8Array {
-  const mask = new Uint8Array(rowCount);
+function nullCompareMask(rowCount: number, scope?: MemoryScope): Uint8Array {
+  const mask = admitVectorBuffer(scope, rowCount, () => new Uint8Array(rowCount));
   mask.fill(2);
   return mask;
 }
@@ -917,30 +1487,130 @@ function flipCompareOp(op: CompareOp): CompareOp {
   }
 }
 
-function inMask(target: BatchExprValues, values: BatchExprValues[], negated: boolean): Uint8Array {
-  const mask = new Uint8Array(target.rowCount);
-  for (let index = 0; index < target.rowCount; index += 1) {
-    const result = inValue(
-      target.valueAt(index),
-      values.map((value) => value.valueAt(index)),
-    );
-    mask[index] = sqlMaskValue(negated ? sqlNot(result) : result);
+function inMask(
+  target: BatchExprValues,
+  values: BatchExprValues[],
+  negated: boolean,
+  scope?: MemoryScope,
+): Uint8Array {
+  const mask = admitVectorBuffer(scope, target.rowCount, () => new Uint8Array(target.rowCount));
+  if (numericLiteralInMask(target, values, negated, mask, scope)) return mask;
+  const allocationFree = target.allocationFree && values.every((value) => value.allocationFree);
+  for (let index = 0; index < target.rowCount; index++) {
+    const scratch = allocationFree ? undefined : scope?.childScope();
+    try {
+      const targetValue = target.valueAt(index, scratch);
+      let found = false;
+      let sawNull = false;
+      let comparisonFailed = false;
+      let comparisonError: unknown;
+      // Evaluate every candidate even after a match. Defer comparison errors
+      // until evaluation completes, preserving the prior eager error ordering.
+      // Only the target and one candidate normally need to stay live together.
+      for (const candidate of values) {
+        const valueScope = candidate.allocationFree ? undefined : scratch?.childScope();
+        let keepFailedValue = false;
+        try {
+          const value = candidate.valueAt(index, valueScope);
+          if (targetValue !== null && !found && !comparisonFailed) {
+            try {
+              const comparison = compareValue(
+                "eq",
+                targetValue,
+                value,
+                valueScope ?? scratch ?? scope,
+              );
+              found = comparison === true;
+              sawNull ||= comparison === null;
+            } catch (error) {
+              comparisonFailed = true;
+              comparisonError = error;
+              keepFailedValue = true;
+            }
+          }
+        } finally {
+          if (!keepFailedValue) valueScope?.dispose();
+        }
+      }
+      if (comparisonFailed) throw comparisonError;
+      const result = targetValue === null ? null : found ? true : sawNull ? null : false;
+      mask[index] = sqlMaskValue(negated ? sqlNot(result) : result);
+    } finally {
+      scratch?.dispose();
+    }
   }
   return mask;
 }
 
-function nullCheckMask(values: BatchExprValues, negated: boolean): Uint8Array {
-  const mask = new Uint8Array(values.rowCount);
+function numericLiteralInMask(
+  target: BatchExprValues,
+  values: BatchExprValues[],
+  negated: boolean,
+  mask: Uint8Array,
+  scope?: MemoryScope,
+): boolean {
+  if (target.vector === undefined || !isNumberVector(target.vector)) return false;
+  let count = 0;
+  let hasNull = false;
+  for (const value of values) {
+    if (!("literal" in value)) return false;
+    if (value.literal === null) hasNull = true;
+    else if (typeof value.literal === "number" && Number.isFinite(value.literal)) count++;
+    else return false;
+  }
+  const depth = Math.ceil(Math.log2(count + 1));
+  if (count < 2 || target.rowCount * values.length <= 4 * (count + target.rowCount) * depth)
+    return false;
+  const bytes = count * Float64Array.BYTES_PER_ELEMENT;
+  if (scope !== undefined && bytes > scope.budget.availableBytes) return false;
+  const sorted = admitVectorBuffer(scope, bytes, () => new Float64Array(count));
+  try {
+    let offset = 0;
+    for (const value of values)
+      if (typeof value.literal === "number") sorted[offset++] = value.literal;
+    sorted.sort();
+    for (let row = 0; row < target.rowCount; row++) {
+      const value = target.valueAt(row);
+      let result: boolean | null;
+      if (value === null) result = null;
+      else {
+        const number = value as number;
+        let lo = 0;
+        let hi = sorted.length;
+        while (lo < hi) {
+          const mid = lo + Math.floor((hi - lo) / 2);
+          if ((sorted[mid] ?? 0) < number) lo = mid + 1;
+          else hi = mid;
+        }
+        // Preserve the existing scalar comparator's NaN behavior.
+        const found = Number.isNaN(number) || sorted[lo] === number;
+        result = found ? true : hasNull ? null : false;
+      }
+      mask[row] = sqlMaskValue(negated ? sqlNot(result) : result);
+    }
+    return true;
+  } finally {
+    scope?.releaseAllocation(sorted);
+  }
+}
+
+function nullCheckMask(values: BatchExprValues, negated: boolean, scope?: MemoryScope): Uint8Array {
+  const mask = admitVectorBuffer(scope, values.rowCount, () => new Uint8Array(values.rowCount));
   for (let index = 0; index < values.rowCount; index += 1) {
-    const result = values.valueAt(index) === null;
-    mask[index] = (negated ? !result : result) ? 1 : 0;
+    const scratch = values.allocationFree ? undefined : scope?.childScope();
+    try {
+      const result = values.valueAt(index, scratch) === null;
+      mask[index] = (negated ? !result : result) ? 1 : 0;
+    } finally {
+      scratch?.dispose();
+    }
   }
   return mask;
 }
 
-function vectorNullCheckMask(vector: Vector, negated: boolean): Uint8Array {
+function vectorNullCheckMask(vector: Vector, negated: boolean, scope?: MemoryScope): Uint8Array {
   const rowCount = vectorLength(vector);
-  const mask = new Uint8Array(rowCount);
+  const mask = admitVectorBuffer(scope, rowCount, () => new Uint8Array(rowCount));
   for (let index = 0; index < rowCount; index += 1) {
     const isNull = vectorValue(vector, index) === null;
     mask[index] = (negated ? !isNull : isNull) ? 1 : 0;
@@ -948,31 +1618,43 @@ function vectorNullCheckMask(vector: Vector, negated: boolean): Uint8Array {
   return mask;
 }
 
-function sqlAndMasks(left: Uint8Array, right: Uint8Array): Uint8Array {
-  const mask = new Uint8Array(left.length);
-  for (let index = 0; index < left.length; index += 1) {
-    mask[index] = sqlMaskValue(sqlAnd(maskValue(left[index]), maskValue(right[index])));
+// Predicate masks are private evaluation outputs, never borrowed column buffers.
+// Consume the right workspace and reuse the left backing for the parent result.
+function sqlAndMasks(left: Uint8Array, right: Uint8Array, scope?: MemoryScope): Uint8Array {
+  try {
+    for (let index = 0; index < left.length; index++) {
+      left[index] = sqlMaskValue(sqlAnd(maskValue(left[index]), maskValue(right[index])));
+    }
+    return left;
+  } finally {
+    scope?.releaseAllocation(right);
   }
-  return mask;
 }
 
-function sqlOrMasks(left: Uint8Array, right: Uint8Array): Uint8Array {
-  const mask = new Uint8Array(left.length);
-  for (let index = 0; index < left.length; index += 1) {
-    mask[index] = sqlMaskValue(sqlOr(maskValue(left[index]), maskValue(right[index])));
+function sqlOrMasks(left: Uint8Array, right: Uint8Array, scope?: MemoryScope): Uint8Array {
+  try {
+    for (let index = 0; index < left.length; index++) {
+      left[index] = sqlMaskValue(sqlOr(maskValue(left[index]), maskValue(right[index])));
+    }
+    return left;
+  } finally {
+    scope?.releaseAllocation(right);
   }
-  return mask;
 }
 
-function sqlNotMask(input: Uint8Array): Uint8Array {
-  const mask = new Uint8Array(input.length);
-  for (let index = 0; index < input.length; index += 1) {
-    mask[index] = sqlMaskValue(sqlNot(maskValue(input[index])));
+function sqlNotMask(input: Uint8Array, _scope?: MemoryScope): Uint8Array {
+  for (let index = 0; index < input.length; index++) {
+    input[index] = sqlMaskValue(sqlNot(maskValue(input[index])));
   }
-  return mask;
+  return input;
 }
 
-function compareValue(op: CompareOp, left: Scalar, right: Scalar): boolean | null {
+function compareValue(
+  op: CompareOp,
+  left: Scalar,
+  right: Scalar,
+  scope?: MemoryScope,
+): boolean | null {
   if (left === null || right === null) return null;
   if (left instanceof Uint8Array || right instanceof Uint8Array) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Cannot compare binary values", {
@@ -981,17 +1663,22 @@ function compareValue(op: CompareOp, left: Scalar, right: Scalar): boolean | nul
     });
   }
   if (isTimestampValue(left) || isTimestampValue(right)) {
-    const leftTimestamp = timestampLiteral(left);
-    const rightTimestamp = timestampLiteral(right);
-    if (leftTimestamp === undefined || rightTimestamp === undefined) {
-      throw new LakeqlError("LAKEQL_TYPE_ERROR", "Cannot compare timestamp with non-timestamp", {
-        leftType: scalarType(left),
-        rightType: scalarType(right),
-      });
+    const parsing = scope?.childScope();
+    try {
+      const leftTimestamp = timestampLiteral(left, parsing);
+      const rightTimestamp = timestampLiteral(right, parsing);
+      if (leftTimestamp === undefined || rightTimestamp === undefined) {
+        throw new LakeqlError("LAKEQL_TYPE_ERROR", "Cannot compare timestamp with non-timestamp", {
+          leftType: scalarType(left),
+          rightType: scalarType(right),
+        });
+      }
+      return compareOrder(op, compareTimestampValues(leftTimestamp, rightTimestamp));
+    } finally {
+      parsing?.dispose();
     }
-    const order = compareTimestampValues(leftTimestamp, rightTimestamp);
-    return compareOrder(op, order);
   }
+
   if (typeof left !== typeof right && !(isNumberLike(left) && isNumberLike(right))) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Cannot compare values of different types", {
       leftType: typeof left,
@@ -1017,17 +1704,6 @@ function compareOrder(op: CompareOp, order: number): boolean {
     case "gte":
       return order >= 0;
   }
-}
-
-function inValue(target: Scalar, values: Scalar[]): boolean | null {
-  if (target === null) return null;
-  let sawNull = false;
-  for (const value of values) {
-    const comparison = compareValue("eq", target, value);
-    if (comparison === true) return true;
-    if (comparison === null) sawNull = true;
-  }
-  return sawNull ? null : false;
 }
 
 function arithmeticValue(
@@ -1088,9 +1764,9 @@ function isNumberLike(value: Scalar): boolean {
   return typeof value === "number" || typeof value === "bigint";
 }
 
-function timestampLiteral(value: Scalar): TimestampValue | undefined {
+function timestampLiteral(value: Scalar, scope?: MemoryScope): TimestampValue | undefined {
   if (isTimestampValue(value)) return value;
-  if (typeof value === "string") return timestampValueFromIso(value);
+  if (typeof value === "string") return timestampValueFromIso(value, scope);
   return undefined;
 }
 

@@ -8,6 +8,7 @@ import {
   restoreVectorAggregateStates,
   snapshotVectorAggregateStates,
   updateVectorAggregateStates,
+  updateVectorAggregateStateValue,
   type VectorAggregateState,
 } from "./vector-aggregate.js";
 
@@ -171,4 +172,64 @@ describe("buffering aggregate memory", () => {
     // Each value once, plus its key form; re-serialising per value would be about rows / 2 times this.
     expect(serialised).toBeLessThan(listBytes * 2);
   });
+});
+
+it.each([
+  "median",
+  "quantile",
+  "mode",
+  "count_distinct",
+  "approx_count_distinct",
+] as const)("rejects %s growth before mutation and permits a later admitted update", (op) => {
+  for (const metric of ["rows", "bytes"] as const) {
+    const states = createVectorAggregateStates({ value: { op, column: "value", quantile: 0.5 } });
+    const state = states.value;
+    if (!state) throw Error("Missing accumulator");
+    updateVectorAggregateStateValue(state, 7, { budget: { maxMemoryBytes: 10000 } });
+    const before = snapshotVectorAggregateStates(states);
+    const bytes = serialisedBytes(state);
+    const budget = metric === "rows" ? { maxBufferedRows: 1 } : { maxMemoryBytes: bytes + 1 };
+    expect(() => updateVectorAggregateStateValue(state, 8, { budget })).toThrow(/budget/);
+    expect(snapshotVectorAggregateStates(states)).toEqual(before);
+    expect(serialisedBytes(state)).toBe(bytes);
+    updateVectorAggregateStateValue(state, 8, {
+      budget: { maxMemoryBytes: 10000, maxBufferedRows: 2 },
+    });
+    expect(snapshotVectorAggregateStates(states)).not.toEqual(before);
+  }
+});
+
+it.each([
+  "median",
+  "quantile",
+] as const)("%s merge keeps only the admitted prefix and leaves its source unchanged", (op) => {
+  const spec = { value: { op, column: "value", quantile: 0.5 } };
+  const target = createVectorAggregateStates(spec);
+  const source = createVectorAggregateStates(spec);
+  const targetState = target.value;
+  const sourceState = source.value;
+  if (!targetState || !sourceState) throw Error("Missing accumulator");
+  const values = op === "median" ? (["a", "é", "😀"] as const) : ([1, 2, 3] as const);
+  updateVectorAggregateStateValue(targetState, values[0]);
+  updateVectorAggregateStateValue(sourceState, values[1]);
+  updateVectorAggregateStateValue(sourceState, values[2]);
+  const sourceBefore = snapshotVectorAggregateStates(source);
+  const expected = createVectorAggregateStates(spec);
+  const expectedState = expected.value;
+  if (!expectedState) throw Error("Missing accumulator");
+  updateVectorAggregateStateValue(expectedState, values[0]);
+  updateVectorAggregateStateValue(expectedState, values[1]);
+  const byteLimit = jsonBytes(values.slice(0, 2));
+  expect(() =>
+    mergeVectorAggregateStates(target, source, {
+      budget: { maxMemoryBytes: byteLimit },
+    }),
+  ).toThrow(/budget/);
+  expect(snapshotVectorAggregateStates(target)).toEqual(snapshotVectorAggregateStates(expected));
+  expect(snapshotVectorAggregateStates(source)).toEqual(sourceBefore);
+  expect(serialisedBytes(targetState)).toBe(byteLimit);
+  updateVectorAggregateStateValue(targetState, values[2], {
+    budget: { maxMemoryBytes: jsonBytes(values) },
+  });
+  expect(serialisedBytes(targetState)).toBe(jsonBytes(values));
 });

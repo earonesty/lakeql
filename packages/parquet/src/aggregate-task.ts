@@ -6,7 +6,6 @@ import {
   fanInWorkUnits,
   finalizeVectorAggregateStates,
   finalizeVectorGroupByBatch,
-  gatherBatch,
   LakeqlError,
   materializeBatchRows,
   mergeVectorAggregateStateSnapshots,
@@ -15,6 +14,7 @@ import {
   type Row,
   restoreVectorGroupByState,
   selectedRowCount,
+  sliceBatch as sliceBatchRows,
   snapshotVectorAggregateStates,
   snapshotVectorGroupByState,
   type TaskInput,
@@ -63,7 +63,7 @@ export async function aggregateParquetTask(
       options.metadataCache,
     );
     recordMetadataCache(scanOptions, cached);
-    rejectUnsupportedParquetSchema(metadata, { allowValueCheckedInt64Decimals: true });
+    rejectUnsupportedParquetSchema(metadata, { allowValueCheckedScalarDecimals: true });
     enforceAggregateTaskBudget(scanOptions);
     const physicalColumns = aggregateTaskReadColumns(task, spec);
     const aggregateOptions = aggregateVectorOptions(options);
@@ -156,7 +156,7 @@ export async function aggregateParquetGroupTask(
       options.metadataCache,
     );
     recordMetadataCache(scanOptions, cached);
-    rejectUnsupportedParquetSchema(metadata, { allowValueCheckedInt64Decimals: true });
+    rejectUnsupportedParquetSchema(metadata, { allowValueCheckedScalarDecimals: true });
     enforceAggregateTaskBudget(scanOptions);
     const physicalColumns = aggregateTaskReadColumns(task, spec, groupColumns);
     const aggregateOptions = aggregateVectorOptions(options);
@@ -314,7 +314,5 @@ function sliceBatch(batch: Batch, offset: number, limit?: number): Batch {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "limit must be a non-negative integer", { limit });
   }
   const end = limit === undefined ? batch.rowCount : Math.min(offset + limit, batch.rowCount);
-  const indices: number[] = [];
-  for (let index = offset; index < end; index += 1) indices.push(index);
-  return gatherBatch(batch, indices);
+  return sliceBatchRows(batch, Math.min(offset, batch.rowCount), end);
 }

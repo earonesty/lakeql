@@ -1,0 +1,1161 @@
+{
+  "scope": "Seven measured fresh-process runs per script after one discarded run. Each child checks values and final zero ownership. Memory metrics are explicit accounting, not VM heap. Reported timing ranges are descriptive, not causal speedup evidence or confidence intervals. Local execution only; no cloud transport.",
+  "node": "v24.18.1",
+  "results": [
+    {
+      "script": "union-concat-scaling.mjs",
+      "appends": 32,
+      "rows": 34,
+      "mode": "oneShot",
+      "runs": [
+        {
+          "elapsedMs": 3.8288379999999975,
+          "retainedBytes": 2876,
+          "peakBytes": 2876,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 3.000109000000002,
+          "retainedBytes": 2876,
+          "peakBytes": 2876,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 3.0381709999999984,
+          "retainedBytes": 2876,
+          "peakBytes": 2876,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 2.917322999999996,
+          "retainedBytes": 2876,
+          "peakBytes": 2876,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 2.9025040000000004,
+          "retainedBytes": 2876,
+          "peakBytes": 2876,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 2.911161,
+          "retainedBytes": 2876,
+          "peakBytes": 2876,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 3.817385999999999,
+          "retainedBytes": 2876,
+          "peakBytes": 2876,
+          "unionDepth": 2
+        }
+      ],
+      "elapsedMs": {
+        "min": 2.9025040000000004,
+        "median": 3.000109000000002,
+        "max": 3.8288379999999975
+      }
+    },
+    {
+      "script": "union-concat-scaling.mjs",
+      "appends": 32,
+      "rows": 34,
+      "mode": "incremental",
+      "runs": [
+        {
+          "elapsedMs": 7.302724000000012,
+          "retainedBytes": 6867,
+          "peakBytes": 15574,
+          "unionDepth": 7
+        },
+        {
+          "elapsedMs": 7.628731000000002,
+          "retainedBytes": 6867,
+          "peakBytes": 15574,
+          "unionDepth": 7
+        },
+        {
+          "elapsedMs": 10.304676,
+          "retainedBytes": 6867,
+          "peakBytes": 15574,
+          "unionDepth": 7
+        },
+        {
+          "elapsedMs": 7.584918000000002,
+          "retainedBytes": 6867,
+          "peakBytes": 15574,
+          "unionDepth": 7
+        },
+        {
+          "elapsedMs": 7.724702999999998,
+          "retainedBytes": 6867,
+          "peakBytes": 15574,
+          "unionDepth": 7
+        },
+        {
+          "elapsedMs": 9.509501,
+          "retainedBytes": 6867,
+          "peakBytes": 15574,
+          "unionDepth": 7
+        },
+        {
+          "elapsedMs": 7.617078999999997,
+          "retainedBytes": 6867,
+          "peakBytes": 15574,
+          "unionDepth": 7
+        }
+      ],
+      "elapsedMs": {
+        "min": 7.302724000000012,
+        "median": 7.628731000000002,
+        "max": 10.304676
+      }
+    },
+    {
+      "script": "union-concat-scaling.mjs",
+      "appends": 128,
+      "rows": 130,
+      "mode": "oneShot",
+      "runs": [
+        {
+          "elapsedMs": 3.4292509999999936,
+          "retainedBytes": 5660,
+          "peakBytes": 5660,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 4.007697,
+          "retainedBytes": 5660,
+          "peakBytes": 5660,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 4.1568089999999955,
+          "retainedBytes": 5660,
+          "peakBytes": 5660,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 3.199455999999998,
+          "retainedBytes": 5660,
+          "peakBytes": 5660,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 3.4587669999999946,
+          "retainedBytes": 5660,
+          "peakBytes": 5660,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 3.3586680000000015,
+          "retainedBytes": 5660,
+          "peakBytes": 5660,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 3.769015000000003,
+          "retainedBytes": 5660,
+          "peakBytes": 5660,
+          "unionDepth": 2
+        }
+      ],
+      "elapsedMs": {
+        "min": 3.199455999999998,
+        "median": 3.4587669999999946,
+        "max": 4.1568089999999955
+      }
+    },
+    {
+      "script": "union-concat-scaling.mjs",
+      "appends": 128,
+      "rows": 130,
+      "mode": "incremental",
+      "runs": [
+        {
+          "elapsedMs": 32.55675799999999,
+          "retainedBytes": 5596,
+          "peakBytes": 42274,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 32.56383199999999,
+          "retainedBytes": 5596,
+          "peakBytes": 42274,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 36.98379800000001,
+          "retainedBytes": 5596,
+          "peakBytes": 42274,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 32.792895,
+          "retainedBytes": 5596,
+          "peakBytes": 42274,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 29.656979000000007,
+          "retainedBytes": 5596,
+          "peakBytes": 42274,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 31.215399000000005,
+          "retainedBytes": 5596,
+          "peakBytes": 42274,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 29.517104000000003,
+          "retainedBytes": 5596,
+          "peakBytes": 42274,
+          "unionDepth": 2
+        }
+      ],
+      "elapsedMs": {
+        "min": 29.517104000000003,
+        "median": 32.55675799999999,
+        "max": 36.98379800000001
+      }
+    },
+    {
+      "script": "union-concat-scaling.mjs",
+      "appends": 512,
+      "rows": 514,
+      "mode": "oneShot",
+      "runs": [
+        {
+          "elapsedMs": 4.242451000000003,
+          "retainedBytes": 20673,
+          "peakBytes": 20673,
+          "unionDepth": 3
+        },
+        {
+          "elapsedMs": 4.495309000000006,
+          "retainedBytes": 20673,
+          "peakBytes": 20673,
+          "unionDepth": 3
+        },
+        {
+          "elapsedMs": 4.030108999999996,
+          "retainedBytes": 20673,
+          "peakBytes": 20673,
+          "unionDepth": 3
+        },
+        {
+          "elapsedMs": 5.758259999999993,
+          "retainedBytes": 20673,
+          "peakBytes": 20673,
+          "unionDepth": 3
+        },
+        {
+          "elapsedMs": 3.64061199999999,
+          "retainedBytes": 20673,
+          "peakBytes": 20673,
+          "unionDepth": 3
+        },
+        {
+          "elapsedMs": 3.8538350000000037,
+          "retainedBytes": 20673,
+          "peakBytes": 20673,
+          "unionDepth": 3
+        },
+        {
+          "elapsedMs": 3.680335999999997,
+          "retainedBytes": 20673,
+          "peakBytes": 20673,
+          "unionDepth": 3
+        }
+      ],
+      "elapsedMs": {
+        "min": 3.64061199999999,
+        "median": 4.030108999999996,
+        "max": 5.758259999999993
+      }
+    },
+    {
+      "script": "union-concat-scaling.mjs",
+      "appends": 512,
+      "rows": 514,
+      "mode": "incremental",
+      "runs": [
+        {
+          "elapsedMs": 231.72364900000002,
+          "retainedBytes": 43021,
+          "peakBytes": 138658,
+          "unionDepth": 10
+        },
+        {
+          "elapsedMs": 234.67873199999997,
+          "retainedBytes": 43021,
+          "peakBytes": 138658,
+          "unionDepth": 10
+        },
+        {
+          "elapsedMs": 226.59000099999997,
+          "retainedBytes": 43021,
+          "peakBytes": 138658,
+          "unionDepth": 10
+        },
+        {
+          "elapsedMs": 221.734521,
+          "retainedBytes": 43021,
+          "peakBytes": 138658,
+          "unionDepth": 10
+        },
+        {
+          "elapsedMs": 205.495161,
+          "retainedBytes": 43021,
+          "peakBytes": 138658,
+          "unionDepth": 10
+        },
+        {
+          "elapsedMs": 211.667265,
+          "retainedBytes": 43021,
+          "peakBytes": 138658,
+          "unionDepth": 10
+        },
+        {
+          "elapsedMs": 216.48028599999998,
+          "retainedBytes": 43021,
+          "peakBytes": 138658,
+          "unionDepth": 10
+        }
+      ],
+      "elapsedMs": {
+        "min": 205.495161,
+        "median": 221.734521,
+        "max": 234.67873199999997
+      }
+    },
+    {
+      "script": "union-selection-scaling.mjs",
+      "appends": 32,
+      "rows": 2,
+      "mode": "selected",
+      "runs": [
+        {
+          "elapsedMs": 11.896619999999999,
+          "retainedBytes": 1247,
+          "peakBytes": 6807,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 12.000385999999999,
+          "retainedBytes": 1247,
+          "peakBytes": 6807,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 12.070909,
+          "retainedBytes": 1247,
+          "peakBytes": 6807,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 12.872456999999997,
+          "retainedBytes": 1247,
+          "peakBytes": 6807,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 12.087019999999995,
+          "retainedBytes": 1247,
+          "peakBytes": 6807,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 14.027422999999999,
+          "retainedBytes": 1247,
+          "peakBytes": 6807,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 12.250118999999998,
+          "retainedBytes": 1247,
+          "peakBytes": 6807,
+          "unionDepth": 2
+        }
+      ],
+      "elapsedMs": {
+        "min": 11.896619999999999,
+        "median": 12.087019999999995,
+        "max": 14.027422999999999
+      }
+    },
+    {
+      "script": "union-selection-scaling.mjs",
+      "appends": 32,
+      "rows": 2,
+      "mode": "strings",
+      "runs": [
+        {
+          "elapsedMs": 6.478284000000002,
+          "retainedBytes": 1463,
+          "peakBytes": 6823,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 7.1736899999999935,
+          "retainedBytes": 1463,
+          "peakBytes": 6823,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 6.664116000000007,
+          "retainedBytes": 1463,
+          "peakBytes": 6823,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 6.720080999999993,
+          "retainedBytes": 1463,
+          "peakBytes": 6823,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 6.867509999999996,
+          "retainedBytes": 1463,
+          "peakBytes": 6823,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 9.068325999999999,
+          "retainedBytes": 1463,
+          "peakBytes": 6823,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 6.690315000000005,
+          "retainedBytes": 1463,
+          "peakBytes": 6823,
+          "unionDepth": 2
+        }
+      ],
+      "elapsedMs": {
+        "min": 6.478284000000002,
+        "median": 6.720080999999993,
+        "max": 9.068325999999999
+      }
+    },
+    {
+      "script": "union-selection-scaling.mjs",
+      "appends": 32,
+      "rows": 2,
+      "mode": "binary",
+      "runs": [
+        {
+          "elapsedMs": 9.203412,
+          "retainedBytes": 1631,
+          "peakBytes": 7412,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 9.782097000000007,
+          "retainedBytes": 1631,
+          "peakBytes": 7412,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 9.259628000000006,
+          "retainedBytes": 1631,
+          "peakBytes": 7412,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 9.862749000000008,
+          "retainedBytes": 1631,
+          "peakBytes": 7412,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 10.117902999999998,
+          "retainedBytes": 1631,
+          "peakBytes": 7412,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 10.255334000000005,
+          "retainedBytes": 1631,
+          "peakBytes": 7412,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 12.633555000000001,
+          "retainedBytes": 1631,
+          "peakBytes": 7412,
+          "unionDepth": 2
+        }
+      ],
+      "elapsedMs": {
+        "min": 9.203412,
+        "median": 9.862749000000008,
+        "max": 12.633555000000001
+      }
+    },
+    {
+      "script": "union-selection-scaling.mjs",
+      "appends": 32,
+      "rows": 2,
+      "mode": "struct",
+      "runs": [
+        {
+          "elapsedMs": 25.084593999999996,
+          "retainedBytes": 7244,
+          "peakBytes": 22017,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 24.928628000000003,
+          "retainedBytes": 7244,
+          "peakBytes": 22017,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 23.43969,
+          "retainedBytes": 7244,
+          "peakBytes": 22017,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 24.397834000000003,
+          "retainedBytes": 7244,
+          "peakBytes": 22017,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 24.851273000000006,
+          "retainedBytes": 7244,
+          "peakBytes": 22017,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 23.728737999999993,
+          "retainedBytes": 7244,
+          "peakBytes": 22017,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 23.606657,
+          "retainedBytes": 7244,
+          "peakBytes": 22017,
+          "unionDepth": 2
+        }
+      ],
+      "elapsedMs": {
+        "min": 23.43969,
+        "median": 24.397834000000003,
+        "max": 25.084593999999996
+      }
+    },
+    {
+      "script": "union-selection-scaling.mjs",
+      "appends": 32,
+      "rows": 2,
+      "mode": "list",
+      "runs": [
+        {
+          "elapsedMs": 19.85105700000001,
+          "retainedBytes": 5570,
+          "peakBytes": 18969,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 22.06637099999999,
+          "retainedBytes": 5570,
+          "peakBytes": 18969,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 19.78874900000001,
+          "retainedBytes": 5570,
+          "peakBytes": 18969,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 25.676834999999997,
+          "retainedBytes": 5570,
+          "peakBytes": 18969,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 22.852318999999994,
+          "retainedBytes": 5570,
+          "peakBytes": 18969,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 21.043594,
+          "retainedBytes": 5570,
+          "peakBytes": 18969,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 20.358497999999997,
+          "retainedBytes": 5570,
+          "peakBytes": 18969,
+          "unionDepth": 2
+        }
+      ],
+      "elapsedMs": {
+        "min": 19.78874900000001,
+        "median": 21.043594,
+        "max": 25.676834999999997
+      }
+    },
+    {
+      "script": "union-selection-scaling.mjs",
+      "appends": 128,
+      "rows": 2,
+      "mode": "selected",
+      "runs": [
+        {
+          "elapsedMs": 24.92708599999999,
+          "retainedBytes": 1247,
+          "peakBytes": 6807,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 30.73717400000001,
+          "retainedBytes": 1247,
+          "peakBytes": 6807,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 28.222644000000003,
+          "retainedBytes": 1247,
+          "peakBytes": 6807,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 26.80249599999999,
+          "retainedBytes": 1247,
+          "peakBytes": 6807,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 24.376394000000005,
+          "retainedBytes": 1247,
+          "peakBytes": 6807,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 24.89286100000001,
+          "retainedBytes": 1247,
+          "peakBytes": 6807,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 24.899764000000005,
+          "retainedBytes": 1247,
+          "peakBytes": 6807,
+          "unionDepth": 2
+        }
+      ],
+      "elapsedMs": {
+        "min": 24.376394000000005,
+        "median": 24.92708599999999,
+        "max": 30.73717400000001
+      }
+    },
+    {
+      "script": "union-selection-scaling.mjs",
+      "appends": 128,
+      "rows": 2,
+      "mode": "strings",
+      "runs": [
+        {
+          "elapsedMs": 23.614941999999985,
+          "retainedBytes": 1463,
+          "peakBytes": 6823,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 26.483132000000012,
+          "retainedBytes": 1463,
+          "peakBytes": 6823,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 22.952968999999996,
+          "retainedBytes": 1463,
+          "peakBytes": 6823,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 23.329671999999988,
+          "retainedBytes": 1463,
+          "peakBytes": 6823,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 22.571697999999998,
+          "retainedBytes": 1463,
+          "peakBytes": 6823,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 24.86226400000001,
+          "retainedBytes": 1463,
+          "peakBytes": 6823,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 25.090264999999988,
+          "retainedBytes": 1463,
+          "peakBytes": 6823,
+          "unionDepth": 2
+        }
+      ],
+      "elapsedMs": {
+        "min": 22.571697999999998,
+        "median": 23.614941999999985,
+        "max": 26.483132000000012
+      }
+    },
+    {
+      "script": "union-selection-scaling.mjs",
+      "appends": 128,
+      "rows": 2,
+      "mode": "binary",
+      "runs": [
+        {
+          "elapsedMs": 19.761819000000003,
+          "retainedBytes": 1631,
+          "peakBytes": 7412,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 20.910352999999986,
+          "retainedBytes": 1631,
+          "peakBytes": 7412,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 21.597383000000008,
+          "retainedBytes": 1631,
+          "peakBytes": 7412,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 22.506754,
+          "retainedBytes": 1631,
+          "peakBytes": 7412,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 21.436027999999993,
+          "retainedBytes": 1631,
+          "peakBytes": 7412,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 22.616922999999986,
+          "retainedBytes": 1631,
+          "peakBytes": 7412,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 22.042896000000013,
+          "retainedBytes": 1631,
+          "peakBytes": 7412,
+          "unionDepth": 2
+        }
+      ],
+      "elapsedMs": {
+        "min": 19.761819000000003,
+        "median": 21.597383000000008,
+        "max": 22.616922999999986
+      }
+    },
+    {
+      "script": "union-selection-scaling.mjs",
+      "appends": 128,
+      "rows": 2,
+      "mode": "struct",
+      "runs": [
+        {
+          "elapsedMs": 97.98792599999999,
+          "retainedBytes": 7244,
+          "peakBytes": 22017,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 113.109992,
+          "retainedBytes": 7244,
+          "peakBytes": 22017,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 89.8012,
+          "retainedBytes": 7244,
+          "peakBytes": 22017,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 94.321226,
+          "retainedBytes": 7244,
+          "peakBytes": 22017,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 90.36035900000002,
+          "retainedBytes": 7244,
+          "peakBytes": 22017,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 92.80082000000002,
+          "retainedBytes": 7244,
+          "peakBytes": 22017,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 94.04804100000004,
+          "retainedBytes": 7244,
+          "peakBytes": 22017,
+          "unionDepth": 2
+        }
+      ],
+      "elapsedMs": {
+        "min": 89.8012,
+        "median": 94.04804100000004,
+        "max": 113.109992
+      }
+    },
+    {
+      "script": "union-selection-scaling.mjs",
+      "appends": 128,
+      "rows": 2,
+      "mode": "list",
+      "runs": [
+        {
+          "elapsedMs": 53.54994799999997,
+          "retainedBytes": 5570,
+          "peakBytes": 18969,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 67.81352799999996,
+          "retainedBytes": 5570,
+          "peakBytes": 18969,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 56.09851200000003,
+          "retainedBytes": 5570,
+          "peakBytes": 18969,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 54.35859900000003,
+          "retainedBytes": 5570,
+          "peakBytes": 18969,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 55.886300000000006,
+          "retainedBytes": 5570,
+          "peakBytes": 18969,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 53.464516,
+          "retainedBytes": 5570,
+          "peakBytes": 18969,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 52.35657900000001,
+          "retainedBytes": 5570,
+          "peakBytes": 18969,
+          "unionDepth": 2
+        }
+      ],
+      "elapsedMs": {
+        "min": 52.35657900000001,
+        "median": 54.35859900000003,
+        "max": 67.81352799999996
+      }
+    },
+    {
+      "script": "union-selection-scaling.mjs",
+      "appends": 512,
+      "rows": 2,
+      "mode": "selected",
+      "runs": [
+        {
+          "elapsedMs": 56.848972,
+          "retainedBytes": 1247,
+          "peakBytes": 6807,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 63.14611200000002,
+          "retainedBytes": 1247,
+          "peakBytes": 6807,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 54.495547999999985,
+          "retainedBytes": 1247,
+          "peakBytes": 6807,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 54.866551000000015,
+          "retainedBytes": 1247,
+          "peakBytes": 6807,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 55.69879599999996,
+          "retainedBytes": 1247,
+          "peakBytes": 6807,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 55.94434100000001,
+          "retainedBytes": 1247,
+          "peakBytes": 6807,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 59.57534500000003,
+          "retainedBytes": 1247,
+          "peakBytes": 6807,
+          "unionDepth": 2
+        }
+      ],
+      "elapsedMs": {
+        "min": 54.495547999999985,
+        "median": 55.94434100000001,
+        "max": 63.14611200000002
+      }
+    },
+    {
+      "script": "union-selection-scaling.mjs",
+      "appends": 512,
+      "rows": 2,
+      "mode": "strings",
+      "runs": [
+        {
+          "elapsedMs": 53.731089999999995,
+          "retainedBytes": 1463,
+          "peakBytes": 6823,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 57.516636000000005,
+          "retainedBytes": 1463,
+          "peakBytes": 6823,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 57.841402000000016,
+          "retainedBytes": 1463,
+          "peakBytes": 6823,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 55.114329999999995,
+          "retainedBytes": 1463,
+          "peakBytes": 6823,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 57.45666399999999,
+          "retainedBytes": 1463,
+          "peakBytes": 6823,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 53.50128699999999,
+          "retainedBytes": 1463,
+          "peakBytes": 6823,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 54.264230999999995,
+          "retainedBytes": 1463,
+          "peakBytes": 6823,
+          "unionDepth": 2
+        }
+      ],
+      "elapsedMs": {
+        "min": 53.50128699999999,
+        "median": 55.114329999999995,
+        "max": 57.841402000000016
+      }
+    },
+    {
+      "script": "union-selection-scaling.mjs",
+      "appends": 512,
+      "rows": 2,
+      "mode": "binary",
+      "runs": [
+        {
+          "elapsedMs": 64.71406000000002,
+          "retainedBytes": 1631,
+          "peakBytes": 7412,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 60.71179500000005,
+          "retainedBytes": 1631,
+          "peakBytes": 7412,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 59.73443500000002,
+          "retainedBytes": 1631,
+          "peakBytes": 7412,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 61.19272600000005,
+          "retainedBytes": 1631,
+          "peakBytes": 7412,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 62.164355,
+          "retainedBytes": 1631,
+          "peakBytes": 7412,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 59.72218299999997,
+          "retainedBytes": 1631,
+          "peakBytes": 7412,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 62.105053999999996,
+          "retainedBytes": 1631,
+          "peakBytes": 7412,
+          "unionDepth": 2
+        }
+      ],
+      "elapsedMs": {
+        "min": 59.72218299999997,
+        "median": 61.19272600000005,
+        "max": 64.71406000000002
+      }
+    },
+    {
+      "script": "union-selection-scaling.mjs",
+      "appends": 512,
+      "rows": 2,
+      "mode": "struct",
+      "runs": [
+        {
+          "elapsedMs": 252.9307060000001,
+          "retainedBytes": 7244,
+          "peakBytes": 22017,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 247.6288300000001,
+          "retainedBytes": 7244,
+          "peakBytes": 22017,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 247.51942399999996,
+          "retainedBytes": 7244,
+          "peakBytes": 22017,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 243.37475000000006,
+          "retainedBytes": 7244,
+          "peakBytes": 22017,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 242.62842799999999,
+          "retainedBytes": 7244,
+          "peakBytes": 22017,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 246.3810229999999,
+          "retainedBytes": 7244,
+          "peakBytes": 22017,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 254.987436,
+          "retainedBytes": 7244,
+          "peakBytes": 22017,
+          "unionDepth": 2
+        }
+      ],
+      "elapsedMs": {
+        "min": 242.62842799999999,
+        "median": 247.51942399999996,
+        "max": 254.987436
+      }
+    },
+    {
+      "script": "union-selection-scaling.mjs",
+      "appends": 512,
+      "rows": 2,
+      "mode": "list",
+      "runs": [
+        {
+          "elapsedMs": 201.076148,
+          "retainedBytes": 5570,
+          "peakBytes": 18969,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 201.92698900000005,
+          "retainedBytes": 5570,
+          "peakBytes": 18969,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 206.99989299999993,
+          "retainedBytes": 5570,
+          "peakBytes": 18969,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 199.78329299999996,
+          "retainedBytes": 5570,
+          "peakBytes": 18969,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 219.35232700000006,
+          "retainedBytes": 5570,
+          "peakBytes": 18969,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 216.78951699999993,
+          "retainedBytes": 5570,
+          "peakBytes": 18969,
+          "unionDepth": 2
+        },
+        {
+          "elapsedMs": 203.01908000000003,
+          "retainedBytes": 5570,
+          "peakBytes": 18969,
+          "unionDepth": 2
+        }
+      ],
+      "elapsedMs": {
+        "min": 199.78329299999996,
+        "median": 203.01908000000003,
+        "max": 219.35232700000006
+      }
+    }
+  ]
+}

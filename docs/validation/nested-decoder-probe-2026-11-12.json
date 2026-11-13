@@ -1,0 +1,76 @@
+{
+  "scope": "Diagnostic using the existing internal column decoder with the public schema guard bypassed; borrowed local fixture buffers; JSON representation comparison only, not canonical semantic equality or bounded-memory validation",
+  "reports": [
+    {
+      "file": "data/nested_structs.rust.parquet",
+      "publicSchemaGateBypassed": true,
+      "actualRows": 1,
+      "expectedRows": 1,
+      "firstDifference": {
+        "path": "rows.0.ul_observation_date.min",
+        "actual": "+052951-07-27T10:00:00.000000Z",
+        "expected": "52951-07-27 10:00:00"
+      },
+      "jsonRepresentationEqual": false
+    },
+    {
+      "file": "data/nonnullable.impala.parquet",
+      "publicSchemaGateBypassed": true,
+      "actualRows": 1,
+      "expectedRows": 1,
+      "firstDifference": {
+        "path": "rows.0.Int_Map",
+        "actual": {
+          "k1": -1
+        },
+        "expected": [
+          {
+            "key": "k1",
+            "value": -1
+          }
+        ]
+      },
+      "jsonRepresentationEqual": false
+    },
+    {
+      "file": "data/nullable.impala.parquet",
+      "publicSchemaGateBypassed": true,
+      "actualRows": 7,
+      "expectedRows": 7,
+      "firstDifference": {
+        "path": "rows.0.int_map",
+        "actual": {
+          "k1": 1,
+          "k2": 100
+        },
+        "expected": [
+          {
+            "key": "k1",
+            "value": 1
+          },
+          {
+            "key": "k2",
+            "value": 100
+          }
+        ]
+      },
+      "jsonRepresentationEqual": false
+    },
+    {
+      "file": "shredded_variant/case-001.parquet",
+      "publicSchemaGateBypassed": true,
+      "actualRows": 1,
+      "expectedRows": 1,
+      "firstDifference": null,
+      "jsonRepresentationEqual": true
+    },
+    {
+      "file": "shredded_variant/case-002.parquet",
+      "publicSchemaGateBypassed": true,
+      "actualRows": 1,
+      "expectedRows": 1,
+      "firstDifference": null,
+      "jsonRepresentationEqual": true
+    }
+  ]
+}
