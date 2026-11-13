@@ -182,6 +182,12 @@
     "reproducer": "bench/dictionary-extent-oracle.mjs",
     "finding": "The name and comment_col metadata total_compressed_size each omit exactly their 15-byte dictionary-page header. Their declared ends are 451/2593, whereas the last data-page bodies end at 466/2608. Other columns have no shortfall.",
     "validation": "Unmodified metadata rejects. Correcting only those two metadata extents in the diagnostic restores all 25 rows. All values match DuckDB, comparing binary values with UTF8 bytes from reader strings. Fixture bytes and production code remain unchanged.",
-    "next": "Implement generic bounded page-extent recovery with validated neighboring-column/footer boundaries and admission before extra cloud range reads. Do not globally pad every column, download whole objects, or classify this fixture as an expected rejection. Conformance remains 18 failures until production integration passes."
+    "next": "Implement generic bounded page-extent recovery with validated neighboring-column/footer boundaries and admission before extra cloud range reads. Do not globally pad every column, download whole objects, or classify this fixture as an expected rejection. Conformance remains 18 failures until production integration passes.",
+    "inspector": {
+      "implementation": "packages/parquet/src/dictionary-column-extent.ts",
+      "contract": "Given a validated next-column/footer boundary, inspect bounded page headers for a missing-dictionary-offset column. Return a correction only for exactly one omitted initial dictionary header and the exact declared value count. Empty encoding lists are permitted because this fixture has them; page types provide the proof. Do not mutate metadata or fetch separate page bodies.",
+      "validation": "Real fixture proves two 15-byte recoveries. Boundary one byte short, inconsistent value count, and size shortfall not equal to the dictionary header all reject. Already-corrected metadata stays unchanged. Tiny budgets reject at header-probe admission; scopes return to zero.",
+      "integration": "Internal inspector only; public/owned readers do not call it yet. No conformance improvement is claimed. Integrating validated physical bounds, owned metadata changes, and cloud transport tests remains required."
+    }
   }
 }
