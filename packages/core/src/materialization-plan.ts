@@ -1,6 +1,7 @@
 import { MATERIALIZATION_CHARGES } from "./allocation-charges.js";
 import {
   type Batch,
+  materializeBatchRow,
   materializeSelectedBatchRows,
   type Selection,
   type Vector,
@@ -27,6 +28,19 @@ export interface MaterializationPlan {
  * work as well as retained output; duplicate/null map keys can over-reserve.
  */
 export function planBatchMaterialization(batch: Batch, selection?: Selection): MaterializationPlan {
+  return planMaterialization(batch, selection);
+}
+
+function planMaterialization(
+  batch: Batch,
+  selection?: Selection,
+  rowIndex?: number,
+): MaterializationPlan {
+  if (
+    rowIndex !== undefined &&
+    (!Number.isSafeInteger(rowIndex) || rowIndex < 0 || rowIndex >= batch.rowCount)
+  )
+    throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Invalid materialization row index");
   if (
     !Number.isSafeInteger(batch.rowCount) ||
     batch.rowCount < 0 ||
@@ -185,7 +199,11 @@ export function planBatchMaterialization(batch: Batch, selection?: Selection): M
       active.delete(vector);
     }
   }
-  for (let index = 0; index < batch.rowCount; index++) {
+  for (
+    let index = rowIndex ?? 0;
+    index < (rowIndex === undefined ? batch.rowCount : rowIndex + 1);
+    index++
+  ) {
     if (selection !== undefined && selection[index] !== 1) continue;
     rows++;
     add(cost.arraySlot + cost.object + fieldCount * cost.property);
@@ -201,7 +219,9 @@ export function planBatchMaterialization(batch: Batch, selection?: Selection): M
       const stage = scope.childStage(allocationBytes, "materialized output");
       try {
         const output = stage.allocate(allocationBytes - scratchBytes, "materialized rows", () =>
-          materializeSelectedBatchRows(batch, selection),
+          rowIndex === undefined
+            ? materializeSelectedBatchRows(batch, selection)
+            : [materializeBatchRow(batch, rowIndex)],
         );
         return scope.adopt(output.retain());
       } finally {
@@ -219,14 +239,41 @@ export function materializeOwnedBatchRows(
   selection?: Selection,
   budget: MemoryBudget = input.budget,
 ): OwnedMemory<Row[]> {
-  const plan = planBatchMaterialization(input.value, selection);
+  return materializeOwnedPlan(
+    input,
+    planBatchMaterialization(input.value, selection),
+    budget,
+    (rows) => rows,
+  );
+}
+
+/** Materialize one candidate without a batch-sized selection mask or scan. */
+export function materializeOwnedBatchRow(
+  input: OwnedMemory<Batch>,
+  index: number,
+  budget: MemoryBudget = input.budget,
+): OwnedMemory<Row> {
+  return materializeOwnedPlan(
+    input,
+    planMaterialization(input.value, undefined, index),
+    budget,
+    (rows) => rows[0] as Row,
+  );
+}
+
+function materializeOwnedPlan<T>(
+  input: OwnedMemory<Batch>,
+  plan: MaterializationPlan,
+  budget: MemoryBudget,
+  select: (rows: Row[]) => T,
+): OwnedMemory<T> {
   const scope = new MemoryScope(budget);
   try {
     const source = scope.adopt(input.retainIn(budget));
     const rows = plan.execute(scope);
     if (!plan.retainsInput) source.release();
     // The output allocation and input pins must outlive the temporary scope.
-    const output = scope.retainAllocations(rows.value);
+    const output = scope.retainAllocations(select(rows.value));
     return output;
   } finally {
     scope.dispose();

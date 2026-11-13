@@ -23,7 +23,7 @@ export function normalizeOrderBy(terms: OrderByTerm[]): OrderByTerm[] {
   });
 }
 
-export function compareRows(left: Row, right: Row, orderBy: OrderByTerm[]): number {
+export function compareRows(left: Row, right: Row, orderBy: readonly OrderByTerm[]): number {
   for (const term of orderBy) {
     const comparison = compareSortValues(
       valueForColumn(left, term.column),

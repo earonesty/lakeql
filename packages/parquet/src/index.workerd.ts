@@ -693,3 +693,75 @@ it.each([
     expect(pool.usedBytes).toBe(0);
   }
 });
+
+it.each([64, 128])("owns deferred top-k over native R2 with a %s MiB shared pool", async (mib) => {
+  const bucket = (env as unknown as { MEMORY_TEST_BUCKET: R2BucketLike }).MEMORY_TEST_BUCKET;
+  const store = new R2ObjectStore(bucket);
+  const path = `deferred-top-k-${mib}.parquet`;
+  const text = Array.from({ length: 100 }, (_, id) => `${id}:`.padEnd(1024, "x"));
+  await writeParquet(store, path, {
+    codec: "UNCOMPRESSED",
+    rowGroupSize: Array(10).fill(10),
+    columnData: [
+      { name: "id", type: "INT32", data: Array.from({ length: 100 }, (_, id) => id) },
+      { name: "text", type: "STRING", data: text },
+    ],
+  });
+  const pool = new MemoryBudget(mib * 1024 * 1024);
+  const cache = new SharedMemoryCache({ maxBytes: 1024 * 1024, memoryBudget: pool });
+  const adapter = new ParquetScanAdapter(store, {
+    scanRangeCache: { maxBytes: 1024 * 1024, sharedCache: cache },
+  });
+  const scans = vi.spyOn(adapter, "scanOwnedVectorBatches");
+  const reads = vi.spyOn(store, "getRangeOwned");
+  const lake = new Lake({ store, scanner: adapter, memoryPool: pool });
+  try {
+    for (let round = 0; round < 2; round++) {
+      reads.mockClear();
+      const owners = await Promise.all(
+        Array.from({ length: 4 }, () =>
+          lake
+            .path(path)
+            .select(["text"])
+            .orderBy([{ column: "id", direction: "desc" }])
+            .offset(2)
+            .limit(5)
+            .batchSize(10)
+            .run()
+            .toOwnedArray(),
+        ),
+      );
+      try {
+        for (const owner of owners)
+          expect(owner.value).toEqual(
+            text
+              .slice(93, 98)
+              .reverse()
+              .map((text) => ({ text })),
+          );
+        if (round === 0) expect(reads.mock.calls.length).toBeGreaterThan(0);
+        else expect(reads).not.toHaveBeenCalled();
+        if (round === 1) {
+          cache.deleteWhere(() => true);
+          expect(pool.usedBytes).toBeGreaterThan(0);
+          expect(owners[0]?.value[0]).toEqual({ text: text[97] });
+        }
+      } finally {
+        for (const owner of owners) owner.release();
+      }
+    }
+    expect(scans.mock.calls.some(([, options]) => options.columns?.join() === "id")).toBe(true);
+    expect(
+      scans.mock.calls.some(
+        ([, options]) =>
+          options.columns?.join() === "text" && options.rowStart === 93 && options.rowEnd === 98,
+      ),
+    ).toBe(true);
+    expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
+  } finally {
+    scans.mockRestore();
+    reads.mockRestore();
+    cache.deleteWhere(() => true);
+  }
+  expect(pool.usedBytes).toBe(0);
+});

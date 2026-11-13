@@ -32,12 +32,13 @@ import {
   stableStringify,
   type TaskManifest,
 } from "./manifest.js";
-import { materializeOwnedBatchRows } from "./materialization-plan.js";
+import { materializeOwnedBatchRow, materializeOwnedBatchRows } from "./materialization-plan.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
 import { isPrototypeMutationKey } from "./object-key.js";
 import { ownedAggregateExpressionBytesForColumns } from "./owned-aggregate-input.js";
 import { OwnedAggregateState } from "./owned-aggregate-state.js";
+import { OwnedBoundedTopK } from "./owned-bounded-top-k.js";
 import { OwnedGroupDirectory } from "./owned-group-directory.js";
 import { collectOwnedRows } from "./owned-row-collector.js";
 import {
@@ -1219,8 +1220,9 @@ export class QueryResult {
           owner.release();
         }
       }
-    } else if (scanner.scanVectorBatches !== undefined) {
-      yield* scanner.scanVectorBatches(path, options);
+    } else {
+      const scan = vectorBatchScanner(scanner);
+      if (scan) yield* scan(scanner, path, options);
     }
   }
 
@@ -2507,13 +2509,26 @@ export class QueryResult {
     ) {
       return undefined;
     }
+    if (
+      config.scanner.scanColumns === undefined &&
+      config.scanner.scanOwnedVectorBatches === undefined &&
+      vectorBatchScanner(config.scanner) === undefined
+    )
+      return undefined;
     const orderBy = normalizeOrderBy(config.orderBy);
     const topK = (config.offset ?? 0) + config.limit;
     const startedAt = config.now();
+    const plannedObjects = await this.planObjects();
     const lateMaterialized =
-      ownedOutput || config.physicalExecution.acceleratorPolicy === "required"
+      config.physicalExecution.acceleratorPolicy === "required"
         ? undefined
-        : await this.tryLateMaterializedTopKRows(orderBy, topK, startedAt);
+        : await this.tryLateMaterializedTopKRows(
+            orderBy,
+            topK,
+            startedAt,
+            ownedOutput,
+            plannedObjects,
+          );
     if (lateMaterialized !== undefined) return lateMaterialized;
     if (
       config.scanner.scanColumns === undefined &&
@@ -2528,6 +2543,7 @@ export class QueryResult {
         startedAt,
         columnarBatchSize(config.batchSize),
         "iteration",
+        plannedObjects,
       )) {
         const stage = owner === undefined ? undefined : new MemoryScope(this.memoryBudget);
         try {
@@ -2660,12 +2676,16 @@ export class QueryResult {
     orderBy: OrderByTerm[],
     topK: number,
     startedAt: number,
-  ): Promise<Row[] | undefined> {
+    ownedOutput: boolean,
+    plannedObjects: { planned: ObjectInfo[]; skipped: number },
+  ): Promise<Row[] | OwnedMemory<Row[]> | undefined> {
     const config = this.config;
     if (
       vectorBatchScanner(config.scanner) === undefined ||
       config.select === undefined ||
-      config.select.length === 0
+      config.select.length === 0 ||
+      config.select.includes("*") ||
+      (ownedOutput && config.scanner.scanOwnedVectorBatches === undefined)
     ) {
       return undefined;
     }
@@ -2674,74 +2694,166 @@ export class QueryResult {
     const outputColumns = [...new Set([...config.select, ...orderBy.map((term) => term.column)])];
     if (outputColumns.every((column) => rankColumns.includes(column))) return undefined;
 
-    const retained = new BoundedTopK<RankedRowRef>(topK, (left, right) =>
-      compareRankedRefs(left, right, orderBy),
-    );
     const refMemory =
       config.budget.maxMemoryBytes === undefined
         ? undefined
         : new BufferMemory<RankedRowRef>((ref) => estimateOperatorMemoryBytes([ref]) - 2);
-    const scanVectorBatches = vectorBatchScanner(config.scanner);
-    if (scanVectorBatches === undefined) return undefined;
-    const { planned: paths, skipped: skippedFiles } = await this.planObjects();
-    this.stats.filesSkipped = skippedFiles;
-    for (const object of paths) {
-      this.stats.filesPlanned += 1;
-      this.stats.filesRead += 1;
-      this.stats.bytesRequested += object.size;
-      enforceBudget(config.budget, this.stats, config.now, startedAt);
-      const scanOptions: ScanOptions = {
-        memoryBudget: this.memoryBudget,
-        object,
-        columns: rankColumns,
-        ...(config.where === undefined ? {} : { where: config.where }),
-        batchSize: columnarBatchSize(config.batchSize),
-        stats: this.stats,
-        budget: config.budget,
-        now: config.now,
-        startedAt,
-      };
-      for await (const { rowOffset, batch } of scanVectorBatches(
-        config.scanner,
-        object.path,
-        scanOptions,
-      )) {
-        const selection = predicateSelection(batch, config.where);
-        this.stats.rowsMatched += selectedRowCount(batch.rowCount, selection);
-        addRankedRefs(
-          retained,
-          object.path,
-          object,
-          rowOffset,
-          batch,
-          selection,
-          rankColumns,
-          refMemory,
-        );
-        enforceBufferedRowsBudget(config.budget, retained.size);
-        if (refMemory !== undefined) enforceOperatorMemoryBudget(config.budget, refMemory.bytes);
-        enforceBudget(config.budget, this.stats, config.now, startedAt);
-      }
-    }
-    const orderedRefs = retained.drainSorted();
-    const limit = config.limit;
-    if (limit === undefined) return undefined;
-    const selected = orderedRefs.slice(config.offset ?? 0, (config.offset ?? 0) + limit);
-    const rowsByRef = await this.materializeRowRefs(
-      selected,
-      outputColumns,
-      rankColumns,
-      startedAt,
+    const scope = new MemoryScope(
+      this.memoryBudget,
+      config.budget.signal ? [config.budget.signal] : [],
     );
-    const rows = selected
-      .map((ref) => rowsByRef.get(rowRefKey(ref)))
-      .filter((row): row is Row => row !== undefined);
-    for (const _row of rows) {
-      this.stats.rowsReturned += 1;
-      enforceBudget(config.budget, this.stats, config.now, startedAt);
+    const ownedRetained =
+      config.scanner.scanOwnedVectorBatches === undefined
+        ? undefined
+        : new OwnedBoundedTopK<RankedRowRef>(
+            scope,
+            topK,
+            (left, right) => compareRankedRefs(left, right, orderBy),
+            refMemory,
+          );
+    try {
+      const retained = new BoundedTopK<RankedRowRef>(topK, (left, right) =>
+        compareRankedRefs(left, right, orderBy),
+      );
+      const scanVectorBatches = vectorBatchScanner(config.scanner);
+      if (scanVectorBatches === undefined) return undefined;
+      const { planned: paths, skipped: skippedFiles } = plannedObjects;
+      if (paths.some((object) => object.rangeReadMode === "emulated")) return undefined;
+      this.stats.filesSkipped = skippedFiles;
+      for (const object of paths) {
+        this.stats.filesPlanned += 1;
+        this.stats.filesRead += 1;
+        this.stats.bytesRequested += object.size;
+        enforceBudget(config.budget, this.stats, config.now, startedAt);
+        const scanOptions: ScanOptions = {
+          memoryBudget: this.memoryBudget,
+          object,
+          columns: rankColumns,
+          ...(config.where === undefined ? {} : { where: config.where }),
+          batchSize: columnarBatchSize(config.batchSize),
+          stats: this.stats,
+          budget: config.budget,
+          now: config.now,
+          startedAt,
+        };
+        for await (const { rowOffset, batch, owner } of this.projectedScanInputs(
+          object.path,
+          scanOptions,
+        )) {
+          const stage = scope.childScope();
+          try {
+            if (owner) stage.adopt(owner.retain());
+            const batchOwner = owner ? stage.retainAllocations(batch) : undefined;
+            try {
+              const selection = predicateSelection(batch, config.where, owner ? stage : undefined);
+              this.stats.rowsMatched += selectedRowCount(batch.rowCount, selection);
+              if (ownedRetained && batchOwner) {
+                for (const index of selectedRowIndices(batch.rowCount, selection)) {
+                  if (topK === 0) break;
+                  const candidate = stage.childScope();
+                  try {
+                    const keys = candidate.adopt(materializeOwnedBatchRow(batchOwner, index));
+                    const ref = candidate.allocate(
+                      allocationCharges.object + 4 * allocationCharges.property,
+                      "ranked row reference",
+                      () => ({
+                        path: object.path,
+                        object,
+                        rowIndex: rowOffset + index,
+                        keys: keys.value,
+                      }),
+                    );
+                    const ownedRef = candidate.retainAllocations(ref.value);
+                    try {
+                      ownedRetained.offer(ownedRef);
+                    } finally {
+                      ownedRef.release();
+                    }
+                  } finally {
+                    candidate.dispose();
+                  }
+                }
+              } else
+                addRankedRefs(
+                  retained,
+                  object.path,
+                  object,
+                  rowOffset,
+                  batch,
+                  selection,
+                  rankColumns,
+                  refMemory,
+                );
+              enforceBufferedRowsBudget(config.budget, ownedRetained?.size ?? retained.size);
+              if (refMemory !== undefined)
+                enforceOperatorMemoryBudget(config.budget, refMemory.bytes);
+              enforceBudget(config.budget, this.stats, config.now, startedAt);
+            } finally {
+              batchOwner?.release();
+            }
+          } finally {
+            stage.dispose();
+          }
+        }
+      }
+      const limit = config.limit;
+      if (limit === undefined) return undefined;
+      const offset = config.offset ?? 0;
+      const selected = ownedRetained
+        ? scope.adopt(ownedRetained.finish(offset, limit)).value
+        : retained.drainSorted().slice(offset, offset + limit);
+      const rowsByRef = await this.materializeRowRefs(
+        selected,
+        outputColumns,
+        rankColumns,
+        startedAt,
+        columnarBatchSize(config.batchSize),
+        ownedRetained ? scope : undefined,
+      );
+      const buildOutput = () => {
+        const rows: Row[] = [];
+        for (const ref of selected) {
+          const row = rowsByRef.get(rowRefKey(ref));
+          if (!row)
+            throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Deferred output omitted a winner");
+          rows.push(project(row, config.select, undefined));
+          this.stats.rowsReturned++;
+          enforceBudget(config.budget, this.stats, config.now, startedAt);
+        }
+        return rows;
+      };
+      if (!ownedRetained) {
+        const rows = buildOutput();
+        this.stats.elapsedMs = config.now() - startedAt;
+        return rows;
+      }
+      let keyBytes: number = allocationCharges.string;
+      for (const ref of selected)
+        keyBytes = Math.max(
+          keyBytes,
+          allocationCharges.string + (ref.path.length + 17) * allocationCharges.stringCodeUnit,
+        );
+      const scratch = scope.reserve(keyBytes, "ordered winner lookup");
+      try {
+        const output = scope.allocate(
+          allocationCharges.array +
+            selected.length *
+              (allocationCharges.arraySlot +
+                allocationCharges.object +
+                config.select.length * allocationCharges.property),
+          "deferred projected output",
+          buildOutput,
+        );
+        this.stats.elapsedMs = config.now() - startedAt;
+        scratch.release();
+        return ownedOutput ? scope.retainAllocations(output.value) : output.value;
+      } finally {
+        scratch.release();
+      }
+    } finally {
+      ownedRetained?.dispose();
+      scope.dispose();
     }
-    this.stats.elapsedMs = config.now() - startedAt;
-    return rows.map((row) => project(row, config.select, undefined));
   }
 
   private async materializeRowRefs(
@@ -2750,14 +2862,35 @@ export class QueryResult {
     rankColumns: readonly string[],
     startedAt: number,
     maxWindowRows = columnarBatchSize(this.config.batchSize),
+    scope?: MemoryScope,
   ): Promise<Map<string, Row>> {
     const scanVectorBatches = vectorBatchScanner(this.config.scanner);
     if (scanVectorBatches === undefined) return new Map();
+    if (scope) {
+      let bytes =
+        allocationCharges.object +
+        allocationCharges.array +
+        columns.length * allocationCharges.arraySlot;
+      for (const ref of refs)
+        bytes +=
+          allocationCharges.property +
+          allocationCharges.object +
+          (columns.length + rankColumns.length) * allocationCharges.property +
+          allocationCharges.string +
+          (ref.path.length + 17) * allocationCharges.stringCodeUnit;
+      scope.allocate(bytes, "deferred row directory and joined row descriptors", () => undefined);
+    }
     const rows = new Map<string, Row>();
     for (const ref of refs) rows.set(rowRefKey(ref), { ...ref.keys });
     const lateColumns = columns.filter((column) => !rankColumns.includes(column));
     if (lateColumns.length === 0) return rows;
-    for (const window of materializationWindows(refs, maxWindowRows)) {
+    scope?.allocate(
+      allocationCharges.object + refs.length * allocationCharges.property,
+      "deferred completed winners",
+      () => undefined,
+    );
+    const completed = new Set<Row>();
+    for (const window of materializationWindows(refs, maxWindowRows, scope)) {
       const scanOptions: ScanOptions = {
         memoryBudget: this.memoryBudget,
         ...(window.object === undefined ? {} : { object: window.object }),
@@ -2770,25 +2903,85 @@ export class QueryResult {
         now: this.config.now,
         startedAt,
       };
-      for await (const { rowOffset, batch } of scanVectorBatches(
-        this.config.scanner,
+      let fetchedEnd = window.rowStart;
+      for await (const { rowOffset, batch, owner } of this.projectedScanInputs(
         window.path,
         scanOptions,
       )) {
-        for (let index = 0; index < batch.rowCount; index += 1) {
-          const rowIndex = rowOffset + index;
-          const key = rowRefKey({ path: window.path, rowIndex });
-          const existing = rows.get(key);
-          if (existing === undefined) continue;
-          const row: Row = {};
-          for (const column of lateColumns) {
-            const vector = batch.columns[column];
-            if (vector !== undefined) row[column] = vectorValue(vector, index);
+        if (
+          !Number.isSafeInteger(rowOffset) ||
+          !Number.isSafeInteger(batch.rowCount) ||
+          batch.rowCount < 0 ||
+          !Number.isSafeInteger(rowOffset + batch.rowCount) ||
+          rowOffset < fetchedEnd ||
+          rowOffset + batch.rowCount > window.rowEnd
+        )
+          throw new LakeqlError(
+            "LAKEQL_VALIDATION_ERROR",
+            "Deferred scan returned invalid row positions",
+          );
+        fetchedEnd = rowOffset + batch.rowCount;
+        for (const column of lateColumns)
+          if (!Object.hasOwn(batch.columns, column))
+            throw new LakeqlError(
+              "LAKEQL_VALIDATION_ERROR",
+              "Deferred scan omitted requested column",
+              { column },
+            );
+        const stage = scope?.childScope();
+        try {
+          if (stage && owner) stage.adopt(owner.retain());
+          const batchOwner = stage && owner ? stage.retainAllocations(batch) : undefined;
+          try {
+            if (scope && !batchOwner)
+              throw new LakeqlError(
+                "LAKEQL_TYPE_ERROR",
+                "Deferred materialization lost input ownership",
+              );
+            for (let index = 0; index < batch.rowCount; index += 1) {
+              const scratch = stage?.reserve(
+                allocationCharges.object +
+                  2 * allocationCharges.property +
+                  allocationCharges.string +
+                  (window.path.length + 17) * allocationCharges.stringCodeUnit,
+                "deferred row lookup",
+              );
+              try {
+                const rowIndex = rowOffset + index;
+                const key = rowRefKey({ path: window.path, rowIndex });
+                const existing = rows.get(key);
+                if (existing === undefined) continue;
+                if (completed.has(existing))
+                  throw new LakeqlError(
+                    "LAKEQL_VALIDATION_ERROR",
+                    "Deferred scan repeated a selected row",
+                  );
+                completed.add(existing);
+                if (scope && batchOwner) {
+                  const row = scope.adopt(materializeOwnedBatchRow(batchOwner, index));
+                  Object.assign(existing, row.value);
+                  continue;
+                }
+                const row: Row = {};
+                for (const column of lateColumns) {
+                  const vector = batch.columns[column];
+                  if (vector !== undefined) row[column] = vectorValue(vector, index);
+                }
+                Object.assign(existing, row);
+              } finally {
+                scratch?.release();
+              }
+            }
+          } finally {
+            batchOwner?.release();
           }
-          rows.set(key, { ...existing, ...row });
+        } finally {
+          stage?.dispose();
         }
       }
     }
+    if (completed.size !== rows.size)
+      throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Deferred scan omitted selected rows");
     return rows;
   }
 
@@ -2797,13 +2990,14 @@ export class QueryResult {
     startedAt: number,
     batchSize = this.config.batchSize ?? 4096,
     inputLifetime: "iteration" | "retained" = "retained",
+    plannedObjects?: { planned: ObjectInfo[]; skipped: number },
   ): AsyncIterable<{ batch: Batch; sourceIdentity: string; owner?: OwnedMemory<ScanVectorBatch> }> {
     const config = this.config;
     const scanColumns = config.scanner.scanColumns;
     const scanOwned =
       inputLifetime === "iteration" ? config.scanner.scanOwnedVectorBatches : undefined;
     if (scanColumns === undefined && scanOwned === undefined) return;
-    const { planned: paths, skipped: skippedFiles } = await this.planObjects();
+    const { planned: paths, skipped: skippedFiles } = plannedObjects ?? (await this.planObjects());
     this.stats.filesSkipped = skippedFiles;
     for (const object of paths) {
       this.stats.filesPlanned += 1;
@@ -4860,29 +5054,51 @@ function addRankedRefs(
 function materializationWindows(
   refs: readonly RankedRowRef[],
   maxWindowRows: number,
+  scope?: MemoryScope,
 ): MaterializationWindow[] {
-  const out: MaterializationWindow[] = [];
-  const sorted = [...refs].sort(
-    (left, right) => left.path.localeCompare(right.path) || left.rowIndex - right.rowIndex,
+  const count = refs.length;
+  // At most one window per winner; admit output and ordering overlap before copying.
+  const scratch = scope?.reserve(
+    allocationCharges.array + count * (allocationCharges.arraySlot + allocationCharges.object),
+    "ranked window ordering",
   );
-  for (const ref of sorted) {
-    const current = out[out.length - 1];
-    if (
-      current !== undefined &&
-      current.path === ref.path &&
-      ref.rowIndex + 1 - current.rowStart <= maxWindowRows
-    ) {
-      current.rowEnd = Math.max(current.rowEnd, ref.rowIndex + 1);
-      continue;
+  try {
+    const build = (): MaterializationWindow[] => [];
+    const out = scope
+      ? scope.allocate(
+          allocationCharges.array +
+            count *
+              (allocationCharges.arraySlot +
+                allocationCharges.object +
+                4 * allocationCharges.property),
+          "ranked read windows",
+          build,
+        ).value
+      : build();
+    const sorted = [...refs].sort(
+      (left, right) => left.path.localeCompare(right.path) || left.rowIndex - right.rowIndex,
+    );
+    for (const ref of sorted) {
+      const current = out[out.length - 1];
+      if (
+        current !== undefined &&
+        current.path === ref.path &&
+        ref.rowIndex + 1 - current.rowStart <= maxWindowRows
+      ) {
+        current.rowEnd = Math.max(current.rowEnd, ref.rowIndex + 1);
+        continue;
+      }
+      out.push({
+        path: ref.path,
+        ...(ref.object === undefined ? {} : { object: ref.object }),
+        rowStart: ref.rowIndex,
+        rowEnd: ref.rowIndex + 1,
+      });
     }
-    out.push({
-      path: ref.path,
-      ...(ref.object === undefined ? {} : { object: ref.object }),
-      rowStart: ref.rowIndex,
-      rowEnd: ref.rowIndex + 1,
-    });
+    return out;
+  } finally {
+    scratch?.release();
   }
-  return out;
 }
 
 function rankKeyRow(batch: Batch, rowIndex: number, columns: readonly string[]): Row {
@@ -4905,7 +5121,7 @@ function compareRankedRefs(
   orderBy: readonly OrderByTerm[],
 ): number {
   return (
-    compareRows(left.keys, right.keys, [...orderBy]) ||
+    compareRows(left.keys, right.keys, orderBy) ||
     left.path.localeCompare(right.path) ||
     left.rowIndex - right.rowIndex
   );

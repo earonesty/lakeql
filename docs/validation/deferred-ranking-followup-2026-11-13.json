@@ -1,0 +1,136 @@
+{
+  "scope": "Deferred top-k integration follow-up to PR 21",
+  "publicFixture": "query-owned-output.test.ts: ranks owned Parquet keys before reading deferred payload columns",
+  "assertions": [
+    "Written Parquet: 128 rows, 16 row groups; batch 7, descending, offset 2, limit 5",
+    "Projected text values equal independent fixture oracle",
+    "Owned ranking requests id only",
+    "maxMemoryBytes 1 rejects with typed budget error",
+    "Shared pool returns to zero on success and rejection"
+  ],
+  "correction": "Owned candidate selection updates shared incremental BufferMemory on acceptance/eviction, preserving maxMemoryBytes as well as allocation admission",
+  "focusedTestsPassed": 22,
+  "remaining": [
+    "HTTP and Worker traffic/budget boundary matrix",
+    "Narrow returned ownership to necessary values",
+    "Final integration and release gates"
+  ],
+  "cancellation": "18 public owned-output tests pass, including eager/deferred cancellation after consumed candidate batches with pinned sibling output preserved",
+  "ciFinding": "PR 21 main job lacked external Parquet fixtures; external job only verified Iceberg checksums and passed without the Parquet corpus. Both jobs now fetch external fixtures before tests. Full conformance remains expected to expose 18 failures.",
+  "gatherDescriptorAdmission": {
+    "change": "Admit joined batch and column-container descriptors before construction; count own fields without a temporary Object.keys array",
+    "validation": "28 deferred-gather/public-output tests pass; exact minimum successful pool and one byte below; source ownership and iterator cleanup verified",
+    "typeScriptBuild": "passed",
+    "scope": "Shared helper used by deferred projection and aggregation; final deferred top-k output integration remains open"
+  },
+  "windowPlanning": {
+    "admission": [
+      "Selected reference array before slice",
+      "At most one read-window descriptor per selected winner",
+      "Ordering copy and workspace during window planning"
+    ],
+    "release": "Sorting reservation released after planning; selected references/windows live in enclosing query scope",
+    "simplification": "compareRows accepts readonly terms, avoiding an array copy for each ranked comparison",
+    "validation": "99 query/public-output tests passed",
+    "remaining": "Late row map, row conversion, final projection and independent owned-output transfer still require integration"
+  },
+  "lateMaterialization": {
+    "change": "Scoped row directory, keys and joined descriptors; owned late scans; admitted single-row conversion retained through query assembly; per-row lookup scratch released promptly",
+    "validation": "99 query/public-output tests passed",
+    "remaining": [
+      "Final returned-array/projected-object admission",
+      "Independent owned-output transfer",
+      "Missing/duplicate late-position validation",
+      "HTTP/Worker read quality and pressure evidence"
+    ]
+  },
+  "ownedOutputIntegration": {
+    "change": "Owned deferred top-k routes through admitted final projection and independently retained output; wildcard and emulated-range cases use eager route",
+    "correction": "Rebuilt package tests exposed raw directory reservations not held by the scope. Replaced them with owned allocations. Prior source-only test counts did not validate emitted dependency code.",
+    "validation": "Rebuilt query/public-output suites: 99 passed; expanded owned/ordinary deferred fixture checks independent retention and zero final pool usage",
+    "remaining": [
+      "Remote read and Worker matrices",
+      "Malformed late scans edge cases",
+      "Narrow output pins to only necessary values",
+      "Final full-suite and coverage refresh"
+    ]
+  },
+  "malformedScans": {
+    "checks": [
+      "Missing selected rows",
+      "Duplicate/overlapping batches",
+      "Invalid absolute row offsets/extents",
+      "Missing requested payload column"
+    ],
+    "fixture": "Written Parquet, public toOwnedArray with intercepted late scan",
+    "cleanup": "All four failures close late iterator and restore pool usage to zero",
+    "validation": "104 rebuilt query/public-output tests pass; TypeScript build passes",
+    "implementation": "Keep joined row identity stable across updates for completion tracking"
+  },
+  "fullRefresh": {
+    "defaultPassed": 2685,
+    "defaultFailed": 1,
+    "defaultSkipped": 598,
+    "workersPassed": 49,
+    "lint": "passed",
+    "typecheck": "passed",
+    "failure": "index.test.ts: reuses decoded column batches from the shared cache budget; second deferred top-k cacheHits 0, expected >1",
+    "nextAction": "Trace owned deferred scan cache admission/reuse; preserve existing cache-quality assertion",
+    "coverage": "No passing coverage claim; suite failed"
+  },
+  "cacheReuseFix": {
+    "cause": "Configured shared cache had no allocation pool, so owned page insertion was declined",
+    "change": "Parquet factory supplies its query pool as the default configured-cache budget; explicit cache budget preserved; supplied cache budget root can seed default query pool",
+    "targetedResult": "Original cache reuse assertion passes without weakening it; added assertions that retained cache storage is charged to the lake pool",
+    "fullCoverage": {
+      "status": "passed",
+      "statements": 91.38,
+      "branches": 85.14,
+      "functions": 95.67,
+      "lines": 93.51,
+      "typecheck": "passed"
+    }
+  },
+  "nativeR2": {
+    "runtime": "Local workerd native R2 binding",
+    "sharedPoolsMiB": [64, 128],
+    "concurrentQueries": 4,
+    "rounds": ["cold", "warm"],
+    "fixture": "100 rows, ten row groups, 1 KiB text; descending offset 2, limit 5",
+    "assertions": [
+      "Rank reads id only",
+      "Late text read window [93,98)",
+      "Correct independently derived rows",
+      "Warm scan issues no getRangeOwned calls",
+      "Output survives cache eviction",
+      "Final pool usage zero"
+    ],
+    "workerSuitePassed": 51,
+    "limitation": "Small-fixture pool accounting; not near-cap runtime-heap or production R2 proof"
+  },
+  "selectedWinnerTransfer": {
+    "change": "Owned top-k finalization accepts offset/limit and transfers only requested payload ownership; removes redundant selected-reference array in query integration",
+    "test": "Eight 1 KiB candidates, offset 5 limit 2; result [5,6], retained allocations below 3 KiB, final release zero; invalid negative offset preserves selection for subsequent valid finish",
+    "validation": "29 rebuilt owned-heap/public-output tests and TypeScript build pass",
+    "remaining": "Returned query scope still retains some planning descriptors; complete query/Worker allocation goal remains open"
+  },
+  "finalCheckpoint": {
+    "defaultPassed": 2689,
+    "defaultSkipped": 598,
+    "workersPassed": 51,
+    "referencePassed": 104,
+    "coveragePercent": {
+      "statements": 91.38,
+      "branches": 85.14,
+      "functions": 95.66,
+      "lines": 93.51
+    },
+    "build": "passed",
+    "typecheck": "passed",
+    "lint": "passed",
+    "packages": "passed",
+    "compatibility": "passed",
+    "externalConformance": "Known 18 failures, not rerun in this refresh",
+    "goalComplete": false
+  }
+}

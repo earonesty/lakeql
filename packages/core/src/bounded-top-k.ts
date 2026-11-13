@@ -40,10 +40,9 @@ export class BoundedTopK<T> {
         const parent = Math.floor((index - 1) / 2);
         if (this.order(this.heap[index] as Candidate<T>, this.heap[parent] as Candidate<T>) <= 0)
           break;
-        [this.heap[index], this.heap[parent]] = [
-          this.heap[parent] as Candidate<T>,
-          this.heap[index] as Candidate<T>,
-        ];
+        const swapped = this.heap[index] as Candidate<T>;
+        this.heap[index] = this.heap[parent] as Candidate<T>;
+        this.heap[parent] = swapped;
         index = parent;
       }
       return { accepted: true, removed: [] };
@@ -62,10 +61,9 @@ export class BoundedTopK<T> {
           : left;
       if (this.order(this.heap[index] as Candidate<T>, this.heap[child] as Candidate<T>) >= 0)
         break;
-      [this.heap[index], this.heap[child]] = [
-        this.heap[child] as Candidate<T>,
-        this.heap[index] as Candidate<T>,
-      ];
+      const swapped = this.heap[index] as Candidate<T>;
+      this.heap[index] = this.heap[child] as Candidate<T>;
+      this.heap[child] = swapped;
       index = child;
     }
     return { accepted: true, removed: [worst.value] };
@@ -77,6 +75,12 @@ export class BoundedTopK<T> {
     const values = this.heap.map((candidate) => candidate.value);
     this.heap.length = 0;
     return values;
+  }
+
+  /** Drop retained references without comparing or allocating a result. */
+  clear(): void {
+    this.heap.length = 0;
+    this.ordinal = 0;
   }
 
   private order(left: Candidate<T>, right: Candidate<T>): number {

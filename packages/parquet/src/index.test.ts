@@ -2225,6 +2225,8 @@ describe("createParquetLake", () => {
     const firstRows = await first.toArray();
     expect(firstRows).toHaveLength(2);
     expect(first.stats.cacheMisses).toBeGreaterThan(0);
+    expect(lake.memoryPool.usedBytes).toBeGreaterThan(0);
+    expect(lake.memoryPool.peakBytes).toBeLessThanOrEqual(lake.memoryPool.maxBytes);
 
     const second = lake
       .path(`data/${STATS.file}`)
@@ -2235,6 +2237,8 @@ describe("createParquetLake", () => {
       .run();
     await expect(second.toArray()).resolves.toEqual(firstRows);
     expect(second.stats.cacheHits).toBeGreaterThan(1);
+    expect(lake.memoryPool.usedBytes).toBeGreaterThan(0);
+    expect(lake.memoryPool.peakBytes).toBeLessThanOrEqual(lake.memoryPool.maxBytes);
   });
 
   it("spends scan range cache entries from the shared cache budget", async () => {

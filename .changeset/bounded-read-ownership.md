@@ -331,3 +331,9 @@ aliases them, while preserving backing ownership for numeric and binary views.
 
 Reject buffering aggregate growth before adding an over-limit item, preserving
 existing collection contents on serialized-byte or buffered-row budget failure.
+
+Own deferred top-k candidates, late row materialization and projected output;
+transfer only requested winner payloads after offsets. Admit read-window planning
+and shared deferred-join containers, reject malformed late scans, and preserve
+cache reuse by sharing the lake allocation pool with configured caches by default.
+Reuse object planning when emulated-range reads require eager fallback.

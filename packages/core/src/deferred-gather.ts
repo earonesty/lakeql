@@ -1,3 +1,4 @@
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import type { Batch } from "./batch.js";
 import { LakeqlError } from "./errors.js";
 import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
@@ -99,7 +100,12 @@ export async function* gatherDeferredColumns(
         const earlyBatch = gatherBatch(batch, sourceIndices, scope);
         const lateBatch = gatherBatch(late.batch, local.value, scope);
         local.release();
-        for (const name of Object.keys(lateBatch.columns)) {
+        let columnCount = 0;
+        for (const name in earlyBatch.columns)
+          if (Object.hasOwn(earlyBatch.columns, name)) columnCount++;
+        for (const name in lateBatch.columns) {
+          if (!Object.hasOwn(lateBatch.columns, name)) continue;
+          columnCount++;
           if (Object.hasOwn(earlyBatch.columns, name))
             throw new LakeqlError(
               "LAKEQL_VALIDATION_ERROR",
@@ -107,10 +113,15 @@ export async function* gatherDeferredColumns(
               { name },
             );
         }
-        yield scope.retainAllocations({
-          rowCount: cursor - start,
-          columns: { ...earlyBatch.columns, ...lateBatch.columns },
-        });
+        const joined = scope.allocate(
+          2 * c.object + (columnCount + 2) * c.property,
+          "deferred joined batch descriptors",
+          () => ({
+            rowCount: cursor - start,
+            columns: { ...earlyBatch.columns, ...lateBatch.columns },
+          }),
+        );
+        yield scope.retainAllocations(joined.value);
         if (cursor === end) break;
       } finally {
         scope.dispose();

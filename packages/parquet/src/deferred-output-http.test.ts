@@ -13,9 +13,11 @@ import { HttpObjectStore } from "../../http/src/index.js";
 import { createParquetLake } from "./index.js";
 
 it.each([
-  false,
-  true,
-])("defers sparse output columns over HTTP with ignored ranges=%s", async (ignoreRange) => {
+  { ignoreRange: false, ranked: false },
+  { ignoreRange: true, ranked: false },
+  { ignoreRange: false, ranked: true },
+  { ignoreRange: true, ranked: true },
+])("defers sparse output columns over HTTP: %j", async ({ ignoreRange, ranked }) => {
   let seed = 12345;
   const rows = Array.from({ length: 512 }, (_, id) => ({
     id,
@@ -77,14 +79,16 @@ it.each([
       memoryPool: pool,
       scanRangeCache: { maxBytes: 8 * 1024 * 1024, coalesceBytes: 0, sharedCache: cache },
     });
-    const query = (select: string[]) =>
-      lake
+    const query = (select: string[]) => {
+      const base = lake
         .path("rows.parquet")
         .select(select)
-        .where(eq(mod(col("id"), 257), 256))
+        .where(eq(mod(col("id"), 257), 256));
+      return (ranked ? base.orderBy([{ column: "id", direction: "desc" }]) : base)
         .limit(1)
         .batchSize(16)
         .run();
+    };
     const baseline = await query(["*"]).toOwnedArray();
     expect(baseline.value).toEqual([rows[256]]);
     baseline.release();
@@ -123,6 +127,7 @@ it.each([
       process.stdout.write(
         `${JSON.stringify({
           ignoreRange,
+          ranked,
           fixtureBytes: bytes.length,
           eagerBytes,
           deferredBytes,

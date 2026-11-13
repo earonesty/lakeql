@@ -10,6 +10,7 @@ import {
   Lake,
   type LakeConfig,
   LakeqlError,
+  MemoryBudget,
   memoryCache,
   type ObjectInfo,
   type ObjectStore,
@@ -1064,7 +1065,20 @@ export function parquetScanner(
 }
 
 export function createParquetLake(config: ParquetLakeConfig): Lake {
-  const sharedCache = config.cache === undefined ? undefined : new SharedMemoryCache(config.cache);
+  const memoryPool =
+    config.memoryPool ??
+    config.cache?.memoryBudget?.allocationPool ??
+    new MemoryBudget(
+      config.budget?.maxAllocatedMemoryBytes ?? config.budget?.maxMemoryBytes ?? 64 * 1024 * 1024,
+    );
+  const cacheOptions =
+    config.cache === undefined
+      ? undefined
+      : {
+          ...config.cache,
+          memoryBudget: config.cache.memoryBudget ?? memoryPool,
+        };
+  const sharedCache = cacheOptions === undefined ? undefined : new SharedMemoryCache(cacheOptions);
   const scannerOptions: {
     batchSize?: number;
     metadataCache?: CacheAdapter<ParquetMetadata>;
@@ -1108,6 +1122,7 @@ export function createParquetLake(config: ParquetLakeConfig): Lake {
     config.planningCache ?? (config.cache === undefined ? undefined : memoryCache<ObjectInfo[]>());
   return new Lake({
     ...config,
+    memoryPool,
     store,
     ...(planningCache !== undefined ? { planningCache } : {}),
     scanner: parquetScanner(store, scannerOptions),

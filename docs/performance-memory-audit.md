@@ -16252,3 +16252,30 @@ Coverage passes unchanged thresholds at 91.48% statements, 85.21% branches,
 The 16 public owned-output tests also pass separately. This refresh excludes the
 archived unfinished helpers and does not resolve the external conformance gate
 or the broader outstanding allocation and scheduling requirements.
+
+### Deferred ranking follow-up after PR #21
+
+PR #21 contains the validated checkpoint without the unfinished deferred-ranking
+helpers. Follow-up work restores those helpers in the working tree to continue
+M1/F3 integration. Single-row materialization admits one selected row without a
+batch-sized mask or scanning unrelated rows. Owned candidate selection admits
+replacement overlap and transfers independent winner ownership. Added tests prove
+that cross-budget admission failure preserves the source owner and releases all
+target reservations, and zero-capacity selection retains no candidate payload.
+Heap swaps now use scalar references rather than constructing temporary arrays.
+All 17 focused heap/materialization tests pass. Public deferred-read routing and
+window/gather ownership remain unimplemented; this is prerequisite evidence, not
+closure of the deferred-ranking requirement.
+
+Deferred ranking now selects the owned candidate heap when its scanner supplies
+owned batches, reserves scalar materialization before constructing each candidate,
+and retains ordered references through late-column gathering. Predicate masks are
+scoped on this route. The shared scan-input adapter preserves legacy column-batch
+fallback. The query, public owned-output and owned-heap suites pass 102 tests after
+that fallback correction. This covers the ordinary returned-row deferred route's
+ranking phase; final gather/map/projection allocations are still not fully owned,
+and `toOwnedArray` continues using its eager owned route. Whole deferred-output
+ownership and real-fixture boundary/traffic measurements remain required.
+
+Real-fixture follow-up and serialized-limit regression: see
+`docs/validation/deferred-ranking-followup-2026-11-13.json` (22 tests pass).

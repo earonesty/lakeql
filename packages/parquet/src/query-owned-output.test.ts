@@ -275,7 +275,10 @@ it.each([
     }
 });
 
-it("releases cancelled top-k candidates while preserving sibling output", async () => {
+it.each([
+  false,
+  true,
+])("releases cancelled top-k candidates while preserving sibling output (deferred=%s)", async (deferred) => {
   const { store, rows } = await fixture();
   const pool = new MemoryBudget(1024 * 1024);
   const sibling = createParquetLake({ store, memoryPool: pool, scanRangeCache: { maxBytes: 0 } });
@@ -307,15 +310,15 @@ it("releases cancelled top-k candidates while preserving sibling output", async 
       memoryPool: pool,
       budget: { signal: controller.signal },
     });
-    await expect(
-      lake
-        .path("rows.parquet")
-        .orderBy([{ column: "id", direction: "desc" }])
-        .limit(10)
-        .batchSize(4)
-        .run()
-        .toOwnedArray(),
-    ).rejects.toMatchObject({ code: "LAKEQL_ABORTED" });
+    const query = lake.path("rows.parquet");
+    const result = (deferred ? query.select(["text"]) : query)
+      .orderBy([{ column: "id", direction: "desc" }])
+      .limit(10)
+      .batchSize(4)
+      .run();
+    await expect(deferred ? result.toArray() : result.toOwnedArray()).rejects.toMatchObject({
+      code: "LAKEQL_ABORTED",
+    });
     expect(closed).toBe(true);
     expect(observedCandidateMemory).toBe(true);
     expect(pool.usedBytes).toBe(baseline);
@@ -325,4 +328,120 @@ it("releases cancelled top-k candidates while preserving sibling output", async 
     pinned.release();
   }
   expect(pool.usedBytes).toBe(0);
+});
+
+it.each([
+  false,
+  true,
+])("ranks owned Parquet keys before reading deferred payload columns (owned=%s)", async (owned) => {
+  const { store, rows } = await fixture();
+  const pool = new MemoryBudget(1024 * 1024);
+  const adapter = new ParquetScanAdapter(store, { scanRangeCache: { maxBytes: 0 } });
+  const scans = vi.spyOn(adapter, "scanOwnedVectorBatches");
+  const lake = new Lake({ store, scanner: adapter, memoryPool: pool });
+  try {
+    const result = lake
+      .path("rows.parquet")
+      .select(["text"])
+      .orderBy([{ column: "id", direction: "desc" }])
+      .offset(2)
+      .limit(5)
+      .batchSize(7)
+      .run();
+    const outputOwner = owned ? await result.toOwnedArray() : undefined;
+    const output = outputOwner ? outputOwner.value : await result.toArray();
+    expect(output).toEqual(
+      rows
+        .slice(121, 126)
+        .reverse()
+        .map(({ text }) => ({ text })),
+    );
+    expect(scans.mock.calls.some(([, options]) => options.columns?.join() === "id")).toBe(true);
+    expect(scans.mock.calls.every(([, options]) => options.columns?.join() !== "text,id")).toBe(
+      true,
+    );
+    if (outputOwner) {
+      expect(pool.usedBytes).toBeGreaterThan(0);
+      const retained = outputOwner.retain();
+      outputOwner.release();
+      expect(retained.value).toEqual(output);
+      retained.release();
+    }
+    expect(pool.usedBytes).toBe(0);
+    const constrained = new Lake({
+      store,
+      scanner: adapter,
+      memoryPool: pool,
+      budget: { maxMemoryBytes: 1 },
+    });
+    await expect(
+      constrained
+        .path("rows.parquet")
+        .select(["text"])
+        .orderBy([{ column: "id", direction: "desc" }])
+        .limit(5)
+        .batchSize(7)
+        .run()
+        .toArray(),
+    ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+    expect(pool.usedBytes).toBe(0);
+  } finally {
+    scans.mockRestore();
+  }
+});
+
+it.each([
+  "missing",
+  "duplicate",
+  "offset",
+  "column",
+])("rejects malformed deferred %s scans and releases candidates", async (mode) => {
+  const { store } = await fixture();
+  const pool = new MemoryBudget(1024 * 1024);
+  const adapter = new ParquetScanAdapter(store, { scanRangeCache: { maxBytes: 0 } });
+  const original = adapter.scanOwnedVectorBatches;
+  let lateClosed = false;
+  const spy = vi
+    .spyOn(adapter, "scanOwnedVectorBatches")
+    .mockImplementation(async function* (path, options) {
+      if (options.rowStart === undefined) {
+        yield* original(path, options);
+        return;
+      }
+      try {
+        if (mode === "missing") return;
+        for await (const input of original(path, options)) {
+          const value = input.value;
+          if (mode === "offset") value.rowOffset = -1;
+          if (mode === "column") delete value.batch.columns.text;
+          const duplicate = mode === "duplicate" ? input.retain() : undefined;
+          try {
+            yield input;
+            if (duplicate) yield duplicate;
+          } finally {
+            duplicate?.release();
+            input.release();
+          }
+        }
+      } finally {
+        lateClosed = true;
+      }
+    });
+  try {
+    const lake = new Lake({ store, scanner: adapter, memoryPool: pool });
+    await expect(
+      lake
+        .path("rows.parquet")
+        .select(["text"])
+        .orderBy([{ column: "id", direction: "desc" }])
+        .limit(5)
+        .batchSize(7)
+        .run()
+        .toOwnedArray(),
+    ).rejects.toMatchObject({ code: "LAKEQL_VALIDATION_ERROR" });
+    expect(lateClosed).toBe(true);
+    expect(pool.usedBytes).toBe(0);
+  } finally {
+    spy.mockRestore();
+  }
 });

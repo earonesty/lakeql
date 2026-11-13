@@ -140,3 +140,52 @@ it("closes an interrupted fetched iterator while independently retained output s
   retained.release();
   expect(pool.usedBytes).toBe(0);
 });
+
+it("admits joined descriptors at the exact allocation boundary and unwinds one byte below", async () => {
+  async function run(cap: number) {
+    const pool = new MemoryBudget(cap);
+    const source = input(pool);
+    const baseline = pool.usedBytes;
+    let closed = false;
+    let succeeded = false;
+    async function* read() {
+      const scope = new MemoryScope(pool);
+      try {
+        yield scope.retainAllocations({
+          rowOffset: 100,
+          batch: batchFromColumns({ payload: ["fixture"] }, scope),
+        });
+      } finally {
+        closed = true;
+        scope.dispose();
+      }
+    }
+    try {
+      for await (const output of gatherDeferredColumns(source, Uint32Array.of(0), 1, read)) {
+        try {
+          expect(materializeBatchRows(output.value)).toEqual([{ id: 0, payload: "fixture" }]);
+        } finally {
+          output.release();
+        }
+      }
+      succeeded = true;
+    } catch (error) {
+      expect(error).toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+    }
+    expect(closed).toBe(true);
+    expect(pool.usedBytes).toBe(baseline);
+    source.release();
+    expect(pool.usedBytes).toBe(0);
+    return succeeded;
+  }
+  let low = 256,
+    high = 4096;
+  expect(await run(high)).toBe(true);
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (await run(middle)) high = middle;
+    else low = middle + 1;
+  }
+  expect(await run(low)).toBe(true);
+  expect(await run(low - 1)).toBe(false);
+});
