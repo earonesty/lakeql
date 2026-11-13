@@ -48,12 +48,14 @@ for (const [name, value] of Object.entries(cases)) {
     ),
   });
 }
-const sources = ["json-output-encoding", "json-output-size", "evaluator"].map((name) => [
-  `${name}.ts`,
-  createHash("sha256")
-    .update(readFileSync(new URL(`../packages/core/src/${name}.ts`, import.meta.url)))
-    .digest("hex"),
-]);
+const sources = ["json-output-encoding", "json-output-size", "json-string-size", "evaluator"].map(
+  (name) => [
+    `${name}.ts`,
+    createHash("sha256")
+      .update(readFileSync(new URL(`../packages/core/src/${name}.ts`, import.meta.url)))
+      .digest("hex"),
+  ],
+);
 const report = {
   node: process.version,
   description:
@@ -62,7 +64,10 @@ const report = {
   results,
 };
 writeFileSync(
-  new URL("../docs/benchmarks/json-output-2026-11-13.json", import.meta.url),
+  new URL(
+    process.env.LAKEQL_JSON_OUTPUT_REPORT ?? "../docs/benchmarks/json-output-2026-11-13.json",
+    import.meta.url,
+  ),
   `${JSON.stringify(report, null, 2)}\n`,
 );
 console.log(

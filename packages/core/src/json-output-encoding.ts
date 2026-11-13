@@ -2,6 +2,7 @@ import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
 import { intervalToString, isIntervalValue } from "./interval.js";
 import { jsonOutputUtf8Bytes } from "./json-output-size.js";
+import { isPlainJsonAscii } from "./json-string-size.js";
 import type { MemoryScope, OwnedMemory } from "./memory-scope.js";
 import { isTimestampValue } from "./timestamp.js";
 
@@ -43,6 +44,13 @@ export function encodeOwnedJsonOutput(
     };
     const string = (text: string) => {
       byte(34);
+      if (isPlainJsonAscii(text)) {
+        const start = offset;
+        for (let i = 0; i < text.length; i++) buffer[start + i] = text.charCodeAt(i);
+        offset += text.length;
+        byte(34);
+        return;
+      }
       for (let i = 0; i < text.length; i++) {
         let code = text.charCodeAt(i);
         if (code === 34 || code === 92) {

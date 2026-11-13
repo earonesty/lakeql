@@ -60,6 +60,19 @@
       "http": "Both packages/parquet/src/json-http.test.ts cases passed. External parquet-testing json.parquet contains mixed objects, missing keys versus explicit null, arrays and null. Four concurrent JSON/NDJSON streams run with batchSize=1 against HTTP 206 ranges and ignored-range HTTP 200 responses. Cold and warm shared-cache rounds preserve exact JSON bytes; warm rounds perform no data reads beyond head probing. Per-query charges return to zero while shared cache backing remains separately owned.",
       "limits": "Worker fixtures run under Miniflare native R2 bindings, not a deployed Cloudflare service. Pool limits are reservation limits; these small fixtures do not stress near-cap total runtime heap. Existing synthetic tests cover exact output cap and one-byte-short rejection.",
       "checks": "tsc -b and typecheck passed after Worker test additions; focused HTTP tests passed after HTTP additions."
+    },
+    "asciiFastPath": {
+      "change": "Shared native regular-expression scan recognizes strings that need no JSON escaping and already occupy one byte per UTF16 code unit. Sizing returns length plus quotes; encoding writes directly into the same admitted output buffer with a local start offset. No escaped copy or scratch byte buffer is introduced. The predicate uses UTF16 code-unit matching so astral characters cannot enter the ASCII path.",
+      "validation": {
+        "defaultPassed": 2791,
+        "defaultSkipped": 605,
+        "workerPassed": 53,
+        "referencePassed": 104,
+        "buildLintTypecheck": "passed",
+        "edgeCases": "Existing exhaustive individual UTF16 sizing and combined UTF16 encoding tests remain green. Added isolated astral pair, lone high/low surrogate, DEL, and plain ASCII encoding cases; exact-cap and cap-minus-one tests apply to each."
+      },
+      "benchmark": "../benchmarks/json-output-ascii-2026-11-13.json",
+      "interpretation": "Separate-run ASCII fixture medians improved from about 0.573ms to 0.386ms; legacy unaccounted encoding measured about 0.213ms in the latter run. These are synthetic output-only observations, not a paired statistical comparison or whole-query throughput claim. Small-object scope/admission overhead remains; binary and Unicode timings vary between runs. Historical pre-fast-path evidence is preserved."
     }
   }
 }

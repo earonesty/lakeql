@@ -1,5 +1,15 @@
+// A native scan recognizes strings whose JSON body is already one-byte ASCII.
+// This creates neither an escaped copy nor an encoded scratch buffer.
+// biome-ignore lint/suspicious/noControlCharactersInRegex: JSON requires escaping every ASCII control code.
+const jsonAsciiSpecial = /["\\\x00-\x1f\x80-\uffff]/;
+
+export function isPlainJsonAscii(value: string): boolean {
+  return !jsonAsciiSpecial.test(value);
+}
+
 /** UTF8 byte length of JSON-escaped text, including quotes, without creating a serialized copy. */
 export function jsonStringUtf8Bytes(value: string): number {
+  if (isPlainJsonAscii(value)) return value.length + 2;
   let bytes = 2;
   for (let index = 0; index < value.length; index++) {
     const code = value.charCodeAt(index);

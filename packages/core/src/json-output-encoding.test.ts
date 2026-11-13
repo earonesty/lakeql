@@ -8,6 +8,11 @@ import { MemoryScope } from "./memory-scope.js";
 import { timestampFromEpoch } from "./timestamp.js";
 
 const inputs = [
+  "plain ascii text",
+  "😀",
+  "\u007f",
+  "\ud800",
+  "\udfff",
   null,
   true,
   false,
