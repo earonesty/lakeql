@@ -176,5 +176,12 @@
       "shredded_variant/case-030.parquet"
     ],
     "conclusion": "The release gate still fails. Recent JSON stream and string sizing changes introduce no additional failures in this corpus. No exclusions or assertions changed."
+  },
+  "dictionaryExtentInvestigation": {
+    "evidence": "../benchmarks/dictionary-extent-oracle-2026-11-13.json",
+    "reproducer": "bench/dictionary-extent-oracle.mjs",
+    "finding": "The name and comment_col metadata total_compressed_size each omit exactly their 15-byte dictionary-page header. Their declared ends are 451/2593, whereas the last data-page bodies end at 466/2608. Other columns have no shortfall.",
+    "validation": "Unmodified metadata rejects. Correcting only those two metadata extents in the diagnostic restores all 25 rows. All values match DuckDB, comparing binary values with UTF8 bytes from reader strings. Fixture bytes and production code remain unchanged.",
+    "next": "Implement generic bounded page-extent recovery with validated neighboring-column/footer boundaries and admission before extra cloud range reads. Do not globally pad every column, download whole objects, or classify this fixture as an expected rejection. Conformance remains 18 failures until production integration passes."
   }
 }

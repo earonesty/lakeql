@@ -1,0 +1,79 @@
+{
+  "fixture": "fixtures/external/parquet-testing/data/nation.dict-malformed.parquet",
+  "fixtureSha256": "245c025fe866c7a55612bf0848034e6cb7b33965668e9244bc007ab0eb61034d",
+  "node": "v24.18.1",
+  "duckdb": "v1.5.3",
+  "columns": [
+    {
+      "path": ["nation_key"],
+      "start": 4,
+      "declaredEnd": 129,
+      "shortfall": 0,
+      "pages": [
+        {
+          "at": 4,
+          "headerBytes": 19,
+          "type": 0,
+          "bodyEnd": 129
+        }
+      ]
+    },
+    {
+      "path": ["name"],
+      "start": 129,
+      "declaredEnd": 451,
+      "shortfall": 15,
+      "pages": [
+        {
+          "at": 129,
+          "headerBytes": 15,
+          "type": 2,
+          "bodyEnd": 421
+        },
+        {
+          "at": 421,
+          "headerBytes": 17,
+          "type": 0,
+          "bodyEnd": 466
+        }
+      ]
+    },
+    {
+      "path": ["region_key"],
+      "start": 466,
+      "declaredEnd": 591,
+      "shortfall": 0,
+      "pages": [
+        {
+          "at": 466,
+          "headerBytes": 19,
+          "type": 0,
+          "bodyEnd": 591
+        }
+      ]
+    },
+    {
+      "path": ["comment_col"],
+      "start": 591,
+      "declaredEnd": 2593,
+      "shortfall": 15,
+      "pages": [
+        {
+          "at": 591,
+          "headerBytes": 15,
+          "type": 2,
+          "bodyEnd": 2563
+        },
+        {
+          "at": 2563,
+          "headerBytes": 17,
+          "type": 0,
+          "bodyEnd": 2608
+        }
+      ]
+    }
+  ],
+  "correctedMetadataRows": 25,
+  "allValuesMatchDuckdb": true,
+  "conclusion": "Two column compressed extents omit exactly their 15-byte dictionary page header. Adjusting only those metadata extents restores all 25 rows, byte-for-byte equal to DuckDB. This establishes a recoverable metadata inconsistency, not grounds to waive the conformance failure. No production code or fixture bytes were changed. Physical boundary validation and admitted bounded remote recovery remain required."
+}
