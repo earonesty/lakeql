@@ -71,3 +71,71 @@ it("restores the parent path after completing a nested sibling", () => {
     }),
   );
 });
+
+it("admits traversal growth and releases it on success, rejection, and budget failure", async () => {
+  const { MemoryBudget, MemoryScope } = await import("lakeql-core");
+  const schema = deepSchema(128);
+  const pool = new MemoryBudget(65536);
+  const sibling = new MemoryScope(pool);
+  sibling.allocate(7, "independent sibling", () => new Uint8Array(7));
+  rejectUnsupportedParquetSchema({ schema }, { memoryBudget: pool, columns: ["g0"] });
+  expect(pool.usedBytes).toBe(7);
+  const peak = pool.peakBytes;
+  expect(peak).toBeGreaterThan(7);
+  const exact = new MemoryBudget(peak - 7);
+  rejectUnsupportedParquetSchema({ schema }, { memoryBudget: exact, columns: ["g0"] });
+  expect(exact.usedBytes).toBe(0);
+  const tight = new MemoryBudget(peak - 8);
+  expect(() =>
+    rejectUnsupportedParquetSchema({ schema }, { memoryBudget: tight, columns: ["g0"] }),
+  ).toThrowError(expect.objectContaining({ code: "LAKEQL_BUDGET_EXCEEDED" }));
+  expect(tight.usedBytes).toBe(0);
+  expect(() =>
+    rejectUnsupportedParquetSchema({ schema: deepSchema(128, 20) }, { memoryBudget: pool }),
+  ).toThrowError(expect.objectContaining({ code: "LAKEQL_UNSUPPORTED_PARQUET_FEATURE" }));
+  expect(pool.usedBytes).toBe(7);
+  sibling.dispose();
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("bounds traversal workspace by depth rather than schema width", async () => {
+  const { MemoryBudget } = await import("lakeql-core");
+  const peaks = [1, 10000].map((width) => {
+    const schema: SchemaElement[] = [
+      { name: "root", num_children: width },
+      ...Array.from({ length: width }, (_, index) => ({
+        name: `c${index}`,
+        type: "INT32" as const,
+      })),
+    ];
+    const pool = new MemoryBudget(1024);
+    rejectUnsupportedParquetSchema({ schema }, { memoryBudget: pool });
+    expect(pool.usedBytes).toBe(0);
+    return pool.peakBytes;
+  });
+  // The minimum capacity is capped by schema size; large widths stop at 16 slots.
+  expect(peaks[1]).toBeLessThanOrEqual(1024);
+  expect(peaks[1]).toBeGreaterThanOrEqual(peaks[0] ?? 0);
+});
+
+it("rejects selection allocation before enumerating its elements", async () => {
+  const { MemoryBudget } = await import("lakeql-core");
+  let reads = 0;
+  const columns = ["g0"];
+  Object.defineProperty(columns, "0", {
+    get() {
+      reads++;
+      return "g0";
+    },
+  });
+  expect(() =>
+    rejectUnsupportedParquetSchema(
+      { schema: deepSchema(1) },
+      {
+        columns,
+        memoryBudget: new MemoryBudget(0),
+      },
+    ),
+  ).toThrowError(expect.objectContaining({ code: "LAKEQL_BUDGET_EXCEEDED" }));
+  expect(reads).toBe(0);
+});

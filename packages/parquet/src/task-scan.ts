@@ -37,7 +37,10 @@ export async function* scanParquetTaskBatches(
 ): AsyncIterable<Row[]> {
   const file = await asyncBufferFromStore(store, task.path);
   const metadata = await taskMetadata(task.path, file, options);
-  rejectUnsupportedParquetSchema(metadata, { allowValueCheckedScalarDecimals: true });
+  rejectUnsupportedParquetSchema(metadata, {
+    allowValueCheckedScalarDecimals: true,
+    memoryBudget: options.memoryBudget,
+  });
   const physicalColumns = task.projectedColumns?.filter(
     (column) => !(column in task.partitionValues),
   );
@@ -65,7 +68,10 @@ export async function* scanParquetTaskColumnBatches(
   const scanOptions = aggregateScanOptions(options);
   const file = await asyncBufferFromStore(store, task.path, scanOptions);
   const metadata = await taskMetadata(task.path, file, options);
-  rejectUnsupportedParquetSchema(metadata, { allowValueCheckedScalarDecimals: true });
+  rejectUnsupportedParquetSchema(metadata, {
+    allowValueCheckedScalarDecimals: true,
+    memoryBudget: options.memoryBudget,
+  });
   const physicalColumns = task.projectedColumns?.filter(
     (column) => !(column in task.partitionValues),
   );

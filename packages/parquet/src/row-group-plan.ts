@@ -1,9 +1,14 @@
 import type { RowGroup } from "hyparquet";
-import type { Expr } from "lakeql-core";
+import type { Expr, MemoryBudget } from "lakeql-core";
 import { dictionaryPageOffset } from "./dictionary-offset.js";
 import { rowGroupMayMatch } from "./row-group-pruning.js";
 import { rejectUnsupportedParquetSchema } from "./schema.js";
 import type { ParquetMetadata } from "./types.js";
+
+interface RowGroupPlanOptions {
+  includeByteRanges?: boolean;
+  memoryBudget?: MemoryBudget | undefined;
+}
 
 export interface PlannedParquetRowGroup {
   index: number;
@@ -29,10 +34,11 @@ export function planRowGroupsFromSource(
   metadata: Pick<ParquetMetadata, "schema">,
   groups: Iterable<RowGroup | undefined>,
   where: Expr | undefined,
+  options: RowGroupPlanOptions = {},
 ): ParquetRowGroupPlan {
   const rowGroups: PlannedParquetRowGroup[] = [];
   const ranges: { start: number; end: number }[] = [];
-  for (const planned of iteratePlannedRowGroups(metadata, groups, where)) {
+  for (const planned of iteratePlannedRowGroups(metadata, groups, where, options)) {
     rowGroups.push(planned);
     appendRowGroupRange(ranges, planned.index);
   }
@@ -61,9 +67,12 @@ export function* iteratePlannedRowGroups(
   metadata: Pick<ParquetMetadata, "schema">,
   groups: Iterable<RowGroup | undefined>,
   where: Expr | undefined,
-  options: { includeByteRanges?: boolean } = {},
+  options: RowGroupPlanOptions = {},
 ): Generator<PlannedParquetRowGroup> {
-  rejectUnsupportedParquetSchema(metadata, { allowValueCheckedScalarDecimals: true });
+  rejectUnsupportedParquetSchema(metadata, {
+    allowValueCheckedScalarDecimals: true,
+    memoryBudget: options.memoryBudget,
+  });
   let rowStart = 0;
   let nextIndex = 0;
   for (const rowGroup of groups) {

@@ -12,7 +12,9 @@ export async function planOwnedIndexedRowGroups(
 ) {
   const source = await acquireIndexedParquetSource(file, budget, signals);
   try {
-    return planRowGroupsFromSource(source.metadata, iterateIndexedGroups(source, signals), where);
+    return planRowGroupsFromSource(source.metadata, iterateIndexedGroups(source, signals), where, {
+      memoryBudget: budget,
+    });
   } finally {
     source.dispose();
   }
@@ -27,7 +29,9 @@ export async function* iterateOwnedIndexedRowGroups(
 ) {
   const source = await acquireIndexedParquetSource(file, budget, signals);
   try {
-    yield* iteratePlannedRowGroups(source.metadata, iterateIndexedGroups(source, signals), where);
+    yield* iteratePlannedRowGroups(source.metadata, iterateIndexedGroups(source, signals), where, {
+      memoryBudget: budget,
+    });
   } finally {
     source.dispose();
   }

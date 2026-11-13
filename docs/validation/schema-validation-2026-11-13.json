@@ -19,7 +19,22 @@
   "benchmark": "../benchmarks/schema-validation-2026-11-13.json",
   "limitations": [
     "Synthetic schema-only timings do not measure whole queries, IO, codec costs or VM heap usage.",
-    "Traversal workspace is structurally bounded by schema depth but not separately charged to MemoryScope; metadata and other planning accounting work remains.",
+    "Schema workspace is charged on the listed budget-aware paths; borrowed callers without a budget remain untracked. Error-message strings and other metadata/planner allocations are outside this workspace model.",
     "Other schema consumers may still recurse. This change does not establish support for arbitrary nesting throughout query execution."
-  ]
+  ],
+  "allocationAdmission": {
+    "change": "Temporary selection Set, path array, and remaining-child stack are admitted before allocation/growth. Geometric capacity growth needs logarithmically many reservations and stays bounded by schema size. Validation scope releases on success, unsupported schema, or budget failure. Empty projection returns before traversal.",
+    "callers": "Scan adapters (including owned indexed/cached multi-file discovery), aggregate/task scans, and owned indexed task planning propagate the caller budget.",
+    "validation": {
+      "focusedPassed": 33,
+      "defaultPassed": 2726,
+      "defaultSkipped": 605,
+      "workerPassed": 51,
+      "referencePassed": 104,
+      "buildLintTypes": "passed"
+    },
+    "cloudEvidence": "../benchmarks/cloud-schema-admission-2026-11-13.json",
+    "scalingEvidence": "../benchmarks/schema-validation-admitted-2026-11-13.json",
+    "sourceSha256": "f6e276132fee8eb80e0c1c78965e3b2f51756aef54322b4cde5f15e543605ffc"
+  }
 }

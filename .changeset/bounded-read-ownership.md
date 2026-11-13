@@ -345,3 +345,5 @@ Preserve dynamic JSON object members through vector inference, batching, gatheri
 Read key-only Parquet maps as maps with null values, and preserve empty unannotated repeated fields as empty arrays across public, column, and owned readers. Keep optional nulls distinct and validate map shape before using map assembly.
 
 Validate Parquet schemas in one iterative pass, avoiding repeated ancestor-path copies and call-stack exhaustion on deep selected or skipped subtrees. Preserve projection and exact decimal error paths.
+
+Admit temporary schema-validation directories against caller budgets in owned scans, task execution, and indexed planning; release them on every exit and skip traversal for empty projections.

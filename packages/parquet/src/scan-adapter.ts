@@ -152,7 +152,10 @@ export class ParquetScanAdapter implements ScanAdapter {
         options.memoryBudget,
       );
       try {
-        rejectUnsupportedParquetSchema(source.metadata, { allowValueCheckedScalarDecimals: true });
+        rejectUnsupportedParquetSchema(source.metadata, {
+          allowValueCheckedScalarDecimals: true,
+          memoryBudget: options.memoryBudget,
+        });
         return parquetColumnDescriptors({ ...source.metadata, row_groups: [] }, path);
       } finally {
         source.dispose();
@@ -167,6 +170,7 @@ export class ParquetScanAdapter implements ScanAdapter {
       );
       try {
         rejectUnsupportedParquetSchema(loaded.owner.value, {
+          memoryBudget: options.memoryBudget,
           allowValueCheckedScalarDecimals: true,
         });
         return parquetColumnDescriptors(loaded.owner.value, path);
@@ -184,6 +188,7 @@ export class ParquetScanAdapter implements ScanAdapter {
     const file = this.scanBuffer(path, await this.scanFile(path, options));
     const metadata = await this.metadata(path, file, options);
     rejectUnsupportedParquetSchema(metadata, {
+      memoryBudget: options.memoryBudget,
       columns: options.columns,
       allowValueCheckedScalarDecimals: true,
     });
@@ -289,6 +294,7 @@ export class ParquetScanAdapter implements ScanAdapter {
         present.length > 0 &&
         canReadParquetVectorBatches(metadata, vectorOptions);
       rejectUnsupportedParquetSchema(metadata, {
+        memoryBudget: options.memoryBudget,
         columns: options.columns,
         allowValueCheckedScalarDecimals: true,
       });
@@ -441,6 +447,7 @@ export class ParquetScanAdapter implements ScanAdapter {
         now: options.now,
       };
       rejectUnsupportedParquetSchema(metadata, {
+        memoryBudget: options.memoryBudget,
         columns: options.columns,
         allowValueCheckedScalarDecimals: true,
       });
@@ -526,7 +533,7 @@ export class ParquetScanAdapter implements ScanAdapter {
             source.metadata,
             iterateIndexedGroups(source, signals),
             options.where,
-            { includeByteRanges: false },
+            { includeByteRanges: false, memoryBudget: options.memoryBudget },
           ),
         );
         if (options.stats !== undefined) {
@@ -547,6 +554,7 @@ export class ParquetScanAdapter implements ScanAdapter {
       const plan = summarizePlannedRowGroups(
         iteratePlannedRowGroups(metadata, metadata.row_groups, options.where, {
           includeByteRanges: false,
+          memoryBudget: options.memoryBudget,
         }),
       );
       if (options.stats !== undefined) {

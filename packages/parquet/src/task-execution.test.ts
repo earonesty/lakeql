@@ -425,7 +425,12 @@ it("shares the caller allocation budget with adaptive GROUPS evaluation after ta
     expect(output.map((row) => row.total)).toEqual(
       keys.map((key) => (key % 2 ? (key * (key + 1)) / 2 : key)),
     );
-    expect(pool.peakBytes).toBe(cap === 3204 ? 3204 : 0);
+    if (cap === 3204) expect(pool.peakBytes).toBe(3204);
+    else {
+      // The index is declined, but task schema validation still owns workspace.
+      expect(pool.peakBytes).toBeGreaterThan(0);
+      expect(pool.peakBytes).toBeLessThan(3204);
+    }
     expect(pool.usedBytes).toBe(0);
   }
 });

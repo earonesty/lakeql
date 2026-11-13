@@ -63,7 +63,10 @@ export async function aggregateParquetTask(
       options.metadataCache,
     );
     recordMetadataCache(scanOptions, cached);
-    rejectUnsupportedParquetSchema(metadata, { allowValueCheckedScalarDecimals: true });
+    rejectUnsupportedParquetSchema(metadata, {
+      allowValueCheckedScalarDecimals: true,
+      memoryBudget: options.memoryBudget,
+    });
     enforceAggregateTaskBudget(scanOptions);
     const physicalColumns = aggregateTaskReadColumns(task, spec);
     const aggregateOptions = aggregateVectorOptions(options);
@@ -156,7 +159,10 @@ export async function aggregateParquetGroupTask(
       options.metadataCache,
     );
     recordMetadataCache(scanOptions, cached);
-    rejectUnsupportedParquetSchema(metadata, { allowValueCheckedScalarDecimals: true });
+    rejectUnsupportedParquetSchema(metadata, {
+      allowValueCheckedScalarDecimals: true,
+      memoryBudget: options.memoryBudget,
+    });
     enforceAggregateTaskBudget(scanOptions);
     const physicalColumns = aggregateTaskReadColumns(task, spec, groupColumns);
     const aggregateOptions = aggregateVectorOptions(options);

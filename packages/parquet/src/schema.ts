@@ -1,10 +1,17 @@
-import { LakeqlError } from "lakeql-core";
+import {
+  MATERIALIZATION_CHARGES as c,
+  LakeqlError,
+  type MemoryBudget,
+  MemoryScope,
+} from "lakeql-core";
 import type { ParquetMetadata } from "./types.js";
 
 export interface RejectUnsupportedParquetSchemaOptions {
   columns?: readonly string[] | undefined;
   /** Permit exact value-checked decoding for top-level scalar decimal leaves. */
   allowValueCheckedScalarDecimals?: boolean;
+  /** Admit temporary validation directories against the caller's allocation pool. */
+  memoryBudget?: MemoryBudget | undefined;
 }
 
 export function rejectUnsupportedParquetSchema(
@@ -13,7 +20,41 @@ export function rejectUnsupportedParquetSchema(
 ): void {
   const schema = metadata.schema;
   if (!Array.isArray(schema) || schema.length === 0) return;
+  if (options.columns?.length === 0 || schemaChildCount(schema[0]) === 0) return;
+  const scope =
+    options.memoryBudget === undefined ? undefined : new MemoryScope(options.memoryBudget);
+  try {
+    validateSchema(schema, options, scope);
+  } finally {
+    scope?.dispose();
+  }
+}
+
+function validateSchema(
+  schema: ParquetSchemaElement[],
+  options: RejectUnsupportedParquetSchemaOptions,
+  scope?: MemoryScope,
+): void {
+  if (options.columns !== undefined)
+    scope?.allocate(
+      c.object + options.columns.length * c.property,
+      "schema selection directory",
+      () => undefined,
+    );
   const selected = options.columns === undefined ? undefined : new Set(options.columns);
+  scope?.allocate(2 * c.array, "schema traversal arrays", () => undefined);
+  let capacity = 0;
+  const reserveDepth = (needed: number) => {
+    if (scope === undefined || needed <= capacity) return;
+    const next = Math.min(schema.length, Math.max(needed, 16, capacity * 2));
+    scope.allocate(
+      (next - capacity) * (2 * c.arraySlot + c.number),
+      "schema traversal capacity",
+      () => undefined,
+    );
+    capacity = next;
+  };
+  reserveDepth(1);
   // One path and remaining-child stack: linear traversal, O(depth) workspace.
   // Join the path only when reporting a rejected leaf, not at every group.
   const remaining = [schemaChildCount(schema[0])];
@@ -34,12 +75,16 @@ export function rejectUnsupportedParquetSchema(
       index = skipParquetSchemaSubtree(schema, index);
       continue;
     }
+    reserveDepth(depth + 1);
     path.length = depth;
     path.push(name);
     rejectUnsupportedParquetLeaf(element, path, options);
     index++;
     const count = schemaChildCount(element);
-    if (count > 0) remaining.push(count);
+    if (count > 0) {
+      reserveDepth(remaining.length + 1);
+      remaining.push(count);
+    }
   }
 }
 

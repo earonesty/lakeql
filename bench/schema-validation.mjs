@@ -90,7 +90,11 @@ const report = {
   results,
 };
 writeFileSync(
-  new URL("../docs/benchmarks/schema-validation-2026-11-13.json", import.meta.url),
+  new URL(
+    process.env.LAKEQL_SCHEMA_BENCH_REPORT ??
+      "../docs/benchmarks/schema-validation-2026-11-13.json",
+    import.meta.url,
+  ),
   `${JSON.stringify(report, null, 2)}\n`,
 );
 console.log(
