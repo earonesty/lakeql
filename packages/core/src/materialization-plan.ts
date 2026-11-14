@@ -10,6 +10,7 @@ import {
 import { decimalFormatAllocationBytes, requireDecimalValue } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
 import type { MemoryBudget, MemoryReservation } from "./memory-budget.js";
+import { reserveMemoryCapacity } from "./memory-capacity.js";
 import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
 import type { Row } from "./types.js";
 
@@ -115,14 +116,13 @@ function planMaterialization(
       // than creating a reservation for every cell (or consuming stage capacity
       // again after release, which does not replenish a fixed admission).
       if (planning !== undefined && active.size >= depthCapacity) {
-        const next = planning.reserve(cost.property, "materialization traversal depth");
-        try {
-          traversal = traversal === undefined ? next : traversal.merge(next);
-          depthCapacity++;
-        } catch (error) {
-          next.release();
-          throw error;
-        }
+        traversal = reserveMemoryCapacity(
+          planning,
+          traversal,
+          (depthCapacity + 1) * cost.property,
+          "materialization traversal depth",
+        );
+        depthCapacity++;
       }
       try {
         active.add(vector);

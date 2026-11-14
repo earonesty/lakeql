@@ -389,3 +389,5 @@ Share allocation-free packed range access across selected concatenation and gath
 Reuse physical input batches for identity CPU projections instead of rebuilding unchanged column directories and descriptor owners. Preserve standalone projection copy semantics, backend selection, metrics, limits and nonidentity projection behavior.
 
 Reuse materialization-planning ancestry capacity across sibling rows, merging exclusive reservations instead of allocating per-cell frame reservations. Preserve depth bounds and output forecasts while allowing exact fixed-stage planning allowances to succeed.
+
+Grow reusable JSON scalar and traversal workspace through shared incremental admission, preserving exact fixed-stage limits and cleanup without re-admitting existing capacity.

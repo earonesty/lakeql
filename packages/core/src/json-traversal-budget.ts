@@ -1,13 +1,13 @@
-import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import type { MemoryReservation } from "./memory-budget.js";
+import { reserveMemoryCapacity } from "./memory-capacity.js";
 import type { MemoryScope } from "./memory-scope.js";
 
 /** Admit traversal capacity once per depth. Sibling containers reuse admission;
  * keeping the high-water charge until disposal also covers retained stack slots.
  */
 export class JsonTraversalBudget {
-  private readonly reservations: MemoryReservation[] = [];
-  private base: MemoryReservation | undefined;
+  private reservation: MemoryReservation | undefined;
+  private depth = 0;
 
   constructor(
     private readonly scope: MemoryScope | undefined,
@@ -16,19 +16,19 @@ export class JsonTraversalBudget {
   ) {}
 
   admit(depth: number): void {
-    if (this.scope === undefined || depth <= this.reservations.length) return;
-    this.base ??= this.scope.reserve(this.baseBytes + c.array, "JSON traversal capacity");
-    while (this.reservations.length < depth) {
-      this.reservations.push(
-        this.scope.reserve(this.frameBytes + c.arraySlot, "JSON traversal depth"),
-      );
-    }
+    if (this.scope === undefined || depth <= this.depth) return;
+    this.reservation = reserveMemoryCapacity(
+      this.scope,
+      this.reservation,
+      this.baseBytes + depth * this.frameBytes,
+      "JSON traversal capacity",
+    );
+    this.depth = depth;
   }
 
   dispose(): void {
-    for (const reservation of this.reservations) reservation.release();
-    this.reservations.length = 0;
-    this.base?.release();
-    this.base = undefined;
+    this.reservation?.release();
+    this.reservation = undefined;
+    this.depth = 0;
   }
 }

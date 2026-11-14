@@ -13,10 +13,17 @@ import { MemoryScope } from "../packages/core/dist/memory-scope.js";
 // Compare the selected reference with current built output using identical
 // inputs, budgets, runtime, and byte verification. Timing includes both passes.
 const reference = process.env.LAKEQL_JSON_REFERENCE ?? "5e4d280";
+const referenceModules = [
+  "json-output-size",
+  "json-output-encoding",
+  ...(process.env.LAKEQL_JSON_REFERENCE_HELPERS ?? "").split(",").filter(Boolean),
+];
+if (referenceModules.some((name) => !/^[a-z-]+$/.test(name)))
+  throw new Error("Invalid reference module name");
 const scratch = await mkdtemp(join(tmpdir(), "lakeql-json-traversal-"));
 const dist = pathToFileURL(`${resolve("packages/core/dist")}/`).href;
 try {
-  for (const name of ["json-output-size", "json-output-encoding"]) {
+  for (const name of referenceModules) {
     const source = execFileSync("git", ["show", `${reference}:packages/core/src/${name}.ts`], {
       encoding: "utf8",
     });
@@ -27,7 +34,7 @@ try {
       .outputText.replaceAll(
         /from "\.\/([^"]+)"/g,
         (_match, file) =>
-          `from "${file === "json-output-size.js" ? pathToFileURL(join(scratch, file)).href : dist + file}"`,
+          `from "${referenceModules.some((name) => file === `${name}.js`) ? pathToFileURL(join(scratch, file)).href : dist + file}"`,
       );
     await writeFile(join(scratch, `${name}.js`), compiled);
   }
@@ -98,6 +105,7 @@ try {
   }
   const report = {
     reference,
+    referenceModules,
     current: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
     node: process.version,
     builtModuleHashes: Object.fromEntries(
@@ -108,6 +116,8 @@ try {
           "json-traversal-budget",
           "json-container-entries",
           "json-standard-scalars",
+          "json-scalar-output",
+          "memory-capacity",
         ].map(async (name) => [
           name,
           createHash("sha256")

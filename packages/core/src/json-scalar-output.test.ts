@@ -43,3 +43,20 @@ it("failed workspace growth does not invoke the consumer or leak old capacity", 
   formatter.dispose();
   scope.dispose();
 });
+
+it("grows within an exact fixed stage by admitting only additional capacity", () => {
+  const large = 10n ** 1000n;
+  const extent = scalarStringAllocationBytes(large);
+  const scope = new MemoryScope(new MemoryBudget(extent));
+  scope.admit(extent, "scalar workspace");
+  const formatter = new JsonScalarFormatter(scope);
+  try {
+    formatter.consume(0.25, (text) => expect(text).toBe("0.25"));
+    expect(formatter.consume(large, (text) => text.length)).toBe(1001);
+    expect(scope.budget.peakBytes).toBe(extent);
+  } finally {
+    formatter.dispose();
+    scope.dispose();
+  }
+  expect(scope.budget.usedBytes).toBe(0);
+});

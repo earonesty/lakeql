@@ -40,3 +40,26 @@ it("releases nested writer capacity after a Worker output admission failure", ()
   expect(scope.budget.usedBytes).toBe(0);
   scope.dispose();
 });
+
+it("sizes growing JSON scalars in an exact Worker stage", async () => {
+  const { jsonOutputUtf8Bytes } = await import("./json-output-size.js");
+  const value = [0.25, 10n ** 1000n, { nested: [10n ** 2000n, 0.5] }];
+  const expected = new TextEncoder().encode(
+    JSON.stringify([0.25, String(10n ** 1000n), { nested: [String(10n ** 2000n), 0.5] }]),
+  ).length;
+  const measured = new MemoryScope(new MemoryBudget(100000));
+  expect(jsonOutputUtf8Bytes(value, measured)).toBe(expected);
+  const peak = measured.budget.peakBytes;
+  measured.dispose();
+  for (const capacity of [peak, peak - 1]) {
+    const scope = new MemoryScope(new MemoryBudget(capacity));
+    scope.admit(capacity, "JSON sizing workspace");
+    try {
+      if (capacity === peak) expect(jsonOutputUtf8Bytes(value, scope)).toBe(expected);
+      else expect(() => jsonOutputUtf8Bytes(value, scope)).toThrow(/budget|extent/i);
+    } finally {
+      scope.dispose();
+    }
+    expect(scope.budget.usedBytes).toBe(0);
+  }
+});

@@ -10,6 +10,7 @@ import {
   isIntervalValue,
 } from "./interval.js";
 import type { MemoryReservation } from "./memory-budget.js";
+import { reserveMemoryCapacity } from "./memory-capacity.js";
 import type { MemoryScope } from "./memory-scope.js";
 import { scalarStringAllocationBytes } from "./scalar-cast-allocation.js";
 import { isTimestampValue, type TimestampValue } from "./timestamp.js";
@@ -35,8 +36,17 @@ export class JsonScalarFormatter {
           ? intervalStringAllocationBytes(value)
           : scalarStringAllocationBytes(value);
       if (bytes > (this.reservation?.bytes ?? 0)) {
-        this.dispose();
-        this.reservation = this.scope.reserve(bytes, "JSON scalar formatting");
+        try {
+          this.reservation = reserveMemoryCapacity(
+            this.scope,
+            this.reservation,
+            bytes,
+            "JSON scalar formatting",
+          );
+        } catch (error) {
+          this.dispose();
+          throw error;
+        }
       }
     }
     const text = isTimestampValue(value)

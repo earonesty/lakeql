@@ -1,0 +1,89 @@
+{
+  "runtimeBase": "78da60a",
+  "requirements": ["M1", "M2", "V2"],
+  "finding": "JSON scalar workspace growth released and re-admitted its full size, exhausting fixed stage capacity despite a sufficient largest-workspace allowance. A new regression fails on the baseline with Allocation exceeds admitted stage extent.",
+  "contract": "Reserve only additional exclusive workspace capacity; merge without pool readmission. Failure preserves the previous reservation in the generic helper; the scalar formatter releases it on failure as before. Materialization and JSON traversal share the helper.",
+  "tests": [
+    "Exact fixed stage and one-byte-below boundaries",
+    "Growing scalar siblings through actual JSON sizing with expected UTF-8 byte count",
+    "Shared reservation merge rejection releases additional capacity",
+    "Invalid workspace extents reject without changing current ownership",
+    "Deep traversal and repeated sibling reuse"
+  ],
+  "validation": {
+    "build": "tsc -b passed",
+    "regularPassed": 3920,
+    "regularSkipped": 645,
+    "coverage": {
+      "statements": 91.36,
+      "branches": 85.52,
+      "functions": 95.9,
+      "lines": 93.17,
+      "thresholds": "unchanged"
+    },
+    "workerPassed": 85,
+    "requiredConformancePassed": 520,
+    "requiredConformanceSkipped": 1,
+    "typecheck": "passed",
+    "lint": "passed",
+    "timeouts": "unchanged"
+  },
+  "limitations": [
+    "Admission units are not exact VM heap storage.",
+    "Public JSON encoding includes separate sizing and writing phases; this does not claim that a fixed stage sized only for one phase covers both.",
+    "This does not close the historical JSON performance gap versus recursive encoding."
+  ],
+  "benchmarks": [
+    {
+      "artifact": "docs/benchmarks/json-capacity-2026-11-14.json",
+      "medians": {
+        "small-row": {
+          "reference": 0.012356903500000044,
+          "current": 0.007976645999999988
+        },
+        "wide-numbers": {
+          "reference": 2.090432649999997,
+          "current": 2.042953775000001
+        },
+        "row-array": {
+          "reference": 0.6019579249999992,
+          "current": 0.5794391500000018
+        },
+        "mixed-siblings": {
+          "reference": 0.4150196000000051,
+          "current": 0.3894087500000012
+        },
+        "deep-20000": {
+          "reference": 26.745581500000185,
+          "current": 29.68548575000011
+        }
+      }
+    },
+    {
+      "artifact": "docs/benchmarks/json-capacity-repeat-2026-11-14.json",
+      "medians": {
+        "small-row": {
+          "reference": 0.011371185000000027,
+          "current": 0.007371120999999988
+        },
+        "wide-numbers": {
+          "reference": 1.9132997999999986,
+          "current": 1.9837054000000023
+        },
+        "row-array": {
+          "reference": 0.6093847750000009,
+          "current": 0.6373533000000066
+        },
+        "mixed-siblings": {
+          "reference": 0.42605980000000154,
+          "current": 0.40912962499999705
+        },
+        "deep-20000": {
+          "reference": 26.64862149999999,
+          "current": 28.521338000000014
+        }
+      }
+    }
+  ],
+  "tradeoff": "Keep one merged traversal reservation: removes the reservation directory and its depth-proportional live handles, with modeled deep peak reduced from 22,400,256 to 22,080,192 bytes. Two isolated runs show 7\u201311% slower 20,000-depth encoding; ordinary shapes are mixed. This is a memory/ownership simplification, not a universal speedup. No speculative spare capacity or user tuning is introduced."
+}

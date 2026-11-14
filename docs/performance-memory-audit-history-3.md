@@ -4985,3 +4985,24 @@ budget failures, four successful post-release retries). The 64 MiB/four-job
 managed-heap sample still reaches 97,148,452 bytes; sparse GC-dependent samples
 do not establish total memory caps. See
 `validation/materialization-traversal-capacity-2026-11-14.json`.
+
+### Shared incremental workspace capacity (2026-11-14)
+
+A baseline negative control proves that JSON scalar growth could consume a fixed
+stage twice: releasing a reservation does not refund stage admission. The shared
+helper now admits only the difference and merges exclusive reservations. Its
+failure leaves prior ownership intact; the formatter preserves its existing
+cleanup-on-error behavior. Materialization planning uses the same helper.
+
+JSON traversal holds one merged reservation instead of a depth-sized handle
+directory. Both isolated benchmark runs verify identical output and zero final
+admission, with 320,064 fewer modeled bytes at depth 20,000. Encoding at that
+depth is 7–11% slower; ordinary shapes are mixed. This is retained bookkeeping
+reduction with a CPU cost, not an across-the-board performance claim. The helper
+adds no spare-capacity heuristic or user configuration. The benchmark can now
+substitute explicitly selected historical helper modules, avoiding a comparison
+that accidentally shares the modified implementation between variants.
+
+Evidence and current validation: `validation/shared-workspace-capacity-2026-11-14.json`.
+
+Final validation: 3,920 regular/coverage tests (645 skipped), 85 Worker tests, 520 required conformance cases (one inactive guard skipped), build/types/lint. Coverage thresholds and test timeouts are unchanged. Native Worker sizing now tests growing scalar siblings at exact fixed-stage capacity and one byte below. Existing real HTTP and R2 fixtures remain in the full suites; no new live-cloud throughput claim is made.
