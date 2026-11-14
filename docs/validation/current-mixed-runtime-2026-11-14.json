@@ -1,0 +1,64 @@
+{
+  "date": "2026-11-14",
+  "sourceCommit": "12527c2",
+  "requirements": [
+    "M2",
+    "V1",
+    "V2"
+  ],
+  "artifacts": [
+    "docs/benchmarks/mixed-query-memory-2026-11-14.json",
+    "docs/benchmarks/workerd-owned-current-2026-11-14.json",
+    "docs/benchmarks/workerd-owned-heap64-current-2026-11-14.json"
+  ],
+  "changes": [
+    "Refresh mixed-query harness with delayed real HTTP 206 responses, active-read concurrency assertion, runtime memory samples, elapsed times, fixture hash and source provenance.",
+    "Use date-specific or explicitly configured output path instead of overwriting historical benchmark evidence."
+  ],
+  "results": {
+    "mixed_query": {
+      "scenarios": 8,
+      "rounds_per_scenario": 2,
+      "overlapping_jobs": 4,
+      "all_jobs_completed": true,
+      "max_tracked_mib": 51.5,
+      "max_http_reads": 2,
+      "warm_fitting_cache_discovery_requests": 4,
+      "final_reserved_bytes": 0
+    },
+    "local_workerd_emulated_r2": {
+      "rows": 32768,
+      "payload_characters_per_row": 256,
+      "pool_mib": [
+        64,
+        128
+      ],
+      "jobs": [
+        1,
+        4
+      ],
+      "rounds": [
+        "cold",
+        "warm"
+      ],
+      "four_jobs_64_mib": "Two succeed and two typed budget rejections in each round; tracked peak 63.99 MiB.",
+      "four_jobs_128_mib": "All four succeed; tracked peak 105.78 MiB.",
+      "max_sampled_managed_heap_64_mib_four_jobs": 81.26,
+      "final_reserved_bytes": 0
+    },
+    "local_workerd_v8_heap64_http": {
+      "managed_heap_flag_mib": 64,
+      "same_success_and_budget_outcomes": true,
+      "max_sampled_managed_heap_mib": 55.1,
+      "final_reserved_bytes": 0
+    }
+  },
+  "limitations": [
+    "One run per scenario, not stable latency or fairness evidence.",
+    "Node samples include fixture and HTTP server storage; they are not Worker samples.",
+    "Local unconstrained workerd uses emulated native R2; heap-constrained workerd uses localhost HTTP. These are distinct transports, not a controlled speed comparison.",
+    "Inspector sampling can be delayed by execution: only three samples in several unconstrained rounds. Sampled peaks are lower bounds.",
+    "V8 managed-heap flags do not bound external buffers, driver/embedder memory, total process RSS or production Cloudflare billing/limits.",
+    "64 MiB reservation pool still allows more than 64 MiB sampled managed heap without the runtime flag. Whole-runtime memory acceptance remains unproven."
+  ]
+}
