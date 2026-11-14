@@ -137,7 +137,11 @@ it("releases failed accumulated projection before awaiting scanner cleanup", asy
   sibling.release();
 });
 
-it("admits collected fallback projections at the measured exact peak", async () => {
+it.each([
+  "scan",
+  "sort",
+  "topK",
+])("admits collected %s projections at the measured exact peak", async (route) => {
   const store = memoryStore();
   await store.put("table", new Uint8Array(1));
   async function run(cap: number, succeeds: boolean) {
@@ -151,12 +155,13 @@ it("admits collected fallback projections at the measured exact peak", async () 
         },
       },
     });
-    const result = lake
+    let query = lake
       .path("table")
       .batchSize(1)
-      .project({ text: { kind: "call", fn: "upper", args: [{ kind: "column", name: "text" }] } })
-      .run()
-      .toOwnedArray();
+      .project({ text: { kind: "call", fn: "upper", args: [{ kind: "column", name: "text" }] } });
+    if (route !== "scan") query = query.orderBy([{ column: "text", direction: "desc" }]);
+    if (route === "topK") query = query.limit(2);
+    const result = query.run().toOwnedArray();
     if (succeeds) {
       const owner = await result;
       expect(owner.value).toEqual([{ text: "SS" }, { text: "A" }]);
@@ -169,4 +174,45 @@ it("admits collected fallback projections at the measured exact peak", async () 
   const peak = await run(65536, true);
   expect(await run(peak, true)).toBe(peak);
   await run(peak - 1, false);
+});
+
+it.each([
+  false,
+  true,
+])("releases ordered batch projection on early return (topK=%s)", async (topK) => {
+  const pool = new MemoryBudget(65536);
+  const sibling = pool.reserve(1024, "sibling");
+  const store = memoryStore();
+  await store.put("table", new Uint8Array(1));
+  const lake = new Lake({
+    store,
+    memoryPool: pool,
+    scanner: {
+      async *scan() {
+        yield [
+          { id: 2, text: "ß" },
+          { id: 1, text: "ß" },
+          { id: 0, text: "ß" },
+        ];
+      },
+    },
+  });
+  let query = lake
+    .path("table")
+    .orderBy([{ column: "id" }])
+    .batchSize(1)
+    .project({
+      text: { kind: "call", fn: "upper", args: [{ kind: "column", name: "text" }] },
+    });
+  if (topK) query = query.limit(2);
+  const iterator = query.run().batches()[Symbol.asyncIterator]();
+  expect((await iterator.next()).value).toEqual([{ id: 0, text: "SS" }]);
+  const live = pool.usedBytes;
+  expect(live).toBeGreaterThan(sibling.bytes);
+  expect((await iterator.next()).value).toEqual([{ id: 1, text: "SS" }]);
+  expect(pool.usedBytes).toBe(live);
+  await iterator.return?.();
+  expect(pool.usedBytes).toBe(sibling.bytes);
+  sibling.release();
+  expect(pool.usedBytes).toBe(0);
 });

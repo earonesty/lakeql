@@ -87,10 +87,7 @@ it.each(
           .filter((row) => row.text === "dictionary text 1 猫")
           .map((row) => (projection ? { ...row, projected: "accepted text 1 猫" } : row));
         await Promise.all(
-          (projection
-            ? ["batches", "aggregate", "topK", "sort"]
-            : ["batches", "aggregate", "ordered", "topK", "sort"]
-          ).map(async (route) => {
+          ["batches", "aggregate", "ordered", "topK", "sort"].map(async (route) => {
             let query = lake
               .path("brotli.parquet")
               .where(

@@ -974,14 +974,7 @@ export class QueryResult {
                     continue;
                   }
                   if (config.limit !== undefined && returned >= config.limit) break;
-                  const value = ownedOutput
-                    ? batchScope.adopt(detachOwnedRow(projected, this.memoryBudget, projection))
-                        .value
-                    : projected;
-                  if (!ownedOutput) batchScope.adopt(projection.retainAllocations(undefined));
-                  batchScope.allocate(allocationCharges.arraySlot, "row output slot", () =>
-                    out.push(value),
-                  );
+                  appendProjectedOutput(out, projected, projection, batchScope, ownedOutput);
                   returned += 1;
                   stats.rowsReturned += 1;
                   enforceBudget(config.budget, stats, config.now, startedAt);
@@ -1094,6 +1087,17 @@ export class QueryResult {
     );
   }
 
+  private canOwnOrderedRowOutput(): boolean {
+    const config = this.config;
+    return (
+      config.orderBy !== undefined &&
+      config.distinct !== true &&
+      config.hive !== true &&
+      (config.windows === undefined || Object.keys(config.windows).length === 0) &&
+      config.qualify === undefined
+    );
+  }
+
   /** Materialize and collect with explicit lifetime ownership. Unsupported
    * operators reject before scanning; borrowed rows validate their detachable
    * data shape during materialization rather than claim untracked output.
@@ -1114,12 +1118,14 @@ export class QueryResult {
       const output = await this.tryColumnarTopKRows(true);
       if (output !== undefined) return output;
     }
-    if (this.canOwnRowProjectedOutput()) {
+    if (this.canOwnRowProjectedOutput() || this.canOwnOrderedRowOutput()) {
       const query = this;
       async function* ownedRows(
         fail: (error: unknown) => never,
       ): AsyncIterable<OwnedMemory<Row[]>> {
-        for await (const output of query.rowProjectedOutputs(true, fail)) {
+        for await (const output of query.config.orderBy === undefined
+          ? query.rowProjectedOutputs(true, fail)
+          : query.orderedRowOutputs(true, fail)) {
           if (Array.isArray(output))
             throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Expected owned rows");
           yield output;
@@ -1694,16 +1700,6 @@ export class QueryResult {
   }
 
   async toArray(): Promise<Row[]> {
-    if (this.canOwnProjectedOutput() || this.canOwnRowProjectedOutput()) {
-      const owner = await this.toOwnedArray();
-      // Plain rows transfer to caller management. Use toOwnedArray to keep their
-      // reservation live across jobs and release deterministically after use.
-      try {
-        return owner.value;
-      } finally {
-        owner.release();
-      }
-    }
     // A completed vector top-k already has its final result array. Do not
     // duplicate it through orderedBatches and a second row collector.
     if (
@@ -1713,6 +1709,20 @@ export class QueryResult {
     ) {
       const rows = await this.tryColumnarTopKRows();
       if (rows !== undefined) return rows;
+    }
+    if (
+      this.canOwnProjectedOutput() ||
+      this.canOwnRowProjectedOutput() ||
+      this.canOwnOrderedRowOutput()
+    ) {
+      const owner = await this.toOwnedArray();
+      // Plain rows transfer to caller management. Use toOwnedArray to keep their
+      // reservation live across jobs and release deterministically after use.
+      try {
+        return owner.value;
+      } finally {
+        owner.release();
+      }
     }
     const rows: Row[] = [];
     for await (const row of this.rows()) rows.push(row);
@@ -2666,7 +2676,6 @@ export class QueryResult {
 
   private async *orderedBatches(): AsyncIterable<Row[]> {
     const config = this.config;
-    const { stats } = this;
     const columnarRows = await this.tryColumnarTopKRows();
     if (columnarRows !== undefined) {
       const batchSize = config.batchSize ?? 4096;
@@ -2675,6 +2684,21 @@ export class QueryResult {
       }
       return;
     }
+    for await (const output of this.orderedRowOutputs(false)) {
+      if (!Array.isArray(output)) {
+        output.release();
+        throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Unexpected owned ordered output");
+      }
+      yield output;
+    }
+  }
+
+  private async *orderedRowOutputs(
+    ownedOutput: boolean,
+    fail?: (error: unknown) => never,
+  ): AsyncIterable<Row[] | OwnedMemory<Row[]>> {
+    const config = this.config;
+    const { stats } = this;
     this.requirePhysicalPath("ordered query");
     const matched: Row[] = [];
     const topK =
@@ -2701,30 +2725,68 @@ export class QueryResult {
         }
       }
       const batchSize = config.batchSize ?? 4096;
-      let batch: Row[] = [];
+      let batchScope = retainedScope.childScope();
+      const newBatch = () =>
+        batchScope.allocate(allocationCharges.array, "ordered output directory", () => [] as Row[])
+          .value;
+      let batch = newBatch();
       let offsetSkipped = 0;
       let returned = 0;
       const distinct = config.distinct === true ? new Set<string>() : undefined;
       for (const row of matched) {
-        const projected = project(row, config.select, config.projections);
-        if (distinct !== undefined && !addDistinctRow(distinct, projected, config.budget)) continue;
-        if (offsetSkipped < (config.offset ?? 0)) {
-          offsetSkipped += 1;
-          continue;
+        const projection = batchScope.childScope();
+        try {
+          const projected = project(row, config.select, config.projections, projection);
+          if (distinct !== undefined && !addDistinctRow(distinct, projected, config.budget))
+            continue;
+          if (offsetSkipped < (config.offset ?? 0)) {
+            offsetSkipped += 1;
+            continue;
+          }
+          if (config.limit !== undefined && returned >= config.limit) break;
+          appendProjectedOutput(
+            batch,
+            projected,
+            projection,
+            batchScope,
+            ownedOutput,
+            retainedScope,
+          );
+          returned += 1;
+          stats.rowsReturned += 1;
+          enforceBudget(config.budget, stats, config.now, startedAt);
+        } finally {
+          projection.dispose();
         }
-        if (config.limit !== undefined && returned >= config.limit) break;
-        batch.push(projected);
-        returned += 1;
-        stats.rowsReturned += 1;
-        enforceBudget(config.budget, stats, config.now, startedAt);
         if (batch.length >= batchSize) {
           stats.elapsedMs = config.now() - startedAt;
-          yield batch;
-          batch = [];
+          if (ownedOutput) {
+            const owner = batchScope.retainAllocations(batch);
+            try {
+              yield owner;
+            } finally {
+              owner.release();
+            }
+          } else yield batch;
+          batchScope.dispose();
+          batchScope = retainedScope.childScope();
+          batch = newBatch();
         }
       }
       stats.elapsedMs = config.now() - startedAt;
-      if (batch.length > 0) yield batch;
+      if (batch.length > 0) {
+        if (ownedOutput) {
+          const owner = batchScope.retainAllocations(batch);
+          try {
+            yield owner;
+          } finally {
+            owner.release();
+          }
+        } else yield batch;
+      }
+    } catch (error) {
+      if (fail !== undefined) fail(error);
+      throw error;
     } finally {
       retainedScope.dispose();
     }
@@ -5998,6 +6060,30 @@ function assignProjectedField(out: Row, key: string, value: unknown, scope?: Mem
 function copyProjectedFields(out: Row, row: Row, scope?: MemoryScope): void {
   for (const key in row)
     if (Object.hasOwn(row, key)) assignProjectedField(out, key, row[key], scope);
+}
+
+/** Same handoff for borrowed scans and retained ordered rows. */
+function appendProjectedOutput(
+  output: Row[],
+  projected: Row,
+  projection: MemoryScope,
+  target: MemoryScope,
+  owned: boolean,
+  retainedSource?: MemoryScope,
+): void {
+  let value = projected;
+  if (owned) {
+    const owner =
+      retainedSource?.tryRetainAllocation(projected) ??
+      detachOwnedRow(projected, target.budget, projection);
+    try {
+      value = target.adopt(owner).value;
+    } catch (error) {
+      owner.release();
+      throw error;
+    }
+  } else target.adopt(projection.retainAllocations(undefined));
+  target.allocate(allocationCharges.arraySlot, "row output slot", () => output.push(value));
 }
 
 function projectRowRange(

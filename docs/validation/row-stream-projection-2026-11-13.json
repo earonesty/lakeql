@@ -40,5 +40,6 @@
     "Ordered streaming projection, borrowed reference selection, DISTINCT keys, partition merging and remaining scalar internals remain open.",
     "Source adapter input allocations, scope/runtime metadata and VM/GC behavior remain separate from admitted output; this is not whole-runtime heap certification.",
     "No throughput speedup is claimed; mutable output detachment and reservation tracking add work in exchange for safe retained lifetime."
-  ]
+  ],
+  "followupEvidence": "docs/validation/ordered-row-projection-2026-11-13.json"
 }
