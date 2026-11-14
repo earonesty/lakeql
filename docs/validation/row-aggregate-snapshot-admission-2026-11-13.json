@@ -1,0 +1,23 @@
+{
+  "status": "Implemented; build, default and Worker validation passed",
+  "change": "Final aggregate checkpoints admit envelope and group directory storage, sorted-group scratch, group/key/state records and scalar conversion before construction. Growing states retain their own snapshot admission. Fixed-state snapshots receive conservative record admission at the group boundary. First/last/any and group keys reuse snapshotScalarWithAdmission, shared with row snapshot construction, for scalar normalization. The unscoped snapshot path remains for legacy serialized-size estimation.",
+  "validation": {
+    "build": "passed",
+    "focusedTestsPassed": 110,
+    "scalarSnapshotTestsPassed": 4,
+    "cases": [
+      "Exact scalar byte-to-hex conversion capacity and one-byte-short failure",
+      "Existing exact aggregate checkpoint allocation test includes envelope/state/output overlap",
+      "Unicode, restore, serialized-size parity and cancellation cleanup tests"
+    ],
+    "defaultTestsPassed": 3076,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61
+  },
+  "remaining": [
+    "Aggregate result projection/output ownership, per-row bookkeeping temporaries and request compatibility serialization still need admission.",
+    "Serialized-size estimation can build legacy unscoped snapshots and needs a separate allocation audit.",
+    "Group-column/spec references borrow query configuration; this change does not bound compiled-plan/configuration storage.",
+    "Reservation units do not certify total runtime heap or native sort internals."
+  ]
+}

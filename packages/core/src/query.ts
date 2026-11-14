@@ -43,7 +43,7 @@ import { parseOwnedJson } from "./owned-json-parse.js";
 import { OwnedReplacementValue } from "./owned-replacement-value.js";
 import { collectOwnedRows } from "./owned-row-collector.js";
 import { detachOwnedRow } from "./owned-row-detachment.js";
-import { snapshotOwnedRows } from "./owned-snapshot-rows.js";
+import { snapshotOwnedRows, snapshotScalarWithAdmission } from "./owned-snapshot-rows.js";
 import {
   type AcceleratorPolicy,
   CpuPhysicalBackend,
@@ -2524,7 +2524,7 @@ export class QueryResult {
         this.stats.rowsReturned += 1;
         enforceBudget(this.config.budget, this.stats, this.config.now, startedAt);
       }
-      const state = aggregateOperatorState(groupColumns, spec, groups);
+      const state = aggregateOperatorState(groupColumns, spec, groups, checkpointScope);
       const checkpoint = checkpointScope.adopt(encodeOwnedCheckpoint(state, checkpointScope));
       const operatorState = checkpoint.value;
       const result: AggregateResult = {
@@ -3538,7 +3538,7 @@ export class QueryResult {
 interface AggregateState {
   add(value: unknown): void;
   finish(): unknown;
-  snapshot(): AggregateStateSnapshot;
+  snapshot(scope?: MemoryScope): AggregateStateSnapshot;
   bufferedMemory?(measureBytes: boolean): { bytes: number; rows: number };
 }
 
@@ -3583,10 +3583,36 @@ class AggregateGroup {
     return { bytes, rows };
   }
 
-  snapshot(key: string): AggregateGroupSnapshot {
-    const states: Record<string, AggregateStateSnapshot> = {};
-    for (const [alias, state] of Object.entries(this.states)) states[alias] = state.snapshot();
-    return { key, keys: snapshotRecord(this.keys), states };
+  snapshot(key: string, scope?: MemoryScope): AggregateGroupSnapshot {
+    const construct = () => {
+      const states: Record<string, AggregateStateSnapshot> = {};
+      for (const alias in this.states) {
+        if (!Object.hasOwn(this.states, alias)) continue;
+        const state = this.states[alias] as AggregateState;
+        const copy = () => {
+          states[alias] = state.snapshot(scope);
+        };
+        if (scope)
+          scope.allocate(
+            allocationCharges.property +
+              allocationCharges.string +
+              alias.length * allocationCharges.stringCodeUnit +
+              allocationCharges.object +
+              4 * allocationCharges.property,
+            "aggregate snapshot state",
+            copy,
+          );
+        else copy();
+      }
+      return { key, keys: snapshotRecord(this.keys, scope), states };
+    };
+    return scope
+      ? scope.allocate(
+          2 * allocationCharges.object + 3 * allocationCharges.property,
+          "aggregate snapshot group",
+          construct,
+        ).value
+      : construct();
   }
 }
 
@@ -4190,8 +4216,12 @@ class FirstState implements AggregateState {
     return this.seen ? this.value : null;
   }
 
-  snapshot(): AggregateStateSnapshot {
-    return { op: "first", seen: this.seen, value: snapshotValue(this.seen ? this.value : null) };
+  snapshot(scope?: MemoryScope): AggregateStateSnapshot {
+    return {
+      op: "first",
+      seen: this.seen,
+      value: snapshotValue(this.seen ? this.value : null, scope),
+    };
   }
 }
 
@@ -4215,14 +4245,22 @@ class LastState implements AggregateState {
     return this.seen ? this.value : null;
   }
 
-  snapshot(): AggregateStateSnapshot {
-    return { op: "last", seen: this.seen, value: snapshotValue(this.seen ? this.value : null) };
+  snapshot(scope?: MemoryScope): AggregateStateSnapshot {
+    return {
+      op: "last",
+      seen: this.seen,
+      value: snapshotValue(this.seen ? this.value : null, scope),
+    };
   }
 }
 
 class AnyState extends FirstState {
-  override snapshot(): AggregateStateSnapshot {
-    return { op: "any", seen: this.seen, value: snapshotValue(this.seen ? this.value : null) };
+  override snapshot(scope?: MemoryScope): AggregateStateSnapshot {
+    return {
+      op: "any",
+      seen: this.seen,
+      value: snapshotValue(this.seen ? this.value : null, scope),
+    };
   }
 }
 
@@ -4644,15 +4682,32 @@ function aggregateOperatorState(
   groupColumns: string[],
   spec: AggregateSpec,
   groups: Map<string, AggregateGroup>,
+  scope?: MemoryScope,
 ): AggregateOperatorState {
-  return {
-    version: 1,
-    groupColumns: [...groupColumns],
-    spec,
-    groups: [...groups.entries()]
-      .map(([key, group]) => group.snapshot(key))
-      .sort((left, right) => left.key.localeCompare(right.key)),
+  const construct = () => {
+    const snapshots: AggregateGroupSnapshot[] = [];
+    for (const [key, group] of groups) snapshots.push(group.snapshot(key, scope));
+    snapshots.sort((left, right) => left.key.localeCompare(right.key));
+    return { version: 1 as const, groupColumns: [...groupColumns], spec, groups: snapshots };
   };
+  if (!scope) return construct();
+  const scratch = scope.reserve(
+    allocationCharges.array +
+      groups.size * (allocationCharges.arraySlot + allocationCharges.object),
+    "aggregate snapshot sort",
+  );
+  try {
+    return scope.allocate(
+      allocationCharges.object +
+        4 * allocationCharges.property +
+        2 * allocationCharges.array +
+        (groups.size + groupColumns.length) * allocationCharges.arraySlot,
+      "aggregate snapshot envelope",
+      construct,
+    ).value;
+  } finally {
+    scratch.release();
+  }
 }
 
 function validateAggregateOperatorState(value: unknown): AggregateOperatorState {
@@ -4831,13 +4886,37 @@ function isAggregateExpr(value: unknown): value is AggregateExpr {
   return isRecord(value) && typeof value.op === "string";
 }
 
-function snapshotRecord(record: Record<string, unknown>): Record<string, AggregateSnapshotValue> {
+function snapshotRecord(
+  record: Record<string, unknown>,
+  scope?: MemoryScope,
+): Record<string, AggregateSnapshotValue> {
+  if (scope) {
+    const out = scope.allocate(
+      allocationCharges.object,
+      "aggregate snapshot keys",
+      () => Object.create(null) as Record<string, AggregateSnapshotValue>,
+    ).value;
+    for (const key in record) {
+      if (!Object.hasOwn(record, key)) continue;
+      scope.allocate(
+        allocationCharges.property +
+          allocationCharges.string +
+          key.length * allocationCharges.stringCodeUnit,
+        "aggregate snapshot key",
+        () => {
+          out[key] = snapshotValue(record[key], scope);
+        },
+      );
+    }
+    return out;
+  }
   const out: Record<string, AggregateSnapshotValue> = {};
   for (const [key, value] of Object.entries(record)) out[key] = snapshotValue(value);
   return out;
 }
 
-function snapshotValue(value: unknown): AggregateSnapshotValue {
+function snapshotValue(value: unknown, scope?: MemoryScope): AggregateSnapshotValue {
+  if (scope) return snapshotScalarWithAdmission(value, scope);
   const safe = jsonSafeValue(value);
   if (
     safe === null ||

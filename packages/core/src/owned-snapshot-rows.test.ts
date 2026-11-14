@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import { jsonSafeValue } from "./evaluator.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope } from "./memory-scope.js";
-import { snapshotOwnedRows } from "./owned-snapshot-rows.js";
+import { snapshotOwnedRows, snapshotScalarWithAdmission } from "./owned-snapshot-rows.js";
 
 it("owns snapshot scalar conversions and safely preserves own prototype keys", () => {
   const row = {
@@ -55,5 +55,21 @@ it("rejects nested and cyclic values before normalization and releases partial s
     );
     expect(pool.usedBytes).toBe(0);
     scope.dispose();
+  }
+});
+
+it("admits scalar byte conversion at exact capacity before constructing text", () => {
+  const input = new Uint8Array(128).fill(255);
+  const measured = new MemoryBudget(65536);
+  const scope = new MemoryScope(measured);
+  expect(snapshotScalarWithAdmission(input, scope)).toBe("ff".repeat(128));
+  const required = measured.peakBytes;
+  scope.dispose();
+  for (const cap of [required - 1, required]) {
+    const target = new MemoryScope(new MemoryBudget(cap));
+    if (cap < required) expect(() => snapshotScalarWithAdmission(input, target)).toThrow(/budget/i);
+    else expect(snapshotScalarWithAdmission(input, target)).toBe("ff".repeat(128));
+    target.dispose();
+    expect(target.budget.usedBytes).toBe(0);
   }
 });

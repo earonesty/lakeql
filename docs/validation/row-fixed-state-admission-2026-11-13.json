@@ -18,9 +18,10 @@
     "workerTestsPassed": 61
   },
   "remaining": [
-    "First/last/any snapshot scalar conversion and snapshot record construction still require separate admission.",
-    "Outer group snapshots, result projection and bookkeeping temporaries remain outstanding.",
+    "Final first/last/any scalar conversion and snapshot records are now admitted (linked evidence); legacy estimation remains separate.",
+    "Final outer aggregate snapshots are now admitted; result projection and bookkeeping remain outstanding.",
     "The borrowed-data detachment contract excludes accessors/custom unsupported prototypes; no arbitrary executable input contract is implied.",
     "Memory accounting is conservative ownership, not a portable total-heap cap."
-  ]
+  ],
+  "snapshotEvidence": "row-aggregate-snapshot-admission-2026-11-13.json"
 }

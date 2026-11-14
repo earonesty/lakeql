@@ -36,26 +36,11 @@ export function snapshotOwnedRows(
       for (const key in row) {
         if (!Object.hasOwn(row, key)) continue;
         const value = row[key];
-        let bytes = 0;
-        if (typeof value === "string") bytes = c.string + value.length * c.stringCodeUnit;
-        else if (isIntervalValue(value)) bytes = intervalStringAllocationBytes(value);
-        else if (
-          typeof value === "bigint" ||
-          value instanceof Uint8Array ||
-          isDecimalValue(value) ||
-          isTimestampValue(value)
-        )
-          bytes = scalarStringAllocationBytes(value);
-        else if (value !== null && typeof value !== "number" && typeof value !== "boolean")
-          throw new LakeqlError(
-            "LAKEQL_TYPE_ERROR",
-            "Aggregate operator state values must be JSON scalars",
-          );
         scope.allocate(
-          c.property + c.string + key.length * c.stringCodeUnit + bytes,
+          c.property + c.string + key.length * c.stringCodeUnit,
           "snapshot scalar property",
           () => {
-            record[key] = jsonSafeValue(value) as SnapshotScalar;
+            record[key] = snapshotScalarWithAdmission(value, scope);
           },
         );
       }
@@ -65,4 +50,27 @@ export function snapshotOwnedRows(
   } finally {
     scope.dispose();
   }
+}
+
+export function snapshotScalarWithAdmission(value: unknown, scope: MemoryScope): SnapshotScalar {
+  let bytes = 0;
+  if (typeof value === "string") bytes = c.string + value.length * c.stringCodeUnit;
+  else if (isIntervalValue(value)) bytes = intervalStringAllocationBytes(value);
+  else if (
+    typeof value === "bigint" ||
+    value instanceof Uint8Array ||
+    isDecimalValue(value) ||
+    isTimestampValue(value)
+  )
+    bytes = scalarStringAllocationBytes(value);
+  else if (value !== null && typeof value !== "number" && typeof value !== "boolean")
+    throw new LakeqlError(
+      "LAKEQL_TYPE_ERROR",
+      "Aggregate operator state values must be JSON scalars",
+    );
+  return scope.allocate(
+    bytes,
+    "snapshot scalar conversion",
+    () => jsonSafeValue(value) as SnapshotScalar,
+  ).value;
 }
