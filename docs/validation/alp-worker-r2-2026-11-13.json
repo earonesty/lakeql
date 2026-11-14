@@ -21,5 +21,6 @@
     "Reservation limits are not a complete JavaScript heap cap.",
     "No production code changed in this checkpoint; default suite baseline remains 3119 passed and 629 skipped.",
     "Four BSON/Brotli conformance failures remain unresolved."
-  ]
+  ],
+  "followupEvidence": "bson-framing-2026-11-13.json"
 }

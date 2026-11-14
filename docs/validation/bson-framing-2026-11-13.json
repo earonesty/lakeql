@@ -1,0 +1,26 @@
+{
+  "status": "Bounded framing primitive implemented; logical BSON decoding and reader integration remain open",
+  "specification": "https://bsonspec.org/spec.html",
+  "change": "validateBsonFraming validates document/scalar/string/binary/code-scope extents through an explicit, admitted traversal stack. It does not recursively call itself, decode strings or construct logical values. Every frame reservation is released on success, malformed input or budget denial. Arrays require canonical sequential integer keys.",
+  "validation": {
+    "build": "passed",
+    "focusedTestsPassed": 4,
+    "cases": [
+      "Two non-null BSON payloads extracted from the real Parquet fixture through physical PLAIN decoding",
+      "All BSON wire types, including deprecated values, old binary subtype lengths and code-with-scope documents",
+      "Every truncated prefix of each constructed valid wire-type document",
+      "Malformed array indices, booleans, binary lengths, code scopes, type zero and trailing bytes",
+      "5000 nested documents; exact measured traversal cap succeeds, one byte less and 1024-byte cap reject; all cases release usage to zero"
+    ]
+  },
+  "remaining": [
+    "Logical decoder must preserve full BSON type distinctions, int64 precision, decimal128 payloads, binary subtypes and timestamps; a three-row fixture alone does not prove that contract.",
+    "UTF-8 validation and duplicate-key handling must be explicit during conversion; framing does not decode field names.",
+    "Integrate framing with output admission and shared public/owned logical conversion without a query-specific fixture branch.",
+    "Four BSON/Brotli conformance failures remain open. This helper is not yet called by production readers."
+  ],
+  "limits": [
+    "Stack reservations use explicit allocation units, not a total VM heap measure.",
+    "No broader release or Worker acceptance claim is added by these isolated primitive tests."
+  ]
+}
