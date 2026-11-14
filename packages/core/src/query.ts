@@ -4967,9 +4967,21 @@ async function sortRunsFromState(
         },
       );
     }
-    runs.push(
-      deserializeSortRunRows(await readCheckpointSpill(options.spill, run.spillRef, scope), scope),
-    );
+    const bytes = await readCheckpointSpill(options.spill, run.spillRef, scope);
+    if (bytes.byteLength !== run.byteSize)
+      throw new LakeqlError("LAKEQL_BOOKMARK_INVALID", "Sort spill byte size changed", {
+        spillRef: run.spillRef,
+        expected: run.byteSize,
+        actual: bytes.byteLength,
+      });
+    const rows = deserializeSortRunRows(bytes, scope);
+    if (rows.length !== run.rowCount)
+      throw new LakeqlError("LAKEQL_BOOKMARK_INVALID", "Sort spill row count changed", {
+        spillRef: run.spillRef,
+        expected: run.rowCount,
+        actual: rows.length,
+      });
+    runs.push(rows);
   }
   return runs;
 }
@@ -5329,10 +5341,10 @@ function isSortRunState(value: unknown): value is SortRunState {
     typeof value.spillRef === "string" &&
     value.spillRef.length > 0 &&
     typeof value.rowCount === "number" &&
-    Number.isInteger(value.rowCount) &&
+    Number.isSafeInteger(value.rowCount) &&
     value.rowCount >= 0 &&
     typeof value.byteSize === "number" &&
-    Number.isInteger(value.byteSize) &&
+    Number.isSafeInteger(value.byteSize) &&
     value.byteSize >= 0
   );
 }

@@ -1,0 +1,27 @@
+{
+  "baseCommit": "2088358",
+  "acceptanceItems": ["F2", "M2", "V2"],
+  "change": "Verify spill run byte size before parse and row count before merge; require safe descriptor integers",
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 15,
+    "fullSuite": {
+      "passed": 3723,
+      "skipped": 629,
+      "filesPassed": 408
+    }
+  },
+  "proof": [
+    "Changed run bytes rejected",
+    "Incorrect row count rejected",
+    "Unsafe counts/extents rejected",
+    "Valid continuation preserves sorted output",
+    "Rejections release scope charges and do not invoke scanners",
+    "Real HTTP206/200 Parquet fixture rejects bad descriptor before new data requests"
+  ],
+  "limitations": [
+    "Memory spill fixtures do not prove remote atomicity",
+    "Equal-size equal-count content changes require stronger version/integrity evidence"
+  ]
+}

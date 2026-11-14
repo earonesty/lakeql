@@ -1,13 +1,13 @@
 import { createServer } from "node:http";
 import { parquetWriteBuffer } from "hyparquet-writer";
-import { MemoryBudget } from "lakeql-core";
+import { MemoryBudget, memorySpillAdapter } from "lakeql-core";
 import { expect, it } from "vitest";
 import { HttpObjectStore } from "../../http/src/index.js";
 import { createParquetLake } from "./index.js";
 
 it.each([
   206, 200,
-])("rejects an oversized restored group set before HTTP %i reads", async (status) => {
+])("validates aggregate and sort checkpoint restore before HTTP %i reads", async (status) => {
   const bytes = Buffer.from(
     parquetWriteBuffer({
       columnData: [
@@ -97,6 +97,25 @@ it.each([
         operatorState: buffered.operatorState,
       }),
     ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+    expect(requests).toBe(0);
+    expect(pool.usedBytes).toBe(0);
+    const spill = memorySpillAdapter();
+    const sorted = await lake
+      .path("fixture.parquet")
+      .orderBy([{ column: "value" }])
+      .sortWithState({ spill, spillId: "sorted" });
+    const sortState = JSON.parse(new TextDecoder().decode(sorted.operatorState as Uint8Array));
+    sortState.runs[0].rowCount++;
+    requests = 0;
+    await expect(
+      lake
+        .path("fixture.parquet")
+        .orderBy([{ column: "value" }])
+        .sortWithState({
+          spill,
+          operatorState: new TextEncoder().encode(JSON.stringify(sortState)),
+        }),
+    ).rejects.toMatchObject({ code: "LAKEQL_BOOKMARK_INVALID" });
     expect(requests).toBe(0);
     expect(pool.usedBytes).toBe(0);
   } finally {

@@ -35,6 +35,8 @@ F1 malformed-restore follow-up: [validation](validation/aggregate-duplicate-rest
 F1 restore-lifetime follow-up: [validation](validation/aggregate-restore-scratch-lifetime-2026-11-14.json). Parsed checkpoint/spill buffers now release before scanning; restored keys have independent ownership. Inline/spill tests show unchanged scanner-entry memory despite 64 KiB extra checkpoint data. Build/typecheck and 3,716 tests passed (629 skipped).
 
 F3 discovery-lifetime follow-up: [validation](validation/topk-restore-before-discovery-2026-11-14.json). Top-k now releases checkpoint scratch before metadata discovery; sort already releases it before planning. Build/typecheck and 3,718 tests passed (629 skipped).
+
+F2 sort-spill follow-up: [validation](validation/sort-restore-extent-2026-11-14.json). Run byte sizes and row counts are checked before merge/new scanning; unsafe descriptors are rejected. Build/typecheck and 3,723 tests passed (629 skipped). Remote spill atomicity remains unproven.
 Current release checks (source `246b165`):
 `docs/validation/current-cache-ownership-release-gates-2026-11-14.json`.
 

@@ -4301,3 +4301,11 @@ The analogous continuation review found that sort already detaches restored rows
 Twenty row top-k memory tests pass, including new inline/spilled continuation fixtures. A checkpoint with 64 KiB of extra unused data has a larger restore peak but the same live pool usage at the metadata `head` callback as an ordinary checkpoint. Both continuations return the same selected row and release all reservations. This is a deterministic ownership-boundary check, not a production cloud memory measurement; real transport regressions remain part of the full suite.
 
 Final verification: build/typecheck/formatting passed; full suite 3,718 passed / 629 skipped (407 files). Evidence: `topk-restore-before-discovery-2026-11-14.json`.
+
+### F2 sort spill extent validation (2026-11-14)
+
+Sort checkpoint descriptors carried `byteSize` and `rowCount`, but restoration did not compare either with the loaded run. Restore now verifies byte size before JSON parsing and row count before retaining the decoded run for merge. Descriptor counts/extents must be safe nonnegative integers. Mismatches produce `LAKEQL_BOOKMARK_INVALID` before new scanning; owned read/parse scopes still unwind on rejection.
+
+Fifteen focused sort restore/transaction tests pass. New cases cover changed/truncated run bytes, mismatched row counts, unsafe descriptor integers, valid resumed ordering, no scanner invocation on rejection, and zero remaining pool usage. The real Parquet HTTP fixture now also verifies a bad sort-run descriptor prevents new data requests for both 206 and ignored-range 200 servers. Spill storage in these fixtures is the memory adapter: this proves extent validation and query transport separation, not production remote spill atomicity or detection of same-size/same-count content changes.
+
+Final verification: build/typecheck/formatting passed; full suite 3,723 passed / 629 skipped (408 files). Evidence: `sort-restore-extent-2026-11-14.json`.
