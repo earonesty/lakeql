@@ -87,46 +87,56 @@ it.each(
           .filter((row) => row.text === "dictionary text 1 猫")
           .map((row) => (projection ? { ...row, projected: "accepted text 1 猫" } : row));
         await Promise.all(
-          ["batches", "aggregate", "ordered", "topK", "sort"].map(async (route) => {
-            let query = lake
-              .path("brotli.parquet")
-              .where(
-                projection
-                  ? {
-                      kind: "compare",
-                      op: "eq",
-                      left: { kind: "column", name: "text" },
-                      right: { kind: "literal", value: "dictionary text 1 猫" },
-                    }
-                  : predicate,
-              )
-              .batchSize(32);
-            if (projection) query = query.project({ projected: predicate.left });
-            if (["ordered", "topK", "sort"].includes(route))
-              query = query.orderBy([{ column: "id" }]);
-            if (route === "topK") query = query.limit(2);
-            const result = query.run();
-            const output =
-              route === "aggregate"
-                ? result
-                    .aggregateWithState([], { count: { op: "count" } })
-                    .then((value) => value.rows)
-                : route === "topK"
-                  ? result.topKWithState().then((value) => value.rows)
-                  : route === "sort"
-                    ? result.sortWithState().then((value) => value.rows)
-                    : result.toArray();
-            if (expand)
-              await expect(output).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
-            else
-              expect(await output).toEqual(
+          ["batches", "aggregate", "ordered", "topK", "sort", "distinct", "orderedDistinct"].map(
+            async (route) => {
+              let query = lake
+                .path("brotli.parquet")
+                .where(
+                  projection
+                    ? {
+                        kind: "compare",
+                        op: "eq",
+                        left: { kind: "column", name: "text" },
+                        right: { kind: "literal", value: "dictionary text 1 猫" },
+                      }
+                    : predicate,
+                )
+                .batchSize(32);
+              if (projection) query = query.project({ projected: predicate.left });
+              if (["ordered", "topK", "sort", "orderedDistinct"].includes(route))
+                query = query.orderBy([{ column: "id" }]);
+              if (route === "topK") query = query.limit(2);
+              if (route === "distinct" || route === "orderedDistinct")
+                query = query.select(["text"]).distinct();
+              const result = query.run();
+              const output =
                 route === "aggregate"
-                  ? [{ count: selected.length }]
+                  ? result
+                      .aggregateWithState([], { count: { op: "count" } })
+                      .then((value) => value.rows)
                   : route === "topK"
-                    ? selected.slice(0, 2)
-                    : selected,
-              );
-          }),
+                    ? result.topKWithState().then((value) => value.rows)
+                    : route === "sort"
+                      ? result.sortWithState().then((value) => value.rows)
+                      : result.toArray();
+              if (expand)
+                await expect(output).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+              else
+                expect(await output).toEqual(
+                  route === "distinct" || route === "orderedDistinct"
+                    ? [
+                        projection
+                          ? { text: "dictionary text 1 猫", projected: "accepted text 1 猫" }
+                          : { text: "dictionary text 1 猫" },
+                      ]
+                    : route === "aggregate"
+                      ? [{ count: selected.length }]
+                      : route === "topK"
+                        ? selected.slice(0, 2)
+                        : selected,
+                );
+            },
+          ),
         );
       }
       expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);

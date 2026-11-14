@@ -81,6 +81,7 @@ import {
   validateSortRow,
   valueForColumn,
 } from "./query-sort.js";
+import { RowDistinctSet } from "./row-distinct-set.js";
 import type {
   CacheAdapter,
   MetricsHook,
@@ -912,7 +913,8 @@ export class QueryResult {
       const startedAt = config.now();
       let offsetSkipped = 0;
       let returned = 0;
-      const distinct = config.distinct === true ? new Set<string>() : undefined;
+      const distinct =
+        config.distinct === true ? createRowDistinct(predicateScope, config.budget) : undefined;
       const { planned: paths, skipped: skippedFiles } = await this.planObjects();
       stats.filesSkipped = skippedFiles;
       const columns = projectedReadColumns(
@@ -967,8 +969,7 @@ export class QueryResult {
                 const projection = batchScope.childScope();
                 try {
                   const projected = project(row, config.select, config.projections, projection);
-                  if (distinct !== undefined && !addDistinctRow(distinct, projected, config.budget))
-                    continue;
+                  if (distinct !== undefined && !distinct.add(projected)) continue;
                   if (offsetSkipped < (config.offset ?? 0)) {
                     offsetSkipped += 1;
                     continue;
@@ -1033,7 +1034,7 @@ export class QueryResult {
       batchExecution: {
         project,
         compareRows,
-        addDistinctRow,
+        createDistinct: createRowDistinct,
         vectorExprSupported,
       },
     };
@@ -1079,7 +1080,6 @@ export class QueryResult {
     const config = this.config;
     return (
       config.orderBy === undefined &&
-      config.distinct !== true &&
       config.hive !== true &&
       (config.windows === undefined || Object.keys(config.windows).length === 0) &&
       config.qualify === undefined &&
@@ -1091,7 +1091,6 @@ export class QueryResult {
     const config = this.config;
     return (
       config.orderBy !== undefined &&
-      config.distinct !== true &&
       config.hive !== true &&
       (config.windows === undefined || Object.keys(config.windows).length === 0) &&
       config.qualify === undefined
@@ -2732,13 +2731,13 @@ export class QueryResult {
       let batch = newBatch();
       let offsetSkipped = 0;
       let returned = 0;
-      const distinct = config.distinct === true ? new Set<string>() : undefined;
+      const distinct =
+        config.distinct === true ? createRowDistinct(retainedScope, config.budget) : undefined;
       for (const row of matched) {
         const projection = batchScope.childScope();
         try {
           const projected = project(row, config.select, config.projections, projection);
-          if (distinct !== undefined && !addDistinctRow(distinct, projected, config.budget))
-            continue;
+          if (distinct !== undefined && !distinct.add(projected)) continue;
           if (offsetSkipped < (config.offset ?? 0)) {
             offsetSkipped += 1;
             continue;
@@ -6110,21 +6109,11 @@ function projectRowRange(
   ).value;
 }
 
-const distinctBufferMemory = new WeakMap<Set<string>, BufferMemory<string>>();
-
-function addDistinctRow(seen: Set<string>, row: Row, budget: QueryBudget): boolean {
-  const key = stableStringify(jsonSafeValue(row));
-  if (seen.has(key)) return false;
-  let memory = distinctBufferMemory.get(seen);
-  if (budget.maxMemoryBytes !== undefined && memory === undefined) {
-    memory = new BufferMemory<string>((value) => estimateOperatorMemoryBytes([value]) - 2, seen);
-    distinctBufferMemory.set(seen, memory);
-  }
-  seen.add(key);
-  memory?.add(key);
-  enforceBufferedRowsBudget(budget, seen.size);
-  if (memory !== undefined) enforceOperatorMemoryBudget(budget, memory.bytes);
-  return true;
+function createRowDistinct(scope: MemoryScope, budget: QueryBudget): RowDistinctSet {
+  return new RowDistinctSet(scope, (rows, bytes) => {
+    enforceBufferedRowsBudget(budget, rows);
+    enforceOperatorMemoryBudget(budget, bytes);
+  });
 }
 
 export function parseHivePartitions(path: string): Record<string, string> {

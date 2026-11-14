@@ -34,5 +34,6 @@
     "DISTINCT, hive, windows, borrowed references, partition merging, source input allocations and remaining scalar internals still need their complete ownership contracts.",
     "Reservation bounds are not a total Worker heap or production Cloudflare memory certification.",
     "The entire release checklist is still open; older release gate results must not be attributed to this revision."
-  ]
+  ],
+  "followupEvidence": "docs/validation/row-distinct-ownership-2026-11-13.json"
 }

@@ -185,7 +185,7 @@ function runnerOptions(
               select.filter((column) => column in row).map((column) => [column, row[column]]),
             ),
       compareRows: () => 0,
-      addDistinctRow: () => true,
+      createDistinct: () => ({ add: () => true }),
       vectorExprSupported: () => false,
     },
   } satisfies WindowRunnerOptions;

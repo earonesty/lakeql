@@ -1,5 +1,6 @@
 import { matches } from "./evaluator.js";
-import type { MemoryBudget } from "./memory-budget.js";
+import { MemoryBudget } from "./memory-budget.js";
+import { MemoryScope } from "./memory-scope.js";
 import type { PathQueryInit, QueryBudget } from "./query.js";
 import type { QueryStats, Row } from "./types.js";
 
@@ -21,7 +22,7 @@ export interface WindowBatchExecutionOptions {
     projections: PathQueryInit["projections"],
   ) => Row;
   compareRows: (left: Row, right: Row, orderBy: NonNullable<PathQueryInit["orderBy"]>) => number;
-  addDistinctRow: (seen: Set<string>, row: Row, budget: QueryBudget) => boolean;
+  createDistinct: (scope: MemoryScope, budget: QueryBudget) => { add(row: Row): boolean };
   enforceBudget: (
     budget: QueryBudget,
     stats: QueryStats,
@@ -74,32 +75,38 @@ export async function* postWindowQueryBatches(
     rows.sort((left, right) => options.compareRows(left, right, config.orderBy ?? []));
   }
 
-  const distinct = config.distinct === true ? new Set<string>() : undefined;
-  const batchSize = config.batchSize ?? 4096;
-  let batch: Row[] = [];
-  let offsetSkipped = 0;
-  let returned = 0;
-  for (const row of rows) {
-    const projected = options.project(row, config.select, config.projections);
-    if (distinct !== undefined && !options.addDistinctRow(distinct, projected, config.budget)) {
-      continue;
+  const scope = new MemoryScope(options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER));
+  try {
+    const distinct =
+      config.distinct === true ? options.createDistinct(scope, config.budget) : undefined;
+    const batchSize = config.batchSize ?? 4096;
+    let batch: Row[] = [];
+    let offsetSkipped = 0;
+    let returned = 0;
+    for (const row of rows) {
+      const projected = options.project(row, config.select, config.projections);
+      if (distinct !== undefined && !distinct.add(projected)) {
+        continue;
+      }
+      if (offsetSkipped < (config.offset ?? 0)) {
+        offsetSkipped += 1;
+        continue;
+      }
+      if (config.limit !== undefined && returned >= config.limit) break;
+      batch.push(projected);
+      returned += 1;
+      stats.rowsReturned += 1;
+      options.enforceBudget(config.budget, stats, config.now, startedAt);
+      if (batch.length >= batchSize) {
+        stats.elapsedMs = config.now() - startedAt;
+        yield batch;
+        batch = [];
+      }
     }
-    if (offsetSkipped < (config.offset ?? 0)) {
-      offsetSkipped += 1;
-      continue;
-    }
-    if (config.limit !== undefined && returned >= config.limit) break;
-    batch.push(projected);
-    returned += 1;
-    stats.rowsReturned += 1;
-    options.enforceBudget(config.budget, stats, config.now, startedAt);
-    if (batch.length >= batchSize) {
-      stats.elapsedMs = config.now() - startedAt;
-      yield batch;
-      batch = [];
-    }
+    stats.elapsedMs = config.now() - startedAt;
+    if (batch.length > 0) yield batch;
+    config.metrics?.timing("lakeql.query.elapsed", stats.elapsedMs, { queryId: stats.queryId });
+  } finally {
+    scope.dispose();
   }
-  stats.elapsedMs = config.now() - startedAt;
-  if (batch.length > 0) yield batch;
-  config.metrics?.timing("lakeql.query.elapsed", stats.elapsedMs, { queryId: stats.queryId });
 }
