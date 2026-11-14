@@ -53,6 +53,25 @@ for (const capMiB of [64, 128]) {
         });
         const spec = {
           count: { op: "count" },
+          expressionCount: {
+            op: "count",
+            expr: {
+              kind: "call",
+              fn: "replace",
+              args: [
+                {
+                  kind: "call",
+                  fn: "cast",
+                  args: [
+                    { kind: "column", name: "amount" },
+                    { kind: "literal", value: "string" },
+                  ],
+                },
+                { kind: "literal", value: "1" },
+                { kind: "literal", value: "$`é😀$'" },
+              ],
+            },
+          },
           sum: { op: "sum", column: "amount" },
           median: { op: "median", column: "amount" },
           quantile: { op: "quantile", column: "amount", quantile: 0.5 },
@@ -62,6 +81,7 @@ for (const capMiB of [64, 128]) {
         assert.deepEqual(result.rows, [
           {
             count: 144,
+            expressionCount: values.length,
             sum: values.reduce((a, b) => a + b, 0),
             median,
             quantile: median,
@@ -79,6 +99,7 @@ for (const capMiB of [64, 128]) {
           assert.deepEqual(resumed.rows, [
             {
               count: 288,
+              expressionCount: 2 * values.length,
               sum: 2 * values.reduce((a, b) => a + b, 0),
               median,
               quantile: median,

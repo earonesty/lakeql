@@ -3572,8 +3572,21 @@ class AggregateGroup {
   }
 
   add(row: Row): void {
-    for (const [alias, state] of Object.entries(this.states)) {
-      state.add(aggregateValue(row, alias, stateSpecs.get(state)));
+    for (const alias in this.states) {
+      if (!Object.hasOwn(this.states, alias)) continue;
+      const state = this.states[alias];
+      if (state === undefined) continue;
+      const spec = stateSpecs.get(state);
+      if (spec?.expr === undefined) {
+        state.add(aggregateValue(row, alias, spec, this.scope));
+        continue;
+      }
+      const expressionScope = this.scope.childScope();
+      try {
+        state.add(aggregateValue(row, alias, spec, expressionScope));
+      } finally {
+        expressionScope.dispose();
+      }
     }
   }
 
@@ -5047,12 +5060,17 @@ function snapshotValue(value: unknown, scope?: MemoryScope): AggregateSnapshotVa
   );
 }
 
-function aggregateValue(row: Row, alias: string, aggregate: AggregateExpr | undefined): unknown {
+function aggregateValue(
+  row: Row,
+  alias: string,
+  aggregate: AggregateExpr | undefined,
+  scope: MemoryScope,
+): unknown {
   if (!aggregate) throw new LakeqlError("LAKEQL_VALIDATION_ERROR", `Missing aggregate ${alias}`);
   if (aggregate.op === "count" && aggregate.column === undefined && aggregate.expr === undefined) {
     return true;
   }
-  if (aggregate.expr !== undefined) return evaluate(aggregate.expr, row);
+  if (aggregate.expr !== undefined) return evaluate(aggregate.expr, row, scope);
   if (aggregate.column === undefined) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", `${aggregate.op} requires a column`, { aggregate });
   }

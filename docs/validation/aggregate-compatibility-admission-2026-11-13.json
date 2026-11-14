@@ -20,5 +20,6 @@
     "Small remote fixture validates operation and reuse, not throughput scaling or total Worker heap.",
     "Mutable/accessor/executable data has no immutable stable comparison contract.",
     "Expression/evaluator allocations and additional runtime bookkeeping remain open."
-  ]
+  ],
+  "followupEvidence": "row-expression-admission-2026-11-13.json"
 }

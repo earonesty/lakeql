@@ -1,0 +1,24 @@
+{
+  "status": "Implemented and validated; broader evaluator admission remains open",
+  "change": "Optional MemoryScope propagates through recursive row expressions. Call and IN argument arrays are admitted before construction. Row string casts and replacement reuse the vector-path admission helpers. Aggregate input expressions execute inside a per-value child scope through state consumption, then release temporaries on success or failure. Column-only aggregate updates avoid child scopes and iterate the existing state record without Object.entries arrays.",
+  "validation": {
+    "build": "passed",
+    "focusedTestsPassed": 38,
+    "defaultTestsPassed": 3096,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61,
+    "cases": [
+      "Nested bigint cast and Unicode replacement tokens match native results",
+      "Exact retained extent succeeds; one byte short rejects",
+      "1000 aggregate rows release temporary allocations between inputs",
+      "Expanding replacement rejects during scanning and closes source with zero retained budget"
+    ],
+    "remoteEvidence": "../benchmarks/row-expression-cloud-2026-11-13.json",
+    "remote": "Actual R2 HTTP 206 fixture, four concurrent jobs, cold/warm cache, 64/128 MiB shared pools and 8 MiB query caps. Aggregate expression counts match independent non-null fixture counts before and after checkpoint resume. Peak tracked allocation 424491 bytes; retained cache 5481; eviction zero."
+  },
+  "limits": [
+    "Remaining row scalar operations (including casing, regex, date and spatial operations), comparisons and HAVING/projection call sites still require allocation coverage. Optional scope is not a claim that every evaluator operation is admitted.",
+    "Small remote fixture establishes operation, not throughput improvement or total runtime heap bounds.",
+    "Six previously recorded Parquet conformance failures remain unresolved; this change does not assert release acceptance."
+  ]
+}

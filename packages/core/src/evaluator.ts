@@ -1,10 +1,14 @@
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { compareDecimalOperands } from "./decimal-comparison.js";
 import { decimalToString, isDecimalValue } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
 import type { Expr, Scalar } from "./expr.js";
 import { intervalToString, isIntervalValue } from "./interval.js";
+import type { MemoryScope } from "./memory-scope.js";
 import { setRecordValue } from "./record-value.js";
 import { regexpMatchesValue, regexpReplaceValue } from "./regex-functions.js";
+import { scalarStringWithAdmission } from "./scalar-cast-allocation.js";
+import { replaceAllWithAdmission } from "./string-replacement-allocation.js";
 import { compareTimestampValues, isTimestampValue, timestampValueFromIso } from "./timestamp.js";
 import type { Row } from "./types.js";
 
@@ -132,58 +136,53 @@ export interface BBox {
 
 const textEncoder = new TextEncoder();
 
-export function evaluate(expr: Expr, row: Row): EvalValue {
+export function evaluate(expr: Expr, row: Row, scope?: MemoryScope): EvalValue {
   switch (expr.kind) {
     case "literal":
       return expr.value;
     case "column":
       return rowValue(row, expr.name);
     case "compare":
-      return compare(expr.op, evaluate(expr.left, row), evaluate(expr.right, row));
+      return compare(expr.op, evaluate(expr.left, row, scope), evaluate(expr.right, row, scope));
     case "in": {
-      const target = evaluate(expr.target, row);
-      const result = inList(
-        target,
-        expr.values.map((value) => evaluate(value, row)),
-      );
+      const target = evaluate(expr.target, row, scope);
+      const result = inList(target, evaluateArguments(expr.values, row, scope));
       return expr.negated ? sqlNot(result) : result;
     }
     case "between": {
-      const target = evaluate(expr.target, row);
-      const low = evaluate(expr.low, row);
-      const high = evaluate(expr.high, row);
+      const target = evaluate(expr.target, row, scope);
+      const low = evaluate(expr.low, row, scope);
+      const high = evaluate(expr.high, row, scope);
       return sqlAnd(compare("gte", target, low), compare("lte", target, high));
     }
     case "null-check": {
-      const result = evaluate(expr.target, row) === null;
+      const result = evaluate(expr.target, row, scope) === null;
       return expr.negated ? !result : result;
     }
     case "logical":
       return expr.op === "and"
         ? expr.operands.reduce<SqlBoolean>(
-            (acc, operand) => sqlAnd(acc, toSqlBoolean(evaluate(operand, row))),
+            (acc, operand) => sqlAnd(acc, toSqlBoolean(evaluate(operand, row, scope))),
             true,
           )
         : expr.operands.reduce<SqlBoolean>(
-            (acc, operand) => sqlOr(acc, toSqlBoolean(evaluate(operand, row))),
+            (acc, operand) => sqlOr(acc, toSqlBoolean(evaluate(operand, row, scope))),
             false,
           );
     case "not":
-      return sqlNot(toSqlBoolean(evaluate(expr.operand, row)));
+      return sqlNot(toSqlBoolean(evaluate(expr.operand, row, scope)));
     case "like":
-      return likeMatch(evaluate(expr.target, row), expr.pattern, expr.caseInsensitive);
+      return likeMatch(evaluate(expr.target, row, scope), expr.pattern, expr.caseInsensitive);
     case "call":
-      return callFunction(
-        expr.fn,
-        expr.args.map((arg) => evaluate(arg, row)),
-      );
+      return callFunction(expr.fn, evaluateArguments(expr.args, row, scope), scope);
     case "arithmetic":
-      return arithmetic(expr.op, evaluate(expr.left, row), evaluate(expr.right, row));
+      return arithmetic(expr.op, evaluate(expr.left, row, scope), evaluate(expr.right, row, scope));
     case "case":
       for (const branch of expr.whens) {
-        if (toSqlBoolean(evaluate(branch.when, row)) === true) return evaluate(branch.value, row);
+        if (toSqlBoolean(evaluate(branch.when, row, scope)) === true)
+          return evaluate(branch.value, row, scope);
       }
-      return expr.else === undefined ? null : evaluate(expr.else, row);
+      return expr.else === undefined ? null : evaluate(expr.else, row, scope);
   }
 }
 
@@ -392,7 +391,15 @@ function escapeLikePattern(pattern: string): string {
   return out;
 }
 
-function callFunction(name: string, args: EvalValue[]): EvalValue {
+function evaluateArguments(expressions: Expr[], row: Row, scope?: MemoryScope): EvalValue[] {
+  const build = () => expressions.map((expr) => evaluate(expr, row, scope));
+  return scope === undefined
+    ? build()
+    : scope.allocate(c.array + expressions.length * c.arraySlot, "row expression arguments", build)
+        .value;
+}
+
+function callFunction(name: string, args: EvalValue[], scope?: MemoryScope): EvalValue {
   const fn = name.toLowerCase();
   switch (fn) {
     case "lower":
@@ -404,7 +411,7 @@ function callFunction(name: string, args: EvalValue[]): EvalValue {
     case "substr":
       return substr(args);
     case "replace":
-      return replace(args);
+      return replace(args, scope);
     case "regexp_matches":
       return regexpMatches(args);
     case "regexp_replace":
@@ -415,7 +422,7 @@ function callFunction(name: string, args: EvalValue[]): EvalValue {
       requireArgCount(fn, args, 2);
       return compare("eq", args[0] ?? null, args[1] ?? null) === true ? null : (args[0] ?? null);
     case "cast":
-      return cast(args);
+      return cast(args, scope);
     case "year":
       return datePart(fn, args, (date) => date.getUTCFullYear());
     case "month":
@@ -521,7 +528,7 @@ function substr(args: EvalValue[]): EvalValue {
   return value.slice(start, start + length);
 }
 
-function replace(args: EvalValue[]): EvalValue {
+function replace(args: EvalValue[], scope?: MemoryScope): EvalValue {
   requireArgCount("replace", args, 3);
   const value = args[0] ?? null;
   const search = args[1] ?? null;
@@ -531,7 +538,7 @@ function replace(args: EvalValue[]): EvalValue {
   if (typeof search !== "string" || typeof replacement !== "string") {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "replace() search and replacement must be strings");
   }
-  return value.replaceAll(search, replacement);
+  return replaceAllWithAdmission(value, search, replacement, scope);
 }
 
 function regexpMatches(args: EvalValue[]): EvalValue {
@@ -1314,7 +1321,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function cast(args: EvalValue[]): EvalValue {
+function cast(args: EvalValue[], scope?: MemoryScope): EvalValue {
   requireArgCount("cast", args, 2);
   const value = args[0] ?? null;
   const target = args[1] ?? null;
@@ -1322,7 +1329,7 @@ function cast(args: EvalValue[]): EvalValue {
   if (typeof target !== "string") throwType("cast", "string type name", target ?? null);
   switch (target) {
     case "string":
-      return String(value);
+      return scalarStringWithAdmission(value, scope);
     case "float64":
     case "number": {
       const number = Number(value);
