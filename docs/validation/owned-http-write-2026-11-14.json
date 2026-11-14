@@ -1,0 +1,30 @@
+{
+  "baseCommit": "d73e973",
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "fullSuite": {
+      "passed": 3699,
+      "skipped": 629,
+      "filesPassed": 404
+    },
+    "workerd": {
+      "passed": 78,
+      "files": 22
+    }
+  },
+  "edgeCases": [
+    "Exact capacity and one byte below before fetch",
+    "Subarray copies only visible extent",
+    "Input/copy held through delayed success, HTTP error, network error",
+    "Caller-scope disposal during pending write",
+    "URI/cache/read-control forwarding with real HTTP JSON round trip",
+    "Cache repopulation during pending write",
+    "Pre-aborted controls send no request"
+  ],
+  "limitations": [
+    "Native Fetch and request/header allocations remain external",
+    "Adapters without putOwned retain legacy write accounting",
+    "No total Worker heap cap claimed"
+  ]
+}

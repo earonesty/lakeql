@@ -55,3 +55,9 @@ HTTP store when no pool was explicitly supplied. It does not mutate the source
 store or override explicit pool/cache options. `createParquetLake` uses this
 capability automatically when its cache is enabled, including through supported
 store wrappers.
+
+`putOwned(path, body, options)` admits the adapter's request-body copy through the
+owned body's budget before sending. It copies only the supplied view and retains
+both input and request copy until the response settles. Budget rejection sends no
+request. Native Fetch buffering, request/header objects, and transport internals
+remain outside this payload-copy accounting.

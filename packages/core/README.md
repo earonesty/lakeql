@@ -119,3 +119,10 @@ callbacks are rejected; arbitrary callback allocations cannot be forecast. Input
 must remain immutable during serialization. Plain `set` retains its legacy native
 JSON behavior. Adapter-internal write buffering and copies remain external to the
 owned serialization budget.
+
+Stores may implement `putOwned(path, body, options)` to admit their write copies
+through the supplied immutable body's budget. Ownership is borrowed through
+settlement; stores retaining it must acquire their own handle. URI, cache, and
+read-control wrappers preserve the capability. JSON cache writes prefer it and
+fall back to legacy `put` when absent. This capability accounts for adapter-owned
+copies, not opaque runtime transport storage.

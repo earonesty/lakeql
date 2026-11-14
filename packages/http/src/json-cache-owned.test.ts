@@ -1,5 +1,12 @@
 import { createServer } from "node:http";
-import { MemoryBudget, MemoryScope, ObjectStoreJsonCache } from "lakeql-core";
+import {
+  cachedObjectStore,
+  MemoryBudget,
+  MemoryScope,
+  ObjectStoreJsonCache,
+  uriObjectStore,
+  withObjectStoreReadControls,
+} from "lakeql-core";
 import { expect, it } from "vitest";
 import { HttpObjectStore } from "./index.js";
 
@@ -84,7 +91,13 @@ it("writes owned standard JSON through real HTTP and reads it back", async () =>
       baseUrl: `http://127.0.0.1:${address.port}`,
       maxFullObjectCacheBytes: 0,
     });
-    const cache = new ObjectStoreJsonCache({ store, prefix: "cache" });
+    const wrapped = withObjectStoreReadControls(
+      cachedObjectStore(uriObjectStore(store, { scheme: "s3", authority: "bucket" }), {
+        maxBytes: 0,
+      }),
+      { maxConcurrentReads: 2 },
+    );
+    const cache = new ObjectStoreJsonCache({ store: wrapped, prefix: "s3://bucket/cache" });
     await cache.setOwnedEntry("key", input);
     expect(stored.toString()).toBe(JSON.stringify({ value }));
     scope.dispose();

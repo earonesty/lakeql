@@ -77,6 +77,11 @@ export interface ObjectStore {
     options?: PutOptions,
   ): Promise<void>;
 
+  /** Borrow immutable body ownership through settlement; admit adapter-owned
+   * copies in body.budget. Runtime/transport-internal allocations remain external.
+   */
+  putOwned?(path: string, body: OwnedMemory<Uint8Array>, options?: PutOptions): Promise<void>;
+
   delete(path: string): Promise<void>;
 
   list(prefix: string, options?: ListOptions): AsyncIterable<ObjectInfo>;
@@ -161,6 +166,16 @@ export function uriObjectStore(
     async getRange(path, range) {
       return await store.getRange(normalizeObjectStorePath(path, mappings), range);
     },
+    ...(store.putOwned === undefined
+      ? {}
+      : {
+          putOwned: (path: string, body: OwnedMemory<Uint8Array>, options?: PutOptions) =>
+            (store.putOwned as NonNullable<ObjectStore["putOwned"]>)(
+              normalizeObjectStorePath(path, mappings),
+              body,
+              options,
+            ),
+        }),
     async put(path, body, options) {
       return await store.put(normalizeObjectStorePath(path, mappings), body, options);
     },
@@ -278,6 +293,14 @@ function controlledObjectStore(
     get: (path) => controlledRead(normalized, semaphore, () => store.get(path)),
     getRange: (path, range) =>
       controlledRead(normalized, semaphore, () => store.getRange(path, range)),
+    ...(store.putOwned === undefined
+      ? {}
+      : {
+          putOwned: (path: string, body: OwnedMemory<Uint8Array>, options?: PutOptions) => {
+            throwIfAborted(normalized.signal);
+            return (store.putOwned as NonNullable<ObjectStore["putOwned"]>)(path, body, options);
+          },
+        }),
     put: (path, body, options) => {
       throwIfAborted(normalized.signal);
       return store.put(path, body, options);

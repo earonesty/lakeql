@@ -207,9 +207,28 @@ export class HttpObjectStore implements ObjectStore {
     body: Uint8Array | ReadableStream<Uint8Array>,
     options?: PutOptions,
   ): Promise<void> {
+    await this.putBody(path, bodyInit(body), options);
+  }
+
+  async putOwned(path: string, body: OwnedMemory<Uint8Array>, options?: PutOptions): Promise<void> {
+    const scope = new MemoryScope(body.budget);
+    try {
+      const input = scope.adopt(body.retain()).value;
+      const copy = scope.allocate(c.view + input.byteLength, "HTTP write body copy", () => {
+        const bytes = new Uint8Array(input.byteLength);
+        bytes.set(input);
+        return bytes;
+      });
+      await this.putBody(path, copy.value.buffer as ArrayBuffer, options);
+    } finally {
+      scope.dispose();
+    }
+  }
+
+  private async putBody(path: string, body: BodyInit, options?: PutOptions): Promise<void> {
     const headers = new Headers(this.headers);
     if (options?.contentType) headers.set("content-type", options.contentType);
-    const response = await this.fetchPath(path, { method: "PUT", headers, body: bodyInit(body) });
+    const response = await this.fetchPath(path, { method: "PUT", headers, body });
     await assertOk(response, path);
     this.fullObjectCache.delete(path);
     await discardResponse(response);

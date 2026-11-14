@@ -2,7 +2,7 @@ import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { isLakeqlError, LakeqlError } from "./errors.js";
 import type { MemoryBudget, MemoryReservation } from "./memory-budget.js";
 import type { MemoryScope, OwnedMemory } from "./memory-scope.js";
-import type { ListOptions, ObjectHead, ObjectInfo, ObjectStore } from "./store.js";
+import type { ListOptions, ObjectHead, ObjectInfo, ObjectStore, PutOptions } from "./store.js";
 
 export interface ObjectStoreCacheOptions {
   /** Maximum cached payload and retained entry metadata bytes. Defaults to 64 MiB. */
@@ -355,6 +355,15 @@ export function cachedObjectStore(
       set(key, { kind: "range", path, value });
       return value;
     },
+    ...(inner.putOwned === undefined
+      ? {}
+      : {
+          async putOwned(path: string, body: OwnedMemory<Uint8Array>, options?: PutOptions) {
+            invalidatePath(path);
+            await (inner.putOwned as NonNullable<ObjectStore["putOwned"]>)(path, body, options);
+            invalidatePath(path);
+          },
+        }),
     async put(path, body, putOptions) {
       invalidatePath(path);
       await inner.put(path, body, putOptions);

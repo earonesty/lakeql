@@ -155,8 +155,9 @@ export class ObjectStoreJsonCache<T> implements CacheAdapter<T> {
       })).value;
       const bytes = scope.adopt(encodeOwnedJsonOutput(stored, scope, {}, "standard"));
       // The serialized backing remains owned through asynchronous transport.
-      // Adapter-internal write buffering remains an external allocation boundary.
-      await this.store.put(path, bytes.value, options);
+      // Capable adapters admit their own copies; legacy/runtime buffering remains external.
+      if (this.store.putOwned !== undefined) await this.store.putOwned(path, bytes, options);
+      else await this.store.put(path, bytes.value, options);
     } finally {
       scope.dispose();
     }

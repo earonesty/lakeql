@@ -17,6 +17,8 @@ Current JSON runtime checks: [Worker and coverage evidence](validation/json-work
 Direct JSON cursor follow-up: [benchmark](validation/json-cursor-benchmark-2026-11-14.json). Array traversal avoids iterator-result allocation; row-array median is 0.54 ms versus 0.35 ms recursively (about 1.55×, still open). Build/typecheck, 3,683 regular tests (629 skipped), and 78 Worker tests passed.
 
 Owned cache-write follow-up: [validation](validation/owned-standard-json-cache-write-2026-11-14.json), [query benchmark](validation/json-standard-mode-benchmark-2026-11-14.json). Standard JSON serialization is now admitted through write settlement for immutable data values; custom conversion callbacks are rejected. Adapter-internal write buffering remains external. Build/typecheck, 3,693 tests (629 skipped), and 78 Worker tests passed.
+
+Owned HTTP transport follow-up: [validation](validation/owned-http-write-2026-11-14.json). `putOwned` now admits HTTP payload copies and survives URI/cache/control composition. Build/typecheck, 3,699 tests (629 skipped), and 78 Worker tests passed. Native Fetch/request-header allocations and legacy adapters remain external.
 Current release checks (source `246b165`):
 `docs/validation/current-cache-ownership-release-gates-2026-11-14.json`.
 

@@ -4228,3 +4228,13 @@ Validation includes byte-for-byte comparison with native JSON.stringify for ordi
 The query kernel benchmark remains similar after adding the standard mode: medians small-row 0.0102 ms vs recursive 0.0102; wide-numbers 2.07 vs 2.17; row-array 0.57 vs 0.34; deep iterative 21.53 ms while recursion fails. Raw evidence `json-standard-mode-benchmark-2026-11-14.json` records base ff4f0c4 and built-module hashes. The shallow row-array performance gap remains open.
 
 Final verification: build/typecheck/formatting passed; full suite 3,693 passed / 629 skipped (402 files), workerd 78 passed (22 files). Evidence: `owned-standard-json-cache-write-2026-11-14.json`.
+
+### Owned write transport and HTTP payload-copy accounting (2026-11-14)
+
+Added optional `ObjectStore.putOwned(path, body, options)`: a borrowed immutable byte owner supplies the budget for adapter-controlled copies and remains valid until settlement. URI, raw-cache, and read-control wrappers forward the capability while preserving normalized paths, pre-abort checks, and before/after-write cache invalidation. Owned JSON cache writes select this capability when present and retain legacy compatibility otherwise.
+
+HTTP now shares write response handling between plain and owned methods. Its owned method retains the input and admits the explicit request-body copy before allocation/sending, copying only the visible view rather than the entire backing buffer. It holds both through successful, HTTP-error, or network-error settlement and then releases them. Successful/error response cleanup remains shared. This closes the known HTTP body-copy gap; request/header allocations, native Fetch copies, opaque network storage, and adapters without owned writes remain external boundaries.
+
+Focused tests prove exact-budget admission and one-byte-below rejection before any fetch, subarray extent handling, delayed lifetime after caller-scope disposal, cleanup for success/HTTP/network errors, wrapper path forwarding, pre-aborted controls, and invalidation of cache entries repopulated during a pending write. A real localhost JSON cache PUT/GET now exercises the URI/cache/read-control chain and owned HTTP write path.
+
+Final verification: build/typecheck/formatting passed; full suite 3,699 passed / 629 skipped (404 files), workerd 78 passed (22 files). Evidence: `owned-http-write-2026-11-14.json`.
