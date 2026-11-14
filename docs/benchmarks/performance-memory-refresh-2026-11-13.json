@@ -1,0 +1,59 @@
+{
+  "baseline": "b54d4ed",
+  "node": "v24.18.1",
+  "method": "one warmup, median of three; output parity asserted; kernel-only timings",
+  "results": [
+    {
+      "kernel": "budgeted-group-by",
+      "rows": 2000,
+      "beforeMs": 68.973,
+      "afterMs": 2.667
+    },
+    {
+      "kernel": "budgeted-group-by",
+      "rows": 5000,
+      "beforeMs": 404.865,
+      "afterMs": 5.628
+    },
+    {
+      "kernel": "budgeted-group-by",
+      "rows": 10000,
+      "beforeMs": 1603.849,
+      "afterMs": 5.362
+    },
+    {
+      "kernel": "row-top-k",
+      "rows": 20000,
+      "k": 1000,
+      "beforeMs": 213.387,
+      "afterMs": 5.465
+    },
+    {
+      "kernel": "range-frame-endpoints",
+      "rows": 10000,
+      "beforeMs": 147.366,
+      "afterMs": 2.098
+    },
+    {
+      "kernel": "groups-frame-cursors",
+      "rows": 2000,
+      "peersPerGroup": 5,
+      "beforeMs": 65.894,
+      "afterMs": 0.355
+    },
+    {
+      "kernel": "groups-frame-cursors",
+      "rows": 5000,
+      "peersPerGroup": 5,
+      "beforeMs": 540.472,
+      "afterMs": 0.601
+    }
+  ],
+  "testedRevision": "35a040662ee0a84dad89acfb68a9e396777c69cb",
+  "benchmarkScriptSha256": "8f6a6b3c0c109a2da68bc34613a671c178458eaf484e077218ecd98752a620a0",
+  "limitations": [
+    "Kernel-only comparison against b54d4ed. Baseline kernels use current built dependencies; this is not an isolated checkout comparison.",
+    "One warmup and three timed samples; small absolute timings are noisy. Output parity assertions ran before timing.",
+    "Excludes query planning, cloud I/O, full ownership admission, final output retention and total VM heap. No whole-query speedup or Worker memory certification is inferred."
+  ]
+}

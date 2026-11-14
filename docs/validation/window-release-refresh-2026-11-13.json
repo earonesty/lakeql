@@ -1,0 +1,78 @@
+{
+  "requirements": ["F1", "F3", "F4", "V2", "V3"],
+  "status": "Independent reference, conformance, coverage, packaging and kernel performance evidence refreshed; full acceptance remains open",
+  "testedRevision": "35a040662ee0a84dad89acfb68a9e396777c69cb",
+  "gates": {
+    "conformance": {
+      "command": "pnpm test:conformance",
+      "passed": 517,
+      "skipped": 1,
+      "skipReason": "The missing-required-Iceberg-fixtures guard is inactive when reference cases exist; actual external fixture cases ran."
+    },
+    "reference": {
+      "command": "pnpm test:reference",
+      "passed": 104,
+      "scope": "DuckDB comparisons include CLI ranking/distribution, value, aggregate, ROWS/RANGE/GROUPS/qualify windows, plus external Parquet values and dictionary concat. Passing this suite does not cover every memory lifetime."
+    },
+    "coverage": {
+      "command": "pnpm coverage",
+      "passed": 3214,
+      "skipped": 629,
+      "statements": {
+        "percent": 91.02,
+        "covered": 31301,
+        "total": 34387
+      },
+      "branches": {
+        "percent": 85.01,
+        "covered": 22350,
+        "total": 26288
+      },
+      "functions": {
+        "percent": 95.64,
+        "covered": 4938,
+        "total": 5163
+      },
+      "lines": {
+        "percent": 92.9,
+        "covered": 27871,
+        "total": 30000
+      },
+      "thresholdsChanged": false,
+      "exclusionsChanged": false
+    },
+    "build": "pnpm build passed",
+    "cleanNpmConsumer": "pnpm check:packages passed; installed 66 dependencies into the isolated consumer",
+    "lint": "pnpm lint passed after formatting two existing evidence files",
+    "compatibility": "pnpm check:compatibility passed",
+    "fixtureIntegrity": "node scripts/check-fixtures.mjs passed; regenerated fixtures produce no Git changes",
+    "sizeAndChangeset": "pnpm check:large-files and pnpm check:changeset passed",
+    "worker": "75 tests passed in the preceding window-index run on the same production sources; not rerun during this gate refresh"
+  },
+  "performance": {
+    "command": "node bench/performance-memory.mjs",
+    "report": "docs/benchmarks/performance-memory-refresh-2026-11-13.json",
+    "assertions": "All benchmark output-parity checks passed",
+    "selectedMedianMilliseconds": {
+      "rowTopK20kK1k": {
+        "baseline": 213.387,
+        "current": 5.465
+      },
+      "rangeEndpoints10k": {
+        "baseline": 147.366,
+        "current": 2.098
+      },
+      "budgetedGroupBy10k": {
+        "baseline": 1603.849,
+        "current": 5.362
+      }
+    }
+  },
+  "remainingAcceptance": [
+    "F1-F6/M1-M2/V1-V3 remain subject to their complete acceptance matrix; passing gates is not a substitute for missing ownership integration.",
+    "Window backend output rows, computed scalar/collection payloads, sort-group planning metadata, final collection and checkpoint serialization/state parsing remain open.",
+    "Delegated task output ownership and other documented source/operator integration gaps remain open.",
+    "Local HTTP and local workerd/R2 evidence is distinct from production Cloudflare total-memory enforcement. Shared reservation caps do not certify total VM heap.",
+    "These gates must be refreshed again as required after subsequent implementation changes."
+  ]
+}

@@ -1,11 +1,5 @@
 {
-  "requirements": [
-    "M1",
-    "F2",
-    "F3",
-    "V1",
-    "V2"
-  ],
+  "requirements": ["M1", "F2", "F3", "V1", "V2"],
   "status": "Row fallback WHERE temporary admission integrated; broader allocation coverage remains open",
   "finding": "Ordinary row batches, aggregate matchedRows, collectOrderedMatches and collectSortRuns called matches without a scope. Retained row/state ownership did not admit temporary filter string expansion.",
   "change": "Aggregate and ordered collectors pass their existing owning scope to matches. Ordinary fallback batches own one predicate parent scope for the generator lifetime and dispose it on all exits. The shared evaluator creates and disposes each predicate temporary scope before exposing the row, including false results and errors. No copy of accepted input rows is introduced by this filter change. parquetScanner now declares its existing scanRangeCache option in the public type.",

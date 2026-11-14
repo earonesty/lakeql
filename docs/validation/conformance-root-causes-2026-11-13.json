@@ -29,33 +29,16 @@
       "fileBytes": 4325,
       "columns": [
         {
-          "path": [
-            "arr",
-            "key_value",
-            "key"
-          ],
+          "path": ["arr", "key_value", "key"],
           "codec": "BROTLI",
-          "encodings": [
-            "RLE_DICTIONARY",
-            "PLAIN",
-            "RLE",
-            "PLAIN"
-          ],
+          "encodings": ["RLE_DICTIONARY", "PLAIN", "RLE", "PLAIN"],
           "compressedBytes": "3346",
           "uncompressedBytes": "2147483749"
         },
         {
-          "path": [
-            "arr",
-            "key_value",
-            "value"
-          ],
+          "path": ["arr", "key_value", "value"],
           "codec": "BROTLI",
-          "encodings": [
-            "RLE_DICTIONARY",
-            "PLAIN",
-            "RLE"
-          ],
+          "encodings": ["RLE_DICTIONARY", "PLAIN", "RLE"],
           "compressedBytes": "81",
           "uncompressedBytes": "78"
         }

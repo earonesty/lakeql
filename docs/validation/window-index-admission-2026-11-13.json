@@ -41,5 +41,6 @@
     "Sort-group planning metadata, delegated task outputs, final collection and checkpoint encoding/state parsing remain separate open requirements.",
     "Identical-order index reuse and removal of extra run-index copies are structural allocation reductions; no timing speedup or total Worker heap cap is claimed.",
     "The complete acceptance matrix and final release gates remain open."
-  ]
+  ],
+  "followupEvidence": "docs/validation/window-release-refresh-2026-11-13.json"
 }
