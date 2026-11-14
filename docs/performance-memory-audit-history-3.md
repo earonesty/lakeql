@@ -4373,3 +4373,12 @@ Final verification: build/typecheck passed; 30 focused tests, 3,725 regular test
 Added real localhost HTTP fixtures for cancellation before response headers and during a partial two-byte range response. The body case waits for tracked response storage before cancelling, preventing a header-only cancellation from passing that case. Both queue a second metadata read behind the active request, verify that it has not reached the server, dispose the first scope, observe the server response close, and require the second read to return correct object size. Final shared-pool usage is zero.
 
 Both fixtures pass; typecheck and formatting pass. Runtime source remains `9224149`; only test/evidence files changed. Evidence: `docs/validation/owned-head-http-cancellation-2026-11-14.json`. This verifies native Fetch/socket cancellation and slot recovery together on localhost, without establishing production latency, native R2 cancellation, general fairness or whole-runtime memory limits.
+
+
+### M2/V2 R2 metadata cancellation settlement contract (2026-11-14)
+
+Added a workerd fixture over the actual R2 bucket that delays delivery of the first real metadata response. R2's binding interface has no abort signal, so the read-control semaphore must retain the active slot until the call settles; otherwise a cancelled query could increase actual binding concurrency. The fixture disposes the first scope, queues another metadata read, checks that only one binding call has occurred, then releases the gate. The late result must reject with `LAKEQL_ABORTED`; the next reader must return the correct object size and release all tracked storage.
+
+The gate controls response delivery after a real binding call, not the native network itself. This is local Worker settlement/ownership evidence, distinct from HTTP socket abort and production R2 latency. Runtime source is `9224149`; no implementation change is required by this fixture.
+
+Final verification: typecheck and all 82 Worker tests passed. Evidence: `docs/validation/r2-metadata-cancellation-2026-11-14.json`.
