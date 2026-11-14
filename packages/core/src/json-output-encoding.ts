@@ -6,13 +6,15 @@ import { writeJsonInteger } from "./json-integer-output.js";
 import { jsonOutputUtf8Bytes } from "./json-output-size.js";
 import { JsonScalarFormatter } from "./json-scalar-output.js";
 import { isPlainJsonAscii } from "./json-string-size.js";
+import type { MemoryReservation } from "./memory-budget.js";
 import type { MemoryScope, OwnedMemory } from "./memory-scope.js";
 import { isTimestampValue } from "./timestamp.js";
 
 /** Encode immutable JSON-safe values directly into one admitted output buffer.
  * No cloned value tree, complete JSON string, or per-string escaped copy.
- * Scalar formatting reuses one admitted workspace per traversal. Traversal and runtime
- * workspace remain separate from output backing.
+ * Scalar formatting reuses one admitted workspace per traversal. Iterative writing
+ * admits active frames separately from output backing; runtime iterator internals
+ * are not a portable heap measurement.
  */
 export function encodeOwnedJsonOutput(
   value: unknown,
@@ -27,6 +29,9 @@ export function encodeOwnedJsonOutput(
   const bytes = size + prefix.length + suffix.length;
   const construction = scope.childScope();
   const scalar = new JsonScalarFormatter(construction);
+  type Frame = { iterator: Generator<unknown>; closing: number; reservation: MemoryReservation };
+  const frames: Frame[] = [];
+  let traversal: MemoryReservation | undefined;
   try {
     const output = construction.allocate(
       bytes + c.view,
@@ -134,38 +139,55 @@ export function encodeOwnedJsonOutput(
           return;
         }
         case "object": {
-          if (Array.isArray(value)) {
-            byte(91);
-            for (let i = 0; i < value.length; i++) {
-              if (i) byte(44);
-              write(value[i]);
+          traversal ??= construction.reserve(c.array + c.object, "JSON writing traversal");
+          const reservation = construction.reserve(
+            4 * c.object + 8 * c.property + c.arraySlot,
+            "JSON writing frame",
+          );
+          const array = Array.isArray(value);
+          function* children(): Generator<unknown> {
+            if (Array.isArray(value)) {
+              for (let i = 0; i < value.length; i++) {
+                if (i) byte(44);
+                yield value[i];
+              }
+            } else {
+              let first = true;
+              for (const key in value as object) {
+                if (!Object.hasOwn(value as object, key)) continue;
+                const item = (value as Record<string, unknown>)[key];
+                if (absent(item)) continue;
+                if (!first) byte(44);
+                first = false;
+                string(key);
+                byte(58);
+                yield item;
+              }
             }
-            byte(93);
-          } else {
-            byte(123);
-            let first = true;
-            for (const key in value) {
-              if (!Object.hasOwn(value, key)) continue;
-              const item = (value as Record<string, unknown>)[key];
-              if (absent(item)) continue;
-              if (!first) byte(44);
-              first = false;
-              string(key);
-              byte(58);
-              write(item);
-            }
-            byte(125);
           }
+          frames.push({ iterator: children(), closing: array ? 93 : 125, reservation });
+          byte(array ? 91 : 123);
         }
       }
     };
     ascii(prefix);
     write(value);
+    while (frames.length > 0) {
+      const frame = frames[frames.length - 1] as Frame;
+      const next = frame.iterator.next();
+      if (next.done) {
+        byte(frame.closing);
+        frames.pop();
+        frame.reservation.release();
+      } else write(next.value);
+    }
     ascii(suffix);
     if (offset !== bytes)
       throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "JSON value changed during encoding");
     return output.retain();
   } finally {
+    for (const frame of frames) frame.reservation.release();
+    traversal?.release();
     scalar.dispose();
     construction.dispose();
   }

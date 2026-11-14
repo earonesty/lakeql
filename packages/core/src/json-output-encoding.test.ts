@@ -94,19 +94,22 @@ it("rolls back changed extents and rejects unforecastable roots", () => {
 });
 
 it("bounds nested scalar workspace independently of array length", () => {
+  const overheads: number[] = [];
   for (const count of [1000, 10000]) {
     const value = { values: Array.from({ length: count }, (_, i) => i + 0.25) };
     const expected = new TextEncoder().encode(JSON.stringify(value));
-    const pool = new MemoryBudget(expected.length + 512);
+    const pool = new MemoryBudget(expected.length + 4096);
     const scope = new MemoryScope(pool);
     const output = encodeOwnedJsonOutput(value, scope);
     expect(output.value).toEqual(expected);
     expect(pool.peakBytes - output.bytes).toBeGreaterThan(0);
-    expect(pool.peakBytes - output.bytes).toBeLessThan(512);
+    expect(pool.peakBytes - output.bytes).toBeLessThan(4096);
+    overheads.push(pool.peakBytes - output.bytes);
     scope.dispose();
     output.release();
     expect(pool.usedBytes).toBe(0);
   }
+  expect(overheads[0]).toBe(overheads[1]);
 });
 it("rejects nested timestamp formatting before its formatter runs", () => {
   const timestamp = timestampFromEpoch(0n, "nanos");
@@ -165,4 +168,45 @@ it("releases output and temporary formatting when the write-pass formatter fails
   expect(calls).toBe(2);
   expect(scope.budget.usedBytes).toBe(0);
   scope.dispose();
+});
+
+it("encodes 20000 nested containers with exact admitted capacity", () => {
+  let value: unknown = "雪😀";
+  for (let i = 0; i < 20000; i++) value = i % 2 ? { value } : [value];
+  const expected = `${'{"value":['.repeat(10000)}"雪😀"${"]}".repeat(10000)}`;
+  const scope = new MemoryScope(new MemoryBudget(64 * 1024 * 1024));
+  const result = encodeOwnedJsonOutput(value, scope);
+  expect(new TextDecoder().decode(result.value)).toBe(expected);
+  const peak = scope.budget.peakBytes;
+  result.release();
+  scope.dispose();
+  expect(scope.budget.usedBytes).toBe(0);
+  for (const capacity of [peak - 1, peak]) {
+    const exact = new MemoryScope(new MemoryBudget(capacity));
+    if (capacity < peak) expect(() => encodeOwnedJsonOutput(value, exact)).toThrow(/budget/i);
+    else {
+      const encoded = encodeOwnedJsonOutput(value, exact);
+      expect(new TextDecoder().decode(encoded.value)).toBe(expected);
+      encoded.release();
+    }
+    exact.dispose();
+    expect(exact.budget.usedBytes).toBe(0);
+  }
+});
+
+it("admits traversal while the output backing is live and unwinds writer failures", () => {
+  const value = ["x".repeat(4096)];
+  const measured = new MemoryScope(new MemoryBudget(16384));
+  const output = encodeOwnedJsonOutput(value, measured);
+  const peak = measured.budget.peakBytes;
+  expect(peak).toBeGreaterThan(output.bytes);
+  output.release();
+  measured.dispose();
+  for (const capacity of [peak - 1, peak]) {
+    const scope = new MemoryScope(new MemoryBudget(capacity));
+    if (capacity < peak) expect(() => encodeOwnedJsonOutput(value, scope)).toThrow(/budget/i);
+    else encodeOwnedJsonOutput(value, scope).release();
+    scope.dispose();
+    expect(scope.budget.usedBytes).toBe(0);
+  }
 });

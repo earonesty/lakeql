@@ -4168,3 +4168,13 @@ JSON output sizing now uses an explicit depth stack and ancestor tracking rather
 The focused sizing/encoding suites pass 55 tests, including 20,000 nested arrays, exact capacity and one byte below, and cycle cleanup. This establishes deep sizing, not deep encoding: the output writer still uses recursive traversal, and runtime iterator storage is not a measured VM heap cap. Standard cache JSON serialization remains separate because its Date, typed-array, and bigint behavior differs from query output formatting.
 
 Final verification: build and typecheck passed; full suite 3,678 passed / 629 skipped. Three success-fixture budgets increased from 1 KiB to 4 KiB to cover the newly charged traversal; output lifetime assertions and budget-rejection fixtures remain intact. Iterator internals and retained array/set capacity remain runtime headroom concerns rather than measured heap guarantees.
+
+### Iterative owned JSON writing (2026-11-14)
+
+The JSON output writer now traverses containers with explicit admitted frames, removing recursive calls while preserving direct encoding into one pre-admitted UTF-8 backing. Frame reservations overlap the output backing and scalar workspace; completed frames release their reservations, and error cleanup releases all active frames. Object key order, omitted properties, array holes, Unicode escapes, and special query scalar formatting retain the existing contract.
+
+Focused encoding/stream validation: 41 tests passed. New fixtures encode 20,000 alternating object/array levels with a Unicode leaf and compare the actual bytes against independently constructed JSON. Exact-capacity and one-byte-below tests cover both deep sizing and writer/output overlap. The existing 1,000-versus-10,000-element shallow array test now requires identical traversal/scalar overhead, using a 4 KiB allowance for newly admitted frames instead of its prior scalar-only 512 bytes.
+
+These are reservation units, not a total VM heap guarantee: generator internals, retained container capacity, GC, caller-owned values, and stateful mutation remain separate concerns. Standard cache JSON write serialization remains open and cannot reuse query scalar formatting unchanged.
+
+Final verification: build, typecheck, formatting, and full suite passed (3,680 tests / 629 skipped). Two decimal fixtures now allow admitted writer frames in addition to scalar formatting and output backing; their output and release assertions remain intact.

@@ -4,7 +4,9 @@ Current implementation: `docs/validation/default-http-pool-propagation-2026-11-1
 
 HTTP response cleanup follow-up: [validation](validation/http-response-cleanup-2026-11-14.json); build and all 50 HTTP adapter tests passed. Full acceptance remains open.
 
-JSON sizing follow-up: [validation](validation/iterative-json-sizing-2026-11-14.json); iterative admitted traversal, build/typecheck and 3,678 tests passed (629 skipped). Recursive output writing and cache-write serialization remain open.
+JSON sizing follow-up: [validation](validation/iterative-json-sizing-2026-11-14.json); iterative admitted traversal, build/typecheck and 3,678 tests passed (629 skipped). Output writing is also iterative in the follow-up below; cache-write serialization remains open.
+
+JSON writing follow-up: [validation](validation/iterative-json-writing-2026-11-14.json); iterative admitted output writing, build/typecheck and 3,680 tests passed (629 skipped).
 Current release checks (source `246b165`):
 `docs/validation/current-cache-ownership-release-gates-2026-11-14.json`.
 

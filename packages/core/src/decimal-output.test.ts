@@ -67,11 +67,12 @@ it.each([1000, 10000])("reuses bounded decimal formatting across %i values", (co
   const expected = JSON.stringify(Array.from({ length: count }, () => "123456789.987654321"));
   const bytes = new TextEncoder().encode(expected);
   const workspace = decimalFormatAllocationBytes(decimal);
-  const pool = new MemoryBudget(bytes.length + c.view + workspace);
+  const pool = new MemoryBudget(bytes.length + c.view + workspace + 4096);
   const scope = new MemoryScope(pool);
   const output = encodeOwnedJsonOutput(input, scope);
   expect(output.value).toEqual(bytes);
-  expect(pool.peakBytes).toBe(output.bytes + workspace);
+  expect(pool.peakBytes).toBeGreaterThan(output.bytes + workspace);
+  expect(pool.peakBytes).toBeLessThan(output.bytes + workspace + 4096);
   expect(pool.usedBytes).toBe(output.bytes);
   output.release();
   scope.dispose();

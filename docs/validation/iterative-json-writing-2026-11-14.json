@@ -1,0 +1,25 @@
+{
+  "baseCommit": "6d988f3",
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedEncodingAndStreamTests": 41,
+    "decimalTests": 8,
+    "fullSuite": {
+      "passed": 3680,
+      "skipped": 629,
+      "passedFiles": 400
+    }
+  },
+  "edgeCases": [
+    "20000 alternating object and array levels with Unicode leaf",
+    "exact capacity and one byte below",
+    "output backing overlaps writer traversal",
+    "constant workspace for 1000 and 10000 shallow elements"
+  ],
+  "limitations": [
+    "Reservation units do not prove VM heap bounds",
+    "Runtime iterator storage and retained container capacity remain headroom concerns",
+    "Standard JSON cache serialization remains open"
+  ]
+}
