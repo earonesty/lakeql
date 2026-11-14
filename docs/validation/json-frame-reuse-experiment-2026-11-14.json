@@ -1,0 +1,77 @@
+{
+  "base": "0b74d0e",
+  "requirements": ["M1", "V1", "V2"],
+  "decision": "Rejected; production runtime unchanged.",
+  "hypothesis": "Reuse actual JSON traversal frames and cursors at high-water depth, matching existing reusable admission and reducing sibling allocation churn.",
+  "patch": "docs/benchmarks/json-frame-reuse-experiment-2026-11-14.patch",
+  "constructionEvidence": {
+    "candidateCursors": 6,
+    "baselineCursors": 4002,
+    "mixedRows": 1000,
+    "passes": 2,
+    "maximumDepth": 3,
+    "candidateTest": "passed",
+    "baselineNegativeControl": "failed expected 6, received 4002"
+  },
+  "correctness": "65 existing JSON size/encoding/standard cases passed on candidate, plus construction test. No full release claim for rejected candidate.",
+  "mediansMs": [
+    {
+      "small-row": {
+        "reference": 0.0054394499999999655,
+        "current": 0.008074027000000001
+      },
+      "wide-numbers": {
+        "reference": 1.9236823750000043,
+        "current": 1.9115918749999992
+      },
+      "row-array": {
+        "reference": 0.5655904249999935,
+        "current": 0.5429363749999994
+      },
+      "mixed-siblings": {
+        "reference": 0.3889891999999918,
+        "current": 0.37572527499999064
+      },
+      "deep-20000": {
+        "reference": 16.273623250000014,
+        "current": 16.536645249999992
+      }
+    },
+    {
+      "small-row": {
+        "reference": 0.00476013949999998,
+        "current": 0.008062772999999964
+      },
+      "wide-numbers": {
+        "reference": 1.9260234749999996,
+        "current": 1.8386797750000028
+      },
+      "row-array": {
+        "reference": 0.5867030499999999,
+        "current": 0.5518349999999999
+      },
+      "mixed-siblings": {
+        "reference": 0.4171732999999961,
+        "current": 0.3869978249999974
+      },
+      "deep-20000": {
+        "reference": 17.81253074999995,
+        "current": 18.301835499999925
+      }
+    }
+  ],
+  "tradeoff": "Small row cost rises from 0.0048\u20130.0054 ms to 0.0081 ms; row-array gains are about 4\u20136%. Deep nesting is slightly slower. Admitted peaks unchanged across all five shapes.",
+  "limitations": [
+    "Kernel measurements, not real cloud-query or whole-runtime memory evidence.",
+    "Repeat overlaps briefly with a focused test; first comparison is isolated.",
+    "Construction count is not a GC or retained-heap measurement.",
+    "Ordinary JSON regression and whole-runtime headroom remain open."
+  ],
+  "restoredValidation": {
+    "runtimeDiff": "none relative to 0b74d0e",
+    "typescriptBuild": "passed",
+    "focusedCorrectnessPassed": 65,
+    "repositoryLint": "passed",
+    "fullRelease": "Inherited unchanged runtime gates from numeric-shared-pressure-2026-11-14.json; not rerun for documentation-only checkpoint."
+  }
+}

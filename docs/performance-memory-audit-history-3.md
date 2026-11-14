@@ -5143,3 +5143,20 @@ Worker tests, 520 required conformance cases (one inactive guard skipped), 120
 references, build/types, clean 66-package consumer, lint and repository checks.
 Fixture regeneration leaves data unchanged. Thresholds and timeouts are unchanged.
 Evidence: `validation/numeric-shared-pressure-2026-11-14.json`.
+
+### Rejected JSON traversal frame reuse (2026-11-14)
+
+The existing traversal reuses admitted depth capacity but allocates frames/cursors
+per sibling. An experiment reused both objects by depth and cleared borrowed
+input references when popping. For 1,000 mixed rows, a direct construction test
+measures six cursors instead of 4,002; restoring the baseline fails that assertion.
+All 65 existing focused correctness cases pass on the candidate.
+
+The isolated alternating comparison slows small rows from 5.4 to 8.1 microseconds,
+while row arrays improve about 4% and deep nesting becomes slightly slower. A
+repeat supports the direction, but briefly overlaps a focused test and is marked
+as such. Admitted peaks remain unchanged. The candidate is rejected: ordinary
+small stream outputs should not pay that cost for modest batched gains. The patch
+and both runs are retained in `validation/json-frame-reuse-experiment-2026-11-14.json`.
+Production source is restored. This closes an experiment, not the JSON or runtime
+headroom requirement; cursor construction is not total-heap measurement.

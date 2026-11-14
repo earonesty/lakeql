@@ -1,0 +1,223 @@
+diff --git a/packages/core/src/json-container-entries.ts b/packages/core/src/json-container-entries.ts
+index 3d470da..e936e92 100644
+--- a/packages/core/src/json-container-entries.ts
++++ b/packages/core/src/json-container-entries.ts
+@@ -7,14 +7,31 @@ export class JsonContainerCursor {
+   key: string | undefined;
+   value: unknown;
+   private index = 0;
+-  private readonly array: unknown[] | undefined;
+-  private readonly keys: Generator<string> | undefined;
++  private array: unknown[] | undefined;
++  private keys: Generator<string> | undefined;
+ 
+-  constructor(private readonly container: object) {
++  private container: object | undefined;
++
++  constructor(container: object) {
++    this.reset(container);
++  }
++
++  reset(container: object): void {
++    this.clear();
++    this.container = container;
+     this.array = Array.isArray(container) ? container : undefined;
+     this.keys = this.array === undefined ? ownKeys(container) : undefined;
+   }
+ 
++  clear(): void {
++    this.container = undefined;
++    this.array = undefined;
++    this.keys = undefined;
++    this.key = undefined;
++    this.value = undefined;
++    this.index = 0;
++  }
++
+   advance(): boolean {
+     if (this.array !== undefined) {
+       if (this.index >= this.array.length) return false;
+diff --git a/packages/core/src/json-output-encoding.ts b/packages/core/src/json-output-encoding.ts
+index 7eac8b8..7bfb821 100644
+--- a/packages/core/src/json-output-encoding.ts
++++ b/packages/core/src/json-output-encoding.ts
+@@ -35,6 +35,7 @@ export function encodeOwnedJsonOutput(
+   const standard = semantics === "standard" ? new JsonStandardScalars(construction) : undefined;
+   type Frame = { iterator: JsonContainerCursor; closing: number; first: boolean };
+   const frames: Frame[] = [];
++  let depth = 0;
+   const traversal = new JsonTraversalBudget(
+     construction,
+     4 * c.object + 10 * c.property + c.arraySlot,
+@@ -148,24 +149,34 @@ export function encodeOwnedJsonOutput(
+             byte(34);
+             return;
+           }
+-          traversal.admit(frames.length + 1);
++          traversal.admit(depth + 1);
+           const array = Array.isArray(value);
+-          frames.push({
+-            iterator: new JsonContainerCursor(value),
+-            closing: array ? 93 : 125,
+-            first: true,
+-          });
++          let frame = frames[depth];
++          if (frame === undefined) {
++            frame = {
++              iterator: new JsonContainerCursor(value),
++              closing: array ? 93 : 125,
++              first: true,
++            };
++            frames.push(frame);
++          } else {
++            frame.iterator.reset(value);
++            frame.closing = array ? 93 : 125;
++            frame.first = true;
++          }
++          depth++;
+           byte(array ? 91 : 123);
+         }
+       }
+     };
+     ascii(prefix);
+     write(value);
+-    while (frames.length > 0) {
+-      const frame = frames[frames.length - 1] as Frame;
++    while (depth > 0) {
++      const frame = frames[depth - 1] as Frame;
+       if (!frame.iterator.advance()) {
+         byte(frame.closing);
+-        frames.pop();
++        frame.iterator.clear();
++        depth--;
+       } else {
+         const entry = frame.iterator;
+         if (entry.key !== undefined && absent(entry.value)) continue;
+diff --git a/packages/core/src/json-output-size.ts b/packages/core/src/json-output-size.ts
+index 1be535e..887e517 100644
+--- a/packages/core/src/json-output-size.ts
++++ b/packages/core/src/json-output-size.ts
+@@ -33,13 +33,14 @@ export function jsonOutputUtf8Bytes(
+   );
+   const ancestors = new Set<object>();
+   type Frame = {
+-    value: object;
++    value: object | undefined;
+     entries: JsonContainerCursor;
+     bytes: number;
+     count: number;
+     key: string | undefined;
+   };
+   const frames: Frame[] = [];
++  let depth = 0;
+   const measure = (value: unknown): number | undefined => {
+     if (standard !== undefined) value = standard.normalize(value);
+     if (value === null) return 4;
+@@ -74,14 +75,25 @@ export function jsonOutputUtf8Bytes(
+         if (standard === undefined && value instanceof Uint8Array) return 2 + 2 * value.byteLength;
+         if (ancestors.has(value))
+           throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Cyclic JSON output");
+-        traversal.admit(frames.length + 1);
+-        frames.push({
+-          value,
+-          entries: new JsonContainerCursor(value),
+-          bytes: 2,
+-          count: 0,
+-          key: undefined,
+-        });
++        traversal.admit(depth + 1);
++        let frame = frames[depth];
++        if (frame === undefined) {
++          frame = {
++            value,
++            entries: new JsonContainerCursor(value),
++            bytes: 2,
++            count: 0,
++            key: undefined,
++          };
++          frames.push(frame);
++        } else {
++          frame.value = value;
++          frame.entries.reset(value);
++          frame.bytes = 2;
++          frame.count = 0;
++          frame.key = undefined;
++        }
++        depth++;
+         ancestors.add(value);
+         return undefined;
+       }
+@@ -96,19 +108,22 @@ export function jsonOutputUtf8Bytes(
+   };
+   try {
+     const root = measure(value);
+-    if (frames.length === 0) return root;
+-    while (frames.length > 0) {
+-      const frame = frames[frames.length - 1] as Frame;
++    if (depth === 0) return root;
++    while (depth > 0) {
++      const frame = frames[depth - 1] as Frame;
+       if (!frame.entries.advance()) {
+-        frames.pop();
+-        ancestors.delete(frame.value);
+-        if (frames.length === 0) return frame.bytes;
+-        accumulate(frames[frames.length - 1] as Frame, frame.bytes);
++        depth--;
++        ancestors.delete(frame.value as object);
++        frame.value = undefined;
++        frame.key = undefined;
++        frame.entries.clear();
++        if (depth === 0) return frame.bytes;
++        accumulate(frames[depth - 1] as Frame, frame.bytes);
+       } else {
+         frame.key = frame.entries.key;
+-        const depth = frames.length;
++        const previousDepth = depth;
+         const size = measure(frame.entries.value);
+-        if (frames.length === depth) accumulate(frame, size);
++        if (depth === previousDepth) accumulate(frame, size);
+       }
+     }
+     return undefined;
+diff --git a/packages/core/src/json-frame-reuse.test.ts b/packages/core/src/json-frame-reuse.test.ts
+new file mode 100644
+index 0000000..7a4b4ea
+--- /dev/null
++++ b/packages/core/src/json-frame-reuse.test.ts
+@@ -0,0 +1,36 @@
++import { expect, it, vi } from "vitest";
++import { encodeOwnedJsonOutput } from "./json-output-encoding.js";
++import { MemoryBudget } from "./memory-budget.js";
++import { MemoryScope } from "./memory-scope.js";
++
++const counters = vi.hoisted(() => ({ cursors: 0 }));
++vi.mock("./json-container-entries.js", async (importOriginal) => {
++  const original = await importOriginal<typeof import("./json-container-entries.js")>();
++  return {
++    JsonContainerCursor: class extends original.JsonContainerCursor {
++      constructor(value: object) {
++        super(value);
++        counters.cursors++;
++      }
++    },
++  };
++});
++
++it("bounds cursor construction by depth across mixed sibling containers", () => {
++  const value = Array.from({ length: 1000 }, (_, i) =>
++    i % 2 ? { id: i, nested: [undefined, "雪😀", null] } : [i, { flag: true }],
++  );
++  const budget = new MemoryBudget(1024 * 1024);
++  const scope = new MemoryScope(budget);
++  counters.cursors = 0;
++  const output = encodeOwnedJsonOutput(value, scope);
++  try {
++    expect(new TextDecoder().decode(output.value)).toBe(JSON.stringify(value));
++    // Three simultaneously active containers in each of the two passes.
++    expect(counters.cursors).toBe(6);
++  } finally {
++    output.release();
++    scope.dispose();
++  }
++  expect(budget.usedBytes).toBe(0);
++});

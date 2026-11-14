@@ -228,6 +228,8 @@ with the same job outcomes and samples at most 55.1 MiB managed heap. Transport,
 sampling, external-memory and production-runtime limitations remain explicit in
 `docs/validation/current-mixed-runtime-2026-11-14.json`; V1 remains open.
 
+JSON frame-reuse experiment: [evidence](validation/json-frame-reuse-experiment-2026-11-14.json). Reusing frame/cursor objects cuts construction from 4,002 to six for 1,000 mixed rows, but the isolated comparison slows small-row encoding from 5.4 to 8.1 µs for only about 4% row-array improvement. The candidate is rejected and archived; production source is unchanged. Ordinary JSON performance and whole-runtime headroom remain open.
+
 ### Current allocation ownership matrix
 
 This consolidates implemented ownership boundaries and known gaps. “Admitted” means
