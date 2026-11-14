@@ -198,7 +198,8 @@ it.each([
       );
       expect(pool.peakBytes).toBeGreaterThan(16);
     }
-    expect(closed).toBe(true);
+    // Column planning rejects the tiny pool before opening the scanner.
+    expect(closed).toBe(maxBytes !== 16);
     expect(pool.usedBytes).toBe(0);
     expect(pool.peakBytes).toBeLessThanOrEqual(maxBytes);
   }

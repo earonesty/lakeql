@@ -850,7 +850,9 @@ export class QueryResult {
       };
       if (config.limit !== undefined) scanOptions.canStopEarly = true;
       const partitionValues = config.hive ? parseHivePartitions(object.path) : {};
-      const physicalColumns = readColumns?.filter((column) => !(column in partitionValues));
+      const physicalColumns = readColumns?.filter(
+        (column) => !Object.hasOwn(partitionValues, column),
+      );
       if (physicalColumns !== undefined && physicalColumns.length > 0) {
         scanOptions.columns = physicalColumns;
       }
@@ -935,7 +937,9 @@ export class QueryResult {
         };
         if (config.limit !== undefined) scanOptions.canStopEarly = true;
         const partitionValues = config.hive ? parseHivePartitions(object.path) : {};
-        const physicalColumns = columns?.filter((column) => !(column in partitionValues));
+        const physicalColumns = columns?.filter(
+          (column) => !Object.hasOwn(partitionValues, column),
+        );
         if (physicalColumns !== undefined && physicalColumns.length > 0) {
           scanOptions.columns = physicalColumns;
         }
@@ -2128,7 +2132,7 @@ export class QueryResult {
     };
     try {
       for await (const { batch, sourceIdentity } of this.columnBatches(
-        aggregateReadColumns(groupColumns, spec, config.where, config.projections),
+        aggregateReadColumns(groupColumns, spec, config.where, config.projections, scope),
         startedAt,
         columnarBatchSize(config.batchSize),
         "iteration",
@@ -2303,20 +2307,40 @@ export class QueryResult {
     if (config.where === undefined) return undefined;
     if (scanVectorBatches === undefined && config.scanner.scanOwnedVectorBatches === undefined)
       return undefined;
-    const earlyColumns = aggregateEarlyReadColumns(groupColumns, config.where);
-    if (earlyColumns.length === 0) return undefined;
-    const aggregateColumns = aggregateInputColumns(spec);
-    const lateColumns = aggregateColumns.filter((column) => !earlyColumns.includes(column));
-    if (lateColumns.length === 0) return undefined;
-
-    return this.tryOwnedLateAggregateRows(
-      groupColumns,
-      spec,
-      options,
-      earlyColumns,
-      lateColumns,
-      startedAt,
-    );
+    const planning = new MemoryScope(this.memoryBudget);
+    try {
+      const earlyColumns = admittedColumnNames(
+        planning,
+        (columns) => {
+          for (const column of groupColumns) columns.add(column);
+          collectExprColumns(config.where, columns);
+        },
+        true,
+      );
+      if (earlyColumns.length === 0) return undefined;
+      const lateColumns = admittedColumnNames(
+        planning,
+        (columns) => {
+          collectAggregateColumns(spec, {
+            add(column) {
+              if (!earlyColumns.includes(column)) columns.add(column);
+            },
+          });
+        },
+        true,
+      );
+      if (lateColumns.length === 0) return undefined;
+      return await this.tryOwnedLateAggregateRows(
+        groupColumns,
+        spec,
+        options,
+        earlyColumns,
+        lateColumns,
+        startedAt,
+      );
+    } finally {
+      planning.dispose();
+    }
   }
 
   /** Owned deferred aggregation joins selected positions in bounded windows;
@@ -2499,6 +2523,7 @@ export class QueryResult {
         spec,
         this.config.where,
         this.config.projections,
+        checkpointScope.childScope(),
       );
       for await (const row of this.matchedRows(startedAt, readColumns, checkpointScope)) {
         const keyScope = checkpointScope.childScope();
@@ -3300,7 +3325,7 @@ export class QueryResult {
         startedAt,
       };
       const partitionValues = config.hive ? parseHivePartitions(object.path) : {};
-      const physicalColumns = columns?.filter((column) => !(column in partitionValues));
+      const physicalColumns = columns?.filter((column) => !Object.hasOwn(partitionValues, column));
       if (physicalColumns !== undefined && physicalColumns.length > 0) {
         scanOptions.columns = physicalColumns;
       }
@@ -3384,7 +3409,7 @@ export class QueryResult {
         startedAt,
       };
       const partitionValues = config.hive ? parseHivePartitions(object.path) : {};
-      const physicalColumns = columns?.filter((column) => !(column in partitionValues));
+      const physicalColumns = columns?.filter((column) => !Object.hasOwn(partitionValues, column));
       if (physicalColumns !== undefined && physicalColumns.length > 0) {
         scanOptions.columns = physicalColumns;
       }
@@ -3508,7 +3533,9 @@ export class QueryResult {
         : windowTaskPlanForWindows(config.windows, Math.max(1, objects.length * 2));
     for (const object of objects) {
       const partitionValues = config.hive ? parseHivePartitions(object.path) : {};
-      const physicalColumns = projectedColumns?.filter((column) => !(column in partitionValues));
+      const physicalColumns = projectedColumns?.filter(
+        (column) => !Object.hasOwn(partitionValues, column),
+      );
       const scanPlan = await config.scanner.planTask?.(object.path, {
         memoryBudget: this.memoryBudget,
         object,
@@ -5583,19 +5610,35 @@ function aggregateReadColumns(
   spec: AggregateSpec,
   where: Expr | undefined,
   projections: Record<string, Expr> | undefined,
+  scope: MemoryScope,
 ): string[] | undefined {
-  const columns = new Set<string>();
-  for (const column of groupColumns) {
-    const projection = projections?.[column];
-    if (projection === undefined) columns.add(column);
-    else collectExprColumns(projection, columns);
-  }
-  for (const aggregate of Object.values(spec)) {
+  const columns = admittedColumnNames(
+    scope,
+    (columns) => {
+      for (const column of groupColumns) {
+        const projection =
+          projections !== undefined && Object.hasOwn(projections, column)
+            ? projections[column]
+            : undefined;
+        if (projection === undefined) columns.add(column);
+        else collectExprColumns(projection, columns);
+      }
+      collectAggregateColumns(spec, columns);
+      collectExprColumns(where, columns);
+    },
+    true,
+  );
+  return columns.length === 0 ? undefined : columns;
+}
+
+function collectAggregateColumns(spec: AggregateSpec, columns: { add(name: string): void }): void {
+  for (const alias in spec) {
+    if (!Object.hasOwn(spec, alias)) continue;
+    const aggregate = spec[alias];
+    if (!aggregate) continue;
     if (aggregate.column !== undefined) columns.add(aggregate.column);
-    if (aggregate.expr !== undefined) collectExprColumns(aggregate.expr, columns);
+    collectExprColumns(aggregate.expr, columns);
   }
-  collectExprColumns(where, columns);
-  return columns.size === 0 ? undefined : [...columns].sort();
 }
 
 function limitAwareBatchSize(
@@ -5641,25 +5684,6 @@ interface MaterializationWindow {
   object?: ObjectInfo;
   rowStart: number;
   rowEnd: number;
-}
-
-function aggregateEarlyReadColumns(
-  groupColumns: readonly string[],
-  where: Expr | undefined,
-): string[] {
-  const columns = new Set<string>();
-  for (const column of groupColumns) columns.add(column);
-  collectExprColumns(where, columns);
-  return [...columns].sort();
-}
-
-function aggregateInputColumns(spec: AggregateSpec): string[] {
-  const columns = new Set<string>();
-  for (const aggregate of Object.values(spec)) {
-    if (aggregate.column !== undefined) columns.add(aggregate.column);
-    collectExprColumns(aggregate.expr, columns);
-  }
-  return [...columns].sort();
 }
 
 /** Borrowed vectors may be reused at the next yield; detach only selected rows. */

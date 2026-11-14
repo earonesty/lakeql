@@ -1,0 +1,29 @@
+{
+  "date": "2026-11-14",
+  "requirements": ["F1", "M1"],
+  "changes": [
+    "Use the shared admitted column-name collector for ordinary, stateful and deferred aggregate read plans.",
+    "Deferred early and late lists are planned within a scope held through execution and released on return/failure.",
+    "Share aggregate expression/column traversal and remove intermediate Object.values/filter arrays from these column planners.",
+    "Projection and partition lookups use own properties, preserving physical columns with names inherited from Object.prototype."
+  ],
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "targeted_final_tests": 106,
+    "scenarios": [
+      "Prototype-like constructor group column is included in the exact requested physical column list and aggregates correctly.",
+      "Tiny aggregate pools now reject during planning before the scanner opens; larger pools still return correct grouped count, median and count-distinct.",
+      "Existing grouped/scalar deferred selection, density fallback, cancellation and stateful checkpoint tests pass."
+    ],
+    "full_default_suite": {
+      "passed": 3466,
+      "skipped": 629
+    }
+  },
+  "remaining": [
+    "Other query-builder, physical-plan and parser/runtime allocations still require review.",
+    "Column planning uses the established explicit charge model, not total heap measurement.",
+    "Full allocation-matrix and Worker headroom acceptance remain open."
+  ]
+}
