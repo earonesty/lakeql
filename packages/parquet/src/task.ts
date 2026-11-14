@@ -1,9 +1,11 @@
 import {
   type AggregateSpec,
   type CacheAdapter,
+  MATERIALIZATION_CHARGES as c,
   type Expr,
   LakeqlError,
   type MemoryBudget,
+  type MemoryScope,
   type OrderByTerm,
   type QueryBudget,
   type QueryStats,
@@ -147,25 +149,44 @@ export function taskRowWindows(
   metadata: ParquetMetadataLike,
   task: TaskInput,
 ): { rowStart: number; rowEnd: number }[] {
-  const windows: { rowStart: number; rowEnd: number }[] = [];
-  const starts: number[] = [];
-  let rowStart = 0;
-  for (const rowGroup of metadata.row_groups) {
-    starts.push(rowStart);
-    rowStart += Number(rowGroup.num_rows);
-  }
-  for (const range of task.rowGroupRanges) {
-    const startGroup = range.start;
-    const endGroup = Math.min(range.end, metadata.row_groups.length);
-    if (startGroup < 0 || startGroup >= endGroup || startGroup >= metadata.row_groups.length) {
-      continue;
+  return Array.from(iterateTaskRowWindows(metadata, task));
+}
+
+/** Ordered disjoint ranges traverse each preceding row group once. Backward or
+ * overlapping ranges restart the cursor to preserve caller order without an
+ * unbounded prefix array. Only the current yielded descriptor stays charged.
+ */
+export function* iterateTaskRowWindows(
+  metadata: ParquetMetadataLike,
+  task: TaskInput,
+  scope?: MemoryScope,
+): IterableIterator<{ rowStart: number; rowEnd: number }> {
+  let groupIndex = 0;
+  let rowOffset = 0;
+  const advance = (end: number) => {
+    while (groupIndex < end) {
+      rowOffset += Number(metadata.row_groups[groupIndex]?.num_rows ?? 0);
+      groupIndex += 1;
     }
-    const start = starts[startGroup] ?? 0;
-    const lastGroup = metadata.row_groups[endGroup - 1];
-    const end = (starts[endGroup - 1] ?? start) + Number(lastGroup?.num_rows ?? 0);
-    windows.push({ rowStart: start, rowEnd: end });
+    return rowOffset;
+  };
+  for (const range of task.rowGroupRanges) {
+    const start = range.start;
+    const end = Math.min(range.end, metadata.row_groups.length);
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || start >= end) continue;
+    if (start < groupIndex) {
+      groupIndex = 0;
+      rowOffset = 0;
+    }
+    const rowStart = advance(start);
+    const rowEnd = advance(end);
+    const reservation = scope?.reserve(c.object + 2 * c.property, "task row window");
+    try {
+      yield { rowStart, rowEnd };
+    } finally {
+      reservation?.release();
+    }
   }
-  return windows;
 }
 
 export function validateTaskWorkUnitOptions(options: PlanParquetTaskWorkUnitsOptions): void {

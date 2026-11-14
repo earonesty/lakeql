@@ -270,3 +270,62 @@ function queryStats(): QueryStats {
     cacheMisses: 0,
   };
 }
+
+it("streams row windows with constant live storage and lazy metadata traversal", async () => {
+  const { iterateTaskRowWindows } = await import("./task.js");
+  const { MemoryBudget, MemoryScope } = await import("lakeql-core");
+  let reads = 0;
+  const metadata = {
+    row_groups: Array.from({ length: 1000 }, () => ({
+      get num_rows() {
+        reads++;
+        return 2;
+      },
+    })),
+  };
+  const task = {
+    path: "data",
+    partitionValues: {},
+    rowGroupRanges: Array.from({ length: 1000 }, (_, start) => ({ start, end: start + 1 })),
+  };
+  const budget = new MemoryBudget(1024);
+  const scope = new MemoryScope(budget);
+  const iterator = iterateTaskRowWindows(metadata, task, scope);
+  expect(reads).toBe(0);
+  expect(iterator.next().value).toEqual({ rowStart: 0, rowEnd: 2 });
+  expect(reads).toBe(1);
+  const held = budget.usedBytes;
+  expect(held).toBeGreaterThan(0);
+  let count = 1;
+  for (const window of iterator) {
+    expect(window).toEqual({ rowStart: count * 2, rowEnd: (count + 1) * 2 });
+    expect(budget.usedBytes).toBe(held);
+    count++;
+  }
+  expect(count).toBe(1000);
+  expect(reads).toBe(1000);
+  expect(budget.usedBytes).toBe(0);
+  const early = iterateTaskRowWindows(metadata, task, scope);
+  early.next();
+  early.return?.();
+  expect(budget.usedBytes).toBe(0);
+  expect([
+    ...iterateTaskRowWindows(
+      metadata,
+      {
+        ...task,
+        rowGroupRanges: [
+          { start: 3, end: 5 },
+          { start: 1, end: 4 },
+          { start: 0, end: 1 },
+        ],
+      },
+      scope,
+    ),
+  ]).toEqual([
+    { rowStart: 6, rowEnd: 10 },
+    { rowStart: 2, rowEnd: 8 },
+    { rowStart: 0, rowEnd: 2 },
+  ]);
+  scope.dispose();
+});

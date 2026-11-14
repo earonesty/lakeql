@@ -22,10 +22,10 @@ import { asyncBufferFromStore } from "./store-buffer.js";
 import {
   appendRowGroupRange,
   cloneTaskWithRanges,
+  iterateTaskRowWindows,
   type PlanParquetTaskWorkUnitsOptions,
   type ScanParquetTaskOptions,
   taskReadOptions,
-  taskRowWindows,
   validateTaskWorkUnitOptions,
 } from "./task.js";
 import { batchWithPartitionValues, projectTaskBatch } from "./task-batch.js";
@@ -53,7 +53,7 @@ export async function* scanParquetTaskBatches(
     const physicalColumns = task.projectedColumns?.filter(
       (column) => !(column in task.partitionValues),
     );
-    for (const { rowStart, rowEnd } of taskRowWindows(metadata, task)) {
+    for (const { rowStart, rowEnd } of iterateTaskRowWindows(metadata, task, scope)) {
       for await (const batch of readParquetObjectBatchesFromFile(
         file,
         metadata,
@@ -95,7 +95,7 @@ export async function* scanParquetTaskColumnBatches(
     const physicalColumns = task.projectedColumns?.filter(
       (column) => !(column in task.partitionValues),
     );
-    for (const { rowStart, rowEnd } of taskRowWindows(metadata, task)) {
+    for (const { rowStart, rowEnd } of iterateTaskRowWindows(metadata, task, scope)) {
       for await (const batch of readParquetColumnBatchesFromFile(
         file,
         metadata,

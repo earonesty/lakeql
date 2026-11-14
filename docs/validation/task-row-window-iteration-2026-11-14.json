@@ -1,0 +1,28 @@
+{
+  "date": "2026-11-14",
+  "changes": [
+    "Row, column and aggregate task scans iterate row windows lazily instead of constructing whole-file prefix and window arrays.",
+    "Only the current window descriptor is admitted, and it releases when iteration advances, closes or fails.",
+    "Retain the array-returning helper as a compatibility wrapper for direct callers."
+  ],
+  "validation": {
+    "targeted_tests": 47,
+    "build": "passed",
+    "structural_test": "1000 ordered disjoint windows read exactly 1000 metadata counts and retain constant descriptor reservations; first next reads only one count.",
+    "edge_cases": [
+      "early return releases descriptor",
+      "backward and overlapping ranges preserve order",
+      "existing invalid-span tests and real task fixtures"
+    ],
+    "typecheck": "passed",
+    "real_http_tests": 4
+  },
+  "tradeoffs": [
+    "Ordered disjoint ranges are linear; backward or overlapping ranges can rescan metadata prefixes. The execution planner normally emits ordered disjoint ranges, but arbitrary caller tasks retain correctness with a CPU cost.",
+    "The compatibility array helper still materializes its return value; scan execution uses the admitted iterator."
+  ],
+  "remaining": [
+    "Task splitting/grouping topology, borrowed parser boundaries and other allocation-matrix gaps remain open.",
+    "No total-heap bound or cloud-latency improvement is claimed."
+  ]
+}

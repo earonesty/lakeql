@@ -39,8 +39,8 @@ import {
   aggregateTaskReadColumns,
   enforceAggregateTaskBudget,
   groupAggregateTasks,
+  iterateTaskRowWindows,
   taskReadOptions,
-  taskRowWindows,
 } from "./task.js";
 import { batchWithPartitionValues } from "./task-batch.js";
 import { taskMetadataOwned, taskSource } from "./task-source.js";
@@ -113,7 +113,7 @@ async function aggregateTaskSnapshotOwned(
       ...(options.now === undefined ? {} : { now: options.now }),
       ...(options.startedAt === undefined ? {} : { queryStartedAt: options.startedAt }),
     });
-    for (const { rowStart, rowEnd } of taskRowWindows(metadata, task)) {
+    for (const { rowStart, rowEnd } of iterateTaskRowWindows(metadata, task, scope)) {
       const readOptions = taskReadOptions(
         rowStart,
         rowEnd,
