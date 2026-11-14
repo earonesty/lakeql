@@ -14,6 +14,7 @@ import { vectorCallExprSupported } from "./batch-call.js";
 import { BoundedTopK } from "./bounded-top-k.js";
 import { BufferMemory } from "./buffer-memory.js";
 import { readCheckpointSpill } from "./checkpoint-spill-read.js";
+import { withCheckpointSpillBatch } from "./checkpoint-spill-write-batch.js";
 import { csvOutputStream } from "./csv-output-stream.js";
 import { gatherDeferredColumns } from "./deferred-gather.js";
 import { LakeqlError } from "./errors.js";
@@ -1901,27 +1902,29 @@ export class QueryResult {
         enforceBudget(config.budget, this.stats, config.now, startedAt);
       }
       this.stats.elapsedMs = config.now() - startedAt;
-      const state = await sortOperatorState(
-        orderBy,
-        runs,
-        options.spill,
-        options.spillId ?? `sort-${this.stats.queryId}`,
-        retainedScope,
-      );
-      const checkpoint = retainedScope.adopt(encodeOwnedCheckpoint(state, retainedScope));
-      const operatorState = checkpoint.value;
-      const result: SortResult = { rows, operatorState };
-      if (options.spill !== undefined) {
-        result.operatorSpill = await writeOwnedCheckpoint(
-          options.spill,
+      return await withCheckpointSpillBatch(options.spill, retainedScope, async (spill) => {
+        const state = await sortOperatorState(
+          orderBy,
+          runs,
+          spill,
           options.spillId ?? `sort-${this.stats.queryId}`,
-          checkpoint,
           retainedScope,
         );
-      }
-      if (retainedScope.disposed)
-        throw new LakeqlError("LAKEQL_ABORTED", "Checkpoint scope disposed during spill");
-      return result;
+        const checkpoint = retainedScope.adopt(encodeOwnedCheckpoint(state, retainedScope));
+        const operatorState = checkpoint.value;
+        const result: SortResult = { rows, operatorState };
+        if (spill !== undefined) {
+          result.operatorSpill = await writeOwnedCheckpoint(
+            spill,
+            options.spillId ?? `sort-${this.stats.queryId}`,
+            checkpoint,
+            retainedScope,
+          );
+        }
+        if (retainedScope.disposed)
+          throw new LakeqlError("LAKEQL_ABORTED", "Checkpoint scope disposed during spill");
+        return result;
+      });
     } finally {
       retainedScope.dispose();
       projectionScope.dispose();

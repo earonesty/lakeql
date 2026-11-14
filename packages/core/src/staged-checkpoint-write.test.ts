@@ -25,6 +25,7 @@ it.each([
       },
     });
     const spill = new MemorySpillAdapter({ maxBytes: 128 * 1024 });
+    Object.defineProperty(spill, "beginWriteBatch", { value: undefined });
     const prior = Uint8Array.of(7, 8, 9);
     await spill.write("state", prior);
     const stage = spill.stageWrite.bind(spill);

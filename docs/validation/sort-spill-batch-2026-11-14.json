@@ -1,0 +1,37 @@
+{
+  "date": "2026-11-14",
+  "changes": [
+    "Wrap sort run-file and final-checkpoint writes in one optional adapter batch.",
+    "Prefer atomic batches when supported; otherwise retain existing single-file staging or legacy-write behavior.",
+    "Keep transaction bookkeeping charged independently until commit/rollback settles, including after query cancellation.",
+    "Share a generic checkpoint batch helper for later window integration; preserve both primary and rollback errors."
+  ],
+  "validation": {
+    "build": "passed",
+    "targeted_tests": 52,
+    "scenarios": [
+      "success publishes run and final checkpoint together",
+      "cancellation before commit preserves prior checkpoint and leaves no run",
+      "final target version conflict leaves no earlier run publication",
+      "write failure after staging rolls back all files"
+    ],
+    "assertions": [
+      "staged run unreadable",
+      "prior checkpoint readable while staging",
+      "query pool returns to zero",
+      "legacy and single-staged adapter paths still pass"
+    ],
+    "typecheck": "passed",
+    "full_default_suite": {
+      "passed": 3440,
+      "skipped": 629
+    }
+  },
+  "remaining": [
+    "Window checkpoint writer still needs batch integration.",
+    "Adapters without atomic batch capability cannot provide multi-file rollback guarantees.",
+    "Cancellation after successful commit cannot retract published data through rollback.",
+    "Remote adapter commit semantics and real cloud fixtures are not proven by these controlled scanner/in-memory spill tests.",
+    "Broader allocation/runtime acceptance remains open."
+  ]
+}
