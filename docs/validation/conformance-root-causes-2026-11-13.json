@@ -71,5 +71,6 @@
     "Targeted reproduction only; this does not replace the full release acceptance gate.",
     "No unsafe multi-gigabyte decode was attempted. Metadata was read through the production footer reader.",
     "All six cases remain failures, not waived or reclassified as passes."
-  ]
+  ],
+  "followupEvidence": "alp-decoder-2026-11-13.json"
 }
