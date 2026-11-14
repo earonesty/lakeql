@@ -1,0 +1,1869 @@
+{
+  "sourceCommit": "1edbbe518411fa3f295d8e7d6a4464d96ecdff56",
+  "node": "v24.18.1",
+  "harnessSha256": "a6ca474c4b3f269e04d134da251e17d4b2d6805b422f19f12c1c8ad330ce8f06",
+  "description": "Unicode nullable packed and dictionary keys; one/two ordering terms, widths 32/256, k 3/100, one/four selections sharing preparation with all results retained. Two warmups/six samples, alternating variant order. Cache construction included, fixture construction and independent stable-sort oracle excluded. 64 MiB modeled pool; dictionaries decode unique values only.",
+  "limitations": [
+    "Sequential synchronous Node selections with retained outputs model reuse/overlap, not asynchronous cloud jobs.",
+    "Unicode allocation uses a conservative UTF16 upper bound derived from UTF8 bytes; runtime/native/GC overhead and oracle memory are outside reservation accounting.",
+    "Experimental cache only; no production policy or timing threshold inferred from one run."
+  ],
+  "results": [
+    {
+      "shape": "packed",
+      "keys": 1,
+      "width": 32,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 2.9287730000000067,
+          "incrementalPeak": 988,
+          "decodedValues": null,
+          "samplesMs": [
+            5.767265000000009, 1.7013220000000047, 2.8156999999999925, 1.6711060000000089,
+            3.041846000000021, 3.306182999999976
+          ]
+        },
+        "cached": {
+          "medianMs": 2.261511999999996,
+          "incrementalPeak": 1441488,
+          "decodedValues": 8571,
+          "samplesMs": [
+            2.323322999999988, 2.1997010000000046, 2.0914559999999938, 2.3979929999999854,
+            2.02842899999996, 2.4930519999999774
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 1,
+      "width": 32,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 5.151667000000032,
+          "incrementalPeak": 988,
+          "decodedValues": null,
+          "samplesMs": [
+            5.8697890000000825, 3.690306000000078, 7.6738240000000815, 4.433544999999981,
+            6.200108999999998, 2.69037400000002
+          ]
+        },
+        "cached": {
+          "medianMs": 2.9218495000000075,
+          "incrementalPeak": 1441488,
+          "decodedValues": 8571,
+          "samplesMs": [
+            4.678115999999932, 2.3428889999999, 2.4681850000000622, 2.6225560000000314,
+            3.2211429999999837, 3.4883350000000064
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 1,
+      "width": 32,
+      "limit": 3,
+      "reuse": 4,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 7.891543000000013,
+          "incrementalPeak": 1105,
+          "decodedValues": null,
+          "samplesMs": [
+            7.472424000000046, 8.31066199999998, 8.671540999999934, 6.23475499999995,
+            7.298487000000023, 8.812186999999994
+          ]
+        },
+        "cached": {
+          "medianMs": 2.8355170000000385,
+          "incrementalPeak": 1441560,
+          "decodedValues": 8571,
+          "samplesMs": [
+            2.6539149999999836, 3.040051999999946, 2.6139590000000226, 2.6258319999999458,
+            3.0171190000000934, 6.138793999999962
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 1,
+      "width": 32,
+      "limit": 3,
+      "reuse": 4,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 14.357278500000007,
+          "incrementalPeak": 1384,
+          "decodedValues": null,
+          "samplesMs": [
+            13.654481000000033, 16.288066999999955, 12.952710000000025, 16.53118500000005,
+            15.060075999999981, 12.7553190000001
+          ]
+        },
+        "cached": {
+          "medianMs": 3.8620090000000573,
+          "incrementalPeak": 1441560,
+          "decodedValues": 8571,
+          "samplesMs": [
+            3.527027999999973, 3.754325999999992, 5.8181509999999435, 3.969692000000123,
+            4.475604000000203, 3.2897820000000593
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 1,
+      "width": 32,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 2.476906999999983,
+          "incrementalPeak": 2164,
+          "decodedValues": null,
+          "samplesMs": [
+            2.1728290000000925, 2.1654359999999997, 2.4353940000000875, 2.518419999999878,
+            2.550901999999951, 9.011512000000039
+          ]
+        },
+        "cached": {
+          "medianMs": 2.053239500000018,
+          "incrementalPeak": 1442560,
+          "decodedValues": 8571,
+          "samplesMs": [
+            1.7315989999999601, 2.2768949999999677, 1.6573389999998653, 4.026739000000134,
+            2.355534000000034, 1.829584000000068
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 1,
+      "width": 32,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 6.603213499999811,
+          "incrementalPeak": 5264,
+          "decodedValues": null,
+          "samplesMs": [
+            6.904485999999906, 6.301940999999715, 4.818670000000111, 4.943514999999934,
+            7.431938000000173, 7.3562660000002325
+          ]
+        },
+        "cached": {
+          "medianMs": 2.22132600000009,
+          "incrementalPeak": 1442560,
+          "decodedValues": 8571,
+          "samplesMs": [
+            1.9508820000000924, 2.450072000000091, 1.8597909999998592, 4.497024000000238,
+            4.695447000000058, 1.992580000000089
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 1,
+      "width": 32,
+      "limit": 100,
+      "reuse": 4,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 9.786144499999864,
+          "incrementalPeak": 6064,
+          "decodedValues": null,
+          "samplesMs": [
+            8.746231999999964, 8.609955999999784, 10.826056999999764, 15.501377000000048,
+            8.550254000000223, 17.548921000000064
+          ]
+        },
+        "cached": {
+          "medianMs": 3.6577744999999595,
+          "incrementalPeak": 1444960,
+          "decodedValues": 8571,
+          "samplesMs": [
+            4.039542999999867, 3.2495560000002115, 3.221352999999908, 5.305626000000302,
+            3.389329000000089, 3.92621999999983
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 1,
+      "width": 32,
+      "limit": 100,
+      "reuse": 4,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 21.453164499999957,
+          "incrementalPeak": 18464,
+          "decodedValues": null,
+          "samplesMs": [
+            20.71522099999993, 33.96720400000004, 19.580525000000307, 26.37278900000001,
+            21.349413999999797, 21.556915000000117
+          ]
+        },
+        "cached": {
+          "medianMs": 5.144402499999842,
+          "incrementalPeak": 1444960,
+          "decodedValues": 8571,
+          "samplesMs": [
+            4.586461999999756, 8.003153999999995, 5.540046999999959, 4.506131000000096,
+            5.951051000000007, 4.748757999999725
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 1,
+      "width": 256,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 2.048341000000164,
+          "incrementalPeak": 1884,
+          "decodedValues": null,
+          "samplesMs": [
+            2.0405510000000504, 2.6612099999997554, 2.0561310000002777, 4.981605999999829,
+            1.6278439999996408, 1.595694000000094
+          ]
+        },
+        "cached": {
+          "medianMs": 1.806950999999799,
+          "incrementalPeak": 5921488,
+          "decodedValues": 8571,
+          "samplesMs": [
+            3.4430310000002464, 1.4981199999997443, 1.4595369999997274, 2.1357100000000173,
+            1.482560999999805, 2.1157819999998537
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 1,
+      "width": 256,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 2.924373999999716,
+          "incrementalPeak": 1884,
+          "decodedValues": null,
+          "samplesMs": [
+            3.720832999999402, 2.70063300000038, 2.7832479999997304, 2.815889999999854,
+            4.656504999999925, 3.032857999999578
+          ]
+        },
+        "cached": {
+          "medianMs": 2.1993600000005245,
+          "incrementalPeak": 5921488,
+          "decodedValues": 8571,
+          "samplesMs": [
+            2.2162820000003194, 2.103610000000117, 2.100083000000268, 2.1824380000007295,
+            3.163252999999713, 2.354131000000052
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 1,
+      "width": 256,
+      "limit": 3,
+      "reuse": 4,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 10.150540500000261,
+          "incrementalPeak": 2001,
+          "decodedValues": null,
+          "samplesMs": [
+            6.111583000000792, 10.81792200000018, 9.483159000000342, 11.86503300000004,
+            6.5846440000004804, 11.381092000000535
+          ]
+        },
+        "cached": {
+          "medianMs": 2.939377499999864,
+          "incrementalPeak": 5921560,
+          "decodedValues": 8571,
+          "samplesMs": [
+            5.406907000000501, 3.0662720000000263, 2.7052520000006552, 2.614861000000019,
+            2.812482999999702, 7.591359000000011
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 1,
+      "width": 256,
+      "limit": 3,
+      "reuse": 4,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 12.558007500000258,
+          "incrementalPeak": 4296,
+          "decodedValues": null,
+          "samplesMs": [
+            39.225821999999425, 12.822325000000092, 12.88059500000054, 12.293690000000424,
+            12.238856000000851, 11.435985000000073
+          ]
+        },
+        "cached": {
+          "medianMs": 6.160921000000144,
+          "incrementalPeak": 5921560,
+          "decodedValues": 8571,
+          "samplesMs": [
+            6.133364000000256, 10.208814999999959, 7.40373499999987, 4.589869000000363,
+            6.188478000000032, 4.212117999999464
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 1,
+      "width": 256,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 2.507519499999944,
+          "incrementalPeak": 2272,
+          "decodedValues": null,
+          "samplesMs": [
+            2.7694229999997333, 2.689723000000413, 2.3446530000001076, 2.153252999999495,
+            2.6703859999997803, 2.2018749999997453
+          ]
+        },
+        "cached": {
+          "medianMs": 1.6251689999999144,
+          "incrementalPeak": 5922560,
+          "decodedValues": 8571,
+          "samplesMs": [
+            1.5935090000002674, 2.6020769999995537, 1.6182559999997466, 1.7435519999999087,
+            1.6320820000000822, 1.615910999999869
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 1,
+      "width": 256,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 9.668538500000523,
+          "incrementalPeak": 27664,
+          "decodedValues": null,
+          "samplesMs": [
+            6.739915999999539, 12.169185000000653, 11.760707000000366, 5.467580999999882,
+            11.04760400000032, 8.289473000000726
+          ]
+        },
+        "cached": {
+          "medianMs": 2.577195500000016,
+          "incrementalPeak": 5922560,
+          "decodedValues": 8571,
+          "samplesMs": [
+            2.079174000000421, 2.849713999999949, 2.039227999999639, 2.511486999999761,
+            3.7366339999998672, 2.6429040000002715
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 1,
+      "width": 256,
+      "limit": 100,
+      "reuse": 4,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 9.347745000000032,
+          "incrementalPeak": 6172,
+          "decodedValues": null,
+          "samplesMs": [
+            8.586903000000348, 14.100179999999455, 8.879493999998886, 11.214127999999619,
+            9.502696999999898, 9.192793000000165
+          ]
+        },
+        "cached": {
+          "medianMs": 4.709064000001035,
+          "incrementalPeak": 5924960,
+          "decodedValues": 8571,
+          "samplesMs": [
+            4.584239000000707, 3.37452200000007, 5.520421000001079, 4.8338890000013635,
+            3.1365939999996044, 7.154135999999198
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 1,
+      "width": 256,
+      "limit": 100,
+      "reuse": 4,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 22.54724400000032,
+          "incrementalPeak": 108064,
+          "decodedValues": null,
+          "samplesMs": [
+            23.364267000000837, 27.86051099999895, 18.54930400000012, 28.890849999999773,
+            21.7302209999998, 17.727648000000045
+          ]
+        },
+        "cached": {
+          "medianMs": 5.1037409999999,
+          "incrementalPeak": 5924960,
+          "decodedValues": 8571,
+          "samplesMs": [
+            6.270512999999482, 5.050435999999536, 5.157046000000264, 4.790306000000783,
+            9.898391999999149, 4.811686999999438
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 2,
+      "width": 32,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 2.1748489999999947,
+          "incrementalPeak": 1260,
+          "decodedValues": null,
+          "samplesMs": [
+            2.810170000000653, 2.1425230000004376, 2.1882690000002185, 2.161428999999771,
+            2.1594249999998283, 2.491410000000542
+          ]
+        },
+        "cached": {
+          "medianMs": 2.7160875000008673,
+          "incrementalPeak": 2882336,
+          "decodedValues": 17661,
+          "samplesMs": [
+            2.605674000000363, 7.083012999999482, 3.351799000000028, 2.6306920000006357,
+            2.801483000001099, 2.553095999999641
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 2,
+      "width": 32,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 2.7754240000003847,
+          "incrementalPeak": 1260,
+          "decodedValues": null,
+          "samplesMs": [
+            2.6997510000001057, 2.7839600000006612, 3.5817020000013144, 2.766888000000108,
+            3.6379180000003544, 2.6856149999985064
+          ]
+        },
+        "cached": {
+          "medianMs": 2.7289520000003904,
+          "incrementalPeak": 2882336,
+          "decodedValues": 17661,
+          "samplesMs": [
+            2.649637000000439, 3.162812999999005, 3.031897000000754, 2.6189889999986917,
+            2.5923000000002503, 2.808267000000342
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 2,
+      "width": 32,
+      "limit": 3,
+      "reuse": 4,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 8.755229499999587,
+          "incrementalPeak": 1737,
+          "decodedValues": null,
+          "samplesMs": [
+            8.56172499999957, 8.549451999999292, 13.691130000001067, 8.308247999999367,
+            8.948733999999604, 14.808382999999594
+          ]
+        },
+        "cached": {
+          "medianMs": 4.546021999999539,
+          "incrementalPeak": 2882408,
+          "decodedValues": 17661,
+          "samplesMs": [
+            4.067587000001367, 4.223990999998932, 4.679419000000053, 4.453241999999591,
+            4.638801999999487, 7.5104559999999765
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 2,
+      "width": 32,
+      "limit": 3,
+      "reuse": 4,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 11.608315000000403,
+          "incrementalPeak": 1929,
+          "decodedValues": null,
+          "samplesMs": [
+            14.158048999999664, 11.50839199999973, 11.708238000001074, 13.062948000000688,
+            10.765113000001293, 11.212765000000218
+          ]
+        },
+        "cached": {
+          "medianMs": 4.43896549999954,
+          "incrementalPeak": 2882408,
+          "decodedValues": 17661,
+          "samplesMs": [
+            4.31974099999934, 4.471245999999155, 4.553600999999617, 4.344477000000552,
+            4.406684999999925, 6.322840999999244
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 2,
+      "width": 32,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 7.8512780000010025,
+          "incrementalPeak": 6436,
+          "decodedValues": null,
+          "samplesMs": [
+            7.54403000000093, 4.149761000000581, 23.290407999998934, 8.158526000001075,
+            4.137037000000419, 20.541493999999147
+          ]
+        },
+        "cached": {
+          "medianMs": 3.107829500000662,
+          "incrementalPeak": 2883216,
+          "decodedValues": 17661,
+          "samplesMs": [
+            3.075198000000455, 6.17851999999948, 3.7751960000005056, 3.054659999999785,
+            3.140461000000869, 3.056222000001071
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 2,
+      "width": 32,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 6.586953499999254,
+          "incrementalPeak": 9316,
+          "decodedValues": null,
+          "samplesMs": [
+            4.161452000000281, 12.553518999999142, 4.172764999999345, 16.16998600000079,
+            9.001141999999163, 4.114864999999554
+          ]
+        },
+        "cached": {
+          "medianMs": 2.934488500000043,
+          "incrementalPeak": 2883216,
+          "decodedValues": 17661,
+          "samplesMs": [
+            2.9550319999998464, 2.9555229999987205, 2.9045079999996233, 2.91394500000024,
+            2.89722299999994, 6.000825000000987
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 2,
+      "width": 32,
+      "limit": 100,
+      "reuse": 4,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 21.54968749999989,
+          "incrementalPeak": 22336,
+          "decodedValues": null,
+          "samplesMs": [
+            23.602746999999, 19.315486999999848, 20.46739499999967, 45.737169999998514,
+            22.631980000000112, 20.030813999999737
+          ]
+        },
+        "cached": {
+          "medianMs": 7.207336499999656,
+          "incrementalPeak": 2885616,
+          "decodedValues": 17661,
+          "samplesMs": [
+            8.110687000000325, 6.84813000000031, 7.0218669999994745, 10.370129999999335,
+            7.392805999999837, 6.39187099999981
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 2,
+      "width": 32,
+      "limit": 100,
+      "reuse": 4,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 22.045529999999417,
+          "incrementalPeak": 33856,
+          "decodedValues": null,
+          "samplesMs": [
+            25.810151999998197, 18.118483999998716, 22.179416999999376, 43.144430000000284,
+            21.911642999999458, 19.21730199999729
+          ]
+        },
+        "cached": {
+          "medianMs": 8.303529500000877,
+          "incrementalPeak": 2885616,
+          "decodedValues": 17661,
+          "samplesMs": [
+            9.305626000001212, 7.301433000000543, 5.516442999996798, 29.016648000000714,
+            6.084833000000799, 9.643723000001046
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 2,
+      "width": 256,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 3.111907499998779,
+          "incrementalPeak": 2156,
+          "decodedValues": null,
+          "samplesMs": [
+            2.7917149999993853, 3.0461539999996603, 3.5175209999979415, 3.1776609999978973,
+            2.9975830000003043, 3.622297999998409
+          ]
+        },
+        "cached": {
+          "medianMs": 3.976439999998547,
+          "incrementalPeak": 11842336,
+          "decodedValues": 17661,
+          "samplesMs": [
+            4.937253000000055, 5.019658000001073, 3.8908940000001166, 3.810653000000457,
+            4.061985999996978, 3.2417219999988447
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 2,
+      "width": 256,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 3.5554619999984425,
+          "incrementalPeak": 2156,
+          "decodedValues": null,
+          "samplesMs": [
+            3.3134869999994407, 3.6765809999997145, 3.552025999997568, 4.247394999998505,
+            3.558897999999317, 3.2969559999983176
+          ]
+        },
+        "cached": {
+          "medianMs": 4.478986000000077,
+          "incrementalPeak": 11842336,
+          "decodedValues": 17661,
+          "samplesMs": [
+            5.434069000002637, 4.366640000000189, 3.740269999998418, 3.7174270000032266,
+            4.591331999999966, 4.85490800000116
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 2,
+      "width": 256,
+      "limit": 3,
+      "reuse": 4,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 10.353683999999703,
+          "incrementalPeak": 4649,
+          "decodedValues": null,
+          "samplesMs": [
+            10.139244999998482, 10.338801000001695, 9.885377000002336, 13.847344999998313,
+            10.4445999999989, 10.36856699999771
+          ]
+        },
+        "cached": {
+          "medianMs": 4.744465499999933,
+          "incrementalPeak": 11842408,
+          "decodedValues": 17661,
+          "samplesMs": [
+            4.336923000002571, 4.591893000000709, 4.442891999999119, 4.8970379999991565,
+            5.6445349999994505, 6.931077000001096
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 2,
+      "width": 256,
+      "limit": 3,
+      "reuse": 4,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 14.07731749999948,
+          "incrementalPeak": 6185,
+          "decodedValues": null,
+          "samplesMs": [
+            14.241195999999036, 13.913438999999926, 25.34534799999892, 11.822062999999616,
+            11.896402000002126, 18.095902000000933
+          ]
+        },
+        "cached": {
+          "medianMs": 6.439761499997985,
+          "incrementalPeak": 11842408,
+          "decodedValues": 17661,
+          "samplesMs": [
+            4.959826000002067, 6.660206999997172, 7.058476999998675, 6.219315999998798,
+            6.0144710000022314, 7.240739000000758
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 2,
+      "width": 256,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 11.962046500000724,
+          "incrementalPeak": 28836,
+          "decodedValues": null,
+          "samplesMs": [
+            8.137547000002087, 9.933428000000276, 15.089783999999781, 11.930367000000842,
+            13.574059999999008, 11.993726000000606
+          ]
+        },
+        "cached": {
+          "medianMs": 3.4091220000009343,
+          "incrementalPeak": 11843216,
+          "decodedValues": 17661,
+          "samplesMs": [
+            6.589584000001196, 3.365495000001829, 3.45274900000004, 3.25655000000188,
+            3.3041990000019723, 11.656241000000591
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 2,
+      "width": 256,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 8.10002700000041,
+          "incrementalPeak": 51876,
+          "decodedValues": null,
+          "samplesMs": [
+            5.38263200000074, 8.321123000001535, 7.878930999999284, 6.219507000001613,
+            8.444405000002007, 9.895725999998831
+          ]
+        },
+        "cached": {
+          "medianMs": 4.50084749999769,
+          "incrementalPeak": 11843216,
+          "decodedValues": 17661,
+          "samplesMs": [
+            4.45493599999827, 5.106811999998172, 3.8301589999973658, 3.9332739999990736,
+            4.54675899999711, 7.664276999999856
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 2,
+      "width": 256,
+      "limit": 100,
+      "reuse": 4,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 27.29548899999827,
+          "incrementalPeak": 111936,
+          "decodedValues": null,
+          "samplesMs": [
+            27.419441999998526, 27.171535999998014, 25.149077999998553, 24.958209999997052,
+            29.108602999996947, 37.38477100000091
+          ]
+        },
+        "cached": {
+          "medianMs": 9.458348500000284,
+          "incrementalPeak": 11845616,
+          "decodedValues": 17661,
+          "samplesMs": [
+            7.570330000002286, 9.489391999999498, 7.77831100000185, 9.676104000001942,
+            9.42730500000107, 20.315381000000343
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "keys": 2,
+      "width": 256,
+      "limit": 100,
+      "reuse": 4,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 25.426410500000202,
+          "incrementalPeak": 204096,
+          "decodedValues": null,
+          "samplesMs": [
+            20.721905000002153, 27.284217000000353, 23.56860400000005, 28.301343000002817,
+            21.564311000001908, 31.03897599999982
+          ]
+        },
+        "cached": {
+          "medianMs": 9.949874000001728,
+          "incrementalPeak": 11845616,
+          "decodedValues": 17661,
+          "samplesMs": [
+            6.256306000002951, 11.116594999999506, 8.088926000000356, 11.10823000000164,
+            8.791518000001815, 16.779975000001286
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 32,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 2.349001500000668,
+          "incrementalPeak": 988,
+          "decodedValues": null,
+          "samplesMs": [
+            2.3643100000008417, 2.224025999999867, 2.7138379999996687, 3.1543369999999413,
+            2.2607759999991686, 2.333693000000494
+          ]
+        },
+        "cached": {
+          "medianMs": 0.9195005000019592,
+          "incrementalPeak": 10960,
+          "decodedValues": 64,
+          "samplesMs": [
+            0.904021999998804, 0.9122070000012172, 0.9829200000021956, 0.9406699999999546,
+            0.9267940000027011, 0.9040520000016841
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 32,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 3.8948365000014746,
+          "incrementalPeak": 988,
+          "decodedValues": null,
+          "samplesMs": [
+            3.8927180000027874, 5.326285000002827, 4.888801999997668, 3.826240999998845,
+            3.8266530000000785, 3.896955000000162
+          ]
+        },
+        "cached": {
+          "medianMs": 1.37928649999958,
+          "incrementalPeak": 10960,
+          "decodedValues": 64,
+          "samplesMs": [
+            1.374948000000586, 1.3339909999995143, 1.4186110000009649, 1.3339510000005248,
+            1.383624999998574, 1.5536449999999604
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 32,
+      "limit": 3,
+      "reuse": 4,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 9.652579500001593,
+          "incrementalPeak": 1105,
+          "decodedValues": null,
+          "samplesMs": [
+            9.008746999999858, 10.379648000001907, 9.672547000001941, 9.632612000001245,
+            9.030518999999913, 9.958135000000766
+          ]
+        },
+        "cached": {
+          "medianMs": 3.4928594999983034,
+          "incrementalPeak": 11041,
+          "decodedValues": 64,
+          "samplesMs": [
+            3.5279309999968973, 4.066213999998581, 3.52974400000312, 3.379461000000447,
+            3.4376609999999346, 3.4577879999997094
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 32,
+      "limit": 3,
+      "reuse": 4,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 16.021733500001574,
+          "incrementalPeak": 1384,
+          "decodedValues": null,
+          "samplesMs": [
+            15.389227000003302, 15.727774999999383, 15.843493000000308, 16.279002999999648,
+            16.714843000001565, 16.19997400000284
+          ]
+        },
+        "cached": {
+          "medianMs": 5.477466000000277,
+          "incrementalPeak": 11032,
+          "decodedValues": 64,
+          "samplesMs": [
+            5.230405999998766, 5.270681999998487, 6.021383999999671, 5.536030999999639,
+            5.743741999998747, 5.418901000000915
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 32,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 3.218132500000138,
+          "incrementalPeak": 2164,
+          "decodedValues": null,
+          "samplesMs": [
+            3.1850650000014866, 4.439026000000013, 3.326240999998845, 3.250699000000168,
+            3.166520999999193, 3.185566000000108
+          ]
+        },
+        "cached": {
+          "medianMs": 1.2477885000007518,
+          "incrementalPeak": 12132,
+          "decodedValues": 64,
+          "samplesMs": [
+            1.255343000000721, 1.300097999999707, 1.2319290000014007, 1.4036119999982475,
+            1.2402340000007825, 1.207602999998926
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 32,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 5.91778400000112,
+          "incrementalPeak": 5264,
+          "decodedValues": null,
+          "samplesMs": [
+            5.8299540000007255, 6.430906000001414, 5.965930000002118, 5.869638000000123,
+            8.246692999997322, 5.783998000002612
+          ]
+        },
+        "cached": {
+          "medianMs": 1.9734000000007654,
+          "incrementalPeak": 12032,
+          "decodedValues": 64,
+          "samplesMs": [
+            2.0111350000006496, 2.080686000001151, 1.9562020000012126, 1.983223999999609,
+            1.9635760000019218, 1.9509629999993194
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 32,
+      "limit": 100,
+      "reuse": 4,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 13.32345449999957,
+          "incrementalPeak": 6064,
+          "decodedValues": null,
+          "samplesMs": [
+            13.027421999999206, 15.293437000000267, 12.606950999997935, 14.192375000002357,
+            12.957570000002306, 13.619486999999936
+          ]
+        },
+        "cached": {
+          "medianMs": 4.689552499999991,
+          "incrementalPeak": 14832,
+          "decodedValues": 64,
+          "samplesMs": [
+            4.661704999998619, 4.6515049999979965, 4.6517559999992955, 4.717400000001362,
+            4.939968000002409, 4.733530000001338
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 32,
+      "limit": 100,
+      "reuse": 4,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 26.029225500000393,
+          "incrementalPeak": 18464,
+          "decodedValues": null,
+          "samplesMs": [
+            29.80401200000051, 23.774420999998256, 27.812783000001218, 23.579665000001114,
+            24.24566799999957, 30.158909000001586
+          ]
+        },
+        "cached": {
+          "medianMs": 8.444910999998683,
+          "incrementalPeak": 14432,
+          "decodedValues": 64,
+          "samplesMs": [
+            8.519776999997703, 7.857068999997864, 9.2581969999992, 9.261524000001373,
+            7.984279000000242, 8.370044999999664
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 256,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 2.3545574999989185,
+          "incrementalPeak": 1884,
+          "decodedValues": null,
+          "samplesMs": [
+            2.277547000001505, 2.2765459999973245, 2.3413779999973485, 2.4776640000018233,
+            2.3677370000004885, 2.4463849999992817
+          ]
+        },
+        "cached": {
+          "medianMs": 0.9061004999985016,
+          "incrementalPeak": 39632,
+          "decodedValues": 64,
+          "samplesMs": [
+            0.9267550000004121, 0.9131089999973483, 0.899091999999655, 0.8626939999994647,
+            1.4172469999975874, 0.864687999997841
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 256,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 4.215560000000551,
+          "incrementalPeak": 1884,
+          "decodedValues": null,
+          "samplesMs": [
+            3.852391999997053, 4.5622069999990345, 3.9881569999997737, 4.252314000001206,
+            4.178805999999895, 4.471847999997408
+          ]
+        },
+        "cached": {
+          "medianMs": 1.3596994999988965,
+          "incrementalPeak": 39632,
+          "decodedValues": 64,
+          "samplesMs": [
+            1.4385280000024068, 1.31397300000026, 1.340342999999848, 1.3350030000001425,
+            1.379055999997945, 1.7310379999980796
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 256,
+      "limit": 3,
+      "reuse": 4,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 9.266107000001284,
+          "incrementalPeak": 2001,
+          "decodedValues": null,
+          "samplesMs": [
+            10.869811000000482, 9.388973000000988, 9.089018999999098, 9.128713999998581,
+            10.572081000002072, 9.14324100000158
+          ]
+        },
+        "cached": {
+          "medianMs": 3.7218010000015056,
+          "incrementalPeak": 39713,
+          "decodedValues": 64,
+          "samplesMs": [
+            3.4474499999996624, 4.2219780000014, 3.996152000003349, 3.3694130000003497,
+            3.40135200000077, 5.003497999998217
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 256,
+      "limit": 3,
+      "reuse": 4,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 16.916432500000155,
+          "incrementalPeak": 4296,
+          "decodedValues": null,
+          "samplesMs": [
+            16.282147999998415, 18.142119000000093, 18.570185999997193, 16.110164999998233,
+            16.515198000000964, 17.317666999999346
+          ]
+        },
+        "cached": {
+          "medianMs": 5.301565000001574,
+          "incrementalPeak": 39704,
+          "decodedValues": 64,
+          "samplesMs": [
+            5.274740000000747, 5.3283900000024005, 5.329060999996727, 5.2665129999986675,
+            5.273176000002422, 7.35269100000005
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 256,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 3.3470254999992903,
+          "incrementalPeak": 2272,
+          "decodedValues": null,
+          "samplesMs": [
+            3.693282000000181, 3.4058210000002873, 3.8960929999993823, 3.2455690000024333,
+            3.2882299999982934, 3.236522999999579
+          ]
+        },
+        "cached": {
+          "medianMs": 1.2462105000013253,
+          "incrementalPeak": 40804,
+          "decodedValues": 64,
+          "samplesMs": [
+            1.292993999999453, 1.2529890000005253, 1.193607000001066, 1.1917539999994915,
+            1.2485599999999977, 1.2438610000026529
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 256,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 6.074118999998973,
+          "incrementalPeak": 27664,
+          "decodedValues": null,
+          "samplesMs": [
+            5.950700999997935, 6.170645999998669, 7.146142000001419, 5.977591999999277,
+            5.962233000002016, 9.135264999997162
+          ]
+        },
+        "cached": {
+          "medianMs": 1.992185499999323,
+          "incrementalPeak": 40704,
+          "decodedValues": 64,
+          "samplesMs": [
+            2.069165000000794, 1.9933629999977711, 1.9485180000010587, 1.982121000000916,
+            1.9910080000008747, 2.031152999999904
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 256,
+      "limit": 100,
+      "reuse": 4,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 13.813391499999852,
+          "incrementalPeak": 6172,
+          "decodedValues": null,
+          "samplesMs": [
+            14.587558999999601, 13.92590299999938, 14.36823600000207, 13.700880000000325,
+            13.264929000000848, 13.363936000001559
+          ]
+        },
+        "cached": {
+          "medianMs": 4.813595999999961,
+          "incrementalPeak": 43504,
+          "decodedValues": 64,
+          "samplesMs": [
+            4.883052000001044, 4.697543000002042, 6.2347459999982675, 4.744139999998879,
+            4.728289999999106, 5.344019999996817
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 256,
+      "limit": 100,
+      "reuse": 4,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 25.085228999998435,
+          "incrementalPeak": 108064,
+          "decodedValues": null,
+          "samplesMs": [
+            24.756180000000313, 30.898471999997128, 25.125043999996706, 26.765402000000904,
+            25.045414000000164, 24.915460000000166
+          ]
+        },
+        "cached": {
+          "medianMs": 8.626543499998661,
+          "incrementalPeak": 43104,
+          "decodedValues": 64,
+          "samplesMs": [
+            10.309605999998894, 9.789777999998478, 9.33404999999766, 7.787107999996806,
+            7.919036999999662, 7.6916479999999865
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 32,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 2.9411014999986946,
+          "incrementalPeak": 1260,
+          "decodedValues": null,
+          "samplesMs": [
+            2.9457750000001397, 2.9284020000013697, 2.8848309999993944, 3.4093880000000354,
+            2.9364279999972496, 3.047848000001977
+          ]
+        },
+        "cached": {
+          "medianMs": 1.1005165000024135,
+          "incrementalPeak": 21280,
+          "decodedValues": 128,
+          "samplesMs": [
+            1.1164110000026994, 1.0838299999995797, 1.0846220000021276, 1.559304999998858,
+            1.6593330000032438, 1.078068999999232
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 32,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 3.9396204999993643,
+          "incrementalPeak": 1260,
+          "decodedValues": null,
+          "samplesMs": [
+            3.916371999999683, 3.99220399999831, 4.513766000000032, 3.908877999998367,
+            3.9628689999990456, 3.896505000000616
+          ]
+        },
+        "cached": {
+          "medianMs": 1.3582765000010113,
+          "incrementalPeak": 21280,
+          "decodedValues": 128,
+          "samplesMs": [
+            1.394825999999739, 1.3497200000019802, 1.3697480000009818, 1.3435689999969327,
+            1.3500110000022687, 1.366541999999754
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 32,
+      "limit": 3,
+      "reuse": 4,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 12.42660099999921,
+          "incrementalPeak": 1737,
+          "decodedValues": null,
+          "samplesMs": [
+            12.505248999998003, 11.977225000002363, 14.771355000000767, 12.347953000000416,
+            13.418538000001718, 11.817253999997774
+          ]
+        },
+        "cached": {
+          "medianMs": 4.399251000000731,
+          "incrementalPeak": 21397,
+          "decodedValues": 128,
+          "samplesMs": [
+            4.321703999998135, 4.474543000000267, 4.164709000000585, 4.9066859999984445,
+            4.746313999999984, 4.323959000001196
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 32,
+      "limit": 3,
+      "reuse": 4,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 16.523788499998773,
+          "incrementalPeak": 2016,
+          "decodedValues": null,
+          "samplesMs": [
+            16.046856000000844, 17.484662999999273, 16.965645000000222, 19.55259500000102,
+            16.081931999997323, 15.779903000002378
+          ]
+        },
+        "cached": {
+          "medianMs": 5.496736999999484,
+          "incrementalPeak": 21388,
+          "decodedValues": 128,
+          "samplesMs": [
+            5.4748859999999695, 5.363506000001507, 5.518587999998999, 7.10366200000135,
+            6.59708700000192, 5.406676999999036
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 32,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 6.145803499999602,
+          "incrementalPeak": 6436,
+          "decodedValues": null,
+          "samplesMs": [
+            5.943366999999853, 5.9292310000018915, 9.251184000000649, 6.161347999997815,
+            6.489966000001004, 6.130259000001388
+          ]
+        },
+        "cached": {
+          "medianMs": 2.1387959999992745,
+          "incrementalPeak": 22660,
+          "decodedValues": 128,
+          "samplesMs": [
+            2.6528030000008584, 2.107085999999981, 2.0713790000008885, 2.1874280000010913,
+            2.170505999998568, 2.0764889999991283
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 32,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 7.382074999999531,
+          "incrementalPeak": 9536,
+          "decodedValues": null,
+          "samplesMs": [
+            6.817503000002034, 8.216545999999653, 7.823616000001493, 7.022778999998991,
+            6.848260999999184, 7.741371000000072
+          ]
+        },
+        "cached": {
+          "medianMs": 2.2761295000000246,
+          "incrementalPeak": 22560,
+          "decodedValues": 128,
+          "samplesMs": [
+            2.2609659999980067, 2.246017999998003, 2.908435000001191, 2.2630800000006275,
+            2.3867320000026666, 2.2891789999994216
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 32,
+      "limit": 100,
+      "reuse": 4,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 25.17157650000081,
+          "incrementalPeak": 22336,
+          "decodedValues": null,
+          "samplesMs": [
+            24.61685700000089, 27.107405999999173, 25.72629600000073, 24.288659999998345,
+            26.913311000003887, 23.541152999998303
+          ]
+        },
+        "cached": {
+          "medianMs": 8.58572649999951,
+          "incrementalPeak": 26560,
+          "decodedValues": 128,
+          "samplesMs": [
+            9.834161000002496, 8.313308999997389, 8.638570999999502, 10.452134000002843,
+            8.532881999999518, 8.213330999999016
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 32,
+      "limit": 100,
+      "reuse": 4,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 28.588153000000602,
+          "incrementalPeak": 34736,
+          "decodedValues": null,
+          "samplesMs": [
+            29.955086000001756, 28.942360000000917, 27.24729899999511, 28.332131000002846,
+            28.65257399999973, 28.523732000001473
+          ]
+        },
+        "cached": {
+          "medianMs": 10.126852500001405,
+          "incrementalPeak": 26160,
+          "decodedValues": 128,
+          "samplesMs": [
+            9.12656999999308, 10.471181000000797, 10.906169000001682, 8.961589000005915,
+            10.167409000001498, 10.086296000001312
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 256,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 3.359107500000391,
+          "incrementalPeak": 2156,
+          "decodedValues": null,
+          "samplesMs": [
+            3.6906870000020717, 3.0275279999987106, 2.987312999997812, 4.651526000001468,
+            3.0046559999973397, 4.969945000004373
+          ]
+        },
+        "cached": {
+          "medianMs": 1.0993589999998221,
+          "incrementalPeak": 78624,
+          "decodedValues": 128,
+          "samplesMs": [
+            1.1079049999971176, 1.0703040000007604, 1.288405999999668, 1.2854589999988093,
+            1.0908130000025267, 1.065625999995973
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 256,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 4.560349499999575,
+          "incrementalPeak": 2344,
+          "decodedValues": null,
+          "samplesMs": [
+            4.69303399999626, 4.347032000005129, 4.0078839999987395, 4.973912000001292,
+            4.821585999998206, 4.427665000002889
+          ]
+        },
+        "cached": {
+          "medianMs": 1.4016430000010587,
+          "incrementalPeak": 78624,
+          "decodedValues": 128,
+          "samplesMs": [
+            1.4044030000004568, 1.4518929999976535, 1.3613929999992251, 1.5908639999979641,
+            1.3988830000016605, 1.395938000001479
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 256,
+      "limit": 3,
+      "reuse": 4,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 13.97358300000269,
+          "incrementalPeak": 4649,
+          "decodedValues": null,
+          "samplesMs": [
+            14.083990999999514, 12.729471999999078, 12.793321000004653, 14.034969000000274,
+            13.912197000005108, 14.330654999997932
+          ]
+        },
+        "cached": {
+          "medianMs": 4.35168149999663,
+          "incrementalPeak": 78741,
+          "decodedValues": 128,
+          "samplesMs": [
+            4.280637999996543, 4.796097999998892, 4.172695000001113, 4.381006999996316,
+            4.322355999996944, 6.021845999996003
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 256,
+      "limit": 3,
+      "reuse": 4,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 18.575776500001666,
+          "incrementalPeak": 7132,
+          "decodedValues": null,
+          "samplesMs": [
+            18.960010000002512, 16.258023999995203, 22.83083500000066, 17.793432999998913,
+            20.20687700000417, 18.19154300000082
+          ]
+        },
+        "cached": {
+          "medianMs": 5.4617010000001756,
+          "incrementalPeak": 78732,
+          "decodedValues": 128,
+          "samplesMs": [
+            5.654854000000341, 5.925223999998707, 5.491778000003251, 5.4316239999971,
+            5.35238599999866, 5.322117999996408
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 256,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 6.575356999997894,
+          "incrementalPeak": 28836,
+          "decodedValues": null,
+          "samplesMs": [
+            7.333093000001099, 6.583922999998322, 6.118468000000576, 6.566790999997465,
+            6.506407000000763, 7.485389999994368
+          ]
+        },
+        "cached": {
+          "medianMs": 2.208666999998968,
+          "incrementalPeak": 80004,
+          "decodedValues": 128,
+          "samplesMs": [
+            2.4056989999953657, 2.142121999997471, 2.275212000000465, 2.7329349999999977,
+            2.1387350000004517, 2.0650670000031823
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 256,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 8.017542000001413,
+          "incrementalPeak": 54336,
+          "decodedValues": null,
+          "samplesMs": [
+            7.7576330000010785, 8.277451000001747, 7.139960000000428, 8.895113999999012,
+            8.985854999998992, 7.243755000003148
+          ]
+        },
+        "cached": {
+          "medianMs": 2.425640999997995,
+          "incrementalPeak": 79904,
+          "decodedValues": 128,
+          "samplesMs": [
+            2.3444929999968736, 2.513571999996202, 2.5067889999991166, 2.7714670000059414,
+            2.3175419999970472, 2.259963999997126
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 256,
+      "limit": 100,
+      "reuse": 4,
+      "nulls": "first",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 29.63888600000064,
+          "incrementalPeak": 111936,
+          "decodedValues": null,
+          "samplesMs": [
+            29.662073999999848, 26.912498999998206, 29.61569800000143, 28.095495000001392,
+            30.084839999995893, 31.857467000001634
+          ]
+        },
+        "cached": {
+          "medianMs": 8.362782000000152,
+          "incrementalPeak": 83904,
+          "decodedValues": 128,
+          "samplesMs": [
+            8.501683000002231, 10.151098000002094, 9.837096999995993, 8.223880999998073,
+            8.223189000003913, 8.062145999996574
+          ]
+        }
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 256,
+      "limit": 100,
+      "reuse": 4,
+      "nulls": "last",
+      "rows": 10000,
+      "variants": {
+        "direct": {
+          "medianMs": 31.87337750000006,
+          "incrementalPeak": 213936,
+          "decodedValues": null,
+          "samplesMs": [
+            30.754640999999538, 35.91743000000133, 30.52908700000262, 31.956414000000223,
+            31.7903409999999, 35.04733100000158
+          ]
+        },
+        "cached": {
+          "medianMs": 9.325273999998899,
+          "incrementalPeak": 83504,
+          "decodedValues": 128,
+          "samplesMs": [
+            9.327387999997882, 8.73065399999905, 10.379778000002261, 9.260611999998218,
+            9.67399899999873, 9.323159999999916
+          ]
+        }
+      }
+    }
+  ]
+}
