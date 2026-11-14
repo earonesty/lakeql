@@ -1,0 +1,25 @@
+{
+  "sourceCommit": "a8ba6db",
+  "requirements": ["F5", "V2"],
+  "harness": "bench/top-k-key-cache.mjs",
+  "artifact": "docs/benchmarks/top-k-key-cache-2026-11-14.json",
+  "checks": {
+    "scenarios": 12,
+    "variants": 2,
+    "warmups": 2,
+    "samples": 5,
+    "outputEquality": "passed every iteration",
+    "finalReservations": "zero every iteration"
+  },
+  "method": "Same owned top-k operator over packed input or admitted utf8 string vector; cached timing includes bulk-admitted cache construction. ASCII fixture gives a known decoded-size bound.",
+  "findings": [
+    "Cached keys improve observed median in eleven of twelve cases; wide-text top-3 at 10000 rows is slower in this run.",
+    "At 10000 rows, whole-batch cache incremental tracked peaks range from 1121296 to 21281968 bytes, versus 924 to 5344 for direct reads.",
+    "No production default changed; candidate policy needs bounded capacity, concurrency/headroom and broader shape evidence."
+  ],
+  "limitations": [
+    "Sequential microbenchmarks, not robust production latency estimates.",
+    "Single ASCII column with permutation order; dictionary/null/multiple-key/reuse shapes not covered.",
+    "Bulk cache admission models strings/descriptors and one transient view/decoder; native decoder/GC costs remain external."
+  ]
+}
