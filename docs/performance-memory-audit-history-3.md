@@ -5248,3 +5248,35 @@ Final release validation passes 3,951 regular/coverage tests (645 skipped), 93
 Worker tests, 520 required conformance cases (one inactive guard skipped), 120
 references, full build/types, clean 66-package consumer and repository gates.
 Fixture regeneration leaves data unchanged; thresholds and timeouts are unchanged.
+
+### Current concurrent runtime refresh after retention fixes (2026-11-14)
+
+Current runtime `fe2b5ec` completes all 128 mixed-operator jobs across memory and
+real localhost HTTP, range-only/factory caches, 64/128 MiB pools and four concurrent
+queries. All pools release to zero; HTTP concurrency remains two. The largest
+64 MiB factory-cache admitted peak is 67,076,718 bytes.
+
+All 52 public R2 scenarios pass, including forty ordinary owned-query cases with
+512 KiB shared headroom. Maximum incremental admission is 416,968 bytes, read
+concurrency stays at most four, and warm ordinary queries issue no data reads.
+Discovery probes remain separate.
+
+Native workerd/R2 and managed-heap-constrained HTTP each run four rounds at both
+pool capacities and one/four jobs. Across both transports, 64 of 80 primary jobs
+succeed and sixteen correctly reject at 64 MiB/four jobs. Eight retries with
+outputs pinned reject; all eight retries after releasing output succeed using
+the same pool/cache. Every final eviction returns admission to zero.
+
+Whole-runtime acceptance remains open. Including snapshots after release and
+eviction, native R2 samples 97,687,612 managed-heap bytes at 64 MiB and 179,062,576
+at 128 MiB. The primary-query-only 64 MiB sample maximum is lower (79,825,156),
+so reporting only that would miss later pending-reclamation pressure. Diagnostic
+GC runs only after all measured rounds and final eviction; it reduces managed
+heap to approximately 5 MB and backing to 366,064 bytes. This supports pending
+reclamation rather than a large surviving leak in this fixture. Production cannot
+depend on forced GC, a managed-heap flag excludes external storage, and independent
+counter maxima are not added to invent a total. Sparse samples do not establish
+statistical before/after improvements from the retention fixes.
+
+Evidence: `validation/retention-runtime-refresh-2026-11-14.json`. This checkpoint
+changes evidence only; runtime and release gates remain those of `fe2b5ec`.
