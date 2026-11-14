@@ -1,0 +1,918 @@
+{
+  "node": "v24.18.1",
+  "scope": "Local dictionary materialization policy experiment; cache directory admission only. Input/output allocation excluded. No runtime/query/cloud speed or memory-cap claim. UTF-8 values checked against the existing decoder on every run; one-byte workspace shortage falls back to direct access.",
+  "cases": [
+    {
+      "cardinality": 16,
+      "width": 8,
+      "stride": 1,
+      "rows": 32768,
+      "selectedRows": 32768,
+      "measurements": {
+        "direct": [
+          {
+            "elapsedMs": 6.1845519999999965,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 3.8667619999999943,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 3.788995,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 4.403663999999992,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 3.7793559999999786,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 4.846238,
+            "decodes": 29789,
+            "workspacePeak": 0
+          }
+        ],
+        "cached": [
+          {
+            "elapsedMs": 1.2466809999999953,
+            "decodes": 16,
+            "workspacePeak": 320
+          },
+          {
+            "elapsedMs": 1.0359129999999936,
+            "decodes": 16,
+            "workspacePeak": 320
+          },
+          {
+            "elapsedMs": 1.0577849999999955,
+            "decodes": 16,
+            "workspacePeak": 320
+          },
+          {
+            "elapsedMs": 1.3398970000000077,
+            "decodes": 16,
+            "workspacePeak": 320
+          },
+          {
+            "elapsedMs": 1.1045129999999972,
+            "decodes": 16,
+            "workspacePeak": 320
+          },
+          {
+            "elapsedMs": 1.0738149999999962,
+            "decodes": 16,
+            "workspacePeak": 320
+          }
+        ]
+      },
+      "directMedianMs": 4.403663999999992,
+      "cachedMedianMs": 1.1045129999999972,
+      "fallbackDecodes": 29789
+    },
+    {
+      "cardinality": 16,
+      "width": 8,
+      "stride": 64,
+      "rows": 32768,
+      "selectedRows": 512,
+      "measurements": {
+        "direct": [
+          {
+            "elapsedMs": 0.053741999999999734,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.054572999999976446,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.05492399999999975,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.0535109999999861,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.0559549999999831,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.058721000000019785,
+            "decodes": 465,
+            "workspacePeak": 0
+          }
+        ],
+        "cached": [
+          {
+            "elapsedMs": 0.027442000000007738,
+            "decodes": 1,
+            "workspacePeak": 320
+          },
+          {
+            "elapsedMs": 0.01924700000000712,
+            "decodes": 1,
+            "workspacePeak": 320
+          },
+          {
+            "elapsedMs": 0.03717100000000073,
+            "decodes": 1,
+            "workspacePeak": 320
+          },
+          {
+            "elapsedMs": 0.021590999999972382,
+            "decodes": 1,
+            "workspacePeak": 320
+          },
+          {
+            "elapsedMs": 0.019306000000000267,
+            "decodes": 1,
+            "workspacePeak": 320
+          },
+          {
+            "elapsedMs": 0.016761999999999944,
+            "decodes": 1,
+            "workspacePeak": 320
+          }
+        ]
+      },
+      "directMedianMs": 0.05492399999999975,
+      "cachedMedianMs": 0.021590999999972382,
+      "fallbackDecodes": 465
+    },
+    {
+      "cardinality": 16,
+      "width": 256,
+      "stride": 1,
+      "rows": 32768,
+      "selectedRows": 32768,
+      "measurements": {
+        "direct": [
+          {
+            "elapsedMs": 10.986165000000028,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 7.909303999999963,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 11.00478099999998,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 4.567272000000003,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 11.111181999999985,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 5.2285889999999995,
+            "decodes": 29789,
+            "workspacePeak": 0
+          }
+        ],
+        "cached": [
+          {
+            "elapsedMs": 0.6792609999999968,
+            "decodes": 16,
+            "workspacePeak": 320
+          },
+          {
+            "elapsedMs": 0.6399769999999876,
+            "decodes": 16,
+            "workspacePeak": 320
+          },
+          {
+            "elapsedMs": 1.1465119999999729,
+            "decodes": 16,
+            "workspacePeak": 320
+          },
+          {
+            "elapsedMs": 0.555657999999994,
+            "decodes": 16,
+            "workspacePeak": 320
+          },
+          {
+            "elapsedMs": 1.7959060000000022,
+            "decodes": 16,
+            "workspacePeak": 320
+          },
+          {
+            "elapsedMs": 1.0872900000000527,
+            "decodes": 16,
+            "workspacePeak": 320
+          }
+        ]
+      },
+      "directMedianMs": 10.986165000000028,
+      "cachedMedianMs": 1.0872900000000527,
+      "fallbackDecodes": 29789
+    },
+    {
+      "cardinality": 16,
+      "width": 256,
+      "stride": 64,
+      "rows": 32768,
+      "selectedRows": 512,
+      "measurements": {
+        "direct": [
+          {
+            "elapsedMs": 0.20253200000001925,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.1583880000000022,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.1606930000000375,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.1606029999999805,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.15638500000000022,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.15474199999999882,
+            "decodes": 465,
+            "workspacePeak": 0
+          }
+        ],
+        "cached": [
+          {
+            "elapsedMs": 0.027050999999971737,
+            "decodes": 1,
+            "workspacePeak": 320
+          },
+          {
+            "elapsedMs": 0.01913600000000315,
+            "decodes": 1,
+            "workspacePeak": 320
+          },
+          {
+            "elapsedMs": 0.01956599999999753,
+            "decodes": 1,
+            "workspacePeak": 320
+          },
+          {
+            "elapsedMs": 0.01792399999999361,
+            "decodes": 1,
+            "workspacePeak": 320
+          },
+          {
+            "elapsedMs": 0.01947699999999486,
+            "decodes": 1,
+            "workspacePeak": 320
+          },
+          {
+            "elapsedMs": 0.016050000000007003,
+            "decodes": 1,
+            "workspacePeak": 320
+          }
+        ]
+      },
+      "directMedianMs": 0.1606029999999805,
+      "cachedMedianMs": 0.01947699999999486,
+      "fallbackDecodes": 465
+    },
+    {
+      "cardinality": 1024,
+      "width": 8,
+      "stride": 1,
+      "rows": 32768,
+      "selectedRows": 32768,
+      "measurements": {
+        "direct": [
+          {
+            "elapsedMs": 4.058111999999994,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 13.394558000000018,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 3.575561999999991,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 3.183804000000009,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 3.1070179999999255,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 3.169216000000006,
+            "decodes": 29789,
+            "workspacePeak": 0
+          }
+        ],
+        "cached": [
+          {
+            "elapsedMs": 1.196546000000012,
+            "decodes": 1024,
+            "workspacePeak": 16448
+          },
+          {
+            "elapsedMs": 1.2779590000000098,
+            "decodes": 1024,
+            "workspacePeak": 16448
+          },
+          {
+            "elapsedMs": 0.5514999999999759,
+            "decodes": 1024,
+            "workspacePeak": 16448
+          },
+          {
+            "elapsedMs": 0.5343280000000163,
+            "decodes": 1024,
+            "workspacePeak": 16448
+          },
+          {
+            "elapsedMs": 0.5696339999999509,
+            "decodes": 1024,
+            "workspacePeak": 16448
+          },
+          {
+            "elapsedMs": 0.5498669999999493,
+            "decodes": 1024,
+            "workspacePeak": 16448
+          }
+        ]
+      },
+      "directMedianMs": 3.575561999999991,
+      "cachedMedianMs": 0.5696339999999509,
+      "fallbackDecodes": 29789
+    },
+    {
+      "cardinality": 1024,
+      "width": 8,
+      "stride": 64,
+      "rows": 32768,
+      "selectedRows": 512,
+      "measurements": {
+        "direct": [
+          {
+            "elapsedMs": 0.04428399999994781,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.5271340000000464,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.046968999999990046,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.04458399999998619,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.04366200000004028,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.0442440000000488,
+            "decodes": 465,
+            "workspacePeak": 0
+          }
+        ],
+        "cached": [
+          {
+            "elapsedMs": 0.013405000000034306,
+            "decodes": 16,
+            "workspacePeak": 16448
+          },
+          {
+            "elapsedMs": 0.08393899999998666,
+            "decodes": 16,
+            "workspacePeak": 16448
+          },
+          {
+            "elapsedMs": 0.012643999999909283,
+            "decodes": 16,
+            "workspacePeak": 16448
+          },
+          {
+            "elapsedMs": 0.010530000000017026,
+            "decodes": 16,
+            "workspacePeak": 16448
+          },
+          {
+            "elapsedMs": 0.011301000000003114,
+            "decodes": 16,
+            "workspacePeak": 16448
+          },
+          {
+            "elapsedMs": 0.010290000000054533,
+            "decodes": 16,
+            "workspacePeak": 16448
+          }
+        ]
+      },
+      "directMedianMs": 0.04458399999998619,
+      "cachedMedianMs": 0.012643999999909283,
+      "fallbackDecodes": 465
+    },
+    {
+      "cardinality": 1024,
+      "width": 256,
+      "stride": 1,
+      "rows": 32768,
+      "selectedRows": 32768,
+      "measurements": {
+        "direct": [
+          {
+            "elapsedMs": 4.297864000000004,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 6.365823999999975,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 5.751905999999963,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 7.640445999999997,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 4.369839999999954,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 6.052782999999977,
+            "decodes": 29789,
+            "workspacePeak": 0
+          }
+        ],
+        "cached": [
+          {
+            "elapsedMs": 0.6313599999999724,
+            "decodes": 1024,
+            "workspacePeak": 16448
+          },
+          {
+            "elapsedMs": 0.8827239999999392,
+            "decodes": 1024,
+            "workspacePeak": 16448
+          },
+          {
+            "elapsedMs": 0.65959399999997,
+            "decodes": 1024,
+            "workspacePeak": 16448
+          },
+          {
+            "elapsedMs": 0.6128350000000182,
+            "decodes": 1024,
+            "workspacePeak": 16448
+          },
+          {
+            "elapsedMs": 0.6457680000000892,
+            "decodes": 1024,
+            "workspacePeak": 16448
+          },
+          {
+            "elapsedMs": 0.6704540000000634,
+            "decodes": 1024,
+            "workspacePeak": 16448
+          }
+        ]
+      },
+      "directMedianMs": 6.052782999999977,
+      "cachedMedianMs": 0.65959399999997,
+      "fallbackDecodes": 29789
+    },
+    {
+      "cardinality": 1024,
+      "width": 256,
+      "stride": 64,
+      "rows": 32768,
+      "selectedRows": 512,
+      "measurements": {
+        "direct": [
+          {
+            "elapsedMs": 0.06835900000010042,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.06755700000007892,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.06869000000006054,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.06847900000002483,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.06806800000003932,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.06813899999997375,
+            "decodes": 465,
+            "workspacePeak": 0
+          }
+        ],
+        "cached": [
+          {
+            "elapsedMs": 0.012933999999972912,
+            "decodes": 16,
+            "workspacePeak": 16448
+          },
+          {
+            "elapsedMs": 0.010420000000067375,
+            "decodes": 16,
+            "workspacePeak": 16448
+          },
+          {
+            "elapsedMs": 0.011611000000016247,
+            "decodes": 16,
+            "workspacePeak": 16448
+          },
+          {
+            "elapsedMs": 0.010921000000053027,
+            "decodes": 16,
+            "workspacePeak": 16448
+          },
+          {
+            "elapsedMs": 0.02477699999997185,
+            "decodes": 16,
+            "workspacePeak": 16448
+          },
+          {
+            "elapsedMs": 0.015479000000027554,
+            "decodes": 16,
+            "workspacePeak": 16448
+          }
+        ]
+      },
+      "directMedianMs": 0.06835900000010042,
+      "cachedMedianMs": 0.012933999999972912,
+      "fallbackDecodes": 465
+    },
+    {
+      "cardinality": 32768,
+      "width": 8,
+      "stride": 1,
+      "rows": 32768,
+      "selectedRows": 32768,
+      "measurements": {
+        "direct": [
+          {
+            "elapsedMs": 3.2365730000000212,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 3.1778320000000804,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 3.1854070000000547,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 3.1232199999999466,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 3.1780829999999014,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 3.3118950000000495,
+            "decodes": 29789,
+            "workspacePeak": 0
+          }
+        ],
+        "cached": [
+          {
+            "elapsedMs": 5.741396000000009,
+            "decodes": 29789,
+            "workspacePeak": 524352
+          },
+          {
+            "elapsedMs": 3.3610069999999723,
+            "decodes": 29789,
+            "workspacePeak": 524352
+          },
+          {
+            "elapsedMs": 3.3769079999999576,
+            "decodes": 29789,
+            "workspacePeak": 524352
+          },
+          {
+            "elapsedMs": 3.341721000000007,
+            "decodes": 29789,
+            "workspacePeak": 524352
+          },
+          {
+            "elapsedMs": 3.460384999999974,
+            "decodes": 29789,
+            "workspacePeak": 524352
+          },
+          {
+            "elapsedMs": 3.6018720000000712,
+            "decodes": 29789,
+            "workspacePeak": 524352
+          }
+        ]
+      },
+      "directMedianMs": 3.1854070000000547,
+      "cachedMedianMs": 3.460384999999974,
+      "fallbackDecodes": 29789
+    },
+    {
+      "cardinality": 32768,
+      "width": 8,
+      "stride": 64,
+      "rows": 32768,
+      "selectedRows": 512,
+      "measurements": {
+        "direct": [
+          {
+            "elapsedMs": 0.0454459999999699,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.051367000000027474,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.04598599999997077,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.04660799999999199,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.0453260000000455,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.04620700000009492,
+            "decodes": 465,
+            "workspacePeak": 0
+          }
+        ],
+        "cached": [
+          {
+            "elapsedMs": 0.17661299999997482,
+            "decodes": 465,
+            "workspacePeak": 524352
+          },
+          {
+            "elapsedMs": 0.18073099999992337,
+            "decodes": 465,
+            "workspacePeak": 524352
+          },
+          {
+            "elapsedMs": 0.17300599999998667,
+            "decodes": 465,
+            "workspacePeak": 524352
+          },
+          {
+            "elapsedMs": 0.17767499999990832,
+            "decodes": 465,
+            "workspacePeak": 524352
+          },
+          {
+            "elapsedMs": 0.16584199999999782,
+            "decodes": 465,
+            "workspacePeak": 524352
+          },
+          {
+            "elapsedMs": 0.18793400000004112,
+            "decodes": 465,
+            "workspacePeak": 524352
+          }
+        ]
+      },
+      "directMedianMs": 0.04620700000009492,
+      "cachedMedianMs": 0.17767499999990832,
+      "fallbackDecodes": 465
+    },
+    {
+      "cardinality": 32768,
+      "width": 256,
+      "stride": 1,
+      "rows": 32768,
+      "selectedRows": 32768,
+      "measurements": {
+        "direct": [
+          {
+            "elapsedMs": 7.138339999999971,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 13.212222999999994,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 7.017841999999973,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 7.185218999999961,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 11.467051999999967,
+            "decodes": 29789,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 8.204580000000078,
+            "decodes": 29789,
+            "workspacePeak": 0
+          }
+        ],
+        "cached": [
+          {
+            "elapsedMs": 7.415874000000031,
+            "decodes": 29789,
+            "workspacePeak": 524352
+          },
+          {
+            "elapsedMs": 7.422586999999908,
+            "decodes": 29789,
+            "workspacePeak": 524352
+          },
+          {
+            "elapsedMs": 8.642957000000024,
+            "decodes": 29789,
+            "workspacePeak": 524352
+          },
+          {
+            "elapsedMs": 10.699926000000005,
+            "decodes": 29789,
+            "workspacePeak": 524352
+          },
+          {
+            "elapsedMs": 7.523306000000048,
+            "decodes": 29789,
+            "workspacePeak": 524352
+          },
+          {
+            "elapsedMs": 11.020200000000159,
+            "decodes": 29789,
+            "workspacePeak": 524352
+          }
+        ]
+      },
+      "directMedianMs": 8.204580000000078,
+      "cachedMedianMs": 8.642957000000024,
+      "fallbackDecodes": 29789
+    },
+    {
+      "cardinality": 32768,
+      "width": 256,
+      "stride": 64,
+      "rows": 32768,
+      "selectedRows": 512,
+      "measurements": {
+        "direct": [
+          {
+            "elapsedMs": 0.06667600000014318,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.07214599999997517,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.06486199999994824,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.06536299999993389,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.07167600000002494,
+            "decodes": 465,
+            "workspacePeak": 0
+          },
+          {
+            "elapsedMs": 0.07438999999999396,
+            "decodes": 465,
+            "workspacePeak": 0
+          }
+        ],
+        "cached": [
+          {
+            "elapsedMs": 0.21325300000012248,
+            "decodes": 465,
+            "workspacePeak": 524352
+          },
+          {
+            "elapsedMs": 0.18240400000013324,
+            "decodes": 465,
+            "workspacePeak": 524352
+          },
+          {
+            "elapsedMs": 0.1836559999999281,
+            "decodes": 465,
+            "workspacePeak": 524352
+          },
+          {
+            "elapsedMs": 0.19447600000012244,
+            "decodes": 465,
+            "workspacePeak": 524352
+          },
+          {
+            "elapsedMs": 0.18248400000015863,
+            "decodes": 465,
+            "workspacePeak": 524352
+          },
+          {
+            "elapsedMs": 0.2319479999998748,
+            "decodes": 465,
+            "workspacePeak": 524352
+          }
+        ]
+      },
+      "directMedianMs": 0.07167600000002494,
+      "cachedMedianMs": 0.19447600000012244,
+      "fallbackDecodes": 465
+    }
+  ]
+}

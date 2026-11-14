@@ -1,0 +1,12 @@
+{
+  "runtimeChanged": false,
+  "method": "Two local runs; twelve dictionary width/cardinality/selection cases per run; two warmups and six measured rounds with alternating order. Both paths construct identical row objects. Optional cache directory has exact admission; one-byte shortage uses direct decoding.",
+  "findings": [
+    "All output values match existing vectorValue, including UTF-8 BOM and malformed input replacement.",
+    "Repeated dictionary entries reduce decoder calls; unique entries do not.",
+    "Cache directory is cardinality-sized even when sparse selection touches few entries. Universal eager caching is unsuitable."
+  ],
+  "winsPerRun": [8, 10],
+  "scope": "Microbenchmark excludes source/output admission and is not production query, cloud throughput or whole-runtime memory evidence. No production default changed.",
+  "next": "Investigate bounded lazy reuse sensitive to observed dictionary-index repetition, with cache workspace admitted before allocation and direct access when admission or reuse is insufficient. Preserve independent binary ownership; restrict immutable scalar reuse by explicit vector shape."
+}
