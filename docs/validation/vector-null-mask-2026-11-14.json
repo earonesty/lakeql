@@ -1,0 +1,53 @@
+{
+  "runtimeBase": "145c854",
+  "requirements": ["M1", "M2", "V1", "V2"],
+  "finding": "Direct column IS NULL/IS NOT NULL masks called vectorValue for every row, decoding packed text and materializing nested containers outside the mask reservation.",
+  "fix": "Resolve nullness solely through validity, null vectors, dictionary indices and union tags/offsets. Indirection is iterative; non-null leaf payload and nested container children are not read. Constant-space cycle detection preserves termination without a visited-node set.",
+  "negativeControl": {
+    "restoredOldLoopFailures": 3,
+    "failures": [
+      "TextDecoder called four times where metadata-only checks require zero calls.",
+      "Nested payload accessor was visited.",
+      "A 20000-level dictionary chain overflowed the recursive value reader."
+    ]
+  },
+  "validation": {
+    "focusedTestsPassed": 66,
+    "regularPassed": 3874,
+    "regularSkipped": 645,
+    "build": "passed",
+    "types": "pnpm typecheck passed",
+    "worker": 82,
+    "workerCommand": "pnpm test:workerd --no-file-parallelism",
+    "workerRetry": "Default parallel-file run hit 5s timestamp dynamic-import and 15s Cloudflare entrypoint-import timeouts. Complete serialized-file rerun passed all 82 tests with existing timeouts unchanged; in-test concurrent queries remained concurrent."
+  },
+  "evidence": [
+    "Eighteen unit cases cover primitive/packed/nested/union/dictionary null semantics, both negations, exact mask capacity, one-byte-short rejection with sibling preservation, invalid indirection cleanup, deep dictionary chains, cyclic dictionary/union rejection and terminating self-aliases at different row offsets.",
+    "Real HTTP Parquet fixture matrix includes nullable text; both null predicates preserve filtered offset/limit results through borrowed/owned scanners and 206/200 responses. Owned results remain charged through cache eviction and release to zero.",
+    "Native R2 fixture matrix adds four concurrent nullable queries with cold/warm cache reuse, cache eviction while outputs remain owned, and zero cleanup at 64/128 MiB."
+  ],
+  "benchmark": {
+    "artifact": "docs/benchmarks/vector-null-mask-2026-11-14.json",
+    "scenarios": 8,
+    "variantOrder": "alternating, 2 warmups/6 samples",
+    "oracle": "independent validity flags",
+    "maxEliminatedDecodeBytes": 28753920,
+    "largestListCase": {
+      "rows": 4096,
+      "elementsPerRow": 2,
+      "textWidth": 4096,
+      "oldMedianMs": 5.24947250000001,
+      "newMedianMs": 0.06589399999998591,
+      "oldDecodeCalls": 7020,
+      "newDecodeCalls": 0
+    },
+    "allNewDecodeCalls": 0
+  },
+  "boundaries": [
+    "A null predicate inspects nullness, not leaf payload validity; invalid union/dictionary indirection still rejects. Data decoding/validation remains the scan layer responsibility.",
+    "The benchmark reproduces the removed loop using current vectorValue, not a historical full build. Source storage is borrowed and excluded from predicate charges; the old loop had the same mask charge despite untracked payload work.",
+    "HTTP fixtures, local workerd R2 bindings and Node timing are distinct evidence; no production-cloud latency or whole-runtime heap bound is claimed.",
+    "Ordering comparisons retain their previous implementation. Broader audit and final release gates remain open.",
+    "The existing predicate mask backing-byte charge is unchanged; this removes untracked payload materialization, not every mask/view/runtime bookkeeping gap."
+  ]
+}

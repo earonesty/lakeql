@@ -3,6 +3,8 @@ import { parquetWriteBuffer } from "hyparquet-writer";
 import {
   col,
   eq,
+  isNotNull,
+  isNull,
   Lake,
   MemoryBudget,
   mod,
@@ -32,10 +34,13 @@ it.each(
   let seed = 12345;
   const rows = Array.from({ length: 512 }, (_, id) => ({
     id,
-    text: Array.from({ length: 512 }, () => {
-      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-      return String.fromCharCode(33 + ((seed >>> 16) % 90));
-    }).join(""),
+    text:
+      id % 7 === 0
+        ? null
+        : Array.from({ length: 512 }, () => {
+            seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+            return String.fromCharCode(33 + ((seed >>> 16) % 90));
+          }).join(""),
   }));
   const bytes = new Uint8Array(
     parquetWriteBuffer({
@@ -264,6 +269,31 @@ it.each(
     cache.deleteWhere(() => true);
     expect(firstSlice.rows).toEqual(expectedSlice.slice(0, 9));
     expect(pool.usedBytes).toBe(0);
+
+    for (const nullRows of [true, false]) {
+      const owner = await lake
+        .path("rows.parquet")
+        .select(["id"])
+        .where(nullRows ? isNull("text") : isNotNull("text"))
+        .offset(1)
+        .limit(5)
+        .batchSize(3)
+        .run()
+        .toOwnedArray();
+      try {
+        expect(owner.value).toEqual(
+          rows
+            .filter((row) => (row.text === null) === nullRows)
+            .slice(1, 6)
+            .map(({ id }) => ({ id })),
+        );
+        cache.deleteWhere(() => true);
+        expect(pool.usedBytes).toBeGreaterThan(0);
+      } finally {
+        owner.release();
+      }
+      expect(pool.usedBytes).toBe(0);
+    }
 
     expect(peak).toBeLessThanOrEqual(2);
     expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);

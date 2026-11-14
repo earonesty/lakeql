@@ -1,6 +1,14 @@
 /// <reference types="@cloudflare/vitest-pool-workers/types" />
 import { env } from "cloudflare:test";
-import { type Expr, Lake, MemoryBudget, memorySpillAdapter, SharedMemoryCache } from "lakeql-core";
+import {
+  type Expr,
+  isNotNull,
+  isNull,
+  Lake,
+  MemoryBudget,
+  memorySpillAdapter,
+  SharedMemoryCache,
+} from "lakeql-core";
 import { expect, it } from "vitest";
 import { type R2BucketLike, R2ObjectStore } from "../../r2/src/index.js";
 import { parquetScanner } from "./index.js";
@@ -48,6 +56,36 @@ it.each(
       },
       budget: { maxAllocatedMemoryBytes: 2 * 1024 * 1024 },
     });
+    for (const nullRows of [true, false]) {
+      const outputs = await Promise.all(
+        Array.from({ length: 4 }, () =>
+          lake
+            .path(path)
+            .select(["id"])
+            .where(nullRows ? isNull("text") : isNotNull("text"))
+            .offset(1)
+            .limit(5)
+            .batchSize(3)
+            .run()
+            .toOwnedArray(),
+        ),
+      );
+      try {
+        cache.deleteWhere(() => true);
+        for (const output of outputs)
+          expect(output.value).toEqual(
+            expected
+              .filter((row) => (row.text === null) === nullRows)
+              .slice(1, 6)
+              .map(({ id }) => ({ id })),
+          );
+        expect(pool.usedBytes).toBeGreaterThan(0);
+      } finally {
+        for (const output of outputs) output.release();
+      }
+      expect(pool.usedBytes).toBe(0);
+    }
+
     for (const expand of [false, true]) {
       const predicate: Expr = {
         kind: "compare",

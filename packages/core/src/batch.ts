@@ -1684,11 +1684,49 @@ function nullCheckMask(values: BatchExprValues, negated: boolean, scope?: Memory
   return mask;
 }
 
+/** Nullness depends on validity and indirection, never on leaf payload. Follow
+ * dictionary/union chains iteratively without decoding text or building rows. */
+function vectorNullAt(vector: Vector, index: number): boolean {
+  // Brent's cycle check keeps malformed indirection from turning an iterative
+  // read into an infinite loop, without allocating a visited-node set.
+  let checkpoint = vector;
+  let checkpointIndex = index;
+  let distance = 0;
+  let period = 1;
+  while (true) {
+    if (index < 0 || index >= vectorLength(vector))
+      throw new LakeqlError("LAKEQL_TYPE_ERROR", "Vector index is out of bounds", {
+        index,
+        length: vectorLength(vector),
+      });
+    if ("valid" in vector && vector.valid?.[index] === 0) return true;
+    if (vector.type === "dict") {
+      index = vector.indices[index] ?? 0;
+      vector = vector.dictionary;
+    } else if (vector.type === "union") {
+      const child = vector.children[vector.tags[index] ?? -1];
+      const offset = vector.offsets[index];
+      if (child === undefined || offset === undefined)
+        throw new LakeqlError("LAKEQL_TYPE_ERROR", "Invalid union row");
+      vector = child;
+      index = offset;
+    } else return vector.type === "null";
+    if (vector === checkpoint && index === checkpointIndex)
+      throw new LakeqlError("LAKEQL_TYPE_ERROR", "Cyclic vector null indirection");
+    if (++distance === period) {
+      checkpoint = vector;
+      checkpointIndex = index;
+      distance = 0;
+      period *= 2;
+    }
+  }
+}
+
 function vectorNullCheckMask(vector: Vector, negated: boolean, scope?: MemoryScope): Uint8Array {
   const rowCount = vectorLength(vector);
   const mask = admitVectorBuffer(scope, rowCount, () => new Uint8Array(rowCount));
   for (let index = 0; index < rowCount; index += 1) {
-    const isNull = vectorValue(vector, index) === null;
+    const isNull = vectorNullAt(vector, index);
     mask[index] = (negated ? !isNull : isNull) ? 1 : 0;
   }
   return mask;
