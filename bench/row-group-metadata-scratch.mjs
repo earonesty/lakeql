@@ -16,7 +16,7 @@ const variants = { current: decodeRowGroupMetadata };
 if (process.env.LAKEQL_METADATA_REFERENCE)
   variants.reference = (await import(process.env.LAKEQL_METADATA_REFERENCE)).decodeRowGroupMetadata;
 const reports = [];
-for (const width of [1, 8, 32]) {
+for (const width of [1, 8, 32, 128]) {
   const bytes = parquetWriteBuffer({
     rowGroupSize: [2, 2],
     columnData: Array.from({ length: width }, (_, i) => ({
@@ -32,27 +32,36 @@ for (const width of [1, 8, 32]) {
   const directoryScope = new MemoryScope(new MemoryBudget(16));
   const group = footerRowGroupView(view, indexFooterRowGroups(view, directoryScope), 1);
   directoryScope.dispose();
-  for (const [variant, decode] of Object.entries(variants)) {
-    const samples = [];
-    let peak = 0,
-      retained = 0;
-    for (let round = 0; round < 7; round++) {
+  const entries = Object.entries(variants).map(([variant, decode]) => ({
+    variant,
+    decode,
+    samples: [],
+    peak: 0,
+    retained: 0,
+  }));
+  // Alternate first runner to reduce JIT/GC and machine-load ordering bias.
+  for (let round = 0; round < 12; round++) {
+    const ordered = round % 2 === 0 ? entries : [...entries].reverse();
+    for (const entry of ordered) {
       const start = performance.now();
       for (let iteration = 0; iteration < 100; iteration++) {
-        const budget = new MemoryBudget(1024 * 1024);
+        const budget = new MemoryBudget(4 * 1024 * 1024);
         const scope = new MemoryScope(budget);
         try {
-          const result = decode(group, leaves, true, scope);
+          const result = entry.decode(group, leaves, true, scope);
           if (iteration === 0) assert.deepEqual(result, metadata.row_groups[1]);
-          peak = budget.peakBytes;
-          retained = budget.usedBytes;
+          entry.peak = budget.peakBytes;
+          entry.retained = budget.usedBytes;
         } finally {
           scope.dispose();
         }
         assert.equal(budget.usedBytes, 0);
       }
-      if (round >= 2) samples.push((performance.now() - start) / 100);
+      if (round >= 4) entry.samples.push((performance.now() - start) / 100);
     }
+  }
+  for (const { variant, samples, peak, retained } of entries) {
+    const sorted = [...samples].sort((a, b) => a - b);
     reports.push({
       width,
       variant,
@@ -60,15 +69,16 @@ for (const width of [1, 8, 32]) {
       retainedBytes: retained,
       scratchOverRetainedBytes: peak - retained,
       samplesMs: samples,
-      medianMs: [...samples].sort((a, b) => a - b)[2],
+      medianMs: (sorted[3] + sorted[4]) / 2,
     });
   }
 }
 const result = {
   conditions: {
-    warmupRounds: 2,
-    sampleRounds: 5,
+    warmupRounds: 4,
+    sampleRounds: 8,
     decodesPerRound: 100,
+    executionOrder: "alternating variants each round",
     fixture: "real written two-row-group nullable INT32 Parquet",
     timing: "decode, scope cleanup and zero-used check; reference equality checked once per round",
   },

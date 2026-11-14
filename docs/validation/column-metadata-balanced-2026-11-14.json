@@ -1,0 +1,33 @@
+{
+  "requirements": ["M1", "V2"],
+  "runtimeSourceCommit": "2d0498e",
+  "referenceSourceCommit": "7cba928",
+  "harness": "bench/row-group-metadata-scratch.mjs",
+  "harnessSha256": "faf9ebfbf79272d1240dd2406be1bafae618a6c222108d85ab34146de14af32f",
+  "artifact": "docs/benchmarks/row-group-metadata-balanced-2026-11-14.json",
+  "conditions": {
+    "warmupRounds": 4,
+    "sampleRounds": 8,
+    "decodesPerRound": 100,
+    "executionOrder": "alternating variants each round",
+    "fixture": "real written two-row-group nullable INT32 Parquet",
+    "timing": "decode, scope cleanup and zero-used check; reference equality checked once per round"
+  },
+  "findings": {
+    "widths": [1, 8, 32, 128],
+    "scratchAboveRetainedBytes": 3478,
+    "peak128Before": 1040990,
+    "peak128After": 628110,
+    "median128BeforeMs": 3.0579567799999996,
+    "median128AfterMs": 3.1769597750000047,
+    "median32BeforeMs": 0.746546189999998,
+    "median32AfterMs": 0.8186653949999994
+  },
+  "decision": "Keep column-scoped admission: constant transient scratch and lower wide-schema peak justify measured CPU overhead. No new directory, parser callback, or configuration based on these results.",
+  "validation": "All 9600 decodes complete, compare each variant against independently decoded Parquet metadata once per round, and assert zero budget usage after every decode.",
+  "limitations": [
+    "Single local Node run; alternating order mitigates but does not eliminate JIT/GC/load effects",
+    "Narrow schemas show less memory benefit and a larger relative CPU cost",
+    "Fixed-width numeric schema benchmark does not establish all metadata shapes or whole-query speed"
+  ]
+}

@@ -4689,3 +4689,28 @@ pass. The current 512 KiB live R2 run passes all 52 scenarios; maximum increment
 charge stays 397,512 bytes and warm ordinary reads stay zero. Thus the parser
 scratch improvement does not lower this workload's overall maximum. Evidence:
 `validation/column-metadata-scratch-2026-11-14.json`.
+
+### V2 balanced-order metadata tradeoff measurement
+
+The metadata harness now alternates which variant runs first in every round,
+uses four warmup rounds and eight measured rounds of 100 decodes, and includes
+128-column schemas. Both variants still compare complete metadata against the
+independent reader and assert zero live budget after every decode. All 9,600
+decodes pass. This addresses ordering bias in the earlier current-then-reference
+run; it does not remove machine load, GC or JIT variability.
+
+| Columns | Current median ms | Reference median ms | Current tracked peak | Reference tracked peak |
+| --- | --- | --- | --- | --- |
+| 1 | 0.0536 | 0.0452 | 9,056 | 9,440 |
+| 8 | 0.2337 | 0.2036 | 43,174 | 66,294 |
+| 32 | 0.8187 | 0.7465 | 160,150 | 261,222 |
+| 128 | 3.1770 | 3.0580 | 628,110 | 1,040,990 |
+
+Scratch above retained output remains 3,478 bytes at all widths. The measured
+128-column reduction is about 40% of tracked peak for about 4% more decode time;
+the 32-column time difference is about 10%, rather than treating the earlier 7%
+observation as a stable constant. Narrow schemas have smaller memory savings and
+a larger relative CPU cost. Keep the simpler per-column admission contract: the
+data does not justify introducing an offset directory or another parser callback
+contract merely to remove a traversal. Production behavior is unchanged by this
+measurement. See `validation/column-metadata-balanced-2026-11-14.json`.
