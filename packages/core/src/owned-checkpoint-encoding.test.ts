@@ -1,10 +1,11 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { stableStringify } from "./manifest.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope } from "./memory-scope.js";
 import {
   encodeOwnedCheckpoint,
   equalStableData,
+  internStableDataKey,
   stringifyOwnedStableData,
 } from "./owned-checkpoint-encoding.js";
 
@@ -93,4 +94,57 @@ it("compares stable data with admitted overlap and releases mismatch/error scrat
     expect(target.budget.usedBytes).toBe(0);
     target.dispose();
   }
+});
+
+it("interns equal stable keys without retaining duplicate string storage", () => {
+  const budget = new MemoryBudget(65536);
+  const scope = new MemoryScope(budget);
+  try {
+    const first = internStableDataKey({ b: ["猫", 2], a: "same" }, scope);
+    const retained = budget.usedBytes;
+    expect(retained).toBeGreaterThan(0);
+    for (let index = 0; index < 100; index++) {
+      expect(internStableDataKey({ a: "same", b: ["猫", 2] }, scope)).toBe(first);
+      expect(budget.usedBytes).toBe(retained);
+    }
+    expect(internStableDataKey({ a: "different" }, scope)).not.toBe(first);
+    expect(budget.usedBytes).toBeGreaterThan(retained);
+  } finally {
+    scope.dispose();
+  }
+  expect(budget.usedBytes).toBe(0);
+});
+
+it("admits interned key construction at exact peak and rolls back one byte below", () => {
+  const value = { text: "猫\u0000".repeat(100), n: 123 };
+  const run = (budget: MemoryBudget) => {
+    const scope = new MemoryScope(budget);
+    try {
+      expect(internStableDataKey(value, scope)).toBe(stableStringify(value));
+    } finally {
+      scope.dispose();
+    }
+  };
+  const measured = new MemoryBudget(65536);
+  run(measured);
+  run(new MemoryBudget(measured.peakBytes));
+  const small = new MemoryBudget(measured.peakBytes - 1);
+  expect(() => run(small)).toThrow(expect.objectContaining({ code: "LAKEQL_BUDGET_EXCEEDED" }));
+  expect(small.usedBytes).toBe(0);
+});
+
+it("transfers an interned key from pre-admitted stage capacity without charging twice", () => {
+  const input = { key: ["猫", 123] };
+  // Stage capacity is consumed cumulatively, unlike a live-peak budget.
+  const budget = new MemoryBudget(65536);
+  const reserve = vi.spyOn(budget, "reserve");
+  const parent = new MemoryScope(budget);
+  const stage = parent.childStage(65536, "key stage");
+  try {
+    expect(internStableDataKey(input, stage)).toBe(stableStringify(input));
+    expect(reserve).toHaveBeenCalledTimes(1);
+  } finally {
+    parent.dispose();
+  }
+  expect(budget.usedBytes).toBe(0);
 });

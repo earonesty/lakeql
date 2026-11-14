@@ -3,10 +3,9 @@ import type { Expr } from "./expr.js";
 import { collectExprColumns } from "./expr-utils.js";
 import { stableStringify } from "./manifest.js";
 import type { MemoryScope } from "./memory-scope.js";
-import { stringifyOwnedStableData } from "./owned-checkpoint-encoding.js";
+import { internStableDataKey } from "./owned-checkpoint-encoding.js";
 import type { OrderByTerm } from "./query.js";
 import type { WindowExpr } from "./window.js";
-import { retainWindowValue } from "./window-value-ownership.js";
 
 export interface WindowReadColumnInput {
   select?: string[];
@@ -133,20 +132,8 @@ export function compatibleWindowSortGroups<T extends CompatibleWindowSortItem>(
     } finally {
       sorting?.release();
     }
-    const key = (value: unknown) => {
-      if (scratch === undefined) return stableStringify(value);
-      const temporary = scratch.childScope();
-      try {
-        const owner = stringifyOwnedStableData(value, temporary);
-        try {
-          return retainWindowValue(owner.value, scratch, temporary) as string;
-        } finally {
-          owner.release();
-        }
-      } finally {
-        temporary.dispose();
-      }
-    };
+    const key = (value: unknown) =>
+      scratch === undefined ? stableStringify(value) : internStableDataKey(value, scratch);
     for (const item of ordered) {
       const partition = key(item.expr.over.partitionBy);
       const keys = allocate(

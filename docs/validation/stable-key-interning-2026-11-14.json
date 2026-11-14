@@ -1,0 +1,61 @@
+{
+  "requirements": ["F4", "M1", "V2", "V3"],
+  "status": "Stable planning-key ownership simplified; full acceptance remains open",
+  "implementation": [
+    "A shared internStableDataKey helper reserves formatting output before construction, reuses an existing immutable key when equal, and transfers the reservation directly for a new key.",
+    "Window planning no longer creates a child scope and multiple retained handles for each key. Stable serialization forecasting and equal-string backing reuse are preserved.",
+    "Reservation ownership remains with the caller on transfer-validation failure and is released by the helper; successful transfer leaves the key owned by the supplied scope."
+  ],
+  "validation": {
+    "default": {
+      "passed": 3324,
+      "skipped": 629,
+      "note": "Full run before adding the final stage-transfer regression; production sources unchanged afterward."
+    },
+    "worker": {
+      "passed": 75
+    },
+    "reference": {
+      "passed": 104
+    },
+    "focusedFinal": {
+      "passed": 11,
+      "scope": "Checkpoint encoding and window-planning tests, including three new regressions for equal-key reuse, exact peak/minus-one boundaries, and stage transfer without a second budget reservation."
+    },
+    "build": "pnpm exec tsc -b passed before runtime tests and benchmarks",
+    "typecheck": "pnpm typecheck passed",
+    "limitations": "Coverage, external conformance and full packaging were not refreshed for this change."
+  },
+  "performance": {
+    "report": "docs/benchmarks/window-sort-interned-2026-11-14.json",
+    "previousReport": "docs/benchmarks/window-sort-planning-2026-11-14.json",
+    "admitted1024WindowsMedianMilliseconds": {
+      "compatible": {
+        "previous": 25.067795,
+        "current": 14.900172
+      },
+      "distinctPartitions": {
+        "previous": 37.392779,
+        "current": 30.093167
+      },
+      "distinctOrderBranches": {
+        "previous": 46.262803,
+        "current": 29.637603
+      }
+    },
+    "peakBytesUnchanged": {
+      "compatible": 133788,
+      "distinctPartitions": 887988,
+      "distinctOrderBranches": 771364
+    },
+    "tradeoff": "Compatible plans still cost more with admission than the untracked baseline (2.437109 ms in the current report). No memory checks were removed to obtain the improvement.",
+    "method": "Same local benchmark with two warmups, three samples, independent group membership/order assertions and final zero-reservation checks. Reports retain raw samples; timing variation remains relevant.",
+    "limitations": "Planning kernels only; no cloud latency or total VM heap claim."
+  },
+  "remainingAcceptance": [
+    "Low-headroom alternatives for cached planning, remaining planning/metadata and timestamp workspace admission remain open.",
+    "Legacy spill-read pre-allocation admission, delegated task intermediates, transactional spill cleanup and other source/operator gaps remain open.",
+    "Full mixed-job/adaptive scheduling acceptance and production Cloudflare total-memory evidence remain open.",
+    "Reservation accounting does not establish total VM heap, external backing or RSS limits."
+  ]
+}

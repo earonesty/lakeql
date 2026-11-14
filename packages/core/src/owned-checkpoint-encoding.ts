@@ -2,6 +2,7 @@ import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
 import { jsonStringUtf8Bytes } from "./json-string-size.js";
 import { stableStringify } from "./manifest.js";
+import type { MemoryReservation } from "./memory-budget.js";
 import type { MemoryScope, OwnedMemory } from "./memory-scope.js";
 import { decimalStringAllocationBytes } from "./scalar-allocation.js";
 
@@ -30,6 +31,34 @@ export function stringifyOwnedStableData(value: unknown, scope: MemoryScope): Ow
       )
       .retain(),
   );
+}
+
+/** Canonical planning keys share an existing immutable string when equal.
+ * Reserve formatting output before construction; transfer its reservation only
+ * when the key is new, without a temporary scope and duplicate owner handles. */
+export function internStableDataKey(value: unknown, scope: MemoryScope): string {
+  return withStableJsonAdmission(value, scope, true, (bytes) => {
+    let storage: MemoryReservation | undefined = scope.reserve(
+      c.string + bytes * c.stringCodeUnit,
+      "stable data key",
+    );
+    try {
+      const key = stableStringify(value);
+      const existing = scope.tryRetainAllocation(key);
+      if (existing !== undefined) {
+        try {
+          return existing.value;
+        } finally {
+          existing.release();
+        }
+      }
+      const owner = scope.allocateReserved(storage, () => key);
+      storage = undefined;
+      return owner.value;
+    } finally {
+      storage?.release();
+    }
+  });
 }
 
 /** Compare legacy normalized data while owning both comparison strings and

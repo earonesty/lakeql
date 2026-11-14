@@ -59,5 +59,6 @@
     "Full concurrent mixed-job/adaptive scheduling acceptance and production Cloudflare total-memory evidence remain open.",
     "Reservation accounting does not establish total VM heap, external backing or RSS limits.",
     "Low-headroom alternatives for cached planning remain part of adaptive acceptance; no fallback guarantee is established by this change."
-  ]
+  ],
+  "followupEvidence": "docs/validation/stable-key-interning-2026-11-14.json"
 }
