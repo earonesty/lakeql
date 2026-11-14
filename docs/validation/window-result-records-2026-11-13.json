@@ -1,0 +1,37 @@
+{
+  "requirements": ["F4", "M1", "V3"],
+  "status": "Result record and vector materialization admission integrated; full acceptance remains open",
+  "implementation": [
+    "Row and run backends admit result directories, copied row records and properties before allocation. New window aliases reserve their slots; overwriting a field reuses the existing slot.",
+    "All three backends use the safe record setter for aliases, including __proto__ as an own data property.",
+    "The vector backend uses the shared physical-shape materialization planner for each selected batch instead of untracked per-row materialization. This admits nested output and packed scalar conversion and preserves selected-row order.",
+    "Result reservations use the existing result scope, rolling back failed construction and surviving streaming suspension and asynchronous checkpoint consumption. Input lifetimes continue to pin borrowed payload aliases."
+  ],
+  "testsAdded": [
+    "Exact result-directory/record/property cap and one byte below for row/run backends",
+    "Special alias stored without changing the output prototype",
+    "Selected nested vector materialization at the measured exact peak and one byte below; retained result scope and complete release"
+  ],
+  "remainingAcceptance": [
+    "Window aggregate result payloads, sort-group planning metadata, final collectors and checkpoint serialization/parsing remain incomplete.",
+    "Materialization planning metadata and retained per-batch directories can still be simplified; no claim of optimal reservation size is made.",
+    "Delegated task output, post-write cancellation and the complete mixed-job/adaptive scheduling matrix remain open.",
+    "Local HTTP/workerd tests are not production Cloudflare enforcement; allocation reservations do not establish a total runtime RAM bound."
+  ],
+  "validation": {
+    "default": {
+      "passed": 3254,
+      "skipped": 629
+    },
+    "worker": {
+      "passed": 75,
+      "scope": "Full local workerd suite, including Parquet window routes with shared 64/128 MiB pools"
+    },
+    "reference": {
+      "passed": 104
+    },
+    "build": "pnpm exec tsc -b passed before runtime tests",
+    "typecheck": "pnpm typecheck passed",
+    "limitations": "Coverage, external conformance, packaging and kernel benchmarks were not rerun for this change; prior revision evidence is linked separately."
+  }
+}

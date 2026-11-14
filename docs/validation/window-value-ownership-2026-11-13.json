@@ -43,5 +43,6 @@
     "Checkpoint cancellation after asynchronous writes and the complete mixed-job acceptance matrix remain open.",
     "Unknown input scalar provenance can be conservatively double charged. No per-row whole-state provenance walk was introduced.",
     "Tracked reservations do not certify total heap, external backing, RSS or production Cloudflare memory safety. Prior benchmark evidence is kernel-specific and was not rerun for this ownership change."
-  ]
+  ],
+  "followupEvidence": "docs/validation/window-result-records-2026-11-13.json"
 }

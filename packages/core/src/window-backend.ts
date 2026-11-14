@@ -21,8 +21,10 @@ import {
   type WindowRow,
 } from "./window-utils.js";
 import {
+  copyWindowRows,
   evaluateWindowValue,
   retainWindowValue,
+  setWindowResultValue,
   withWindowResultScope,
   withWindowValue,
 } from "./window-value-ownership.js";
@@ -44,7 +46,7 @@ export function applyWindowsToRows(
 ): Row[] {
   return withWindowResultScope(options, (resultScope) => {
     options = { ...options, memoryBudget: resultScope.budget, resultScope };
-    const rows = inputRows.map((row) => ({ ...row }));
+    const rows = copyWindowRows(inputRows, resultScope);
     options.enforceBufferedRows?.(rows.length);
     if (options.estimateMemoryBytes !== undefined) {
       options.enforceMemoryBytes?.(options.estimateMemoryBytes(rows));
@@ -67,7 +69,8 @@ export function applyWindowsToRows(
             });
             for (let index = 0; index < rows.length; index += 1) {
               const row = rows[index];
-              if (row !== undefined) row[alias] = values[index] ?? null;
+              if (row !== undefined)
+                setWindowResultValue(row, alias, values[index] ?? null, resultScope);
             }
           } finally {
             expressionScope.dispose();
@@ -88,7 +91,11 @@ export function applyWindowsToRuns(
 ): Row[][] {
   return withWindowResultScope(options, (resultScope) => {
     options = { ...options, memoryBudget: resultScope.budget, resultScope };
-    const outputRuns = inputRuns.map((run) => run.map((row) => ({ ...row })));
+    const outputRuns = resultScope.allocate(
+      c.array + inputRuns.length * c.arraySlot,
+      "window result runs",
+      () => inputRuns.map((run) => copyWindowRows(run, resultScope)),
+    ).value;
     for (const group of windowSortGroups(windows)) {
       const groupScope = new MemoryScope(
         options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER),
@@ -145,7 +152,8 @@ export function applyWindowsToRuns(
                 const item = windowRows[index];
                 if (item === undefined) continue;
                 const row = outputRuns[item.runIndex]?.[item.rowIndex];
-                if (row !== undefined) row[alias] = values[index] ?? null;
+                if (row !== undefined)
+                  setWindowResultValue(row, alias, values[index] ?? null, resultScope);
               }
             } finally {
               expressionScope.dispose();

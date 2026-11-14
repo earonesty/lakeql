@@ -89,7 +89,7 @@ it("retains one shared immutable result and releases per-probe scratch", () => {
   );
   expect(output.every((row) => row.value === "a".repeat(10000))).toBe(true);
   expect(pool.usedBytes).toBeGreaterThanOrEqual(20000);
-  expect(pool.usedBytes).toBeLessThan(25000);
+  expect(pool.usedBytes).toBeLessThan(55000);
   const live = pool.usedBytes;
   for (let index = 0; index < 100; index++)
     expect(
@@ -206,4 +206,64 @@ it("keeps computed values admitted until checkpoint writes settle", async () => 
   finish();
   expect((await result).rows[0]?.value).toBe("a".repeat(10000));
   expect(pool.usedBytes).toBe(0);
+});
+
+it.each(["rows", "runs"])("admits result records at the exact boundary (%s)", (route) => {
+  // One array, two slots, two records with one property; runs add one outer array/slot.
+  const bytes = 64 + 2 * 16 + 2 * (64 + 64) + (route === "runs" ? 80 : 0);
+  for (const limit of [bytes, bytes - 1]) {
+    const budget = new MemoryBudget(limit);
+    const resultScope = new MemoryScope(budget);
+    const rows = [{ id: 1 }, { id: 2 }];
+    const run = () =>
+      route === "rows"
+        ? applyWindowsToRows(rows, {}, { memoryBudget: budget, resultScope })
+        : applyWindowsToRuns([rows], {}, { memoryBudget: budget, resultScope });
+    if (limit === bytes) {
+      expect(run()).toEqual(route === "rows" ? rows : [rows]);
+      expect(budget.usedBytes).toBe(bytes);
+    } else {
+      expect(run).toThrow(expect.objectContaining({ code: "LAKEQL_BUDGET_EXCEEDED" }));
+      expect(budget.usedBytes).toBe(0);
+    }
+    resultScope.dispose();
+    expect(budget.usedBytes).toBe(0);
+  }
+});
+
+it("stores special window aliases as own data without changing the result prototype", () => {
+  const windows = Object.create(null) as Record<string, WindowExpr>;
+  Object.defineProperty(windows, "__proto__", {
+    value: expression("first_value", col("id")),
+    enumerable: true,
+  });
+  const rows = applyWindowsToRows([{ id: 7 }], windows);
+  expect(Object.getPrototypeOf(rows[0])).toBe(Object.prototype);
+  expect(Object.hasOwn(rows[0] ?? {}, "__proto__")).toBe(true);
+  expect(Object.getOwnPropertyDescriptor(rows[0], "__proto__")?.value).toBe(7);
+});
+
+it("admits selected vector materialization at its exact peak", async () => {
+  const inputs = [
+    {
+      batch: batchFromColumns({ id: [1, 2], nested: [["猫", "x"], ["ignored"]] }),
+      selection: Uint8Array.of(1, 0),
+    },
+  ];
+  const measured = new MemoryBudget(65536);
+  const scope = new MemoryScope(measured);
+  expect(
+    await applyWindowsToVectorBatches(inputs, {}, { memoryBudget: measured, resultScope: scope }),
+  ).toEqual([{ id: 1, nested: ["猫", "x"] }]);
+  expect(measured.usedBytes).toBeGreaterThan(0);
+  const peak = measured.peakBytes;
+  scope.dispose();
+  expect(measured.usedBytes).toBe(0);
+  for (const limit of [peak, peak - 1]) {
+    const budget = new MemoryBudget(limit);
+    const run = () => applyWindowsToVectorBatches(inputs, {}, { memoryBudget: budget });
+    if (limit === peak) expect(await run()).toEqual([{ id: 1, nested: ["猫", "x"] }]);
+    else await expect(run()).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+    expect(budget.usedBytes).toBe(0);
+  }
 });

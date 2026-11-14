@@ -1,18 +1,13 @@
 import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
-import {
-  type Batch,
-  batchExprValues,
-  materializeBatchRow,
-  type Selection,
-  selectedRowIndices,
-} from "./batch.js";
+import { type Batch, batchExprValues, type Selection, selectedRowIndices } from "./batch.js";
+import { planBatchMaterialization } from "./materialization-plan.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope } from "./memory-scope.js";
 import type { Row } from "./types.js";
 import type { WindowExpr } from "./window.js";
 import type { WindowExecutionOptions } from "./window-backend.js";
 import { partitionSpans, sortWindowRows, type WindowRow } from "./window-utils.js";
-import { withWindowResultScope } from "./window-value-ownership.js";
+import { setWindowResultValue, withWindowResultScope } from "./window-value-ownership.js";
 
 export interface VectorWindowBatch {
   batch: Batch;
@@ -42,7 +37,22 @@ export async function applyWindowsToVectorBatches(
     try {
       const entries = vectorEntries(inputs, indexScope);
       options.enforceBufferedRows?.(entries.length);
-      const rows = entries.map((entry) => rowForEntry(entry, inputs));
+      const rows = resultScope.allocate(
+        c.array + entries.length * c.arraySlot,
+        "vector window result rows",
+        () => new Array<Row>(entries.length),
+      ).value;
+      let position = 0;
+      for (const input of inputs) {
+        const materialized = planBatchMaterialization(input.batch, input.selection).execute(
+          resultScope,
+        );
+        for (const row of materialized.value) {
+          const entry = entries[position] as VectorWindowEntry;
+          entry.row = row;
+          rows[position++] = row;
+        }
+      }
       if (options.estimateMemoryBytes !== undefined)
         options.enforceMemoryBytes?.(options.estimateMemoryBytes(rows));
       for (const group of windowSortGroups(windows)) {
@@ -61,7 +71,7 @@ export async function applyWindowsToVectorBatches(
               });
               for (let index = 0; index < rows.length; index++) {
                 const row = rows[index] as Row;
-                row[alias] = values[index] ?? null;
+                setWindowResultValue(row, alias, values[index] ?? null, resultScope);
               }
             } finally {
               expressionScope.dispose();
@@ -131,19 +141,11 @@ function vectorWindowRows(
           values.map((value) => value.valueAt(entry.rowIndex, scope)),
         ).value;
       return scope.allocate(c.object + 4 * c.property, "vector window row index", () => ({
-        row: rowForEntry(entry, inputs),
+        row: entry.row as Row,
         originalIndex: entry.originalIndex,
         partitionKey: keys(partition),
         orderKey: keys(order),
       })).value;
     }),
   ).value;
-}
-
-function rowForEntry(entry: VectorWindowEntry, inputs: readonly VectorWindowBatch[]): Row {
-  if (entry.row === undefined) {
-    const input = inputs[entry.batchIndex] as VectorWindowBatch;
-    entry.row = materializeBatchRow(input.batch, entry.rowIndex);
-  }
-  return entry.row;
 }

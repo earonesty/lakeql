@@ -5,6 +5,7 @@ import type { Expr } from "./expr.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope } from "./memory-scope.js";
 import { detachOwnedRow } from "./owned-row-detachment.js";
+import { setRecordValue } from "./record-value.js";
 import { decimalStringAllocationBytes } from "./scalar-allocation.js";
 import type { Row } from "./types.js";
 
@@ -111,4 +112,28 @@ export function evaluateWindowValue(expr: Expr, row: Row, scope?: MemoryScope): 
   return withWindowValue(expr, row, scope, (value, temporary) =>
     retainWindowValue(value, scope, temporary),
   );
+}
+
+/** Copy row containers while payloads remain pinned by the input lifetime. */
+export function copyWindowRows(rows: readonly Row[], scope: MemoryScope): Row[] {
+  return scope.allocate(c.array + rows.length * c.arraySlot, "window result rows", () =>
+    rows.map((source) => {
+      const row = scope.allocate(c.object, "window result record", () => ({}) as Row).value;
+      for (const key in source) {
+        if (Object.hasOwn(source, key)) setWindowResultValue(row, key, source[key], scope);
+      }
+      return row;
+    }),
+  ).value;
+}
+
+/** Replacing a field reuses its admitted slot; new aliases reserve before mutation. */
+export function setWindowResultValue(
+  row: Row,
+  key: string,
+  value: unknown,
+  scope: MemoryScope,
+): void {
+  if (Object.hasOwn(row, key)) setRecordValue(row, key, value);
+  else scope.allocate(c.property, "window result property", () => setRecordValue(row, key, value));
 }
