@@ -1,0 +1,29 @@
+{
+  "date": "2026-11-14",
+  "finding": "An owned footer read that settled after its scope was cancelled could expose a released-memory validation error before cancellation was checked.",
+  "change": "Check the owned read scope signal immediately after each footer read settles; release the returned owner and report LAKEQL_ABORTED before accessing its backing.",
+  "validation": {
+    "build": "passed",
+    "targeted_tests": 20,
+    "matrix": [
+      "borrowed metadata read cancelled during await",
+      "owned metadata read cancelled during await",
+      "borrowed metadata deadline expires during await",
+      "owned metadata deadline expires during await"
+    ],
+    "assertions": [
+      "typed cancellation or budget error",
+      "reads actually started",
+      "no live reservations before caller scope disposal"
+    ],
+    "fixtures": "Real encoded Parquet footer in task-source tests; existing owned/full metadata cache and actual HTTP retry fixture suites also pass.",
+    "typecheck": "passed"
+  },
+  "limits": [
+    "The custom test adapters settle; this does not force cancellation of arbitrary never-settling external code.",
+    "Borrowed-reader allocation remains external before library retention admission."
+  ],
+  "remaining": [
+    "Full current-revision release gates and broader allocation/concurrency acceptance remain open."
+  ]
+}

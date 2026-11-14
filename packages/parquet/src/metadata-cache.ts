@@ -91,7 +91,16 @@ export async function readParquetFooterBuffer(
   }
   const offset = Math.max(0, file.byteLength - fetchSize);
   const read = async (start: number, end: number) => {
-    if (scope !== undefined && file.sliceOwned) return file.sliceOwned(start, end, scope);
+    if (scope !== undefined && file.sliceOwned) {
+      const owner = await file.sliceOwned(start, end, scope);
+      try {
+        throwIfAborted(scope.signal);
+        return owner;
+      } catch (error) {
+        owner.release();
+        throw error;
+      }
+    }
     return { value: await file.slice(start, end), release() {} };
   };
   const initial = await read(offset, file.byteLength);
