@@ -31,10 +31,12 @@ under verified 64/128 MiB V8 heap settings; this distinguishes runtime GC policy
 from a persistent leak, but does not cap external backing or prove production
 Cloudflare total-memory safety. See the constrained-runtime section below.
 
-Latest decimal checkpoint (November 13, 2026): **2,935 default tests**
-(629 skipped) and **61 Worker tests** pass, with build, typecheck, lint and clean
+Latest decimal checkpoint (November 13, 2026): **2,936 default tests**
+(629 skipped), one additional boundary test and **61 Worker tests** pass, with
+build, typecheck, lint and clean
 package installation. Decimal predicates compare finite numeric values exactly.
-Direct/dictionary vectors prepare a literal and its digit text once per operation.
+Direct/dictionary vectors prepare a literal and its digit text once per operation,
+falling back to scalar comparison when preparation does not fit the caller budget.
 The controlled 10,000-row benchmark measured 1.5–1.6 ms versus a scalar conversion
 loop at 13–154 ms, with row-count-independent scratch (not VM heap accounting).
 See `docs/validation/conformance-value-parity-2026-11-13.json` for evidence and gaps.

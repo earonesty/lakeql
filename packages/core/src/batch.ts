@@ -1383,17 +1383,31 @@ function compareDecimalLiteralMasks(
   let first = 0;
   while (first < count && vector.valid?.[first] === 0) mask[first++] = 2;
   if (first === count) return mask;
-  return withDecimalComparisonOperand(literal, scope, (operand) =>
-    withPreparedDecimalComparison(operand, scope, (compare) => {
-      for (let index = first; index < count; index++) {
-        mask[index] =
-          vector.valid?.[index] === 0
-            ? 2
-            : sqlMaskValue(compareOrder(op, compare(requireDecimalValue(vector.values[index]))));
-      }
-      return mask;
-    }),
-  );
+  const fill = (compare: (value: DecimalValue) => number): Uint8Array => {
+    for (let index = first; index < count; index++) {
+      mask[index] =
+        vector.valid?.[index] === 0
+          ? 2
+          : sqlMaskValue(compareOrder(op, compare(requireDecimalValue(vector.values[index]))));
+    }
+    return mask;
+  };
+  try {
+    return withDecimalComparisonOperand(literal, scope, (operand) =>
+      withPreparedDecimalComparison(operand, scope, fill),
+    );
+  } catch (error) {
+    if (
+      scope === undefined ||
+      !(error instanceof LakeqlError) ||
+      error.code !== "LAKEQL_BUDGET_EXCEEDED"
+    )
+      throw error;
+    // Preparation is an optimization, not an additional minimum budget. Its
+    // synchronous helpers have released all scratch; reuse the admitted mask.
+    // Comparison is pure, so retrying after a late scratch rejection is safe.
+    return fill((value) => compareDecimalOperands(value, literal, scope));
+  }
 }
 
 function compareDictLiteralMasks(

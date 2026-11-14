@@ -536,5 +536,36 @@
     "measurement": "For 10000 comparisons, prepared vectors measured 1.5\u20131.6 ms versus a same-process scalar-conversion reference loop at about 13 ms for 0.1, 154 ms for the smallest subnormal and 30 ms for the largest finite number. Conversion-only preparation left the subnormal case at 134 ms; eliminating repeated digit sizing/formatting reduced it to 1.5 ms. Tracked scratch remains independent of row count, with 384 bytes of additional preparation state; the measured subnormal peak scratch is 6200 bytes beyond the mask.",
     "cloudEvidence": "Existing binary/shredded real fixtures continue to exercise mixed numeric and exact decimal predicates over HTTP range/ignored-range responses, concurrent local workerd native R2 at 64/128 MiB, and clean npm installation.",
     "limits": "Controlled local comparison, not an archived revision speedup or production Cloudflare throughput/heap claim. The fast path covers explicit direct/dictionary decimal vector shapes; mixed union and computed-expression operands retain the correct generic path. Broad allocation accounting, generic sorting/grouping/aggregate/arithmetic integration and ordinary high-precision vectors remain unfinished."
+  },
+  "admissionAwareDecimalPreparation": {
+    "change": "Prepared direct/dictionary decimal comparison is opportunistic. Only a scoped LAKEQL_BUDGET_EXCEEDED triggers one retry using the original scalar comparison path; synchronous helpers release prepared text/state/conversion workspace before retry. The already-admitted mask is reused, and both paths share one fill loop. Other errors propagate. The optimization no longer increases the minimum executable predicate budget.",
+    "evidence": "../benchmarks/decimal-literal-budget-2026-11-13.json",
+    "validation": {
+      "defaultPassed": 2936,
+      "defaultSkipped": 629,
+      "focusedPredicatePassed": 9,
+      "additionalOutputOnlyBoundaryTestPassed": 1,
+      "workerPassed": 61,
+      "build": "passed",
+      "typecheck": "passed",
+      "lint": "passed",
+      "cleanNpmInstall": "passed",
+      "referencePassed": 104,
+      "conformancePassed": 511,
+      "conformanceFailed": 6,
+      "conformanceSkipped": 1,
+      "compatibility": "passed",
+      "trackedFileSizes": "passed"
+    },
+    "edgeCases": [
+      "One byte below prepared peak succeeds through fallback; one byte below scalar minimum rejects and cleans up.",
+      "A late coefficient-workspace rejection retries once and returns the correct full mask, including nulls and differing results.",
+      "Retained sibling reservations remain intact through retry and output release.",
+      "Same-scale comparisons run with only the three-byte output-mask budget.",
+      "Malformed decimal vectors still propagate validation errors rather than triggering a budget retry."
+    ],
+    "measurement": "With synthetic peer reservations filling 64/128 MiB pools, 10000-row fraction comparisons succeed with 11754 bytes available for preparation or 11370 for scalar fallback. Subnormal comparisons succeed with 16200 or 15816 bytes respectively. Preparation measured about 1.7\u20131.8 ms; constrained scalar fallback about 12 ms for fractions and 154 ms for subnormals. No configuration flag is required.",
+    "cloudEvidence": "The unchanged real HTTP and local workerd native R2 decimal predicate tests pass in the full/Worker suites; clean installed-package checks pass. The new deliberately tight budget and sibling-retention proof is a core accounting test, not a cloud heap measurement.",
+    "limits": "Peer reservations in the benchmark are synthetic, not matching live heap payloads. Native runtime allocation/GC and broader audit gaps remain open. Generic sorting/grouping/aggregate/arithmetic integration and ordinary high-precision vectors remain unfinished."
   }
 }

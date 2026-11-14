@@ -1,0 +1,115 @@
+{
+  "description": "Prepared decimal predicates dynamically fall back when peer reservations leave only the scalar path's required headroom. 64/128 MiB accounting pools; peer reservation is synthetic and does not allocate a matching heap payload. Input vectors excluded. Two warmups, seven timed rounds; no cloud or total-heap claim.",
+  "node": "v24.18.1",
+  "sources": {
+    "packages/core/src/batch.ts": "cb1b28d4b2dfd0b842b3cf4b02361253747eca8f80f2f505e4ceadd37c2c088d",
+    "packages/core/src/decimal-comparison.ts": "04e5ce5220ad24857593c7bcc8a34f7979b3a2330d582eac886b434a704c1264",
+    "packages/core/src/decimal-value.ts": "684199afbd64261c647ce30d6844b16d9bc99f8818ed968fc45edd85c3044084"
+  },
+  "results": [
+    {
+      "name": "fraction",
+      "rows": 10000,
+      "poolMiB": 64,
+      "mode": "prepared",
+      "availableBytes": 11754,
+      "peakBytes": 67108864,
+      "medianMilliseconds": 1.7636819999999886,
+      "samples": [
+        3.597405000000002, 1.9892169999999965, 1.747802, 1.7701840000000004, 1.676829000000005,
+        1.7636819999999886, 1.6926079999999928
+      ]
+    },
+    {
+      "name": "fraction",
+      "rows": 10000,
+      "poolMiB": 64,
+      "mode": "scalar fallback",
+      "availableBytes": 11370,
+      "peakBytes": 67108864,
+      "medianMilliseconds": 12.406066999999993,
+      "samples": [
+        12.406066999999993, 12.22068800000001, 12.391098999999997, 14.322817999999984,
+        12.818062999999995, 12.314925000000017, 12.84474400000002
+      ]
+    },
+    {
+      "name": "fraction",
+      "rows": 10000,
+      "poolMiB": 128,
+      "mode": "prepared",
+      "availableBytes": 11754,
+      "peakBytes": 134217728,
+      "medianMilliseconds": 1.6455589999999916,
+      "samples": [
+        1.675657000000001, 1.7203010000000063, 1.6455589999999916, 1.6603170000000205,
+        1.63396800000001, 1.6114960000000167, 1.6143299999999954
+      ]
+    },
+    {
+      "name": "fraction",
+      "rows": 10000,
+      "poolMiB": 128,
+      "mode": "scalar fallback",
+      "availableBytes": 11370,
+      "peakBytes": 134217728,
+      "medianMilliseconds": 12.437054999999987,
+      "samples": [
+        13.96880999999999, 13.666370999999998, 12.188247000000047, 12.471910999999977,
+        12.437054999999987, 12.363728000000037, 11.837276000000031
+      ]
+    },
+    {
+      "name": "subnormal",
+      "rows": 10000,
+      "poolMiB": 64,
+      "mode": "prepared",
+      "availableBytes": 16200,
+      "peakBytes": 67108864,
+      "medianMilliseconds": 1.7130359999999882,
+      "samples": [
+        1.5978099999999813, 1.6726309999999671, 3.2052170000000046, 1.7160020000000031,
+        1.8093380000000252, 1.70183499999996, 1.7130359999999882
+      ]
+    },
+    {
+      "name": "subnormal",
+      "rows": 10000,
+      "poolMiB": 64,
+      "mode": "scalar fallback",
+      "availableBytes": 15816,
+      "peakBytes": 67108864,
+      "medianMilliseconds": 154.12604999999996,
+      "samples": [
+        154.12604999999996, 155.29663500000004, 152.624101, 154.15992400000005, 151.547554,
+        156.68879700000002, 152.3419100000001
+      ]
+    },
+    {
+      "name": "subnormal",
+      "rows": 10000,
+      "poolMiB": 128,
+      "mode": "prepared",
+      "availableBytes": 16200,
+      "peakBytes": 134217728,
+      "medianMilliseconds": 1.6077679999998509,
+      "samples": [
+        1.6077679999998509, 1.6024479999998675, 1.7077359999998407, 1.7102409999999963,
+        1.6242500000000746, 1.5725319999999101, 1.573362999999972
+      ]
+    },
+    {
+      "name": "subnormal",
+      "rows": 10000,
+      "poolMiB": 128,
+      "mode": "scalar fallback",
+      "availableBytes": 15816,
+      "peakBytes": 134217728,
+      "medianMilliseconds": 153.18688199999997,
+      "samples": [
+        153.18688199999997, 154.9702510000002, 151.23065700000006, 153.345691, 152.76267400000006,
+        157.73176200000034, 151.63838600000008
+      ]
+    }
+  ]
+}
