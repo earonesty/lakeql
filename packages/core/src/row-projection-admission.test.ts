@@ -119,7 +119,7 @@ it("preserves special source fields without mutating the source or output protot
     .topKWithState();
   expect(Object.getPrototypeOf(result.rows[0])).toBe(Object.prototype);
   expect(Object.hasOwn(result.rows[0] ?? {}, "__proto__")).toBe(true);
-  expect(result.rows[0]?.__proto__).toBe("source");
+  expect(Object.getOwnPropertyDescriptor(result.rows[0] ?? {}, "__proto__")?.value).toBe("source");
   expect(result.rows[0]?.projected).toBe("safe");
   expect(source).toEqual({ id: 1, ["__proto__"]: "source" });
   expect(pool.usedBytes).toBe(0);

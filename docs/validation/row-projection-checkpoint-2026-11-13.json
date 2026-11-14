@@ -1,12 +1,5 @@
 {
-  "requirements": [
-    "F2",
-    "F3",
-    "M1",
-    "V1",
-    "V2",
-    "V3"
-  ],
+  "requirements": ["F2", "F3", "M1", "V1", "V2", "V3"],
   "status": "Checkpoint and aggregate projection admission implemented; streaming projection ownership remains open",
   "projectionContract": [
     "TopKWithState and sortWithState admit result directories, records, fields and expression output in a separate projection scope. One ownership capture preserves source aliases until the checkpoint operation settles, including cancellation while a spill write is pending. This avoids repeated full-state captures per spilled run. A range loop replaces slice().map(); ordinary result ownership transfers to the caller at return.",
