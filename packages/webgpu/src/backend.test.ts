@@ -111,28 +111,14 @@ describe.runIf(await dawnAdapterAvailable())("WebGpuPhysicalBackend with Dawn", 
     });
 
     const result = lake.path("scores.parquet").select(["id"]).where(gt("score", 0.5)).run();
-    if (policy === "required") {
-      await expect(result.toArray()).rejects.toMatchObject({
-        code: "LAKEQL_PHYSICAL_BACKEND_UNAVAILABLE",
-        details: {
-          candidates: expect.arrayContaining([
-            expect.objectContaining({
-              backendId: "webgpu",
-              reasons: expect.arrayContaining([
-                expect.objectContaining({
-                  message: "Backend does not support allocation scopes for this fragment",
-                }),
-              ]),
-            }),
-          ]),
-        },
-      });
-    } else {
-      await expect(result.toArray()).resolves.toEqual([{ id: 2 }, { id: 3 }]);
-      expect((await result.explain()).json.physicalFragments).toEqual([
-        expect.objectContaining({ backendId: "cpu", operators: ["select"], output: "selection" }),
-      ]);
-    }
+    await expect(result.toArray()).resolves.toEqual([{ id: 2 }, { id: 3 }]);
+    expect((await result.explain()).json.physicalFragments).toEqual([
+      expect.objectContaining({
+        backendId: policy === "required" ? "webgpu" : "cpu",
+        operators: ["select"],
+        output: "selection",
+      }),
+    ]);
   });
 
   it("admits selection backing and transfers only its mask", async () => {
@@ -151,7 +137,7 @@ describe.runIf(await dawnAdapterAvailable())("WebGpuPhysicalBackend with Dawn", 
           { allocationScope: scope },
         );
         expect(result.output).toEqual({ kind: "selection", selection: Uint8Array.of(0, 0, 1, 1) });
-        expect(pool.usedBytes).toBe(4);
+        expect(pool.usedBytes).toBe(1220);
         return pool.peakBytes;
       } finally {
         scope.dispose();
@@ -163,6 +149,55 @@ describe.runIf(await dawnAdapterAvailable())("WebGpuPhysicalBackend with Dawn", 
       expect(peak).toBeGreaterThan(100);
       expect(await run(peak)).toBe(peak);
       expect(await run(peak, true)).toBe(peak);
+      await expect(run(peak - 1)).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+    } finally {
+      local.close();
+    }
+  });
+
+  it.each([0, 1, 257])("bounds scoped nullable multi-shape selection (%s rows)", async (rows) => {
+    const local = new WebGpuPhysicalBackend(() => runtime, { maxPipelineCacheEntries: 0 });
+    const batch = batchFromVectors({
+      value: { type: "u32", values: Uint32Array.from({ length: rows }, (_, i) => i) },
+      score: {
+        type: "f32",
+        values: Float32Array.from({ length: rows }, (_, i) => i / 10),
+        valid: Uint8Array.from({ length: rows }, (_, i) => i % 2),
+      },
+      flag: {
+        type: "bool",
+        values: Uint8Array.from({ length: rows }, (_, i) => (i % 3 === 0 ? 1 : 0)),
+      },
+    });
+    const predicate = and(gt("score", 0.5), and(gte("value", 2), eq("flag", true)));
+    const target = fragment(batch, predicate);
+    try {
+      const compiled = await local.compile(target);
+      const run = async (capacity: number) => {
+        const pool = new MemoryBudget(capacity);
+        const scope = new MemoryScope(pool);
+        try {
+          const result = await local.execute(
+            compiled,
+            { kind: "batch", batch },
+            { allocationScope: scope },
+          );
+          expect(result.output).toEqual({
+            kind: "selection",
+            // WHERE retains true; CPU unknown markers and GPU false both reject the row.
+            selection: Uint8Array.from(predicateSelection(batch, predicate), (value) =>
+              value === 1 ? 1 : 0,
+            ),
+          });
+          expect(result.metrics.dispatches).toBe(rows === 0 ? 0 : 1);
+          return pool.peakBytes;
+        } finally {
+          scope.dispose();
+          expect(pool.usedBytes).toBe(0);
+        }
+      };
+      const peak = await run(65536);
+      expect(await run(peak)).toBe(peak);
       await expect(run(peak - 1)).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
     } finally {
       local.close();
@@ -182,8 +217,8 @@ describe.runIf(await dawnAdapterAvailable())("WebGpuPhysicalBackend with Dawn", 
         { kind: "batch", batch },
         { allocationScope: scope },
       );
-      expect(job.usedBytes).toBe(2);
-      expect(pool.usedBytes).toBeGreaterThan(2);
+      expect(job.usedBytes).toBe(1218);
+      expect(pool.usedBytes).toBeGreaterThan(1218);
       scope.dispose();
       expect(job.usedBytes).toBe(0);
       expect(pool.usedBytes).toBeGreaterThan(0);

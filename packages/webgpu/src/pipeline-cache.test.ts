@@ -20,8 +20,8 @@ it("evicts by recency with a fixed entry bound", () => {
 });
 
 it("enforces modeled byte boundaries and skips oversized entries", () => {
-  // 384 descriptor bytes plus two bytes per source/key code unit.
-  const cache = new PipelineCache<number>(10, 388);
+  // 512 descriptor bytes plus two bytes per source/key code unit.
+  const cache = new PipelineCache<number>(10, 516);
   cache.set("a", "b", Promise.resolve(1));
   expect(cache.has("a")).toBe(true);
   cache.set("c", "d", Promise.resolve(2));
@@ -32,7 +32,7 @@ it("enforces modeled byte boundaries and skips oversized entries", () => {
   cache.clear();
   cache.set("a", "b", Promise.resolve(4));
   expect(cache.has("a")).toBe(true);
-  const short = new PipelineCache<number>(10, 387);
+  const short = new PipelineCache<number>(10, 515);
   short.set("a", "b", Promise.resolve(1));
   expect(short.has("a")).toBe(false);
 });
@@ -82,7 +82,7 @@ it("charges the shared pool, reclaims entries for sibling jobs and detaches on c
   const value = Promise.resolve(1);
   cache.set("a", "b", value, job);
   expect(job.usedBytes).toBe(0);
-  expect(pool.usedBytes).toBe(388);
+  expect(pool.usedBytes).toBe(516);
   expect(cache.get("a", job)).toBe(value);
   expect(cache.get("a", new MemoryBudget(1024))).toBeUndefined();
   const sibling = pool.child(1024).reserve(1024, "sibling work");
@@ -97,7 +97,7 @@ it("charges the shared pool, reclaims entries for sibling jobs and detaches on c
 });
 
 it("declines optional retention when pinned work consumes the pool", () => {
-  const pool = new MemoryBudget(388);
+  const pool = new MemoryBudget(516);
   const pinned = pool.reserve(1, "work");
   const cache = new PipelineCache<number>(2, 1024);
   cache.set("a", "b", Promise.resolve(1), pool);
@@ -111,7 +111,7 @@ it("releases shared charges on replacement and compilation failure", async () =>
   const cache = new PipelineCache<number>(2, 1024);
   cache.set("a", "b", Promise.resolve(1), pool);
   cache.set("a", "b", Promise.reject(new Error("failed")), pool);
-  expect(pool.usedBytes).toBe(388);
+  expect(pool.usedBytes).toBe(516);
   await Promise.resolve();
   expect(pool.usedBytes).toBe(0);
 });
@@ -122,9 +122,9 @@ it("keeps evicted in-flight metadata charged until its pin releases", () => {
   const cache = new PipelineCache<number>(2, 1024);
   cache.set("a", "b", Promise.resolve(1), job);
   const pin = cache.pin("a", job);
-  expect(job.usedBytes).toBe(388);
+  expect(job.usedBytes).toBe(516);
   cache.clear();
-  expect(pool.usedBytes).toBe(388);
+  expect(pool.usedBytes).toBe(516);
   expect(cache.has("a")).toBe(false);
   pin?.release();
   expect(pool.usedBytes).toBe(0);
@@ -132,12 +132,12 @@ it("keeps evicted in-flight metadata charged until its pin releases", () => {
 });
 
 it("reclaims the least recently used entry in the requesting pool", () => {
-  const pool = new MemoryBudget(1024);
+  const pool = new MemoryBudget(2048);
   const cache = new PipelineCache<number>(3, 2048);
   cache.set("a", "b", Promise.resolve(1), pool);
   cache.set("c", "d", Promise.resolve(2), pool);
   cache.get("a", pool);
-  const work = pool.reserve(300, "pressure");
+  const work = pool.reserve(1100, "pressure");
   expect(cache.has("a")).toBe(true);
   expect(cache.has("c")).toBe(false);
   work.release();
@@ -146,15 +146,15 @@ it("reclaims the least recently used entry in the requesting pool", () => {
 });
 
 it("retains active metadata in cache without reserving backing twice", () => {
-  const pool = new MemoryBudget(388);
-  const job = pool.child(388);
-  const active = job.reserve(388, "active pipeline");
+  const pool = new MemoryBudget(516);
+  const job = pool.child(516);
+  const active = job.reserve(516, "active pipeline");
   const cache = new PipelineCache<number>(2, 1024);
   cache.set("a", "b", Promise.resolve(1), job, active);
-  expect(pool.usedBytes).toBe(388);
+  expect(pool.usedBytes).toBe(516);
   active.release();
   expect(job.usedBytes).toBe(0);
-  expect(pool.usedBytes).toBe(388);
+  expect(pool.usedBytes).toBe(516);
   cache.clear();
   expect(pool.usedBytes).toBe(0);
 });

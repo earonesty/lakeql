@@ -120,5 +120,5 @@ export class PipelineCache<T> {
 }
 
 export function pipelineMetadataBytes(key: string, source: string): number {
-  return 2 * c.string + (key.length + source.length) * c.stringCodeUnit + c.object + 3 * c.property;
+  return 2 * c.string + (key.length + source.length) * c.stringCodeUnit + c.object + 5 * c.property;
 }

@@ -58,6 +58,7 @@ import {
   type WebGpuDeviceOptions,
   type WebGpuRuntimeProvider,
 } from "./runtime.js";
+import { selectionResultBytes, selectionWorkspaceMetadataBytes } from "./selection-memory.js";
 import {
   type CompiledWebGpuVectorTopK,
   compileWebGpuVectorTopK,
@@ -223,6 +224,7 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
   capabilities(): PhysicalCapabilities {
     return {
       backendKind: "accelerator",
+      allocationScopeOperators: ["select"],
       operators: [
         {
           kind: "select",
@@ -629,18 +631,23 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
         : new MemoryScope(context.allocationScope.budget);
     let pipelineReservation: MemoryReservation | undefined;
     const workspace = context.allocationScope?.reserve(
-      transfer.uploadBytes + transfer.deviceBytes,
+      transfer.uploadBytes +
+        transfer.deviceBytes +
+        selectionWorkspaceMetadataBytes(compiled.fragment.id, predicate.columns.length),
       "WebGPU selection host upload and device backing",
     );
     try {
       if (resultScope !== undefined && context.allocationScope !== undefined) {
         resultScope.admitReserved(
-          context.allocationScope.reserve(input.batch.rowCount, "WebGPU selection mask"),
+          context.allocationScope.reserve(
+            selectionResultBytes(input.batch.rowCount),
+            "WebGPU selection result",
+          ),
         );
       }
       const admittedMask = resultScope?.allocate(
-        input.batch.rowCount,
-        "WebGPU selection mask",
+        selectionResultBytes(input.batch.rowCount),
+        "WebGPU selection result",
         () => new Uint8Array(input.batch.rowCount),
       ).value;
       const attempt = physicalAttempt(this.id);

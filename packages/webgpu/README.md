@@ -48,6 +48,15 @@ export async function queryScores() {
 }
 ```
 
+Allocation-scoped physical execution supports selection over the backend's
+advertised scalar vector shapes. It admits upload/device backing, modeled
+execution descriptors and views, pipeline metadata, and the returned mask and
+result records. Workspace stays charged through asynchronous cleanup; reusable
+pipeline metadata stays in the shared pool until eviction or backend close.
+Scoped reduction and vector-distance execution are not advertised. These are
+library reservation bounds, not measurements of driver-internal memory or total
+process memory.
+
 Compiled pipeline reuse is bounded by two backend options:
 `maxPipelineCacheEntries` (default 64) and `maxPipelineCacheBytes` (default
 1 MiB of modeled source/key metadata). The cache evicts the least recently
