@@ -1,0 +1,32 @@
+{
+  "date": "2026-11-14",
+  "changes": [
+    "Query checkpoint writing automatically prefers stageWrite when advertised, retaining encoded bytes while staging/commit settles.",
+    "Check the checkpoint scope before staging, after staging and after commit; roll back uncommitted writes on cancellation or conflict.",
+    "Preserve legacy write-only behavior and explicitly test it; report both primary and cleanup errors if rollback also fails."
+  ],
+  "validation": {
+    "build": "passed",
+    "targeted_tests": 48,
+    "matrix": ["top-k", "sort final checkpoint", "aggregate checkpoint"],
+    "outcomes": ["successful commit", "cancellation while staging", "competing writer conflict"],
+    "assertions": [
+      "prior checkpoint remains readable while staging",
+      "cancelled replacement preserves prior bytes",
+      "conflict preserves competing writer bytes",
+      "pending staged entry releases",
+      "query allocation pool returns to zero"
+    ],
+    "typecheck": "passed",
+    "full_default_suite": {
+      "passed": 3434,
+      "skipped": 629
+    }
+  },
+  "remaining": [
+    "Sort run files and window multi-run checkpoints are not yet committed/rolled back as a single transaction; final checkpoint rollback alone does not remove already committed run files.",
+    "Cancellation after an adapter has committed cannot undo the published write via uncommitted rollback.",
+    "Legacy adapters without stageWrite cannot provide transactional cleanup.",
+    "Tests use actual in-memory spill bytes with controlled scanner rows, not new cloud fixtures or remote conditional-write adapters."
+  ]
+}

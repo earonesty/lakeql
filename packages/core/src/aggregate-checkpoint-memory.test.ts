@@ -54,6 +54,8 @@ it("pins aggregate checkpoint bytes until a canceled write settles", async () =>
   const spill = memorySpillAdapter();
   const ready = Promise.withResolvers<void>();
   const gate = Promise.withResolvers<void>();
+  // This fixture exercises adapters without transactional writes.
+  Object.defineProperty(spill, "stageWrite", { value: undefined });
   spill.write = async (id, bytes) => {
     ready.resolve();
     await gate.promise;

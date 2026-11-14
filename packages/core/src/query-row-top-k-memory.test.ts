@@ -259,6 +259,8 @@ it("keeps sort rows owned during asynchronous spill and releases them on rejecti
   });
   const spill = memorySpillAdapter();
   let writes = 0;
+  // This fixture exercises adapters without transactional writes.
+  Object.defineProperty(spill, "stageWrite", { value: undefined });
   spill.write = async () => {
     writes++;
     await Promise.resolve();
@@ -303,6 +305,8 @@ it.each([
     settle = resolve;
   });
   const spill = memorySpillAdapter();
+  // This fixture exercises adapters without transactional writes.
+  Object.defineProperty(spill, "stageWrite", { value: undefined });
   spill.write = async (id, bytes) => {
     started();
     await pending;

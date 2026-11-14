@@ -1831,6 +1831,7 @@ export class QueryResult {
           options.spill,
           options.spillId ?? `topk-${this.stats.queryId}`,
           checkpoint,
+          retainedScope,
         );
       }
       if (retainedScope.disposed)
@@ -1915,6 +1916,7 @@ export class QueryResult {
           options.spill,
           options.spillId ?? `sort-${this.stats.queryId}`,
           checkpoint,
+          retainedScope,
         );
       }
       if (retainedScope.disposed)
@@ -2697,6 +2699,7 @@ export class QueryResult {
           options.spill,
           options.spillId ?? `aggregate-${this.stats.queryId}`,
           checkpoint,
+          checkpointScope,
         );
       }
       if (checkpointScope.disposed)
@@ -4625,10 +4628,35 @@ async function writeOwnedCheckpoint(
   spill: SpillAdapter,
   id: string,
   output: OwnedMemory<Uint8Array>,
+  scope: MemoryScope,
 ) {
   const pin = output.retain();
+  let staged: Awaited<ReturnType<NonNullable<SpillAdapter["stageWrite"]>>> | undefined;
+  const check = () => {
+    if (scope.disposed)
+      throw new LakeqlError("LAKEQL_ABORTED", "Checkpoint scope disposed during spill");
+  };
   try {
-    return await spill.write(id, pin.value);
+    check();
+    if (spill.stageWrite === undefined) {
+      const ref = await spill.write(id, pin.value);
+      check();
+      return ref;
+    }
+    staged = await spill.stageWrite(id, pin.value);
+    check();
+    const ref = await staged.commit();
+    check();
+    return ref;
+  } catch (error) {
+    if (staged !== undefined) {
+      try {
+        await staged.rollback();
+      } catch (cleanup) {
+        throw new AggregateError([error, cleanup], "Checkpoint write and rollback failed");
+      }
+    }
+    throw error;
   } finally {
     pin.release();
   }
@@ -4797,6 +4825,7 @@ async function sortOperatorState(
         spill,
         `${spillId}-run-${String(index).padStart(6, "0")}`,
         output,
+        scope,
       );
       if (scope.disposed)
         throw new LakeqlError("LAKEQL_ABORTED", "Sort checkpoint scope disposed during spill");
