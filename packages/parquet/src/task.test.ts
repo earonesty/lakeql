@@ -367,3 +367,49 @@ it.each([
   expect(pool.usedBytes).toBe(0);
   scope.dispose();
 });
+
+it("rechecks shared headroom between row windows and releases an admitted index on failure", async () => {
+  const { iterateTaskRowWindows } = await import("./task.js");
+  const { MemoryBudget, MemoryScope } = await import("lakeql-core");
+  const pool = new MemoryBudget(64 * 1024);
+  const scope = new MemoryScope(pool);
+  let reads = 0;
+  let fail = false;
+  const metadata = {
+    row_groups: Array.from({ length: 1000 }, () => ({
+      get num_rows() {
+        if (fail) throw new Error("metadata unavailable");
+        reads++;
+        return 1;
+      },
+    })),
+  };
+  const task = {
+    path: "data",
+    partitionValues: {},
+    rowGroupRanges: [
+      { start: 999, end: 1000 },
+      { start: 998, end: 999 },
+      { start: 997, end: 998 },
+    ],
+  };
+  const iterator = iterateTaskRowWindows(metadata, task, scope);
+  iterator.next();
+  const competing = pool.reserve(pool.availableBytes - 1024, "competing job");
+  expect(iterator.next().value).toEqual({ rowStart: 998, rowEnd: 999 });
+  expect(reads).toBe(1999);
+  competing.release();
+  expect(iterator.next().value).toEqual({ rowStart: 997, rowEnd: 998 });
+  expect(reads).toBe(2999);
+  expect(pool.usedBytes).toBeGreaterThan(8000);
+  iterator.return?.();
+  expect(pool.usedBytes).toBe(0);
+  const failing = iterateTaskRowWindows(metadata, task, scope);
+  failing.next();
+  fail = true;
+  expect(() => failing.next()).toThrow("metadata unavailable");
+  expect(pool.usedBytes).toBe(0);
+  const reuse = pool.reserve(pool.maxBytes, "next job");
+  reuse.release();
+  scope.dispose();
+});

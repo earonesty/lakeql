@@ -17,7 +17,12 @@
     ],
     "typecheck": "passed",
     "real_http_tests": "4 passed before adaptive-index follow-up; not rerun for this follow-up",
-    "adaptive_index": "Twenty descending ranges across 1000 groups: 19810 metadata reads under a 1 KiB pool, 2000 reads under a 64 KiB pool, identical output; both normal completion and early return release index and descriptor reservations."
+    "adaptive_index": "Twenty descending ranges across 1000 groups: 19810 metadata reads under a 1 KiB pool, 2000 reads under a 64 KiB pool, identical output; both normal completion and early return release index and descriptor reservations.",
+    "contention_followup": {
+      "task_unit_tests": 12,
+      "scenario": "Suspend after first window, reserve all but 1 KiB of shared headroom in a competing job, verify rescan fallback, release competing storage, verify later index admission. Force metadata failure during index construction and verify the next job can reserve the entire pool.",
+      "scope": "Deterministic shared-pool interleaving; not a threaded scheduler or production-cloud stress test."
+    }
   },
   "tradeoffs": [
     "Ordered disjoint ranges remain linear without an index. Backward/overlapping ranges use an index when measured work and available headroom justify it; low-headroom operation retains the rescan CPU cost.",
