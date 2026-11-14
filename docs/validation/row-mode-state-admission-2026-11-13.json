@@ -1,0 +1,24 @@
+{
+  "status": "Implemented; build, default, Worker and follow-up lifecycle validation passed",
+  "change": "ModeState admits its Map, scalar-key formatting scratch, retained keys/value entries, restored entries and snapshot containers. New entries use the shared MutableMemoryLedger; duplicate counts reuse retained storage. Key formatting remains stableStringify to preserve legacy equality semantics.",
+  "validation": {
+    "build": "passed",
+    "focusedTestsPassed": 100,
+    "defaultTestsPassed": 3066,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61,
+    "followupLifecycleTestsPassed": 7,
+    "cases": [
+      "Repeated escaped Unicode and lone-surrogate key keeps retained usage constant across 100 rows",
+      "8192-byte cap rejects high-cardinality mode growth before 10000 rows, closes scanner and releases usage",
+      "Existing serialized-size and Unicode restore parity tests"
+    ],
+    "note": "The final mode high-cardinality parameter was added after the broad run; all seven lifecycle tests then passed separately. Production code was unchanged."
+  },
+  "remaining": [
+    "Distinct accepts general stableStringify input, so its pre-format forecast must cover broader values rather than silently imposing mode scalar semantics.",
+    "Group metadata and other scalar states remain unadmitted.",
+    "Mode bookkeeping temporary objects and outer group snapshots remain separate allocation work.",
+    "Restore duplicate entries are conservatively charged before Map replacement; reclamation can be improved."
+  ]
+}

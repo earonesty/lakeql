@@ -105,6 +105,7 @@ it("admits aggregate checkpoint overlap at exact capacity and cleans up below it
 it.each([
   "median",
   "quantile",
+  "mode",
 ] as const)("%s rejects retained growth during scanning and releases partial state", async (op) => {
   const pool = new MemoryBudget(8192);
   const store = memoryStore();
@@ -132,11 +133,39 @@ it.each([
       .path("table")
       .run()
       .aggregateWithState([], {
-        result: op === "median" ? { op, column: "value" } : { op, column: "value", quantile: 0.5 },
+        result:
+          op === "quantile" ? { op, column: "value", quantile: 0.5 } : { op, column: "value" },
       }),
   ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
   expect(scanned).toBeGreaterThan(0);
   expect(scanned).toBeLessThan(10000);
   expect(closed).toBe(true);
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("does not grow retained mode storage for repeated escaped Unicode keys", async () => {
+  const pool = new MemoryBudget(65536);
+  const store = memoryStore();
+  await store.put("table", new Uint8Array(1));
+  const observations: number[] = [];
+  const value = '雪\\"\ud800';
+  const lake = new Lake({
+    store,
+    memoryPool: pool,
+    scanner: {
+      async *scan() {
+        for (let index = 0; index < 100; index++) {
+          yield [{ value }];
+          observations.push(pool.usedBytes);
+        }
+      },
+    },
+  });
+  const result = await lake
+    .path("table")
+    .run()
+    .aggregateWithState([], { result: { op: "mode", column: "value" } });
+  expect(result.rows).toEqual([{ result: value }]);
+  expect(new Set(observations).size).toBe(1);
   expect(pool.usedBytes).toBe(0);
 });

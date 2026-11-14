@@ -16,9 +16,10 @@
     "workerTestsPassed": 61
   },
   "remaining": [
-    "Group directory/key storage and other aggregate state classes still need allocation admission.",
+    "Mode retention and snapshots are now admitted (linked evidence); group directory/key storage and remaining state classes are still outstanding.",
     "Aggregate snapshot outer envelopes and group key copies remain unadmitted.",
     "Median numeric midpoint semantics are unchanged; sort scratch charges are conservative units, not a VM heap guarantee.",
     "Restored source trees remain charged alongside independently copied growing states until aggregate completion."
-  ]
+  ],
+  "modeEvidence": "row-mode-state-admission-2026-11-13.json"
 }

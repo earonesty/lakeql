@@ -20,6 +20,7 @@ import { ensureGeoBackendForExprs, evaluate, jsonSafeValue, matches } from "./ev
 import type { Expr } from "./expr.js";
 import { collectExprColumns } from "./expr-utils.js";
 import { jsonOutputStream } from "./json-output-stream.js";
+import { jsonStringUtf8Bytes } from "./json-string-size.js";
 import {
   assertBookmarkMatches,
   createBookmark,
@@ -3615,7 +3616,7 @@ function createAggregateState(aggregate: AggregateExpr, scope: MemoryScope): Agg
     case "approx_count_distinct":
       return new CountDistinctState("approx_count_distinct");
     case "mode":
-      return new ModeState();
+      return new ModeState([], scope);
     case "first":
       return new FirstState();
     case "last":
@@ -3951,8 +3952,32 @@ class ModeState implements AggregateState {
   }>();
   private readonly values: Map<string, { value: string | number | boolean | null; count: number }>;
 
-  constructor(values: { key: string; value: AggregateSnapshotValue; count: number }[] = []) {
-    this.values = new Map(values.map((entry) => [entry.key, { ...entry }]));
+  private readonly ledger: MutableMemoryLedger;
+  constructor(
+    values: { key: string; value: AggregateSnapshotValue; count: number }[],
+    private readonly scope: MemoryScope,
+  ) {
+    this.values = scope.allocate(
+      allocationCharges.object,
+      "mode directory",
+      () => new Map<string, { value: AggregateSnapshotValue; count: number }>(),
+    ).value;
+    this.ledger = new MutableMemoryLedger(scope);
+    for (const entry of values) {
+      this.ledger.append(this.entryBytes(entry.key, entry.value), "restored mode entry", () => {
+        this.values.set(entry.key, { value: entry.value, count: entry.count });
+      });
+    }
+  }
+
+  private entryBytes(key: string, value: AggregateSnapshotValue): number {
+    return (
+      2 * allocationCharges.object +
+      4 * allocationCharges.property +
+      allocationCharges.string +
+      key.length * allocationCharges.stringCodeUnit +
+      (typeof value === "string" ? aggregateRetainedValueBytes(value) : allocationCharges.number)
+    );
   }
 
   add(value: unknown): void {
@@ -3960,16 +3985,28 @@ class ModeState implements AggregateState {
     if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") {
       throwAggregateType("mode");
     }
-    const key = stableStringify(value);
-    const existing = this.values.get(key);
-    if (existing === undefined) {
-      const entry = { value, count: 1 };
-      this.memory.add({ key, ...entry });
-      this.values.set(key, entry);
-    } else {
-      this.memory.remove({ key, value: existing.value, count: existing.count });
-      existing.count += 1;
-      this.memory.add({ key, value: existing.value, count: existing.count });
+    const scratch = this.scope.reserve(
+      allocationCharges.string +
+        allocationCharges.stringCodeUnit *
+          (typeof value === "string" ? jsonStringUtf8Bytes(value) : 32),
+      "mode key formatting",
+    );
+    try {
+      const key = stableStringify(value);
+      const existing = this.values.get(key);
+      if (existing === undefined) {
+        this.ledger.append(this.entryBytes(key, value), "mode entry", () => {
+          const entry = { value, count: 1 };
+          this.memory.add({ key, ...entry });
+          this.values.set(key, entry);
+        });
+      } else {
+        this.memory.remove({ key, value: existing.value, count: existing.count });
+        existing.count += 1;
+        this.memory.add({ key, value: existing.value, count: existing.count });
+      }
+    } finally {
+      scratch.release();
     }
   }
 
@@ -3995,14 +4032,25 @@ class ModeState implements AggregateState {
   }
 
   snapshot(): AggregateStateSnapshot {
-    return {
-      op: "mode",
-      values: [...this.values.entries()].map(([key, entry]) => ({
-        key,
-        value: entry.value,
-        count: entry.count,
-      })),
-    };
+    return this.scope.allocate(
+      allocationCharges.object +
+        2 * allocationCharges.property +
+        allocationCharges.array +
+        this.values.size *
+          (3 * allocationCharges.arraySlot +
+            allocationCharges.array +
+            allocationCharges.object +
+            3 * allocationCharges.property),
+      "mode snapshot",
+      () => ({
+        op: "mode" as const,
+        values: [...this.values.entries()].map(([key, entry]) => ({
+          key,
+          value: entry.value,
+          count: entry.count,
+        })),
+      }),
+    ).value;
   }
 }
 
@@ -4445,7 +4493,7 @@ function aggregateStateFromSnapshot(
     case "approx_count_distinct":
       return new CountDistinctState(snapshot.op, snapshot.values);
     case "mode":
-      return new ModeState(snapshot.values);
+      return new ModeState(snapshot.values, scope);
     case "first":
       return new FirstState(snapshot.value, snapshot.seen);
     case "last":
