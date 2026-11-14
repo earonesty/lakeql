@@ -177,3 +177,38 @@ it("enforces the measured unlimited-ordering peak at exact and one-byte-short ca
     sibling.release();
   }
 });
+
+it("preserves tied encounter order across stateful sort run boundaries", async () => {
+  const pool = new MemoryBudget(65536);
+  const store = memoryStore();
+  await store.put("table", new Uint8Array(1));
+  await store.put("next", new Uint8Array(1));
+  const rows = Array.from({ length: 12 }, (_, id) => ({ id, key: 1 }));
+  const lake = new Lake({
+    store,
+    memoryPool: pool,
+    budget: { maxBufferedRows: 2 },
+    scanner: {
+      async *scan(path) {
+        yield path === "table"
+          ? rows
+          : [
+              { id: 12, key: 1 },
+              { id: 13, key: 1 },
+            ];
+      },
+    },
+  });
+  const result = await lake
+    .path("table")
+    .orderBy([{ column: "key" }])
+    .offset(1)
+    .limit(8)
+    .sortWithState();
+  expect(result.rows.map((row) => row.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  const resumed = await lake
+    .path("next")
+    .orderBy([{ column: "key" }])
+    .sortWithState({ operatorState: result.operatorState });
+  expect(resumed.rows.map((row) => row.id)).toEqual(Array.from({ length: 14 }, (_, id) => id));
+});

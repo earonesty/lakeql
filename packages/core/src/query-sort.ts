@@ -41,9 +41,22 @@ export function flushSortRun(runs: Row[][], currentRun: Row[], orderBy: OrderByT
   runs.push(currentRun.splice(0, currentRun.length));
 }
 
+interface SortRunEntry {
+  runIndex: number;
+  row: Row;
+}
+
+function compareRunEntries(
+  left: SortRunEntry,
+  right: SortRunEntry,
+  orderBy: OrderByTerm[],
+): number {
+  return compareRows(left.row, right.row, orderBy) || left.runIndex - right.runIndex;
+}
+
 export function mergeSortRuns(runs: Row[][], orderBy: OrderByTerm[]): Row[] {
   const cursors = runs.map(() => 0);
-  const heap: { runIndex: number; row: Row }[] = [];
+  const heap: SortRunEntry[] = [];
   const out: Row[] = [];
   for (let runIndex = 0; runIndex < runs.length; runIndex += 1) {
     const row = runs[runIndex]?.[0];
@@ -55,32 +68,28 @@ export function mergeSortRuns(runs: Row[][], orderBy: OrderByTerm[]): Row[] {
     out.push(next.row);
     cursors[next.runIndex] = (cursors[next.runIndex] ?? 0) + 1;
     const row = runs[next.runIndex]?.[cursors[next.runIndex] ?? 0];
-    if (row !== undefined) heapPush(heap, { runIndex: next.runIndex, row }, orderBy);
+    if (row !== undefined) {
+      next.row = row;
+      heapPush(heap, next, orderBy);
+    }
   }
   return out;
 }
 
-function heapPush(
-  heap: { runIndex: number; row: Row }[],
-  item: { runIndex: number; row: Row },
-  orderBy: OrderByTerm[],
-): void {
+function heapPush(heap: SortRunEntry[], item: SortRunEntry, orderBy: OrderByTerm[]): void {
   heap.push(item);
   for (let index = heap.length - 1; index > 0; ) {
     const parent = Math.floor((index - 1) / 2);
-    if (compareRows(heap[index]?.row ?? {}, heap[parent]?.row ?? {}, orderBy) >= 0) break;
-    [heap[index], heap[parent]] = [
-      heap[parent] as { runIndex: number; row: Row },
-      heap[index] as { runIndex: number; row: Row },
-    ];
+    if (compareRunEntries(heap[index] as SortRunEntry, heap[parent] as SortRunEntry, orderBy) >= 0)
+      break;
+    const swapped = heap[index] as SortRunEntry;
+    heap[index] = heap[parent] as SortRunEntry;
+    heap[parent] = swapped;
     index = parent;
   }
 }
 
-function heapPop(
-  heap: { runIndex: number; row: Row }[],
-  orderBy: OrderByTerm[],
-): { runIndex: number; row: Row } | undefined {
+function heapPop(heap: SortRunEntry[], orderBy: OrderByTerm[]): SortRunEntry | undefined {
   const root = heap[0];
   const last = heap.pop();
   if (root === undefined || last === undefined) return root;
@@ -91,32 +100,27 @@ function heapPop(
   return root;
 }
 
-function heapifyDown(
-  heap: { runIndex: number; row: Row }[],
-  start: number,
-  orderBy: OrderByTerm[],
-): void {
+function heapifyDown(heap: SortRunEntry[], start: number, orderBy: OrderByTerm[]): void {
   for (let index = start; ; ) {
     const left = index * 2 + 1;
     const right = left + 1;
     let smallest = index;
     if (
       heap[left] !== undefined &&
-      compareRows(heap[left].row, heap[smallest]?.row ?? {}, orderBy) < 0
+      compareRunEntries(heap[left], heap[smallest] as SortRunEntry, orderBy) < 0
     ) {
       smallest = left;
     }
     if (
       heap[right] !== undefined &&
-      compareRows(heap[right].row, heap[smallest]?.row ?? {}, orderBy) < 0
+      compareRunEntries(heap[right], heap[smallest] as SortRunEntry, orderBy) < 0
     ) {
       smallest = right;
     }
     if (smallest === index) return;
-    [heap[index], heap[smallest]] = [
-      heap[smallest] as { runIndex: number; row: Row },
-      heap[index] as { runIndex: number; row: Row },
-    ];
+    const swapped = heap[index] as SortRunEntry;
+    heap[index] = heap[smallest] as SortRunEntry;
+    heap[smallest] = swapped;
     index = smallest;
   }
 }

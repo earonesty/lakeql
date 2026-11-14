@@ -21,5 +21,6 @@
     "Sort workspace charges are explicit conservative units, not a portable measurement of native sort or VM heap.",
     "Stateful sort runs, checkpoint serialization/deserialization, hive merge and result projection/output admission remain separate gaps.",
     "Per-row directory reservation overhead requires measurement; no latency improvement is claimed."
-  ]
+  ],
+  "statefulMergeFollowup": "docs/validation/stable-sort-run-merge-2026-11-13.json"
 }

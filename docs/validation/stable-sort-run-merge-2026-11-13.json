@@ -1,0 +1,24 @@
+{
+  "status": "Implemented; default and reference validation passed",
+  "requirement": "F2/F3 stateful ordering correctness and bounded merge metadata",
+  "demonstratedBug": "Merging three sorted runs with equal keys and encounter ids [0,1],[2,3],[4,5] produced [0,4,1,5,2,3]. Heap comparisons did not break ties by run encounter order.",
+  "change": "Heap comparisons use row keys followed by original run index. A popped run entry is updated and reused for its next row, so merge allocates one entry per nonempty run rather than one per row. Heap swaps use scalar temporaries instead of temporary arrays.",
+  "validation": {
+    "testsPassed": 94,
+    "build": "passed",
+    "cases": [
+      "three fully tied runs",
+      "stable full-sort parity at six run widths",
+      "null placement",
+      "ascending/descending and multiple keys",
+      "empty runs",
+      "input run immutability",
+      "public sortWithState ties with offset and limit across six runs"
+    ],
+    "defaultTestsPassed": 3037,
+    "defaultTestsSkipped": 629,
+    "referenceTestsPassed": 104,
+    "followup": "Ten focused sort/row tests passed after extending public sortWithState coverage to restore a checkpoint and merge new equal-key runs."
+  },
+  "remaining": "Stateful sort row ownership, run/sort/merge allocation admission, checkpoint serialization and spill lifetimes remain open. This change establishes deterministic stable merging and reduces transient entry allocations; it does not claim complete sort memory bounds."
+}
