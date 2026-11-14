@@ -1,18 +1,14 @@
 import {
-  type Batch,
-  batchFromColumns,
   MATERIALIZATION_CHARGES as c,
   detachOwnedRow,
-  gatherBatch,
+  gatherSelectedBatch,
   LakeqlError,
   MemoryBudget,
   MemoryScope,
   matches,
-  materializeBatchRows,
-  materializeSelectedBatchRows,
   type ObjectStore,
+  planBatchMaterialization,
   type Row,
-  selectedRowCount,
   type TaskInput,
   tryPredicateSelection,
 } from "lakeql-core";
@@ -104,42 +100,42 @@ export async function* scanParquetTaskColumnBatches(
         metadata,
         taskReadOptions(rowStart, rowEnd, physicalColumns, task.residualPredicate, options),
       )) {
-        if (batch.residualPredicateSatisfied === true || task.residualPredicate === undefined) {
-          const output = scope.childScope();
-          try {
-            const augmented = batchWithPartitionValues(batch.batch, task.partitionValues, output);
-            const projected = projectTaskBatch(augmented, task.projectedColumns, output);
-            recordRowsMatched(options.stats, projected.rowCount);
-            if (projected.rowCount > 0) yield { rowOffset: batch.rowOffset, batch: projected };
-          } finally {
-            output.dispose();
+        const output = scope.childScope();
+        try {
+          const augmented = batchWithPartitionValues(batch.batch, task.partitionValues, output);
+          let selection: Uint8Array | undefined;
+          if (batch.residualPredicateSatisfied !== true && task.residualPredicate !== undefined) {
+            selection = tryPredicateSelection(augmented, task.residualPredicate, output);
+            if (selection === undefined) {
+              const scratch = output.childScope();
+              try {
+                const rows = planBatchMaterialization(augmented).execute(scratch);
+                try {
+                  selection = output.allocate(
+                    c.view + augmented.rowCount,
+                    "task residual selection",
+                    () => new Uint8Array(augmented.rowCount),
+                  ).value;
+                  for (let index = 0; index < rows.value.length; index += 1) {
+                    const row = rows.value[index];
+                    if (row !== undefined && matches(task.residualPredicate, row, scratch))
+                      selection[index] = 1;
+                  }
+                } finally {
+                  rows.release();
+                }
+              } finally {
+                scratch.dispose();
+              }
+            }
           }
-          continue;
-        }
-        const selection = tryPredicateSelection(batch.batch, task.residualPredicate);
-        if (
-          selection !== undefined &&
-          Object.keys(task.partitionValues).length === 0 &&
-          task.projectedColumns?.every((column) => column in batch.batch.columns) !== false
-        ) {
-          recordRowsMatched(options.stats, selectedRowCount(batch.batch.rowCount, selection));
-          yield {
-            rowOffset: batch.rowOffset,
-            batch: gatherBatch(batch.batch, selectionIndices(selection)),
-          };
-          continue;
-        }
-        const rows =
-          selection === undefined
-            ? materializeBatchRows(batch.batch)
-                .map((row: Row) => ({ ...task.partitionValues, ...row }))
-                .filter((row: Row) => matches(task.residualPredicate, row))
-                .map((row: Row) => projectTaskRow(row, task.projectedColumns))
-            : materializeSelectedBatchRows(batch.batch, selection)
-                .map((row: Row) => ({ ...task.partitionValues, ...row }))
-                .map((row: Row) => projectTaskRow(row, task.projectedColumns));
-        if (rows.length > 0) {
-          yield { rowOffset: batch.rowOffset, batch: batchFromRows(rows, task.projectedColumns) };
+          const projected = projectTaskBatch(augmented, task.projectedColumns, output);
+          const selected =
+            selection === undefined ? projected : gatherSelectedBatch(projected, selection, output);
+          recordRowsMatched(options.stats, selected.rowCount);
+          if (selected.rowCount > 0) yield { rowOffset: batch.rowOffset, batch: selected };
+        } finally {
+          output.dispose();
         }
       }
     }
@@ -266,14 +262,6 @@ async function taskMetadata(
   return metadata;
 }
 
-function selectionIndices(selection: Uint8Array): number[] {
-  const indices: number[] = [];
-  for (let index = 0; index < selection.length; index += 1) {
-    if (selection[index] === 1) indices.push(index);
-  }
-  return indices;
-}
-
 /** The source batch stays live while rows are transformed and yielded. */
 function transformTaskRows(source: Row[], task: TaskInput, output: MemoryScope): Row[] {
   const rows = output.allocate(c.array, "task output rows", () => [] as Row[]).value;
@@ -333,22 +321,4 @@ function transformTaskRows(source: Row[], task: TaskInput, output: MemoryScope):
     }
   }
   return rows;
-}
-
-function projectTaskRow(row: Row, columns: string[] | undefined): Row {
-  if (columns === undefined) return row;
-  const projected: Row = {};
-  for (const column of columns) projected[column] = row[column];
-  return projected;
-}
-
-function batchFromRows(rows: Row[], columns: string[] | undefined): Batch {
-  const names = columns ?? [...new Set(rows.flatMap((row) => Object.keys(row)))];
-  const columnsByName: Record<string, unknown[]> = Object.fromEntries(
-    names.map((name) => [name, []]),
-  );
-  for (const row of rows) {
-    for (const name of names) columnsByName[name]?.push(row[name]);
-  }
-  return batchFromColumns(columnsByName);
 }

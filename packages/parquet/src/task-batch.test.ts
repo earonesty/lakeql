@@ -76,3 +76,44 @@ it("scans a real Parquet partition column without expanding repeated text", asyn
   expect(count).toBe(256);
   expect(budget.usedBytes).toBe(0);
 });
+
+it.each([
+  "vector",
+  "scalar",
+  "empty",
+] as const)("filters partition vectors through the %s residual path", async (kind) => {
+  const { memoryStore, eq, like } = await import("lakeql-core");
+  const { writeParquet, scanParquetTaskColumnBatches } = await import("./index.js");
+  const store = memoryStore();
+  await writeParquet(store, "partition-filter.parquet", {
+    rowGroupSize: [3],
+    columnData: [{ name: "id", type: "INT32", data: [1, 2, 3] }],
+  });
+  const budget = new MemoryBudget(128 * 1024);
+  const iterator = scanParquetTaskColumnBatches(
+    store,
+    {
+      path: "partition-filter.parquet",
+      rowGroupRanges: [{ start: 0, end: 1 }],
+      projectedColumns: ["id", "partition"],
+      partitionValues: { partition: "west" },
+      residualPredicate:
+        kind === "scalar"
+          ? like("partition", "w%")
+          : eq("partition", kind === "empty" ? "east" : "west"),
+    },
+    { memoryBudget: budget, batchSize: 3 },
+  )[Symbol.asyncIterator]();
+  const first = await iterator.next();
+  if (kind === "empty") expect(first.done).toBe(true);
+  else {
+    expect(first.done).toBe(false);
+    if (first.done) throw new Error("Expected a selected batch");
+    expect(materializeBatchRows(first.value.batch)).toEqual(
+      [1, 2, 3].map((id) => ({ id, partition: "west" })),
+    );
+    expect(budget.usedBytes).toBeGreaterThan(0);
+  }
+  await iterator.return?.();
+  expect(budget.usedBytes).toBe(0);
+});
