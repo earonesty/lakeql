@@ -1,0 +1,49 @@
+{
+  "requirements": ["F4", "M1", "V1", "V2"],
+  "runtimeSourceCommit": "c950498",
+  "fixture": "packages/parquet/src/index.workerd.ts",
+  "fixtureSha256": "601926a0d9a581450a458696d5766c3c4bdec34195d2c7e781d09c2a8b97a0d6",
+  "transport": "Native R2 binding in local workerd, not local-file or mocked ObjectStore reads; not production R2",
+  "data": {
+    "rows": 100,
+    "rowGroups": 10,
+    "textWidth": 1024,
+    "codec": "UNCOMPRESSED"
+  },
+  "matrix": {
+    "poolMiB": [64, 128],
+    "concurrentWindowJobs": 4,
+    "cacheMiB": 1,
+    "batchRows": 10,
+    "windows": [
+      "rank",
+      "count_distinct",
+      "mode",
+      "quantile",
+      "lag with default",
+      "last_value",
+      "running count",
+      "cume_dist"
+    ]
+  },
+  "assertions": [
+    "All four owned window results survive full range-cache eviction",
+    "Pool remains charged while window outputs are pinned",
+    "Independent expected values checked after eviction, including text payloads",
+    "Releasing all window owners returns pool used bytes to zero",
+    "Tracked peak remains within configured pool"
+  ],
+  "checks": {
+    "workerTestsPassed": 82,
+    "workerFiles": 23,
+    "referenceTestsPassed": 120,
+    "referenceFiles": 4,
+    "typecheck": "passed"
+  },
+  "limitations": [
+    "Small fixture verifies ownership lifecycle, not near-cap workload headroom",
+    "Reservation accounting is not total runtime heap",
+    "Reference comparison uses actual local-file Parquet and DuckDB; it does not prove cloud transport",
+    "Production-cloud measurements and broader allocation coverage remain open"
+  ]
+}

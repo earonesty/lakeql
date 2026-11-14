@@ -850,24 +850,32 @@ it.each([64, 128])("owns deferred top-k over native R2 with a %s MiB shared pool
             },
           })
           .run()
-          .toArray(),
+          .toOwnedArray(),
       ),
     );
-    for (const rows of ranked)
-      expect(rows).toEqual(
-        text.map((value, id) => ({
-          id,
-          text: value,
-          rank: 100 - id,
-          running_count: 100 - id,
-          last_text: text[99],
-          running_quantile: id * 0.25,
-          distinct_ids: id + 1,
-          mode_id: 0,
-          previous_text: id >= 3 ? text[id - 3] : "missing",
-          tied: 1,
-        })),
-      );
+    try {
+      // Windows must detach published values from evictable range backing.
+      cache.deleteWhere(() => true);
+      expect(pool.usedBytes).toBeGreaterThan(0);
+      for (const owner of ranked)
+        expect(owner.value).toEqual(
+          text.map((value, id) => ({
+            id,
+            text: value,
+            rank: 100 - id,
+            running_count: 100 - id,
+            last_text: text[99],
+            running_quantile: id * 0.25,
+            distinct_ids: id + 1,
+            mode_id: 0,
+            previous_text: id >= 3 ? text[id - 3] : "missing",
+            tied: 1,
+          })),
+        );
+    } finally {
+      for (const owner of ranked) owner.release();
+    }
+    expect(pool.usedBytes).toBe(0);
     expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
   } finally {
     scans.mockRestore();

@@ -4564,3 +4564,21 @@ their previous optional-workspace headroom and verify helper cleanup.
 
 This closes the identified peer-helper gap, not all window helper/VM allocation
 coverage. See `validation/window-peer-metadata-2026-11-14.json` for validation.
+
+### F4/M1/V1 owned window output across native R2 cache eviction
+
+The existing real-Parquet native R2 fixture now retains owned output from four
+concurrent window queries at both 64 and 128 MiB shared pool caps. It evicts the
+entire range cache before comparing every output against independently computed
+rank, distinct-count, mode, quantile, lag/default, last-value, running-count and
+cumulative-distribution values. The pool remains charged while results are held
+and returns to zero after all owners release. This directly exercises published
+window strings after backing-cache eviction, beyond the earlier plain-row checks.
+The fixture has 100 rows in ten row groups with 1,024-character strings; it proves
+operation and ownership, not near-cap runtime headroom.
+
+All 82 Worker tests pass. All 120 real-Parquet/DuckDB reference tests also pass on
+runtime `c950498`, including the dynamic RANGE/GROUPS exclusion matrix. Those
+reference tests use local files; the R2 test uses a native local workerd binding,
+not production cloud service measurements. See
+`validation/window-owned-r2-2026-11-14.json`.
