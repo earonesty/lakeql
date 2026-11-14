@@ -1,0 +1,26 @@
+{
+  "sourceBase": "dc8a14c",
+  "scope": "Reusable admitted iterative logical predicate stack",
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 111,
+    "fullSuite": {
+      "passed": 3622,
+      "skipped": 629,
+      "log": "/tmp/sidecar-stack-full.log"
+    }
+  },
+  "evidence": [
+    "20,000 logical levels without recursive stack overflow",
+    "Two file evaluations reuse frame storage",
+    "Exact capacity succeeds and one byte below rolls back",
+    "Nested AND/OR short-circuit preserves unevaluated malformed spatial literals",
+    "Empty AND is true and empty OR is false"
+  ],
+  "remaining": [
+    "Repeated spatial shape validation",
+    "Caller-supplied expression storage",
+    "Broader allocation gaps and full acceptance audit"
+  ]
+}

@@ -3857,3 +3857,22 @@ Evidence: `docs/validation/current-planning-runtime-2026-11-14.json`. Raw heap,
 backing and embedder samples remain separate in the artifacts. Sampling is sparse
 and cannot establish exact peaks. Managed-heap flags exclude external backing
 and are not production Cloudflare total-memory limits; V1 remains open.
+
+### 2026-11-14 — iterative admitted sidecar logical traversal
+
+Sidecar predicate evaluation no longer recurses through logical expressions or
+creates every/some callbacks for logical nodes on each file. An explicit frame
+stack grows only to the reached logical depth. Frame records and slots are
+admitted before allocation and reused across files; the entire workspace is
+released with pruning scratch. Short-circuit evaluation and empty AND/OR identities
+are preserved, and unreachable spatial literals remain unparsed.
+
+A 20,000-level predicate over two different file indexes verifies stack safety,
+frame reuse, exact-capacity success and one-byte-below rollback. Nested mixed
+AND/OR tests verify empty operands and malformed short-circuited literals. This
+closes recursive logical traversal storage for valid expression trees; repeated
+spatial shape validation, caller expression storage and broader allocation gaps
+remain separate work.
+
+Build/typecheck passed; focused suites passed 111 tests; full suite passed 3,622
+with 629 skips. Evidence: `docs/validation/sidecar-logical-workspace-2026-11-14.json`.

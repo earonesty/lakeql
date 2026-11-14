@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { Expr } from "./expr.js";
 import { and, between, col, eq, fn, gt, gte, isIn, lit, lt, lte, ne, not, or } from "./expr.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope } from "./memory-scope.js";
@@ -471,4 +472,45 @@ it("treats inherited index names as absent and preserves explicit prototype-name
     expect(Object.hasOwn(columns, name)).toBe(true);
     expect(pruneFilesWithIndex([{ path: "a", columns }], eq(col(name), 1)).skipped).toHaveLength(1);
   }
+});
+
+it("uses admitted reusable frames for deeply nested logical pruning", () => {
+  let predicate: Expr = eq(col("x"), 1);
+  for (let i = 0; i < 20000; i++)
+    predicate = { kind: "logical", op: i % 2 ? "and" : "or", operands: [predicate] };
+  const input = [
+    { path: "a", columns: { x: { min: 1, max: 1 } } },
+    { path: "b", columns: { x: { min: 2, max: 2 } } },
+  ];
+  const pool = new MemoryBudget(10_000_000);
+  const scope = new MemoryScope(pool);
+  expect(pruneFilesWithIndex(input, predicate, { scope }).planned).toEqual([input[0]]);
+  const peak = pool.peakBytes;
+  // Two files share the same 20,000 frames, rather than allocating two stacks.
+  expect(peak).toBeLessThan(5_000_000);
+  scope.dispose();
+  for (const capacity of [peak - 1, peak]) {
+    const target = new MemoryScope(new MemoryBudget(capacity));
+    try {
+      if (capacity < peak)
+        expect(() => pruneFilesWithIndex(input, predicate, { scope: target })).toThrow(/budget/i);
+      else
+        expect(pruneFilesWithIndex(input, predicate, { scope: target }).skipped).toEqual([
+          input[1],
+        ]);
+    } finally {
+      target.dispose();
+    }
+    expect(target.budget.usedBytes).toBe(0);
+  }
+});
+it("preserves empty logic and nested short-circuit behavior", () => {
+  const input = [{ path: "a", columns: { x: { min: 1, max: 1 } }, h3: { cell: ["a"] } }];
+  const bad = fn("h3_in", col("cell"), "[");
+  const yes: Expr = { kind: "logical", op: "and", operands: [] };
+  const no: Expr = { kind: "logical", op: "or", operands: [] };
+  expect(pruneFilesWithIndex(input, yes).planned).toHaveLength(1);
+  expect(pruneFilesWithIndex(input, no).skipped).toHaveLength(1);
+  expect(pruneFilesWithIndex(input, or(and(no, bad), yes, bad)).planned).toHaveLength(1);
+  expect(pruneFilesWithIndex(input, and(or(yes, bad), no, bad)).skipped).toHaveLength(1);
 });

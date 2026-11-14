@@ -71,6 +71,27 @@ export function pruneFilesWithIndex<T extends SidecarFileIndex>(
       literals.set(text, parsed);
       return parsed;
     };
+    const frames = allocate(
+      scratch,
+      c.array,
+      "sidecar predicate stack",
+      () => [] as PredicateFrame[],
+    );
+    const enter = (expr: LogicalExpr, depth: number): PredicateFrame => {
+      let frame = frames[depth];
+      if (frame === undefined) {
+        frame = allocate(
+          scratch,
+          c.arraySlot + c.object + 2 * c.property,
+          "sidecar predicate frame",
+          () => ({ expr, next: 0 }),
+        );
+        frames.push(frame);
+      }
+      frame.expr = expr;
+      frame.next = 0;
+      return frame;
+    };
     let ordered = files;
     for (let index = 1; index < files.length; index++) {
       const previous = files[index - 1],
@@ -103,7 +124,9 @@ export function pruneFilesWithIndex<T extends SidecarFileIndex>(
     for (const file of ordered) {
       const index = options.indexForFile === undefined ? file : options.indexForFile(file);
       const target =
-        index === undefined || fileMayMatch(index, where, parseLiteral) ? planned : skipped;
+        index === undefined || fileMayMatch(index, where, parseLiteral, frames, enter)
+          ? planned
+          : skipped;
       output?.allocate(c.arraySlot, "sidecar result slot", () => undefined);
       target.push(file);
     }
@@ -194,33 +217,63 @@ export function buildBBoxIndex<T extends Record<string, unknown>>(
   return { minx, miny, maxx, maxy };
 }
 
+type LogicalExpr = Extract<Expr, { kind: "logical" }>;
+interface PredicateFrame {
+  expr: LogicalExpr;
+  next: number;
+}
+
 function fileMayMatch(
   file: SidecarFileIndex,
   expr: Expr | undefined,
   parseLiteral: (text: string) => unknown,
+  frames: PredicateFrame[],
+  enter: (expr: LogicalExpr, depth: number) => PredicateFrame,
 ): boolean {
-  if (!expr) return true;
+  let current = expr;
+  let depth = 0;
+  for (;;) {
+    let result: boolean;
+    if (current?.kind === "logical") {
+      if (current.operands.length > 0) {
+        const frame = enter(current, depth++);
+        current = frame.expr.operands[frame.next++];
+        continue;
+      }
+      result = current.op === "and";
+    } else {
+      result = leafMayMatch(file, current, parseLiteral);
+    }
+    for (;;) {
+      if (depth === 0) return result;
+      const frame = frames[depth - 1];
+      if (frame === undefined) throw new Error("Missing predicate frame");
+      const shortCircuit = frame.expr.op === "and" ? !result : result;
+      if (shortCircuit || frame.next >= frame.expr.operands.length) {
+        depth--;
+        continue;
+      }
+      current = frame.expr.operands[frame.next++];
+      break;
+    }
+  }
+}
+
+function leafMayMatch(
+  file: SidecarFileIndex,
+  expr: Expr | undefined,
+  parseLiteral: (text: string) => unknown,
+): boolean {
+  if (expr === undefined) return true;
   switch (expr.kind) {
-    case "literal":
-    case "column":
-    case "null-check":
-    case "like":
-    case "arithmetic":
-    case "case":
-    case "call":
-      return callMayMatch(file, expr, parseLiteral);
-    case "not":
-      return true;
-    case "logical":
-      return expr.op === "and"
-        ? expr.operands.every((operand) => fileMayMatch(file, operand, parseLiteral))
-        : expr.operands.some((operand) => fileMayMatch(file, operand, parseLiteral));
     case "compare":
       return compareMayMatch(file, expr);
     case "between":
       return betweenMayMatch(file, expr);
     case "in":
       return inMayMatch(file, expr);
+    default:
+      return callMayMatch(file, expr, parseLiteral);
   }
 }
 
