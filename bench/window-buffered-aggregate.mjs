@@ -72,7 +72,8 @@ const report = {
   results,
 };
 writeFileSync(
-  "docs/benchmarks/window-buffered-aggregate-2026-11-13.json",
+  process.env.LAKEQL_WINDOW_BUFFERED_REPORT ??
+    "docs/benchmarks/window-buffered-aggregate-2026-11-13.json",
   `${JSON.stringify(report, null, 2)}\n`,
 );
 console.log(JSON.stringify(results.map(({ samples, ...result }) => result)));

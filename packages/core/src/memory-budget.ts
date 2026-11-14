@@ -162,6 +162,27 @@ export class MemoryBudget {
         allocation.bytes = total;
         return this.handle(allocation);
       },
+      shrink: (bytes) => {
+        requireLive();
+        validateBytes(bytes);
+        if (bytes > allocation.bytes)
+          throw new LakeqlError(
+            "LAKEQL_VALIDATION_ERROR",
+            "Cannot grow a reservation by shrinking",
+          );
+        if (
+          allocation.holders.size !== chain.length ||
+          chain.some((budget) => allocation.holders.get(budget) !== 1)
+        )
+          throw new LakeqlError(
+            "LAKEQL_VALIDATION_ERROR",
+            "Shrinking requires exclusive reservation ownership",
+          );
+        const releasedBytes = allocation.bytes - bytes;
+        allocation.bytes = bytes;
+        (result as { bytes: number }).bytes = bytes;
+        for (const budget of chain) budget.used -= releasedBytes;
+      },
       bytes: allocation.bytes,
       budget: this,
       retain: () => {
@@ -280,6 +301,9 @@ export interface MemoryReservation {
   /** Combine two exclusive extents from the same budget without readmission.
    * On success both original handles are consumed; failure preserves them. */
   merge(other: MemoryReservation): MemoryReservation;
+  /** Reduce an exclusively owned extent after dropping the released storage.
+   * Keeps this handle live; cannot grow, reclaim, or change shared ownership. */
+  shrink(bytes: number): void;
   /** Idempotent; the allocation remains charged while another holder retains it. */
   release(): void;
 }

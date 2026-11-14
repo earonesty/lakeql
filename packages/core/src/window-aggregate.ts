@@ -275,14 +275,7 @@ class AggregateState {
       const added = insert(key);
       if (added && reservation !== undefined) {
         const retainedBytes = charges.string + charges.stringCodeUnit * key.length + entryBytes;
-        const [retained, scratch] = reservation.partition([
-          retainedBytes,
-          reservation.bytes - retainedBytes,
-        ]);
-        scratch?.release();
-        reservation = retained;
-        if (reservation === undefined)
-          throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Missing key reservation");
+        reservation.shrink(retainedBytes);
         this.keyReservation =
           this.keyReservation === undefined ? reservation : this.keyReservation.merge(reservation);
         reservation = undefined;
