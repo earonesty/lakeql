@@ -1,0 +1,327 @@
+{
+  "runtimeSource": "bc17c16c4176e9dbb4ee0893457438babb58b214",
+  "node": "v24.18.1",
+  "workload": {
+    "rows": 1000,
+    "warmupEncodes": 1000,
+    "measuredEncodes": 20000,
+    "samplingIntervalMicroseconds": 100,
+    "budgetBytes": 67108864
+  },
+  "sampledMicroseconds": 11184309,
+  "builtModuleHashes": {
+    "json-output-size": "7ca48d3b05484a856f3e4a68354d07026cf2efa53ff4f03dde2ce09c0e58e2da",
+    "json-output-encoding": "1ee8755d82849be50e678a2b1cfa96e61aa4a9a9f7cf1aaade456c1a311a48b1",
+    "json-container-entries": "c7fb72ee7d2bc3a0ad66bf220ad7d85b0cf50eef4f46968c0a01fe3d67fb824e",
+    "json-string-size": "3b41ed29132be62bb18dc6619681710c6d79a5e31f44a68d4a5257257659eea7"
+  },
+  "selfTime": [
+    {
+      "function": "encodeOwnedJsonOutput",
+      "file": "json-output-encoding.js",
+      "line": 19,
+      "microseconds": 1467986,
+      "percent": 13.125406317010736
+    },
+    {
+      "function": "advance",
+      "file": "json-container-entries.js",
+      "line": 17,
+      "microseconds": 1400042,
+      "percent": 12.5179123716986
+    },
+    {
+      "function": "string",
+      "file": "json-output-encoding.js",
+      "line": 49,
+      "microseconds": 1368332,
+      "percent": 12.234390162145914
+    },
+    {
+      "function": "measure",
+      "file": "json-output-size.js",
+      "line": 26,
+      "microseconds": 1226995,
+      "percent": 10.970682229899047
+    },
+    {
+      "function": "write",
+      "file": "json-output-encoding.js",
+      "line": 99,
+      "microseconds": 1200644,
+      "percent": 10.735075363171743
+    },
+    {
+      "function": "ownKeys",
+      "file": "json-container-entries.js",
+      "line": 34,
+      "microseconds": 1176142,
+      "percent": 10.516000586178368
+    },
+    {
+      "function": "jsonOutputUtf8Bytes",
+      "file": "json-output-size.js",
+      "line": 20,
+      "microseconds": 1142798,
+      "percent": 10.217868622907325
+    },
+    {
+      "function": "isPlainJsonAscii",
+      "file": "json-string-size.js",
+      "line": 5,
+      "microseconds": 1095754,
+      "percent": 9.797243620504405
+    },
+    {
+      "function": "run",
+      "file": "json-output-profile.mjs",
+      "line": 12,
+      "microseconds": 244724,
+      "percent": 2.1881012050006845
+    },
+    {
+      "function": "(garbage collector)",
+      "file": "",
+      "line": 0,
+      "microseconds": 219937,
+      "percent": 1.9664782151494562
+    },
+    {
+      "function": "jsonStringUtf8Bytes",
+      "file": "json-string-size.js",
+      "line": 9,
+      "microseconds": 153407,
+      "percent": 1.371626982051372
+    },
+    {
+      "function": "writeJsonInteger",
+      "file": "json-integer-output.js",
+      "line": 12,
+      "microseconds": 96539,
+      "percent": 0.8631646353833751
+    },
+    {
+      "function": "JsonContainerCursor",
+      "file": "json-container-entries.js",
+      "line": 12,
+      "microseconds": 91891,
+      "percent": 0.8216064130560055
+    },
+    {
+      "function": "",
+      "file": "json-output-encoding.js",
+      "line": 32,
+      "microseconds": 81771,
+      "percent": 0.7311225038578602
+    },
+    {
+      "function": "handle",
+      "file": "memory-budget.js",
+      "line": 98,
+      "microseconds": 48834,
+      "percent": 0.43662956736978564
+    },
+    {
+      "function": "trackOwner",
+      "file": "memory-scope.js",
+      "line": 372,
+      "microseconds": 30310,
+      "percent": 0.2710046727070935
+    },
+    {
+      "function": "(program)",
+      "file": "",
+      "line": 0,
+      "microseconds": 26395,
+      "percent": 0.2360002750281667
+    },
+    {
+      "function": "AtomicMemory",
+      "file": "memory-scope.js",
+      "line": 458,
+      "microseconds": 24500,
+      "percent": 0.21905689479788157
+    },
+    {
+      "function": "post",
+      "file": "node:inspector",
+      "line": 115,
+      "microseconds": 14602,
+      "percent": 0.1305579092995374
+    },
+    {
+      "function": "pin",
+      "file": "memory-budget.js",
+      "line": 68,
+      "microseconds": 12545,
+      "percent": 0.11216607123426221
+    },
+    {
+      "function": "dispose",
+      "file": "json-traversal-budget.js",
+      "line": 24,
+      "microseconds": 9989,
+      "percent": 0.08931262539330771
+    },
+    {
+      "function": "MemoryScope",
+      "file": "memory-scope.js",
+      "line": 53,
+      "microseconds": 8609,
+      "percent": 0.07697391050265152
+    },
+    {
+      "function": "",
+      "file": "json-output-profile.mjs",
+      "line": 0,
+      "microseconds": 8363,
+      "percent": 0.07477440045692585
+    },
+    {
+      "function": "release",
+      "file": "memory-budget.js",
+      "line": 204,
+      "microseconds": 7444,
+      "percent": 0.06655753162756858
+    },
+    {
+      "function": "childScope",
+      "file": "memory-scope.js",
+      "line": 238,
+      "microseconds": 5787,
+      "percent": 0.051742132661034314
+    },
+    {
+      "function": "dispose",
+      "file": "memory-scope.js",
+      "line": 351,
+      "microseconds": 4897,
+      "percent": 0.04378455566633576
+    },
+    {
+      "function": "reserve",
+      "file": "memory-scope.js",
+      "line": 270,
+      "microseconds": 2542,
+      "percent": 0.022728270472498566
+    },
+    {
+      "function": "release",
+      "file": "memory-scope.js",
+      "line": 375,
+      "microseconds": 2323,
+      "percent": 0.020770170065937916
+    },
+    {
+      "function": "release",
+      "file": "memory-scope.js",
+      "line": 489,
+      "microseconds": 1972,
+      "percent": 0.017631844756792754
+    },
+    {
+      "function": "MemoryScope",
+      "file": "memory-scope.js",
+      "line": 42,
+      "microseconds": 1758,
+      "percent": 0.01571844983896636
+    },
+    {
+      "function": "track",
+      "file": "memory-scope.js",
+      "line": 368,
+      "microseconds": 1596,
+      "percent": 0.014269992003976283
+    },
+    {
+      "function": "retain",
+      "file": "memory-scope.js",
+      "line": 479,
+      "microseconds": 1101,
+      "percent": 0.009844148619284392
+    },
+    {
+      "function": "reserve",
+      "file": "memory-budget.js",
+      "line": 43,
+      "microseconds": 803,
+      "percent": 0.007179701490722405
+    },
+    {
+      "function": "jsonIntegerBytes",
+      "file": "json-integer-output.js",
+      "line": 2,
+      "microseconds": 487,
+      "percent": 0.004354314602717074
+    },
+    {
+      "function": "MemoryScope.detachSignals",
+      "file": "memory-scope.js",
+      "line": 57,
+      "microseconds": 485,
+      "percent": 0.00433643240722337
+    },
+    {
+      "function": "ownedMemory",
+      "file": "memory-scope.js",
+      "line": 501,
+      "microseconds": 439,
+      "percent": 0.003925141910868164
+    },
+    {
+      "function": "MemoryBudget",
+      "file": "memory-budget.js",
+      "line": 5,
+      "microseconds": 323,
+      "percent": 0.0028879745722332957
+    },
+    {
+      "function": "retain",
+      "file": "memory-scope.js",
+      "line": 404,
+      "microseconds": 322,
+      "percent": 0.0028790334744864432
+    },
+    {
+      "function": "dispatch",
+      "file": "",
+      "line": 0,
+      "microseconds": 283,
+      "percent": 0.0025303306623592034
+    },
+    {
+      "function": "get value",
+      "file": "memory-scope.js",
+      "line": 397,
+      "microseconds": 169,
+      "percent": 0.0015110455192180402
+    },
+    {
+      "function": "JsonTraversalBudget",
+      "file": "json-traversal-budget.js",
+      "line": 6,
+      "microseconds": 161,
+      "percent": 0.0014395167372432216
+    },
+    {
+      "function": "ascii",
+      "file": "json-output-encoding.js",
+      "line": 38,
+      "microseconds": 154,
+      "percent": 0.0013769290530152556
+    },
+    {
+      "function": "requireLive",
+      "file": "memory-budget.js",
+      "line": 101,
+      "microseconds": 154,
+      "percent": 0.0013769290530152556
+    }
+  ],
+  "verification": "Byte oracle checked at the start of each phase; every encode releases all budget charges.",
+  "limitations": [
+    "V8 sampled self time may include inlined work; not exact function attribution.",
+    "Profiling changes runtime overhead; use the unprofiled traversal benchmark for comparisons.",
+    "One local Node row-array workload; not Worker/cloud throughput or whole-heap evidence."
+  ]
+}
