@@ -1,4 +1,5 @@
 import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
+import { admittedColumnNames } from "./column-names.js";
 import type { Expr } from "./expr.js";
 import { collectExprColumns } from "./expr-utils.js";
 import { stableStringify } from "./manifest.js";
@@ -49,22 +50,40 @@ export interface WindowExplainPlan {
 
 export type WindowExecutionMode = "row-materialized" | "vector-window" | "parquet-work-unit-fanout";
 
-export function windowReadColumns(input: WindowReadColumnInput): string[] | undefined {
+export function windowReadColumns(
+  input: WindowReadColumnInput,
+  scope?: MemoryScope,
+): string[] | undefined {
   if (input.select === undefined || input.select.length === 0 || input.select.includes("*"))
     return undefined;
+  const collect = (names: { add(name: string): unknown }) => {
+    const columns = {
+      add(name: string) {
+        if (input.windows === undefined || !Object.hasOwn(input.windows, name)) names.add(name);
+      },
+    };
+    for (const name of input.select ?? []) if (name !== "*") columns.add(name);
+    for (const term of input.orderBy ?? []) columns.add(term.column);
+    if (input.projections !== undefined)
+      for (const name in input.projections) {
+        if (Object.hasOwn(input.projections, name))
+          collectExprColumns(input.projections[name], columns);
+      }
+    if (input.windows !== undefined)
+      for (const name in input.windows) {
+        const expr = input.windows[name];
+        if (Object.hasOwn(input.windows, name) && expr !== undefined)
+          collectWindowColumns(expr, columns);
+      }
+    collectExprColumns(input.where, columns);
+    collectExprColumns(input.qualify, columns);
+  };
+  if (scope !== undefined) {
+    const columns = admittedColumnNames(scope, collect, true);
+    return columns.length === 0 ? undefined : columns;
+  }
   const columns = new Set<string>();
-  const windowAliases = new Set(Object.keys(input.windows ?? {}));
-  for (const column of input.select ?? []) {
-    if (column !== "*" && !windowAliases.has(column)) columns.add(column);
-  }
-  for (const term of input.orderBy ?? []) {
-    if (!windowAliases.has(term.column)) columns.add(term.column);
-  }
-  for (const expr of Object.values(input.projections ?? {})) collectExprColumns(expr, columns);
-  for (const expr of Object.values(input.windows ?? {})) collectWindowColumns(expr, columns);
-  collectExprColumns(input.where, columns);
-  collectExprColumns(input.qualify, columns);
-  for (const alias of windowAliases) columns.delete(alias);
+  collect(columns);
   return columns.size === 0 ? undefined : [...columns].sort();
 }
 
@@ -81,7 +100,10 @@ export function windowExpressions(windows: Record<string, WindowExpr> | undefine
   return exprs;
 }
 
-export function collectWindowColumns(expr: WindowExpr, columns: Set<string>): void {
+export function collectWindowColumns(
+  expr: WindowExpr,
+  columns: { add(name: string): unknown },
+): void {
   for (const part of expr.over.partitionBy) collectExprColumns(part, columns);
   for (const term of expr.over.orderBy) collectExprColumns(term.expr, columns);
   for (const arg of expr.args) collectExprColumns(arg, columns);

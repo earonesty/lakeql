@@ -1,0 +1,31 @@
+{
+  "date": "2026-11-14",
+  "requirements": ["F4", "M1", "M2"],
+  "changes": [
+    "Admit object-planner column lists and option records before invoking the callback; hold their independent scope until asynchronous planning settles.",
+    "Check cancellation immediately before and after object planning so a cancelled callback result cannot begin scanning.",
+    "Share admitted column-name collection with window planning, eliminating alias Set/Object.keys/Object.values temporaries and exposing optional scoped admission.",
+    "Use scratch child scopes for window row/vector collection and run planning so returned result ownership excludes planning lists.",
+    "Use own-property partition checks in both row window scan paths to preserve physical columns named constructor or similar prototype properties."
+  ],
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "coverage": [
+      "Pending planner success, failure and cancellation keep arguments charged through callback completion; only success opens the scanner, and every path releases reservations.",
+      "Oversized object-plan columns reject before planner invocation.",
+      "Window collector exact observed peak succeeds and one byte less rejects, covering duplicate names, Unicode, own aliases and inherited names.",
+      "Window scan regression asserts constructor is requested and receives the correct row_number values.",
+      "Full suite includes real Parquet HTTP, range fallback and window fixture tests."
+    ],
+    "full_default_suite": {
+      "passed": 3537,
+      "skipped": 629
+    }
+  },
+  "remaining": [
+    "Returned object/task/explain metadata still needs complete ownership integration; this change admits callback arguments, not all metadata returned by adapters.",
+    "Unscoped window/projected column collection remains in explain/task discovery where returned-plan lifetime must be addressed.",
+    "Geo-expression preparation, partition/filter scratch, compiler/converter workspace and whole-runtime memory validation remain open."
+  ]
+}

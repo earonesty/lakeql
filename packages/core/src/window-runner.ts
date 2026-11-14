@@ -235,7 +235,7 @@ export async function collectWindowMatches(
     const buffer = new WindowRowBuffer(options, scope, matched);
     const { planned: paths, skipped: skippedFiles } = await options.planObjects();
     stats.filesSkipped = skippedFiles;
-    const columns = windowReadColumns(config);
+    const columns = windowReadColumns(config, scope.childScope());
     for (const object of paths) {
       stats.filesPlanned += 1;
       stats.filesRead += 1;
@@ -243,7 +243,7 @@ export async function collectWindowMatches(
       options.enforceBudget(config.budget, stats, config.now, startedAt);
       const scanOptions = rowScanOptions(options, startedAt);
       const partitionValues = config.hive ? options.parseHivePartitions(object.path) : {};
-      const physicalColumns = columns?.filter((column) => !(column in partitionValues));
+      const physicalColumns = columns?.filter((column) => !Object.hasOwn(partitionValues, column));
       if (physicalColumns !== undefined && physicalColumns.length > 0) {
         scanOptions.columns = physicalColumns;
       }
@@ -367,7 +367,7 @@ async function collectVectorWindowRows(
 
   const { planned: paths, skipped: skippedFiles } = await options.planObjects();
   stats.filesSkipped = skippedFiles;
-  const columns = windowReadColumns(config);
+  const columns = windowReadColumns(config, retainedScope.childScope());
   const inputs = retainedScope.allocate(
     c.array,
     "window vector inputs",
@@ -432,7 +432,7 @@ async function collectVectorWindowRunMatches(
 
   const { planned: paths, skipped: skippedFiles } = await options.planObjects();
   stats.filesSkipped = skippedFiles;
-  const columns = windowReadColumns(config);
+  const columns = windowReadColumns(config, retainedScope.childScope());
   for (const object of paths) {
     stats.filesPlanned += 1;
     stats.filesRead += 1;
@@ -487,7 +487,7 @@ async function collectRowWindowRunMatches(
   try {
     const { planned: paths, skipped: skippedFiles } = await options.planObjects();
     stats.filesSkipped = skippedFiles;
-    const columns = windowReadColumns(config);
+    const columns = windowReadColumns(config, scope.childScope());
     for (const object of paths) {
       stats.filesPlanned += 1;
       stats.filesRead += 1;
@@ -495,7 +495,7 @@ async function collectRowWindowRunMatches(
       options.enforceBudget(config.budget, stats, config.now, startedAt);
       const scanOptions = rowScanOptions(options, startedAt);
       const partitionValues = config.hive ? options.parseHivePartitions(object.path) : {};
-      const physicalColumns = columns?.filter((column) => !(column in partitionValues));
+      const physicalColumns = columns?.filter((column) => !Object.hasOwn(partitionValues, column));
       if (physicalColumns !== undefined && physicalColumns.length > 0) {
         scanOptions.columns = physicalColumns;
       }

@@ -96,7 +96,7 @@ import type {
 } from "./runtime.js";
 import { serializedBatchBytes, serializedValueBytes } from "./serialized-size.js";
 import { pruneFilesWithIndex, type SidecarFileIndex } from "./sidecar-index.js";
-import type { ObjectInfo, ObjectStore } from "./store.js";
+import { type ObjectInfo, type ObjectStore, throwIfAborted } from "./store.js";
 import type { Bookmark, BookmarkQuery, QueryStats, Row, SliceResult } from "./types.js";
 import { vectorProjectBatch } from "./vector-project.js";
 import { sliceBatch } from "./vector-slice.js";
@@ -227,6 +227,7 @@ export interface ScanAdapter {
   scanColumns?(path: string, options: ScanOptions): AsyncIterable<Batch>;
   scanVectorBatches?(path: string, options: ScanOptions): AsyncIterable<ScanVectorBatch>;
   scanColumnBatches?(path: string, options: ScanOptions): AsyncIterable<ScanColumnBatch>;
+  /** Options/column lists are borrowed until this promise settles; retained planner storage needs its own admission. */
   planObjects?(objects: ObjectInfo[], options: ScanObjectPlanOptions): Promise<ObjectInfo[]>;
   planTask?(path: string, options: ScanTaskPlanOptions): Promise<ScanTaskPlan>;
   executeOwnedWindowTasks?(
@@ -3590,15 +3591,39 @@ export class QueryResult {
       skipped += pruned.skipped.length;
     }
     if (config.scanner.planObjects !== undefined) {
-      const columns =
-        config.windows === undefined
-          ? projectedReadColumns(config.select, config.where, config.orderBy, config.projections)
-          : windowReadColumns(config);
-      planned = await config.scanner.planObjects(planned, {
-        memoryBudget: this.memoryBudget,
-        ...(columns !== undefined ? { columns } : {}),
-        ...(config.where !== undefined ? { where: config.where } : {}),
-      });
+      // Planning callbacks borrow these arguments until their promise settles.
+      // Do not tie this scope to cancellation while the callback may still use them.
+      const planning = new MemoryScope(this.memoryBudget);
+      try {
+        const columns =
+          config.windows === undefined
+            ? projectedReadColumns(
+                config.select,
+                config.where,
+                config.orderBy,
+                config.projections,
+                planning,
+              )
+            : windowReadColumns(config, planning);
+        const options = planning.allocate(
+          allocationCharges.object +
+            (1 + Number(columns !== undefined) + Number(config.where !== undefined)) *
+              allocationCharges.property,
+          "object planning options",
+          () => ({
+            memoryBudget: this.memoryBudget,
+            ...(columns !== undefined ? { columns } : {}),
+            ...(config.where !== undefined ? { where: config.where } : {}),
+          }),
+        ).value;
+        throwIfAborted(config.budget.signal);
+        enforceBudget(config.budget, this.stats, config.now, startedAt);
+        planned = await config.scanner.planObjects(planned, options);
+        throwIfAborted(config.budget.signal);
+        enforceBudget(config.budget, this.stats, config.now, startedAt);
+      } finally {
+        planning.dispose();
+      }
     }
     this.stats.planningMs = (this.stats.planningMs ?? 0) + (config.now() - startedAt);
     return { planned, skipped };
