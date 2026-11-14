@@ -426,3 +426,8 @@ Collect multiple owned batches into one incrementally admitted output directory,
 releasing replaceable source arrays during append. Preserve direct single-batch
 handoff, payload ownership under reentrant disposal, and charged high-water
 capacity after failed growth. See the audit for fixture timings and memory bounds.
+
+Reuse decoded immutable dictionary strings within owned materialization when
+selected-row count predicts reuse and spare admitted workspace can hold the
+reference directory. Reserve mandatory output first, preserve parent stage caps,
+and fall back to direct decoding without cache eviction when workspace is scarce.

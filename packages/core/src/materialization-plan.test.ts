@@ -249,3 +249,135 @@ it.each([
   }
   expect(tight.budget.usedBytes).toBe(0);
 });
+
+it("reuses immutable dictionary text only when optional workspace fits", () => {
+  const batch = batchFromVectors({
+    text: {
+      type: "dict",
+      indices: Uint32Array.from({ length: 16 }, (_, i) => i % 2),
+      dictionary: {
+        type: "utf8-view",
+        data: Uint8Array.of(239, 187, 191, 255, 65, 66, 67, 68),
+        fixedLength: 4,
+        length: 2,
+      },
+    },
+  });
+  const expected = materializeBatchRows(batch);
+  const plan = planBatchMaterialization(batch);
+  for (const extra of [0, 175, 176]) {
+    const scope = new MemoryScope(new MemoryBudget(plan.allocationBytes + extra));
+    const decode = vi.spyOn(TextDecoder.prototype, "decode");
+    try {
+      const result = plan.execute(scope);
+      expect(result.value).toEqual(expected);
+      expect(decode).toHaveBeenCalledTimes(extra === 176 ? 2 : 16);
+      expect(scope.budget.peakBytes).toBe(plan.allocationBytes + (extra === 176 ? 176 : 0));
+      expect(scope.budget.usedBytes).toBe(plan.retainedBytes);
+    } finally {
+      decode.mockRestore();
+      scope.dispose();
+    }
+    expect(scope.budget.usedBytes).toBe(0);
+  }
+});
+
+it("keeps sparse unique dictionaries direct using the selected row count", () => {
+  const dictionary = {
+    type: "utf8-view" as const,
+    data: new TextEncoder().encode("abcdefgh"),
+    fixedLength: 1,
+    length: 8,
+  };
+  const batch = batchFromVectors({
+    text: { type: "dict", indices: Uint32Array.from({ length: 16 }, (_, i) => i % 8), dictionary },
+  });
+  const selection = Uint8Array.from({ length: 16 }, (_, i) => Number(i === 1 || i === 7));
+  const plan = planBatchMaterialization(batch, selection);
+  const scope = new MemoryScope(new MemoryBudget(plan.allocationBytes + 4096));
+  const decode = vi.spyOn(TextDecoder.prototype, "decode");
+  try {
+    expect(plan.execute(scope).value).toEqual([{ text: "b" }, { text: "h" }]);
+    expect(decode).toHaveBeenCalledTimes(2);
+    expect(scope.budget.peakBytes).toBe(plan.allocationBytes);
+  } finally {
+    decode.mockRestore();
+    scope.dispose();
+  }
+  expect(scope.budget.usedBytes).toBe(0);
+});
+
+it("releases optional dictionary workspace and output admission when decoding throws", () => {
+  const batch = batchFromVectors({
+    text: {
+      type: "dict",
+      indices: new Uint32Array(16),
+      dictionary: { type: "utf8-view", data: Uint8Array.of(65), fixedLength: 1, length: 1 },
+    },
+  });
+  const plan = planBatchMaterialization(batch);
+  const scope = new MemoryScope(new MemoryBudget(plan.allocationBytes + 4096));
+  const error = new Error("decoder failed");
+  const decode = vi.spyOn(TextDecoder.prototype, "decode").mockImplementation(() => {
+    throw error;
+  });
+  try {
+    expect(() => plan.execute(scope)).toThrow(error);
+    expect(scope.budget.usedBytes).toBe(0);
+  } finally {
+    decode.mockRestore();
+    scope.dispose();
+  }
+});
+
+it("caches empty and null dictionary values without bypassing outer validity", () => {
+  const batch = batchFromVectors({
+    text: {
+      type: "dict",
+      indices: Uint32Array.from({ length: 12 }, (_, i) => i % 3),
+      valid: Uint8Array.from({ length: 12 }, (_, i) => Number(i !== 2)),
+      dictionary: {
+        type: "utf8-view",
+        data: Uint8Array.of(65),
+        ranges: Uint32Array.of(0, 0, 0, 1, 0, 1),
+        valid: Uint8Array.of(1, 0, 1),
+        length: 3,
+      },
+    },
+  });
+  const expected = materializeBatchRows(batch);
+  const plan = planBatchMaterialization(batch);
+  const scope = new MemoryScope(new MemoryBudget(plan.allocationBytes + 4096));
+  const decode = vi.spyOn(TextDecoder.prototype, "decode");
+  try {
+    expect(plan.execute(scope).value).toEqual(expected);
+    expect(decode).toHaveBeenCalledTimes(2);
+  } finally {
+    decode.mockRestore();
+    scope.dispose();
+  }
+  expect(scope.budget.usedBytes).toBe(0);
+});
+
+it("does not bypass a parent stage allowance to acquire optional dictionary storage", () => {
+  const batch = batchFromVectors({
+    text: {
+      type: "dict",
+      indices: new Uint32Array(16),
+      dictionary: { type: "utf8-view", data: Uint8Array.of(65), fixedLength: 1, length: 1 },
+    },
+  });
+  const plan = planBatchMaterialization(batch);
+  const root = new MemoryScope(new MemoryBudget(plan.allocationBytes + 4096));
+  const stage = root.childStage(plan.allocationBytes, "caller stage");
+  const decode = vi.spyOn(TextDecoder.prototype, "decode");
+  try {
+    expect(plan.execute(stage).value).toHaveLength(16);
+    expect(decode).toHaveBeenCalledTimes(16);
+    expect(root.budget.peakBytes).toBe(plan.allocationBytes);
+  } finally {
+    decode.mockRestore();
+    root.dispose();
+  }
+  expect(root.budget.usedBytes).toBe(0);
+});

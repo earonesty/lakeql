@@ -290,6 +290,7 @@ function planMaterialization(
       retainsInput,
       execute(scope, containerOwnership = "separate") {
         const stage = scope.childStage(allocationBytes, "materialized output");
+        const workspace = scope.childScope();
         try {
           if (containerOwnership === "combined") {
             const output = stage.allocate(
@@ -297,7 +298,7 @@ function planMaterialization(
               "materialized rows",
               () =>
                 rowIndex === undefined
-                  ? materializeSelectedBatchRows(batch, selection)
+                  ? materializeSelectedBatchRows(batch, selection, workspace, rows)
                   : [materializeBatchRow(batch, rowIndex)],
             );
             return scope.adopt(output.retain());
@@ -313,12 +314,16 @@ function planMaterialization(
             "materialized row directory",
             () =>
               rowIndex === undefined
-                ? materializeSelectedBatchRows(batch, selection)
+                ? materializeSelectedBatchRows(batch, selection, workspace, rows)
                 : [materializeBatchRow(batch, rowIndex)],
           );
           return scope.adopt(stage.retainAllocations(output.value));
         } finally {
-          stage.dispose();
+          try {
+            workspace.dispose();
+          } finally {
+            stage.dispose();
+          }
         }
       },
     };

@@ -279,18 +279,72 @@ export function materializeBatchRow(batch: Batch, index: number): Row {
   return row;
 }
 
-export function materializeSelectedBatchRows(batch: Batch, selection?: Selection): Row[] {
+export function materializeSelectedBatchRows(
+  batch: Batch,
+  selection?: Selection,
+  workspace?: MemoryScope,
+  expectedRows = selection === undefined ? batch.rowCount : 0,
+): Row[] {
   const rows: Row[] = [];
   const columns = Object.entries(batch.columns);
+  const caches = materializationDictionaryCaches(columns, expectedRows, workspace);
   for (let index = 0; index < batch.rowCount; index += 1) {
     if (selection !== undefined && selection[index] !== 1) continue;
     const row: Row = {};
-    for (const [name, vector] of columns) {
-      setRecordValue(row, name, vectorValue(vector, index));
+    for (let column = 0; column < columns.length; column++) {
+      const [name, vector] = columns[column] as [string, Vector];
+      const cache = caches?.[column];
+      if (cache === undefined || vector.type !== "dict") {
+        setRecordValue(row, name, vectorValue(vector, index));
+      } else if (vector.valid?.[index] === 0) {
+        setRecordValue(row, name, null);
+      } else {
+        const key = vector.indices[index] ?? 0;
+        let value = cache[key];
+        if (value === undefined) {
+          // Validate/decode through the ordinary accessor before publishing a hit.
+          value = vectorValue(vector.dictionary, key) as string | null;
+          cache[key] = value;
+        }
+        setRecordValue(row, name, value);
+      }
     }
     rows.push(row);
   }
   return rows;
+}
+
+/** Immutable scalar reuse only: no binary aliases or nested mutable values.
+ * At least two potential uses per dictionary entry justify optional preparation.
+ * Output admission precedes this workspace; shortage never evicts cache entries.
+ */
+function materializationDictionaryCaches(
+  columns: [string, Vector][],
+  rows: number,
+  scope?: MemoryScope,
+): ((string | null | undefined)[] | undefined)[] | undefined {
+  if (scope === undefined || rows < 2) return undefined;
+  let caches: ((string | null | undefined)[] | undefined)[] | undefined;
+  for (let column = 0; column < columns.length; column++) {
+    const vector = columns[column]?.[1];
+    if (vector?.type !== "dict" || vector.dictionary.type !== "utf8-view") continue;
+    const count = vector.dictionary.length;
+    if (count === 0 || count > rows / 2) continue;
+    const directory = caches === undefined ? c.array + columns.length * c.arraySlot : 0;
+    const bytes = c.array + count * c.arraySlot;
+    if (directory + bytes > scope.availableAllocationBytes) continue;
+    caches ??= scope.allocate(
+      directory,
+      "materialization cache directory",
+      () => new Array<(string | null | undefined)[] | undefined>(columns.length),
+    ).value;
+    caches[column] = scope.allocate(
+      bytes,
+      "decoded dictionary references",
+      () => new Array<string | null | undefined>(count),
+    ).value;
+  }
+  return caches;
 }
 
 export function selectedRowCount(rowCount: number, selection?: Selection): number {

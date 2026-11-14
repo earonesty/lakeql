@@ -1,0 +1,174 @@
+{
+  "baseline": "481f323",
+  "status": "validated implementation; full audit acceptance remains open",
+  "contract": [
+    "Reserve complete mandatory output before optional dictionary workspace.",
+    "Only immutable packed UTF-8 dictionary values are reused; nested/mutable/binary shapes stay on ordinary access.",
+    "Use selected row count to require at least two potential uses per dictionary entry; decode values lazily.",
+    "Charge both per-column directory and per-dictionary references before allocation, within parent-stage and pool limits. Insufficient space declines without eviction.",
+    "Workspace ends with materialization; output retains its original conservative payload admission."
+  ],
+  "validation": {
+    "focusedPassed": 43,
+    "regularPassed": 3998,
+    "regularSkipped": 645,
+    "workerPassed": 95,
+    "requiredConformancePassed": 520,
+    "requiredConformanceSkipped": 1,
+    "referencePassed": 120,
+    "releaseGates": "build, types, package consumer, lint, compatibility, large files, changeset, fixtures passed",
+    "thresholdsAndTimeouts": "unchanged"
+  },
+  "queryComparison": {
+    "method": "Two comparisons of six independent DuckDB-generated Parquet cases, alternating fresh processes, one warmup/four measured pairs. Every row checked; every result releases to zero.",
+    "aggregateMedianMs": [[113.2772075, 102.9518925], [105.894987, 104.55883]],
+    "repeated16ValueDictionaryBatch2048MedianMs": [[9.8435845, 5.7639645], [10.335885, 5.389688]],
+    "interpretation": "Strong repeated low-cardinality/large-batch benefit; other cases vary. No universal speedup or cloud-throughput claim.",
+    "fixtureDevelopment": "Initial hyparquet-writer experiment produced an unsupported page on the baseline; comparisons use independently generated DuckDB fixtures instead."
+  },
+  "runtime": [
+    {
+      "transport": "native emulated R2",
+      "poolMiB": 64,
+      "jobs": 1,
+      "status": "complete",
+      "maxSampledManagedHeapBytes": 44902348,
+      "counts": {
+        "result": {
+          "ok": 4
+        },
+        "recovery": {},
+        "recoveryAfterRelease": {}
+      },
+      "finalAdmittedBytes": 0
+    },
+    {
+      "transport": "native emulated R2",
+      "poolMiB": 64,
+      "jobs": 4,
+      "status": "complete",
+      "maxSampledManagedHeapBytes": 76745572,
+      "counts": {
+        "result": {
+          "ok": 8,
+          "budget": 8
+        },
+        "recovery": {
+          "budget": 4
+        },
+        "recoveryAfterRelease": {
+          "ok": 4
+        }
+      },
+      "finalAdmittedBytes": 0
+    },
+    {
+      "transport": "native emulated R2",
+      "poolMiB": 128,
+      "jobs": 1,
+      "status": "complete",
+      "maxSampledManagedHeapBytes": 44895804,
+      "counts": {
+        "result": {
+          "ok": 4
+        },
+        "recovery": {},
+        "recoveryAfterRelease": {}
+      },
+      "finalAdmittedBytes": 0
+    },
+    {
+      "transport": "native emulated R2",
+      "poolMiB": 128,
+      "jobs": 4,
+      "status": "complete",
+      "maxSampledManagedHeapBytes": 93542228,
+      "counts": {
+        "result": {
+          "ok": 16
+        },
+        "recovery": {},
+        "recoveryAfterRelease": {}
+      },
+      "finalAdmittedBytes": 0
+    },
+    {
+      "transport": "localhost HTTP ranges",
+      "poolMiB": 64,
+      "jobs": 1,
+      "status": "complete",
+      "maxSampledManagedHeapBytes": 51242472,
+      "counts": {
+        "result": {
+          "ok": 4
+        },
+        "recovery": {},
+        "recoveryAfterRelease": {}
+      },
+      "finalAdmittedBytes": 0
+    },
+    {
+      "transport": "localhost HTTP ranges",
+      "poolMiB": 64,
+      "jobs": 4,
+      "status": "complete",
+      "maxSampledManagedHeapBytes": 57813572,
+      "counts": {
+        "result": {
+          "ok": 8,
+          "budget": 8
+        },
+        "recovery": {
+          "budget": 4
+        },
+        "recoveryAfterRelease": {
+          "ok": 4
+        }
+      },
+      "finalAdmittedBytes": 0
+    },
+    {
+      "transport": "localhost HTTP ranges",
+      "poolMiB": 128,
+      "jobs": 1,
+      "status": "complete",
+      "maxSampledManagedHeapBytes": 39186860,
+      "counts": {
+        "result": {
+          "ok": 4
+        },
+        "recovery": {},
+        "recoveryAfterRelease": {}
+      },
+      "finalAdmittedBytes": 0
+    },
+    {
+      "transport": "localhost HTTP ranges",
+      "poolMiB": 128,
+      "jobs": 4,
+      "status": "complete",
+      "maxSampledManagedHeapBytes": 58970340,
+      "counts": {
+        "result": {
+          "ok": 16
+        },
+        "recovery": {},
+        "recoveryAfterRelease": {}
+      },
+      "finalAdmittedBytes": 0
+    }
+  ],
+  "runtimeBoundary": "Sparse GC-dependent managed-heap samples include baseline, all rounds, retained output, release and eviction. They are lower bounds, not exact peaks or statistical comparisons. Counters are not summed; runtime flags do not cap total process or production Cloudflare memory.",
+  "remaining": [
+    "Full audit and whole-runtime cap acceptance remain open.",
+    "Reuse prediction is based on shape/cardinality and selected count; future observed-reuse policy and nested dictionary reuse remain opportunities."
+  ],
+  "publicR2": {
+    "scenarios": 52,
+    "ordinaryScenarios": 40,
+    "maxOrdinaryReadConcurrency": 4,
+    "maxIncrementalAdmission": 415448,
+    "maxWarmOrdinaryDataRequests": 0,
+    "queryHeadroomBytes": 524288
+  }
+}

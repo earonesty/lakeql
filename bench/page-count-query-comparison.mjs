@@ -40,7 +40,9 @@ const sources = new Map(${JSON.stringify(modules.map((entry) => [entry.target, e
 registerHooks({load(url, context, next) { return sources.has(url) ? {format:"module", source:sources.get(url), shortCircuit:true} : next(url, context); }});
 `,
   );
-  const benchmark = fileURLToPath(new URL("./page-count-query.mjs", import.meta.url));
+  const benchmarkName = process.env.LAKEQL_COMPARE_BENCHMARK ?? "page-count-query.mjs";
+  if (!/^[a-z-]+\.mjs$/.test(benchmarkName)) throw new Error("Invalid benchmark name");
+  const benchmark = fileURLToPath(new URL(`./${benchmarkName}`, import.meta.url));
   const runs = { prior: [], current: [] };
   for (let round = 0; round < 5; round++) {
     for (const variant of round % 2 ? ["current", "prior"] : ["prior", "current"]) {
@@ -57,6 +59,7 @@ registerHooks({load(url, context, next) { return sources.has(url) ? {format:"mod
     JSON.stringify(
       {
         baseline,
+        benchmarkName,
         moduleName,
         modules: modules.map(({ name, baselineSourceSha256, currentSourceSha256 }) => ({
           name,
@@ -67,7 +70,7 @@ registerHooks({load(url, context, next) { return sources.has(url) ? {format:"mod
         warmupPairs: 1,
         measuredPairs: 4,
         scope:
-          "Alternating fresh Node processes; the named modules are replaced together by their prior implementations, with current dependencies. Local 40,000-row many-page fixture query, not cloud throughput. Source store/runtime overhead excluded from pool metrics. Value parity is covered by external conformance; benchmark checks count and release.",
+          "Alternating fresh Node processes; the named modules are replaced together by their prior implementations, with current dependencies. The recorded benchmark identifies its fixture and checks; these are local queries, not cloud throughput. Source store/runtime overhead excluded from pool metrics. Value parity is covered by external conformance; benchmark checks count and release.",
         priorMedianMs: median(runs.prior.map((r) => r.elapsedMs)),
         currentMedianMs: median(runs.current.map((r) => r.elapsedMs)),
         runs,
