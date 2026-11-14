@@ -127,6 +127,16 @@ it.each([
               },
             },
           });
+        for (const [fn, offset] of [
+          ["lag", 3],
+          ["lead", 2],
+        ] as const)
+          query = query.window(fn, {
+            fn,
+            args: [col("timestamp_nanos"), lit(offset)],
+            ignoreNulls: true,
+            over: { partitionBy: [], orderBy: [{ expr: col("timestamp_nanos") }] },
+          });
         return query
           .window("running_count", {
             fn: { aggregate: "count" },
@@ -146,6 +156,7 @@ it.each([
       }),
     );
     const ranks = [3, 4, 2, 5, 6, 1];
+    const sorted = [expected[5], expected[2], expected[0], expected[1], expected[3], expected[4]];
     for (const output of ranked)
       expect(output).toEqual(
         expected.map((row, index) => {
@@ -157,6 +168,8 @@ it.each([
             percent_rank: (rank - 1) / 5,
             cume_dist: rank / 6,
             running_count: rank,
+            lag: sorted[rank - 4]?.timestamp_nanos ?? null,
+            lead: sorted[rank + 1]?.timestamp_nanos ?? null,
             first_value: expected[5]?.timestamp_nanos,
             last_value: expected[4]?.timestamp_nanos,
             nth_value: expected[0]?.timestamp_nanos,

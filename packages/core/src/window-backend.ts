@@ -216,27 +216,28 @@ function evaluatePartitionWithPeers(
       aggregateWindowValue(frameRowIterator(partition, index, expr, peers), expr),
     );
   }
-  const rows = partition.map((item) => item.row);
   switch (fn) {
     case "row_number":
-      return rows.map((_row, index) => index + 1);
+      return partition.map((_row, index) => index + 1);
     case "rank":
-      return rankValues(rows.length, peers, false);
+      return rankValues(partition.length, peers, false);
     case "dense_rank":
-      return rankValues(rows.length, peers, true);
+      return rankValues(partition.length, peers, true);
     case "percent_rank": {
-      if (rows.length <= 1) return rows.map(() => 0);
-      const ranks = rankValues(rows.length, peers, false) as number[];
-      return ranks.map((rank) => (rank - 1) / (rows.length - 1));
+      if (partition.length <= 1) return partition.map(() => 0);
+      const ranks = rankValues(partition.length, peers, false) as number[];
+      for (let index = 0; index < ranks.length; index++)
+        ranks[index] = ((ranks[index] ?? 1) - 1) / (partition.length - 1);
+      return ranks;
     }
     case "cume_dist":
-      return cumeDistValues(rows.length, peers);
+      return cumeDistValues(partition.length, peers);
     case "ntile":
-      return ntileValues(rows, expr);
+      return ntileValues(partition.length, expr);
     case "lag":
-      return offsetValues(rows, expr, -1);
+      return offsetValues(partition, expr, -1);
     case "lead":
-      return offsetValues(rows, expr, 1);
+      return offsetValues(partition, expr, 1);
     case "first_value":
       return partition.map((_item, index) => {
         return frameValueAt(frameRowIterator(partition, index, expr, peers), expr, 1);
@@ -271,21 +272,21 @@ function cumeDistValues(length: number, peers: WindowPeers): number[] {
   return values;
 }
 
-function ntileValues(rows: readonly Row[], expr: WindowExpr): number[] {
+function ntileValues(length: number, expr: WindowExpr): number[] {
   const bucketCount = numericArg(expr, 0, 0);
   if (!Number.isInteger(bucketCount) || bucketCount <= 0) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "ntile requires a positive integer bucket count");
   }
-  const base = Math.floor(rows.length / bucketCount);
-  const extra = rows.length % bucketCount;
-  return rows.map((_row, index) =>
+  const base = Math.floor(length / bucketCount);
+  const extra = length % bucketCount;
+  return Array.from({ length }, (_row, index) =>
     index < (base + 1) * extra
       ? Math.floor(index / (base + 1)) + 1
       : extra + Math.floor((index - (base + 1) * extra) / base) + 1,
   );
 }
 
-function offsetValues(rows: readonly Row[], expr: WindowExpr, direction: -1 | 1): unknown[] {
+function offsetValues(rows: readonly WindowRow[], expr: WindowExpr, direction: -1 | 1): unknown[] {
   const offset = expr.args.length >= 2 ? numericArg(expr, 1, 1) : 1;
   if (!Number.isInteger(offset) || offset < 0) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "lag/lead offset must be a non-negative integer");
@@ -294,33 +295,57 @@ function offsetValues(rows: readonly Row[], expr: WindowExpr, direction: -1 | 1)
   return rows.map((row, index) => {
     const target = rows[index + direction * offset];
     if (target === undefined)
-      return expr.args[2] === undefined ? null : evaluate(expr.args[2], row);
-    return evaluate(valueArg(expr), target);
+      return expr.args[2] === undefined ? null : evaluate(expr.args[2], row.row);
+    return evaluate(valueArg(expr), target.row);
   });
 }
 
+/** Maintain the count of non-null values between the current and target row.
+ * Both cursors move once through the partition; no offset-sized ring is needed. */
 function offsetIgnoringNulls(
-  rows: readonly Row[],
+  rows: readonly WindowRow[],
   expr: WindowExpr,
   direction: -1 | 1,
   offset: number,
 ): unknown[] {
   const arg = valueArg(expr);
-  return rows.map((row, index) => {
-    if (offset === 0) return evaluate(arg, row);
-    let remaining = offset;
-    for (
-      let targetIndex = index + direction;
-      targetIndex >= 0 && targetIndex < rows.length;
-      targetIndex += direction
-    ) {
-      const target = rows[targetIndex];
-      if (target === undefined || evaluate(arg, target) === null) continue;
-      remaining -= 1;
-      if (remaining === 0) return evaluate(arg, target);
+  if (offset === 0) return rows.map((item) => evaluate(arg, item.row));
+  const output = new Array<unknown>(rows.length);
+  const start = direction === 1 ? 0 : rows.length - 1;
+  let target = start;
+  let count = 0;
+  let targetValue: unknown = null;
+  for (let index = start; index >= 0 && index < rows.length; index += direction) {
+    while (count < offset) {
+      const next = target + direction;
+      if (next < 0 || next >= rows.length) break;
+      target = next;
+      const item = rows[target];
+      if (item === undefined) continue;
+      const value = evaluate(arg, item.row);
+      if (value !== null) {
+        count++;
+        targetValue = value;
+      }
     }
-    return expr.args[2] === undefined ? null : evaluate(expr.args[2], row);
-  });
+    const item = rows[index];
+    output[index] =
+      count === offset
+        ? targetValue
+        : expr.args[2] === undefined || item === undefined
+          ? null
+          : evaluate(expr.args[2], item.row);
+    const nextIndex = index + direction;
+    if (
+      nextIndex >= 0 &&
+      nextIndex < rows.length &&
+      (direction === 1 ? nextIndex <= target : nextIndex >= target)
+    ) {
+      const departing = rows[nextIndex];
+      if (departing !== undefined && evaluate(arg, departing.row) !== null) count--;
+    }
+  }
+  return output;
 }
 
 function nthValue(

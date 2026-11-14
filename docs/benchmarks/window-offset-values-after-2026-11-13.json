@@ -1,0 +1,42 @@
+{
+  "description": "IGNORE NULLS offset 3 with sparse values. Two warmups, three local timed samples; construction and independent slice/filter oracle excluded. No whole-heap or cloud measurement.",
+  "compiledSourceHash": "8477c50167e7576df8644c16909c14fbe12aabec69dcd8760652631e24ad1167",
+  "results": [
+    {
+      "rows": 256,
+      "fn": "lag",
+      "medianMilliseconds": 0.0383420000000001,
+      "samples": [0.0383420000000001, 0.04083699999999979, 0.03654900000000083]
+    },
+    {
+      "rows": 256,
+      "fn": "lead",
+      "medianMilliseconds": 0.06347000000000236,
+      "samples": [0.03825199999999995, 0.06347000000000236, 0.07087299999999885]
+    },
+    {
+      "rows": 1024,
+      "fn": "lag",
+      "medianMilliseconds": 0.04839099999999519,
+      "samples": [0.12967500000000598, 0.04839099999999519, 0.04631700000000194]
+    },
+    {
+      "rows": 1024,
+      "fn": "lead",
+      "medianMilliseconds": 0.030217000000000382,
+      "samples": [0.034434999999994886, 0.030217000000000382, 0.03019700000000114]
+    },
+    {
+      "rows": 2048,
+      "fn": "lag",
+      "medianMilliseconds": 0.07215599999999966,
+      "samples": [0.07215599999999966, 0.055495000000000516, 0.13325100000000134]
+    },
+    {
+      "rows": 2048,
+      "fn": "lead",
+      "medianMilliseconds": 0.05324099999999987,
+      "samples": [0.056747000000001435, 0.05324099999999987, 0.046468000000004395]
+    }
+  ]
+}
