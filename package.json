@@ -12,7 +12,8 @@
       "webgpu"
     ],
     "patchedDependencies": {
-      "hyparquet@1.26.0": "patches/hyparquet@1.26.0.patch"
+      "hyparquet@1.26.0": "patches/hyparquet@1.26.0.patch",
+      "hyparquet-writer@0.15.6": "patches/hyparquet-writer@0.15.6.patch"
     }
   },
   "scripts": {

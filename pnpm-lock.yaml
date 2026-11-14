@@ -5,6 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
+  hyparquet-writer@0.15.6:
+    hash: 00204100b60f360175a8616fef58f229b44422c8ceb3a57c701269ad1c856e02
+    path: patches/hyparquet-writer@0.15.6.patch
   hyparquet@1.26.0:
     hash: b788c22a969fece73d6bdda5b5db8fdb5035e79b7328c1e440053eef763a639b
     path: patches/hyparquet@1.26.0.patch
@@ -54,7 +57,7 @@ importers:
         version: 5.7.9
       hyparquet-writer:
         specifier: ^0.15.0
-        version: 0.15.6
+        version: 0.15.6(patch_hash=00204100b60f360175a8616fef58f229b44422c8ceb3a57c701269ad1c856e02)
 
   packages/arrow:
     dependencies:
@@ -170,7 +173,7 @@ importers:
         version: 1.26.0(patch_hash=b788c22a969fece73d6bdda5b5db8fdb5035e79b7328c1e440053eef763a639b)
       hyparquet-writer:
         specifier: ^0.15.6
-        version: 0.15.6
+        version: 0.15.6(patch_hash=00204100b60f360175a8616fef58f229b44422c8ceb3a57c701269ad1c856e02)
     devDependencies:
       lakeql-core:
         specifier: workspace:*
@@ -241,7 +244,7 @@ importers:
         version: 1.26.0(patch_hash=b788c22a969fece73d6bdda5b5db8fdb5035e79b7328c1e440053eef763a639b)
       hyparquet-writer:
         specifier: ^0.15.6
-        version: 0.15.6
+        version: 0.15.6(patch_hash=00204100b60f360175a8616fef58f229b44422c8ceb3a57c701269ad1c856e02)
       lakeql-core:
         specifier: workspace:*
         version: link:../core
@@ -4156,7 +4159,7 @@ snapshots:
 
   human-id@4.2.0: {}
 
-  hyparquet-writer@0.15.6:
+  hyparquet-writer@0.15.6(patch_hash=00204100b60f360175a8616fef58f229b44422c8ceb3a57c701269ad1c856e02):
     dependencies:
       hyparquet: 1.26.0(patch_hash=b788c22a969fece73d6bdda5b5db8fdb5035e79b7328c1e440053eef763a639b)
 

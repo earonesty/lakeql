@@ -26,3 +26,14 @@ wrapper, while still rejecting a missing value column when the schema declares
 one. Empty unannotated REPEATED leaves become empty arrays; OPTIONAL leaves and
 optional LIST containers retain null semantics. Collection-shape fixture tests,
 the complete external corpus, and the clean npm install gate cover these rules.
+
+## Bounded writer statistics
+
+`hyparquet-writer@0.15.6.patch` prevents truncated string maxima from being
+published as upper bounds. Optional extrema are omitted when they exceed the
+writer's 16-code-unit encoding bound or contain surrogate code units whose UTF-8
+order is not established by the writer's JS comparator. Non-null pages without
+valid extrema disable that column's optional column index; null counts and offset
+indexes remain. Short representable bounds retain normal pruning. The writer is
+inlined into the published bundle and the clean-install smoke test verifies a
+long-string equality query that otherwise loses matching rows.

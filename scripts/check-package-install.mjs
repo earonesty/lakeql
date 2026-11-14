@@ -55,6 +55,7 @@ import {
   MemoryBudget,
   createParquetLake,
   readParquetObjects,
+  writeParquet,
   timestampEpochForUnit,
   batchFromVectors,
   batchFromColumns,
@@ -71,6 +72,18 @@ import { WebGpuPhysicalBackend } from "lakeql-webgpu";
 
 // Real Spark fixture, tested after npm install outside workspace patch settings.
 const store = memoryStore();
+// Writer fixes must survive a clean consumer install without workspace patches.
+const longText = "dictionary text 1 猫";
+await writeParquet(store, "writer-bounds.parquet", {
+  codec: "UNCOMPRESSED", pageSize: 8,
+  columnData: [{ name: "text", type: "STRING", encoding: "PLAIN",
+    data: [longText, "dictionary text 9 猫", null, longText], columnIndex: true }],
+});
+assert.deepEqual(await createParquetLake({ store }).path("writer-bounds.parquet")
+  .where({ kind: "compare", op: "eq", left: { kind: "column", name: "text" },
+    right: { kind: "literal", value: longText } }).toArray(),
+  [{ text: longText }, { text: longText }]);
+
 await store.put("int96.parquet", readFileSync(new URL("int96.parquet", import.meta.url)));
 const rows = await readParquetObjects(store, "int96.parquet", { batchSize: 2 });
 assert.deepEqual(rows.map(({ a }) => a === null ? null : timestampEpochForUnit(a, "nanos")),

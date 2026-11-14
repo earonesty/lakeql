@@ -30,9 +30,9 @@ export default defineConfig({
   clean: true,
   treeshake: true,
   sourcemap: false,
-  // Inline the version-patched Parquet reader so npm consumers receive its
-  // lossless INT96 parser hook; workspace patch settings do not propagate.
-  noExternal: [/^lakeql-/, /^hyparquet(?:\/|$)/],
+  // Inline patched Parquet codecs/writers: workspace patch settings do not
+  // propagate to npm consumers.
+  noExternal: [/^lakeql-/, /^hyparquet(?:-writer)?(?:\/|$)/],
   external: [
     "@turf/boolean-contains",
     "@turf/boolean-intersects",
@@ -41,6 +41,5 @@ export default defineConfig({
     "fast-xml-parser",
     "fzstd",
     "h3-js",
-    "hyparquet-writer",
   ],
 });
