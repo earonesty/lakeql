@@ -358,3 +358,43 @@ it.each([
   expect(rows).toEqual([{ score: 1 }]);
   expect(pool.usedBytes).toBe(0);
 });
+
+it.each([
+  "topKWithState",
+  "sortWithState",
+] as const)("%s releases parsed checkpoint backing before scanner execution", async (method) => {
+  const observed: number[] = [];
+  for (const padding of ["", "x".repeat(8000)]) {
+    const pool = new MemoryBudget(131072);
+    const store = memoryStore();
+    await store.put("table", new Uint8Array(1));
+    const lake = new Lake({
+      store,
+      memoryPool: pool,
+      scanner: {
+        async *scan() {
+          observed.push(pool.usedBytes);
+          yield [{ score: 2 }];
+        },
+      },
+    });
+    const common = { version: 1, orderBy: [{ column: "score" }], padding };
+    const state =
+      method === "topKWithState"
+        ? { ...common, rows: [{ score: 1 }], offset: 0, limit: 2 }
+        : { ...common, runs: [{ rows: [{ score: 1 }] }] };
+    const result = await lake
+      .path("table")
+      .orderBy([{ column: "score" }])
+      .limit(2)
+      .run()
+      [method]({
+        operatorState: new TextEncoder().encode(JSON.stringify(state)),
+      });
+    expect(result.rows).toEqual([{ score: 1 }, { score: 2 }]);
+    expect(pool.usedBytes).toBe(0);
+  }
+  expect(observed).toHaveLength(2);
+  expect(observed[0]).toBeGreaterThan(0);
+  expect(observed[1]).toBe(observed[0]);
+});

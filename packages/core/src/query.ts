@@ -1641,16 +1641,23 @@ export class QueryResult {
     );
     try {
       const orderBy = normalizeOrderBy(config.orderBy, retainedScope);
-      const matched = await topKRowsFromState(
-        orderBy,
-        config.offset ?? 0,
-        config.limit,
-        options,
-        retainedScope,
-      );
-      enforceBufferedRowsBudget(config.budget, matched.length);
-      enforceOperatorMemoryBudget(config.budget, estimateOperatorMemoryBytes(matched));
-      await this.collectOrderedMatches(matched, topK, startedAt, retainedScope);
+      const restoreScope = retainedScope.childScope();
+      let matched: Row[];
+      try {
+        matched = await topKRowsFromState(
+          orderBy,
+          config.offset ?? 0,
+          config.limit,
+          options,
+          restoreScope,
+          retainedScope,
+        );
+        enforceBufferedRowsBudget(config.budget, matched.length);
+        enforceOperatorMemoryBudget(config.budget, estimateOperatorMemoryBytes(matched));
+        await this.collectOrderedMatches(matched, topK, startedAt, retainedScope, restoreScope);
+      } finally {
+        restoreScope.dispose();
+      }
       const start = config.offset ?? 0;
       const end = start + config.limit;
       const rows = matched
@@ -1701,24 +1708,29 @@ export class QueryResult {
     );
     try {
       const orderBy = normalizeOrderBy(config.orderBy, retainedScope);
-      const runs = await sortRunsFromState(orderBy, options, retainedScope);
-      retainedScope.allocate(
-        allocationCharges.array + runs.length * allocationCharges.arraySlot,
-        "restored sort run directory",
-        () => {
-          for (let index = 0; index < runs.length; index++) {
-            const run = runs[index] as Row[];
-            runs[index] = retainedScope.allocate(
-              allocationCharges.array + run.length * allocationCharges.arraySlot,
-              "restored sort rows",
-              () =>
-                run.map(
-                  (row) => retainedScope.adopt(detachOwnedRow(row, retainedScope.budget)).value,
-                ),
-            ).value;
-          }
-        },
-      );
+      const restoreScope = retainedScope.childScope();
+      let runs: Row[][];
+      try {
+        const sourceRuns = await sortRunsFromState(orderBy, options, restoreScope);
+        runs = retainedScope.allocate(
+          allocationCharges.array + sourceRuns.length * allocationCharges.arraySlot,
+          "restored sort run directory",
+          () =>
+            sourceRuns.map(
+              (run) =>
+                retainedScope.allocate(
+                  allocationCharges.array + run.length * allocationCharges.arraySlot,
+                  "restored sort rows",
+                  () =>
+                    run.map(
+                      (row) => retainedScope.adopt(detachOwnedRow(row, retainedScope.budget)).value,
+                    ),
+                ).value,
+            ),
+        ).value;
+      } finally {
+        restoreScope.dispose();
+      }
       await this.collectSortRuns(runs, orderBy, startedAt, retainedScope);
       const matched = mergeSortRuns(runs, orderBy, retainedScope);
       const start = config.offset ?? 0;
@@ -3124,6 +3136,7 @@ export class QueryResult {
     topK: number | undefined,
     startedAt: number,
     allocationScope: MemoryScope,
+    initialRowsScope?: MemoryScope,
   ): Promise<void> {
     const config = this.config;
     const { stats } = this;
@@ -3158,6 +3171,7 @@ export class QueryResult {
     if (selection !== undefined) {
       for (const row of matched) offer(row);
       matched.length = 0;
+      initialRowsScope?.dispose();
     }
     const columns = projectedReadColumns(config.select, config.where, orderBy, config.projections);
     for (const object of paths) {
@@ -4011,6 +4025,7 @@ async function topKRowsFromState(
   limit: number,
   options: TopKOptions,
   scope: MemoryScope,
+  directoryScope: MemoryScope,
 ): Promise<Row[]> {
   const state =
     isSpilledOperatorState(options.operatorState) && options.spill !== undefined
@@ -4043,7 +4058,7 @@ async function topKRowsFromState(
       limit,
     });
   }
-  return scope.allocate(
+  return directoryScope.allocate(
     allocationCharges.array + snapshot.rows.length * allocationCharges.arraySlot,
     "restored top-k directory",
     () => snapshot.rows.slice(),

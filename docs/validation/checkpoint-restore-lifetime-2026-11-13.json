@@ -1,0 +1,23 @@
+{
+  "status": "Implemented; build, default and Worker validation passed",
+  "change": "Restore source trees use a child scope. Top-k disposes that scope after candidates are detached into its heap and the source directory is cleared. Sort detaches restored runs into independently admitted execution directories, then disposes source ownership before collecting new runs. Both paths dispose source scope on errors.",
+  "validation": {
+    "build": "passed",
+    "focusedTestsPassed": 100,
+    "cases": [
+      "Top-k and sort encoded checkpoints with 0 versus 8000 bytes of unused source text have identical live budget usage when scanner execution begins",
+      "Result parity after source disposal",
+      "Final pool usage zero",
+      "Existing cancellation, spill failure and malformed snapshot cleanup tests"
+    ],
+    "defaultTestsPassed": 3056,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61
+  },
+  "limits": [
+    "Restore still requires simultaneous source and detached-row allocation, admitted before copying.",
+    "Top-k keeps source ownership through object planning until initial candidates enter the heap.",
+    "Scope release is deterministic budget ownership, not a guarantee of immediate garbage collection.",
+    "Spill adapter read buffers still require pre-read admission."
+  ]
+}

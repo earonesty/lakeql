@@ -17,8 +17,9 @@
   "developmentFinding": "Initial use of raw scope.reserve leaked metadata charges; boundary and lifecycle tests caught it. Replaced persistent charges with scope.allocate so scope disposal releases them. Only corrected-run evidence establishes validation.",
   "remaining": [
     "Spill run ID formatting and runtime iterator metadata are not covered by these envelope charges.",
-    "Source restore trees remain retained through completion.",
+    "Restore source ownership now ends after row detachment and before scanning (linked evidence).",
     "Spill read buffers and adapter-internal copies require a separate pre-read contract.",
     "This does not establish a total VM heap cap."
-  ]
+  ],
+  "restoreLifetimeEvidence": "checkpoint-restore-lifetime-2026-11-13.json"
 }
