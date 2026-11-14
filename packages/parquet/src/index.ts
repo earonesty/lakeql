@@ -1059,6 +1059,7 @@ export function parquetScanner(
     taskMetadataMode?: "auto" | "indexed" | "cached";
     scanMetadataMode?: "auto" | "indexed" | "cached";
     decodedColumnCache?: DecodedColumnCache;
+    scanRangeCache?: RangeCacheOptions;
   } = {},
 ): ScanAdapter {
   return new ParquetScanAdapter(store, options);

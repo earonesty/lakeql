@@ -1,6 +1,6 @@
 # Performance and memory budget audit
 
-Latest codec/transport evidence: `docs/validation/brotli-cloud-ring-2026-11-13.json`. Conformance passes; full release acceptance remains open.
+Latest execution evidence: `docs/validation/row-filter-admission-2026-11-13.json`. Full release acceptance remains open.
 
 LakeQL has further opportunities to remove repeated whole-state work from per-row
 execution. The highest-value work is shared incremental memory accounting, followed

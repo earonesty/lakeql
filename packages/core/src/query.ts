@@ -831,6 +831,7 @@ export class QueryResult {
   private async *matchedRows(
     startedAt: number,
     readColumns: string[] | undefined,
+    allocationScope: MemoryScope,
   ): AsyncIterable<Row> {
     const config = this.config;
     const { stats } = this;
@@ -862,7 +863,7 @@ export class QueryResult {
           const row = config.hive ? { ...partitionValues, ...rawRow } : rawRow;
           stats.rowsDecoded += 1;
           enforceBudget(config.budget, stats, config.now, startedAt);
-          if (!matches(config.where, row)) continue;
+          if (!matches(config.where, row, allocationScope)) continue;
           stats.rowsMatched += 1;
           yield row;
         }
@@ -891,70 +892,75 @@ export class QueryResult {
       return;
     }
     this.requirePhysicalPath("query");
-    const config = this.config;
-    const { stats } = this;
-    const startedAt = config.now();
-    let offsetSkipped = 0;
-    let returned = 0;
-    const distinct = config.distinct === true ? new Set<string>() : undefined;
-    const { planned: paths, skipped: skippedFiles } = await this.planObjects();
-    stats.filesSkipped = skippedFiles;
-    const columns = projectedReadColumns(
-      config.select,
-      config.where,
-      undefined,
-      config.projections,
-    );
-    for (const object of paths) {
-      stats.filesPlanned += 1;
-      stats.filesRead += 1;
-      stats.bytesRequested += object.size;
-      enforceBudget(config.budget, stats, config.now, startedAt);
-      const scanOptions: ScanOptions = {
-        memoryBudget: this.memoryBudget,
-        object,
-        batchSize: limitAwareBatchSize(config.batchSize ?? 4096, config.limit, config.offset),
-        stats,
-        budget: config.budget,
-        now: config.now,
-        startedAt,
-      };
-      if (config.limit !== undefined) scanOptions.canStopEarly = true;
-      const partitionValues = config.hive ? parseHivePartitions(object.path) : {};
-      const physicalColumns = columns?.filter((column) => !(column in partitionValues));
-      if (physicalColumns !== undefined && physicalColumns.length > 0) {
-        scanOptions.columns = physicalColumns;
-      }
-      if (config.where !== undefined) scanOptions.where = config.where;
-      for await (const rawBatch of config.scanner.scan(object.path, scanOptions)) {
-        const out: Row[] = [];
-        for (const rawRow of rawBatch) {
-          const row = config.hive ? { ...partitionValues, ...rawRow } : rawRow;
-          stats.rowsDecoded += 1;
-          enforceBudget(config.budget, stats, config.now, startedAt);
-          if (!matches(config.where, row)) continue;
-          stats.rowsMatched += 1;
-          const projected = project(row, config.select, config.projections);
-          if (distinct !== undefined && !addDistinctRow(distinct, projected, config.budget)) {
-            continue;
-          }
-          if (offsetSkipped < (config.offset ?? 0)) {
-            offsetSkipped += 1;
-            continue;
-          }
-          if (config.limit !== undefined && returned >= config.limit) break;
-          out.push(projected);
-          returned += 1;
-          stats.rowsReturned += 1;
-          enforceBudget(config.budget, stats, config.now, startedAt);
+    const predicateScope = new MemoryScope(this.memoryBudget);
+    try {
+      const config = this.config;
+      const { stats } = this;
+      const startedAt = config.now();
+      let offsetSkipped = 0;
+      let returned = 0;
+      const distinct = config.distinct === true ? new Set<string>() : undefined;
+      const { planned: paths, skipped: skippedFiles } = await this.planObjects();
+      stats.filesSkipped = skippedFiles;
+      const columns = projectedReadColumns(
+        config.select,
+        config.where,
+        undefined,
+        config.projections,
+      );
+      for (const object of paths) {
+        stats.filesPlanned += 1;
+        stats.filesRead += 1;
+        stats.bytesRequested += object.size;
+        enforceBudget(config.budget, stats, config.now, startedAt);
+        const scanOptions: ScanOptions = {
+          memoryBudget: this.memoryBudget,
+          object,
+          batchSize: limitAwareBatchSize(config.batchSize ?? 4096, config.limit, config.offset),
+          stats,
+          budget: config.budget,
+          now: config.now,
+          startedAt,
+        };
+        if (config.limit !== undefined) scanOptions.canStopEarly = true;
+        const partitionValues = config.hive ? parseHivePartitions(object.path) : {};
+        const physicalColumns = columns?.filter((column) => !(column in partitionValues));
+        if (physicalColumns !== undefined && physicalColumns.length > 0) {
+          scanOptions.columns = physicalColumns;
         }
-        stats.elapsedMs = config.now() - startedAt;
-        if (out.length > 0) yield out;
-        if (config.limit !== undefined && returned >= config.limit) return;
+        if (config.where !== undefined) scanOptions.where = config.where;
+        for await (const rawBatch of config.scanner.scan(object.path, scanOptions)) {
+          const out: Row[] = [];
+          for (const rawRow of rawBatch) {
+            const row = config.hive ? { ...partitionValues, ...rawRow } : rawRow;
+            stats.rowsDecoded += 1;
+            enforceBudget(config.budget, stats, config.now, startedAt);
+            if (!matches(config.where, row, predicateScope)) continue;
+            stats.rowsMatched += 1;
+            const projected = project(row, config.select, config.projections);
+            if (distinct !== undefined && !addDistinctRow(distinct, projected, config.budget)) {
+              continue;
+            }
+            if (offsetSkipped < (config.offset ?? 0)) {
+              offsetSkipped += 1;
+              continue;
+            }
+            if (config.limit !== undefined && returned >= config.limit) break;
+            out.push(projected);
+            returned += 1;
+            stats.rowsReturned += 1;
+            enforceBudget(config.budget, stats, config.now, startedAt);
+          }
+          stats.elapsedMs = config.now() - startedAt;
+          if (out.length > 0) yield out;
+          if (config.limit !== undefined && returned >= config.limit) return;
+        }
       }
+      stats.elapsedMs = config.now() - startedAt;
+      config.metrics?.timing("lakeql.query.elapsed", stats.elapsedMs, { queryId: stats.queryId });
+    } finally {
+      predicateScope.dispose();
     }
-    stats.elapsedMs = config.now() - startedAt;
-    config.metrics?.timing("lakeql.query.elapsed", stats.elapsedMs, { queryId: stats.queryId });
   }
 
   private async *windowedBatches(): AsyncIterable<Row[]> {
@@ -2477,7 +2483,7 @@ export class QueryResult {
         this.config.where,
         this.config.projections,
       );
-      for await (const row of this.matchedRows(startedAt, readColumns)) {
+      for await (const row of this.matchedRows(startedAt, readColumns, checkpointScope)) {
         const aggregateRow =
           this.config.projections === undefined
             ? row
@@ -3249,7 +3255,7 @@ export class QueryResult {
           const row = config.hive ? { ...partitionValues, ...rawRow } : rawRow;
           stats.rowsDecoded += 1;
           enforceBudget(config.budget, stats, config.now, startedAt);
-          if (!matches(config.where, row)) continue;
+          if (!matches(config.where, row, allocationScope)) continue;
           stats.rowsMatched += 1;
           validateSortRow(row, orderBy);
           if (selection === undefined) {
@@ -3333,7 +3339,7 @@ export class QueryResult {
           const row = config.hive ? { ...partitionValues, ...rawRow } : rawRow;
           stats.rowsDecoded += 1;
           enforceBudget(config.budget, stats, config.now, startedAt);
-          if (!matches(config.where, row)) continue;
+          if (!matches(config.where, row, allocationScope)) continue;
           stats.rowsMatched += 1;
           validateSortRow(row, orderBy);
           const owner = allocationScope.adopt(detachOwnedRow(row, allocationScope.budget));

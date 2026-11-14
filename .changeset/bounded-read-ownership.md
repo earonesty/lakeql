@@ -355,3 +355,5 @@ Decode ALP FLOAT/DOUBLE pages through shared public and owned reader dispatch, p
 Decode BSON logical columns with admitted nonrecursive framing and value construction, exact integer/datetime values and explicit tagged BSON-specific values. Share conversion across public, owned, packed-leaf and dictionary paths; reject malformed framing, duplicate keys and invalid UTF-8.
 
 Decode Brotli pages into fixed output with admitted reusable workspace and decoder metadata. Reject oversized pages before output allocation, validate full input consumption, and release scratch allocations on success and failure.
+
+Admit scalar filter temporaries across ordinary row batches, row aggregates, ordered selection and checkpointed sorting; release predicate scratch before yielding and on failure or cancellation.

@@ -30,5 +30,6 @@
     "Broader F1-F6/M1-M2/V1-V3 audit work and full acceptance gates remain active.",
     "Hosted cloud latency/throughput, Worker heap/RSS caps and complete VM allocation accounting are not certified by these tests.",
     "Bundle-cost measurement and larger representative performance samples remain open."
-  ]
+  ],
+  "followupEvidence": "row-filter-admission-2026-11-13.json"
 }
