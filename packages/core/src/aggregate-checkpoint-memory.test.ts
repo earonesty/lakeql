@@ -227,3 +227,35 @@ it("detaches group key bytes before the scanner reuses their backing", async () 
   ]);
   expect(pool.usedBytes).toBe(0);
 });
+
+it("detaches first, last and any values from reused scanner byte buffers", async () => {
+  const pool = new MemoryBudget(65536);
+  const store = memoryStore();
+  await store.put("table", new Uint8Array(1));
+  const lake = new Lake({
+    store,
+    memoryPool: pool,
+    scanner: {
+      async *scan() {
+        const value = new Uint8Array(1);
+        for (const byte of [1, 2, 3]) {
+          value[0] = byte;
+          yield [{ value }];
+        }
+        value[0] = 99;
+      },
+    },
+  });
+  const result = await lake
+    .path("table")
+    .run()
+    .aggregateWithState([], {
+      first: { op: "first", column: "value" },
+      last: { op: "last", column: "value" },
+      any: { op: "any", column: "value" },
+    });
+  expect(result.rows).toEqual([
+    { first: new Uint8Array([1]), last: new Uint8Array([3]), any: new Uint8Array([1]) },
+  ]);
+  expect(pool.usedBytes).toBe(0);
+});

@@ -40,6 +40,7 @@ import { OwnedBoundedTopK } from "./owned-bounded-top-k.js";
 import { encodeOwnedCheckpoint, stringifyOwnedStableData } from "./owned-checkpoint-encoding.js";
 import { OwnedGroupDirectory } from "./owned-group-directory.js";
 import { parseOwnedJson } from "./owned-json-parse.js";
+import { OwnedReplacementValue } from "./owned-replacement-value.js";
 import { collectOwnedRows } from "./owned-row-collector.js";
 import { detachOwnedRow } from "./owned-row-detachment.js";
 import { snapshotOwnedRows } from "./owned-snapshot-rows.js";
@@ -3674,9 +3675,9 @@ function createAggregateState(aggregate: AggregateExpr, scope: MemoryScope): Agg
     case "quantile":
       return new QuantileState(requiredQuantile(aggregate), [], scope);
     case "min":
-      return new MinMaxState("min");
+      return new MinMaxState("min", null, scope);
     case "max":
-      return new MinMaxState("max");
+      return new MinMaxState("max", null, scope);
     case "count_distinct":
       return new CountDistinctState("count_distinct", [], scope);
     case "approx_count_distinct":
@@ -3684,11 +3685,11 @@ function createAggregateState(aggregate: AggregateExpr, scope: MemoryScope): Agg
     case "mode":
       return new ModeState([], scope);
     case "first":
-      return new FirstState();
+      return new FirstState(undefined, false, scope);
     case "last":
-      return new LastState();
+      return new LastState(undefined, false, scope);
     case "any":
-      return new AnyState();
+      return new AnyState(undefined, false, scope);
   }
 }
 
@@ -3951,8 +3952,13 @@ function compareMedianValues(left: number | string, right: number | string): num
 class MinMaxState implements AggregateState {
   constructor(
     private readonly op: "min" | "max",
-    private value: string | number | boolean | null = null,
-  ) {}
+    private value: string | number | boolean | null,
+    scope: MemoryScope,
+  ) {
+    this.retained = new OwnedReplacementValue(scope);
+    this.value = this.retained.replace(value);
+  }
+  private readonly retained: OwnedReplacementValue;
 
   add(value: unknown): void {
     if (value === null || value === undefined) return;
@@ -3960,11 +3966,12 @@ class MinMaxState implements AggregateState {
       throwAggregateType(this.op);
     }
     if (this.value === null) {
-      this.value = value;
+      this.value = this.retained.replace(value);
       return;
     }
     if (typeof this.value !== typeof value) throwAggregateType(this.op);
-    if (this.op === "min" ? value < this.value : value > this.value) this.value = value;
+    if (this.op === "min" ? value < this.value : value > this.value)
+      this.value = this.retained.replace(value);
   }
 
   finish(): string | number | boolean | null {
@@ -4164,13 +4171,18 @@ class ModeState implements AggregateState {
 
 class FirstState implements AggregateState {
   constructor(
-    protected value: unknown = undefined,
-    protected seen = false,
-  ) {}
+    protected value: unknown,
+    protected seen: boolean,
+    scope: MemoryScope,
+  ) {
+    this.retained = new OwnedReplacementValue(scope);
+    if (seen) this.value = this.retained.replace(value);
+  }
+  private readonly retained: OwnedReplacementValue;
 
   add(value: unknown): void {
     if (this.seen) return;
-    this.value = value;
+    this.value = this.retained.replace(value);
     this.seen = true;
   }
 
@@ -4185,12 +4197,17 @@ class FirstState implements AggregateState {
 
 class LastState implements AggregateState {
   constructor(
-    private value: unknown = undefined,
-    private seen = false,
-  ) {}
+    private value: unknown,
+    private seen: boolean,
+    scope: MemoryScope,
+  ) {
+    this.retained = new OwnedReplacementValue(scope);
+    if (seen) this.value = this.retained.replace(value);
+  }
+  private readonly retained: OwnedReplacementValue;
 
   add(value: unknown): void {
-    this.value = value;
+    this.value = this.retained.replace(value);
     this.seen = true;
   }
 
@@ -4608,18 +4625,18 @@ function aggregateStateFromSnapshot(
       return new QuantileState(snapshot.quantile, snapshot.values, scope);
     case "min":
     case "max":
-      return new MinMaxState(snapshot.op, snapshot.value);
+      return new MinMaxState(snapshot.op, snapshot.value, scope);
     case "count_distinct":
     case "approx_count_distinct":
       return new CountDistinctState(snapshot.op, snapshot.values, scope);
     case "mode":
       return new ModeState(snapshot.values, scope);
     case "first":
-      return new FirstState(snapshot.value, snapshot.seen);
+      return new FirstState(snapshot.value, snapshot.seen, scope);
     case "last":
-      return new LastState(snapshot.value, snapshot.seen);
+      return new LastState(snapshot.value, snapshot.seen, scope);
     case "any":
-      return new AnyState(snapshot.value, snapshot.seen);
+      return new AnyState(snapshot.value, snapshot.seen, scope);
   }
 }
 

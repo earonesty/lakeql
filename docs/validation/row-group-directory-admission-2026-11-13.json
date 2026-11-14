@@ -15,9 +15,10 @@
     "workerTestsPassed": 61
   },
   "remaining": [
-    "Fixed scalar aggregate states can still retain string/value payloads without replacement accounting.",
+    "Min/max and first/last/any now own detached replacement payloads (linked evidence); snapshot conversion and output admission remain separate.",
     "Outer group snapshots, result projection, request compatibility formatting and bookkeeping temporaries remain outside admission.",
     "Restored group keys borrow the admitted source tree, which remains live through query completion.",
     "Metadata charges are conservative reservation units; no new throughput or total-heap claim."
-  ]
+  ],
+  "fixedStateEvidence": "row-fixed-state-admission-2026-11-13.json"
 }
