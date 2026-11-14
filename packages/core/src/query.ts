@@ -13,12 +13,12 @@ import {
 import { vectorCallExprSupported } from "./batch-call.js";
 import { BoundedTopK } from "./bounded-top-k.js";
 import { BufferMemory } from "./buffer-memory.js";
+import { csvOutputStream } from "./csv-output-stream.js";
 import { gatherDeferredColumns } from "./deferred-gather.js";
 import { LakeqlError } from "./errors.js";
 import { ensureGeoBackendForExprs, evaluate, jsonSafeValue, matches } from "./evaluator.js";
 import type { Expr } from "./expr.js";
 import { collectExprColumns } from "./expr-utils.js";
-import { iteratorReadableStream } from "./iterator-stream.js";
 import { jsonOutputStream } from "./json-output-stream.js";
 import {
   assertBookmarkMatches,
@@ -122,7 +122,6 @@ export {
   type WindowResult,
 } from "./window-state.js";
 
-const textEncoder = new TextEncoder();
 const DEFAULT_COLUMNAR_BATCH_SIZE = 262_144;
 
 export interface QueryBudget {
@@ -3366,55 +3365,12 @@ export class QueryResult {
   }
 
   streamCsv(options: CsvStreamOptions = {}): ReadableStream<Uint8Array> {
-    const iterator = this.rows()[Symbol.asyncIterator]();
-    const header = options.header ?? true;
-    let columns = options.columns ?? this.config.select;
-    let initialized = false;
-    return iteratorReadableStream<Uint8Array>(iterator, {
-      async pull(controller) {
-        if (initialized) {
-          const next = await iterator.next();
-          if (next.done) {
-            controller.close();
-            return;
-          }
-          controller.enqueue(textEncoder.encode(csvRow(next.value, columns ?? [])));
-          return;
-        }
-
-        initialized = true;
-        const next = await iterator.next();
-        if (next.done) {
-          if (header && columns !== undefined) {
-            controller.enqueue(textEncoder.encode(csvHeader(columns)));
-          }
-          controller.close();
-          return;
-        }
-        columns = columns ?? Object.keys(next.value);
-        const out = `${header ? csvHeader(columns) : ""}${csvRow(next.value, columns)}`;
-        controller.enqueue(textEncoder.encode(out));
-      },
+    const columns = options.columns ?? this.config.select;
+    return csvOutputStream(this.rows(), this.memoryBudget, {
+      ...options,
+      ...(columns === undefined ? {} : { columns }),
     });
   }
-}
-
-function csvHeader(columns: string[]): string {
-  return `${columns.map(csvCell).join(",")}\n`;
-}
-
-function csvRow(row: Row, columns: string[]): string {
-  return `${columns.map((column) => csvCell(row[column])).join(",")}\n`;
-}
-
-function csvCell(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  const safe = jsonSafeValue(value);
-  const text =
-    typeof safe === "string" || typeof safe === "number" || typeof safe === "boolean"
-      ? String(safe)
-      : JSON.stringify(safe);
-  return /[",\n\r]/u.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
 interface AggregateState {

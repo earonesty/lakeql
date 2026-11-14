@@ -93,14 +93,17 @@ it.skipIf(!existsSync(fixture)).each([false, true])(
           Array.from({ length: 4 }, async (_, index) => {
             const query = lake.path("json.parquet").batchSize(1).run();
             const json = index % 2 === 0;
+            const csv = index === 2;
             const text = await new Response(
-              json ? query.streamJson() : query.streamNdjson(),
+              csv ? query.streamCsv() : json ? query.streamJson() : query.streamNdjson(),
             ).text();
             const expected = records.map((json_field) => ({ json_field }));
             expect(text).toBe(
-              json
-                ? JSON.stringify(expected)
-                : expected.map((row) => `${JSON.stringify(row)}\n`).join(""),
+              csv
+                ? 'json_field\n"{""a"":1}"\n"{""a"":1,""b"":null}"\n"[1,null,3]"\n\n'
+                : json
+                  ? JSON.stringify(expected)
+                  : expected.map((row) => `${JSON.stringify(row)}\n`).join(""),
             );
             expect(query.memoryBudget.usedBytes).toBe(0);
           }),

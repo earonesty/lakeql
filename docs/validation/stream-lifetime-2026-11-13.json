@@ -16,7 +16,7 @@
     ]
   },
   "limitations": [
-    "CSV still uses legacy string/byte encoding. JSON/NDJSON now admit encoded backing, but scalar formatting and traversal workspace remain outside this output charge.",
+    "JSON/NDJSON and CSV now admit encoded backing. CSV also admits its cell directory, prepared cell buffers and inferred columns. Scalar formatting, traversal workspace and runtime bookkeeping remain separate.",
     "Consumer-retained stream chunks remain outside explicit owned-output accounting.",
     "Fault-injected encoding tests use real MemoryScope lifetimes with synthetic row producers; broader suites include existing real Parquet/HTTP/Worker fixtures."
   ],
@@ -24,7 +24,7 @@
     "finding": "serializedValueBytes describes stableStringify(jsonSafeValue), not stream JSON.stringify output. Non-finite numbers and prototype-named keys differ; it cannot be reused blindly for output-buffer admission.",
     "change": "Added internal jsonOutputUtf8Bytes extent calculator matching actual JSON output semantics for supported immutable values, without constructing the cloned JSON value tree or complete serialized string/buffer. Cycles and custom toJSON functions are rejected.",
     "validation": "23 focused tests compare actual JSON.stringify/jsonSafeValue/TextEncoder output, including Unicode, surrogate pairs/lone surrogates, escaping, binary, non-finite numbers, bigint, sparse arrays, undefined/function/symbol omission, timestamp/interval values, and shared references. Build, lint, and typecheck pass.",
-    "remaining": "Extent planning is now wired into JSON/NDJSON streams. Scalar formatting and traversal workspace still allocate; CSV planning remains required. Stateful accessors are outside the immutable-input planning contract."
+    "remaining": "Extent planning is wired into JSON/NDJSON streams; CSV now admits prepared cells and final output through the shared queue owner. Scalar formatting and traversal/runtime workspace remain open. Stateful accessors are outside the immutable JSON planning contract."
   },
   "ownedJsonOutput": {
     "change": "JSON and NDJSON encode directly into one exactly admitted byte buffer, without a cloned JSON-safe tree or whole JSON string. Queued backing stays owned until the next pull or cancellation. The query result supplies the same budget used by execution, so source and output charges overlap.",
@@ -74,5 +74,38 @@
       "benchmark": "../benchmarks/json-output-ascii-2026-11-13.json",
       "interpretation": "Separate-run ASCII fixture medians improved from about 0.573ms to 0.386ms; legacy unaccounted encoding measured about 0.213ms in the latter run. These are synthetic output-only observations, not a paired statistical comparison or whole-query throughput claim. Small-object scope/admission overhead remains; binary and Unicode timings vary between runs. Historical pre-fast-path evidence is preserved."
     }
+  },
+  "ownedCsvOutput": {
+    "change": "CSV prepares cells under a scope, admits the overlapping final output, and encodes directly without whole-row CSV strings or a cloned JSON-safe tree. Nested cells reuse the owned JSON encoder. A shared ownedOutputStream now controls queued ownership and cleanup for JSON, NDJSON and CSV. Inferred column directories are admitted before Object.keys.",
+    "validation": {
+      "defaultPassed": 2823,
+      "defaultSkipped": 605,
+      "workerPassed": 57,
+      "referencePassed": 104,
+      "buildLintTypecheck": "passed",
+      "cleanNpmInstall": "passed with an added exact CSV output and zero-pool-usage assertion"
+    },
+    "edgeCases": [
+      "Commas, quotes, CR/LF, Unicode and lone surrogate replacement",
+      "Null/undefined/missing values, finite/non-finite numbers, bigint, binary, nested JSON, timestamp and interval values",
+      "Exact measured preparation/output overlap cap succeeds; one byte short rejects and releases to zero",
+      "Header-only, no-header and empty-column outputs",
+      "Late getter failure rolls back earlier prepared cells",
+      "Queued output, inferred columns and suspended source release on cancellation",
+      "Rows arriving after cancellation are not prepared",
+      "Exhaustive UTF16 byte-sizing comparison with TextEncoder; strict lossless sizing remains available"
+    ],
+    "fixtures": "Existing mixed-JSON external Parquet HTTP tests now include CSV in concurrent cold/warm cache rounds for native and ignored ranges. Native R2 64/128 MiB stream tests include CSV with quotes/newlines/Unicode/nulls alongside JSON/NDJSON and a cancelling peer. These expanded targeted cases pass after integration.",
+    "benchmarks": [
+      "../benchmarks/csv-output-2026-11-13.json",
+      "../benchmarks/csv-output-bulk-2026-11-13.json"
+    ],
+    "performance": "Moving owned-handle access outside the byte loop and bulk-copying unquoted cells reduced the separate-run ASCII median from ~1.40ms to ~0.336ms. Final paired synthetic medians: small owned ~0.0157ms vs legacy ~0.00077ms; ASCII ~0.336ms vs ~0.126ms; Unicode ~0.756ms vs ~1.154ms; binary ~1.499ms vs ~2.587ms; nested ~0.458ms vs ~0.459ms. No universal speedup or IO-throughput claim. Small-row admission overhead remains a measured optimization opportunity.",
+    "limits": [
+      "Prepared cell backing overlaps final output and is charged conservatively; callers may see earlier typed budget rejection than the old unaccounted encoder.",
+      "Bigint/timestamp/interval scalar formatting, recursive JSON traversal and native/runtime workspace are not complete heap admission.",
+      "Chunks retained by consumers after delivery require caller accounting.",
+      "Worker reservation tests are not production total-heap proof. The broader memory audit and remaining conformance failures are still open."
+    ]
   }
 }

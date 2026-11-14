@@ -78,6 +78,8 @@ const json = await new Response(lake.path("nation.parquet").select(["nation_key"
 assert.equal(json, JSON.stringify(expectedKeys));
 const ndjson = await new Response(lake.path("nation.parquet").select(["nation_key"]).batchSize(3).streamNdjson()).text();
 assert.equal(ndjson, expectedKeys.map(row => JSON.stringify(row) + "\\n").join(""));
+const csv = await new Response(lake.path("nation.parquet").select(["nation_key"]).batchSize(1).streamCsv()).text();
+assert.equal(csv, "nation_key\\n" + expectedKeys.map(row => row.nation_key).join("\\n") + "\\n");
 assert.equal(pool.usedBytes, 0);
 const cancelled = lake.path("nation.parquet").batchSize(1).streamNdjson().getReader();
 assert.equal((await cancelled.read()).done, false);

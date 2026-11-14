@@ -31,10 +31,10 @@ under verified 64/128 MiB V8 heap settings; this distinguishes runtime GC policy
 from a persistent leak, but does not cap external backing or prove production
 Cloudflare total-memory safety. See the constrained-runtime section below.
 
-Current dictionary-recovery checkpoint (November 13, 2026) passes
-**2,793 default tests** (605 skipped), **57 Worker tests**, and **104 reference
+Current stream-admission checkpoint (November 13, 2026) passes
+**2,823 default tests** (605 skipped), **57 Worker tests**, and **104 reference
 tests**, plus TypeScript build, typecheck and lint. These counts are recorded in
-`docs/validation/conformance-value-parity-2026-11-13.json`. Distribution build,
+`docs/validation/stream-lifetime-2026-11-13.json`. Distribution build,
 expanded clean npm install smoke checks, compatibility and tracked-file size checks
 also pass. Coverage and fixture reproducibility remain earlier checkpoints that
 require final-revision reruns.
@@ -129,7 +129,7 @@ route uses those paths. Closing the gaps remains required under M1/M2.
 | Predicate masks and scalar temporaries | Scoped mask backing, per-row/per-candidate scalar scopes, fixed bigint/timestamp fast-path workspace | Consume/reuse private masks; release scratch at last consumer | Predicate/CASE/expression/bigint/timestamp memory tests; compiled plan containers, unscoped conversion callers and runtime overhead remain open |
 | Sort/top-k replacements and row buffers | Incremental buffer accounting and scoped owned selection/projection workspaces | Eviction/replacement release; result transfer | `buffer-memory.test.ts`, `query-memory.test.ts`, `serialized-size.test.ts`, `vector-top-k-memory.test.ts`; full row fallback and replacement-overlap matrix still needs final review |
 | Window indexes and execution state | Charged shared boundary/index metadata and pressure-sensitive alternatives | Operator/workspace teardown | Window memory/reference/scaling evidence below; whole-window lifecycle coverage remains separate and incomplete |
-| JSON/NDJSON stream output | Exact byte extent admitted before encoding; direct writer avoids cloned value tree and whole JSON string | Queued owner releases on next pull, cancellation or failure; consumer-retained chunks leave library ownership | `json-output-encoding.test.ts`, `json-output-stream.test.ts`, real HTTP/native-R2 fixtures; CSV, scalar formatting and traversal workspace remain open. CPU tradeoffs recorded in `stream-lifetime-2026-11-13.json` |
+| Serialized stream output | JSON direct buffers; CSV cell directory/backing and final buffer admitted before allocation | Shared `ownedOutputStream` releases queued owners on handoff, cancellation or failure; caller-retained chunks leave library ownership | Encoder/lifetime tests, real HTTP/native-R2 fixtures and clean package smoke checks; scalar formatting, traversal and runtime workspace remain open. CPU tradeoffs: `stream-lifetime-2026-11-13.json` |
 | Returned results and retained cache/output | Owned APIs transfer independent handles; plain Row[] APIs end library ownership at return | Explicit owner release for owned results; caller/GC lifetime for ordinary arrays | `query-owned-output.test.ts` and cache-pinning fixtures; caller-retained ordinary results and total process memory cannot be inferred from pool usage |
 
 CASE plan admission is now integrated into the supported owned aggregate route.

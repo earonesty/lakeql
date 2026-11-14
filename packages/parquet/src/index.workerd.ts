@@ -790,14 +790,21 @@ it.each([
   const lake = createParquetLake({ store, memoryPool: pool, scanRangeCache: { maxBytes: 0 } });
   const expected = names.map((name, id) => ({ id, name }));
   try {
-    const complete = async (format: "json" | "ndjson") => {
+    const complete = async (format: "json" | "ndjson" | "csv") => {
       const query = lake.path(path).run();
-      const stream = format === "json" ? query.streamJson() : query.streamNdjson();
+      const stream =
+        format === "csv"
+          ? query.streamCsv()
+          : format === "json"
+            ? query.streamJson()
+            : query.streamNdjson();
       const text = await new Response(stream).text();
       expect(text).toBe(
-        format === "json"
-          ? JSON.stringify(expected)
-          : expected.map((row) => `${JSON.stringify(row)}\n`).join(""),
+        format === "csv"
+          ? 'id,name\n0,雪😀\n1,"quote""line\n"\n2,\n3,\n4,tail\n5,é\n'
+          : format === "json"
+            ? JSON.stringify(expected)
+            : expected.map((row) => `${JSON.stringify(row)}\n`).join(""),
       );
       expect(query.stats.rangeRequests).toBeGreaterThan(0);
       expect(query.memoryBudget.usedBytes).toBe(0);
@@ -812,7 +819,7 @@ it.each([
     };
     // Repeat to exercise metadata reuse while a peer cancels its row producer.
     for (let round = 0; round < 2; round++) {
-      await Promise.all([complete("json"), complete("ndjson"), complete("json"), cancel()]);
+      await Promise.all([complete("json"), complete("ndjson"), complete("csv"), cancel()]);
       expect(pool.usedBytes).toBe(0);
     }
     expect(pool.peakBytes).toBeGreaterThan(0);
