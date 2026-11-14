@@ -1,5 +1,7 @@
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
 import { evaluate, jsonSafeValue, matches } from "./evaluator.js";
+import type { MemoryScope } from "./memory-scope.js";
 import type { AggregateOp } from "./query.js";
 import { compareOrderedScalars } from "./scalar-order.js";
 import type { Row } from "./types.js";
@@ -32,17 +34,56 @@ export function requireExactWindowAggregate(op: AggregateOp): void {
   }
 }
 
-export function partitionRows(rows: readonly Row[], expr: WindowExpr): WindowRow[] {
-  return rows.map((row, originalIndex) => ({
-    row,
-    originalIndex,
-    partitionKey: expr.over.partitionBy.map((part) => evaluate(part, row)),
-    orderKey: expr.over.orderBy.map((term) => evaluate(term.expr, row)),
-  }));
+export function partitionRows(
+  rows: readonly Row[],
+  expr: WindowExpr,
+  scope?: MemoryScope,
+): WindowRow[] {
+  const buildOrderExpressions = () => expr.over.orderBy.map((term) => term.expr);
+  const orderExpressions = scope
+    ? scope.allocate(
+        c.array + expr.over.orderBy.length * c.arraySlot,
+        "window order expressions",
+        buildOrderExpressions,
+      ).value
+    : buildOrderExpressions();
+  const create = () =>
+    rows.map((row, originalIndex) => {
+      const keys = (expressions: readonly import("./expr.js").Expr[]) => {
+        const build = () => expressions.map((part) => evaluate(part, row, scope));
+        return scope
+          ? scope.allocate(c.array + expressions.length * c.arraySlot, "window keys", build).value
+          : build();
+      };
+      const build = () => ({
+        row,
+        originalIndex,
+        partitionKey: keys(expr.over.partitionBy),
+        orderKey: keys(orderExpressions),
+      });
+      return scope
+        ? scope.allocate(c.object + 4 * c.property, "window row index", build).value
+        : build();
+    });
+  return scope
+    ? scope.allocate(c.array + rows.length * c.arraySlot, "window row indexes", create).value
+    : create();
 }
 
-export function sortWindowRows(rows: WindowRow[], orderBy: readonly WindowOrderTerm[]): void {
-  rows.sort((left, right) => compareWindowRows(left, right, orderBy));
+export function sortWindowRows(
+  rows: WindowRow[],
+  orderBy: readonly WindowOrderTerm[],
+  scope?: MemoryScope,
+): void {
+  const scratch = scope?.reserve(
+    c.array + rows.length * (c.arraySlot + c.object),
+    "window index sort workspace",
+  );
+  try {
+    rows.sort((left, right) => compareWindowRows(left, right, orderBy));
+  } finally {
+    scratch?.release();
+  }
 }
 
 export function compareWindowRows(
@@ -78,15 +119,28 @@ function sameKeyValues(left: readonly unknown[], right: readonly unknown[]): boo
   return true;
 }
 
-export function partitionSpans(rows: readonly WindowRow[]): { start: number; end: number }[] {
-  const spans: { start: number; end: number }[] = [];
+export function partitionSpans(
+  rows: readonly WindowRow[],
+  scope?: MemoryScope,
+): { start: number; end: number }[] {
+  const spans: { start: number; end: number }[] = scope
+    ? scope.allocate(
+        c.array,
+        "window partition spans",
+        () => [] as { start: number; end: number }[],
+      ).value
+    : [];
   let start = 0;
   while (start < rows.length) {
     let end = start + 1;
     while (end < rows.length && samePartition(rows[start] as WindowRow, rows[end] as WindowRow)) {
       end += 1;
     }
-    spans.push({ start, end });
+    if (scope)
+      scope.allocate(c.arraySlot + c.object + 2 * c.property, "window partition span", () => {
+        spans.push({ start, end });
+      });
+    else spans.push({ start, end });
     start = end;
   }
   return spans;
@@ -117,6 +171,11 @@ export function compareWindowValues(left: unknown, right: unknown, term: WindowO
   return compareOrderedScalars(left, right, term, "Window ORDER BY");
 }
 
+const ascendingNullsLast: WindowOrderTerm = {
+  expr: { kind: "literal", value: null },
+  direction: "asc",
+  nulls: "last",
+};
 function defaultOrderTerm(): WindowOrderTerm {
-  return { expr: { kind: "literal", value: null }, direction: "asc", nulls: "last" };
+  return ascendingNullsLast;
 }

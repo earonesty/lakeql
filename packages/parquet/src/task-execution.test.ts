@@ -385,7 +385,7 @@ describe("Parquet task execution", () => {
   });
 });
 
-it("shares the caller allocation budget with adaptive GROUPS evaluation after task fan-in", async () => {
+it("shares the caller allocation budget with window indexes after task fan-in", async () => {
   const store = memoryStore();
   const keys = Array.from({ length: 800 }, (_, index) => index);
   await writeParquet(store, "adaptive-window.parquet", {
@@ -416,21 +416,22 @@ it("shares the caller allocation budget with adaptive GROUPS evaluation after ta
       },
     },
   } satisfies Record<string, import("lakeql-core").WindowExpr>;
-  for (const cap of [3204, 3203]) {
+  for (const cap of [1024 * 1024, 3204, 3203]) {
     const pool = new MemoryBudget(cap);
-    const output = await windowParquetTasks(store, tasks, windows, {
+    const result = windowParquetTasks(store, tasks, windows, {
       memoryBudget: pool,
       maxConcurrentTasks: 2,
     });
-    expect(output.map((row) => row.total)).toEqual(
-      keys.map((key) => (key % 2 ? (key * (key + 1)) / 2 : key)),
-    );
-    if (cap === 3204) expect(pool.peakBytes).toBe(3204);
+    if (cap < 1024 * 1024)
+      await expect(result).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
     else {
-      // The index is declined, but task schema validation still owns workspace.
-      expect(pool.peakBytes).toBeGreaterThan(0);
-      expect(pool.peakBytes).toBeLessThan(3204);
+      const output = await result;
+      expect(output.map((row) => row.total)).toEqual(
+        keys.map((key) => (key % 2 ? (key * (key + 1)) / 2 : key)),
+      );
+      expect(pool.peakBytes).toBeGreaterThan(3204);
     }
+    expect(pool.peakBytes).toBeLessThanOrEqual(cap);
     expect(pool.usedBytes).toBe(0);
   }
 });

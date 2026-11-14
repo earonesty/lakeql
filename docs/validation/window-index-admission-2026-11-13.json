@@ -1,0 +1,45 @@
+{
+  "requirements": ["F2", "F4", "M1", "M2", "V1", "V2"],
+  "status": "Window key/index and expression-directory lifetimes admitted across row, run and vector backends; result payload and row ownership remain open",
+  "contract": [
+    "Each compatible sort group has a scope for partition/order keys and row indexes. Row evaluate and vector batchExprValues/valueAt receive that scope, so key expansion is admitted before construction and released after the group.",
+    "Sort workspace, partition spans, vector entry metadata, run cursor directories and merged partition references are admitted. Merged-partition references release when the generator advances or closes.",
+    "Identical-order expressions reuse the immutable sorted index directly. Prefix-order expressions admit copied metadata based on actual enumerable fields, key slices and peer-stabilization workspace; temporary expression scopes release before the next expression.",
+    "Window expression and partition result directories are admitted around evaluation. This does not yet admit every computed scalar/collection payload or the copied backend output rows.",
+    "Run indexes add run positions to the existing indexed records instead of mapping into another set of records. Order-expression lists are built once per index construction, and the default comparator order term is shared rather than allocated per comparison."
+  ],
+  "validation": {
+    "initialFocused": {
+      "passed": 114
+    },
+    "keyAndHttpFocused": {
+      "passed": 15
+    },
+    "budgetRegressionFocused": {
+      "passed": 22
+    },
+    "build": "passed",
+    "default": {
+      "passed": 3214,
+      "skipped": 629
+    },
+    "worker": {
+      "passed": 75
+    },
+    "typecheck": "passed",
+    "cases": [
+      "Partition-key and order-key replace expansion succeeds with small values and rejects oversized values under 16 KiB for row, run and vector execution. Cleanup preserves sibling reservations.",
+      "Identical-order index reuse returns the same array with zero new reservations. Prefix ordering restores original peer order without mutating the shared full-order index; insufficient workspace rejects and releases cleanly.",
+      "Real Brotli HTTP 206/ignored-Range 200 and native local Worker R2 matrices include window partition/order expression routes, separately from WHERE/projection. Both row and owned-vector scanners use direct-value WHERE selection so oversized key tests reach key evaluation.",
+      "Pure adaptive peer-index exact-boundary and fallback tests remain at the kernel level. Whole-window/task tests now include mandatory key/index storage: tiny caps reject and adequate caps preserve results and release all tracked allocations.",
+      "The previous zero/3,204-byte whole-window assertions were not valid whole-path bounds because they omitted key/index storage. Tests now explicitly distinguish prepared-kernel workspace from complete backend index construction."
+    ],
+    "lintSizeChangeset": "passed"
+  },
+  "limits": [
+    "Backend copied rows, new result properties, computed scalar/collection payloads and several internal kernel workspaces still require ownership integration.",
+    "Sort-group planning metadata, delegated task outputs, final collection and checkpoint encoding/state parsing remain separate open requirements.",
+    "Identical-order index reuse and removal of extra run-index copies are structural allocation reductions; no timing speedup or total Worker heap cap is claimed.",
+    "The complete acceptance matrix and final release gates remain open."
+  ]
+}

@@ -88,7 +88,7 @@ it("preserves partitions, null peers and compatible sort prefixes across row run
     [4, 3, 1, 1, 4],
     [2, 2, 1, 1, 2],
   ];
-  const pool = new MemoryBudget(0);
+  const pool = new MemoryBudget(65536);
   const outputs = [
     applyWindowsToRows(rows, windows, { memoryBudget: pool }),
     applyWindowsToRuns([rows.slice(0, 2), [], rows.slice(2, 5), rows.slice(5)], windows, {

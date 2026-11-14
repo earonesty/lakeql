@@ -42,5 +42,6 @@
     "Resumable vector rows currently materialize into owned batches and then detach into the run buffer, adding bounded overlap. No CPU throughput improvement is claimed.",
     "Borrowed-source backing created before delivery remains the adapter responsibility. Reservation bounds are not a total runtime heap or production Cloudflare certification.",
     "Final release gates and the complete audit acceptance matrix remain open."
-  ]
+  ],
+  "followupEvidence": "docs/validation/window-index-admission-2026-11-13.json"
 }

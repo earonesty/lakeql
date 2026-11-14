@@ -77,13 +77,15 @@ it.each(
           "orderedDistinct",
           "window",
           "windowState",
+          "windowKeys",
+          "windowPartitionKeys",
         ]
-          .filter((route) => !vector || route === "window" || route === "windowState")
+          .filter((route) => !vector || route.startsWith("window"))
           .map(async (route) => {
             let query = lake
               .path(path)
               .where(
-                projection
+                projection || route.endsWith("Keys")
                   ? {
                       kind: "compare",
                       op: "eq",
@@ -97,12 +99,20 @@ it.each(
             if (["ordered", "topK", "sort", "orderedDistinct"].includes(route))
               query = query.orderBy([{ column: "id" }]);
             if (route === "topK") query = query.limit(2);
-            if (route === "window" || route === "windowState")
+            if (route.startsWith("window"))
               query = query
                 .window("rn", {
                   fn: "row_number",
                   args: [],
-                  over: { partitionBy: [], orderBy: [{ expr: { kind: "column", name: "id" } }] },
+                  over: {
+                    partitionBy: route === "windowPartitionKeys" ? [predicate.left] : [],
+                    orderBy: [
+                      {
+                        expr:
+                          route === "windowKeys" ? predicate.left : { kind: "column", name: "id" },
+                      },
+                    ],
+                  },
                 })
                 .select(["id", "text"]);
             if (route === "distinct" || route === "orderedDistinct")

@@ -2,10 +2,10 @@ import { expect, it } from "vitest";
 import { col, gt } from "./expr.js";
 import { MemoryBudget } from "./memory-budget.js";
 import type { WindowExpr } from "./window.js";
-import { applyWindowsToRows } from "./window-backend.js";
+import { applyWindowsToRows, evaluateWindowRows } from "./window-backend.js";
 import { WindowPeers } from "./window-peers.js";
 import { segmentTreeAggregateValues, segmentTreeWorkspaceBytes } from "./window-segment-tree.js";
-import { partitionRows } from "./window-utils.js";
+import { partitionRows, partitionSpans } from "./window-utils.js";
 
 const expr: WindowExpr = {
   fn: { aggregate: "sum" },
@@ -115,25 +115,38 @@ it("admits a tree only after repeated visits and releases it on completion or fa
     expect(() => segmentTreeWorkspaceBytes(size)).toThrow();
 });
 
-it("propagates query budget to window aggregates and keeps null and filter semantics", () => {
+it("propagates kernel budget and keeps null and filter semantics", () => {
   const rows = [
     { id: 0, amount: null },
     { id: 1, amount: 2 },
     { id: 2, amount: 3 },
   ];
+  const indexed = partitionRows(rows, expr);
+  const spans = partitionSpans(indexed);
   for (const cap of [0, segmentTreeWorkspaceBytes(rows.length)]) {
     const memoryBudget = new MemoryBudget(cap);
+    expect(evaluateWindowRows(rows.length, indexed, spans, expr, { memoryBudget })).toEqual([
+      null,
+      2,
+      5,
+    ]);
     expect(
-      applyWindowsToRows(rows, { total: expr }, { memoryBudget }).map((row) => row.total),
-    ).toEqual([null, 2, 5]);
-    expect(
-      applyWindowsToRows(rows, { total: { ...expr, filter: gt("id", 1) } }, { memoryBudget }).map(
-        (row) => row.total,
+      evaluateWindowRows(
+        rows.length,
+        indexed,
+        spans,
+        { ...expr, filter: gt("id", 1) },
+        { memoryBudget },
       ),
     ).toEqual([null, null, 3]);
     expect(memoryBudget.peakBytes).toBe(0);
     expect(memoryBudget.usedBytes).toBe(0);
   }
+  const zero = new MemoryBudget(0);
+  expect(() => applyWindowsToRows(rows, { total: expr }, { memoryBudget: zero })).toThrowError(
+    expect.objectContaining({ code: "LAKEQL_BUDGET_EXCEEDED" }),
+  );
+  expect(zero.usedBytes).toBe(0);
 });
 
 it("reuses growing frames and resets correctly when dynamic bounds shrink or move", async () => {

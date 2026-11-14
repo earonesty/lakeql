@@ -1,6 +1,8 @@
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
 import { evaluate } from "./evaluator.js";
-import type { MemoryBudget } from "./memory-budget.js";
+import { MemoryBudget } from "./memory-budget.js";
+import { MemoryScope } from "./memory-scope.js";
 import type { Row } from "./types.js";
 import type { WindowExpr } from "./window.js";
 import { aggregateWindowValue } from "./window-aggregate.js";
@@ -22,6 +24,7 @@ import {
 
 export interface WindowExecutionOptions {
   memoryBudget?: MemoryBudget;
+  allocationScope?: MemoryScope;
   estimateMemoryBytes?: (value: unknown) => number;
   enforceBufferedRows?: (rows: number) => void;
   enforceWindowPartitionRows?: (rows: number) => void;
@@ -39,16 +42,31 @@ export function applyWindowsToRows(
     options.enforceMemoryBytes?.(options.estimateMemoryBytes(rows));
   }
   for (const group of windowSortGroups(windows)) {
-    const sorted = partitionRows(rows, group.sortExpr);
-    sortWindowRows(sorted, group.sortExpr.over.orderBy);
-    for (const { alias, expr } of group.items) {
-      const windowRows = windowRowsForExpr(sorted, expr, group.sortExpr);
-      const spans = partitionSpans(windowRows);
-      const values = evaluateWindowRows(rows.length, windowRows, spans, expr, options);
-      for (let index = 0; index < rows.length; index += 1) {
-        const row = rows[index];
-        if (row !== undefined) row[alias] = values[index] ?? null;
+    const groupScope = new MemoryScope(
+      options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER),
+    );
+    try {
+      const sorted = partitionRows(rows, group.sortExpr, groupScope);
+      sortWindowRows(sorted, group.sortExpr.over.orderBy, groupScope);
+      for (const { alias, expr } of group.items) {
+        const expressionScope = groupScope.childScope();
+        try {
+          const windowRows = windowRowsForExpr(sorted, expr, group.sortExpr, expressionScope);
+          const spans = partitionSpans(windowRows, expressionScope);
+          const values = evaluateWindowRows(rows.length, windowRows, spans, expr, {
+            ...options,
+            allocationScope: expressionScope,
+          });
+          for (let index = 0; index < rows.length; index += 1) {
+            const row = rows[index];
+            if (row !== undefined) row[alias] = values[index] ?? null;
+          }
+        } finally {
+          expressionScope.dispose();
+        }
       }
+    } finally {
+      groupScope.dispose();
     }
   }
   return rows;
@@ -61,31 +79,65 @@ export function applyWindowsToRuns(
 ): Row[][] {
   const outputRuns = inputRuns.map((run) => run.map((row) => ({ ...row })));
   for (const group of windowSortGroups(windows)) {
-    const sortedRuns = outputRuns.map((run, runIndex) =>
-      partitionRows(run, group.sortExpr).map((item, rowIndex) => ({
-        ...item,
-        runIndex,
-        rowIndex,
-      })),
+    const groupScope = new MemoryScope(
+      options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER),
     );
-    for (const run of sortedRuns) sortWindowRows(run, group.sortExpr.over.orderBy);
-    for (const partition of mergeWindowPartitions(sortedRuns, group.sortExpr)) {
-      options.enforceWindowPartitionRows?.(partition.length);
-      if (options.estimateMemoryBytes !== undefined) {
-        options.enforceMemoryBytes?.(
-          options.estimateMemoryBytes(partition.map((item) => item.row)),
-        );
-      }
-      for (const { alias, expr } of group.items) {
-        const windowRows = windowRowsForExpr(partition, expr, group.sortExpr);
-        const values = evaluatePartition(windowRows, expr, options);
-        for (let index = 0; index < windowRows.length; index += 1) {
-          const item = windowRows[index];
-          if (item === undefined) continue;
-          const row = outputRuns[item.runIndex]?.[item.rowIndex];
-          if (row !== undefined) row[alias] = values[index] ?? null;
+    try {
+      const sortedRuns = groupScope.allocate(
+        c.array + outputRuns.length * c.arraySlot,
+        "window sorted runs",
+        () =>
+          outputRuns.map((run, runIndex) => {
+            const indexed = partitionRows(run, group.sortExpr, groupScope) as RunWindowRow[];
+            for (let rowIndex = 0; rowIndex < indexed.length; rowIndex++) {
+              const item = indexed[rowIndex];
+              if (item)
+                groupScope.allocate(2 * c.property, "window run position", () => {
+                  item.runIndex = runIndex;
+                  item.rowIndex = rowIndex;
+                });
+            }
+            return indexed;
+          }),
+      ).value;
+      for (const run of sortedRuns) sortWindowRows(run, group.sortExpr.over.orderBy, groupScope);
+      for (const partition of mergeWindowPartitions(sortedRuns, group.sortExpr, groupScope)) {
+        options.enforceWindowPartitionRows?.(partition.length);
+        if (options.estimateMemoryBytes !== undefined) {
+          const scratch = groupScope.reserve(
+            c.array + partition.length * c.arraySlot,
+            "window partition measurement references",
+          );
+          try {
+            options.enforceMemoryBytes?.(
+              options.estimateMemoryBytes(partition.map((item) => item.row)),
+            );
+          } finally {
+            scratch.release();
+          }
+        }
+        for (const { alias, expr } of group.items) {
+          const expressionScope = groupScope.childScope();
+          try {
+            const windowRows = windowRowsForExpr(partition, expr, group.sortExpr, expressionScope);
+            const values = expressionScope.allocate(
+              c.array + windowRows.length * c.arraySlot,
+              "window partition output",
+              () => evaluatePartition(windowRows, expr, options),
+            ).value;
+            for (let index = 0; index < windowRows.length; index++) {
+              const item = windowRows[index];
+              if (item === undefined) continue;
+              const row = outputRuns[item.runIndex]?.[item.rowIndex];
+              if (row !== undefined) row[alias] = values[index] ?? null;
+            }
+          } finally {
+            expressionScope.dispose();
+          }
         }
       }
+    } finally {
+      groupScope.dispose();
     }
   }
   return outputRuns;
@@ -101,14 +153,20 @@ export function windowRowsForExpr<T extends WindowRow>(
   sorted: readonly T[],
   expr: WindowExpr,
   sortExpr: WindowExpr,
-): T[] {
+  scope?: MemoryScope,
+): readonly T[] {
   const orderKeyLength = expr.over.orderBy.length;
-  const projected = sorted.map((item) => ({
-    ...item,
-    orderKey: item.orderKey.slice(0, orderKeyLength),
-  })) as T[];
-  if (orderKeyLength === sortExpr.over.orderBy.length) return projected;
-  stabilizePrefixPeers(projected);
+  if (orderKeyLength === sortExpr.over.orderBy.length) return sorted;
+  const build = () =>
+    sorted.map((item) => ({ ...item, orderKey: item.orderKey.slice(0, orderKeyLength) })) as T[];
+  let bytes = c.array + sorted.length * c.arraySlot;
+  if (scope)
+    for (const item of sorted) {
+      bytes += c.object + c.array + orderKeyLength * c.arraySlot;
+      for (const key in item) if (Object.hasOwn(item, key)) bytes += c.property;
+    }
+  const projected = scope ? scope.allocate(bytes, "window prefix indexes", build).value : build();
+  stabilizePrefixPeers(projected, scope);
   return projected;
 }
 
@@ -120,34 +178,46 @@ interface RunWindowRow extends WindowRow {
 function* mergeWindowPartitions(
   runs: readonly RunWindowRow[][],
   sortExpr: WindowExpr,
+  scope: MemoryScope,
 ): Iterable<RunWindowRow[]> {
-  const cursors = runs.map(() => 0);
-  let current: RunWindowRow[] = [];
-  let currentPartition: RunWindowRow | undefined;
-  while (true) {
-    let bestRun = -1;
-    let best: RunWindowRow | undefined;
-    for (let runIndex = 0; runIndex < runs.length; runIndex += 1) {
-      const candidate = runs[runIndex]?.[cursors[runIndex] ?? 0];
-      if (candidate === undefined) continue;
-      if (best === undefined || compareWindowRows(candidate, best, sortExpr.over.orderBy) < 0) {
-        best = candidate;
-        bestRun = runIndex;
+  const cursors = scope.allocate(c.array + runs.length * c.arraySlot, "window run cursors", () =>
+    runs.map(() => 0),
+  ).value;
+  let partitionScope = scope.childScope();
+  const newPartition = () =>
+    partitionScope.allocate(c.array, "window merged partition", () => [] as RunWindowRow[]).value;
+  let current = newPartition();
+  try {
+    let currentPartition: RunWindowRow | undefined;
+    while (true) {
+      let bestRun = -1;
+      let best: RunWindowRow | undefined;
+      for (let runIndex = 0; runIndex < runs.length; runIndex += 1) {
+        const candidate = runs[runIndex]?.[cursors[runIndex] ?? 0];
+        if (candidate === undefined) continue;
+        if (best === undefined || compareWindowRows(candidate, best, sortExpr.over.orderBy) < 0) {
+          best = candidate;
+          bestRun = runIndex;
+        }
       }
+      if (best === undefined || bestRun === -1) break;
+      cursors[bestRun] = (cursors[bestRun] ?? 0) + 1;
+      if (currentPartition !== undefined && !samePartition(best, currentPartition)) {
+        yield current;
+        partitionScope.dispose();
+        partitionScope = scope.childScope();
+        current = newPartition();
+      }
+      currentPartition = best;
+      partitionScope.allocate(c.arraySlot, "window merged reference", () => current.push(best));
     }
-    if (best === undefined || bestRun === -1) break;
-    cursors[bestRun] = (cursors[bestRun] ?? 0) + 1;
-    if (currentPartition !== undefined && !samePartition(best, currentPartition)) {
-      yield current;
-      current = [];
-    }
-    currentPartition = best;
-    current.push(best);
+    if (current.length > 0) yield current;
+  } finally {
+    partitionScope.dispose();
   }
-  if (current.length > 0) yield current;
 }
 
-function stabilizePrefixPeers(rows: WindowRow[]): void {
+function stabilizePrefixPeers(rows: WindowRow[], scope?: MemoryScope): void {
   let start = 0;
   while (start < rows.length) {
     const current = rows[start];
@@ -158,12 +228,20 @@ function stabilizePrefixPeers(rows: WindowRow[]): void {
       end += 1;
     }
     if (end - start > 1) {
-      rows
-        .slice(start, end)
-        .sort((left, right) => left.originalIndex - right.originalIndex)
-        .forEach((row, index) => {
-          rows[start + index] = row;
-        });
+      const scratch = scope?.reserve(
+        c.array + (end - start) * (2 * c.arraySlot + c.object),
+        "window prefix stabilization",
+      );
+      try {
+        rows
+          .slice(start, end)
+          .sort((left, right) => left.originalIndex - right.originalIndex)
+          .forEach((row, index) => {
+            rows[start + index] = row;
+          });
+      } finally {
+        scratch?.release();
+      }
     }
     start = end;
   }
@@ -176,14 +254,33 @@ export function evaluateWindowRows(
   expr: WindowExpr,
   options: WindowExecutionOptions,
 ): unknown[] {
-  const output = new Array<unknown>(rowCount).fill(null);
+  const scope = options.allocationScope;
+  const createOutput = () => new Array<unknown>(rowCount).fill(null);
+  const output = scope
+    ? scope.allocate(c.array + rowCount * c.arraySlot, "window expression output", createOutput)
+        .value
+    : createOutput();
   for (const span of spans) {
-    const partition = sorted.slice(span.start, span.end);
-    options.enforceWindowPartitionRows?.(partition.length);
-    const values = evaluatePartition(partition, expr, options);
-    for (let index = 0; index < partition.length; index += 1) {
-      const item = partition[index];
-      if (item !== undefined) output[item.originalIndex] = values[index] ?? null;
+    const temporary = scope?.childScope();
+    try {
+      const count = span.end - span.start;
+      const partition = temporary
+        ? temporary.allocate(c.array + count * c.arraySlot, "window partition references", () =>
+            sorted.slice(span.start, span.end),
+          ).value
+        : sorted.slice(span.start, span.end);
+      options.enforceWindowPartitionRows?.(partition.length);
+      const values = temporary
+        ? temporary.allocate(c.array + count * c.arraySlot, "window partition output", () =>
+            evaluatePartition(partition, expr, options),
+          ).value
+        : evaluatePartition(partition, expr, options);
+      for (let index = 0; index < partition.length; index++) {
+        const item = partition[index];
+        if (item !== undefined) output[item.originalIndex] = values[index] ?? null;
+      }
+    } finally {
+      temporary?.dispose();
     }
   }
   return output;
