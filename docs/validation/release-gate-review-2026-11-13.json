@@ -1,0 +1,86 @@
+{
+  "checkpoint": "Release-gate review after bounded window work and BSON preflight correction. This is evidence for parts of V3, not completion of F1\u2013F6/M1\u2013M2/V1\u2013V3.",
+  "coverage": {
+    "command": "pnpm coverage",
+    "status": "passed",
+    "statements": {
+      "percent": 91.52,
+      "covered": 28786,
+      "total": 31453
+    },
+    "branches": {
+      "percent": 85.42,
+      "covered": 21348,
+      "total": 24991
+    },
+    "functions": {
+      "percent": 95.7,
+      "covered": 4633,
+      "total": 4841
+    },
+    "lines": {
+      "percent": 93.6,
+      "covered": 25516,
+      "total": 27258
+    },
+    "thresholdsChanged": false,
+    "exclusionsChanged": false
+  },
+  "fixtures": {
+    "command": "node scripts/check-fixtures.mjs",
+    "status": "passed",
+    "meaning": "Regeneration produced exactly the same bytes for every generated fixture; git LFS status then confirmed no fixture changes.",
+    "files": 41,
+    "bytes": 40945,
+    "pathAndHashDigestSha256": "01f081d0b8de2d59cc51a83bf19b12628516a5da4832ab104f409bcef4c53274",
+    "generatorSha256": "dae84206f52aaa6fde4b61c6eba4a538e7844da1c45924354419f4ac5be57ade"
+  },
+  "validation": {
+    "defaultPassed": 2997,
+    "defaultSkipped": 629,
+    "workerPassed": 61,
+    "referencePassed": 104,
+    "build": "passed",
+    "typecheck": "passed",
+    "lint": "passed",
+    "changeset": "passed",
+    "cleanPackageInstall": "passed",
+    "compatibility": "passed",
+    "fileSizeGate": "passed"
+  },
+  "conformance": {
+    "command": "pnpm test:conformance",
+    "status": "failed",
+    "passed": 511,
+    "failed": 6,
+    "skipped": 1,
+    "cases": [
+      {
+        "fixture": "alp_extended.zstd.parquet",
+        "paths": ["public reader", "owned query reader"],
+        "cause": "Underlying decoder reports unsupported encoding: undefined; ALP is not implemented."
+      },
+      {
+        "fixture": "bson.parquet",
+        "paths": ["public reader", "owned query reader"],
+        "cause": "Selected BSON schema leaves now reject explicitly with LAKEQL_UNSUPPORTED_PARQUET_FEATURE and feature=bson. BSON decoding remains unimplemented."
+      },
+      {
+        "fixture": "large_string_map.brotli.parquet",
+        "paths": ["public reader", "owned query reader"],
+        "cause": "No BROTLI decompressor is registered."
+      }
+    ],
+    "testsExcludedOrWaived": false
+  },
+  "bsonContract": {
+    "implementation": "Schema validation rejects selected BSON annotations before decoding. Unrelated top-level projections remain permitted.",
+    "evidence": [
+      "packages/parquet/src/schema-validation.test.ts",
+      "packages/parquet/src/bson-rejection.test.ts"
+    ],
+    "realFixture": "Actual parquet-testing BSON fixture: public reader performs the metadata-only read sequence, owned reader rejects before first row and returns tracked pool use to zero. This test uses an in-memory object store, not HTTP or native R2.",
+    "compatibility": "Declared detected+rejected with evidence; ALP/Brotli remain planned. docs/parquet-types.md no longer incorrectly says every struct is rejected. These declarations do not waive the external read-conformance failures."
+  },
+  "openAcceptance": "M1/M2 lifecycle integration, broader mixed-job V1 evidence and final checklist review remain incomplete. Typed rejection closes a diagnostic/preflight gap; it does not implement BSON. Format-support scope must still be resolved against the promised read contract before claiming release readiness."
+}

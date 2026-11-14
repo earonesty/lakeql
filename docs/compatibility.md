@@ -8,6 +8,8 @@ Legend: supported+tested = covered by tests; supported = implemented with narrow
 
 | Area | Feature | Status | Notes |
 | --- | --- | --- | --- |
+| Parquet | BSON logical columns | detected+rejected | Selected BSON leaves reject during schema validation with LAKEQL_UNSUPPORTED_PARQUET_FEATURE and column/feature details. Unselected top-level columns remain readable. BSON decoding is not implemented; the external read-conformance cases remain failing. |
+| Parquet | ALP encoding and Brotli compression | planned | No ALP decoder or bounded Brotli codec is registered. External fixtures currently fail through both readers; these capabilities and their admission contracts remain unresolved release work. |
 | Parquet | Primitive scalar columns | supported+tested | Covered by local fixtures and hyparquet decoding. |
 | Parquet | Projection | supported+tested | Column projection is threaded into Parquet reads. |
 | Parquet | Row-group pruning | supported+tested | Predicate pruning uses row-group statistics where available. |

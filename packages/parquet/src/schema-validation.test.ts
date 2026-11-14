@@ -163,3 +163,28 @@ it("rejects selection allocation before enumerating its elements", async () => {
   ).toThrowError(expect.objectContaining({ code: "LAKEQL_BUDGET_EXCEEDED" }));
   expect(reads).toBe(0);
 });
+
+it("rejects selected BSON annotations before decoding while preserving unrelated projections", () => {
+  for (const annotation of [
+    { converted_type: "BSON" },
+    { logical_type: { type: "BSON" } },
+    { logical_type: { BSON: {} } },
+  ]) {
+    const schema = [
+      { name: "root", num_children: 2 },
+      { name: "payload", num_children: 1 },
+      { name: "document", type: "BYTE_ARRAY", ...annotation },
+      { name: "id", type: "INT32" },
+    ] as SchemaElement[];
+    for (const columns of [undefined, ["payload"]]) {
+      expect(() => rejectUnsupportedParquetSchema({ schema }, { columns })).toThrowError(
+        expect.objectContaining({
+          code: "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          details: { column: "payload.document", feature: "bson" },
+        }),
+      );
+    }
+    for (const columns of [[], ["id"]])
+      expect(() => rejectUnsupportedParquetSchema({ schema }, { columns })).not.toThrow();
+  }
+});

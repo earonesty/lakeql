@@ -31,12 +31,12 @@ under verified 64/128 MiB V8 heap settings; this distinguishes runtime GC policy
 from a persistent leak, but does not cap external backing or prove production
 Cloudflare total-memory safety. See the constrained-runtime section below.
 
-Latest execution checkpoint (November 13, 2026): null-ignoring lag/lead use
-constant-state monotone cursors; ranking drops duplicate row directories:
-`docs/validation/window-offset-cursors-2026-11-13.json`.
-Frame iteration: `docs/validation/window-frame-iterator-2026-11-13.json`.
-Measured aggregates: `docs/validation/window-segment-budget-2026-11-13.json`.
-Prior ranking/decimal evidence remains in the corresponding validation reports.
+Latest execution checkpoint (November 13, 2026): coverage and deterministic
+fixture regeneration pass; BSON now rejects at selected-schema preflight.
+Release-gate evidence: `docs/validation/release-gate-review-2026-11-13.json`.
+Window evidence: `docs/validation/window-offset-cursors-2026-11-13.json`,
+`docs/validation/window-frame-iterator-2026-11-13.json`, and
+`docs/validation/window-segment-budget-2026-11-13.json`.
 
 External conformance now reports **511 passed, 6 failed, one skipped**; the six
 remaining failures are ALP, BSON and BROTLI through both readers. No assertions

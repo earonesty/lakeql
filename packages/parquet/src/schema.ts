@@ -121,6 +121,12 @@ function rejectUnsupportedParquetLeaf(
   const convertedType = String(element.converted_type ?? "").toUpperCase();
   const logicalType = logicalTypeRecord(element.logical_type);
   const logicalTypeName = parquetLogicalTypeName(element.logical_type);
+  if (convertedType === "BSON" || logicalTypeName === "BSON")
+    throw new LakeqlError(
+      "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+      "Parquet BSON decoding is not supported",
+      { column: path.join("."), feature: "bson" },
+    );
   const decimalPrecision =
     typeof element.precision === "number"
       ? element.precision
