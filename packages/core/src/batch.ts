@@ -1,11 +1,12 @@
 import { batchCallExprValues, batchCallPredicateMask } from "./batch-call.js";
 import { registerCompactionMetadata } from "./compaction-metadata.js";
-import { compareDecimalOperands } from "./decimal-comparison.js";
+import { compareDecimalOperands, withDecimalComparisonOperand } from "./decimal-comparison.js";
 import {
   DecimalValue,
   decimalValueAllocationBytes,
   isDecimalValue,
   requireDecimalValue,
+  withPreparedDecimalComparison,
 } from "./decimal-value.js";
 import { expandDictionaryMask } from "./dictionary-mask.js";
 import { LakeqlError } from "./errors.js";
@@ -1343,6 +1344,7 @@ function compareVectorLiteralMasks(
 ): Uint8Array | undefined {
   if (literal === null) return nullCompareMask(vectorLength(vector), scope);
   if (vector.type === "dict") return compareDictLiteralMasks(op, vector, literal, scope);
+  if (vector.type === "decimal") return compareDecimalLiteralMasks(op, vector, literal, scope);
   if (isNumberVector(vector) && typeof literal === "number") {
     return compareNumberLiteralMasks(op, vector, literal, scope);
   }
@@ -1367,6 +1369,31 @@ function compareVectorLiteralMasks(
     }
   }
   return undefined;
+}
+
+function compareDecimalLiteralMasks(
+  op: CompareOp,
+  vector: Extract<Vector, { type: "decimal" }>,
+  literal: Scalar,
+  scope?: MemoryScope,
+): Uint8Array {
+  const count = vector.values.length;
+  const mask = admitVectorBuffer(scope, count, () => new Uint8Array(count));
+  // Empty/all-null inputs never evaluate the literal, matching row semantics.
+  let first = 0;
+  while (first < count && vector.valid?.[first] === 0) mask[first++] = 2;
+  if (first === count) return mask;
+  return withDecimalComparisonOperand(literal, scope, (operand) =>
+    withPreparedDecimalComparison(operand, scope, (compare) => {
+      for (let index = first; index < count; index++) {
+        mask[index] =
+          vector.valid?.[index] === 0
+            ? 2
+            : sqlMaskValue(compareOrder(op, compare(requireDecimalValue(vector.values[index]))));
+      }
+      return mask;
+    }),
+  );
 }
 
 function compareDictLiteralMasks(

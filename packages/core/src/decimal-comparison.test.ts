@@ -1,6 +1,10 @@
 import { expect, it } from "vitest";
 import { compareDecimalOperands } from "./decimal-comparison.js";
-import { decimalFromParts } from "./decimal-value.js";
+import {
+  compareDecimalValues,
+  decimalFromParts,
+  withPreparedDecimalComparison,
+} from "./decimal-value.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope } from "./memory-scope.js";
 
@@ -75,5 +79,33 @@ it("rejects nonnumeric and nonfinite operands without conversion hooks", () => {
   for (const value of [NaN, Infinity, -Infinity, "1", true, {}, null, undefined]) {
     expect(() => compareDecimalOperands(decimal, value)).toThrow(/finite numeric/);
     expect(() => compareDecimalOperands(value, decimal)).toThrow(/finite numeric/);
+  }
+});
+
+it("reuses prepared digit storage while preserving sign, scale and equality ordering", () => {
+  for (const coefficient of [-1230n, 1230n]) {
+    const literal = decimalFromParts(coefficient, 3);
+    const scope = new MemoryScope(new MemoryBudget(65536));
+    withPreparedDecimalComparison(literal, scope, (compare) => {
+      let retained: number | undefined;
+      for (const scale of [0, 2, 3, 1000, Number.MAX_SAFE_INTEGER]) {
+        for (const coefficient of [-123n, -1230n, 0n, 123n, 1230n]) {
+          const value = decimalFromParts(coefficient, scale);
+          expect(compare(value)).toBe(compareDecimalValues(value, literal));
+        }
+        retained ??= scope.budget.usedBytes;
+        expect(scope.budget.usedBytes).toBe(retained);
+      }
+      return 0;
+    });
+    expect(scope.budget.usedBytes).toBe(0);
+    expect(() =>
+      withPreparedDecimalComparison(literal, scope, (compare) => {
+        compare(decimalFromParts(coefficient, 2));
+        throw new Error("consumer failure");
+      }),
+    ).toThrow("consumer failure");
+    expect(scope.budget.usedBytes).toBe(0);
+    scope.dispose();
   }
 });

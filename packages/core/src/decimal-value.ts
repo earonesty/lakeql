@@ -1,5 +1,6 @@
 import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
+import type { MemoryReservation } from "./memory-budget.js";
 import type { MemoryScope } from "./memory-scope.js";
 import { decimalStringAllocationBytes } from "./scalar-allocation.js";
 
@@ -107,10 +108,10 @@ export function compareDecimalValues(
   right: DecimalValue,
   scope?: MemoryScope,
 ): -1 | 0 | 1 {
+  const direct = directDecimalOrder(left, right);
+  if (direct !== undefined) return direct;
   const a = left.coefficient;
   const b = right.coefficient;
-  if (left.scale === right.scale || a === 0n || b === 0n || a < 0n !== b < 0n)
-    return a < b ? -1 : a > b ? 1 : 0;
   const admission = scope?.reserve(
     decimalStringAllocationBytes(a) + decimalStringAllocationBytes(b),
     "decimal comparison digits",
@@ -118,24 +119,78 @@ export function compareDecimalValues(
   try {
     const first = String(a);
     const second = String(b);
-    const start = a < 0n ? 1 : 0;
-    const firstExponent = first.length - start - left.scale;
-    const secondExponent = second.length - start - right.scale;
-    let order = firstExponent < secondExponent ? -1 : firstExponent > secondExponent ? 1 : 0;
-    if (order === 0) {
-      const length = Math.max(first.length, second.length);
-      for (let index = start; index < length; index++) {
-        const x = index < first.length ? first.charCodeAt(index) : 48;
-        const y = index < second.length ? second.charCodeAt(index) : 48;
-        if (x !== y) {
-          order = x < y ? -1 : 1;
-          break;
-        }
-      }
-    }
-    if (order === 0) return 0;
-    return (a < 0n ? -order : order) as -1 | 0 | 1;
+    return compareDecimalDigits(left, right, first, second);
   } finally {
     admission?.release();
+  }
+}
+
+function directDecimalOrder(left: DecimalValue, right: DecimalValue): -1 | 0 | 1 | undefined {
+  const a = left.coefficient;
+  const b = right.coefficient;
+  if (left.scale === right.scale || a === 0n || b === 0n || a < 0n !== b < 0n)
+    return a < b ? -1 : a > b ? 1 : 0;
+  return undefined;
+}
+
+function compareDecimalDigits(
+  left: DecimalValue,
+  right: DecimalValue,
+  first: string,
+  second: string,
+): -1 | 0 | 1 {
+  const start = left.coefficient < 0n ? 1 : 0;
+  const firstExponent = first.length - start - left.scale;
+  const secondExponent = second.length - start - right.scale;
+  let order = firstExponent < secondExponent ? -1 : firstExponent > secondExponent ? 1 : 0;
+  if (order === 0) {
+    const length = Math.max(first.length, second.length);
+    for (let index = start; index < length; index++) {
+      const x = index < first.length ? first.charCodeAt(index) : 48;
+      const y = index < second.length ? second.charCodeAt(index) : 48;
+      if (x !== y) {
+        order = x < y ? -1 : 1;
+        break;
+      }
+    }
+  }
+  if (order === 0) return 0;
+  return (left.coefficient < 0n ? -order : order) as -1 | 0 | 1;
+}
+
+/** One borrowed comparator per operation, with lazy fixed-operand text. Neither
+ * the comparator nor its scalar can escape through the callback result. */
+export function withPreparedDecimalComparison<T extends number | Uint8Array>(
+  right: DecimalValue,
+  scope: MemoryScope | undefined,
+  consume: (compare: (left: DecimalValue) => number) => T,
+): T {
+  const state = scope?.reserve(2 * c.object + 4 * c.property, "prepared decimal comparison state");
+  let text: string | undefined;
+  let storage: MemoryReservation | undefined;
+  try {
+    return consume((left) => {
+      const direct = directDecimalOrder(left, right);
+      if (direct !== undefined) return direct;
+      if (text === undefined) {
+        storage = scope?.reserve(
+          decimalStringAllocationBytes(right.coefficient),
+          "prepared decimal digits",
+        );
+        text = String(right.coefficient);
+      }
+      const scratch = scope?.reserve(
+        decimalStringAllocationBytes(left.coefficient),
+        "decimal comparison digits",
+      );
+      try {
+        return compareDecimalDigits(left, right, String(left.coefficient), text);
+      } finally {
+        scratch?.release();
+      }
+    });
+  } finally {
+    storage?.release();
+    state?.release();
   }
 }

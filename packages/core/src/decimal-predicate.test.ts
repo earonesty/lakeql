@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { batchFromColumns, predicateSelection } from "./batch.js";
+import { type Batch, batchFromColumns, predicateSelection } from "./batch.js";
 import { decimalFromParts } from "./decimal-value.js";
 import { evaluate } from "./evaluator.js";
 import { between, col, eq, gt, gte, isIn, lit, lt, lte, ne } from "./expr.js";
@@ -97,4 +97,85 @@ it("rejects nonnumeric decimal coercion in both evaluators", () => {
     expect(() => evaluate(expr, { value })).toThrow(/finite numeric/);
     expect(() => predicateSelection(batch, expr)).toThrow(/finite numeric/);
   }
+});
+
+it("prepares numeric literals once for direct and dictionary decimal vectors", () => {
+  const decimal = decimalFromParts(1n, 1000);
+  for (const dictionary of [false, true]) {
+    const source = batchFromColumns({ value: Array(10000).fill(decimal) });
+    const vector = source.columns.value;
+    if (vector === undefined) throw new Error("missing test vector");
+    const batch: Batch = dictionary
+      ? {
+          rowCount: 10000,
+          columns: { value: { type: "dict", dictionary: vector, indices: new Uint32Array(10000) } },
+        }
+      : source;
+    const scope = new MemoryScope(new MemoryBudget(65536));
+    const reader = vi.spyOn(DataView.prototype, "setFloat64");
+    try {
+      expect(
+        predicateSelection(batch, lt("value", Number.MIN_VALUE), scope).every(
+          (value) => value === 1,
+        ),
+      ).toBe(true);
+      expect(reader).toHaveBeenCalledTimes(1);
+    } finally {
+      reader.mockRestore();
+      scope.dispose();
+    }
+    expect(scope.budget.usedBytes).toBe(0);
+  }
+});
+
+it("preserves all-null, empty, reversed and nullable literal comparison semantics", () => {
+  const decimal = decimalFromParts(1n, 1);
+  for (const values of [[], [decimal, decimal]]) {
+    const batch: Batch = {
+      rowCount: values.length,
+      columns: {
+        value: { type: "decimal", values, valid: new Uint8Array(values.length) },
+      },
+    };
+    expect(Array.from(predicateSelection(batch, eq("value", "invalid")))).toEqual(
+      values.map(() => 2),
+    );
+  }
+  const values = [null, decimal, null, decimalFromParts(5n, 1)];
+  const batch = batchFromColumns({ value: values });
+  for (const make of [eq, ne, lt, lte, gt, gte]) {
+    for (const expr of [make("value", 0.1), make(lit(0.1), col("value"))]) {
+      expect(Array.from(predicateSelection(batch, expr))).toEqual(
+        values.map((value) => {
+          const expected = evaluate(expr, { value });
+          return expected === null ? 2 : expected ? 1 : 0;
+        }),
+      );
+    }
+  }
+});
+
+it("admits one prepared literal with the output and rolls back callback failures", () => {
+  const batch = batchFromColumns({ value: Array(1000).fill(decimalFromParts(1n, 1000)) });
+  const expr = lt("value", Number.MIN_VALUE);
+  const scope = new MemoryScope(new MemoryBudget(65536));
+  predicateSelection(batch, expr, scope);
+  const peak = scope.budget.peakBytes;
+  expect(scope.budget.usedBytes).toBe(1000);
+  scope.dispose();
+  const exact = new MemoryScope(new MemoryBudget(peak));
+  expect(predicateSelection(batch, expr, exact).length).toBe(1000);
+  exact.dispose();
+  const tight = new MemoryScope(new MemoryBudget(peak - 1));
+  expect(() => predicateSelection(batch, expr, tight)).toThrow(/budget/i);
+  expect(tight.budget.usedBytes).toBe(0);
+  tight.dispose();
+  const invalid: Batch = {
+    rowCount: 1,
+    columns: { value: { type: "decimal", values: new Array(1) } },
+  };
+  const rejected = new MemoryScope(new MemoryBudget(65536));
+  expect(() => predicateSelection(invalid, expr, rejected)).toThrow(/decimal vector/);
+  expect(rejected.budget.usedBytes).toBe(0);
+  rejected.dispose();
 });

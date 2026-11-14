@@ -8,9 +8,14 @@ import type { MemoryScope } from "./memory-scope.js";
 export function compareDecimalOperands(left: unknown, right: unknown, scope?: MemoryScope): number {
   if (isDecimalValue(left) && isDecimalValue(right))
     return compareDecimalValues(left, right, scope);
-  if (isDecimalValue(left)) return compareNumeric(left, right, scope);
+  if (isDecimalValue(left))
+    return withDecimalComparisonOperand(right, scope, (value) =>
+      compareDecimalValues(left, value, scope),
+    );
   if (isDecimalValue(right)) {
-    const order = compareNumeric(right, left, scope);
+    const order = withDecimalComparisonOperand(left, scope, (value) =>
+      compareDecimalValues(right, value, scope),
+    );
     return order === 0 ? 0 : -order;
   }
   throw invalidOperand();
@@ -18,11 +23,18 @@ export function compareDecimalOperands(left: unknown, right: unknown, scope?: Me
 
 const scalarBytes = c.object + 2 * c.property;
 
-function compareNumeric(decimal: DecimalValue, value: unknown, scope?: MemoryScope): number {
+/** Synchronous borrowed operand. Conversion workspace remains admitted until
+ * consume returns; its result cannot expose the temporary decimal scalar. */
+export function withDecimalComparisonOperand<T extends number | Uint8Array>(
+  value: unknown,
+  scope: MemoryScope | undefined,
+  consume: (value: DecimalValue) => T,
+): T {
+  if (isDecimalValue(value)) return consume(value);
   if (typeof value === "bigint") {
     const scratch = scope?.reserve(scalarBytes, "borrowed integer decimal comparison");
     try {
-      return compareDecimalValues(decimal, new DecimalValue(value, 0), scope);
+      return consume(new DecimalValue(value, 0));
     } finally {
       scratch?.release();
     }
@@ -34,7 +46,7 @@ function compareNumeric(decimal: DecimalValue, value: unknown, scope?: MemorySco
     const bytes = Number.isSafeInteger(value) ? 8 : 128;
     const scratch = scope?.reserve(scalarBytes + c.bigint + bytes, "integer decimal comparison");
     try {
-      return compareDecimalValues(decimal, new DecimalValue(BigInt(value), 0), scope);
+      return consume(new DecimalValue(BigInt(value), 0));
     } finally {
       scratch?.release();
     }
@@ -57,7 +69,7 @@ function compareNumeric(decimal: DecimalValue, value: unknown, scope?: MemorySco
       const significand = biasedExponent === 0 ? fraction : fraction | (1n << 52n);
       const magnitude = significand * 5n ** BigInt(scale);
       const coefficient = high >>> 31 ? -magnitude : magnitude;
-      return compareDecimalValues(decimal, new DecimalValue(coefficient, scale), scope);
+      return consume(new DecimalValue(coefficient, scale));
     } finally {
       scratch?.release();
     }

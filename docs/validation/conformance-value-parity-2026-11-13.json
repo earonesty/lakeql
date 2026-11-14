@@ -506,5 +506,35 @@
     "cloudEvidence": "The existing 64/128 MiB native R2 concurrency tests now combine exact decimal equality with a numeric integer threshold. Clean npm-install smoke also filters the real shredded fixture with an ordinary numeric literal. HTTP checks include both 206 and ignored-range 200 responses.",
     "measurement": "10000 scalar comparisons measured about 1.8 ms for safe integer zero, 12 ms for numeric 0.1, 153 ms for the smallest subnormal, 30 ms for the largest finite number, and 3.1 ms for bigint. Tracked peak workspace ranged from 264 to 5816 bytes. Timing includes assertions and repeated conversion; these are local kernel measurements, not cloud throughput or total heap.",
     "next": "Prepare repeated numeric literals once per bounded batch: the subnormal measurement exposes repeated exponentiation cost. General sorting/grouping/aggregate/arithmetic integration, ordinary high-precision vectors and broader allocation coverage remain unfinished. Native BigInt implementation scratch/GC remains outside explicit reservation accounting."
+  },
+  "preparedDecimalLiterals": {
+    "change": "Direct and dictionary decimal-vector predicates prepare numeric literals once per mask operation. A shared synchronous operand callback keeps conversion workspace admitted for the operation; a prepared comparator lazily sizes and formats the literal coefficient once. The original and prepared comparison paths share the same sign/scale/digit-order kernel. All retained literal text and preparation state release on success or failure.",
+    "evidence": "../benchmarks/decimal-literal-preparation-2026-11-13.json",
+    "intermediateEvidence": "../benchmarks/decimal-literal-conversion-only-2026-11-13.json",
+    "validation": {
+      "defaultPassed": 2935,
+      "defaultSkipped": 629,
+      "workerPassed": 61,
+      "build": "passed",
+      "typecheck": "passed",
+      "lint": "passed",
+      "cleanNpmInstall": "passed",
+      "referencePassed": 104,
+      "conformancePassed": 511,
+      "conformanceFailed": 6,
+      "conformanceSkipped": 1,
+      "compatibility": "passed",
+      "trackedFileSizes": "passed"
+    },
+    "edgeCases": [
+      "A 10000-row direct vector and dictionary vector each decode the numeric literal exactly once.",
+      "All six operators, either operand orientation, nulls, empty/all-null decimal vectors and invalid literals preserve evaluation semantics.",
+      "Positive and negative prepared literals agree with the original comparator across equal/different scales, zero and MAX_SAFE_INTEGER scale.",
+      "Repeated comparisons retain constant literal storage; callback exceptions release both state and cached text.",
+      "Exact peak capacity succeeds; one-byte-short and malformed-vector failures leave zero reservations."
+    ],
+    "measurement": "For 10000 comparisons, prepared vectors measured 1.5\u20131.6 ms versus a same-process scalar-conversion reference loop at about 13 ms for 0.1, 154 ms for the smallest subnormal and 30 ms for the largest finite number. Conversion-only preparation left the subnormal case at 134 ms; eliminating repeated digit sizing/formatting reduced it to 1.5 ms. Tracked scratch remains independent of row count, with 384 bytes of additional preparation state; the measured subnormal peak scratch is 6200 bytes beyond the mask.",
+    "cloudEvidence": "Existing binary/shredded real fixtures continue to exercise mixed numeric and exact decimal predicates over HTTP range/ignored-range responses, concurrent local workerd native R2 at 64/128 MiB, and clean npm installation.",
+    "limits": "Controlled local comparison, not an archived revision speedup or production Cloudflare throughput/heap claim. The fast path covers explicit direct/dictionary decimal vector shapes; mixed union and computed-expression operands retain the correct generic path. Broad allocation accounting, generic sorting/grouping/aggregate/arithmetic integration and ordinary high-precision vectors remain unfinished."
   }
 }
