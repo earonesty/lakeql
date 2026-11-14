@@ -1,0 +1,229 @@
+{
+  "runtimeSourceCommit": "8c3fda431725f80fb1e6691dc40d8b792c077997",
+  "requirements": ["F5", "M2", "V2"],
+  "harness": "bench/top-k-key-cache-shapes.mjs",
+  "command": "LAKEQL_KEY_CACHE_MATRIX=cardinality LAKEQL_KEY_CACHE_REPORT=<artifact> node bench/top-k-key-cache-shapes.mjs",
+  "artifacts": [
+    "docs/benchmarks/top-k-key-cache-cardinality-2026-11-14.json",
+    "docs/benchmarks/top-k-key-cache-cardinality-repeat-2026-11-14.json"
+  ],
+  "matrix": {
+    "runs": 2,
+    "scenariosPerRun": 72,
+    "dictionaryCardinalities": [64, 1024, 10000],
+    "selectedRows": [10000, 1000, 100],
+    "sourceRows": 10000,
+    "keyColumns": [1, 2],
+    "widthBytes": [32, 256],
+    "limits": [3, 100],
+    "nullOrdering": "last on both keys",
+    "directions": "first ascending, second descending",
+    "warmupsPerVariant": 2,
+    "measuredSamplesPerVariant": 6,
+    "variantOrder": "alternating"
+  },
+  "checks": [
+    "Each run verifies 1152 timed iterations and 72 exact-direct-cap successes against an independent stable-sort oracle.",
+    "Each run also verifies 72 expected LAKEQL_BUDGET_EXCEEDED cache-preparation failures at those exact direct capacities.",
+    "Every successful or failed trial releases all charged reservations.",
+    "Dictionary caches decode unique dictionary values; the source backing, indices, validity and selection mask remain charged throughout."
+  ],
+  "summary": [
+    {
+      "dictionaryCardinality": 64,
+      "selectedRows": 10000,
+      "runs": [
+        {
+          "cachedFaster": 8,
+          "cases": 8,
+          "medianSpeedupRatio": 4.063020254278598,
+          "minSpeedupRatio": 3.255612792197282,
+          "maxSpeedupRatio": 4.503019238670112
+        },
+        {
+          "cachedFaster": 8,
+          "cases": 8,
+          "medianSpeedupRatio": 3.923718737019187,
+          "minSpeedupRatio": 3.0211624011185427,
+          "maxSpeedupRatio": 4.932422910464805
+        }
+      ]
+    },
+    {
+      "dictionaryCardinality": 64,
+      "selectedRows": 1000,
+      "runs": [
+        {
+          "cachedFaster": 8,
+          "cases": 8,
+          "medianSpeedupRatio": 2.9996222137502464,
+          "minSpeedupRatio": 2.3879448279088695,
+          "maxSpeedupRatio": 3.9079455645873735
+        },
+        {
+          "cachedFaster": 8,
+          "cases": 8,
+          "medianSpeedupRatio": 3.1051708805758844,
+          "minSpeedupRatio": 2.2299412596093293,
+          "maxSpeedupRatio": 4.036294376926086
+        }
+      ]
+    },
+    {
+      "dictionaryCardinality": 64,
+      "selectedRows": 100,
+      "runs": [
+        {
+          "cachedFaster": 8,
+          "cases": 8,
+          "medianSpeedupRatio": 1.8067965173077987,
+          "minSpeedupRatio": 1.1894732015570593,
+          "maxSpeedupRatio": 3.347359534205773
+        },
+        {
+          "cachedFaster": 8,
+          "cases": 8,
+          "medianSpeedupRatio": 2.0134530361512937,
+          "minSpeedupRatio": 1.153677127341962,
+          "maxSpeedupRatio": 2.8808561139305247
+        }
+      ]
+    },
+    {
+      "dictionaryCardinality": 1024,
+      "selectedRows": 10000,
+      "runs": [
+        {
+          "cachedFaster": 8,
+          "cases": 8,
+          "medianSpeedupRatio": 3.2105707052956527,
+          "minSpeedupRatio": 2.640502032376363,
+          "maxSpeedupRatio": 3.591976681739109
+        },
+        {
+          "cachedFaster": 8,
+          "cases": 8,
+          "medianSpeedupRatio": 3.3138487705154174,
+          "minSpeedupRatio": 2.8805223429717706,
+          "maxSpeedupRatio": 3.7042862600102646
+        }
+      ]
+    },
+    {
+      "dictionaryCardinality": 1024,
+      "selectedRows": 1000,
+      "runs": [
+        {
+          "cachedFaster": 8,
+          "cases": 8,
+          "medianSpeedupRatio": 2.160575593280736,
+          "minSpeedupRatio": 1.0455118066072806,
+          "maxSpeedupRatio": 3.053442492325021
+        },
+        {
+          "cachedFaster": 8,
+          "cases": 8,
+          "medianSpeedupRatio": 2.243022921083527,
+          "minSpeedupRatio": 1.1259871217180488,
+          "maxSpeedupRatio": 3.015188117162854
+        }
+      ]
+    },
+    {
+      "dictionaryCardinality": 1024,
+      "selectedRows": 100,
+      "runs": [
+        {
+          "cachedFaster": 4,
+          "cases": 8,
+          "medianSpeedupRatio": 0.8957629119265804,
+          "minSpeedupRatio": 0.43787545566767266,
+          "maxSpeedupRatio": 1.7477076482377714
+        },
+        {
+          "cachedFaster": 4,
+          "cases": 8,
+          "medianSpeedupRatio": 0.8752433535571832,
+          "minSpeedupRatio": 0.4292232210305345,
+          "maxSpeedupRatio": 1.679851893004207
+        }
+      ]
+    },
+    {
+      "dictionaryCardinality": 10000,
+      "selectedRows": 10000,
+      "runs": [
+        {
+          "cachedFaster": 8,
+          "cases": 8,
+          "medianSpeedupRatio": 1.4778344957827405,
+          "minSpeedupRatio": 1.0349254683335665,
+          "maxSpeedupRatio": 2.525673024607479
+        },
+        {
+          "cachedFaster": 8,
+          "cases": 8,
+          "medianSpeedupRatio": 1.6747353516746362,
+          "minSpeedupRatio": 1.1105825566187206,
+          "maxSpeedupRatio": 2.0369575746941835
+        }
+      ]
+    },
+    {
+      "dictionaryCardinality": 10000,
+      "selectedRows": 1000,
+      "runs": [
+        {
+          "cachedFaster": 2,
+          "cases": 8,
+          "medianSpeedupRatio": 0.5920741821327904,
+          "minSpeedupRatio": 0.21630937502601694,
+          "maxSpeedupRatio": 1.74237805804456
+        },
+        {
+          "cachedFaster": 3,
+          "cases": 8,
+          "medianSpeedupRatio": 0.6873270845059846,
+          "minSpeedupRatio": 0.22948131682528283,
+          "maxSpeedupRatio": 1.4878347397947984
+        }
+      ]
+    },
+    {
+      "dictionaryCardinality": 10000,
+      "selectedRows": 100,
+      "runs": [
+        {
+          "cachedFaster": 0,
+          "cases": 8,
+          "medianSpeedupRatio": 0.2518971524549527,
+          "minSpeedupRatio": 0.07520450769041588,
+          "maxSpeedupRatio": 0.7270674555691805
+        },
+        {
+          "cachedFaster": 0,
+          "cases": 8,
+          "medianSpeedupRatio": 0.2651359835183359,
+          "minSpeedupRatio": 0.07100705153966157,
+          "maxSpeedupRatio": 0.5720324031895675
+        }
+      ]
+    }
+  ],
+  "decision": [
+    "Reject eager whole-dictionary preparation as a universal default: 10000-entry dictionaries with 100 selected rows lose all eight cases in both runs.",
+    "Keep direct access as the required low-memory fallback: all 144 exact-direct-cap cache trials reject while direct execution succeeds. A fit-only rule would also select slower caches in sparse high-cardinality cases.",
+    "Small-dictionary preparation remains a credible optional/adaptive optimization: all 24 cases with 64 dictionary values win in each run.",
+    "Do not infer a universal cardinality threshold from timing alone; one of 72 winners flips between runs. An adaptive production path must also respect selected work, ordering/monotonicity, currently available capacity and output overlap."
+  ],
+  "remaining": [
+    "Evaluate a bounded preparation strategy that avoids decoding unused dictionary entries and declines optional storage without turning a successful direct query into a failure.",
+    "Verify any adopted strategy with cancellation, shared-pool concurrent jobs, pinned cache/output and real fixture routes.",
+    "Gather/operator bookkeeping and whole-runtime headroom remain separate acceptance requirements."
+  ],
+  "limitations": [
+    "Sequential Node operator measurements; no cloud-latency, async-concurrency or whole-isolate memory claim.",
+    "Modeled allocation excludes runtime/GC and source/oracle construction; Unicode cache strings use a conservative UTF16 upper bound based on UTF8 bytes.",
+    "No production runtime/default changed. Existing build and regular/Worker test evidence remains current for runtime 1edbbe5."
+  ]
+}

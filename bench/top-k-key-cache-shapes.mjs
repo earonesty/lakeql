@@ -35,7 +35,7 @@ function source(pool, config) {
       ).value,
     });
     for (let key = 0; key < config.keys; key++) {
-      const count = config.shape === "dictionary" ? 64 : config.rows;
+      const count = config.shape === "dictionary" ? (config.cardinality ?? 64) : config.rows;
       const data = scope.allocate(
         c.view + count * config.width,
         "packed source keys",
@@ -127,7 +127,7 @@ function decodeKeys(input, scope, keys) {
   };
 }
 function expected(config, order) {
-  const count = config.shape === "dictionary" ? 64 : config.rows;
+  const count = config.shape === "dictionary" ? (config.cardinality ?? 64) : config.rows;
   return Array.from({ length: config.rows }, (_, id) => {
     const row = { id };
     for (let key = 0; key < config.keys; key++)
@@ -135,6 +135,7 @@ function expected(config, order) {
         id % (key ? 11 : 7) === 0 ? null : text((id * (key ? 31 : 17)) % count, config.width);
     return row;
   })
+    .filter((row) => row.id % (config.selectionStride ?? 1) === 0)
     .sort((a, b) => {
       for (const term of order) {
         const x = a[term.column],
@@ -148,22 +149,33 @@ function expected(config, order) {
     })
     .slice(0, config.limit);
 }
-function run(config, cached, oracle, order) {
-  const pool = new MemoryBudget(64 * 1024 * 1024);
+function run(config, cached, oracle, order, cap = 64 * 1024 * 1024) {
+  const pool = new MemoryBudget(cap);
   const input = source(pool, config);
-  const baseline = pool.usedBytes;
   const scope = new MemoryScope(pool);
   const outputs = [];
   let prepared;
-  const start = performance.now();
+  let baseline;
   try {
+    const selection =
+      (config.selectionStride ?? 1) === 1
+        ? undefined
+        : scope.allocate(c.view + config.rows, "fixture selection", () =>
+            Uint8Array.from({ length: config.rows }, (_, row) =>
+              row % config.selectionStride === 0 ? 1 : 0,
+            ),
+          ).value;
+    baseline = pool.usedBytes;
+    const start = performance.now();
     if (cached) prepared = decodeKeys(input, scope, config.keys);
     for (let job = 0; job < config.reuse; job++)
-      outputs.push(vectorTopKOwnedBatch(prepared?.input ?? input, order, { limit: config.limit }));
+      outputs.push(
+        vectorTopKOwnedBatch(prepared?.input ?? input, order, { limit: config.limit }, selection),
+      );
     const elapsedMs = performance.now() - start;
     const incrementalPeak = pool.peakBytes - baseline;
     for (const output of outputs) assert.deepEqual(materializeBatchRows(output.value), oracle);
-    return { elapsedMs, incrementalPeak, decodedValues: prepared?.decodedValues ?? null };
+    return { elapsedMs, baseline, incrementalPeak, decodedValues: prepared?.decodedValues ?? null };
   } finally {
     for (const output of outputs) output.release();
     prepared?.input.release();
@@ -172,53 +184,90 @@ function run(config, cached, oracle, order) {
     assert.equal(pool.usedBytes, 0);
   }
 }
+const matrix = process.env.LAKEQL_KEY_CACHE_MATRIX ?? "shapes";
+assert.ok(["shapes", "cardinality"].includes(matrix));
+function* scenarios() {
+  if (matrix === "cardinality") {
+    for (const cardinality of [64, 1024, 10000])
+      for (const selectionStride of [1, 10, 100])
+        for (const keys of [1, 2])
+          for (const width of [32, 256])
+            for (const limit of [3, 100])
+              yield {
+                shape: "dictionary",
+                keys,
+                width,
+                limit,
+                reuse: 1,
+                nulls: "last",
+                rows: 10000,
+                cardinality,
+                selectionStride,
+              };
+    return;
+  }
+  for (const shape of ["packed", "dictionary"])
+    for (const keys of [1, 2])
+      for (const width of [32, 256])
+        for (const limit of [3, 100])
+          for (const reuse of [1, 4])
+            for (const nulls of ["first", "last"])
+              yield { shape, keys, width, limit, reuse, nulls, rows: 10000 };
+}
 const results = [];
-for (const shape of ["packed", "dictionary"])
-  for (const keys of [1, 2])
-    for (const width of [32, 256])
-      for (const limit of [3, 100])
-        for (const reuse of [1, 4])
-          for (const nulls of ["first", "last"]) {
-            const config = { shape, keys, width, limit, reuse, nulls, rows: 10000 };
-            const order = Array.from({ length: keys }, (_, key) => ({
-              column: `key${key}`,
-              direction: key ? "desc" : "asc",
-              nulls: key ? "last" : nulls,
-            }));
-            const oracle = expected(config, order);
-            const samples = { direct: [], cached: [] };
-            for (let round = 0; round < 8; round++) {
-              for (const cached of round % 2 ? [true, false] : [false, true]) {
-                const observation = run(config, cached, oracle, order);
-                if (round >= 2) samples[cached ? "cached" : "direct"].push(observation);
-              }
-            }
-            const variants = Object.fromEntries(
-              Object.entries(samples).map(([name, observations]) => {
-                const sorted = observations.map((sample) => sample.elapsedMs).sort((a, b) => a - b);
-                return [
-                  name,
-                  {
-                    medianMs: (sorted[2] + sorted[3]) / 2,
-                    incrementalPeak: Math.max(
-                      ...observations.map((sample) => sample.incrementalPeak),
-                    ),
-                    decodedValues: observations[0].decodedValues,
-                    samplesMs: observations.map((sample) => sample.elapsedMs),
-                  },
-                ];
-              }),
-            );
-            results.push({ ...config, variants });
-          }
+for (const config of scenarios()) {
+  const { keys, nulls } = config;
+  const order = Array.from({ length: keys }, (_, key) => ({
+    column: `key${key}`,
+    direction: key ? "desc" : "asc",
+    nulls: key ? "last" : nulls,
+  }));
+  const oracle = expected(config, order);
+  const samples = { direct: [], cached: [] };
+  for (let round = 0; round < 8; round++) {
+    for (const cached of round % 2 ? [true, false] : [false, true]) {
+      const observation = run(config, cached, oracle, order);
+      if (round >= 2) samples[cached ? "cached" : "direct"].push(observation);
+    }
+  }
+  const variants = Object.fromEntries(
+    Object.entries(samples).map(([name, observations]) => {
+      const sorted = observations.map((sample) => sample.elapsedMs).sort((a, b) => a - b);
+      return [
+        name,
+        {
+          medianMs: (sorted[2] + sorted[3]) / 2,
+          incrementalPeak: Math.max(...observations.map((sample) => sample.incrementalPeak)),
+          decodedValues: observations[0].decodedValues,
+          samplesMs: observations.map((sample) => sample.elapsedMs),
+        },
+      ];
+    }),
+  );
+  let pressure;
+  if (matrix === "cardinality") {
+    const exactDirectCap = samples.direct[0].baseline + variants.direct.incrementalPeak;
+    run(config, false, oracle, order, exactDirectCap);
+    let cacheFits = true;
+    try {
+      run(config, true, oracle, order, exactDirectCap);
+    } catch (error) {
+      assert.equal(error.code, "LAKEQL_BUDGET_EXCEEDED");
+      cacheFits = false;
+    }
+    pressure = { exactDirectCap, directFits: true, cacheFits };
+  }
+  results.push({ ...config, variants, ...(pressure ? { pressure } : {}) });
+}
 const report = {
   sourceCommit: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
   node: process.version,
+  matrix,
   harnessSha256: createHash("sha256")
     .update(readFileSync(import.meta.filename))
     .digest("hex"),
   description:
-    "Unicode nullable packed and dictionary keys; one/two ordering terms, widths 32/256, k 3/100, one/four selections sharing preparation with all results retained. Two warmups/six samples, alternating variant order. Cache construction included, fixture construction and independent stable-sort oracle excluded. 64 MiB modeled pool; dictionaries decode unique values only.",
+    "Matrix shapes uses Unicode nullable packed and dictionary keys; one/two ordering terms, widths 32/256, k 3/100, one/four selections sharing preparation with all results retained. Two warmups/six samples, alternating variant order. Cache construction included, fixture construction and independent stable-sort oracle excluded. 64 MiB modeled pool; dictionaries decode unique values only. Matrix cardinality varies dictionary size 64/1024/10000 and selection stride 1/10/100 at one selection per preparation, nulls last, with exact-direct-cap pressure trials.",
   limitations: [
     "Sequential synchronous Node selections with retained outputs model reuse/overlap, not asynchronous cloud jobs.",
     "Unicode allocation uses a conservative UTF16 upper bound derived from UTF8 bytes; runtime/native/GC overhead and oracle memory are outside reservation accounting.",
