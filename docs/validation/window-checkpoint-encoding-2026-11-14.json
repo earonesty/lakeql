@@ -1,0 +1,43 @@
+{
+  "requirements": ["F2", "F4", "M1", "M2", "V3"],
+  "status": "Window checkpoint snapshot and encoding admission integrated; full acceptance remains open",
+  "implementation": [
+    "Scoped window snapshots reuse snapshotOwnedRows; scoped encoding reuses encodeOwnedCheckpoint and preserves the stable checkpoint byte format.",
+    "Spilled run snapshots and encoded buffers use a per-run scope held through the awaited write, then release before the next run. Run-reference records and final checkpoint bytes remain admitted through final consumption.",
+    "Checkpoint collection now separates backend result lifetime from input lifetime. Once the generic collector owns detached output, backend records and computed values release before serialization; input rows remain pinned for the snapshot.",
+    "Checkpoint writes check cancellation and query counters/time before run work and after awaited writes. A cancellation during either a run write or final manifest write rejects instead of returning success; buffers remain charged until the write settles."
+  ],
+  "validation": {
+    "default": {
+      "passed": 3292,
+      "skipped": 629
+    },
+    "newCheckpointCases": 6,
+    "cases": [
+      "Stable-byte parity for Unicode, escaping, bigint, binary and null snapshots",
+      "Measured exact snapshot/encoding peak succeeds and one byte below rejects",
+      "Run bytes remain admitted during delayed successful and failed writes",
+      "Cancellation during a run write and final checkpoint write rejects and releases reservations",
+      "Oversized runs reject before the spill writer is invoked",
+      "Existing large computed-window checkpoint verifies 64 KiB rejection and 128 KiB success once JSON encoding overlap is charged"
+    ],
+    "build": "pnpm exec tsc -b passed before runtime tests",
+    "limitations": "Coverage, external conformance, full packaging and performance measurements were not rerun; prior revision evidence remains linked.",
+    "worker": {
+      "passed": 75,
+      "scope": "Full local workerd suite includes Parquet windowState routes with shared 64/128 MiB pools"
+    },
+    "reference": {
+      "passed": 104
+    },
+    "typecheck": "pnpm typecheck passed",
+    "lint": "pnpm lint passed"
+  },
+  "remainingAcceptance": [
+    "Window state restoration, spill reads and JSON parsing still require owned decoding integration.",
+    "Window planning and frame-bound expression workspace, delegated task intermediate output and other operator/source gaps remain open.",
+    "Completed spill objects may remain stored after cancellation or failure; this change accounts for in-flight encoding, not transactional spill deletion or adapter-owned storage.",
+    "The complete concurrent mixed-job and adaptive scheduling acceptance matrix remains open.",
+    "Admission units do not establish total VM heap, external backing, RSS or production Cloudflare memory limits."
+  ]
+}

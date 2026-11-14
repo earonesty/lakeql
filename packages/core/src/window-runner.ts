@@ -1,6 +1,7 @@
 import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { predicateSelection, selectedRowCount } from "./batch.js";
 import { BufferMemory } from "./buffer-memory.js";
+import { LakeqlError } from "./errors.js";
 import { matches } from "./evaluator.js";
 import { materializeOwnedBatchRows } from "./materialization-plan.js";
 import { MemoryBudget } from "./memory-budget.js";
@@ -154,15 +155,16 @@ export async function executeWindowWithState(
       await collectWindowRuns(options, runs, startedAt, retainedScope);
     }
 
+    const windowScope = retainedScope.childScope();
     const batches =
       windowOptions.spill === undefined
         ? windowedQueryBatches({
-            ...windowBatchOptions(options, startedAt, retainedScope),
+            ...windowBatchOptions(options, startedAt, windowScope),
             retainOutput,
             matched: matched ?? [],
           })
         : windowedRunQueryBatches({
-            ...windowBatchOptions(options, startedAt, retainedScope),
+            ...windowBatchOptions(options, startedAt, windowScope),
             retainOutput,
             runs,
           });
@@ -170,16 +172,33 @@ export async function executeWindowWithState(
       /* Ownership is retained before each yield. */
     }
     collected = collector.finish();
+    // The collector owns detached output; backend result records and values no
+    // longer need to overlap checkpoint serialization. Input rows remain pinned.
+    windowScope.dispose();
     const rows = collected.value;
 
+    const checkCheckpoint = () => {
+      if (config.budget.signal?.aborted)
+        throw new LakeqlError("LAKEQL_ABORTED", "Window checkpoint aborted");
+      options.enforceBudget(config.budget, options.stats, config.now, startedAt);
+    };
+    checkCheckpoint();
     const state =
       windowOptions.spill === undefined
-        ? windowOperatorState(windows, matched ?? [])
-        : await windowOperatorStateFromRuns(windows, runs, windowOptions.spill, spillId);
-    const operatorState = serializeWindowOperatorState(state);
+        ? windowOperatorState(windows, matched ?? [], retainedScope)
+        : await windowOperatorStateFromRuns(
+            windows,
+            runs,
+            windowOptions.spill,
+            spillId,
+            retainedScope,
+            checkCheckpoint,
+          );
+    const operatorState = serializeWindowOperatorState(state, retainedScope);
     const result: WindowResult = { rows, operatorState };
     if (windowOptions.spill !== undefined) {
       result.operatorSpill = await windowOptions.spill.write(spillId, operatorState);
+      checkCheckpoint();
     }
     return result;
   } finally {

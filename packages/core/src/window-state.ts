@@ -1,6 +1,10 @@
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
 import { jsonSafeValue } from "./evaluator.js";
 import { stableStringify } from "./manifest.js";
+import type { MemoryScope } from "./memory-scope.js";
+import { encodeOwnedCheckpoint } from "./owned-checkpoint-encoding.js";
+import { snapshotOwnedRows } from "./owned-snapshot-rows.js";
 import type { SpillAdapter, SpillRef } from "./runtime.js";
 import type { Row } from "./types.js";
 import type { WindowExpr } from "./window.js";
@@ -31,8 +35,21 @@ export type WindowRunState =
   | { rows: Record<string, WindowSnapshotValue>[] }
   | { spillRef: string; rowCount: number; byteSize: number };
 
-export function serializeWindowOperatorState(state: WindowOperatorState): Uint8Array {
-  return new TextEncoder().encode(stableStringify(state));
+export function serializeWindowOperatorState(
+  state: WindowOperatorState,
+  scope?: MemoryScope,
+): Uint8Array {
+  return encodeWindowState(state, scope);
+}
+
+function encodeWindowState(value: unknown, scope?: MemoryScope): Uint8Array {
+  if (scope === undefined) return new TextEncoder().encode(stableStringify(value));
+  const owner = encodeOwnedCheckpoint(value, scope);
+  try {
+    return owner.value;
+  } finally {
+    owner.release();
+  }
 }
 
 export function deserializeWindowOperatorState(
@@ -91,12 +108,19 @@ export async function windowRowsFromState(
 export function windowOperatorState(
   windows: Record<string, WindowExpr>,
   rows: Row[],
+  scope?: MemoryScope,
 ): WindowOperatorState {
-  return {
+  const create = (): WindowOperatorState => ({
     version: 1,
     windows,
-    rows: rows.map(snapshotRecord),
-  };
+    rows:
+      scope === undefined
+        ? rows.map(snapshotRecord)
+        : scope.adopt(snapshotOwnedRows(rows, scope)).value,
+  });
+  return scope === undefined
+    ? create()
+    : scope.allocate(c.object + 3 * c.property, "window checkpoint state", create).value;
 }
 
 export async function windowOperatorStateFromRuns(
@@ -104,19 +128,56 @@ export async function windowOperatorStateFromRuns(
   runs: readonly Row[][],
   spill: SpillAdapter | undefined,
   spillId: string,
+  scope?: MemoryScope,
+  check?: () => void,
 ): Promise<WindowOperatorState> {
-  const runStates: WindowRunState[] = [];
+  const runStates: WindowRunState[] =
+    scope === undefined
+      ? []
+      : scope.allocate(
+          c.array + runs.length * c.arraySlot,
+          "window checkpoint runs",
+          () => [] as WindowRunState[],
+        ).value;
   for (const [index, run] of runs.entries()) {
-    const rows = run.map(snapshotRecord);
-    if (spill === undefined) {
-      runStates.push({ rows });
-      continue;
+    const temporary = spill === undefined ? undefined : scope?.childScope();
+    const snapshotScope = temporary ?? scope;
+    try {
+      const rows =
+        snapshotScope === undefined
+          ? run.map(snapshotRecord)
+          : snapshotScope.adopt(snapshotOwnedRows(run, snapshotScope)).value;
+      if (spill === undefined) {
+        runStates.push(
+          scope === undefined
+            ? { rows }
+            : scope.allocate(c.object + c.property, "window inline checkpoint run", () => ({
+                rows,
+              })).value,
+        );
+        continue;
+      }
+      const bytes = encodeWindowState(rows, temporary);
+      const ref = await spill.write(`${spillId}-run-${String(index).padStart(6, "0")}`, bytes);
+      check?.();
+      const create = () => ({ spillRef: ref.id, rowCount: rows.length, byteSize: ref.byteSize });
+      runStates.push(
+        scope === undefined
+          ? create()
+          : scope.allocate(
+              c.object + 3 * c.property + c.string + ref.id.length * c.stringCodeUnit,
+              "window checkpoint spill reference",
+              create,
+            ).value,
+      );
+    } finally {
+      temporary?.dispose();
     }
-    const bytes = serializeWindowRunRows(rows);
-    const ref = await spill.write(`${spillId}-run-${String(index).padStart(6, "0")}`, bytes);
-    runStates.push({ spillRef: ref.id, rowCount: rows.length, byteSize: ref.byteSize });
   }
-  return { version: 1, windows, runs: runStates };
+  const create = (): WindowOperatorState => ({ version: 1, windows, runs: runStates });
+  return scope === undefined
+    ? create()
+    : scope.allocate(c.object + 3 * c.property, "window checkpoint state", create).value;
 }
 
 function validateWindowOperatorState(value: unknown): WindowOperatorState {
@@ -142,10 +203,6 @@ function isWindowOperatorState(value: unknown): value is WindowOperatorState {
       value.runs === undefined) ||
       (value.rows === undefined && Array.isArray(value.runs) && value.runs.every(isWindowRunState)))
   );
-}
-
-function serializeWindowRunRows(rows: Record<string, WindowSnapshotValue>[]): Uint8Array {
-  return new TextEncoder().encode(stableStringify(rows));
 }
 
 function deserializeWindowRunRows(bytes: Uint8Array): Row[] {

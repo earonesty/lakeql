@@ -56,5 +56,6 @@
     "Other documented operator/source gaps and the complete mixed-job/adaptive-scheduling matrix remain open.",
     "Owned output detaches mutable values and may temporarily overlap producer and collector storage. This is admitted overlap, not a claim of minimal copying.",
     "Shared reservations do not establish total VM heap, external backing, RSS or production Cloudflare limits."
-  ]
+  ],
+  "followupEvidence": "docs/validation/window-checkpoint-encoding-2026-11-14.json"
 }

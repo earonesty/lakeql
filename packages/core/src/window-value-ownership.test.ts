@@ -165,9 +165,11 @@ it.each([
   }
 });
 
-it("keeps computed values admitted until checkpoint writes settle", async () => {
+it.each([
+  65536, 131072,
+])("keeps computed values admitted until checkpoint writes settle (cap=%s)", async (cap) => {
   const { memorySpillAdapter } = await import("./runtime.js");
-  const pool = new MemoryBudget(65536);
+  const pool = new MemoryBudget(cap);
   const store = memoryStore();
   await store.put("table", new Uint8Array(1));
   const lake = new Lake({
@@ -204,7 +206,8 @@ it("keeps computed values admitted until checkpoint writes settle", async () => 
   await ready;
   expect(pool.usedBytes).toBeGreaterThanOrEqual(20000);
   finish();
-  expect((await result).rows[0]?.value).toBe("a".repeat(10000));
+  if (cap === 65536) await expect(result).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  else expect((await result).rows[0]?.value).toBe("a".repeat(10000));
   expect(pool.usedBytes).toBe(0);
 });
 
