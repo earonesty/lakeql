@@ -5611,8 +5611,10 @@ async function expandPaths(
   planningCache?: CacheAdapter<ObjectInfo[]>,
   budget: QueryBudget = {},
 ): Promise<ObjectInfo[]> {
+  throwIfAborted(budget.signal);
   const cacheKey = `object-plan:${pattern}`;
   const cached = await planningCache?.get(cacheKey);
+  throwIfAborted(budget.signal);
   if (cached !== undefined) {
     if (budget.maxFiles !== undefined && cached.value.length > budget.maxFiles) {
       throwBudget("files", budget.maxFiles, cached.value.length);
@@ -5622,6 +5624,7 @@ async function expandPaths(
 
   const paths = await expandPathsUncached(store, pattern, budget);
   await planningCache?.set(cacheKey, { value: cloneObjectInfos(paths) });
+  throwIfAborted(budget.signal);
   return paths;
 }
 
@@ -5635,10 +5638,14 @@ async function expandPathsUncached(
       return listMatchingObjects(store, pattern, budget, (path) => path.endsWith(".parquet"));
     }
     const head = await store.head(pattern);
+    throwIfAborted(budget.signal);
     if (!head) {
       throw new LakeqlError("LAKEQL_OBJECT_NOT_FOUND", `No object at ${pattern}`, {
         path: pattern,
       });
+    }
+    if (budget.maxFiles !== undefined && budget.maxFiles < 1) {
+      throwBudget("files", budget.maxFiles, 1);
     }
     const object: ObjectInfo = { path: pattern, size: head.size };
     if (head.etag !== undefined) object.etag = head.etag;
@@ -5657,12 +5664,12 @@ async function listMatchingObjects(
   matchesPath: (path: string) => boolean,
 ): Promise<ObjectInfo[]> {
   const paths: ObjectInfo[] = [];
-  for await (const object of store.list(prefix)) {
+  for await (const object of checkedAsyncIterable(store.list(prefix), budget.signal)) {
     if (!matchesPath(object.path)) continue;
-    paths.push(object);
-    if (budget.maxFiles !== undefined && paths.length > budget.maxFiles) {
-      throwBudget("files", budget.maxFiles, paths.length);
+    if (budget.maxFiles !== undefined && paths.length >= budget.maxFiles) {
+      throwBudget("files", budget.maxFiles, paths.length + 1);
     }
+    paths.push(object);
   }
   if (paths.length === 0) {
     throw new LakeqlError("LAKEQL_NO_FILES_MATCHED", `No files matched ${prefix}`, { prefix });

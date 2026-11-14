@@ -1,0 +1,25 @@
+{
+  "baseCommit": "3100ab2",
+  "scope": "Discovery cancellation and consistent matching-file limits",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 93,
+    "fullSuite": {
+      "passed": 3588,
+      "skipped": 629,
+      "log": "/tmp/discovery-boundaries-full-final.log"
+    }
+  },
+  "evidence": [
+    "Delayed HEAD/cache get/cache set rejects abort before scan planning",
+    "Delayed empty/value listings reject abort and close iterators",
+    "Listing rejects overflow before retaining the over-limit item",
+    "Cold/warm exact-path, glob, and prefix discovery agree at maxFiles zero and one"
+  ],
+  "limits": [
+    "Already-started cache writes may finish before abort is observed",
+    "Discovery-list allocation ownership remains unfinished",
+    "No new cloud runtime memory-cap evidence"
+  ]
+}

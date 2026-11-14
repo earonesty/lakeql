@@ -3587,3 +3587,22 @@ existing externally supplied planning-cache lifetime remains caller-controlled.
 
 Build/typecheck passed; focused suites passed 90 tests; full suite passed 3,579
 with 629 skips. Evidence: `docs/validation/object-info-transport-copy-2026-11-14.json`.
+
+### 2026-11-14 — discovery cancellation and consistent file limits
+
+Discovery checks cancellation before work and after asynchronous cache get/set and
+HEAD settlement. Listings use the shared checked iterator, including empty
+completion and iterator cleanup. Matching listings reject the first over-limit
+object before appending it to retained results. Uncached exact-path planning now
+enforces `maxFiles: 0`, matching cached, glob and prefix discovery; previously the
+exact-path task planner could return one task at that limit.
+
+Delayed HEAD, empty/value LIST, cache get and cache set tests verify cancellation
+before the scan planner runs. Limit tests cover ignored non-matching files,
+listing cleanup on overflow, and cold/warm exact/glob/prefix paths at zero and one
+file. Cache operations already in flight may complete their side effects before
+cancellation is observed; the caller still receives abort and planning does not
+continue. Discovery-list allocation ownership remains unfinished.
+
+Build/typecheck passed; focused suites passed 93 tests; full suite passed 3,588
+with 629 skips. Evidence: `docs/validation/discovery-boundaries-2026-11-14.json`.
