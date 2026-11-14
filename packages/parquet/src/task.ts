@@ -271,20 +271,23 @@ export function cloneTaskWithRanges(
 }
 
 export function groupAggregateTasks(tasks: TaskInput[]): TaskInput[] {
-  const groups = new Map<string, TaskInput>();
+  const groups = new Map<string, { task: TaskInput; combined: boolean }>();
   for (const task of tasks) {
     const key = aggregateTaskGroupKey(task);
     const existing = groups.get(key);
     if (existing === undefined) {
-      groups.set(key, cloneTaskWithRanges(task, task.rowGroupRanges));
+      groups.set(key, { task: cloneTaskWithRanges(task, task.rowGroupRanges), combined: false });
       continue;
     }
-    existing.rowGroupRanges = mergeRowGroupRanges([
-      ...existing.rowGroupRanges,
-      ...task.rowGroupRanges,
-    ]);
+    for (const range of task.rowGroupRanges) existing.task.rowGroupRanges.push({ ...range });
+    existing.combined = true;
   }
-  return [...groups.values()];
+  const output: TaskInput[] = [];
+  for (const { task, combined } of groups.values()) {
+    if (combined) mergeOwnedRowGroupRanges(task.rowGroupRanges);
+    output.push(task);
+  }
+  return output;
 }
 
 export function aggregateTaskReadColumns(
@@ -319,22 +322,21 @@ function aggregateTaskGroupKey(task: TaskInput): string {
   });
 }
 
-function mergeRowGroupRanges(
-  ranges: { start: number; end: number }[],
-): { start: number; end: number }[] {
-  const sorted = ranges
-    .map((range) => ({ ...range }))
-    .sort((left, right) => left.start - right.start || left.end - right.end);
-  const merged: { start: number; end: number }[] = [];
-  for (const range of sorted) {
-    const previous = merged.at(-1);
+/** Sort and compact caller-independent range storage once per combined task. */
+function mergeOwnedRowGroupRanges(ranges: { start: number; end: number }[]): void {
+  ranges.sort((left, right) => left.start - right.start || left.end - right.end);
+  let count = 0;
+  for (let index = 0; index < ranges.length; index++) {
+    const range = ranges[index];
+    if (range === undefined) continue;
+    const previous = count > 0 ? ranges[count - 1] : undefined;
     if (previous !== undefined && previous.end >= range.start) {
       previous.end = Math.max(previous.end, range.end);
     } else {
-      merged.push(range);
+      ranges[count++] = range;
     }
   }
-  return merged;
+  ranges.length = count;
 }
 
 function collectExprColumns(

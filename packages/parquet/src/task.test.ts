@@ -413,3 +413,23 @@ it("rechecks shared headroom between row windows and releases an admitted index 
   reuse.release();
   scope.dispose();
 });
+
+it("combines fragmented task ranges once without mutating input ranges", () => {
+  const tasks: TaskInput[] = Array.from({ length: 1000 }, (_, index) => ({
+    path: "data",
+    partitionValues: {},
+    rowGroupRanges: [Object.freeze({ start: (999 - index) * 2, end: (999 - index) * 2 + 1 })],
+  }));
+  const grouped = groupAggregateTasks(tasks);
+  expect(grouped).toHaveLength(1);
+  expect(grouped[0]?.rowGroupRanges).toEqual(
+    Array.from({ length: 1000 }, (_, index) => ({ start: index * 2, end: index * 2 + 1 })),
+  );
+  expect(tasks[0]?.rowGroupRanges).toEqual([{ start: 1998, end: 1999 }]);
+  expect(grouped[0]?.rowGroupRanges[0]).not.toBe(tasks[999]?.rowGroupRanges[0]);
+  const overlapping = groupAggregateTasks([
+    ...tasks,
+    { path: "data", partitionValues: {}, rowGroupRanges: [{ start: 0, end: 2000 }] },
+  ]);
+  expect(overlapping[0]?.rowGroupRanges).toEqual([{ start: 0, end: 2000 }]);
+});
