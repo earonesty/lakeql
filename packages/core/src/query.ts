@@ -37,6 +37,7 @@ import { OwnedAggregateState } from "./owned-aggregate-state.js";
 import { OwnedBoundedTopK } from "./owned-bounded-top-k.js";
 import { encodeOwnedCheckpoint } from "./owned-checkpoint-encoding.js";
 import { OwnedGroupDirectory } from "./owned-group-directory.js";
+import { parseOwnedJson } from "./owned-json-parse.js";
 import { collectOwnedRows } from "./owned-row-collector.js";
 import { detachOwnedRow } from "./owned-row-detachment.js";
 import { snapshotOwnedRows } from "./owned-snapshot-rows.js";
@@ -1634,15 +1635,21 @@ export class QueryResult {
     }
     const orderBy = normalizeOrderBy(config.orderBy);
     const topK = (config.offset ?? 0) + config.limit;
-    const matched = await topKRowsFromState(orderBy, config.offset ?? 0, config.limit, options);
-    enforceBufferedRowsBudget(config.budget, matched.length);
-    enforceOperatorMemoryBudget(config.budget, estimateOperatorMemoryBytes(matched));
     const startedAt = config.now();
     const retainedScope = new MemoryScope(
       this.memoryBudget,
       config.budget.signal ? [config.budget.signal] : [],
     );
     try {
+      const matched = await topKRowsFromState(
+        orderBy,
+        config.offset ?? 0,
+        config.limit,
+        options,
+        retainedScope,
+      );
+      enforceBufferedRowsBudget(config.budget, matched.length);
+      enforceOperatorMemoryBudget(config.budget, estimateOperatorMemoryBytes(matched));
       await this.collectOrderedMatches(matched, topK, startedAt, retainedScope);
       const start = config.offset ?? 0;
       const end = start + config.limit;
@@ -1688,13 +1695,13 @@ export class QueryResult {
       throw new LakeqlError("LAKEQL_TYPE_ERROR", "sortWithState does not support distinct queries");
     }
     const orderBy = normalizeOrderBy(config.orderBy);
-    const runs = await sortRunsFromState(orderBy, options);
     const startedAt = config.now();
     const retainedScope = new MemoryScope(
       this.memoryBudget,
       config.budget.signal ? [config.budget.signal] : [],
     );
     try {
+      const runs = await sortRunsFromState(orderBy, options, retainedScope);
       retainedScope.allocate(
         allocationCharges.array + runs.length * allocationCharges.arraySlot,
         "restored sort run directory",
@@ -3990,8 +3997,8 @@ async function writeOwnedCheckpoint(
   }
 }
 
-function deserializeSortRunRows(bytes: Uint8Array): Row[] {
-  const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
+function deserializeSortRunRows(bytes: Uint8Array, scope: MemoryScope): Row[] {
+  const parsed = scope.adopt(parseOwnedJson(bytes, scope)).value;
   if (!Array.isArray(parsed) || !parsed.every(isTopKSnapshotRow)) {
     throw new LakeqlError("LAKEQL_BOOKMARK_INVALID", "Sort run state is invalid");
   }
@@ -4003,6 +4010,7 @@ async function topKRowsFromState(
   offset: number,
   limit: number,
   options: TopKOptions,
+  scope: MemoryScope,
 ): Promise<Row[]> {
   const state =
     isSpilledOperatorState(options.operatorState) && options.spill !== undefined
@@ -4014,7 +4022,10 @@ async function topKRowsFromState(
     });
   }
   if (state === undefined) return [];
-  const snapshot = deserializeTopKOperatorState(state);
+  const snapshot =
+    state instanceof Uint8Array
+      ? validateTopKOperatorState(scope.adopt(parseOwnedJson(state, scope)).value)
+      : deserializeTopKOperatorState(state);
   if (
     stableStringify(snapshot.orderBy) !== stableStringify(orderBy) ||
     snapshot.offset !== offset ||
@@ -4032,7 +4043,11 @@ async function topKRowsFromState(
   return snapshot.rows.map((row) => ({ ...row }));
 }
 
-async function sortRunsFromState(orderBy: OrderByTerm[], options: SortOptions): Promise<Row[][]> {
+async function sortRunsFromState(
+  orderBy: OrderByTerm[],
+  options: SortOptions,
+  scope: MemoryScope,
+): Promise<Row[][]> {
   const state =
     isSpilledOperatorState(options.operatorState) && options.spill !== undefined
       ? await options.spill.read(options.operatorState.spillRef)
@@ -4043,7 +4058,10 @@ async function sortRunsFromState(orderBy: OrderByTerm[], options: SortOptions): 
     });
   }
   if (state === undefined) return [];
-  const snapshot = deserializeSortOperatorState(state);
+  const snapshot =
+    state instanceof Uint8Array
+      ? validateSortOperatorState(scope.adopt(parseOwnedJson(state, scope)).value)
+      : deserializeSortOperatorState(state);
   if (stableStringify(snapshot.orderBy) !== stableStringify(orderBy)) {
     throw new LakeqlError("LAKEQL_BOOKMARK_STALE", "Sort operator state does not match request", {
       stateOrderBy: snapshot.orderBy,
@@ -4065,7 +4083,7 @@ async function sortRunsFromState(orderBy: OrderByTerm[], options: SortOptions): 
         },
       );
     }
-    runs.push(deserializeSortRunRows(await options.spill.read(run.spillRef)));
+    runs.push(deserializeSortRunRows(await options.spill.read(run.spillRef), scope));
   }
   return runs;
 }

@@ -16,8 +16,9 @@
   },
   "remaining": [
     "Checkpoint envelope, order terms and run descriptor metadata still need admission.",
-    "Restore parsing and validation copies remain unadmitted.",
+    "Encoded top-k/sort restore parsing is now admitted (linked evidence); validation copies and object-state restore remain outstanding.",
     "Legacy aggregate snapshots still use the unscoped scalar builder.",
     "Returned query output ownership and total runtime heap are outside this change."
-  ]
+  ],
+  "parseEvidence": "checkpoint-parse-admission-2026-11-13.json"
 }
