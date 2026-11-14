@@ -1,0 +1,23 @@
+{
+  "status": "Implemented; build, default and Worker validation passed",
+  "change": "CountDistinctState and its existing exact approx_count_distinct implementation admit Set storage, stable key formatting, retained keys, restored keys and snapshot sorting/copy storage. Duplicate keys do not append retained ledger entries. Checkpoint encoding and stable data-key formatting share one allocation forecast; the latter additionally handles bigint, Date, Uint8Array, symbols and enumerable object data with legacy stableStringify output.",
+  "validation": {
+    "build": "passed",
+    "focusedTestsPassed": 108,
+    "cases": [
+      "Nested bigint/date/byte/nonfinite/undefined stable-key parity",
+      "Both distinct operations reject high-cardinality growth under an 8192-byte pool before scanning all 10000 rows",
+      "Cleanup closes scanner and releases pool usage",
+      "Existing Unicode/duplicate/restore and exact serialized-size boundary tests"
+    ],
+    "defaultTestsPassed": 3070,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61
+  },
+  "boundaries": [
+    "Forecast/formatting requires immutable data during synchronous traversal. Cycles reject explicitly; executable function values have no bounded data-key contract and reject.",
+    "Checkpoint encoding retains its stricter JSON-shaped input contract; extended key handling does not widen it.",
+    "Byte/base64 scratch accounting is conservative; runtime rope and GC internals are not total-heap guarantees.",
+    "Group keys/directories, fixed scalar states, outer snapshots and runtime metadata still need admission."
+  ]
+}

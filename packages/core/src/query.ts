@@ -37,7 +37,7 @@ import { isPrototypeMutationKey } from "./object-key.js";
 import { ownedAggregateExpressionBytesForColumns } from "./owned-aggregate-input.js";
 import { OwnedAggregateState } from "./owned-aggregate-state.js";
 import { OwnedBoundedTopK } from "./owned-bounded-top-k.js";
-import { encodeOwnedCheckpoint } from "./owned-checkpoint-encoding.js";
+import { encodeOwnedCheckpoint, stringifyOwnedStableData } from "./owned-checkpoint-encoding.js";
 import { OwnedGroupDirectory } from "./owned-group-directory.js";
 import { parseOwnedJson } from "./owned-json-parse.js";
 import { collectOwnedRows } from "./owned-row-collector.js";
@@ -3612,9 +3612,9 @@ function createAggregateState(aggregate: AggregateExpr, scope: MemoryScope): Agg
     case "max":
       return new MinMaxState("max");
     case "count_distinct":
-      return new CountDistinctState("count_distinct");
+      return new CountDistinctState("count_distinct", [], scope);
     case "approx_count_distinct":
-      return new CountDistinctState("approx_count_distinct");
+      return new CountDistinctState("approx_count_distinct", [], scope);
     case "mode":
       return new ModeState([], scope);
     case "first":
@@ -3916,16 +3916,42 @@ class CountDistinctState implements AggregateState {
 
   constructor(
     private readonly op: "count_distinct" | "approx_count_distinct",
-    values: string[] = [],
+    values: string[],
+    private readonly scope: MemoryScope,
   ) {
-    this.values = new Set(values);
+    this.values = scope.allocate(
+      allocationCharges.object,
+      "distinct directory",
+      () => new Set<string>(),
+    ).value;
+    this.ledger = new MutableMemoryLedger(scope);
+    for (const key of values) this.retainKey(key);
+  }
+  private readonly ledger: MutableMemoryLedger;
+
+  private retainKey(key: string): void {
+    if (this.values.has(key)) return;
+    this.ledger.append(
+      allocationCharges.property +
+        allocationCharges.string +
+        key.length * allocationCharges.stringCodeUnit,
+      "distinct retained key",
+      () => {
+        this.memory.add(key);
+        this.values.add(key);
+      },
+    );
   }
 
   add(value: unknown): void {
     if (value === null || value === undefined) return;
-    const key = stableStringify(value);
-    if (!this.values.has(key)) this.memory.add(key);
-    this.values.add(key);
+    const formatting = this.scope.childScope();
+    try {
+      const key = formatting.adopt(stringifyOwnedStableData(value, formatting));
+      this.retainKey(key.value);
+    } finally {
+      formatting.dispose();
+    }
   }
 
   finish(): number {
@@ -3940,7 +3966,23 @@ class CountDistinctState implements AggregateState {
   }
 
   snapshot(): AggregateStateSnapshot {
-    return { op: this.op, values: [...this.values].sort() };
+    const scratch = this.scope.reserve(
+      allocationCharges.array +
+        this.values.size * (allocationCharges.arraySlot + allocationCharges.object),
+      "distinct snapshot sort",
+    );
+    try {
+      return this.scope.allocate(
+        allocationCharges.object +
+          2 * allocationCharges.property +
+          allocationCharges.array +
+          this.values.size * allocationCharges.arraySlot,
+        "distinct snapshot",
+        () => ({ op: this.op, values: [...this.values].sort() }),
+      ).value;
+    } finally {
+      scratch.release();
+    }
   }
 }
 
@@ -4491,7 +4533,7 @@ function aggregateStateFromSnapshot(
       return new MinMaxState(snapshot.op, snapshot.value);
     case "count_distinct":
     case "approx_count_distinct":
-      return new CountDistinctState(snapshot.op, snapshot.values);
+      return new CountDistinctState(snapshot.op, snapshot.values, scope);
     case "mode":
       return new ModeState(snapshot.values, scope);
     case "first":

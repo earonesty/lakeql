@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import { stableStringify } from "./manifest.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope } from "./memory-scope.js";
-import { encodeOwnedCheckpoint } from "./owned-checkpoint-encoding.js";
+import { encodeOwnedCheckpoint, stringifyOwnedStableData } from "./owned-checkpoint-encoding.js";
 
 it("preserves stable checkpoint bytes across keys, numeric edges and escaped text", () => {
   const value = {
@@ -46,4 +46,23 @@ it("rejects cycles and unsupported objects without retaining traversal charges",
   expect(() => encodeOwnedCheckpoint(new Date(), scope)).toThrow(/JSON-shaped/);
   expect(budget.usedBytes).toBe(0);
   scope.dispose();
+});
+
+it("preserves stable data-key semantics for nested special values", () => {
+  const scope = new MemoryScope(new MemoryBudget(65536));
+  const value = {
+    nested: [
+      9007199254740993n,
+      new Date("2020-01-01T00:00:00Z"),
+      new Uint8Array([0, 255]),
+      Infinity,
+      undefined,
+    ],
+    text: '雪\\"',
+  };
+  const key = stringifyOwnedStableData(value, scope);
+  expect(key.value).toBe(stableStringify(value));
+  key.release();
+  scope.dispose();
+  expect(scope.budget.usedBytes).toBe(0);
 });

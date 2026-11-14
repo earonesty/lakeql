@@ -106,6 +106,8 @@ it.each([
   "median",
   "quantile",
   "mode",
+  "count_distinct",
+  "approx_count_distinct",
 ] as const)("%s rejects retained growth during scanning and releases partial state", async (op) => {
   const pool = new MemoryBudget(8192);
   const store = memoryStore();
