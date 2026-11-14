@@ -1,6 +1,8 @@
 import {
   type Batch,
   type Selection,
+  scalarReadAllocationFree,
+  scalarVectorValue,
   selectedRowIndexBuffer,
   type Vector,
   vectorFromValues,
@@ -27,9 +29,9 @@ import {
 } from "./packed-gather.js";
 import type { OrderByTerm } from "./query.js";
 import { setRecordValue } from "./record-value.js";
+import { compareOrderedScalars } from "./scalar-order.js";
 import { planSelectedConcat } from "./selected-concat.js";
 import { structConcatInputs } from "./struct-concat.js";
-import { compareTimestampValues, isTimestampValue, type TimestampValue } from "./timestamp.js";
 import { compactOwnedUnionBatch, needsUnionCompaction } from "./union-compaction.js";
 import { hasUnionLeaf, planUnionConcat } from "./union-concat.js";
 import { admitVectorBuffer } from "./vector-buffer.js";
@@ -106,7 +108,7 @@ export function vectorTopKOwnedBatch(
       () => new Uint32Array(capacity),
     ).value;
     const compare = (left: number, right: number) =>
-      compareBatchRows(batch, left, right, normalized);
+      compareBatchRows(batch, left, right, normalized, scope);
     // Detect monotonic selected input without allocating sort keys. Stop as soon
     // as both directions occur; mixed input uses the bounded heap below.
     let direction = 0;
@@ -568,6 +570,7 @@ function compareBatchRows(
   leftIndex: number,
   rightIndex: number,
   orderBy: readonly OrderByTerm[],
+  scope?: MemoryScope,
 ): number {
   for (const term of orderBy) {
     const vector = batch.columns[term.column];
@@ -576,51 +579,21 @@ function compareBatchRows(
         column: term.column,
       });
     }
-    const comparison = compareSortValues(
-      vectorValue(vector, leftIndex),
-      vectorValue(vector, rightIndex),
-      term,
-    );
-    if (comparison !== 0) return comparison;
+    const scratch =
+      scope !== undefined && !scalarReadAllocationFree(vector) ? scope.childScope() : undefined;
+    try {
+      const read = scope === undefined ? vectorValue : scalarVectorValue;
+      const comparison = compareOrderedScalars(
+        read(vector, leftIndex, scratch ?? scope),
+        read(vector, rightIndex, scratch ?? scope),
+        term,
+      );
+      if (comparison !== 0) return comparison;
+    } finally {
+      scratch?.dispose();
+    }
   }
   return leftIndex - rightIndex;
-}
-
-function compareSortValues(left: unknown, right: unknown, term: OrderByTerm): number {
-  const leftNull = left === null || left === undefined;
-  const rightNull = right === null || right === undefined;
-  if (leftNull || rightNull) {
-    if (leftNull && rightNull) return 0;
-    const nullOrder = term.nulls === "first" ? -1 : 1;
-    return leftNull ? nullOrder : -nullOrder;
-  }
-  if (!isSortableValue(left) || !isSortableValue(right)) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy values must be scalar", {
-      column: term.column,
-    });
-  }
-  if (isTimestampValue(left) || isTimestampValue(right)) {
-    if (!isTimestampValue(left) || !isTimestampValue(right)) {
-      throw new LakeqlError(
-        "LAKEQL_TYPE_ERROR",
-        "orderBy timestamp values must have matching types",
-        {
-          column: term.column,
-        },
-      );
-    }
-    const direction = term.direction === "desc" ? -1 : 1;
-    return compareTimestampValues(left, right) * direction;
-  }
-  if (typeof left !== typeof right) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy values must have matching types", {
-      column: term.column,
-    });
-  }
-  const direction = term.direction === "desc" ? -1 : 1;
-  if (left < right) return -1 * direction;
-  if (left > right) return direction;
-  return 0;
 }
 
 function selectedIndices(rowCount: number, selection?: Selection): number[] {
@@ -1304,16 +1277,4 @@ function validateTopKOptions(options: VectorTopKOptions): void {
       offset: options.offset,
     });
   }
-}
-
-function isSortableValue(
-  value: unknown,
-): value is string | number | bigint | boolean | TimestampValue {
-  return (
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "bigint" ||
-    typeof value === "boolean" ||
-    isTimestampValue(value)
-  );
 }

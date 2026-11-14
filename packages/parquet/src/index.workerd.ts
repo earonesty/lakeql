@@ -765,6 +765,27 @@ it.each([64, 128])("owns deferred top-k over native R2 with a %s MiB shared pool
           options.columns?.join() === "text" && options.rowStart === 93 && options.rowEnd === 98,
       ),
     ).toBe(true);
+    const textOwners = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        lake
+          .path(path)
+          .select(["text"])
+          .orderBy([{ column: "text" }])
+          .limit(3)
+          .batchSize(10)
+          .run()
+          .toOwnedArray(),
+      ),
+    );
+    try {
+      const expected = [...text]
+        .sort()
+        .slice(0, 3)
+        .map((text) => ({ text }));
+      for (const owner of textOwners) expect(owner.value).toEqual(expected);
+    } finally {
+      for (const owner of textOwners) owner.release();
+    }
     expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
   } finally {
     scans.mockRestore();

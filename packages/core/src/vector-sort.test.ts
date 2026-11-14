@@ -17,6 +17,17 @@ import {
 } from "./vector-sort.js";
 
 describe("vector sort kernels", () => {
+  it.each([
+    NaN,
+    Infinity,
+    -Infinity,
+  ])("rejects nonfinite order values consistently (%s)", (value) => {
+    const batch = batchFromColumns({ value: [value, 1] });
+    expect(() => vectorOrderByBatch(batch, [{ column: "value" }])).toThrow(/must be finite/);
+    expect(() => vectorTopKBatch(batch, [{ column: "value" }], { limit: 1 })).toThrow(
+      /must be finite/,
+    );
+  });
   it("gathers and concatenates type-preserving numeric vectors", () => {
     const left = batchFromVectors({
       f32: { type: "f32", values: Float32Array.of(1.5, 2.5) },

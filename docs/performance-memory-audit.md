@@ -31,15 +31,14 @@ under verified 64/128 MiB V8 heap settings; this distinguishes runtime GC policy
 from a persistent leak, but does not cap external backing or prove production
 Cloudflare total-memory safety. See the constrained-runtime section below.
 
-Latest decimal checkpoint (November 13, 2026): **2,936 default tests**
-(629 skipped), one additional boundary test and **61 Worker tests** pass, with
-build, typecheck, lint and clean
-package installation. Decimal predicates compare finite numeric values exactly.
-Direct/dictionary vectors prepare a literal and its digit text once per operation,
-falling back to scalar comparison when preparation does not fit the caller budget.
-The controlled 10,000-row benchmark measured 1.5–1.6 ms versus a scalar conversion
-loop at 13–154 ms, with row-count-independent scratch (not VM heap accounting).
-See `docs/validation/conformance-value-parity-2026-11-13.json` for evidence and gaps.
+Latest execution checkpoint (November 13, 2026): **2,945 default tests**
+(629 skipped) and **61 Worker tests** pass, with build, typecheck, lint and clean
+package installation. Owned top-K now admits typed scalar reads and packed-text
+decoding before comparison, sharing row/vector ordering semantics. Its measured
+comparison workspace stays constant as row count grows (fixed top-3); reusable
+reader workspace remains a performance opportunity. Decimal predicates retain
+adaptive literal preparation under tight budgets. Evidence and remaining gaps:
+`docs/validation/conformance-value-parity-2026-11-13.json`.
 
 External conformance now reports **511 passed, 6 failed, one skipped**; the six
 remaining failures are ALP, BSON and BROTLI through both readers. No assertions

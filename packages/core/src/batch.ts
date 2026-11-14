@@ -1244,7 +1244,7 @@ export function scalarVectorValue(vector: Vector, index: number, scope?: MemoryS
   }
 }
 
-function scalarReadAllocationFree(vector: Vector): boolean {
+export function scalarReadAllocationFree(vector: Vector): boolean {
   switch (vector.type) {
     case "decimal":
     case "null":

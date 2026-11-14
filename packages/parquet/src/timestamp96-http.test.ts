@@ -82,6 +82,23 @@ it.each([
       else expect(dataReads.length).toBeGreaterThan(0);
       expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
     }
+    const ordered = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        lake
+          .path("timestamps.parquet")
+          .batchSize(3)
+          .orderBy([{ column: "timestamp_nanos" }])
+          .limit(3)
+          .run()
+          .toOwnedArray(),
+      ),
+    );
+    try {
+      for (const output of ordered)
+        expect(output.value).toEqual([expected[5], expected[2], expected[0]]);
+    } finally {
+      for (const output of ordered) output.release();
+    }
     expect(peak).toBeLessThanOrEqual(2);
   } finally {
     cache.deleteWhere(() => true);

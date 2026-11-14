@@ -567,5 +567,36 @@
     "measurement": "With synthetic peer reservations filling 64/128 MiB pools, 10000-row fraction comparisons succeed with 11754 bytes available for preparation or 11370 for scalar fallback. Subnormal comparisons succeed with 16200 or 15816 bytes respectively. Preparation measured about 1.7\u20131.8 ms; constrained scalar fallback about 12 ms for fractions and 154 ms for subnormals. No configuration flag is required.",
     "cloudEvidence": "The unchanged real HTTP and local workerd native R2 decimal predicate tests pass in the full/Worker suites; clean installed-package checks pass. The new deliberately tight budget and sibling-retention proof is a core accounting test, not a cloud heap measurement.",
     "limits": "Peer reservations in the benchmark are synthetic, not matching live heap payloads. Native runtime allocation/GC and broader audit gaps remain open. Generic sorting/grouping/aggregate/arithmetic integration and ordinary high-precision vectors remain unfinished."
+  },
+  "scopedTopKScalarReads": {
+    "finding": "Owned vector top-K admitted its heap but read comparison operands through unscoped vectorValue. Typed bigint/timestamp reads and packed UTF-8 decoding could allocate outside the caller pool. Vector ordering also duplicated the row comparator and omitted its finite-number validation.",
+    "change": "Owned top-K uses the generic scalar-read allocation capability and scoped scalarVectorValue. Allocating reads share a short-lived scope per comparison term, keeping both operands admitted until comparison completes and releasing them on success or error. Allocation-free vectors avoid child scopes. Vector sorting delegates scalar ordering to the row comparator, removing duplicated ordering logic and rejecting NaN/infinities consistently.",
+    "evidence": "../benchmarks/top-k-scalar-workspace-2026-11-13.json",
+    "validation": {
+      "defaultPassed": 2945,
+      "defaultSkipped": 629,
+      "workerPassed": 61,
+      "focusedCoreAndRealTimestampPassed": 33,
+      "build": "passed",
+      "typecheck": "passed",
+      "lint": "passed",
+      "cleanNpmInstall": "passed",
+      "referencePassed": 104,
+      "conformancePassed": 511,
+      "conformanceFailed": 6,
+      "conformanceSkipped": 1,
+      "compatibility": "passed",
+      "trackedFileSizes": "passed"
+    },
+    "edgeCases": [
+      "Bigint, timestamp64, timestamp96 and packed-text comparisons succeed at the exact input-plus-heap-plus-two-scalars capacity and reject one byte short.",
+      "Failed second-operand admission releases first-operand scratch while preserving input ownership.",
+      "Insufficient first-text-read capacity rejects before TextDecoder.decode is called.",
+      "Row/vector stable ordering, null placement, offsets and selected rows retain existing regression coverage.",
+      "Both vector full sort and top-K reject NaN, positive infinity and negative infinity."
+    ],
+    "cloudEvidence": "The documented FLBA12 timestamp fixture now passes four concurrent owned top-3 queries over HTTP 206 and ignored-range 200, with cache cleanup and the existing two-read concurrency bound. Native R2 64/128 MiB tests add four concurrent top-3 queries ordered by generated 1024-byte text keys. This distinguishes cloud object-store operation from local-buffer kernel tests.",
+    "measurement": "For fixed top-3, explicit peak beyond retained input is 140 bytes for bigint, 524 for timestamp96 and 908 for 128-byte packed text, unchanged between 100 and 10000 input rows. The 10000-row medians are about 44 ms. No before/after speedup or total-heap claim is made.",
+    "next": "Investigate a shared reusable comparison-reader reservation to reduce per-comparison scope/allocator work without removing admission. Then extend scoped ordering to exact decimals across vector and row operators. General decimal sorting/grouping/aggregate/arithmetic integration and broader allocation coverage remain incomplete."
   }
 }
