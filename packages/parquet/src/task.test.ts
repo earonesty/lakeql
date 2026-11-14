@@ -1,4 +1,5 @@
 import {
+  type AggregateSpec,
   add,
   and,
   between,
@@ -21,11 +22,10 @@ import {
   aggregateScanOptions,
   aggregateTaskReadColumns,
   appendRowGroupRange,
-  cloneTaskWithRanges,
   enforceAggregateTaskBudget,
   groupAggregateTasks,
+  iterateTaskRowWindows,
   taskReadOptions,
-  taskRowWindows,
   validateTaskWorkUnitOptions,
 } from "./task.js";
 
@@ -55,19 +55,21 @@ describe("Parquet task planning contracts", () => {
 
   it("derives row windows from finite row-group ranges and skips invalid spans", () => {
     expect(
-      taskRowWindows(
-        { row_groups: [{ num_rows: 10 }, { num_rows: 5 }, { num_rows: 7 }] },
-        {
-          path: "data.parquet",
-          rowGroupRanges: [
-            { start: -1, end: 1 },
-            { start: 0, end: 2 },
-            { start: 2, end: 9 },
-            { start: 3, end: 4 },
-            { start: 2, end: 2 },
-          ],
-          partitionValues: {},
-        },
+      Array.from(
+        iterateTaskRowWindows(
+          { row_groups: [{ num_rows: 10 }, { num_rows: 5 }, { num_rows: 7 }] },
+          {
+            path: "data.parquet",
+            rowGroupRanges: [
+              { start: -1, end: 1 },
+              { start: 0, end: 2 },
+              { start: 2, end: 9 },
+              { start: 3, end: 4 },
+              { start: 2, end: 2 },
+            ],
+            partitionValues: {},
+          },
+        ),
       ),
     ).toEqual([
       { rowStart: 0, rowEnd: 15 },
@@ -114,7 +116,9 @@ describe("Parquet task planning contracts", () => {
       residualPredicate: eq("tenant", "a"),
       partitionValues: { tenant: "a" },
     };
-    const clone = cloneTaskWithRanges(task, [{ start: 0, end: 1 }]);
+    const clone = groupAggregateTasks([
+      { ...task, rowGroupRanges: [{ start: 0, end: 1 }] },
+    ])[0] as TaskInput;
     clone.partitionValues.tenant = "b";
     clone.projectedColumns?.push("extra");
     clone.rowGroupRanges[0].end = 2;

@@ -148,13 +148,6 @@ export function enforceAggregateTaskBudget(options: ScanOptions | undefined): vo
   }
 }
 
-export function taskRowWindows(
-  metadata: ParquetMetadataLike,
-  task: TaskInput,
-): { rowStart: number; rowEnd: number }[] {
-  return Array.from(iterateTaskRowWindows(metadata, task));
-}
-
 /** Stream ordered ranges; index repeated backward traversal only when measured
  * work reaches a full metadata pass and available headroom covers the index.
  */
@@ -253,23 +246,6 @@ export function appendRowGroupRange(
   } else {
     ranges.push({ start: rowGroup, end: rowGroup + 1 });
   }
-}
-
-export function cloneTaskWithRanges(
-  task: TaskInput,
-  rowGroupRanges: { start: number; end: number }[],
-): TaskInput {
-  const clone: TaskInput = {
-    path: task.path,
-    rowGroupRanges: rowGroupRanges.map((range) => ({ ...range })),
-    partitionValues: { ...task.partitionValues },
-  };
-  if (task.size !== undefined) clone.size = task.size;
-  if (task.etag !== undefined) clone.etag = task.etag;
-  if (task.rowGroupCount !== undefined) clone.rowGroupCount = task.rowGroupCount;
-  if (task.projectedColumns !== undefined) clone.projectedColumns = [...task.projectedColumns];
-  if (task.residualPredicate !== undefined) clone.residualPredicate = task.residualPredicate;
-  return clone;
 }
 
 export function groupAggregateTasks(tasks: TaskInput[], parent?: MemoryScope): TaskInput[] {

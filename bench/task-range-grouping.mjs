@@ -1,5 +1,14 @@
 import assert from "node:assert/strict";
-import { cloneTaskWithRanges, groupAggregateTasks } from "../packages/parquet/dist/task.js";
+import { groupAggregateTasks } from "../packages/parquet/dist/task.js";
+
+// Preserve the previous unadmitted clone in the benchmark baseline only.
+function cloneTaskWithRanges(task, ranges) {
+  return {
+    ...task,
+    rowGroupRanges: ranges.map((range) => ({ ...range })),
+    partitionValues: { ...task.partitionValues },
+  };
+}
 
 function baseline(tasks) {
   const groups = new Map();
