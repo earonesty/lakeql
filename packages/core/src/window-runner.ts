@@ -1,6 +1,7 @@
 import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { predicateSelection, selectedRowCount } from "./batch.js";
 import { BufferMemory } from "./buffer-memory.js";
+import { withCheckpointSpillBatch } from "./checkpoint-spill-write-batch.js";
 import { LakeqlError } from "./errors.js";
 import { matches } from "./evaluator.js";
 import { materializeOwnedBatchRows } from "./materialization-plan.js";
@@ -187,25 +188,27 @@ export async function executeWindowWithState(
     windowScope.dispose();
     const rows = collected.value;
 
-    checkCheckpoint();
-    const state =
-      windowOptions.spill === undefined
-        ? windowOperatorState(windows, matched ?? [], retainedScope)
-        : await windowOperatorStateFromRuns(
-            windows,
-            runs,
-            windowOptions.spill,
-            spillId,
-            retainedScope,
-            checkCheckpoint,
-          );
-    const operatorState = serializeWindowOperatorState(state, retainedScope);
-    const result: WindowResult = { rows, operatorState };
-    if (windowOptions.spill !== undefined) {
-      result.operatorSpill = await windowOptions.spill.write(spillId, operatorState);
+    return await withCheckpointSpillBatch(windowOptions.spill, retainedScope, async (spill) => {
       checkCheckpoint();
-    }
-    return result;
+      const state =
+        spill === undefined
+          ? windowOperatorState(windows, matched ?? [], retainedScope)
+          : await windowOperatorStateFromRuns(
+              windows,
+              runs,
+              spill,
+              spillId,
+              retainedScope,
+              checkCheckpoint,
+            );
+      const operatorState = serializeWindowOperatorState(state, retainedScope);
+      const result: WindowResult = { rows, operatorState };
+      if (spill !== undefined) {
+        result.operatorSpill = await spill.write(spillId, operatorState);
+        checkCheckpoint();
+      }
+      return result;
+    });
   } finally {
     collected?.release();
     collector.dispose();

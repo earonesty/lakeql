@@ -1,0 +1,29 @@
+{
+  "date": "2026-11-14",
+  "changes": [
+    "Window run files and their manifest now use the shared optional atomic checkpoint batch boundary.",
+    "Sort and window share the same success, cancellation, version-conflict and write-failure test matrix.",
+    "Adapters without batch capability retain their existing behavior."
+  ],
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "targeted_tests": 21,
+    "scenarios": [
+      "Prior manifest remains readable and staged run remains invisible before commit.",
+      "Successful commit publishes both run and manifest with correct result rows.",
+      "Cancellation, conflict and final-write failure preserve prior or competing manifest without publishing the run.",
+      "Query reservations return to zero for every outcome."
+    ],
+    "full_default_suite": {
+      "passed": 3444,
+      "skipped": 629
+    }
+  },
+  "limitations": [
+    "These transaction tests use controlled scanner rows and MemorySpillAdapter, not a cloud spill service.",
+    "No multi-file atomicity guarantee for adapters without beginWriteBatch.",
+    "Cancellation after successful commit cannot retract published data.",
+    "Whole-Worker heap bounds and full audit acceptance remain open."
+  ]
+}
