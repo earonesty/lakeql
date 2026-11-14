@@ -99,7 +99,7 @@ it("detaches reused scalar rows through resumable checkpoint creation", async ()
 it("unwinds scanner and selection ownership on candidate admission failure", async () => {
   const pool = new MemoryBudget(65536);
   const sibling = pool.reserve(37, "sibling");
-  const { lake, closed } = await fixture(pool, 1000);
+  const { lake, closed } = await fixture(pool, 2000);
   await expect(
     lake
       .path("table")

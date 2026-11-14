@@ -109,9 +109,11 @@ it.each([
         throw new Error("Unexpected borrowed scan");
       },
       async *scanOwnedVectorBatches(_path, options) {
+        const planningBytes = pool.usedBytes;
+        expect(planningBytes).toBeGreaterThan(0);
         try {
           for (let group = 0; group < 10; group++) {
-            expect(pool.usedBytes).toBe(0);
+            expect(pool.usedBytes).toBe(planningBytes);
             const scope = new MemoryScope(options.memoryBudget);
             try {
               const batch = batchFromColumns({ id: [1, 2, 3] }, scope);

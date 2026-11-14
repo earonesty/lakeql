@@ -11,7 +11,7 @@ it.each([
 ] as const)("rejects oversized %s column planning before opening the scanner", async (kind) => {
   const store = memoryStore();
   await store.put("table", new Uint8Array(1));
-  const pool = new MemoryBudget(1024);
+  const pool = new MemoryBudget(2048);
   let opened = false;
   const lake = new Lake({
     store,

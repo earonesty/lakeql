@@ -89,6 +89,7 @@ it("releases failed accumulated projection before awaiting scanner cleanup", asy
   const sibling = pool.reserve(1024, "sibling");
   const store = memoryStore();
   await store.put("table", new Uint8Array(1));
+  let planningBytes = 0;
   let cleanupStarted!: () => void;
   let finishCleanup!: () => void;
   const ready = new Promise<void>((resolve) => {
@@ -102,6 +103,7 @@ it("releases failed accumulated projection before awaiting scanner cleanup", asy
     memoryPool: pool,
     scanner: {
       async *scan() {
+        planningBytes = pool.usedBytes - sibling.bytes;
         try {
           yield [{ text: "small" }];
           yield [{ text: "ß" }];
@@ -130,7 +132,8 @@ it("releases failed accumulated projection before awaiting scanner cleanup", asy
     .toOwnedArray();
   const rejected = expect(result).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
   await ready;
-  expect(pool.usedBytes).toBe(sibling.bytes);
+  expect(planningBytes).toBeGreaterThan(0);
+  expect(pool.usedBytes).toBe(sibling.bytes + planningBytes);
   finishCleanup();
   await rejected;
   expect(pool.usedBytes).toBe(sibling.bytes);

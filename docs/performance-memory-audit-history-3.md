@@ -3606,3 +3606,36 @@ continue. Discovery-list allocation ownership remains unfinished.
 
 Build/typecheck passed; focused suites passed 93 tests; full suite passed 3,588
 with 629 skips. Evidence: `docs/validation/discovery-boundaries-2026-11-14.json`.
+
+### 2026-11-14 — admitted discovery collection and initial execution integration
+
+Discovery now admits retained list slots and independent object metadata while
+listing, copies metadata from cache under admission, admits HEAD conversion
+overlap, reserves sorting workspace, and holds admitted cache-write copies until
+cache settlement. Hive pruning admits its result list and transient parsed
+partition records. Listing admission failure closes the source without consuming
+the remaining objects. Task planning, ordinary row projection, columnar projection,
+row matching/sorting/top-k collection, and columnar top-k planning retain discovery
+charges in their existing scopes. Task discovery stays live until task construction
+settles, then releases independently of the returned task owner.
+
+The new charges intentionally change intermediate lifetime assertions: scanner
+shutdown can still reference its object metadata, so metadata remains charged
+while previously accumulated output is released. Tests now capture that baseline,
+verify the remainder of the pool can be used by a sibling during shutdown, and
+still require zero final reservations. Tight fixtures targeting later column or
+candidate admission now provide enough capacity to reach those stages. Shared
+query tests distinguish live reservations from a configured child ceiling.
+
+This is not complete object-plan ownership. Deferred limit/aggregate, window and
+some physical input/explain paths still transfer discovered metadata out of
+accounting at plan return. Sidecar planning containers and adapter-added schema
+plans need separate admission and ownership; cloning only declared ObjectInfo
+fields would incorrectly discard Parquet schema-evolution metadata. Existing
+external cache retention remains caller-controlled after set() settles. These
+boundaries remain required follow-up rather than accepted whole-query coverage.
+
+Build/typecheck passed; full suite passed 3,590 tests with 629 skips. Evidence:
+`docs/validation/discovery-admission-2026-11-14.json`. Signal-bound parent scopes
+also need a cancellation lifetime audit before claiming every integrated path
+holds metadata through in-flight cleanup.

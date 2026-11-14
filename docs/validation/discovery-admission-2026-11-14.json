@@ -1,0 +1,31 @@
+{
+  "baseCommit": "13e3d15",
+  "scope": "Discovery collection admission and initial task/row/columnar execution integration",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedInitial": 107,
+    "updatedLifetimeTests": 63,
+    "fullSuite": {
+      "passed": 3590,
+      "skipped": 629,
+      "log": "/tmp/discovery-admission-full-final.log"
+    }
+  },
+  "evidence": [
+    "List slots and copied metadata admitted during iteration; failure closes source before exhaustion",
+    "HEAD and cached-copy overlap and sorting workspace admitted",
+    "Task planning retains discovery until task construction settles",
+    "Ordinary row and columnar planning retain discovery during scans",
+    "Failure cleanup releases accumulated output but preserves live discovery metadata until scanner settlement",
+    "Sibling can use remaining pool during shutdown; final reservations return to zero"
+  ],
+  "remaining": [
+    "Deferred limit/aggregate and window discovery lifetimes",
+    "Physical input and explain discovery lifetimes",
+    "Sidecar containers and adapter-added schema-plan ownership",
+    "Signal-bound parent-scope lifetime audit",
+    "External cache retention contract",
+    "Full runtime/headroom acceptance and release gates"
+  ]
+}

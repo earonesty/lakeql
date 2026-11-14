@@ -39,7 +39,7 @@ import {
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
 import { MutableMemoryLedger } from "./mutable-memory-ledger.js";
-import { cloneObjectInfos } from "./object-info.js";
+import { cloneObjectInfo, cloneObjectInfos } from "./object-info.js";
 
 export { parseHivePartitions } from "./hive-partitions.js";
 
@@ -848,7 +848,9 @@ export class QueryResult {
   ): AsyncIterable<Row> {
     const config = this.config;
     const { stats } = this;
-    const { planned: paths, skipped: skippedFiles } = await this.planObjects();
+    const { planned: paths, skipped: skippedFiles } = await this.planObjects(
+      allocationScope.childScope(),
+    );
     stats.filesSkipped = skippedFiles;
     for (const object of paths) {
       stats.filesPlanned += 1;
@@ -932,7 +934,7 @@ export class QueryResult {
       let returned = 0;
       const distinct =
         config.distinct === true ? createRowDistinct(predicateScope, config.budget) : undefined;
-      const { planned: paths, skipped: skippedFiles } = await this.planObjects();
+      const { planned: paths, skipped: skippedFiles } = await this.planObjects(predicateScope);
       stats.filesSkipped = skippedFiles;
       const columns = projectedReadColumns(
         config.select,
@@ -1235,7 +1237,7 @@ export class QueryResult {
       }
       let offsetSkipped = 0;
       let returned = 0;
-      const { planned: paths, skipped: skippedFiles } = await this.planObjects();
+      const { planned: paths, skipped: skippedFiles } = await this.planObjects(planning);
       stats.filesSkipped = skippedFiles;
       const columns = projectedReadColumns(
         config.select,
@@ -1967,13 +1969,22 @@ export class QueryResult {
   }
 
   async planOwnedTasks(): Promise<OwnedMemory<TaskInput[]>> {
-    const { planned: objects } = await this.planObjects();
-    return this.ownedTasksFromObjects(objects);
+    const discovery = new MemoryScope(this.memoryBudget);
+    try {
+      const { planned: objects } = await this.planObjects(discovery);
+      return await this.ownedTasksFromObjects(objects);
+    } finally {
+      discovery.dispose();
+    }
   }
 
   async planTasks(): Promise<TaskInput[]> {
-    const { planned: objects } = await this.planObjects();
-    return this.tasksFromObjects(objects);
+    const owner = await this.planOwnedTasks();
+    try {
+      return owner.value;
+    } finally {
+      owner.release();
+    }
   }
 
   async ownedTaskManifest(jobId = this.config.queryId): Promise<OwnedMemory<TaskManifest>> {
@@ -2788,7 +2799,7 @@ export class QueryResult {
       const orderBy = normalizeOrderBy(config.orderBy, planning);
       const topK = (config.offset ?? 0) + config.limit;
       const startedAt = config.now();
-      const plannedObjects = await this.planObjects();
+      const plannedObjects = await this.planObjects(planning);
       const lateMaterialized =
         config.physicalExecution.acceleratorPolicy === "required"
           ? undefined
@@ -3308,7 +3319,9 @@ export class QueryResult {
   ): Promise<void> {
     const config = this.config;
     const { stats } = this;
-    const { planned: paths, skipped: skippedFiles } = await this.planObjects();
+    const { planned: paths, skipped: skippedFiles } = await this.planObjects(
+      allocationScope.childScope(),
+    );
     stats.filesSkipped = skippedFiles;
     const orderBy = config.orderBy ?? [];
     const memory =
@@ -3419,7 +3432,9 @@ export class QueryResult {
   ): Promise<void> {
     const config = this.config;
     const { stats } = this;
-    const { planned: paths, skipped: skippedFiles } = await this.planObjects();
+    const { planned: paths, skipped: skippedFiles } = await this.planObjects(
+      allocationScope.childScope(),
+    );
     stats.filesSkipped = skippedFiles;
     const columns = projectedReadColumns(
       config.select,
@@ -3714,83 +3729,120 @@ export class QueryResult {
     }
   }
 
-  private async planObjects(): Promise<{ planned: ObjectInfo[]; skipped: number }> {
-    const config = this.config;
-    const startedAt = config.now();
-    // Lazily load the geospatial backend before any row is evaluated, but only
-    // if this query's filter/projection expressions actually use a spatial
-    // function that needs it. Every read path funnels through planObjects().
-    await ensureGeoBackendForExprs([
-      config.where,
-      config.qualify,
-      ...Object.values(config.projections ?? {}),
-      ...windowExpressions(config.windows),
-    ]);
-    const objects = await expandPaths(
-      config.lake.store,
-      config.source,
-      config.planningCache,
-      config.budget,
-    );
-    let planned = objects;
-    let skipped = 0;
-    if (config.hive && config.where) {
-      const hivePlanned: ObjectInfo[] = [];
-      for (const object of planned) {
-        const partitions = parseHivePartitions(object.path);
-        if (partitionMayMatch(config.where, partitions)) hivePlanned.push(object);
-        else skipped += 1;
-      }
-      planned = hivePlanned;
-    }
-    if (config.sidecarIndex && config.where) {
-      const indexedByPath = new Map(config.sidecarIndex.map((index) => [index.path, index]));
-      const indexedObjects = planned.map((object) => ({
-        ...object,
-        ...indexedByPath.get(object.path),
-        path: object.path,
-      }));
-      const pruned = pruneFilesWithIndex(indexedObjects, config.where);
-      planned = pruned.planned;
-      skipped += pruned.skipped.length;
-    }
-    if (config.scanner.planObjects !== undefined) {
-      // Planning callbacks borrow these arguments until their promise settles.
-      // Do not tie this scope to cancellation while the callback may still use them.
-      const planning = new MemoryScope(this.memoryBudget);
-      try {
-        const columns =
-          config.windows === undefined
-            ? projectedReadColumns(
-                config.select,
-                config.where,
-                config.orderBy,
-                config.projections,
-                planning,
-              )
-            : windowReadColumns(config, planning);
-        const options = planning.allocate(
-          allocationCharges.object +
-            (1 + Number(columns !== undefined) + Number(config.where !== undefined)) *
-              allocationCharges.property,
-          "object planning options",
-          () => ({
-            memoryBudget: this.memoryBudget,
-            ...(columns !== undefined ? { columns } : {}),
-            ...(config.where !== undefined ? { where: config.where } : {}),
-          }),
+  private async planObjects(
+    parent?: MemoryScope,
+  ): Promise<{ planned: ObjectInfo[]; skipped: number }> {
+    const discovery = new MemoryScope(this.memoryBudget);
+    try {
+      const config = this.config;
+      const startedAt = config.now();
+      // Lazily load the geospatial backend before any row is evaluated, but only
+      // if this query's filter/projection expressions actually use a spatial
+      // function that needs it. Every read path funnels through planObjects().
+      await ensureGeoBackendForExprs([
+        config.where,
+        config.qualify,
+        ...Object.values(config.projections ?? {}),
+        ...windowExpressions(config.windows),
+      ]);
+      const objects = await expandPaths(
+        config.lake.store,
+        config.source,
+        config.planningCache,
+        config.budget,
+        discovery,
+      );
+      let planned = objects;
+      let skipped = 0;
+      if (config.hive && config.where) {
+        const hivePlanned = discovery.allocate(
+          allocationCharges.array,
+          "hive object plan",
+          () => [] as ObjectInfo[],
         ).value;
-        throwIfAborted(config.budget.signal);
-        enforceBudget(config.budget, this.stats, config.now, startedAt);
-        planned = await config.scanner.planObjects(planned, options);
-        throwIfAborted(config.budget.signal);
-        enforceBudget(config.budget, this.stats, config.now, startedAt);
-      } finally {
-        planning.dispose();
+        for (const object of planned) {
+          const pruning = discovery.childScope();
+          try {
+            const partitions = parseHivePartitions(object.path, pruning);
+            if (partitionMayMatch(config.where, partitions)) {
+              discovery.allocate(
+                allocationCharges.arraySlot,
+                "hive object plan slot",
+                () => undefined,
+              );
+              hivePlanned.push(object);
+            } else skipped += 1;
+          } finally {
+            pruning.dispose();
+          }
+        }
+        planned = hivePlanned;
       }
+      if (config.sidecarIndex && config.where) {
+        const indexedByPath = new Map(config.sidecarIndex.map((index) => [index.path, index]));
+        const indexedObjects = planned.map((object) => ({
+          ...object,
+          ...indexedByPath.get(object.path),
+          path: object.path,
+        }));
+        const pruned = pruneFilesWithIndex(indexedObjects, config.where);
+        planned = pruned.planned;
+        skipped += pruned.skipped.length;
+      }
+      if (config.scanner.planObjects !== undefined) {
+        // Planning callbacks borrow these arguments until their promise settles.
+        // Do not tie this scope to cancellation while the callback may still use them.
+        const planning = new MemoryScope(this.memoryBudget);
+        try {
+          const columns =
+            config.windows === undefined
+              ? projectedReadColumns(
+                  config.select,
+                  config.where,
+                  config.orderBy,
+                  config.projections,
+                  planning,
+                )
+              : windowReadColumns(config, planning);
+          const options = planning.allocate(
+            allocationCharges.object +
+              (1 + Number(columns !== undefined) + Number(config.where !== undefined)) *
+                allocationCharges.property,
+            "object planning options",
+            () => ({
+              memoryBudget: this.memoryBudget,
+              ...(columns !== undefined ? { columns } : {}),
+              ...(config.where !== undefined ? { where: config.where } : {}),
+            }),
+          ).value;
+          throwIfAborted(config.budget.signal);
+          enforceBudget(config.budget, this.stats, config.now, startedAt);
+          planned = await config.scanner.planObjects(planned, options);
+          throwIfAborted(config.budget.signal);
+          enforceBudget(config.budget, this.stats, config.now, startedAt);
+        } finally {
+          planning.dispose();
+        }
+      }
+      this.stats.planningMs = (this.stats.planningMs ?? 0) + (config.now() - startedAt);
+      const result = discovery.allocate(
+        allocationCharges.object + 2 * allocationCharges.property,
+        "object plan result",
+        () => ({ planned, skipped }),
+      ).value;
+      if (parent !== undefined) {
+        const owner = discovery.retainAllocations(result);
+        try {
+          parent.adopt(owner);
+        } catch (error) {
+          owner.release();
+          throw error;
+        }
+      }
+      return result;
+    } finally {
+      discovery.dispose();
     }
-    this.stats.planningMs = (this.stats.planningMs ?? 0) + (config.now() - startedAt);
-    return { planned, skipped };
   }
 
   streamNdjson(): ReadableStream<Uint8Array> {
@@ -5610,6 +5662,7 @@ async function expandPaths(
   pattern: string,
   planningCache?: CacheAdapter<ObjectInfo[]>,
   budget: QueryBudget = {},
+  scope?: MemoryScope,
 ): Promise<ObjectInfo[]> {
   throwIfAborted(budget.signal);
   const cacheKey = `object-plan:${pattern}`;
@@ -5619,11 +5672,19 @@ async function expandPaths(
     if (budget.maxFiles !== undefined && cached.value.length > budget.maxFiles) {
       throwBudget("files", budget.maxFiles, cached.value.length);
     }
-    return cloneObjectInfos(cached.value);
+    return cloneObjectInfos(cached.value, scope);
   }
 
-  const paths = await expandPathsUncached(store, pattern, budget);
-  await planningCache?.set(cacheKey, { value: cloneObjectInfos(paths) });
+  const paths = await expandPathsUncached(store, pattern, budget, scope);
+  if (planningCache !== undefined) {
+    const transfer = scope?.childScope();
+    try {
+      const value = cloneObjectInfos(paths, transfer);
+      await planningCache.set(cacheKey, { value });
+    } finally {
+      transfer?.dispose();
+    }
+  }
   throwIfAborted(budget.signal);
   return paths;
 }
@@ -5632,10 +5693,17 @@ async function expandPathsUncached(
   store: ObjectStore,
   pattern: string,
   budget: QueryBudget,
+  scope?: MemoryScope,
 ): Promise<ObjectInfo[]> {
   if (!hasGlob(pattern)) {
     if (isPrefixSource(pattern)) {
-      return listMatchingObjects(store, pattern, budget, (path) => path.endsWith(".parquet"));
+      return listMatchingObjects(
+        store,
+        pattern,
+        budget,
+        (path) => path.endsWith(".parquet"),
+        scope,
+      );
     }
     const head = await store.head(pattern);
     throwIfAborted(budget.signal);
@@ -5647,14 +5715,25 @@ async function expandPathsUncached(
     if (budget.maxFiles !== undefined && budget.maxFiles < 1) {
       throwBudget("files", budget.maxFiles, 1);
     }
-    const object: ObjectInfo = { path: pattern, size: head.size };
-    if (head.etag !== undefined) object.etag = head.etag;
-    if (head.rangeReadMode !== undefined) object.rangeReadMode = head.rangeReadMode;
-    if (head.lastModified !== undefined) object.lastModified = head.lastModified;
-    return [object];
+    const headRecord = scope?.reserve(
+      allocationCharges.object +
+        5 * allocationCharges.property +
+        allocationCharges.array +
+        allocationCharges.arraySlot,
+      "object head metadata",
+    );
+    try {
+      const object: ObjectInfo = { path: pattern, size: head.size };
+      if (head.etag !== undefined) object.etag = head.etag;
+      if (head.rangeReadMode !== undefined) object.rangeReadMode = head.rangeReadMode;
+      if (head.lastModified !== undefined) object.lastModified = head.lastModified;
+      return cloneObjectInfos([object], scope);
+    } finally {
+      headRecord?.release();
+    }
   }
   const prefix = globPrefix(pattern);
-  return listMatchingObjects(store, prefix, budget, globMatcher(pattern));
+  return listMatchingObjects(store, prefix, budget, globMatcher(pattern), scope);
 }
 
 async function listMatchingObjects(
@@ -5662,19 +5741,33 @@ async function listMatchingObjects(
   prefix: string,
   budget: QueryBudget,
   matchesPath: (path: string) => boolean,
+  scope?: MemoryScope,
 ): Promise<ObjectInfo[]> {
-  const paths: ObjectInfo[] = [];
+  const paths: ObjectInfo[] =
+    scope === undefined
+      ? []
+      : scope.allocate(allocationCharges.array, "discovered object list", () => [] as ObjectInfo[])
+          .value;
   for await (const object of checkedAsyncIterable(store.list(prefix), budget.signal)) {
     if (!matchesPath(object.path)) continue;
     if (budget.maxFiles !== undefined && paths.length >= budget.maxFiles) {
       throwBudget("files", budget.maxFiles, paths.length + 1);
     }
-    paths.push(object);
+    scope?.allocate(allocationCharges.arraySlot, "discovered object slot", () => undefined);
+    paths.push(cloneObjectInfo(object, scope));
   }
   if (paths.length === 0) {
     throw new LakeqlError("LAKEQL_NO_FILES_MATCHED", `No files matched ${prefix}`, { prefix });
   }
-  paths.sort((a, b) => a.path.localeCompare(b.path));
+  const ordering = scope?.reserve(
+    allocationCharges.array + paths.length * 2 * allocationCharges.arraySlot,
+    "object discovery sorting",
+  );
+  try {
+    paths.sort((a, b) => a.path.localeCompare(b.path));
+  } finally {
+    ordering?.release();
+  }
   return paths;
 }
 

@@ -38,7 +38,7 @@ async function fixture(pool: MemoryBudget, cap: number) {
 }
 
 it("shares physical headroom across query children and cleans up an early consumer exit", async () => {
-  const perQuery = 4 + c.array + c.arraySlot;
+  const perQuery = 2048;
   const pool = new MemoryBudget(2 * perQuery);
   const { lake, seen } = await fixture(pool, perQuery);
   const first = lake.path("table").run();
@@ -49,19 +49,25 @@ it("shares physical headroom across query children and cleans up an early consum
   try {
     await a.next();
     await b.next();
-    expect(pool.usedBytes).toBe(2 * perQuery);
-    expect(first.memoryBudget.usedBytes).toBe(perQuery);
-    expect(second.memoryBudget.usedBytes).toBe(perQuery);
+    const live = first.memoryBudget.usedBytes;
+    expect(live).toBeGreaterThan(4 + c.array + c.arraySlot);
+    expect(pool.usedBytes).toBe(2 * live);
+    expect(second.memoryBudget.usedBytes).toBe(live);
     expect(seen.map((options) => options.memoryBudget)).toEqual([
       first.memoryBudget,
       second.memoryBudget,
     ]);
-    await expect(
-      lake.path("table").run().batches()[Symbol.asyncIterator]().next(),
-    ).rejects.toMatchObject({
-      code: "LAKEQL_BUDGET_EXCEEDED",
-    });
-    expect(pool.usedBytes).toBe(2 * perQuery);
+    const pressure = pool.reserve(pool.maxBytes - pool.usedBytes, "concurrent pressure");
+    try {
+      await expect(
+        lake.path("table").run().batches()[Symbol.asyncIterator]().next(),
+      ).rejects.toMatchObject({
+        code: "LAKEQL_BUDGET_EXCEEDED",
+      });
+      expect(pool.usedBytes).toBe(pool.maxBytes);
+    } finally {
+      pressure.release();
+    }
   } finally {
     await a.return?.();
     await b.return?.();
@@ -151,6 +157,7 @@ it("releases owned output on materialization failure before scanner shutdown fin
   let enter!: () => void;
   let resume!: () => void;
   let produced = 0;
+  let planningBytes = 0;
   const entered = new Promise<void>((resolve) => {
     enter = resolve;
   });
@@ -165,6 +172,7 @@ it("releases owned output on materialization failure before scanner shutdown fin
         throw new Error("Unexpected row fallback");
       },
       async *scanOwnedVectorBatches(_path, options) {
+        planningBytes = pool.usedBytes;
         try {
           for (const text of ["first", "x".repeat(4096)]) {
             const scope = new MemoryScope(options.memoryBudget);
@@ -194,8 +202,9 @@ it("releases owned output on materialization failure before scanner shutdown fin
   await entered;
   try {
     expect(produced).toBe(2);
-    expect(pool.usedBytes).toBe(0);
-    const sibling = pool.reserve(pool.maxBytes, "sibling during scanner shutdown");
+    expect(planningBytes).toBeGreaterThan(0);
+    expect(pool.usedBytes).toBe(planningBytes);
+    const sibling = pool.reserve(pool.maxBytes - planningBytes, "sibling during scanner shutdown");
     sibling.release();
   } finally {
     resume();

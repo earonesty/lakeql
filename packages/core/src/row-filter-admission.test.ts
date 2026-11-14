@@ -68,11 +68,13 @@ it("releases filter scratch before yielding and closes the scanner on early retu
   const store = memoryStore();
   await store.put("table", new Uint8Array(1));
   let closed = false;
+  let planningBytes = 0;
   const lake = new Lake({
     store,
     memoryPool: pool,
     scanner: {
       async *scan() {
+        planningBytes = pool.usedBytes;
         try {
           for (let i = 0; i < 100; i++) yield [{ key: "ß" }];
         } finally {
@@ -95,7 +97,8 @@ it("releases filter scratch before yielding and closes the scanner on early retu
   expect((await rows.next()).value).toEqual({ key: "ß" });
   expect(pool.peakBytes).toBeGreaterThan(0);
   // Filter scratch has released; the suspended output directory remains live.
-  expect(pool.usedBytes).toBe(c.array + c.arraySlot);
+  expect(planningBytes).toBeGreaterThan(0);
+  expect(pool.usedBytes).toBe(planningBytes + c.array + c.arraySlot);
   await rows.return?.();
   expect(closed).toBe(true);
   expect(pool.usedBytes).toBe(0);

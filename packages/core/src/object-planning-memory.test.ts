@@ -84,3 +84,65 @@ it("rejects oversized object-plan columns before invoking the planner", async ()
   expect(planned).toBe(false);
   expect(pool.usedBytes).toBe(0);
 });
+
+it("rejects discovery list growth during iteration and closes the listing", async () => {
+  const store = memoryStore();
+  const pool = new MemoryBudget(1600);
+  let visited = 0,
+    closed = false,
+    planned = false;
+  store.list = async function* () {
+    try {
+      for (let index = 0; index < 100; index++) {
+        if (index > 0) expect(pool.usedBytes).toBeGreaterThan(0);
+        visited++;
+        yield { path: `data/${index}.parquet`, size: 1 };
+      }
+    } finally {
+      closed = true;
+    }
+  };
+  const lake = new Lake({
+    store,
+    memoryPool: pool,
+    scanner: {
+      async planObjects(objects) {
+        planned = true;
+        return objects;
+      },
+      scan() {
+        throw Error("unexpected scan");
+      },
+    },
+  });
+  await expect(lake.path("data/*.parquet").planTasks()).rejects.toMatchObject({
+    code: "LAKEQL_BUDGET_EXCEEDED",
+  });
+  expect(visited).toBeLessThan(100);
+  expect(closed).toBe(true);
+  expect(planned).toBe(false);
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("keeps discovered metadata charged across delayed row scans", async () => {
+  const store = memoryStore();
+  await store.put("table", new Uint8Array(1));
+  const pool = new MemoryBudget(65536);
+  let observed = 0;
+  const lake = new Lake({
+    store,
+    memoryPool: pool,
+    scanner: {
+      async *scan(_path, options) {
+        observed = pool.usedBytes;
+        expect(observed).toBeGreaterThan(0);
+        await Promise.resolve();
+        expect(options.object?.path).toBe("table");
+        expect(pool.usedBytes).toBeGreaterThanOrEqual(observed);
+        yield [{ id: 1 }];
+      },
+    },
+  });
+  expect(await lake.path("table").toArray()).toEqual([{ id: 1 }]);
+  expect(pool.usedBytes).toBe(0);
+});

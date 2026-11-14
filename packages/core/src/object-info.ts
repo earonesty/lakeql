@@ -19,23 +19,7 @@ export function cloneObjectInfos(
             createList,
           ).value;
     for (const object of objects) {
-      const create = (): ObjectInfo => {
-        const cloned: ObjectInfo = { path: object.path, size: object.size };
-        if (object.etag !== undefined) cloned.etag = object.etag;
-        if (object.lastModified !== undefined) cloned.lastModified = new Date(object.lastModified);
-        if (object.rangeReadMode !== undefined) cloned.rangeReadMode = object.rangeReadMode;
-        return cloned;
-      };
-      const bytes =
-        c.object +
-        5 * c.property +
-        c.string +
-        object.path.length * c.stringCodeUnit +
-        (object.etag === undefined ? 0 : c.string + object.etag.length * c.stringCodeUnit) +
-        (object.lastModified === undefined ? 0 : c.timestamp);
-      result.push(
-        output === undefined ? create() : output.allocate(bytes, "object metadata", create).value,
-      );
+      result.push(cloneObjectInfo(object, output));
     }
     if (output !== undefined && parent !== undefined) {
       const owner = output.retainAllocations(result);
@@ -50,4 +34,22 @@ export function cloneObjectInfos(
   } finally {
     output?.dispose();
   }
+}
+
+export function cloneObjectInfo(object: ObjectInfo, scope?: MemoryScope): ObjectInfo {
+  const create = (): ObjectInfo => {
+    const cloned: ObjectInfo = { path: object.path, size: object.size };
+    if (object.etag !== undefined) cloned.etag = object.etag;
+    if (object.lastModified !== undefined) cloned.lastModified = new Date(object.lastModified);
+    if (object.rangeReadMode !== undefined) cloned.rangeReadMode = object.rangeReadMode;
+    return cloned;
+  };
+  const bytes =
+    c.object +
+    5 * c.property +
+    c.string +
+    object.path.length * c.stringCodeUnit +
+    (object.etag === undefined ? 0 : c.string + object.etag.length * c.stringCodeUnit) +
+    (object.lastModified === undefined ? 0 : c.timestamp);
+  return scope === undefined ? create() : scope.allocate(bytes, "object metadata", create).value;
 }
