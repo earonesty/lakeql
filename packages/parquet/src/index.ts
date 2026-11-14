@@ -45,6 +45,8 @@ export {
   aggregateParquetGroupTaskOwned,
   aggregateParquetGroupTasks,
   aggregateParquetGroupTasksBatch,
+  aggregateParquetGroupTasksBatchOwned,
+  aggregateParquetGroupTasksOwned,
   aggregateParquetTask,
   aggregateParquetTaskOwned,
   aggregateParquetTasks,

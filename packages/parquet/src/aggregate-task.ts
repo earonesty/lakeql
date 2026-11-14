@@ -3,32 +3,30 @@ import {
   type Batch,
   CpuPhysicalBackend,
   MATERIALIZATION_CHARGES as c,
-  createVectorGroupByState,
   detachOwnedRow,
   fanInWorkUnits,
-  finalizeVectorGroupByBatch,
+  gatherOwnedBatch,
   LakeqlError,
   MemoryBudget,
   MemoryScope,
-  materializeBatchRows,
-  mergeVectorGroupByStates,
+  materializeOwnedBatchRows,
   type ObjectStore,
   type OwnedMemory,
   type PhysicalGroupedReduce,
+  type PhysicalOutputValue,
   type PhysicalReduce,
   type PhysicalReductionContinuation,
   type Row,
-  restoreVectorGroupByState,
   selectedRowCount,
-  sliceBatch as sliceBatchRows,
   type TaskInput,
   tryPredicateSelection,
   type Vector,
   type VectorAggregateStateSnapshots,
   type VectorGroupByStateSnapshot,
+  type VectorSource,
+  vectorFromSource,
   vectorFromValues,
-  vectorOrderByBatch,
-  vectorTopKBatch,
+  vectorTopKOwnedBatch,
 } from "lakeql-core";
 import { readParquetColumnBatchesFromFile } from "./column-batches.js";
 import { readCachedParquetMetadata } from "./metadata-cache.js";
@@ -41,7 +39,6 @@ import {
   type AggregateParquetTasksOptions,
   aggregateScanOptions,
   aggregateTaskReadColumns,
-  aggregateVectorOptions,
   enforceAggregateTaskBudget,
   groupAggregateTasks,
   taskReadOptions,
@@ -198,19 +195,46 @@ export async function aggregateParquetTasksOwned(
   spec: AggregateSpec,
   options: AggregateParquetTasksOptions = {},
 ): Promise<OwnedMemory<Record<string, unknown>>> {
+  const rows = await aggregateTasksOwnedRows(
+    tasks,
+    { kind: "reduce", aggregates: spec },
+    options,
+    (task, budget) =>
+      aggregateParquetTaskOwned(store, task, spec, { ...options, memoryBudget: budget }),
+    options.partialBoundary,
+  );
+  const scope = new MemoryScope(rows.budget);
+  try {
+    scope.adopt(rows);
+    const row = rows.value[0];
+    if (row === undefined)
+      throw new LakeqlError("LAKEQL_TYPE_ERROR", "Aggregate task returned no result");
+    return scope.retainAllocations(row);
+  } finally {
+    scope.dispose();
+  }
+}
+
+async function aggregateTasksOwnedRows<
+  T extends VectorAggregateStateSnapshots | VectorGroupByStateSnapshot,
+>(
+  tasks: TaskInput[],
+  operator: PhysicalReduce | PhysicalGroupedReduce,
+  options: Omit<AggregateParquetTasksOptions, "partialBoundary">,
+  runTask: (task: TaskInput, budget: MemoryBudget) => Promise<OwnedMemory<T>>,
+  boundary?: (partial: T, task: TaskInput, index: number) => T | Promise<T>,
+): Promise<OwnedMemory<Row[]>> {
   const scope = new MemoryScope(options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER));
   const inputs = scope.childScope();
   let reducer: PhysicalReductionContinuation | undefined;
   try {
-    reducer = new CpuPhysicalBackend().openReduction(
-      { kind: "reduce", aggregates: spec },
-      {
-        allocationScope: scope,
-        ...(options.budget === undefined ? {} : { budget: options.budget }),
-        ...(options.now === undefined ? {} : { now: options.now }),
-        ...(options.startedAt === undefined ? {} : { queryStartedAt: options.startedAt }),
-      },
-    );
+    reducer = new CpuPhysicalBackend().openReduction(operator, {
+      allocationScope: scope,
+      enforceOutputRows: operator.kind === "reduce",
+      ...(options.budget === undefined ? {} : { budget: options.budget }),
+      ...(options.now === undefined ? {} : { now: options.now }),
+      ...(options.startedAt === undefined ? {} : { queryStartedAt: options.startedAt }),
+    });
     const merged = reducer;
     await fanInWorkUnits({
       memoryBudget: scope.budget,
@@ -221,10 +245,7 @@ export async function aggregateParquetTasksOwned(
         ? {}
         : { maxBufferedPartials: options.maxBufferedPartials }),
       async run(task) {
-        const owner = await aggregateParquetTaskOwned(store, task, spec, {
-          ...options,
-          memoryBudget: scope.budget,
-        });
+        const owner = await runTask(task, scope.budget);
         try {
           return inputs.adopt(owner);
         } catch (error) {
@@ -233,14 +254,11 @@ export async function aggregateParquetTasksOwned(
         }
       },
       async boundary(owner, task, index) {
-        if (options.partialBoundary === undefined) return owner;
-        const replacement = await options.partialBoundary(owner.value, task, index);
+        if (boundary === undefined) return owner;
+        const replacement = await boundary(owner.value, task, index);
         const detached = detachOwnedRow({ snapshot: replacement }, scope.budget);
         try {
-          const retained = inputs.retainBacking(
-            detached.value.snapshot as VectorAggregateStateSnapshots,
-            [detached],
-          );
+          const retained = inputs.retainBacking(detached.value.snapshot as T, [detached]);
           owner.release();
           return retained;
         } finally {
@@ -258,7 +276,16 @@ export async function aggregateParquetTasksOwned(
           const checkpoint = scratch.allocate(
             c.object + 2 * c.property,
             "aggregate task merge checkpoint",
-            () => ({ kind: "aggregate-snapshot" as const, snapshot: partial.value }),
+            (): PhysicalOutputValue =>
+              operator.kind === "grouped-reduce"
+                ? {
+                    kind: "grouped-aggregate-snapshot",
+                    snapshot: partial.value as VectorGroupByStateSnapshot,
+                  }
+                : {
+                    kind: "aggregate-snapshot",
+                    snapshot: partial.value as VectorAggregateStateSnapshots,
+                  },
           ).value;
           await target.mergeCheckpoint(checkpoint);
         } finally {
@@ -267,11 +294,7 @@ export async function aggregateParquetTasksOwned(
         }
       },
     });
-    const output = scope.adopt(await merged.finish());
-    const row = output.value[0];
-    if (row === undefined)
-      throw new LakeqlError("LAKEQL_TYPE_ERROR", "Aggregate task returned no result");
-    return scope.retainAllocations(row);
+    return await merged.finish();
   } finally {
     reducer?.dispose();
     scope.dispose();
@@ -320,9 +343,33 @@ export async function aggregateParquetGroupTasks(
   spec: AggregateSpec,
   options: AggregateParquetGroupTasksOptions = {},
 ): Promise<Row[]> {
-  return materializeBatchRows(
-    await aggregateParquetGroupTasksBatch(store, tasks, groupColumns, spec, options),
+  const owner = await aggregateParquetGroupTasksOwned(store, tasks, groupColumns, spec, options);
+  try {
+    return owner.value;
+  } finally {
+    owner.release();
+  }
+}
+
+export async function aggregateParquetGroupTasksOwned(
+  store: ObjectStore,
+  tasks: TaskInput[],
+  groupColumns: readonly string[],
+  spec: AggregateSpec,
+  options: AggregateParquetGroupTasksOptions = {},
+): Promise<OwnedMemory<Row[]>> {
+  const batch = await aggregateParquetGroupTasksBatchOwned(
+    store,
+    tasks,
+    groupColumns,
+    spec,
+    options,
   );
+  try {
+    return materializeOwnedBatchRows(batch);
+  } finally {
+    batch.release();
+  }
 }
 
 export async function aggregateParquetGroupTasksBatch(
@@ -332,35 +379,120 @@ export async function aggregateParquetGroupTasksBatch(
   spec: AggregateSpec,
   options: AggregateParquetGroupTasksOptions = {},
 ): Promise<Batch> {
-  const maxConcurrentTasks = options.maxConcurrentTasks ?? 1;
-  const taskInputs = aggregateTaskInputs(tasks, options);
-  const aggregateOptions = aggregateVectorOptions(options);
-  const groupOptions =
-    options.maxGroups === undefined
-      ? aggregateOptions
-      : { ...aggregateOptions, maxGroups: options.maxGroups };
-  const merged = createVectorGroupByState(groupColumns, spec);
-  await fanInWorkUnits({
-    ...(options.memoryBudget === undefined ? {} : { memoryBudget: options.memoryBudget }),
-    inputs: taskInputs,
-    initial: merged,
-    maxConcurrentTasks,
-    ...(options.maxBufferedPartials !== undefined
-      ? { maxBufferedPartials: options.maxBufferedPartials }
-      : {}),
-    run(task) {
-      return aggregateParquetGroupTask(store, task, groupColumns, spec, options);
+  const owner = await aggregateParquetGroupTasksBatchOwned(
+    store,
+    tasks,
+    groupColumns,
+    spec,
+    options,
+  );
+  try {
+    return owner.value;
+  } finally {
+    owner.release();
+  }
+}
+
+export async function aggregateParquetGroupTasksBatchOwned(
+  store: ObjectStore,
+  tasks: TaskInput[],
+  groupColumns: readonly string[],
+  spec: AggregateSpec,
+  options: AggregateParquetGroupTasksOptions = {},
+): Promise<OwnedMemory<Batch>> {
+  const rows = await aggregateTasksOwnedRows(
+    tasks,
+    {
+      kind: "grouped-reduce",
+      keys: [...groupColumns],
+      aggregates: spec,
+      ...(options.maxGroups === undefined ? {} : { maxGroups: options.maxGroups }),
     },
-    ...(options.partialBoundary === undefined ? {} : { boundary: options.partialBoundary }),
-    reduce(accumulator, partial) {
-      mergeVectorGroupByStates(
-        accumulator,
-        restoreVectorGroupByState(groupColumns, spec, partial, groupOptions),
-        groupOptions,
+    options,
+    (task, budget) =>
+      aggregateParquetGroupTaskOwned(store, task, groupColumns, spec, {
+        ...options,
+        memoryBudget: budget,
+      }),
+    options.partialBoundary,
+  );
+  const scope = new MemoryScope(rows.budget);
+  try {
+    scope.adopt(rows);
+    const columns = scope.allocate(
+      c.object,
+      "group task output columns",
+      () => Object.create(null) as Record<string, Vector>,
+    ).value;
+    const addColumn = (name: string) => {
+      if (Object.hasOwn(columns, name)) return;
+      scope.allocate(
+        c.property + c.string + name.length * c.stringCodeUnit,
+        "group task output column",
+        () => undefined,
       );
-    },
-  });
-  return applyGroupResultOptions(finalizeVectorGroupByBatch(merged), options);
+      columns[name] = vectorFromSource(
+        {
+          length: rows.value.length,
+          get: (index) => (rows.value[index]?.[name] ?? null) as ReturnType<VectorSource["get"]>,
+        },
+        scope,
+      );
+    };
+    for (const name of groupColumns) addColumn(name);
+    for (const name in spec) if (Object.hasOwn(spec, name)) addColumn(name);
+    const batch = scope.allocate(c.object + 2 * c.property, "group task output batch", () => ({
+      rowCount: rows.value.length,
+      columns,
+    })).value;
+    const input = scope.retainAllocations(batch);
+    let output: OwnedMemory<Batch> | undefined;
+    try {
+      if (options.orderBy !== undefined) {
+        output = vectorTopKOwnedBatch(input, options.orderBy, {
+          offset: options.offset ?? 0,
+          limit: options.limit ?? batch.rowCount,
+        });
+      } else if (options.limit === undefined && options.offset === undefined) {
+        output = input.retain();
+      } else {
+        const offset = options.offset ?? 0;
+        const limit = options.limit;
+        if (!Number.isInteger(offset) || offset < 0)
+          throw new LakeqlError("LAKEQL_TYPE_ERROR", "offset must be a non-negative integer", {
+            offset,
+          });
+        if (limit !== undefined && (!Number.isInteger(limit) || limit < 0))
+          throw new LakeqlError("LAKEQL_TYPE_ERROR", "limit must be a non-negative integer", {
+            limit,
+          });
+        const start = Math.min(offset, batch.rowCount);
+        const end = limit === undefined ? batch.rowCount : Math.min(start + limit, batch.rowCount);
+        const indices = scope.allocate(
+          c.array + (end - start) * c.arraySlot,
+          "group task slice indices",
+          () => Array.from({ length: end - start }, (_, index) => start + index),
+        ).value;
+        output = gatherOwnedBatch(input, indices);
+      }
+      if (
+        options.budget?.maxOutputRows !== undefined &&
+        output.value.rowCount > options.budget.maxOutputRows
+      )
+        throw new LakeqlError(
+          "LAKEQL_BUDGET_EXCEEDED",
+          "Grouped task result exceeds output rows budget",
+        );
+      const result = output;
+      output = undefined;
+      return result;
+    } finally {
+      output?.release();
+      input.release();
+    }
+  } finally {
+    scope.dispose();
+  }
 }
 
 function aggregateTaskInputs(
@@ -389,35 +521,4 @@ function batchWithPartitionValues(batch: Batch, partitionValues: Record<string, 
     columns[column] = vectorFromValues(Array.from({ length: batch.rowCount }, () => value));
   }
   return { rowCount: batch.rowCount, columns };
-}
-
-function applyGroupResultOptions(batch: Batch, options: AggregateParquetGroupTasksOptions): Batch {
-  if (options.orderBy === undefined) {
-    if (options.limit === undefined && options.offset === undefined) return batch;
-    return sliceBatch(batch, options.offset ?? 0, options.limit);
-  }
-  if (options.limit !== undefined) {
-    return vectorTopKBatch(
-      batch,
-      options.orderBy,
-      options.offset === undefined
-        ? { limit: options.limit }
-        : { offset: options.offset, limit: options.limit },
-    );
-  }
-  const ordered = vectorOrderByBatch(batch, options.orderBy);
-  return options.offset === undefined || options.offset === 0
-    ? ordered
-    : sliceBatch(ordered, options.offset);
-}
-
-function sliceBatch(batch: Batch, offset: number, limit?: number): Batch {
-  if (!Number.isInteger(offset) || offset < 0) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "offset must be a non-negative integer", { offset });
-  }
-  if (limit !== undefined && (!Number.isInteger(limit) || limit < 0)) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "limit must be a non-negative integer", { limit });
-  }
-  const end = limit === undefined ? batch.rowCount : Math.min(offset + limit, batch.rowCount);
-  return sliceBatchRows(batch, Math.min(offset, batch.rowCount), end);
 }

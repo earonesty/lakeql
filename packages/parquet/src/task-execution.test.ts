@@ -15,6 +15,7 @@ import {
   aggregateParquetGroupTaskOwned,
   aggregateParquetGroupTasks,
   aggregateParquetGroupTasksBatch,
+  aggregateParquetGroupTasksOwned,
   aggregateParquetTask,
   aggregateParquetTasks,
   aggregateParquetTasksOwned,
@@ -771,5 +772,77 @@ it("retains grouped task checkpoints and cleans up group-limit rejection", async
   await expect(
     aggregateParquetGroupTaskOwned(store, task, ["g"], spec, { memoryBudget: pool, maxGroups: 2 }),
   ).rejects.toMatchObject({ code: "LAKEQL_GROUP_LIMIT_EXCEEDED" });
+  expect(pool.usedBytes).toBe(0);
+});
+
+it.each([
+  false,
+  true,
+])("owns grouped fan-in through transport and final shaping (failure=%s)", async (fail) => {
+  const store = memoryStore();
+  await writeParquet(store, "owned-group-fanin.parquet", {
+    rowGroupSize: [2, 2],
+    columnData: [
+      { name: "g", type: "STRING", data: ["a", "b", "a", "b"] },
+      { name: "value", type: "DOUBLE", data: [1, 2, 3, 4] },
+    ],
+  });
+  const tasks: TaskInput[] = [0, 1].map((index) => ({
+    path: "owned-group-fanin.parquet",
+    rowGroupRanges: [{ start: index, end: index + 1 }],
+    partitionValues: {},
+  }));
+  const pool = new MemoryBudget(1024 * 1024);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let entered!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const pending = aggregateParquetGroupTasksOwned(
+    store,
+    tasks,
+    ["g"],
+    { total: { op: "sum", column: "value" } },
+    {
+      memoryBudget: pool,
+      budget: { maxOutputRows: 1 },
+      orderBy: [{ column: "total", direction: "desc" }],
+      offset: 1,
+      limit: 1,
+      preserveTaskBoundaries: true,
+      maxConcurrentTasks: 2,
+      async partialBoundary(partial, _task, index) {
+        if (index === 0) {
+          entered();
+          await gate;
+          if (fail) throw new Error("group transport failed");
+        }
+        return jsonWorkUnitBoundary(partial);
+      },
+    },
+  );
+  const outcome = pending.then(
+    (value) => ({ value }),
+    (error: unknown) => ({ error }),
+  );
+  await ready;
+  expect(pool.usedBytes).toBeGreaterThan(0);
+  release();
+  const result = await outcome;
+  if ("error" in result) {
+    expect(fail).toBe(true);
+    expect(result.error).toEqual(new Error("group transport failed"));
+  } else {
+    expect(fail).toBe(false);
+    try {
+      expect(result.value.value).toEqual([{ g: "a", total: 4 }]);
+      expect(pool.usedBytes).toBeGreaterThan(0);
+    } finally {
+      result.value.release();
+    }
+  }
   expect(pool.usedBytes).toBe(0);
 });
