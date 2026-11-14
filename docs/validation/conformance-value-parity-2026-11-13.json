@@ -226,5 +226,22 @@
       "nativeR2": "The Worker test configuration loads the exact external fixture bytes into a test-only binding. Four native-R2 cases cover 64/128 MiB pools and indexed/cached metadata, concurrent owned outputs at batch sizes 1/3/32, output retention, cancellation, complete parity with the corrected public reader, independently specified keys/first-last names, and zero reservations after release. The suite ran all 57 cases without skips.",
       "limits": "This is local workerd/Miniflare native R2 operation with reservation assertions, not deployed-cloud total-heap proof or near-cap workload stress. The conformance checkpoint remains 477 passed and 16 failed from the preceding full run."
     }
+  },
+  "publishedPackageCheckpoint": {
+    "sourceCommit": "e6d5a80",
+    "distributionBuild": "pnpm build passed",
+    "cleanConsumer": "pnpm check:packages passed after extending scripts/check-package-install.mjs. npm installs packed lakeql/lance/webgpu into a temporary consumer outside workspace patch settings.",
+    "newAssertions": [
+      "Real nation.dict-malformed fixture recovers all 25 keys and independently specified first/last names through the installed entrypoint",
+      "JSON and NDJSON streams emit exact expected output from real Parquet at batch sizes 1 and 3",
+      "Shared 64 MiB allocation pool returns to zero after stream completion and explicit cancellation"
+    ],
+    "existingAssertions": "Installed types/entrypoints, patched INT96 values, key-only maps and empty repeated fields continue to pass.",
+    "additionalGates": [
+      "pnpm check:compatibility passed",
+      "pnpm check:large-files passed",
+      "Changed package-check script passes biome"
+    ],
+    "limits": "Conformance still has sixteen known failures. This refresh does not replace final coverage/fixture reproducibility checks, resolve outstanding allocation categories, or prove total Worker heap caps."
   }
 }

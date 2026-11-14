@@ -24,7 +24,11 @@ try {
     join(consumerDirectory, "int96.parquet"),
     readFileSync(join(root, "fixtures/external/parquet-testing/data/int96_from_spark.parquet")),
   );
-  for (const name of ["map_no_value.parquet", "repeated_primitive_no_list.parquet"])
+  for (const name of [
+    "map_no_value.parquet",
+    "repeated_primitive_no_list.parquet",
+    "nation.dict-malformed.parquet",
+  ])
     writeFileSync(
       join(consumerDirectory, name),
       readFileSync(join(root, "fixtures/external/parquet-testing/data", name)),
@@ -35,6 +39,8 @@ try {
 import assert from "node:assert/strict";
 import {
   memoryStore,
+  MemoryBudget,
+  createParquetLake,
   readParquetObjects,
   timestampEpochForUnit,
   batchFromVectors,
@@ -59,6 +65,24 @@ assert.deepEqual(maps.map(({ my_map_no_v }) => my_map_no_v),
 await store.put("repeated.parquet", readFileSync(new URL("repeated_primitive_no_list.parquet", import.meta.url)));
 const repeated = await readParquetObjects(store, "repeated.parquet", { batchSize: 1 });
 assert.deepEqual(repeated.map(({ Int32_list }) => Int32_list), [[0, 1, 2, 3], [], [4], [5, 6, 7, 8]]);
+// Recovery and stream ownership must survive bundling and a clean npm install.
+await store.put("nation.parquet", readFileSync(new URL("nation.dict-malformed.parquet", import.meta.url)));
+const recovered = await readParquetObjects(store, "nation.parquet", { batchSize: 1 });
+const expectedKeys = Array.from({ length: 25 }, (_, nation_key) => ({ nation_key }));
+assert.deepEqual(recovered.map(({ nation_key }) => ({ nation_key })), expectedKeys);
+assert.equal(new TextDecoder().decode(recovered[0].name), "ALGERIA");
+assert.equal(new TextDecoder().decode(recovered[24].name), "UNITED STATES");
+const pool = new MemoryBudget(64 * 1024 * 1024);
+const lake = createParquetLake({ store, memoryPool: pool, scanRangeCache: { maxBytes: 0 } });
+const json = await new Response(lake.path("nation.parquet").select(["nation_key"]).batchSize(1).streamJson()).text();
+assert.equal(json, JSON.stringify(expectedKeys));
+const ndjson = await new Response(lake.path("nation.parquet").select(["nation_key"]).batchSize(3).streamNdjson()).text();
+assert.equal(ndjson, expectedKeys.map(row => JSON.stringify(row) + "\\n").join(""));
+assert.equal(pool.usedBytes, 0);
+const cancelled = lake.path("nation.parquet").batchSize(1).streamNdjson().getReader();
+assert.equal((await cancelled.read()).done, false);
+await cancelled.cancel();
+assert.equal(pool.usedBytes, 0);
 const batch = batchFromVectors({
   score: { type: "f32", values: Float32Array.of(0.25, 0.75) },
 });

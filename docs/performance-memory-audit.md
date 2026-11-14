@@ -34,9 +34,10 @@ Cloudflare total-memory safety. See the constrained-runtime section below.
 Current dictionary-recovery checkpoint (November 13, 2026) passes
 **2,793 default tests** (605 skipped), **57 Worker tests**, and **104 reference
 tests**, plus TypeScript build, typecheck and lint. These counts are recorded in
-`docs/validation/conformance-value-parity-2026-11-13.json`. Distribution/package-install,
-compatibility, coverage, fixture reproducibility and tracked-file size gates passed
-at earlier documented revisions; they still require final-revision reruns.
+`docs/validation/conformance-value-parity-2026-11-13.json`. Distribution build,
+expanded clean npm install smoke checks, compatibility and tracked-file size checks
+also pass. Coverage and fixture reproducibility remain earlier checkpoints that
+require final-revision reruns.
 
 The latest full external conformance checkpoint reports **477 passed, 16 failed,
 one skipped**. It checks both reader paths and compares owned values with public
