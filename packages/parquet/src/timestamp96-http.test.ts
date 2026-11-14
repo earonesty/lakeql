@@ -114,6 +114,11 @@ it.each([
             },
           });
         return query
+          .window("running_count", {
+            fn: { aggregate: "count" },
+            args: [],
+            over: { partitionBy: [], orderBy: [{ expr: col("timestamp_nanos") }] },
+          })
           .window("all_tied", {
             fn: "cume_dist",
             args: [],
@@ -137,6 +142,7 @@ it.each([
             dense_rank: rank,
             percent_rank: (rank - 1) / 5,
             cume_dist: rank / 6,
+            running_count: rank,
             all_tied: 1,
           };
         }),

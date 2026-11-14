@@ -196,7 +196,7 @@ function evaluatePartition(
 ): unknown[] {
   const peers = new WindowPeers(partition, options.memoryBudget);
   try {
-    return evaluatePartitionWithPeers(partition, expr, peers);
+    return evaluatePartitionWithPeers(partition, expr, peers, options.memoryBudget);
   } finally {
     peers.dispose();
   }
@@ -206,16 +206,17 @@ function evaluatePartitionWithPeers(
   partition: readonly WindowRow[],
   expr: WindowExpr,
   peers: WindowPeers,
+  budget?: MemoryBudget,
 ): unknown[] {
-  const rows = partition.map((item) => item.row);
   const fn = normalizedWindowName(expr.fn);
   if (isAggregateWindow(expr.fn)) {
-    const segmentValues = segmentTreeAggregateValues(partition, expr, peers);
+    const segmentValues = segmentTreeAggregateValues(partition, expr, peers, budget);
     if (segmentValues !== undefined) return segmentValues;
     return partition.map((_item, index) =>
       aggregateWindowValue(frameRows(partition, index, expr, peers), expr),
     );
   }
+  const rows = partition.map((item) => item.row);
   switch (fn) {
     case "row_number":
       return rows.map((_row, index) => index + 1);

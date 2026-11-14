@@ -801,6 +801,11 @@ it.each([64, 128])("owns deferred top-k over native R2 with a %s MiB shared pool
               orderBy: [{ expr: col("id"), direction: "desc" }],
             },
           })
+          .window("running_count", {
+            fn: { aggregate: "count" },
+            args: [],
+            over: { partitionBy: [], orderBy: [{ expr: col("id"), direction: "desc" }] },
+          })
           .window("tied", {
             fn: "cume_dist",
             args: [],
@@ -819,6 +824,7 @@ it.each([64, 128])("owns deferred top-k over native R2 with a %s MiB shared pool
           id,
           text: value,
           rank: 100 - id,
+          running_count: 100 - id,
           tied: 1,
         })),
       );

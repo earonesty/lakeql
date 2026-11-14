@@ -1,9 +1,13 @@
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
 import { evaluate } from "./evaluator.js";
 import type { Scalar } from "./expr.js";
+import type { MemoryBudget } from "./memory-budget.js";
 import type { AggregateOp } from "./query.js";
 import { compareAggregateScalars, numericAggregateValue } from "./scalar-order.js";
+import type { Row } from "./types.js";
 import type { WindowExpr } from "./window.js";
+import { aggregateWindowValue } from "./window-aggregate.js";
 import { frameSpan } from "./window-frame.js";
 import { WindowPeers } from "./window-peers.js";
 import { filterRow, type WindowRow } from "./window-utils.js";
@@ -30,15 +34,52 @@ export function segmentTreeAggregateValues(
   partition: readonly WindowRow[],
   expr: WindowExpr,
   peers = new WindowPeers(partition),
+  budget?: MemoryBudget,
 ): Scalar[] | undefined {
   if (typeof expr.fn !== "object" || expr.distinct === true) return undefined;
   if ((expr.over.frame?.exclude ?? "no-others") !== "no-others") return undefined;
   const op = expr.fn.aggregate;
   if (!isSegmentAggregate(op)) return undefined;
-  const tree = new SegmentTree(partition.map((row) => leafNode(row, expr, op)));
-  return partition.map((_row, index) =>
-    aggregateValue(op, tree.query(frameSpan(partition, index, expr, peers))),
-  );
+  if (partition.length === 0) return [];
+  const bytes = segmentTreeWorkspaceBytes(partition.length);
+  const reservation = budget?.tryReserve(bytes, "window segment tree workspace");
+  if (budget !== undefined && reservation === undefined) {
+    return partition.map((_row, index) => {
+      const span = frameSpan(partition, index, expr, peers);
+      return aggregateWindowValue(spanRows(partition, span.start, span.end), expr);
+    });
+  }
+  try {
+    const tree = new SegmentTree(partition, expr, op);
+    return partition.map((_row, index) =>
+      aggregateValue(op, tree.query(frameSpan(partition, index, expr, peers))),
+    );
+  } finally {
+    reservation?.release();
+  }
+}
+
+/** Tree directory, all possible leaf/internal nodes and three live query
+ * accumulators. Scalar payload ownership and returned output are separate. */
+export function segmentTreeWorkspaceBytes(length: number): number {
+  if (!Number.isSafeInteger(length) || length < 0)
+    throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Invalid segment tree length");
+  if (length === 0) return 0;
+  let size = 1;
+  while (size < length) size *= 2;
+  const node = c.object + 6 * c.property;
+  const bytes =
+    c.object + 2 * c.property + c.array + 2 * size * c.arraySlot + (2 * size - 1 + 3) * node;
+  if (!Number.isSafeInteger(bytes))
+    throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Segment tree workspace exceeds safe extent");
+  return bytes;
+}
+
+function* spanRows(partition: readonly WindowRow[], start: number, end: number): Iterable<Row> {
+  for (let index = start; index < end; index++) {
+    const item = partition[index];
+    if (item !== undefined) yield item.row;
+  }
 }
 
 function isSegmentAggregate(op: AggregateOp): boolean {
@@ -111,13 +152,14 @@ class SegmentTree {
   private readonly size: number;
   private readonly nodes: SegmentNode[];
 
-  constructor(leaves: readonly SegmentNode[]) {
+  constructor(partition: readonly WindowRow[], expr: WindowExpr, op: AggregateOp) {
     let size = 1;
-    while (size < leaves.length) size *= 2;
+    while (size < partition.length) size *= 2;
     this.size = size;
     this.nodes = Array.from({ length: size * 2 }, () => EMPTY_NODE);
-    for (let index = 0; index < leaves.length; index += 1) {
-      this.nodes[size + index] = leaves[index] ?? EMPTY_NODE;
+    for (let index = 0; index < partition.length; index += 1) {
+      const row = partition[index];
+      this.nodes[size + index] = row === undefined ? EMPTY_NODE : leafNode(row, expr, op);
     }
     for (let index = size - 1; index > 0; index -= 1) {
       this.nodes[index] = mergeNodes(

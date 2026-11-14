@@ -1,0 +1,29 @@
+{
+  "change": "Mergeable aggregate windows admit their segment-tree workspace against the query budget before constructing nodes. Exact-size planning covers the directory, possible leaf/internal nodes, tree metadata and three live query accumulator nodes. Tree construction writes leaves directly into the directory rather than building a separate leaf array.",
+  "dynamicDefault": "When admission is unavailable, the same aggregate evaluates frame spans through an iterator. No per-frame row array is materialized. Supported aggregate semantics, filtering and frame bounds are unchanged. This consumes less auxiliary memory at the cost of repeated expression evaluation; no user flag is required.",
+  "integration": "WindowExecutionOptions.memoryBudget now reaches segment-tree execution. The aggregate branch also avoids the unused partition-to-row array previously allocated before dispatch.",
+  "evidence": "../benchmarks/window-segment-budget-2026-11-13.json",
+  "measurement": "For 2048 running-sum rows, admitted tree workspace is 1901696 bytes and local median time is 0.65 ms. One byte below that availability selects span recomputation at 59.4 ms, with zero tree admission. Both outputs match an independent triangular-number oracle. Construction and output validation excluded; two warmups and three timed samples.",
+  "edgeCases": [
+    "Exact, one-byte-short and zero-byte tree budgets at power-of-two and non-power-of-two sizes.",
+    "Sibling query retains 37 bytes throughout; completed and failed operations leave that reservation intact and return their own charges to zero.",
+    "Input getter counts prove a tree evaluates each leaf once and fallback visits the frame spans; reservation is present before every tree input evaluation.",
+    "Empty inputs, invalid lengths, null values, filters and expression failure cleanup.",
+    "Zero-budget recomputation agrees with frame recomputation for all nine supported mergeable aggregate operations."
+  ],
+  "cloudFixtures": "Four concurrent real flba12_timestamp.parquet HTTP window queries now also verify running_count through 206 and ignored-range 200 responses. Native R2 64/128 MiB shared-pool fixtures verify running_count together with ranking, tied peers and preserved 1024-byte text payloads.",
+  "validation": {
+    "defaultPassed": 2970,
+    "defaultSkipped": 629,
+    "focusedPassed": 7,
+    "build": "passed",
+    "typecheck": "passed",
+    "lint": "passed",
+    "workerPassed": 61,
+    "referencePassed": 104,
+    "cleanPackageInstall": "passed",
+    "compatibility": "passed",
+    "fileSizeGate": "passed"
+  },
+  "limits": "The explicit reservation is a conservative allocation model, not a portable VM-heap measurement. Scalar expression payload ownership, returned arrays, input row materialization and fixed recomputation metadata remain separate coverage work. Low-budget span recomputation can be quadratic for growing/wide frames. Whole-window and Cloudflare total-memory safety remain unproven. Exact decimal operators and the six ALP/BSON/BROTLI conformance failures remain open."
+}

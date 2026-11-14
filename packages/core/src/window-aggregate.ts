@@ -7,7 +7,7 @@ import type { Row } from "./types.js";
 import type { WindowExpr } from "./window.js";
 import { filterRow, requireExactWindowAggregate } from "./window-utils.js";
 
-export function aggregateWindowValue(rows: readonly Row[], expr: WindowExpr): Scalar {
+export function aggregateWindowValue(rows: Iterable<Row>, expr: WindowExpr): Scalar {
   if (typeof expr.fn !== "object") {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Window expression is not an aggregate");
   }

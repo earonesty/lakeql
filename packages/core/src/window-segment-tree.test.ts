@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { col, lit } from "./expr.js";
 import { intervalValue } from "./interval.js";
+import { MemoryBudget } from "./memory-budget.js";
 import { timestampFromEpoch } from "./timestamp.js";
 import type { Row } from "./types.js";
 import type { WindowExpr } from "./window.js";
@@ -37,6 +38,13 @@ describe("window segment tree aggregates", () => {
     );
 
     for (const expr of exprs) {
+      const fallbackBudget = new MemoryBudget(0);
+      expect(segmentTreeAggregateValues(partition, expr, undefined, fallbackBudget)).toEqual(
+        partition.map((_row, index) =>
+          aggregateWindowValue(frameRows(partition, index, expr), expr),
+        ),
+      );
+      expect(fallbackBudget.usedBytes).toBe(0);
       expect(segmentTreeAggregateValues(partition, expr)).toEqual(
         partition.map((_row, index) =>
           aggregateWindowValue(frameRows(partition, index, expr), expr),
