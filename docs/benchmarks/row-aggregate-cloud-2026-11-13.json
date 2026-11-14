@@ -1,0 +1,46 @@
+{
+  "source": "https://pub-9d5bcb33a5384d79875a943eef183b6d.r2.dev/bench/window-events.parquet",
+  "scope": "Actual public R2 HTTP 206; forced row scanner; four concurrent stateful aggregate queries; 64/128 MiB shared pools with 8 MiB per-query caps and shared range cache. Independent fixture arithmetic oracle. Small fixture operational evidence, not throughput scaling or total Worker heap certification.",
+  "reports": [
+    {
+      "capMiB": 64,
+      "jobs": 4,
+      "temperature": "cold",
+      "reads": 19,
+      "transferredBytes": 21723,
+      "peakBytes": 236523,
+      "retainedCacheBytes": 5481,
+      "elapsedMilliseconds": 1151.505729
+    },
+    {
+      "capMiB": 64,
+      "jobs": 4,
+      "temperature": "warm",
+      "reads": 4,
+      "transferredBytes": 8,
+      "peakBytes": 236523,
+      "retainedCacheBytes": 5481,
+      "elapsedMilliseconds": 249.684526
+    },
+    {
+      "capMiB": 128,
+      "jobs": 4,
+      "temperature": "cold",
+      "reads": 19,
+      "transferredBytes": 21723,
+      "peakBytes": 244875,
+      "retainedCacheBytes": 5481,
+      "elapsedMilliseconds": 1090.493869
+    },
+    {
+      "capMiB": 128,
+      "jobs": 4,
+      "temperature": "warm",
+      "reads": 4,
+      "transferredBytes": 8,
+      "peakBytes": 244875,
+      "retainedCacheBytes": 5481,
+      "elapsedMilliseconds": 212.224283
+    }
+  ]
+}

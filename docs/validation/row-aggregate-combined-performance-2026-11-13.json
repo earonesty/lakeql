@@ -1,0 +1,44 @@
+{
+  "implementationCommit": "727fcaf",
+  "status": "Local scaling and public R2 concurrent fixture runs passed",
+  "localEvidence": "../benchmarks/row-aggregate-ownership-2026-11-13.json",
+  "remoteEvidence": "../benchmarks/row-aggregate-cloud-2026-11-13.json",
+  "local": {
+    "rows": [1024, 4096, 16384],
+    "medianMilliseconds": [42.943684, 109.268231, 418.773104],
+    "peakReservationBytes": [779759, 1849327, 5923311],
+    "concurrentJobs": 4,
+    "rowsPerConcurrentJob": 16384,
+    "poolCapsMiB": [64, 128],
+    "concurrentPeakBytes": 10307055,
+    "finalUsageBytes": 0
+  },
+  "remote": {
+    "transport": "public R2 HTTPS, GET range responses asserted HTTP 206",
+    "fixtureRows": 144,
+    "concurrentJobs": 4,
+    "poolCapsMiB": [64, 128],
+    "perQueryCapMiB": 8,
+    "coldReads": 19,
+    "coldTransferredBytes": 21723,
+    "warmReads": 4,
+    "warmTransferredBytes": 8,
+    "retainedCacheBytes": 5481,
+    "peakReservationBytesByCap": [236523, 244875],
+    "afterEvictionBytes": 0
+  },
+  "verification": [
+    "Independent arithmetic oracle for counts, sum, medians, quantiles, distinct and applicable mode/last values",
+    "Reused local input batches expose retained-input aliasing",
+    "Pool usage returns to zero after jobs/cache eviction",
+    "Cold/warm remote rounds share one explicitly budgeted range cache"
+  ],
+  "benchmarkCorrection": "An initial remote attempt passed the cache constructor incorrectly and therefore did not account retained cache in the pool. It is excluded from accepted evidence. Corrected run uses {memoryBudget: pool, maxBytes: 65536} and asserts positive retained cache bytes.",
+  "limits": [
+    "This establishes a current baseline, not a pre/post speedup.",
+    "Local input/runtime heap are outside explicit reservation accounting.",
+    "Small remote fixture proves operation and cache reuse, not remote throughput scaling or provider-wide behavior.",
+    "These 64/128 MiB pools are not total Cloudflare Worker heap certifications.",
+    "Full mixed workload and pinned-output acceptance remains open."
+  ]
+}

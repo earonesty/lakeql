@@ -19,5 +19,6 @@
     "Serialized-size estimation can build legacy unscoped snapshots and needs a separate allocation audit.",
     "Group-column/spec references borrow query configuration; this change does not bound compiled-plan/configuration storage.",
     "Reservation units do not certify total runtime heap or native sort internals."
-  ]
+  ],
+  "combinedPerformanceEvidence": "row-aggregate-combined-performance-2026-11-13.json"
 }
