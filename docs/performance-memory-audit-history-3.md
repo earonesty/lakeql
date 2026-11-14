@@ -4071,3 +4071,26 @@ requires its callers to provide a complete retention cost.
 
 Build/typecheck passed; focused suites passed 121 tests; full suite passed 3,660
 with 629 skips. Evidence: `docs/validation/raw-cache-entry-accounting-2026-11-14.json`.
+
+### 2026-11-14 — cache-accounting mixed-query and compatibility refresh
+
+Source 550ff5c passes the original range-cache matrix and a separate factory-cache
+matrix, each with eight scenarios, two rounds, four overlapping queries and pinned
+prior output. All jobs complete and final reclamation reaches zero reservations.
+The original matrix retains two concurrent HTTP reads and four warm discovery
+requests with a fitting 16 MiB range cache.
+
+Factory caching adds raw/decoded/discovery competition for the shared pool. With
+16 MiB cache settings, the 64 MiB pool makes 41 cold and 12 warm HTTP requests;
+the 128 MiB pool makes 37 cold and zero warm requests. Measured maximum tracked
+allocations are 66,960,963 and 69,838,800 bytes respectively. These results show
+why a cache setting alone cannot imply that all cache classes fit simultaneously.
+The benchmark initially assumed zero warm requests in both cases; the measured
+64 MiB contention disproved that assumption. The factory mode now compares cold
+and warm requests explicitly. Cleanup releases outputs before assertions and
+reclaims caches after round measurements, excluding cleanup pressure from peaks.
+
+Worker tests pass 75, reference tests 104, and required external conformance 520
+with one inactive guard skip. Evidence:
+`docs/validation/cache-accounting-mixed-runtime-2026-11-14.json`. This is a single
+Node benchmark run per case, not a Worker memory-cap or stable latency claim.

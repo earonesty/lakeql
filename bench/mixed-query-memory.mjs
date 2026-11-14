@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import {
   lt,
@@ -17,6 +17,7 @@ import { parquetWriteBuffer } from "../packages/parquet/node_modules/hyparquet-w
 const outputPath =
   process.env.LAKEQL_MIXED_MEMORY_OUTPUT ??
   `docs/benchmarks/mixed-query-memory-${new Date().toISOString().slice(0, 10)}.json`;
+const factoryCache = process.env.LAKEQL_MIXED_FACTORY_CACHE === "1";
 const count = 2048;
 const rows = Array.from({ length: count }, (_, id) => ({ id, text: `${id}:`.padEnd(4096, "x") }));
 const bytes = new Uint8Array(
@@ -84,17 +85,22 @@ try {
           memoryBudget: pool,
         });
         const store = withObjectStoreReadControls(rawStore, { maxConcurrentReads: 2 });
-        const lake = createParquetLake({
+        const lakeConfig = {
           store,
           memoryPool: pool,
+          ...(factoryCache ? { cache: { maxBytes: cacheMiB * 1024 * 1024 } } : {}),
           scanRangeCache: {
             maxBytes: cacheMiB * 1024 * 1024,
             coalesceBytes: 0,
             sharedCache: cache,
           },
           budget: { maxAllocatedMemoryBytes: 32 * 1024 * 1024, maxConcurrentReads: 2 },
-        });
-        const pinned = await lake.path("rows.parquet").batchSize(64).run().toOwnedArray();
+        };
+        const lake = createParquetLake(lakeConfig);
+        const pinnedLake = factoryCache
+          ? createParquetLake({ ...lakeConfig, cache: undefined })
+          : lake;
+        const pinned = await pinnedLake.path("rows.parquet").batchSize(64).run().toOwnedArray();
         assert.deepEqual(pinned.value, rows);
         cache.deleteWhere(() => true);
         const pinnedBytes = pool.usedBytes;
@@ -194,6 +200,8 @@ try {
               sampleMemory();
               clearInterval(sampler);
             }
+            const retainedBeforeRelease = pool.usedBytes;
+            for (const output of outputs) output.release();
             assert.equal(peakActive, 4);
             assert.ok(peakActiveReads <= 2, `HTTP concurrency exceeded limit: ${peakActiveReads}`);
             assert.ok(outcomes.some((o) => o.status === "completed"));
@@ -204,11 +212,20 @@ try {
               temperature === "warm" &&
               outcomes.every((outcome) => outcome.status === "completed")
             ) {
-              assert.equal(requests, 4, "Warm fitting cache should need discovery probes only");
-              assert.equal(transferred, 8);
+              if (factoryCache) {
+                assert.ok(
+                  requests <= rounds[0].requests,
+                  "Warm factory cache should not increase request count",
+                );
+              } else {
+                assert.equal(
+                  requests,
+                  4,
+                  "Warm fitting range cache should need discovery probes only",
+                );
+                assert.equal(transferred, 8);
+              }
             }
-            const retainedBeforeRelease = pool.usedBytes;
-            for (const output of outputs) output.release();
             assert.ok(
               outcomes.every((outcome) => outcome.status !== "failed"),
               JSON.stringify(outcomes),
@@ -232,11 +249,16 @@ try {
             });
           }
           cache.deleteWhere(() => true);
+          if (factoryCache)
+            pool
+              .reserve(pool.maxBytes - pinnedBytes, "post-measurement cache reclamation")
+              .release();
           assert.equal(pool.usedBytes, pinnedBytes);
           assert.deepEqual(pinned.value, rows);
         } finally {
           pinned.release();
           cache.deleteWhere(() => true);
+          if (factoryCache) pool.reserve(pool.maxBytes, "post-measurement cache cleanup").release();
         }
         assert.equal(pool.usedBytes, 0);
         reports.push({
@@ -259,12 +281,19 @@ writeFileSync(
       description:
         "Four overlapping public queries over a real written Parquet fixture, shared raw-range cache, retained prior output, cold/warm rounds and two-read transport control. Node memory/local HTTP only; configured pools are not total runtime heap caps. One run per scenario, not stable latency or fairness evidence.",
       sourceCommit: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
+      harnessSha256: createHash("sha256")
+        .update(readFileSync(new URL(import.meta.url)))
+        .digest("hex"),
       runtime: process.version,
       platform: `${process.platform}/${process.arch}`,
       fixtureSha256: createHash("sha256").update(bytes).digest("hex"),
       httpResponseDelayMs: 2,
       runtimeMemoryBoundary:
         "Node process includes the HTTP server and generated fixture. Samples may miss transient peaks and are not Worker memory measurements.",
+      factoryCache,
+      cacheCleanup: factoryCache
+        ? "Shared-pool reclamation after round measurements; cleanup pressure excluded from recorded round peaks"
+        : "Explicit shared range-cache eviction",
       rows: count,
       textBytesPerRow: 4096,
       fixtureBytes: bytes.length,

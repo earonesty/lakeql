@@ -1,0 +1,184 @@
+{
+  "sourceCommit": "550ff5c412c8d9e93963abbebcffdefcfa5e17a8",
+  "requirements": ["M2", "V1", "V2"],
+  "benchmarkHarness": "Modified harness SHA256 is recorded in each artifact; library source is the sourceCommit above.",
+  "results": [
+    {
+      "artifact": "docs/benchmarks/mixed-query-memory-cache-accounting-2026-11-14.json",
+      "factoryCache": false,
+      "scenarios": [
+        {
+          "transport": "memory",
+          "poolMiB": 64,
+          "cacheMiB": 4,
+          "requests": [0, 0],
+          "peakAdmittedBytes": 48629480,
+          "allJobsCompleted": true,
+          "finalReservedBytes": 0
+        },
+        {
+          "transport": "memory",
+          "poolMiB": 64,
+          "cacheMiB": 16,
+          "requests": [0, 0],
+          "peakAdmittedBytes": 53423346,
+          "allJobsCompleted": true,
+          "finalReservedBytes": 0
+        },
+        {
+          "transport": "memory",
+          "poolMiB": 128,
+          "cacheMiB": 4,
+          "requests": [0, 0],
+          "peakAdmittedBytes": 48629480,
+          "allJobsCompleted": true,
+          "finalReservedBytes": 0
+        },
+        {
+          "transport": "memory",
+          "poolMiB": 128,
+          "cacheMiB": 16,
+          "requests": [0, 0],
+          "peakAdmittedBytes": 53423346,
+          "allJobsCompleted": true,
+          "finalReservedBytes": 0
+        },
+        {
+          "transport": "http-206",
+          "poolMiB": 64,
+          "cacheMiB": 4,
+          "requests": [37, 37],
+          "peakAdmittedBytes": 49163136,
+          "allJobsCompleted": true,
+          "finalReservedBytes": 0
+        },
+        {
+          "transport": "http-206",
+          "poolMiB": 64,
+          "cacheMiB": 16,
+          "requests": [37, 4],
+          "peakAdmittedBytes": 53957002,
+          "allJobsCompleted": true,
+          "finalReservedBytes": 0
+        },
+        {
+          "transport": "http-206",
+          "poolMiB": 128,
+          "cacheMiB": 4,
+          "requests": [37, 37],
+          "peakAdmittedBytes": 49163136,
+          "allJobsCompleted": true,
+          "finalReservedBytes": 0
+        },
+        {
+          "transport": "http-206",
+          "poolMiB": 128,
+          "cacheMiB": 16,
+          "requests": [37, 4],
+          "peakAdmittedBytes": 53957002,
+          "allJobsCompleted": true,
+          "finalReservedBytes": 0
+        }
+      ]
+    },
+    {
+      "artifact": "docs/benchmarks/mixed-query-memory-factory-cache-2026-11-14.json",
+      "factoryCache": true,
+      "scenarios": [
+        {
+          "transport": "memory",
+          "poolMiB": 64,
+          "cacheMiB": 4,
+          "requests": [0, 0],
+          "peakAdmittedBytes": 52318298,
+          "allJobsCompleted": true,
+          "finalReservedBytes": 0
+        },
+        {
+          "transport": "memory",
+          "poolMiB": 64,
+          "cacheMiB": 16,
+          "requests": [0, 0],
+          "peakAdmittedBytes": 66960963,
+          "allJobsCompleted": true,
+          "finalReservedBytes": 0
+        },
+        {
+          "transport": "memory",
+          "poolMiB": 128,
+          "cacheMiB": 4,
+          "requests": [0, 0],
+          "peakAdmittedBytes": 52318298,
+          "allJobsCompleted": true,
+          "finalReservedBytes": 0
+        },
+        {
+          "transport": "memory",
+          "poolMiB": 128,
+          "cacheMiB": 16,
+          "requests": [0, 0],
+          "peakAdmittedBytes": 69533836,
+          "allJobsCompleted": true,
+          "finalReservedBytes": 0
+        },
+        {
+          "transport": "http-206",
+          "poolMiB": 64,
+          "cacheMiB": 4,
+          "requests": [37, 33],
+          "peakAdmittedBytes": 52854842,
+          "allJobsCompleted": true,
+          "finalReservedBytes": 0
+        },
+        {
+          "transport": "http-206",
+          "poolMiB": 64,
+          "cacheMiB": 16,
+          "requests": [41, 12],
+          "peakAdmittedBytes": 66959341,
+          "allJobsCompleted": true,
+          "finalReservedBytes": 0
+        },
+        {
+          "transport": "http-206",
+          "poolMiB": 128,
+          "cacheMiB": 4,
+          "requests": [37, 33],
+          "peakAdmittedBytes": 52854842,
+          "allJobsCompleted": true,
+          "finalReservedBytes": 0
+        },
+        {
+          "transport": "http-206",
+          "poolMiB": 128,
+          "cacheMiB": 16,
+          "requests": [37, 0],
+          "peakAdmittedBytes": 69838800,
+          "allJobsCompleted": true,
+          "finalReservedBytes": 0
+        }
+      ]
+    }
+  ],
+  "additionalChecks": {
+    "workerd": 75,
+    "reference": 104,
+    "requiredExternalConformance": {
+      "passed": 520,
+      "skipped": 1,
+      "reason": "Inactive missing-fixture guard"
+    }
+  },
+  "findings": [
+    "Original range-cache-only matrix keeps two concurrent HTTP reads and four warm discovery requests with 16 MiB range cache.",
+    "Factory caching adds decoded/raw/discovery competition. At 64 MiB pool and 16 MiB cache setting, cold/warm requests are 41/12; at 128 MiB, 37/0.",
+    "No additional failed or budget-rejected jobs in either matrix.",
+    "Post-measurement reclamation validates zero final reservations; its artificial reservation peak is excluded from recorded rounds."
+  ],
+  "limitations": [
+    "One run per scenario; latency and fairness claims require repeated measurements.",
+    "Node samples include server and fixture storage and are not Worker heap evidence.",
+    "The factory mode combines multiple caches, so its cacheMiB setting is not a combined total-cache cap. The shared pool bounds their combined tracked allocations.",
+    "Remaining allocation gaps and full acceptance review stay open."
+  ]
+}
