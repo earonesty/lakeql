@@ -4335,3 +4335,14 @@ Reran the existing owned-output Worker harness against source `4d1dc00`: actual 
 The maximum tracked reservation was 67,108,545 bytes for the 64 MiB R2 pool, leaving only 319 bytes at that observed peak. At 128 MiB it was 110,920,090 bytes. The constrained 64 MiB managed-heap HTTP run sampled at most 50,877,724 bytes of JS heap; unconstrained R2 sampled up to 101,138,972 bytes. These sparse samples depend on GC timing and cannot establish total Worker memory safety. Managed heap excludes native/external backing and embedder memory; local transports do not establish production cloud latency. No fairness or stable performance claim follows from a single run.
 
 Evidence: `docs/validation/current-worker-refresh-2026-11-14.json`, with source/harness hashes and links to all raw samples. This refresh advances current-revision runtime evidence without closing broader scheduling, allocation-boundary or full audit acceptance requirements.
+
+
+### F3 JSON scalar dispatch simplification (2026-11-14)
+
+Sizing and encoding previously ran decimal, timestamp, interval and byte-array predicates on every primitive value. These representations are objects, so their checks now live inside the existing object branch in both passes. Primitive dispatch avoids redundant predicates without changing traversal, scalar conversion, reservations, output framing or deep-input support. This is a generic type-dispatch simplification with no query-shape special case or new configuration.
+
+The comparison harness now labels variants reference/current, since its selectable reference may itself be iterative. Against `041c629`, the recorded second run measured median milliseconds: small row 0.01279 to 0.00864, 10,000 numbers 2.19308 to 2.13810, 1,000 rows 0.57434 to 0.53698, and depth 20,000 at 22.64792 to 22.68196. Tracked peaks are identical for all cases; encoded bytes and zero remaining reservations are verified each iteration. An initial run also improved the row-array median (0.59408 to 0.53980). These short sequential kernel measurements are not cloud/query throughput claims, and do not close the remaining regression against recursive output.
+
+Raw evidence: `docs/validation/json-object-dispatch-benchmark-2026-11-14.json`. Its current commit field records the working-tree base; built module hashes identify the measured modification. Build and 58 focused sizing/encoding tests passed before broader verification.
+
+Final verification: build/typecheck passed; 3,723 regular tests passed / 629 skipped, and all 81 Worker tests passed. Evidence: `json-object-dispatch-2026-11-14.json`.

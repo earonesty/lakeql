@@ -108,27 +108,6 @@ export function encodeOwnedJsonOutput(
         ascii("null");
         return;
       }
-      if (standard === undefined && isDecimalValue(value)) {
-        scalar.consume(value, string);
-        return;
-      }
-      if (standard === undefined && isTimestampValue(value)) {
-        scalar.consume(value, string);
-        return;
-      }
-      if (standard === undefined && isIntervalValue(value)) {
-        scalar.consume(value, string);
-        return;
-      }
-      if (standard === undefined && value instanceof Uint8Array) {
-        byte(34);
-        for (const item of value) {
-          byte(hex(item >> 4));
-          byte(hex(item & 15));
-        }
-        byte(34);
-        return;
-      }
       switch (typeof value) {
         case "string":
           string(value);
@@ -148,6 +127,27 @@ export function encodeOwnedJsonOutput(
           return;
         }
         case "object": {
+          if (standard === undefined && isDecimalValue(value)) {
+            scalar.consume(value, string);
+            return;
+          }
+          if (standard === undefined && isTimestampValue(value)) {
+            scalar.consume(value, string);
+            return;
+          }
+          if (standard === undefined && isIntervalValue(value)) {
+            scalar.consume(value, string);
+            return;
+          }
+          if (standard === undefined && value instanceof Uint8Array) {
+            byte(34);
+            for (const item of value) {
+              byte(hex(item >> 4));
+              byte(hex(item & 15));
+            }
+            byte(34);
+            return;
+          }
           traversal.admit(frames.length + 1);
           const array = Array.isArray(value);
           frames.push({

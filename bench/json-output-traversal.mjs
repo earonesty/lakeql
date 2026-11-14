@@ -10,7 +10,7 @@ import { encodeOwnedJsonOutput } from "../packages/core/dist/json-output-encodin
 import { MemoryBudget } from "../packages/core/dist/memory-budget.js";
 import { MemoryScope } from "../packages/core/dist/memory-scope.js";
 
-// Compare the recursive implementation with current built output using identical
+// Compare the selected reference with current built output using identical
 // inputs, budgets, runtime, and byte verification. Timing includes both passes.
 const reference = process.env.LAKEQL_JSON_REFERENCE ?? "5e4d280";
 const scratch = await mkdtemp(join(tmpdir(), "lakeql-json-traversal-"));
@@ -54,8 +54,8 @@ try {
     );
     const variants = {};
     for (const [variant, encode] of [
-      ["recursive", old],
-      ["iterative", encodeOwnedJsonOutput],
+      ["reference", old],
+      ["current", encodeOwnedJsonOutput],
     ]) {
       const samples = [];
       let peak = 0;

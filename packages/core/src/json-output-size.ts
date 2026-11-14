@@ -43,13 +43,6 @@ export function jsonOutputUtf8Bytes(
   const measure = (value: unknown): number | undefined => {
     if (standard !== undefined) value = standard.normalize(value);
     if (value === null) return 4;
-    if (standard === undefined && isDecimalValue(value))
-      return scalar.consume(value, jsonStringUtf8Bytes);
-    if (standard === undefined && isTimestampValue(value))
-      return scalar.consume(value, jsonStringUtf8Bytes);
-    if (standard === undefined && isIntervalValue(value))
-      return scalar.consume(value, jsonStringUtf8Bytes);
-    if (standard === undefined && value instanceof Uint8Array) return 2 + 2 * value.byteLength;
     switch (typeof value) {
       case "string":
         return jsonStringUtf8Bytes(value);
@@ -72,6 +65,13 @@ export function jsonOutputUtf8Bytes(
       case "symbol":
         return undefined;
       case "object": {
+        if (standard === undefined && isDecimalValue(value))
+          return scalar.consume(value, jsonStringUtf8Bytes);
+        if (standard === undefined && isTimestampValue(value))
+          return scalar.consume(value, jsonStringUtf8Bytes);
+        if (standard === undefined && isIntervalValue(value))
+          return scalar.consume(value, jsonStringUtf8Bytes);
+        if (standard === undefined && value instanceof Uint8Array) return 2 + 2 * value.byteLength;
         if (ancestors.has(value))
           throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Cyclic JSON output");
         traversal.admit(frames.length + 1);
