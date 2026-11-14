@@ -484,22 +484,42 @@ it("defaults lake task planning to indexed sources with reusable encoded ranges"
     requests++;
     return read(...args);
   };
-  const pool = new MemoryBudget(indexedPlanningCapacity(bytes) + bytes.byteLength);
-  const sharedCache = new SharedMemoryCache({ maxBytes: bytes.byteLength, memoryBudget: pool });
-  const lake = createParquetLake({
-    store,
-    memoryPool: pool,
-    scanRangeCache: { maxBytes: bytes.byteLength, coalesceBytes: 0, sharedCache },
-    queryId: () => "indexed-default",
-  });
-  const query = lake.path(path).where(gt("id", 5));
-  const first = await query.planTasks();
-  expect(first[0]?.rowGroupRanges).toEqual([{ start: 1, end: 2 }]);
-  expect(requests).toBe(1);
-  expect(await query.planTasks()).toEqual(first);
-  expect(requests).toBe(1);
-  sharedCache.deleteWhere(() => true);
-  expect(pool.usedBytes).toBe(0);
+  const run = async (capacity: number) => {
+    requests = 0;
+    const pool = new MemoryBudget(capacity);
+    const sharedCache = new SharedMemoryCache({ maxBytes: bytes.byteLength, memoryBudget: pool });
+    const lake = createParquetLake({
+      store,
+      memoryPool: pool,
+      scanRangeCache: { maxBytes: bytes.byteLength, coalesceBytes: 0, sharedCache },
+      queryId: () => "indexed-default",
+    });
+    const query = lake.path(path).where(gt("id", 5));
+    const first = await query.planOwnedTasks();
+    try {
+      expect(first.value[0]?.rowGroupRanges).toEqual([{ start: 1, end: 2 }]);
+      expect(first.bytes).toBeGreaterThan(0);
+      expect(requests).toBe(1);
+      const second = await query.planOwnedTasks();
+      try {
+        expect(second.value).toEqual(first.value);
+        expect(requests).toBe(1);
+      } finally {
+        second.release();
+      }
+      sharedCache.deleteWhere(() => true);
+      expect(pool.usedBytes).toBe(first.bytes);
+      return pool.peakBytes;
+    } finally {
+      first.release();
+      sharedCache.deleteWhere(() => true);
+      expect(pool.usedBytes).toBe(0);
+    }
+  };
+  // Include query task metadata and overlapping queued plans, not only the
+  // adapter's indexed-footer workspace used by the lower-level tests above.
+  const peak = await run(65536);
+  expect(await run(peak)).toBe(peak);
 });
 
 it("produces missing-column batches from indexed schema-evolution sources", async () => {

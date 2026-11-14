@@ -3431,3 +3431,51 @@ ownership and real-fixture boundary/traffic measurements remain required.
 
 Real-fixture follow-up and serialized-limit regression: see
 `docs/validation/deferred-ranking-followup-2026-11-13.json` (22 tests pass).
+
+### 2026-11-14 — admitted Hive partition parsing
+
+Extracted the shared Hive parser into `hive-partitions.ts` with an optional owning
+scope. Segment traversal no longer allocates a path-wide split array and scans
+only within each segment. Scoped parsing admits the output record, entry keys and
+decoded values, and encoded-value overlap before allocation. Failed decoding or
+admission releases partial output while preserving caller-owned siblings. Duplicate
+keys retain last-value semantics; conservative storage charges include overwritten
+entries. Prototype-named keys are defined as own data properties.
+
+Validation: `pnpm exec tsc -b` passed; targeted Hive and query suites passed 87 tests.
+New checks cover Unicode decoding, embedded equals signs, duplicate keys, malformed
+percent escapes, prototype names, exact peak capacity and one byte below, rollback,
+and 10,000 non-partition path segments without increased admitted storage. This is
+a task-planning prerequisite: callers do not yet pass the scope, and queued task
+ownership remains unfinished. These checks do not establish cloud runtime memory
+bounds or replace the final full-suite and runtime gates.
+
+### 2026-11-14 — queued task ownership and window execution
+
+Added `planOwnedTasks()` to query builders/results and a shared owned task planner.
+Task arrays/records, copied range records, scoped Hive partitions, paths/etags,
+shared projected columns, detached residual predicates, and scoped window topology
+are admitted before retained construction. Per-object physical-column lists and
+callback arguments remain charged through asynchronous planner settlement,
+including cancellation. Plain `planTasks()` transfers storage out of accounting
+at return. Window task execution holds the task owner through both legacy and
+owned executor callbacks and releases it on success, failure, cancellation, or
+unavailable-topology fallback.
+
+New tests prove exact capacity and one-byte-below rejection, shared predicate and
+column identity across tasks, independence from mutated predicate binary backing
+and adapter ranges, and delayed planning/execution cleanup on all three outcomes.
+A generated real Parquet fixture verifies two simultaneously retained plans,
+cold/warm encoded-read reuse, cache eviction while tasks remain pinned, exact
+measured capacity, and final zero reservations. The fixture's earlier capacity
+covered only adapter workspace; the revised assertion includes query metadata.
+
+Remaining boundaries: object discovery lists, explain/manifest output ownership,
+adapter-internal returned plan workspace, and total runtime-memory headroom still
+need their separate audit evidence. These changes do not establish production
+Cloudflare Worker caps or remote spill atomicity.
+
+Verification after integration: build and typecheck passed; the full default suite
+passed 3,550 tests with 629 skips. Focused task-lifetime tests passed 7 and the
+Parquet adapter suite passed 25. Evidence:
+`docs/validation/queued-task-ownership-2026-11-14.json`.

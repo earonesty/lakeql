@@ -49,6 +49,7 @@ export interface WindowRunnerOptions {
   stats: QueryStats;
   planObjects(): Promise<{ planned: ObjectInfo[]; skipped: number }>;
   tasksFromObjects(objects: ObjectInfo[]): Promise<TaskInput[]>;
+  ownedTasksFromObjects?(objects: ObjectInfo[]): Promise<OwnedMemory<TaskInput[]>>;
   vectorBatchScanner(scanner: ScanAdapter): VectorBatchScanner | undefined;
   columnarBatchSize(batchSize: number | undefined): number;
   parseHivePartitions(path: string): Record<string, string>;
@@ -307,53 +308,58 @@ async function collectWindowTaskMatches(
     return undefined;
   }
   const { planned: objects, skipped } = await options.planObjects();
-  const tasks = await options.tasksFromObjects(objects);
-  if (tasks.some((task) => task.window?.available !== true)) return undefined;
+  const taskOwner = await options.ownedTasksFromObjects?.(objects);
+  try {
+    const tasks = taskOwner?.value ?? (await options.tasksFromObjects(objects));
+    if (tasks.some((task) => task.window?.available !== true)) return undefined;
 
-  stats.filesSkipped = skipped;
-  for (const task of tasks) {
-    stats.filesPlanned += 1;
-    stats.filesRead += 1;
-    if (task.size !== undefined) stats.bytesRequested += task.size;
-    options.enforceBudget(config.budget, stats, config.now, startedAt);
-  }
-  const executionOptions = {
-    memoryBudget: retainedScope.budget,
-    budget: config.budget,
-    stats,
-    now: config.now,
-    startedAt,
-    batchSize: config.batchSize ?? 4096,
-  };
-  if (config.scanner.executeOwnedWindowTasks !== undefined) {
-    const owned = await config.scanner.executeOwnedWindowTasks(
-      tasks,
-      config.windows,
-      executionOptions,
-    );
-    try {
-      if (config.budget.signal?.aborted)
-        throw new LakeqlError("LAKEQL_ABORTED", "Window task execution aborted");
+    stats.filesSkipped = skipped;
+    for (const task of tasks) {
+      stats.filesPlanned += 1;
+      stats.filesRead += 1;
+      if (task.size !== undefined) stats.bytesRequested += task.size;
       options.enforceBudget(config.budget, stats, config.now, startedAt);
-      return retainedScope.adopt(owned).value;
-    } catch (error) {
-      owned.release();
-      throw error;
     }
+    const executionOptions = {
+      memoryBudget: retainedScope.budget,
+      budget: config.budget,
+      stats,
+      now: config.now,
+      startedAt,
+      batchSize: config.batchSize ?? 4096,
+    };
+    if (config.scanner.executeOwnedWindowTasks !== undefined) {
+      const owned = await config.scanner.executeOwnedWindowTasks(
+        tasks,
+        config.windows,
+        executionOptions,
+      );
+      try {
+        if (config.budget.signal?.aborted)
+          throw new LakeqlError("LAKEQL_ABORTED", "Window task execution aborted");
+        options.enforceBudget(config.budget, stats, config.now, startedAt);
+        return retainedScope.adopt(owned).value;
+      } catch (error) {
+        owned.release();
+        throw error;
+      }
+    }
+    const rows = await config.scanner.executeWindowTasks?.(tasks, config.windows, executionOptions);
+    if (rows === undefined) return undefined;
+    if (config.budget.signal?.aborted)
+      throw new LakeqlError("LAKEQL_ABORTED", "Window task execution aborted");
+    options.enforceBudget(config.budget, stats, config.now, startedAt);
+    // Legacy adapter allocation is external; admit independent retained storage.
+    const retained = retainedScope.allocate(
+      c.array + rows.length * c.arraySlot,
+      "legacy window task rows",
+      () => [] as Row[],
+    ).value;
+    for (const row of rows) retained.push(retainWindowRow(row, retainedScope));
+    return retained;
+  } finally {
+    taskOwner?.release();
   }
-  const rows = await config.scanner.executeWindowTasks?.(tasks, config.windows, executionOptions);
-  if (rows === undefined) return undefined;
-  if (config.budget.signal?.aborted)
-    throw new LakeqlError("LAKEQL_ABORTED", "Window task execution aborted");
-  options.enforceBudget(config.budget, stats, config.now, startedAt);
-  // Legacy adapter allocation is external; admit independent retained storage.
-  const retained = retainedScope.allocate(
-    c.array + rows.length * c.arraySlot,
-    "legacy window task rows",
-    () => [] as Row[],
-  ).value;
-  for (const row of rows) retained.push(retainWindowRow(row, retainedScope));
-  return retained;
 }
 
 async function collectVectorWindowRows(

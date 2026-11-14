@@ -19,6 +19,7 @@ import { LakeqlError } from "./errors.js";
 import { ensureGeoBackendForExprs, evaluate, jsonSafeValue, matches } from "./evaluator.js";
 import type { Expr } from "./expr.js";
 import { collectExprColumns } from "./expr-utils.js";
+import { parseHivePartitions } from "./hive-partitions.js";
 import { jsonOutputStream } from "./json-output-stream.js";
 import { jsonStringUtf8Bytes } from "./json-string-size.js";
 import {
@@ -37,6 +38,9 @@ import {
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
 import { MutableMemoryLedger } from "./mutable-memory-ledger.js";
+
+export { parseHivePartitions } from "./hive-partitions.js";
+
 import { isPrototypeMutationKey } from "./object-key.js";
 import { ownedAggregateExpressionBytesForColumns } from "./owned-aggregate-input.js";
 import { OwnedAggregateState } from "./owned-aggregate-state.js";
@@ -229,6 +233,7 @@ export interface ScanAdapter {
   scanColumnBatches?(path: string, options: ScanOptions): AsyncIterable<ScanColumnBatch>;
   /** Options/column lists are borrowed until this promise settles; retained planner storage needs its own admission. */
   planObjects?(objects: ObjectInfo[], options: ScanObjectPlanOptions): Promise<ObjectInfo[]>;
+  /** Arguments are borrowed until settlement; returned ranges are copied into task ownership. */
   planTask?(path: string, options: ScanTaskPlanOptions): Promise<ScanTaskPlan>;
   executeOwnedWindowTasks?(
     tasks: TaskInput[],
@@ -702,6 +707,11 @@ export class QueryBuilder {
     return this.run().planTasks();
   }
 
+  /** Retain queued task storage until the returned owner is released. */
+  planOwnedTasks(): Promise<OwnedMemory<TaskInput[]>> {
+    return this.run().planOwnedTasks();
+  }
+
   taskManifest(jobId?: string): Promise<TaskManifest> {
     return this.run().taskManifest(jobId);
   }
@@ -1023,6 +1033,7 @@ export class QueryResult {
       stats: this.stats,
       planObjects: () => this.planObjects(),
       tasksFromObjects: (objects) => this.tasksFromObjects(objects),
+      ownedTasksFromObjects: (objects) => this.ownedTasksFromObjects(objects),
       vectorBatchScanner,
       columnarBatchSize,
       parseHivePartitions,
@@ -1937,6 +1948,11 @@ export class QueryResult {
     let count = 0;
     for await (const _row of this.rows()) count += 1;
     return count;
+  }
+
+  async planOwnedTasks(): Promise<OwnedMemory<TaskInput[]>> {
+    const { planned: objects } = await this.planObjects();
+    return this.ownedTasksFromObjects(objects);
   }
 
   async planTasks(): Promise<TaskInput[]> {
@@ -3503,51 +3519,150 @@ export class QueryResult {
   }
 
   private async tasksFromObjects(objects: ObjectInfo[]): Promise<TaskInput[]> {
+    const owner = await this.ownedTasksFromObjects(objects);
+    try {
+      return owner.value;
+    } finally {
+      // The plain API transfers storage out of the query's accounting lifetime.
+      owner.release();
+    }
+  }
+
+  private async ownedTasksFromObjects(objects: ObjectInfo[]): Promise<OwnedMemory<TaskInput[]>> {
     const config = this.config;
     const startedAt = config.now();
-    this.stats.rowGroupsPlanned = 0;
-    this.stats.rowGroupsTotal = 0;
-    const projectedColumns =
-      config.windows === undefined
-        ? projectedReadColumns(config.select, config.where, config.orderBy, config.projections)
-        : windowReadColumns(config);
-    const tasks: TaskInput[] = [];
-    const windowTaskPlan =
-      config.windows === undefined
-        ? undefined
-        : windowTaskPlanForWindows(config.windows, Math.max(1, objects.length * 2));
-    for (const object of objects) {
-      const partitionValues = config.hive ? parseHivePartitions(object.path) : {};
-      const physicalColumns = projectedColumns?.filter(
-        (column) => !Object.hasOwn(partitionValues, column),
-      );
-      const scanPlan = await config.scanner.planTask?.(object.path, {
-        memoryBudget: this.memoryBudget,
-        object,
-        partitionValues,
-        stats: this.stats,
-        budget: config.budget,
-        now: config.now,
-        ...(physicalColumns !== undefined && physicalColumns.length > 0
-          ? { columns: physicalColumns }
-          : {}),
-        ...(config.where !== undefined ? { where: config.where } : {}),
-      });
-      const task: TaskInput = {
-        path: object.path,
-        size: object.size,
-        ...(scanPlan?.rowGroupCount === undefined ? {} : { rowGroupCount: scanPlan.rowGroupCount }),
-        rowGroupRanges: scanPlan?.rowGroupRanges ?? [{ start: 0, end: Number.POSITIVE_INFINITY }],
-        partitionValues,
-      };
-      if (object.etag !== undefined) task.etag = object.etag;
-      if (projectedColumns !== undefined) task.projectedColumns = projectedColumns;
-      if (config.where !== undefined) task.residualPredicate = config.where;
-      if (windowTaskPlan !== undefined) task.window = windowTaskPlan;
-      tasks.push(task);
+    // Independent of cancellation: adapter arguments stay live until its promise settles.
+    const output = new MemoryScope(this.memoryBudget);
+    const c = allocationCharges;
+    try {
+      this.stats.rowGroupsPlanned = 0;
+      this.stats.rowGroupsTotal = 0;
+      const projectedColumns =
+        config.windows === undefined
+          ? projectedReadColumns(
+              config.select,
+              config.where,
+              config.orderBy,
+              config.projections,
+              output,
+            )
+          : windowReadColumns(config, output);
+      let residualPredicate: Expr | undefined;
+      if (config.where !== undefined) {
+        const scratch = output.childScope();
+        try {
+          const wrapper = scratch.allocate(c.object + c.property, "task predicate wrapper", () => ({
+            predicate: config.where,
+          }));
+          residualPredicate = output.adopt(detachOwnedRow(wrapper.value, this.memoryBudget)).value
+            .predicate as Expr;
+        } finally {
+          scratch.dispose();
+        }
+      }
+      const tasks = output.allocate(c.array, "task list", () => [] as TaskInput[]).value;
+      const windowTaskPlan =
+        config.windows === undefined
+          ? undefined
+          : windowTaskPlanForWindows(config.windows, Math.max(1, objects.length * 2), output);
+      for (const object of objects) {
+        throwIfAborted(config.budget.signal);
+        enforceBudget(config.budget, this.stats, config.now, startedAt);
+        const partitionValues = config.hive
+          ? parseHivePartitions(object.path, output)
+          : output.allocate(c.object, "task partitions", () => ({})).value;
+        const scratch = output.childScope();
+        try {
+          const physicalColumns =
+            projectedColumns === undefined
+              ? undefined
+              : admittedColumnNames(
+                  scratch,
+                  (names) => {
+                    for (const column of projectedColumns)
+                      if (!Object.hasOwn(partitionValues, column)) names.add(column);
+                  },
+                  false,
+                );
+          const options = scratch.allocate(
+            c.object + 8 * c.property,
+            "task planning arguments",
+            () => ({
+              memoryBudget: this.memoryBudget,
+              object,
+              partitionValues,
+              stats: this.stats,
+              budget: config.budget,
+              now: config.now,
+              ...(physicalColumns !== undefined && physicalColumns.length > 0
+                ? { columns: physicalColumns }
+                : {}),
+              ...(residualPredicate !== undefined ? { where: residualPredicate } : {}),
+            }),
+          ).value;
+          const scanPlan = await config.scanner.planTask?.(object.path, options);
+          throwIfAborted(config.budget.signal);
+          enforceBudget(config.budget, this.stats, config.now, startedAt);
+          const ranges = scanPlan?.rowGroupRanges;
+          const rowGroupRanges = output.allocate(
+            c.array + (ranges?.length ?? 1) * c.arraySlot,
+            "task range list",
+            () => [] as { start: number; end: number }[],
+          ).value;
+          if (ranges === undefined) {
+            rowGroupRanges.push(
+              output.allocate(c.object + 2 * c.property, "task range", () => ({
+                start: 0,
+                end: Number.POSITIVE_INFINITY,
+              })).value,
+            );
+          } else {
+            for (const range of ranges)
+              rowGroupRanges.push(
+                output.allocate(c.object + 2 * c.property, "task range", () => ({
+                  start: range.start,
+                  end: range.end,
+                })).value,
+              );
+          }
+          output.allocate(
+            c.string + object.path.length * c.stringCodeUnit,
+            "task path",
+            () => undefined,
+          );
+          if (object.etag !== undefined)
+            output.allocate(
+              c.string + object.etag.length * c.stringCodeUnit,
+              "task etag",
+              () => undefined,
+            );
+          const task = output.allocate(
+            c.object + 9 * c.property + c.arraySlot,
+            "task record",
+            (): TaskInput => ({
+              path: object.path,
+              size: object.size,
+              rowGroupRanges,
+              partitionValues,
+              ...(scanPlan?.rowGroupCount === undefined
+                ? {}
+                : { rowGroupCount: scanPlan.rowGroupCount }),
+              ...(object.etag === undefined ? {} : { etag: object.etag }),
+              ...(projectedColumns === undefined ? {} : { projectedColumns }),
+              ...(residualPredicate === undefined ? {} : { residualPredicate }),
+              ...(windowTaskPlan === undefined ? {} : { window: windowTaskPlan }),
+            }),
+          ).value;
+          tasks.push(task);
+        } finally {
+          scratch.dispose();
+        }
+      }
+      this.stats.planningMs = (this.stats.planningMs ?? 0) + (config.now() - startedAt);
+      return output.retainAllocations(tasks);
+    } finally {
+      output.dispose();
     }
-    this.stats.planningMs = (this.stats.planningMs ?? 0) + (config.now() - startedAt);
-    return tasks;
   }
 
   private async planObjects(): Promise<{ planned: ObjectInfo[]; skipped: number }> {
@@ -5910,18 +6025,6 @@ function createRowDistinct(scope: MemoryScope, budget: QueryBudget): RowDistinct
     enforceBufferedRowsBudget(budget, rows);
     enforceOperatorMemoryBudget(budget, bytes);
   });
-}
-
-export function parseHivePartitions(path: string): Record<string, string> {
-  const values: Record<string, string> = {};
-  for (const segment of path.split("/")) {
-    const equals = segment.indexOf("=");
-    if (equals <= 0) continue;
-    const key = segment.slice(0, equals);
-    const value = segment.slice(equals + 1);
-    if (key && value) values[key] = decodeURIComponent(value);
-  }
-  return values;
 }
 
 function partitionMayMatch(expr: Expr, partitions: Record<string, string>): boolean {

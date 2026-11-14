@@ -32,3 +32,13 @@ scratch in iterator cleanup; explicitly retain ownership for backing that escape
 These limits currently govern participating allocations, not all decoded objects,
 operator state, returned rows, or the process heap. `maxMemoryBytes` continues to
 have its separate serialized operator-state meaning.
+
+For queued execution, `query.planOwnedTasks()` returns `OwnedMemory<TaskInput[]>`.
+Hold that owner while tasks are queued or executing and release it in `finally`.
+Task records, ranges, partition values, shared column lists, predicates, and window
+partition topology remain charged until release. The plain `planTasks()` API
+admits construction but transfers returned storage out of query accounting.
+Adapter planning callbacks borrow arguments until their promises settle; adapters
+must account for their own workspace and retained results. This ownership contract
+does not account for every allocation made during object discovery or by external
+adapters and is not a total process-memory cap.
