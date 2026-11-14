@@ -736,3 +736,90 @@ it("preserves prototype-like Parquet column names through owned projection", asy
     expect(budget.usedBytes).toBe(0);
   }
 });
+
+it("owns multi-file schema plans at exact capacity and retains inputs independently", async () => {
+  const store = memoryStore();
+  await writeParquet(store, "old.parquet", {
+    columnData: [{ name: "id", type: "INT32", data: [1, 2] }],
+  });
+  await writeParquet(store, "new.parquet", {
+    columnData: [{ name: "added", type: "INT32", data: [9] }],
+  });
+  const run = async (capacity: number) => {
+    const pool = new MemoryBudget(capacity);
+    const scope = new MemoryScope(pool);
+    const objects = [];
+    for await (const object of store.list("")) objects.push(object);
+    const input = scope.allocate(2048, "fixture metadata", () => objects).retain();
+    scope.dispose();
+    const adapter = new ParquetScanAdapter(store);
+    try {
+      const plan = await adapter.planOwnedObjects(input, { memoryBudget: pool });
+      try {
+        input.release();
+        expect(pool.usedBytes).toBe(plan.bytes);
+        expect(plan.value).toHaveLength(2);
+        expect(plan.value[0]).toMatchObject({ parquetSchemaPlan: { columns: ["added", "id"] } });
+        const peak = pool.peakBytes;
+        return peak;
+      } finally {
+        plan.release();
+      }
+    } finally {
+      input.release();
+      expect(pool.usedBytes).toBe(0);
+    }
+  };
+  const peak = await run(1 << 20);
+  expect(await run(peak)).toBe(peak);
+  await expect(run(peak - 1)).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  const lake = new Lake({
+    store,
+    scanner: new ParquetScanAdapter(store),
+    memoryPool: new MemoryBudget(1 << 20),
+  });
+  expect(await lake.path("*.parquet").select(["id", "added"]).toArray()).toEqual([
+    { id: null, added: 9 },
+    { id: 1, added: null },
+    { id: 2, added: null },
+  ]);
+});
+
+it("stops owned schema discovery after an in-flight file settles on cancellation", async () => {
+  const store = memoryStore();
+  for (const path of ["a.parquet", "b.parquet"])
+    await writeParquet(store, path, { columnData: [{ name: "id", type: "INT32", data: [1] }] });
+  const read = store.getRangeOwned?.bind(store);
+  if (read === undefined) throw Error("Owned fixture required");
+  let enter!: () => void, finish!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    enter = resolve;
+  });
+  const pending = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const paths = new Set<string>();
+  store.getRangeOwned = async (...args) => {
+    paths.add(args[0]);
+    enter();
+    await pending;
+    return read(...args);
+  };
+  const pool = new MemoryBudget(1 << 20);
+  const controller = new AbortController();
+  const lake = new Lake({
+    store,
+    memoryPool: pool,
+    scanner: new ParquetScanAdapter(store),
+    budget: { signal: controller.signal },
+  });
+  const work = lake.path("*.parquet").planOwnedTasks();
+  const checked = expect(work).rejects.toMatchObject({ code: "LAKEQL_ABORTED" });
+  await entered;
+  controller.abort();
+  expect(pool.usedBytes).toBeGreaterThan(0);
+  finish();
+  await checked;
+  expect(paths.size).toBe(1);
+  expect(pool.usedBytes).toBe(0);
+});

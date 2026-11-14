@@ -3728,3 +3728,33 @@ and owned multi-file planning integration remain required follow-up.
 
 Build/typecheck passed; focused suites passed 28 tests; full suite passed 3,603
 with 629 skips. Evidence: `docs/validation/parquet-schema-signature-2026-11-14.json`.
+
+### 2026-11-14 — owned multi-file Parquet schema planning
+
+Parquet now implements the owned object-plan contract. The output retains its
+input owner and admits shared unified column names, per-file presence sets,
+planned object records and schema-plan records. Temporary descriptor directories,
+compatibility maps, schema shapes, canonical signatures and sorting overlap are
+admitted before construction. A shared planner backs both owned query calls and
+legacy plain calls; the latter transfer results to caller management at return.
+
+Planning no longer invokes the general Parquet tree builder, which copied a full
+root-to-node path array per node. A small iterative topology builder supplies only
+element/children data needed by descriptors and validates missing, extra and
+invalid child counts. Descriptor tests compare against the previous tree's
+canonical signatures and verify exact capacity and transactional rollback.
+
+Generated two-file Parquet fixtures verify independent input retention, exact
+planning capacity and one-byte-below rejection, and actual schema-evolution reads
+that fill missing columns with nulls. Object-plan options now carry the abort
+signal; a delayed owned-read fixture confirms that cancellation waits for the
+current file's metadata operation and prevents planning the next file, with zero
+reservations after cleanup. These are memory-store fixtures plus existing full
+suite cloud/HTTP regressions, not a new production-cloud memory-cap measurement.
+
+Sidecar planning, external cache retention, auxiliary discovery/adapter runtime
+allocations, output APIs and final constrained-runtime acceptance remain open.
+
+Build/typecheck passed; targeted suites passed 33 tests; full suite passed 3,611
+with 629 skips. Evidence:
+`docs/validation/owned-parquet-object-planning-2026-11-14.json`.

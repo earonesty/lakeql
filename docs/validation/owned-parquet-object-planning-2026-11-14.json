@@ -1,0 +1,30 @@
+{
+  "baseCommit": "24f8662",
+  "scope": "Owned Parquet multi-file schema planning and admitted descriptor topology",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 33,
+    "fullSuite": {
+      "passed": 3611,
+      "skipped": 629,
+      "log": "/tmp/owned-parquet-plan-full.log"
+    }
+  },
+  "evidence": [
+    "Owned output retains source metadata after caller input release",
+    "Shared unified schema and per-file presence metadata admitted",
+    "Descriptor signatures match prior tree construction without copied node paths",
+    "Malformed topology and exact-capacity rollback tests",
+    "Generated real Parquet schema-evolution read fills absent columns with null",
+    "Exact plan peak succeeds; one byte below rejects and releases all reservations",
+    "Cancellation after delayed first-file metadata settlement prevents reading second file"
+  ],
+  "remaining": [
+    "Sidecar planning",
+    "External cache retention",
+    "Auxiliary runtime/adapter allocation coverage",
+    "Owned output API gaps",
+    "Final constrained runtime and release gates"
+  ]
+}

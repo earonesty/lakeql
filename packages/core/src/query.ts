@@ -255,6 +255,7 @@ export interface ScanAdapter {
 }
 
 export interface ScanObjectPlanOptions {
+  signal?: AbortSignal;
   memoryBudget?: MemoryBudget;
   columns?: string[];
   where?: Expr;
@@ -3858,11 +3859,15 @@ export class QueryResult {
               : windowReadColumns(config, planning);
           const options = planning.allocate(
             allocationCharges.object +
-              (1 + Number(columns !== undefined) + Number(config.where !== undefined)) *
+              (1 +
+                Number(columns !== undefined) +
+                Number(config.where !== undefined) +
+                Number(config.budget.signal !== undefined)) *
                 allocationCharges.property,
             "object planning options",
             () => ({
               memoryBudget: this.memoryBudget,
+              ...(config.budget.signal === undefined ? {} : { signal: config.budget.signal }),
               ...(columns !== undefined ? { columns } : {}),
               ...(config.where !== undefined ? { where: config.where } : {}),
             }),

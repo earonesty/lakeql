@@ -26,3 +26,11 @@ Parquet metadata, row-group planning, or writer APIs.
 
 See [Parquet types](../../docs/parquet-types.md) for supported Parquet types and
 nested-column behavior.
+
+Multi-file object planning uses `planOwnedObjects` when called by LakeQL. It
+admits schema topology, descriptor/signature construction, compatibility maps,
+shared column names, and per-file presence sets under the query allocation budget.
+The returned plan retains its input owner; release it after its objects are no
+longer used. Direct legacy `planObjects` calls still return caller-managed metadata.
+Object planning observes `options.signal` between files and after metadata reads
+settle. These reservations do not represent a total runtime heap limit.

@@ -3,6 +3,7 @@ import {
   type Batch,
   batchFromVectors,
   type CacheAdapter,
+  MATERIALIZATION_CHARGES as c,
   LakeqlError,
   type MemoryBudget,
   MemoryScope,
@@ -40,8 +41,7 @@ import { ParquetReadScope } from "./read-scope.js";
 import { iteratePlannedRowGroups, summarizePlannedRowGroups } from "./row-group-plan.js";
 import { rowGroupMayMatch } from "./row-group-pruning.js";
 import { rejectUnsupportedParquetSchema } from "./schema.js";
-import { parquetColumnShape } from "./schema-shape.js";
-import { stableSchemaSignature } from "./schema-signature.js";
+import { type ParquetColumnDescriptor, parquetColumnDescriptors } from "./schema-descriptors.js";
 import { asyncBufferFromObjectInfo, asyncBufferFromStore } from "./store-buffer.js";
 import type { ParquetMetadata, StoreAsyncBuffer } from "./types.js";
 import { parquetValueDecoders } from "./value-decoders.js";
@@ -99,51 +99,158 @@ export class ParquetScanAdapter implements ScanAdapter {
   }
 
   async planObjects(objects: ObjectInfo[], options: ScanObjectPlanOptions): Promise<ObjectInfo[]> {
-    if (objects.length <= 1) return objects;
-    const unified = new Map<string, ParquetColumnDescriptor>();
-    const perFile = new Map<string, Map<string, ParquetColumnDescriptor>>();
+    const scope =
+      options.memoryBudget === undefined ? undefined : new MemoryScope(options.memoryBudget);
+    try {
+      return await this.planObjectList(objects, options, scope);
+    } finally {
+      scope?.dispose();
+    }
+  }
 
-    for (const object of objects) {
-      const file = await asyncBufferFromObjectInfo(this.store, object);
-      const columns = await this.objectColumnDescriptors(object.path, file, options);
-      perFile.set(object.path, columns);
-      for (const [column, descriptor] of columns) {
-        const existing = unified.get(column);
-        if (existing === undefined) {
-          unified.set(column, descriptor);
-        } else if (!parquetColumnCompatible(existing, descriptor)) {
-          throw new LakeqlError(
-            "LAKEQL_SCHEMA_CONFLICT",
-            `Parquet schema conflict for column ${column}`,
-            {
-              column,
-              leftPath: existing.path,
-              leftType: existing.signature,
-              rightPath: object.path,
-              rightType: descriptor.signature,
-            },
-          );
+  async planOwnedObjects(
+    objects: OwnedMemory<ObjectInfo[]>,
+    options: ScanObjectPlanOptions & { memoryBudget: MemoryBudget },
+  ): Promise<OwnedMemory<ObjectInfo[]>> {
+    const scope = new MemoryScope(options.memoryBudget);
+    try {
+      const input = objects.retain();
+      try {
+        scope.adopt(input);
+      } catch (error) {
+        input.release();
+        throw error;
+      }
+      const result = await this.planObjectList(objects.value, options, scope);
+      return scope.retainAllocations(result);
+    } finally {
+      scope.dispose();
+    }
+  }
+
+  private async planObjectList(
+    objects: ObjectInfo[],
+    options: ScanObjectPlanOptions,
+    output?: MemoryScope,
+  ): Promise<ObjectInfo[]> {
+    throwIfAborted(options.signal);
+    if (objects.length <= 1) return objects;
+    const scratch = output?.childScope();
+    const allocate = <T>(
+      scope: MemoryScope | undefined,
+      bytes: number,
+      purpose: string,
+      create: () => T,
+    ): T => (scope === undefined ? create() : scope.allocate(bytes, purpose, create).value);
+    try {
+      const unified = allocate(
+        scratch,
+        c.object,
+        "unified schema directory",
+        () => new Map<string, ParquetColumnDescriptor>(),
+      );
+      const perFile = allocate(
+        scratch,
+        c.array + objects.length * c.arraySlot,
+        "per-file schema directory",
+        () => [] as Map<string, ParquetColumnDescriptor>[],
+      );
+      for (const object of objects) {
+        throwIfAborted(options.signal);
+        const file = await asyncBufferFromObjectInfo(this.store, object);
+        const columns = await this.objectColumnDescriptors(object.path, file, options, scratch);
+        throwIfAborted(options.signal);
+        perFile.push(columns);
+        for (const [column, descriptor] of columns) {
+          const existing = unified.get(column);
+          if (existing === undefined) {
+            scratch?.allocate(c.property, "unified schema entry", () => undefined);
+            unified.set(column, descriptor);
+          } else if (!parquetColumnCompatible(existing, descriptor)) {
+            throw new LakeqlError(
+              "LAKEQL_SCHEMA_CONFLICT",
+              `Parquet schema conflict for column ${column}`,
+              {
+                column,
+                leftPath: existing.path,
+                leftType: existing.signature,
+                rightPath: object.path,
+                rightType: descriptor.signature,
+              },
+            );
+          }
         }
       }
-    }
-
-    const unifiedColumns = [...unified.keys()].sort();
-    return objects.map((object) => {
-      const fileColumns = perFile.get(object.path) ?? new Map();
-      return {
-        ...object,
-        parquetSchemaPlan: {
+      const unifiedColumns = allocate(
+        output,
+        c.array + unified.size * c.arraySlot,
+        "unified schema columns",
+        () => [] as string[],
+      );
+      for (const name of unified.keys()) {
+        output?.allocate(
+          c.string + name.length * c.stringCodeUnit,
+          "unified schema name",
+          () => undefined,
+        );
+        unifiedColumns.push(name);
+      }
+      const sorting = scratch?.reserve(
+        c.array + unifiedColumns.length * 2 * c.arraySlot,
+        "unified schema ordering",
+      );
+      try {
+        unifiedColumns.sort();
+      } finally {
+        sorting?.release();
+      }
+      const result = allocate(
+        output,
+        c.array + objects.length * c.arraySlot,
+        "planned parquet objects",
+        () => [] as ObjectInfo[],
+      );
+      for (let index = 0; index < objects.length; index++) {
+        const object = objects[index],
+          columns = perFile[index];
+        if (object === undefined || columns === undefined)
+          throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Missing planned schema");
+        const present = allocate(
+          output,
+          c.object,
+          "present schema columns",
+          () => new Set<string>(),
+        );
+        for (const name of columns.keys()) {
+          output?.allocate(
+            c.property + c.string + name.length * c.stringCodeUnit,
+            "present schema name",
+            () => undefined,
+          );
+          present.add(name);
+        }
+        const plan = allocate(output, c.object + 2 * c.property, "parquet schema plan", () => ({
           columns: unifiedColumns,
-          present: new Set(fileColumns.keys()),
-        },
-      };
-    });
+          present,
+        }));
+        result.push(
+          allocate(output, c.object + 6 * c.property, "planned parquet object", () => ({
+            ...object,
+            parquetSchemaPlan: plan,
+          })),
+        );
+      }
+      return result;
+    } finally {
+      scratch?.dispose();
+    }
   }
 
   private async objectColumnDescriptors(
     path: string,
     file: StoreAsyncBuffer,
     options: ScanObjectPlanOptions,
+    scope?: MemoryScope,
   ): Promise<Map<string, ParquetColumnDescriptor>> {
     if (
       this.taskMetadataMode === "indexed" &&
@@ -159,7 +266,7 @@ export class ParquetScanAdapter implements ScanAdapter {
           allowValueCheckedScalarDecimals: true,
           memoryBudget: options.memoryBudget,
         });
-        return parquetColumnDescriptors({ ...source.metadata, row_groups: [] }, path);
+        return parquetColumnDescriptors(source.metadata, path, scope);
       } finally {
         source.dispose();
       }
@@ -176,14 +283,14 @@ export class ParquetScanAdapter implements ScanAdapter {
           memoryBudget: options.memoryBudget,
           allowValueCheckedScalarDecimals: true,
         });
-        return parquetColumnDescriptors(loaded.owner.value, path);
+        return parquetColumnDescriptors(loaded.owner.value, path, scope);
       } finally {
         loaded.owner.release();
       }
     }
     const metadata = await this.metadata(path, file);
     rejectUnsupportedParquetSchema(metadata, { allowValueCheckedScalarDecimals: true });
-    return parquetColumnDescriptors(metadata, path);
+    return parquetColumnDescriptors(metadata, path, scope);
   }
 
   async *scan(path: string, options: ScanOptions): AsyncIterable<Row[]> {
@@ -676,30 +783,6 @@ interface PlannedParquetObjectInfo extends ObjectInfo {
 
 function plannedParquetSchema(object: ObjectInfo | undefined): PlannedParquetSchema | undefined {
   return (object as PlannedParquetObjectInfo | undefined)?.parquetSchemaPlan;
-}
-
-interface ParquetColumnDescriptor {
-  path: string;
-  signature: string;
-  physicalType?: string;
-}
-
-function parquetColumnDescriptors(
-  metadata: ParquetMetadata,
-  path: string,
-): Map<string, ParquetColumnDescriptor> {
-  const columns = new Map<string, ParquetColumnDescriptor>();
-  for (const child of parquetSchema(metadata).children) {
-    const element = child.element as unknown as Record<string, unknown>;
-    const name = String(element.name ?? "");
-    if (name.length === 0) continue;
-    columns.set(name, {
-      path,
-      signature: stableSchemaSignature(parquetColumnShape(child)),
-      ...(typeof element.type === "string" ? { physicalType: element.type } : {}),
-    });
-  }
-  return columns;
 }
 
 function parquetColumnCompatible(

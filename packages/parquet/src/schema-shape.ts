@@ -1,7 +1,7 @@
-import type { parquetSchema } from "hyparquet";
 import { MATERIALIZATION_CHARGES as c, type MemoryScope } from "lakeql-core";
+import type { SchemaShapeNode } from "./schema-tree.js";
 
-type SchemaNode = ReturnType<typeof parquetSchema>;
+type SchemaNode = SchemaShapeNode;
 
 /** Build one shape record per node without recursive calls or spread copies.
  * Element values are borrowed from metadata; callers retain that backing. */
