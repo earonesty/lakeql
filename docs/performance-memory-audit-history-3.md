@@ -4470,3 +4470,12 @@ The shared vector order normalizer previously serialized `[column, direction, nu
 Updated exact-budget tests to include retained normalized terms and scratch overlap. A new Unicode/quoted-column case repeats all four normalized variants one hundred times, verifies identical output and identical tracked peaks, then checks exact capacity and one byte below. All fourteen focused tests pass. For a single selected numeric row, normalization scratch now dominates peak admission; the test reflects that overlap rather than treating the heap as the only workspace. Caller-owned term arrays and borrowed column strings remain input storage, not cloned allocations.
 
 The fused projection fixture now admits the larger normalization scratch peak while retaining its exact final-storage assertion. Final verification: build/typecheck, 3,734 regular tests (645 skipped) and 82 Worker tests passed. Evidence: `docs/validation/vector-order-normalization-2026-11-14.json`. No measured speedup is claimed.
+
+
+### F5 current top-k scaling after metadata admission (2026-11-14)
+
+Refreshed scalar-width and numeric owned/borrowed kernels on source `a8ba6db`. All ten scalar cases verify exact output and zero final reservations; tracked workspace remains constant from 100 to 10,000 rows for each shape: bigint top-3 604 bytes, timestamp96 988 bytes, packed widths 16/128/1024 at 924/1372/4956 bytes. These include candidate-view and normalized-order charges added since earlier reports.
+
+All twelve numeric cases (10,000/100,000 rows, ascending/descending/mixed distribution, limits 10/1,000) pass output equality and release checks. Peak incremental tracked storage is 664 bytes for top-10 and 20,464 bytes for top-1,000, invariant by row count/distribution. At 100,000 mixed rows, observed current borrowed/owned medians were 18.13/2.96 ms for top-10 and 34.95/6.62 ms for top-1,000. This compares two current implementations, not a before/after improvement; input creation is excluded and the owned result is released during timing. Native heap/GC, cloud transport and alternative admitted key-cache strategies remain outside these measurements.
+
+Raw reports and conditions: `docs/benchmarks/top-k-normalized-workspace-2026-11-14.json`, `docs/benchmarks/vector-top-k-current-2026-11-14.json`; summary `docs/validation/top-k-normalized-workspace-2026-11-14.json`. No runtime implementation changed.
