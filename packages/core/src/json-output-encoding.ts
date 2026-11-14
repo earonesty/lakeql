@@ -2,7 +2,7 @@ import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { isDecimalValue } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
 import { isIntervalValue } from "./interval.js";
-import { type JsonContainerEntry, jsonContainerEntries } from "./json-container-entries.js";
+import { JsonContainerCursor } from "./json-container-entries.js";
 import { writeJsonInteger } from "./json-integer-output.js";
 import { jsonOutputUtf8Bytes } from "./json-output-size.js";
 import { JsonScalarFormatter } from "./json-scalar-output.js";
@@ -30,11 +30,11 @@ export function encodeOwnedJsonOutput(
   const bytes = size + prefix.length + suffix.length;
   const construction = scope.childScope();
   const scalar = new JsonScalarFormatter(construction);
-  type Frame = { iterator: Generator<JsonContainerEntry>; closing: number; first: boolean };
+  type Frame = { iterator: JsonContainerCursor; closing: number; first: boolean };
   const frames: Frame[] = [];
   const traversal = new JsonTraversalBudget(
     construction,
-    4 * c.object + 8 * c.property + c.arraySlot,
+    4 * c.object + 10 * c.property + c.arraySlot,
     c.array + c.object,
   );
   try {
@@ -147,7 +147,7 @@ export function encodeOwnedJsonOutput(
           traversal.admit(frames.length + 1);
           const array = Array.isArray(value);
           frames.push({
-            iterator: jsonContainerEntries(value),
+            iterator: new JsonContainerCursor(value),
             closing: array ? 93 : 125,
             first: true,
           });
@@ -159,12 +159,11 @@ export function encodeOwnedJsonOutput(
     write(value);
     while (frames.length > 0) {
       const frame = frames[frames.length - 1] as Frame;
-      const next = frame.iterator.next();
-      if (next.done) {
+      if (!frame.iterator.advance()) {
         byte(frame.closing);
         frames.pop();
       } else {
-        const entry = next.value;
+        const entry = frame.iterator;
         if (entry.key !== undefined && absent(entry.value)) continue;
         if (!frame.first) byte(44);
         frame.first = false;

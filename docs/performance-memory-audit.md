@@ -13,6 +13,8 @@ JSON traversal performance follow-up: [initial measurement](validation/json-trav
 Shared JSON enumeration follow-up: [benchmark](validation/json-shared-enumeration-benchmark-2026-11-14.json). One iterator implementation now serves sizing and writing; row-array median improves to 0.85 ms but remains about 2.5× slower than the recursive reference, so the regression remains open.
 
 Current JSON runtime checks: [Worker and coverage evidence](validation/json-worker-coverage-2026-11-14.json), 78 Worker tests passed; coverage thresholds passed unchanged. Deep NDJSON exact-capacity tests exercise workerd directly; total isolate heap bounds remain unproven.
+
+Direct JSON cursor follow-up: [benchmark](validation/json-cursor-benchmark-2026-11-14.json). Array traversal avoids iterator-result allocation; row-array median is 0.54 ms versus 0.35 ms recursively (about 1.55×, still open). Build/typecheck, 3,683 regular tests (629 skipped), and 78 Worker tests passed.
 Current release checks (source `246b165`):
 `docs/validation/current-cache-ownership-release-gates-2026-11-14.json`.
 

@@ -2,7 +2,7 @@ import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { isDecimalValue } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
 import { isIntervalValue } from "./interval.js";
-import { type JsonContainerEntry, jsonContainerEntries } from "./json-container-entries.js";
+import { JsonContainerCursor } from "./json-container-entries.js";
 import { jsonIntegerBytes } from "./json-integer-output.js";
 import { JsonScalarFormatter } from "./json-scalar-output.js";
 import { jsonStringUtf8Bytes } from "./json-string-size.js";
@@ -28,7 +28,7 @@ export function jsonOutputUtf8Bytes(value: unknown, scope?: MemoryScope): number
   const ancestors = new Set<object>();
   type Frame = {
     value: object;
-    entries: Generator<JsonContainerEntry>;
+    entries: JsonContainerCursor;
     bytes: number;
     count: number;
     key: string | undefined;
@@ -67,7 +67,7 @@ export function jsonOutputUtf8Bytes(value: unknown, scope?: MemoryScope): number
         traversal.admit(frames.length + 1);
         frames.push({
           value,
-          entries: jsonContainerEntries(value),
+          entries: new JsonContainerCursor(value),
           bytes: 2,
           count: 0,
           key: undefined,
@@ -89,16 +89,15 @@ export function jsonOutputUtf8Bytes(value: unknown, scope?: MemoryScope): number
     if (frames.length === 0) return root;
     while (frames.length > 0) {
       const frame = frames[frames.length - 1] as Frame;
-      const next = frame.entries.next();
-      if (next.done) {
+      if (!frame.entries.advance()) {
         frames.pop();
         ancestors.delete(frame.value);
         if (frames.length === 0) return frame.bytes;
         accumulate(frames[frames.length - 1] as Frame, frame.bytes);
       } else {
-        frame.key = next.value.key;
+        frame.key = frame.entries.key;
         const depth = frames.length;
-        const size = measure(next.value.value);
+        const size = measure(frame.entries.value);
         if (frames.length === depth) accumulate(frame, size);
       }
     }

@@ -1,29 +1,38 @@
 import { LakeqlError } from "./errors.js";
 
-export interface JsonContainerEntry {
+/** Borrowed cursor fields remain valid until the next advance. Arrays use direct
+ * indexing, including holes; objects enumerate without materializing a key array.
+ */
+export class JsonContainerCursor {
   key: string | undefined;
   value: unknown;
+  private index = 0;
+  private readonly array: unknown[] | undefined;
+  private readonly keys: Generator<string> | undefined;
+
+  constructor(private readonly container: object) {
+    this.array = Array.isArray(container) ? container : undefined;
+    this.keys = this.array === undefined ? ownKeys(container) : undefined;
+  }
+
+  advance(): boolean {
+    if (this.array !== undefined) {
+      if (this.index >= this.array.length) return false;
+      this.value = this.array[this.index++];
+      return true;
+    }
+    const next = (this.keys as Generator<string>).next();
+    if (next.done) return false;
+    this.key = next.value;
+    this.value = (this.container as Record<string, unknown>)[this.key];
+    if (this.key === "toJSON" && typeof this.value === "function")
+      throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Custom JSON output cannot be forecast");
+    return true;
+  }
 }
 
-/** Borrowed entry reused until the next iterator step. Consumers must finish
- * using it before advancing. No key array or cloned value tree is materialized.
- */
-export function* jsonContainerEntries(value: object): Generator<JsonContainerEntry> {
-  const entry: JsonContainerEntry = { key: undefined, value: undefined };
-  if (Array.isArray(value)) {
-    for (let index = 0; index < value.length; index++) {
-      entry.value = value[index];
-      yield entry;
-    }
-  } else {
-    for (const key in value) {
-      if (!Object.hasOwn(value, key)) continue;
-      const inner = (value as Record<string, unknown>)[key];
-      if (key === "toJSON" && typeof inner === "function")
-        throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Custom JSON output cannot be forecast");
-      entry.key = key;
-      entry.value = inner;
-      yield entry;
-    }
+function* ownKeys(value: object): Generator<string> {
+  for (const key in value) {
+    if (Object.hasOwn(value, key)) yield key;
   }
 }

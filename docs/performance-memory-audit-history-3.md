@@ -4206,3 +4206,13 @@ The current runtime source (`d9e53bf`) passes the existing 75 workerd tests, inc
 The expanded Worker gate passes 78 tests in 22 files. This establishes correct deep traversal and allocation-accounting cleanup in workerd; it does not assert a 64/128 MiB total isolate heap cap. The shallow row-array kernel regression and standard cache-write serialization remain open.
 
 Coverage gate passed unchanged: statements 91.28%, branches 85.39%, functions 95.80%, lines 93.08%. Typecheck passed. Evidence is recorded in `json-worker-coverage-2026-11-14.json`.
+
+### Direct array cursor for JSON traversal (2026-11-14)
+
+Replaced the shared entry generator with a borrowed cursor. Arrays now advance by index, including sparse slots, without generator result objects. Objects retain own-key generator enumeration and read each value once per pass; no materialized key array is introduced. Sizing and writing share this behavior. Writer frame admission increases from eight to ten property units to cover the cursor fields; high-water depth reservations are unchanged.
+
+The established benchmark (`json-cursor-benchmark-2026-11-14.json`, source base b9d2df5 with exact built-module hashes) measures median row-array encoding 0.54 ms versus recursive 0.35 ms, compared with 0.85 ms in the prior shared-generator run. Wide numeric arrays measure 2.09 ms versus recursive 2.20 ms; small rows 0.0117 versus 0.0114 ms; 20,000-level encoding 21.46 ms while recursion overflows. The row-array remains about 1.55× slower; performance acceptance remains open. These single-process sequential kernel samples are not cloud query throughput or whole-heap bounds.
+
+The focused sizing/encoding/stream/decimal suites passed 74 tests before the final frame-charge adjustment. Existing byte-level fixtures cover sparse arrays, repeated aliases, empty/numeric keys, inherited/non-enumerable properties, special scalars and Unicode, and 20,000-level exact-capacity boundaries.
+
+Final verification after the frame-charge adjustment: build/typecheck/formatting passed; full suite 3,683 passed / 629 skipped; workerd 78 passed in 22 files.
