@@ -3823,3 +3823,17 @@ Expression traversal workspace and repeated spatial shape validation remain open
 
 Build/typecheck passed; focused suites passed 98 tests; full suite passed 3,620
 with 629 skips. Evidence: `docs/validation/sidecar-comparison-correctness-2026-11-14.json`.
+
+### 2026-11-14 — release checks after owned discovery and sidecar planning
+
+Source d764e98 passed Worker (75), reference (104), required external conformance
+(520, one inactive missing-fixture guard), coverage (3,620 passed / 629 skipped),
+public build, clean npm consumer, deterministic fixture regeneration, lint,
+compatibility, file-size and changeset checks. Typecheck and the full test suite
+also passed on this source. Coverage is 91.26% statements, 85.34% branches,
+95.77% functions and 93.08% lines; thresholds were not changed.
+
+Evidence: `docs/validation/current-planning-release-gates-2026-11-14.json`.
+These gates validate current implementation behavior but do not close remaining
+allocation gaps or replace constrained-runtime benchmark refresh and the full
+F1–F6/M1–M2/V1–V3 acceptance review.
