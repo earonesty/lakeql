@@ -1,0 +1,22 @@
+{
+  "status": "Implemented; build, default and Worker validation passed",
+  "change": "Internal top-k/sort restore validates owned source trees without cloning rows in validators. Restore working directories are admitted; execution detaches rows once into its operator ownership. Object checkpoints first receive one admitted deep data detachment, preserving isolation across asynchronous operations. Order compatibility compares normalized fields directly instead of allocating JSON. Scalar row validation no longer builds Object.values arrays. Standalone public deserializers preserve their copy contract.",
+  "validation": {
+    "build": "passed",
+    "focusedTestsPassed": 98,
+    "cases": [
+      "Frozen caller object checkpoint and row arrays remain unchanged for top-k and sort",
+      "Implicit ascending/nulls-last terms match explicit defaults",
+      "Existing serialized resume, stable ties, spill lifecycle and cancellation regression tests"
+    ],
+    "defaultTestsPassed": 3053,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61
+  },
+  "remaining": [
+    "Owned source trees remain retained through query completion; shortening this lifetime requires transferring or detaching rows before releasing source owners.",
+    "Checkpoint construction envelope/order/run metadata still needs admission.",
+    "Spill read adapter buffers remain outside pre-read admission.",
+    "No new wall-clock benchmark claim is made; eliminated row copies are established by the implementation and functional tests."
+  ]
+}

@@ -4002,7 +4002,7 @@ function deserializeSortRunRows(bytes: Uint8Array, scope: MemoryScope): Row[] {
   if (!Array.isArray(parsed) || !parsed.every(isTopKSnapshotRow)) {
     throw new LakeqlError("LAKEQL_BOOKMARK_INVALID", "Sort run state is invalid");
   }
-  return parsed.map((row) => ({ ...row }));
+  return parsed;
 }
 
 async function topKRowsFromState(
@@ -4024,10 +4024,13 @@ async function topKRowsFromState(
   if (state === undefined) return [];
   const snapshot =
     state instanceof Uint8Array
-      ? validateTopKOperatorState(scope.adopt(parseOwnedJson(state, scope)).value)
-      : deserializeTopKOperatorState(state);
+      ? validateTopKOperatorState(scope.adopt(parseOwnedJson(state, scope)).value, false)
+      : validateTopKOperatorState(
+          scope.adopt(detachOwnedRow(state as unknown as Row, scope.budget)).value,
+          false,
+        );
   if (
-    stableStringify(snapshot.orderBy) !== stableStringify(orderBy) ||
+    !sameOrderBy(snapshot.orderBy, orderBy) ||
     snapshot.offset !== offset ||
     snapshot.limit !== limit
   ) {
@@ -4040,7 +4043,11 @@ async function topKRowsFromState(
       limit,
     });
   }
-  return snapshot.rows.map((row) => ({ ...row }));
+  return scope.allocate(
+    allocationCharges.array + snapshot.rows.length * allocationCharges.arraySlot,
+    "restored top-k directory",
+    () => snapshot.rows.slice(),
+  ).value;
 }
 
 async function sortRunsFromState(
@@ -4060,18 +4067,25 @@ async function sortRunsFromState(
   if (state === undefined) return [];
   const snapshot =
     state instanceof Uint8Array
-      ? validateSortOperatorState(scope.adopt(parseOwnedJson(state, scope)).value)
-      : deserializeSortOperatorState(state);
-  if (stableStringify(snapshot.orderBy) !== stableStringify(orderBy)) {
+      ? validateSortOperatorState(scope.adopt(parseOwnedJson(state, scope)).value, false)
+      : validateSortOperatorState(
+          scope.adopt(detachOwnedRow(state as unknown as Row, scope.budget)).value,
+          false,
+        );
+  if (!sameOrderBy(snapshot.orderBy, orderBy)) {
     throw new LakeqlError("LAKEQL_BOOKMARK_STALE", "Sort operator state does not match request", {
       stateOrderBy: snapshot.orderBy,
       orderBy,
     });
   }
-  const runs: Row[][] = [];
+  const runs = scope.allocate(
+    allocationCharges.array + snapshot.runs.length * allocationCharges.arraySlot,
+    "restore source run directory",
+    () => [] as Row[][],
+  ).value;
   for (const run of snapshot.runs) {
     if ("rows" in run) {
-      runs.push(run.rows.map((row) => ({ ...row })));
+      runs.push(run.rows);
       continue;
     }
     if (options.spill === undefined) {
@@ -4141,10 +4155,29 @@ async function sortOperatorState(
   };
 }
 
-function validateTopKOperatorState(value: unknown): TopKOperatorState {
+/** Compare normalized ordering semantics without allocating normalized terms or JSON. */
+function sameOrderBy(left: OrderByTerm[], right: OrderByTerm[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((term, index) => {
+      const other = right[index];
+      const direction = term.direction ?? "asc";
+      const otherDirection = other?.direction ?? "asc";
+      return (
+        term.column === other?.column &&
+        direction === otherDirection &&
+        (term.nulls ?? (direction === "asc" ? "last" : "first")) ===
+          (other?.nulls ?? (otherDirection === "asc" ? "last" : "first"))
+      );
+    })
+  );
+}
+
+function validateTopKOperatorState(value: unknown, copy = true): TopKOperatorState {
   if (!isTopKOperatorState(value)) {
     throw new LakeqlError("LAKEQL_BOOKMARK_INVALID", "Top-k operator state is invalid");
   }
+  if (!copy) return value;
   return {
     version: 1,
     orderBy: normalizeOrderBy(value.orderBy),
@@ -4154,10 +4187,11 @@ function validateTopKOperatorState(value: unknown): TopKOperatorState {
   };
 }
 
-function validateSortOperatorState(value: unknown): SortOperatorState {
+function validateSortOperatorState(value: unknown, copy = true): SortOperatorState {
   if (!isSortOperatorState(value)) {
     throw new LakeqlError("LAKEQL_BOOKMARK_INVALID", "Sort operator state is invalid");
   }
+  if (!copy) return value;
   return {
     version: 1,
     orderBy: normalizeOrderBy(value.orderBy),
@@ -4362,7 +4396,11 @@ function isOrderByTerm(value: unknown): value is OrderByTerm {
 }
 
 function isTopKSnapshotRow(value: unknown): value is Record<string, OperatorSnapshotValue> {
-  return isRecord(value) && Object.values(value).every(isOperatorSnapshotValue);
+  if (!isRecord(value)) return false;
+  for (const key in value) {
+    if (Object.hasOwn(value, key) && !isOperatorSnapshotValue(value[key])) return false;
+  }
+  return true;
 }
 
 function isAggregateGroupSnapshot(value: unknown): value is AggregateGroupSnapshot {

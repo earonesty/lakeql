@@ -20,10 +20,11 @@
     "workerTestsPassed": 61
   },
   "remaining": [
-    "Validator copies and request-compatibility serialization still allocate outside admission.",
-    "Caller-supplied object state and public standalone deserializers retain their existing unscoped contract.",
+    "Internal validator row copies and request-compatibility JSON serialization have been removed (linked evidence).",
+    "Object state now receives admitted detachment; public standalone deserializers retain their existing unscoped contract.",
     "Spill adapters allocate read buffers before returning them; this interface still lacks pre-read size admission.",
     "Parsed source trees remain charged through query completion even after detached copies become available.",
     "Charges are conservative accounting units, not a portable VM heap guarantee."
-  ]
+  ],
+  "restoreCopyEvidence": "checkpoint-restore-copy-elimination-2026-11-13.json"
 }

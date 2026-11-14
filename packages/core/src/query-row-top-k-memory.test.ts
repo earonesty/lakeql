@@ -323,3 +323,38 @@ it.each([
   await rejected;
   expect(pool.usedBytes).toBe(0);
 });
+
+it.each([
+  "topKWithState",
+  "sortWithState",
+] as const)("%s restores frozen object state with implicit ordering defaults without mutating inputs", async (method) => {
+  const pool = new MemoryBudget(65536);
+  const store = memoryStore();
+  await store.put("table", new Uint8Array(1));
+  const lake = new Lake({
+    store,
+    memoryPool: pool,
+    scanner: {
+      async *scan() {
+        yield [{ score: 2 }];
+      },
+    },
+  });
+  const rows = Object.freeze([Object.freeze({ score: 1 })]);
+  const orderBy = Object.freeze([Object.freeze({ column: "score" })]);
+  const state =
+    method === "topKWithState"
+      ? { version: 1 as const, orderBy, rows, offset: 0, limit: 2 }
+      : { version: 1 as const, orderBy, runs: Object.freeze([Object.freeze({ rows })]) };
+  const result = await lake
+    .path("table")
+    .orderBy([{ column: "score", direction: "asc", nulls: "last" }])
+    .limit(2)
+    .run()
+    [method]({
+      operatorState: state as never,
+    });
+  expect(result.rows).toEqual([{ score: 1 }, { score: 2 }]);
+  expect(rows).toEqual([{ score: 1 }]);
+  expect(pool.usedBytes).toBe(0);
+});
