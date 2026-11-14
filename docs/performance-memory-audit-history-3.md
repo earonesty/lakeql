@@ -4382,3 +4382,12 @@ Added a workerd fixture over the actual R2 bucket that delays delivery of the fi
 The gate controls response delivery after a real binding call, not the native network itself. This is local Worker settlement/ownership evidence, distinct from HTTP socket abort and production R2 latency. Runtime source is `9224149`; no implementation change is required by this fixture.
 
 Final verification: typecheck and all 82 Worker tests passed. Evidence: `docs/validation/r2-metadata-cancellation-2026-11-14.json`.
+
+
+### M2 scheduler FIFO and cancelled-head progress review (2026-11-14)
+
+Reviewed `MemoryStageScheduler` admission and its callers. Added two adversarial queue cases: an eight-byte active stage in a twelve-byte pool, a twelve-byte waiting head, then twenty one-byte newcomers. Without cancellation, none bypasses the head despite four bytes of free capacity; execution order remains FIFO. With head cancellation, fitting newcomers complete while the original active stage remains gated. Both finish with zero active/queued stages and zero tracked bytes, never exceeding the pool. All 15 scheduler tests pass, including existing recursive-admission rejection, impossible retained-output rejection, cancellation during reclamation, input alias lifetime and scratch guards through settlement.
+
+The implementation's fairness boundary is explicit: `vector-batches.ts` shares numeric schedulers by root pool; `numeric-page-alignment.ts` submits planned numeric replacement stages unless an enclosing stage already supplies admission. `concatScheduledBatches` is another explicit scheduled operation. This does not establish scheduling fairness for every operator/query path, and FIFO may leave free capacity idle behind a larger head. These tests verify the stated FIFO contract rather than a throughput or bounded-wait claim. The existing read semaphore has its own FIFO/cancelled-entry tests; transport slots are distinct from memory-stage admission.
+
+Final verification: 15 scheduler tests and typecheck passed. Evidence: `docs/validation/stage-fifo-admission-2026-11-14.json`. No runtime implementation changed.

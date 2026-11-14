@@ -439,3 +439,82 @@ it("propagates stage cancellation through child scope signals while guarding liv
   expect(root.usedBytes).toBe(0);
   expect(scheduler.activeStages).toBe(0);
 });
+
+it.each([
+  false,
+  true,
+])("preserves FIFO under fitting newcomers, cancelled head=%s", async (cancelHead) => {
+  const root = new MemoryBudget(12);
+  const scheduler = new MemoryStageScheduler(root);
+  const activeGate = gate();
+  const events: string[] = [];
+  const first = scheduler.run({
+    budget: root.child(),
+    bytes: 8,
+    purpose: "active",
+    async execute(scope) {
+      const scratch = scope.allocate(8, "active scratch", () => new Uint8Array(8));
+      await activeGate.promise;
+      scratch.release();
+    },
+  });
+  const controller = new AbortController();
+  const head = scheduler
+    .run({
+      budget: root.child(),
+      bytes: 12,
+      purpose: "large head",
+      signal: controller.signal,
+      execute() {
+        events.push("head");
+      },
+    })
+    .then(
+      (owner) => {
+        owner.release();
+        return "completed";
+      },
+      (error) => {
+        expect(error.code).toBe("LAKEQL_ABORTED");
+        return "cancelled";
+      },
+    );
+  const small = Array.from({ length: 20 }, (_, index) =>
+    scheduler
+      .run({
+        budget: root.child(),
+        bytes: 1,
+        purpose: "small newcomer",
+        execute() {
+          events.push(`small-${index}`);
+        },
+      })
+      .then((owner) => owner.release()),
+  );
+  try {
+    await Promise.resolve();
+    expect(events).toEqual([]);
+    expect(scheduler.queuedStages).toBe(21);
+    if (cancelHead) {
+      controller.abort();
+      expect(await head).toBe("cancelled");
+      // These fit beside the still-gated active stage once the head is removed.
+      await Promise.all(small);
+      expect(scheduler.activeStages).toBe(1);
+      expect(root.usedBytes).toBe(8);
+    }
+  } finally {
+    activeGate.open();
+  }
+  (await first).release();
+  expect(await head).toBe(cancelHead ? "cancelled" : "completed");
+  await Promise.all(small);
+  expect(events).toEqual([
+    ...(cancelHead ? [] : ["head"]),
+    ...Array.from({ length: 20 }, (_, index) => `small-${index}`),
+  ]);
+  expect(scheduler.queuedStages).toBe(0);
+  expect(scheduler.activeStages).toBe(0);
+  expect(root.usedBytes).toBe(0);
+  expect(root.peakBytes).toBeLessThanOrEqual(12);
+});
