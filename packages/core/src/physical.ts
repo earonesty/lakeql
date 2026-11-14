@@ -487,7 +487,7 @@ const CPU_CAPABILITIES: PhysicalCapabilities = {
     aggregateState: "lakeql-snapshot",
   },
   limits: {},
-  allocationScopeOperators: ["select", "project", "top-k"],
+  allocationScopeOperators: ["select", "project", "top-k", "reduce", "grouped-reduce"],
   supportsResidentInput: false,
   supportsResidentOutput: false,
 };
@@ -514,7 +514,9 @@ export class CpuPhysicalBackend implements PhysicalExecutionBackend {
     const reasons = [
       ...validatePhysicalFragment(fragment),
       ...validateCpuPlacement(fragment),
-      ...(context.requireReductionContinuation ? cpuReductionInputReasons(fragment) : []),
+      ...(context.requireReductionContinuation || context.requireAllocationScope
+        ? cpuReductionInputReasons(fragment)
+        : []),
     ];
     return {
       supported: reasons.length === 0,
@@ -584,6 +586,35 @@ export class CpuPhysicalBackend implements PhysicalExecutionBackend {
           `Operator ${operator.kind} follows a terminal reduction`,
           { replayable: false, details: { fragmentId: compiled.fragment.id } },
         );
+      }
+      if (
+        context.allocationScope &&
+        (operator.kind === "reduce" || operator.kind === "grouped-reduce")
+      ) {
+        const reduction = this.openReduction(operator, {
+          ...context,
+          allocationScope: context.allocationScope,
+        });
+        try {
+          await reduction.append(batch, selection);
+          const checkpoint = await reduction.checkpoint();
+          try {
+            const value = checkpoint.value;
+            if (value.kind !== "aggregate-snapshot" && value.kind !== "grouped-aggregate-snapshot")
+              throw new LakeqlError(
+                "LAKEQL_PHYSICAL_BACKEND_FAILURE",
+                "Invalid reduction checkpoint",
+              );
+            context.allocationScope.adopt(checkpoint);
+            terminal = value;
+          } catch (error) {
+            checkpoint.release();
+            throw error;
+          }
+        } finally {
+          reduction.dispose();
+        }
+        continue;
       }
       switch (operator.kind) {
         case "select": {
@@ -814,7 +845,9 @@ function reductionContinuationReasons(
 }
 
 function cpuReductionInputReasons(fragment: PhysicalFragment): BackendRejection[] {
-  const operator = fragment.operators[0];
+  const operator = fragment.operators.find(
+    (value) => value.kind === "reduce" || value.kind === "grouped-reduce",
+  );
   if (
     fragment.input.kind !== "batch" ||
     (operator?.kind !== "reduce" && operator?.kind !== "grouped-reduce")
@@ -863,7 +896,9 @@ function allocationScopeReasons(
   const supported = capabilities.allocationScopeOperators ?? [];
   if (
     fragment.input.kind !== "batch" ||
-    !["batch", "selection", "indices"].includes(fragment.output.kind) ||
+    !["batch", "selection", "indices", "aggregate-snapshot", "grouped-aggregate-snapshot"].includes(
+      fragment.output.kind,
+    ) ||
     fragment.operators.some((operator) => !supported.includes(operator.kind))
   ) {
     return [

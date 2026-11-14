@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { batchFromColumns, batchFromVectors, materializeBatchRows } from "./batch.js";
 import { col, eq, gt, mul } from "./expr.js";
+import { MemoryBudget } from "./memory-budget.js";
+import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
 import {
   type BackendAssessment,
   type BackendExecutionContext,
@@ -15,6 +17,7 @@ import {
   type PhysicalFragment,
   type PhysicalFragmentInput,
   type PhysicalFragmentResult,
+  type PhysicalOutputValue,
   physicalInputFromBatch,
   planPhysicalFragment,
 } from "./physical.js";
@@ -654,7 +657,7 @@ function clock(): () => number {
   };
 }
 
-it("plans owned reduction continuation separately from ordinary fragment allocation", () => {
+it("plans scoped snapshots and continuations with separate capabilities", () => {
   const batch = batchFromColumns({ key: ["a"], value: [1] });
   const fragment = testFragment(batch, {
     operators: [
@@ -665,7 +668,7 @@ it("plans owned reduction continuation separately from ordinary fragment allocat
   const backend = new CpuPhysicalBackend();
   expect(() =>
     planPhysicalFragment(fragment, [backend], { requireAllocationScope: true }),
-  ).toThrow();
+  ).not.toThrow();
   expect(() =>
     planPhysicalFragment(fragment, [backend], {
       requireAllocationScope: true,
@@ -791,4 +794,83 @@ it("plans nested union children explicitly and rejects changed runtime child sha
   expect(() =>
     planPhysicalFragment(fragment, [backend], { requireReductionContinuation: true }),
   ).toThrow();
+});
+
+it.each([
+  false,
+  true,
+])("owns one-shot reduction checkpoints through restore (grouped=%s)", async (grouped) => {
+  const aggregates = {
+    n: { op: "count" as const },
+    total: { op: "sum" as const, column: "value" },
+  };
+  const run = async (capacity: number) => {
+    const budget = new MemoryBudget(capacity);
+    const backend = new CpuPhysicalBackend();
+    let prior: OwnedMemory<PhysicalOutputValue> | undefined;
+    try {
+      for (const values of [
+        [0, 1, 2],
+        [3, 4],
+      ]) {
+        const scope = new MemoryScope(budget);
+        try {
+          const batch = batchFromColumns({ key: values.map(() => "a"), value: values });
+          const fragment = testFragment(batch, {
+            operators: [
+              { kind: "select", predicate: gt("value", 0) },
+              grouped
+                ? { kind: "grouped-reduce", keys: ["key"], aggregates }
+                : { kind: "reduce", aggregates },
+            ],
+            output: { kind: grouped ? "grouped-aggregate-snapshot" : "aggregate-snapshot" },
+          });
+          const previous = prior?.value;
+          if (
+            previous &&
+            previous.kind !== "aggregate-snapshot" &&
+            previous.kind !== "grouped-aggregate-snapshot"
+          )
+            throw Error("Invalid checkpoint");
+          const plan = planPhysicalFragment(fragment, [backend], { requireAllocationScope: true });
+          const result = await executePlannedPhysicalFragment(
+            plan,
+            [backend],
+            { kind: "batch", batch },
+            {
+              allocationScope: scope,
+              ...(previous ? { priorOutput: previous } : {}),
+            },
+          );
+          const next = scope.retainAllocations(result.output);
+          prior?.release();
+          prior = next;
+        } finally {
+          scope.dispose();
+        }
+      }
+      expect(budget.usedBytes).toBeGreaterThan(0);
+      const result = prior?.value;
+      if (result?.kind === "grouped-aggregate-snapshot")
+        expect(
+          finalizeVectorGroupByRows(
+            restoreVectorGroupByState(["key"], aggregates, result.snapshot),
+          ),
+        ).toEqual([{ key: "a", n: 4, total: 10 }]);
+      else if (result?.kind === "aggregate-snapshot")
+        expect(
+          finalizeVectorAggregateStates(restoreVectorAggregateStates(result.snapshot)),
+        ).toEqual({ n: 4, total: 10 });
+      else throw Error("Missing checkpoint");
+      return budget.peakBytes;
+    } finally {
+      prior?.release();
+      expect(budget.usedBytes).toBe(0);
+    }
+  };
+  const peak = await run(65536);
+  expect(await run(peak)).toBe(peak);
+  // Aggregate arenas shrink to available capacity rather than requiring the generous-pool peak.
+  expect(await run(peak - 1)).toBeLessThanOrEqual(peak - 1);
+  await expect(run(16)).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
 });
