@@ -21,5 +21,6 @@
     "Legacy unscoped aggregate routes still lack this ownership contract.",
     "Small cloud fixture proves operation, not throughput or total Worker heap limits.",
     "Previously recorded six Parquet conformance failures remain unresolved."
-  ]
+  ],
+  "followupEvidence": "conformance-root-causes-2026-11-13.json"
 }

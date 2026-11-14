@@ -1,0 +1,75 @@
+{
+  "implementationCommit": "d6b1aec",
+  "status": "Six failures reproduced; three distinct capability/fixture causes confirmed; gate remains failing",
+  "command": "LAKEQL_CONFORMANCE=1 pnpm exec vitest run -c vitest.conformance.config.ts -t 'alp_extended|bson.parquet|large_string_map'",
+  "result": {
+    "failed": 6,
+    "skipped": 512
+  },
+  "findings": [
+    {
+      "fixture": "alp_extended.zstd.parquet",
+      "rows": "9032",
+      "fileBytes": 218992,
+      "cause": "Upstream metadata enum maps ALP=10 to undefined; readDataPage then rejects unsupported encoding undefined. Fixture ALP columns use UNCOMPRESSED codec, while reference PLAIN columns use ZSTD. The filename is not evidence of a ZSTD defect.",
+      "nextWork": "Implement bounded ALP page decoding with vector sizes from the page header, exceptions and bitwise float/double parity against the in-file PLAIN reference. Preserve NaN payloads in decoder-level assertions.",
+      "fixtureSpecification": "../../fixtures/external/parquet-testing/data/README.md#alp-encoding"
+    },
+    {
+      "fixture": "bson.parquet",
+      "rows": "3",
+      "fileBytes": 412,
+      "cause": "Schema validation intentionally rejects BSON with LAKEQL_UNSUPPORTED_PARQUET_FEATURE before page reads. Existing bson-rejection.test.ts enforces this behavior; conformance currently expects successful decoding.",
+      "nextWork": "Resolve the decoding contract explicitly and implement bounded BSON decoding if supporting this annotation; do not silently return raw bytes as decoded BSON or remove the conformance assertion.",
+      "fixtureSpecification": "../../fixtures/external/parquet-testing/data/README.md#json-and-bson-logical-types"
+    },
+    {
+      "fixture": "large_string_map.brotli.parquet",
+      "rows": "2",
+      "fileBytes": 4325,
+      "columns": [
+        {
+          "path": [
+            "arr",
+            "key_value",
+            "key"
+          ],
+          "codec": "BROTLI",
+          "encodings": [
+            "RLE_DICTIONARY",
+            "PLAIN",
+            "RLE",
+            "PLAIN"
+          ],
+          "compressedBytes": "3346",
+          "uncompressedBytes": "2147483749"
+        },
+        {
+          "path": [
+            "arr",
+            "key_value",
+            "value"
+          ],
+          "codec": "BROTLI",
+          "encodings": [
+            "RLE_DICTIONARY",
+            "PLAIN",
+            "RLE"
+          ],
+          "compressedBytes": "81",
+          "uncompressedBytes": "78"
+        }
+      ],
+      "cause": "BROTLI is not registered. Independently, the fixture generator produces two rows each with a 1 GiB string; the key column advertises 2147483749 uncompressed bytes. Successful full materialization cannot satisfy the owned test 64 MiB cap.",
+      "nextWork": "Provide a bounded Brotli codec contract and explicit oversized-value admission before allocation. Conformance must distinguish value decoding from expected budget rejection using metadata/fixture-derived bounds, not a filename skip. A smaller real Brotli fixture must prove successful decoding.",
+      "fixtureSpecification": "../../fixtures/external/parquet-testing/data/README.md#large-string-map"
+    }
+  ],
+  "assertionsChanged": false,
+  "productionChanges": false,
+  "limits": [
+    "Targeted reproduction only; this does not replace the full release acceptance gate.",
+    "No unsafe multi-gigabyte decode was attempted. Metadata was read through the production footer reader.",
+    "All six cases remain failures, not waived or reclassified as passes."
+  ]
+}
