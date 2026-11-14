@@ -15,10 +15,11 @@
     "workerTestsPassed": 61
   },
   "remaining": [
-    "Aggregate result projection/output ownership, per-row bookkeeping temporaries and request compatibility serialization still need admission.",
+    "Result records/directories and existing result-option admission are now connected (linked evidence); evaluator temporaries, bookkeeping and request compatibility serialization remain outstanding.",
     "Serialized-size estimation can build legacy unscoped snapshots and needs a separate allocation audit.",
     "Group-column/spec references borrow query configuration; this change does not bound compiled-plan/configuration storage.",
     "Reservation units do not certify total runtime heap or native sort internals."
   ],
-  "combinedPerformanceEvidence": "row-aggregate-combined-performance-2026-11-13.json"
+  "combinedPerformanceEvidence": "row-aggregate-combined-performance-2026-11-13.json",
+  "outputEvidence": "row-aggregate-output-admission-2026-11-13.json"
 }

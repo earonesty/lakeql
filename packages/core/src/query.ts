@@ -2516,10 +2516,16 @@ export class QueryResult {
           keyScope.dispose();
         }
       }
-      const rows = applyAggregateResultOptions(
-        [...groups.values()].map((group) => group.finish()),
-        options,
-      );
+      const finished = checkpointScope.allocate(
+        allocationCharges.array + groups.size * allocationCharges.arraySlot,
+        "aggregate result directory",
+        () => {
+          const output: Row[] = [];
+          for (const group of groups.values()) output.push(group.finish(checkpointScope));
+          return output;
+        },
+      ).value;
+      const rows = applyAggregateResultOptions(finished, options, checkpointScope);
       for (const _row of rows) {
         this.stats.rowsReturned += 1;
         enforceBudget(this.config.budget, this.stats, this.config.now, startedAt);
@@ -3557,10 +3563,29 @@ class AggregateGroup {
     }
   }
 
-  finish(): Row {
-    const out: Row = { ...this.keys };
-    for (const [alias, state] of Object.entries(this.states)) out[alias] = state.finish();
-    return out;
+  finish(scope: MemoryScope): Row {
+    let bytes = allocationCharges.object;
+    for (const key in this.keys) {
+      if (Object.hasOwn(this.keys, key))
+        bytes +=
+          allocationCharges.property +
+          allocationCharges.string +
+          key.length * allocationCharges.stringCodeUnit;
+    }
+    for (const alias in this.states) {
+      if (Object.hasOwn(this.states, alias))
+        bytes +=
+          allocationCharges.property +
+          allocationCharges.string +
+          alias.length * allocationCharges.stringCodeUnit;
+    }
+    return scope.allocate(bytes, "aggregate result row", () => {
+      const out: Row = { ...this.keys };
+      for (const alias in this.states) {
+        if (Object.hasOwn(this.states, alias)) out[alias] = this.states[alias]?.finish();
+      }
+      return out;
+    }).value;
   }
 
   memory(key: string, budget: QueryBudget): { bytes: number; rows: number } {

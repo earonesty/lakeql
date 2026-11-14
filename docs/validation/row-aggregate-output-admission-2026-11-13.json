@@ -1,0 +1,22 @@
+{
+  "status": "Implemented; build, default and Worker validation passed",
+  "change": "Legacy aggregate results admit the row directory and each group result record before construction. The result loop no longer creates an intermediate array of group references. Filtering/order/slice handling now receives the checkpoint scope and reuses existing result-option allocation admission. Result scalar payloads borrow live aggregate ownership until return.",
+  "validation": {
+    "build": "passed",
+    "focusedTestsPassed": 107,
+    "lifecycleTestsPassed": 13,
+    "cases": [
+      "Four groups ordered by count descending with offset one and limit two produce the independent expected rows",
+      "Exact measured end-to-end peak succeeds; one byte less rejects and releases pool usage",
+      "Existing aggregate option, restore and checkpoint failure tests"
+    ],
+    "defaultTestsPassed": 3077,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61
+  },
+  "remaining": [
+    "Plain AggregateResult transfers rows to caller management after query return; there is no independently retained aggregate output handle here.",
+    "HAVING/evaluator temporary scalar allocations, legacy serialized-size estimation and per-row bookkeeping need further review.",
+    "Native-sort and runtime GC storage are not portable total-heap guarantees."
+  ]
+}

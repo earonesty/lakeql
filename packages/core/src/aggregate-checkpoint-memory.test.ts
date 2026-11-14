@@ -259,3 +259,47 @@ it("detaches first, last and any values from reused scanner byte buffers", async
   ]);
   expect(pool.usedBytes).toBe(0);
 });
+
+it("admits aggregate result sorting and slicing with exact end-to-end capacity", async () => {
+  const run = async (pool: MemoryBudget) => {
+    const store = memoryStore();
+    await store.put("table", new Uint8Array(1));
+    const lake = new Lake({
+      store,
+      memoryPool: pool,
+      scanner: {
+        async *scan() {
+          for (let key = 0; key < 4; key++) yield Array.from({ length: key + 1 }, () => ({ key }));
+        },
+      },
+    });
+    return lake
+      .path("table")
+      .run()
+      .aggregateWithState(
+        ["key"],
+        { count: { op: "count" } },
+        {
+          orderBy: [{ column: "count", direction: "desc" }],
+          offset: 1,
+          limit: 2,
+        },
+      );
+  };
+  const measured = new MemoryBudget(65536);
+  expect((await run(measured)).rows).toEqual([
+    { key: 2, count: 3 },
+    { key: 1, count: 2 },
+  ]);
+  for (const cap of [measured.peakBytes - 1, measured.peakBytes]) {
+    const pool = new MemoryBudget(cap);
+    if (cap < measured.peakBytes)
+      await expect(run(pool)).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+    else
+      expect((await run(pool)).rows).toEqual([
+        { key: 2, count: 3 },
+        { key: 1, count: 2 },
+      ]);
+    expect(pool.usedBytes).toBe(0);
+  }
+});
