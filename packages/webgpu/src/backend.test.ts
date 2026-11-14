@@ -342,6 +342,98 @@ describe("WebGpuPhysicalBackend validation", () => {
   });
 });
 
+it.each([
+  { createAt: 1, expected: [] },
+  { createAt: 2, expected: [1] },
+  { createAt: 3, expected: [1, 2] },
+  { createAt: 4, expected: [1, 2, 3] },
+  { uploadAt: 1, expected: [1] },
+  { uploadAt: 2, expected: [1, 2] },
+])("destroys every selection buffer after partial allocation (%j)", async (failure) => {
+  const destroyed: number[] = [];
+  const backend = new WebGpuPhysicalBackend(() =>
+    failingPipelineRuntime({ ...failure, destroyed }),
+  );
+  try {
+    const batch = batchFromVectors({ value: { type: "u32", values: Uint32Array.of(1, 2) } });
+    await expect(execute(backend, batch, gt("value", 1))).rejects.toThrow();
+    expect(destroyed.sort((a, b) => a - b)).toEqual(failure.expected);
+  } finally {
+    backend.close();
+  }
+});
+
+it.each([
+  "reduce",
+  "vector",
+  "resident",
+] as const)("cleans partial %s buffer construction", async (kind) => {
+  const count = kind === "reduce" ? 5 : kind === "vector" ? 8 : 4;
+  const uploads = kind === "reduce" ? 3 : kind === "vector" ? 6 : 4;
+  for (const operation of ["createAt", "uploadAt"] as const) {
+    for (let index = 1; index <= (operation === "createAt" ? count : uploads); index++) {
+      const destroyed: number[] = [];
+      const backend = new WebGpuPhysicalBackend(
+        () => failingPipelineRuntime({ [operation]: index, destroyed }),
+        { maxResidentBytes: 1024 },
+      );
+      try {
+        const block = {
+          rowCount: 2,
+          dimensions: 1,
+          vectors: Float32Array.of(1, 2),
+          rowIdsLow: Uint32Array.of(1, 2),
+          rowIdsHigh: new Uint32Array(2),
+        };
+        if (kind === "resident") {
+          await expect(
+            backend.cacheVectorCandidates("test", block, { sourceIdentity: "test" }),
+          ).rejects.toThrow();
+        } else if (kind === "reduce") {
+          const batch = batchFromVectors({ value: { type: "u32", values: Uint32Array.of(1, 2) } });
+          const target = {
+            ...fragment(batch, gt("value", 0)),
+            operators: [{ kind: "reduce", aggregates: { first: { op: "min", column: "value" } } }],
+            output: { kind: "aggregate-snapshot" },
+          } satisfies PhysicalFragment;
+          await expect(
+            backend.execute(await backend.compile(target), { kind: "batch", batch }),
+          ).rejects.toThrow();
+        } else {
+          const target: PhysicalFragment = {
+            id: "vector-cleanup",
+            input: {
+              kind: "vector-candidates",
+              rowCount: 2,
+              dimensions: 1,
+              encoding: "f32",
+              sourceIdentity: "test",
+            },
+            operators: [
+              { kind: "vector-distance", query: [1], metric: "dot" },
+              { kind: "bounded-top-k", limit: 1 },
+            ],
+            output: { kind: "vector-candidates" },
+            estimates: { rowCount: 2, inputBytes: 24, outputBytes: 16, dispatchCount: 1 },
+          };
+          await expect(
+            backend.execute(await backend.compile(target), {
+              kind: "vector-candidates",
+              block,
+              sourceIdentity: "test",
+            }),
+          ).rejects.toThrow();
+        }
+        expect(destroyed.sort((a, b) => a - b)).toEqual(
+          Array.from({ length: operation === "createAt" ? index - 1 : index }, (_, i) => i + 1),
+        );
+      } finally {
+        backend.close();
+      }
+    }
+  }
+});
+
 function execute(
   backend: WebGpuPhysicalBackend,
   batch: Parameters<typeof physicalInputFromBatch>[0],
@@ -381,7 +473,13 @@ function sum(total: number, value: number): number {
   return total + value;
 }
 
-function failingPipelineRuntime(): WebGpuRuntime {
+function failingPipelineRuntime(failure?: {
+  createAt?: number;
+  uploadAt?: number;
+  destroyed: number[];
+}): WebGpuRuntime {
+  let created = 0;
+  let uploaded = 0;
   const device = {
     limits: {
       maxBufferSize: 1024 * 1024,
@@ -389,7 +487,9 @@ function failingPipelineRuntime(): WebGpuRuntime {
     },
     lost: new Promise<GPUDeviceLostInfo>(() => {}),
     queue: {
-      writeBuffer() {},
+      writeBuffer() {
+        if (++uploaded === failure?.uploadAt) throw new Error("injected upload failure");
+      },
     },
     destroy() {},
     pushErrorScope() {},
@@ -397,9 +497,13 @@ function failingPipelineRuntime(): WebGpuRuntime {
       return null;
     },
     createBuffer(descriptor: GPUBufferDescriptor) {
+      const id = ++created;
+      if (id === failure?.createAt) throw new Error("injected allocation failure");
       const contents = new ArrayBuffer(Number(descriptor.size));
       return {
-        destroy() {},
+        destroy() {
+          failure?.destroyed.push(id);
+        },
         getMappedRange() {
           return contents;
         },

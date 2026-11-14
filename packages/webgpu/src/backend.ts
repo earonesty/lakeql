@@ -384,18 +384,21 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
               block.vectors,
               `lakeql:resident:${cacheKey}:vectors`,
             );
+            created.push(values);
             const rowIdsLow = createUploadBuffer(
               lease.device,
               lease.runtime.constants.bufferUsage,
               block.rowIdsLow,
               `lakeql:resident:${cacheKey}:row-ids-low`,
             );
+            created.push(rowIdsLow);
             const rowIdsHigh = createUploadBuffer(
               lease.device,
               lease.runtime.constants.bufferUsage,
               block.rowIdsHigh,
               `lakeql:resident:${cacheKey}:row-ids-high`,
             );
+            created.push(rowIdsHigh);
             const validity = new Uint32Array(block.rowCount);
             if (block.valid === undefined) validity.fill(1);
             else validity.set(block.valid);
@@ -405,7 +408,8 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
               validity,
               `lakeql:resident:${cacheKey}:validity`,
             );
-            created.push(values, rowIdsLow, rowIdsHigh, validityBuffer);
+            created.push(validityBuffer);
+
             const resident: ResidentVectorEntry = {
               cacheKey,
               sourceIdentity: options.sourceIdentity,
@@ -634,6 +638,8 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
             values,
             `lakeql:${compiled.fragment.id}:values`,
           );
+          buffers.push(valueBuffer);
+
           const validity = uploadValidity(
             input.batch.columns,
             predicate.columns,
@@ -645,7 +651,8 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
             validity,
             `lakeql:${compiled.fragment.id}:validity`,
           );
-          buffers.push(valueBuffer, validityBuffer);
+          buffers.push(validityBuffer);
+
           attempt.uploadBytes = transfer.uploadBytes;
           const entries: GPUBindGroupEntry[] = [
             { binding: 0, resource: { buffer: valueBuffer } },
@@ -660,6 +667,8 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
               lease.runtime.constants.bufferUsage.STORAGE |
               lease.runtime.constants.bufferUsage.COPY_SRC,
           });
+          buffers.push(output);
+
           const readback = lease.device.createBuffer({
             label: `lakeql:${compiled.fragment.id}:readback`,
             size: outputBytes,
@@ -667,7 +676,8 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
               lease.runtime.constants.bufferUsage.MAP_READ |
               lease.runtime.constants.bufferUsage.COPY_DST,
           });
-          buffers.push(output, readback);
+          buffers.push(readback);
+
           entries.push({ binding: predicate.outputBinding, resource: { buffer: output } });
 
           const pipeline = await this.#pipeline(lease.device, lease.generation, predicate);
@@ -794,6 +804,7 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
             values,
             `lakeql:${fragment.id}:values`,
           );
+          buffers.push(valueBuffer);
           const validity = uploadValidity(
             input.batch.columns,
             reduction.columns,
@@ -805,6 +816,7 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
             validity,
             `lakeql:${fragment.id}:validity`,
           );
+          buffers.push(validityBuffer);
           const paramsBuffer = createUploadBuffer(
             lease.device,
             lease.runtime.constants.bufferUsage,
@@ -812,6 +824,7 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
             `lakeql:${fragment.id}:params`,
             lease.runtime.constants.bufferUsage.UNIFORM,
           );
+          buffers.push(paramsBuffer);
           const outputBytes = transfer.outputBytes;
           attempt.uploadBytes = transfer.uploadBytes;
           const output = lease.device.createBuffer({
@@ -821,6 +834,7 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
               lease.runtime.constants.bufferUsage.STORAGE |
               lease.runtime.constants.bufferUsage.COPY_SRC,
           });
+          buffers.push(output);
           const readback = lease.device.createBuffer({
             label: `lakeql:${fragment.id}:readback`,
             size: outputBytes,
@@ -828,7 +842,8 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
               lease.runtime.constants.bufferUsage.MAP_READ |
               lease.runtime.constants.bufferUsage.COPY_DST,
           });
-          buffers.push(valueBuffer, validityBuffer, paramsBuffer, output, readback);
+          buffers.push(readback);
+
           const pipeline = await this.#pipeline(lease.device, lease.generation, reduction);
           throwIfAborted(signal);
           const bindGroup = lease.device.createBindGroup({
@@ -1083,18 +1098,21 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
               input.block.vectors,
               `lakeql:${fragment.id}:vectors`,
             );
+            buffers.push(valuesBuffer);
             lowBuffer = createUploadBuffer(
               lease.device,
               lease.runtime.constants.bufferUsage,
               input.block.rowIdsLow,
               `lakeql:${fragment.id}:row-ids-low`,
             );
+            buffers.push(lowBuffer);
             highBuffer = createUploadBuffer(
               lease.device,
               lease.runtime.constants.bufferUsage,
               input.block.rowIdsHigh,
               `lakeql:${fragment.id}:row-ids-high`,
             );
+            buffers.push(highBuffer);
             const validity = new Uint32Array(input.block.rowCount);
             if (input.block.valid === undefined) validity.fill(1);
             else validity.set(input.block.valid);
@@ -1104,7 +1122,7 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
               validity,
               `lakeql:${fragment.id}:validity`,
             );
-            buffers.push(valuesBuffer, lowBuffer, highBuffer, validityBuffer);
+            buffers.push(validityBuffer);
           } else {
             throw new LakeqlError(
               "LAKEQL_PHYSICAL_BACKEND_UNAVAILABLE",
@@ -1117,6 +1135,7 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
             vector.query,
             `lakeql:${fragment.id}:query`,
           );
+          buffers.push(queryBuffer);
           const paramsBuffer = createUploadBuffer(
             lease.device,
             lease.runtime.constants.bufferUsage,
@@ -1131,6 +1150,7 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
             `lakeql:${fragment.id}:params`,
             lease.runtime.constants.bufferUsage.UNIFORM,
           );
+          buffers.push(paramsBuffer);
           const output = lease.device.createBuffer({
             label: `lakeql:${fragment.id}:candidates`,
             size: transfer.outputBytes,
@@ -1138,6 +1158,7 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
               lease.runtime.constants.bufferUsage.STORAGE |
               lease.runtime.constants.bufferUsage.COPY_SRC,
           });
+          buffers.push(output);
           const readback = lease.device.createBuffer({
             label: `lakeql:${fragment.id}:readback`,
             size: transfer.outputBytes,
@@ -1145,7 +1166,8 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
               lease.runtime.constants.bufferUsage.MAP_READ |
               lease.runtime.constants.bufferUsage.COPY_DST,
           });
-          buffers.push(queryBuffer, paramsBuffer, output, readback);
+          buffers.push(readback);
+
           attempt.uploadBytes = transfer.uploadBytes;
           const pipeline = await this.#pipeline(lease.device, lease.generation, vector);
           throwIfAborted(signal);
@@ -1478,10 +1500,15 @@ function createUploadBuffer(
     size,
     usage: bindingUsage | usage.COPY_DST,
   });
-  if (data.byteLength > 0) {
-    device.queue.writeBuffer(buffer, 0, data.buffer, data.byteOffset, data.byteLength);
+  try {
+    if (data.byteLength > 0) {
+      device.queue.writeBuffer(buffer, 0, data.buffer, data.byteOffset, data.byteLength);
+    }
+    return buffer;
+  } catch (error) {
+    buffer.destroy();
+    throw error;
   }
-  return buffer;
 }
 
 type WebGpuRuntimeBufferUsage = {
