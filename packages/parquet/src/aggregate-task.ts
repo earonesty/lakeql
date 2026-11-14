@@ -32,7 +32,6 @@ import { readParquetColumnBatchesFromFile } from "./column-batches.js";
 import { readCachedParquetMetadata } from "./metadata-cache.js";
 import { recordRowsMatched } from "./read-metrics.js";
 import { rejectUnsupportedParquetSchema } from "./schema.js";
-import { asyncBufferFromStore } from "./store-buffer.js";
 import {
   type AggregateParquetGroupTaskOptions,
   type AggregateParquetGroupTasksOptions,
@@ -46,6 +45,7 @@ import {
   taskReadOptions,
   taskRowWindows,
 } from "./task.js";
+import { taskSource } from "./task-source.js";
 
 export async function aggregateParquetTask(
   store: ObjectStore,
@@ -55,7 +55,7 @@ export async function aggregateParquetTask(
 ): Promise<VectorAggregateStateSnapshots> {
   try {
     const scanOptions = aggregateScanOptions(options);
-    const file = await asyncBufferFromStore(store, task.path, scanOptions);
+    const file = await taskSource(store, task.path, options);
     enforceAggregateTaskBudget(scanOptions);
     const { metadata, cached } = await readCachedParquetMetadata(
       task.path,
@@ -152,7 +152,7 @@ export async function aggregateParquetGroupTask(
 ): Promise<VectorGroupByStateSnapshot> {
   try {
     const scanOptions = aggregateScanOptions(options);
-    const file = await asyncBufferFromStore(store, task.path, scanOptions);
+    const file = await taskSource(store, task.path, options);
     enforceAggregateTaskBudget(scanOptions);
     const { metadata, cached } = await readCachedParquetMetadata(
       task.path,

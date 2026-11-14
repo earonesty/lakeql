@@ -613,6 +613,7 @@ export class ParquetScanAdapter implements ScanAdapter {
     options: WindowTaskExecutionOptions,
   ): Promise<OwnedMemory<Row[]>> {
     return windowParquetTasksOwned(this.store, tasks, windows, {
+      ...(this.scanRangeCache === undefined ? {} : { scanRangeCache: this.scanRangeCache }),
       ...(options.memoryBudget === undefined ? {} : { memoryBudget: options.memoryBudget }),
       batchSize: options.batchSize,
       budget: options.budget,

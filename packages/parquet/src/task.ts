@@ -12,10 +12,12 @@ import {
   type VectorAggregateStateSnapshots,
   type VectorGroupByStateSnapshot,
 } from "lakeql-core";
+import type { RangeCacheOptions } from "./range-cache.js";
 import type { ParquetMetadata } from "./types.js";
 
 export interface ScanParquetTaskOptions {
   memoryBudget?: MemoryBudget;
+  scanRangeCache?: RangeCacheOptions;
   batchSize?: number;
   stats?: QueryStats;
   metadataCache?: CacheAdapter<ParquetMetadata>;
@@ -111,8 +113,8 @@ export function aggregateScanOptions(
     batchSize: options.batchSize ?? 4096,
     stats: options.stats ?? aggregateTaskStats(),
     budget: options.budget ?? {},
-    now: () => Date.now(),
-    startedAt: Date.now(),
+    now: options.now ?? (() => Date.now()),
+    startedAt: options.startedAt ?? options.now?.() ?? Date.now(),
   };
 }
 

@@ -1,0 +1,43 @@
+{
+  "finding": "Delegated window tasks bypassed the configured scan range cache, and row task sources omitted scan read options. Warm HTTP 206 fixture runs repeated 64 data ranges across four jobs.",
+  "change": "Shared taskSource opens row/column/aggregate task sources with budget, stats and clock options and configured range cache. The Parquet scanner forwards its range-cache settings to owned window tasks. Clock forwarding preserves requested now/startedAt.",
+  "validation": {
+    "targetedTests": 23,
+    "httpCases": {
+      "poolMiB": [64, 128],
+      "responses": [206, 200],
+      "jobs": 4,
+      "rowsPerJob": 256,
+      "rowGroups": 4,
+      "rounds": ["cold", "warm"],
+      "assertions": [
+        "explain selects parquet-work-unit-fanout",
+        "all row ordinals and unicode payloads match",
+        "warm runs have zero data-range reads (probe excluded)",
+        "server peak concurrent reads is exactly two",
+        "owned outputs remain pinned despite cache eviction attempts",
+        "cache eviction plus output release returns reservations to zero",
+        "reservation peak stays inside pool cap"
+      ]
+    },
+    "beforeAfter": {
+      "rangeResponse": 206,
+      "warmDataRangesBefore": 64,
+      "warmDataRangesAfter": 0
+    },
+    "build": "passed",
+    "formatting": "passed",
+    "defaultSuite": {
+      "filesPassed": 364,
+      "filesSkipped": 8,
+      "testsPassed": 3355,
+      "testsSkipped": 629
+    },
+    "typecheck": "passed"
+  },
+  "limits": [
+    "Local HTTP service exercises transport semantics, not production object storage latency or Cloudflare heap enforcement.",
+    "Fixture pool admission is not full mixed-operator or adversarial input acceptance.",
+    "Aggregate accumulator ownership and redundant task payload copies remain open."
+  ]
+}

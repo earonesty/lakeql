@@ -19,7 +19,6 @@ import { recordRowsMatched } from "./read-metrics.js";
 import { rejectUnsupportedParquetSchema } from "./schema.js";
 import { asyncBufferFromStore } from "./store-buffer.js";
 import {
-  aggregateScanOptions,
   appendRowGroupRange,
   cloneTaskWithRanges,
   type PlanParquetTaskWorkUnitsOptions,
@@ -28,6 +27,7 @@ import {
   taskRowWindows,
   validateTaskWorkUnitOptions,
 } from "./task.js";
+import { taskSource } from "./task-source.js";
 import type { ParquetColumnBatch, ParquetMetadata, StoreAsyncBuffer } from "./types.js";
 
 export async function* scanParquetTaskBatches(
@@ -35,7 +35,7 @@ export async function* scanParquetTaskBatches(
   task: TaskInput,
   options: ScanParquetTaskOptions = {},
 ): AsyncIterable<Row[]> {
-  const file = await asyncBufferFromStore(store, task.path);
+  const file = await taskSource(store, task.path, options);
   const metadata = await taskMetadata(task.path, file, options);
   rejectUnsupportedParquetSchema(metadata, {
     allowValueCheckedScalarDecimals: true,
@@ -65,8 +65,7 @@ export async function* scanParquetTaskColumnBatches(
   task: TaskInput,
   options: ScanParquetTaskOptions = {},
 ): AsyncIterable<ParquetColumnBatch> {
-  const scanOptions = aggregateScanOptions(options);
-  const file = await asyncBufferFromStore(store, task.path, scanOptions);
+  const file = await taskSource(store, task.path, options);
   const metadata = await taskMetadata(task.path, file, options);
   rejectUnsupportedParquetSchema(metadata, {
     allowValueCheckedScalarDecimals: true,
