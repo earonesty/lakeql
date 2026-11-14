@@ -1,3 +1,4 @@
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import {
   type Batch,
   type Selection,
@@ -105,7 +106,7 @@ export function vectorTopKOwnedBatch(
   try {
     scope.adopt(input.retain());
     const heap = scope.allocate(
-      capacity * 4,
+      c.view + capacity * 4,
       "top-k candidate indices",
       () => new Uint32Array(capacity),
     ).value;

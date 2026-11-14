@@ -4443,3 +4443,12 @@ Expanded `bench/top-k-scalar-workspace.mjs` from one packed-text width to 16/128
 Source review confirms direct scalar reads with reusable workspace rather than a batch-sized key cache. It also identifies a remaining M1 gap: `vectorTopKOwnedBatch` admits only `capacity * 4` before constructing its Uint32Array candidate heap, omitting the standard view charge. These benchmark figures therefore describe current tracked reservations, not complete allocation coverage. A measured comparison against admitted key caching and broader bookkeeping review remain open under F5/M1.
 
 Evidence: `docs/validation/top-k-scalar-widths-2026-11-14.json` and raw `docs/benchmarks/top-k-scalar-widths-2026-11-14.json`; runtime source `9206579`. Harness assertions and formatting passed; no runtime implementation changed.
+
+
+### F5/M1 top-k candidate view admission (2026-11-14)
+
+`vectorTopKOwnedBatch` now admits `MATERIALIZATION_CHARGES.view + capacity * 4` before constructing its candidate Uint32Array, including the zero-capacity case. Capacity remains limited by actual selected rows and requested offset/limit. Updated scalar comparison exact/cap-minus-one budgets and the sparse-selection oversized-limit test to include the 128-byte view charge. All eleven focused top-k memory tests pass, covering scalar shapes, empty/zero-limit results, ties/nulls, ordering directions and offsets.
+
+This corrects the demonstrated candidate backing/view gap. Temporary subarray selection views and normalized order metadata still require separate review; no complete top-k allocation claim follows from this change. The preceding scalar-width report is historical and excludes the new candidate view charge.
+
+Final verification: build/typecheck, 3,731 regular tests (645 skipped) and 82 Worker tests passed. Refreshed width benchmark keeps workspace constant across row counts, with the expected 128-byte increment per shape. Evidence: `docs/validation/top-k-candidate-view-2026-11-14.json`; raw benchmark `docs/benchmarks/top-k-candidate-view-2026-11-14.json`.

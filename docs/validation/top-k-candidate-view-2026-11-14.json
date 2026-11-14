@@ -1,0 +1,19 @@
+{
+  "baseCommit": "df127d3",
+  "requirements": ["F5", "M1", "V2"],
+  "change": "Admit candidate Uint32Array view plus backing before allocation, including zero capacity.",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 11,
+    "regularPassed": 3731,
+    "regularSkipped": 645,
+    "workerPassed": 82
+  },
+  "benchmark": "docs/benchmarks/top-k-candidate-view-2026-11-14.json",
+  "limitations": [
+    "Temporary subarray views and normalized ordering metadata remain under review.",
+    "Tracked units are not a total VM heap bound.",
+    "No measured key-cache alternative comparison yet."
+  ]
+}

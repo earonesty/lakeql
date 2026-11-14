@@ -45,7 +45,7 @@ it.each([
   scope.dispose();
   const order = [{ column: "key" }];
   const expected = materializeBatchRows(vectorTopKBatch(batch, order, { limit: 2 }));
-  const required = input.bytes + 8 + 2 * scalarBytes;
+  const required = input.bytes + c.view + 8 + 2 * scalarBytes;
   const tight = budget.child(required - 1);
   const tightPin = input.retainIn(tight);
   expect(() => vectorTopKOwnedBatch(tightPin, order, { limit: 2 })).toThrow(/budget/i);
@@ -74,7 +74,7 @@ it("rejects packed text scalar allocation before decoding when the first read ca
   };
   const input = scope.retainAllocations(batch);
   scope.dispose();
-  const child = budget.child(input.bytes + 8 + c.view + c.string + 256 - 1);
+  const child = budget.child(input.bytes + c.view + 8 + c.view + c.string + 256 - 1);
   const pin = input.retainIn(child);
   const decode = vi.spyOn(TextDecoder.prototype, "decode");
   try {
@@ -157,12 +157,12 @@ it("sizes the admitted heap from actual selected rows rather than an oversized l
   scope.dispose();
   const selected = new Uint8Array(128);
   selected[73] = 1;
-  // One index plus one Float64 output, in addition to the pinned input.
-  const child = root.child(input.bytes + 4 + 8);
+  // Candidate view, one index and one Float64 output, plus pinned input.
+  const child = root.child(input.bytes + c.view + 4 + 8);
   const pin = input.retainIn(child);
   const output = vectorTopKOwnedBatch(pin, [{ column: "id" }], { limit: 1000000 }, selected);
   expect(materializeBatchRows(output.value)).toEqual([{ id: 73 }]);
-  expect(child.peakBytes).toBe(input.bytes + 12);
+  expect(child.peakBytes).toBe(input.bytes + c.view + 12);
   output.release();
   pin.release();
   expect(child.usedBytes).toBe(0);
