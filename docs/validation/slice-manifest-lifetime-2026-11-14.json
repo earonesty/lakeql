@@ -1,0 +1,27 @@
+{
+  "baseCommit": "a502b4e",
+  "scope": "Retain slice manifest through scanning and enforce cancellation at shared budget checks",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 107,
+    "fullSuite": {
+      "passed": 3567,
+      "skipped": 629,
+      "log": "/tmp/slice-manifest-full-verified.log"
+    }
+  },
+  "evidence": [
+    "Delayed scanner success/failure/cancellation keeps manifest charged until settlement",
+    "Early page termination closes scanner and releases manifest",
+    "Terminal resumed page releases manifest",
+    "Stale bookmark rejects before scanning and releases manifest",
+    "Cancellation regression reproduced before shared enforceBudget signal check"
+  ],
+  "remaining": [
+    "Returned slice rows/bookmark ownership",
+    "Object discovery and explain ownership",
+    "No-output iterator cancellation completion audit",
+    "Final runtime memory benchmarks and release gates"
+  ]
+}

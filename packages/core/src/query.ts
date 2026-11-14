@@ -1986,45 +1986,51 @@ export class QueryResult {
     if (!Number.isInteger(options.maxRows) || options.maxRows <= 0) {
       throw new LakeqlError("LAKEQL_TYPE_ERROR", "slice maxRows must be a positive integer");
     }
-    const manifest = await this.taskManifest();
-    const startOffset = options.bookmark?.position.rowOffset ?? 0;
-    if (options.bookmark) assertBookmarkMatches(options.bookmark, manifest.planFingerprint);
+    const manifestOwner = await this.ownedTaskManifest();
+    try {
+      const manifest = manifestOwner.value;
+      const startOffset = options.bookmark?.position.rowOffset ?? 0;
+      if (options.bookmark) assertBookmarkMatches(options.bookmark, manifest.planFingerprint);
 
-    const rows: Row[] = [];
-    let skipped = 0;
-    let seen = 0;
-    let hasMore = false;
-    for await (const row of this.rows()) {
-      if (skipped < startOffset) {
-        skipped += 1;
+      const rows: Row[] = [];
+      let skipped = 0;
+      let seen = 0;
+      let hasMore = false;
+      for await (const row of this.rows()) {
+        if (skipped < startOffset) {
+          skipped += 1;
+          seen += 1;
+          continue;
+        }
+        if (rows.length >= options.maxRows) {
+          hasMore = true;
+          break;
+        }
+        rows.push(row);
         seen += 1;
-        continue;
       }
-      if (rows.length >= options.maxRows) {
-        hasMore = true;
-        break;
-      }
-      rows.push(row);
-      seen += 1;
-    }
 
-    if (!hasMore) return { rows };
-    const position: { fileIndex: number; rowGroup: number; rowOffset: number; taskId?: string } = {
-      fileIndex: 0,
-      rowGroup: 0,
-      rowOffset: seen,
-    };
-    const taskId = manifest.tasks[0]?.id;
-    if (taskId !== undefined) position.taskId = taskId;
-    return {
-      rows,
-      bookmark: createBookmark({
-        planFingerprint: manifest.planFingerprint,
-        snapshot: manifest.snapshot,
-        query: this.config.bookmarkQuery,
-        position,
-      }),
-    };
+      if (!hasMore) return { rows };
+      const position: { fileIndex: number; rowGroup: number; rowOffset: number; taskId?: string } =
+        {
+          fileIndex: 0,
+          rowGroup: 0,
+          rowOffset: seen,
+        };
+      const taskId = manifest.tasks[0]?.id;
+      if (taskId !== undefined) position.taskId = taskId;
+      return {
+        rows,
+        bookmark: createBookmark({
+          planFingerprint: manifest.planFingerprint,
+          snapshot: manifest.snapshot,
+          query: this.config.bookmarkQuery,
+          position,
+        }),
+      };
+    } finally {
+      manifestOwner.release();
+    }
   }
 
   async *resumableBatches(options: ResumableBatchOptions): AsyncIterable<SliceResult> {
@@ -6097,6 +6103,7 @@ function enforceBudget(
   now: () => number,
   startedAt: number,
 ): void {
+  throwIfAborted(budget.signal);
   const elapsedMs = now() - startedAt;
   stats.elapsedMs = elapsedMs;
   if (budget.maxFiles !== undefined && stats.filesRead > budget.maxFiles) {

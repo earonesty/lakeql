@@ -89,3 +89,88 @@ it("exposes owned query manifests and transfers plain results out of accounting"
   expect(plain.tasks).toHaveLength(1);
   expect(pool.usedBytes).toBe(0);
 });
+
+it.each([
+  "success",
+  "failure",
+  "cancel",
+] as const)("retains the slice manifest while a scan %s is pending", async (outcome) => {
+  const store = memoryStore();
+  await store.put("table", new Uint8Array(1));
+  const pool = new MemoryBudget(1 << 20);
+  const controller = new AbortController();
+  let enter!: () => void, finish!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    enter = resolve;
+  });
+  const pending = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  let closed = false;
+  const lake = new Lake({
+    store,
+    memoryPool: pool,
+    budget: { signal: controller.signal },
+    scanner: {
+      async *scan() {
+        try {
+          enter();
+          await pending;
+          expect(pool.usedBytes).toBeGreaterThan(0);
+          if (outcome === "failure") throw Error("scan failed");
+          yield [{ id: 1 }, { id: 2 }];
+        } finally {
+          closed = true;
+        }
+      },
+    },
+  });
+  const work = lake.path("table").run().slice({ maxRows: 1 });
+  const checked =
+    outcome === "success"
+      ? expect(work).resolves.toMatchObject({
+          rows: [{ id: 1 }],
+          bookmark: { position: { rowOffset: 1 } },
+        })
+      : expect(work).rejects.toMatchObject(
+          outcome === "failure" ? { message: "scan failed" } : { code: "LAKEQL_ABORTED" },
+        );
+  await entered;
+  if (outcome === "cancel") controller.abort();
+  expect(pool.usedBytes).toBeGreaterThan(0);
+  finish();
+  await checked;
+  expect(closed).toBe(true);
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("releases slice manifests on terminal output and stale bookmark rejection", async () => {
+  const store = memoryStore();
+  await store.put("table", new Uint8Array(1));
+  const pool = new MemoryBudget(1 << 20);
+  let scans = 0;
+  const lake = new Lake({
+    store,
+    memoryPool: pool,
+    scanner: {
+      async *scan() {
+        scans++;
+        yield [{ id: 1 }, { id: 2 }];
+      },
+    },
+  });
+  const query = lake.path("table");
+  const first = await query.run().slice({ maxRows: 1 });
+  expect(first.bookmark).toBeDefined();
+  expect(pool.usedBytes).toBe(0);
+  const bookmark = first.bookmark;
+  if (bookmark === undefined) throw Error("missing bookmark");
+  const terminal = await query.run().slice({ maxRows: 2, bookmark });
+  expect(terminal).toEqual({ rows: [{ id: 2 }] });
+  expect(pool.usedBytes).toBe(0);
+  await expect(
+    query.run().slice({ maxRows: 1, bookmark: { ...bookmark, planFingerprint: "stale" } }),
+  ).rejects.toMatchObject({ code: "LAKEQL_BOOKMARK_STALE" });
+  expect(scans).toBe(2);
+  expect(pool.usedBytes).toBe(0);
+});

@@ -3525,3 +3525,23 @@ Build/typecheck and the full suite passed: 3,563 tests, 629 skips. The existing
 real-Parquet serialized golden manifest passes unchanged. Evidence:
 `docs/validation/owned-task-manifest-2026-11-14.json`. Internal `slice()` still
 uses a plain manifest while scanning and needs a retained lifetime in follow-up.
+
+### 2026-11-14 — slice manifest lifetime and shared cancellation check
+
+`slice()` holds an owned manifest through bookmark validation, row scanning, and
+bookmark construction, releasing it in `finally`. Tests cover delayed scan
+success/failure/cancellation, early page termination with iterator cleanup,
+terminal resumed output, and stale-bookmark rejection before scanning.
+
+The delayed cancellation test exposed a pre-existing shared query-budget gap:
+`enforceBudget()` checked resource counters but not the abort signal, allowing a
+non-cooperative row scanner's post-abort batch to produce output. The shared
+check now calls `throwIfAborted`, covering every existing enforcement site rather
+than adding a slice-specific exception. This does not claim that an external
+scanner can be forcibly interrupted or that every no-output iterator completion
+path has been audited. Returned slice rows/bookmark ownership and broader object
+discovery/explain lifetimes remain separate open work.
+
+Validation: build/typecheck passed; focused suites passed 107 tests; full suite
+passed 3,567 with 629 skips. Evidence:
+`docs/validation/slice-manifest-lifetime-2026-11-14.json`.
