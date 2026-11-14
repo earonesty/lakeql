@@ -3549,8 +3549,8 @@ interface AggregateState {
   add(value: unknown): void;
   finish(): unknown;
   snapshot(scope?: MemoryScope): AggregateStateSnapshot;
-  serializedBytes?(): number;
-  bufferedMemory?(measureBytes: boolean): { bytes: number; rows: number };
+  serializedBytes(): number;
+  bufferedRows?(): number;
 }
 
 class AggregateGroup {
@@ -3598,7 +3598,7 @@ class AggregateGroup {
     }).value;
   }
 
-  memory(key: string, budget: QueryBudget): { bytes: number; rows: number } {
+  memory(key: string, budget: QueryBudget, target: { bytes: number; rows: number }): void {
     const measureBytes = budget.maxMemoryBytes !== undefined;
     if (measureBytes && this.serializedHeaderBytes === undefined) {
       let keyBytes = 2;
@@ -3622,15 +3622,11 @@ class AggregateGroup {
     for (const alias in this.states) {
       if (!Object.hasOwn(this.states, alias)) continue;
       const state = this.states[alias] as AggregateState;
-      const buffered = state.bufferedMemory?.(measureBytes);
-      if (budget.maxBufferedRows !== undefined) rows += buffered?.rows ?? 0;
-      if (measureBytes)
-        bytes +=
-          buffered?.bytes ??
-          state.serializedBytes?.() ??
-          estimateOperatorMemoryBytes(state.snapshot());
+      if (budget.maxBufferedRows !== undefined) rows += state.bufferedRows?.() ?? 0;
+      if (measureBytes) bytes += state.serializedBytes();
     }
-    return { bytes, rows };
+    target.bytes = bytes;
+    target.rows = rows;
   }
 
   snapshot(key: string, scope?: MemoryScope): AggregateGroupSnapshot {
@@ -3889,6 +3885,7 @@ class VarianceState implements AggregateState {
 
 /** Lazily measures restored values once; subsequent mutations adjust only changed items. */
 class AggregateValuesMemory<T> {
+  constructor(private readonly values: () => Iterable<T>) {}
   private memory: BufferMemory<T> | undefined;
 
   add(value: T): void {
@@ -3899,9 +3896,9 @@ class AggregateValuesMemory<T> {
     this.memory?.remove(value);
   }
 
-  bytes(values: Iterable<T>, header: unknown): number {
-    this.memory ??= new BufferMemory<T>(estimateOperatorMemoryBytes, values);
-    return estimateOperatorMemoryBytes(header) - 2 + this.memory.bytes;
+  bytes(headerBytes: number): number {
+    this.memory ??= new BufferMemory<T>(estimateOperatorMemoryBytes, this.values());
+    return headerBytes - 2 + this.memory.bytes;
   }
 }
 
@@ -3912,7 +3909,7 @@ function aggregateRetainedValueBytes(value: number | string): number {
 }
 
 class MedianState implements AggregateState {
-  private readonly memory = new AggregateValuesMemory<number | string>();
+  private readonly memory = new AggregateValuesMemory<number | string>(() => this.values);
   private readonly values: (number | string)[];
   private readonly ledger: MutableMemoryLedger;
   constructor(
@@ -3962,11 +3959,11 @@ class MedianState implements AggregateState {
     }
   }
 
-  bufferedMemory(measureBytes: boolean): { bytes: number; rows: number } {
-    return {
-      bytes: measureBytes ? this.memory.bytes(this.values, { op: "median", values: [] }) : 0,
-      rows: this.values.length,
-    };
+  serializedBytes(): number {
+    return this.memory.bytes('{"op":"median","values":[]}'.length);
+  }
+  bufferedRows(): number {
+    return this.values.length;
   }
 
   snapshot(): AggregateStateSnapshot {
@@ -3982,7 +3979,7 @@ class MedianState implements AggregateState {
 }
 
 class QuantileState implements AggregateState {
-  private readonly memory = new AggregateValuesMemory<number>();
+  private readonly memory = new AggregateValuesMemory<number>(() => this.values);
   constructor(
     private readonly quantile: number,
     values: number[],
@@ -4025,13 +4022,13 @@ class QuantileState implements AggregateState {
     }
   }
 
-  bufferedMemory(measureBytes: boolean): { bytes: number; rows: number } {
-    return {
-      bytes: measureBytes
-        ? this.memory.bytes(this.values, { op: "quantile", quantile: this.quantile, values: [] })
-        : 0,
-      rows: this.values.length,
-    };
+  serializedBytes(): number {
+    return this.memory.bytes(
+      '{"op":"quantile","quantile":,"values":[]}'.length + serializedValueBytes(this.quantile),
+    );
+  }
+  bufferedRows(): number {
+    return this.values.length;
   }
 
   snapshot(): AggregateStateSnapshot {
@@ -4092,7 +4089,7 @@ class MinMaxState implements AggregateState {
 }
 
 class CountDistinctState implements AggregateState {
-  private readonly memory = new AggregateValuesMemory<string>();
+  private readonly memory = new AggregateValuesMemory<string>(() => this.values);
   private readonly values: Set<string>;
 
   constructor(
@@ -4139,11 +4136,11 @@ class CountDistinctState implements AggregateState {
     return this.values.size;
   }
 
-  bufferedMemory(measureBytes: boolean): { bytes: number; rows: number } {
-    return {
-      bytes: measureBytes ? this.memory.bytes(this.values, { op: this.op, values: [] }) : 0,
-      rows: this.values.size,
-    };
+  serializedBytes(): number {
+    return this.memory.bytes('{"op":,"values":[]}'.length + serializedValueBytes(this.op));
+  }
+  bufferedRows(): number {
+    return this.values.size;
   }
 
   snapshot(): AggregateStateSnapshot {
@@ -4172,7 +4169,7 @@ class ModeState implements AggregateState {
     key: string;
     value: AggregateSnapshotValue;
     count: number;
-  }>();
+  }>(() => this.memoryValues());
   private readonly values: Map<string, { value: string | number | boolean | null; count: number }>;
 
   private readonly ledger: MutableMemoryLedger;
@@ -4247,11 +4244,11 @@ class ModeState implements AggregateState {
     }
   }
 
-  bufferedMemory(measureBytes: boolean): { bytes: number; rows: number } {
-    return {
-      bytes: measureBytes ? this.memory.bytes(this.memoryValues(), { op: "mode", values: [] }) : 0,
-      rows: this.values.size,
-    };
+  serializedBytes(): number {
+    return this.memory.bytes('{"op":"mode","values":[]}'.length);
+  }
+  bufferedRows(): number {
+    return this.values.size;
   }
 
   snapshot(): AggregateStateSnapshot {
@@ -5989,22 +5986,24 @@ class AggregateMemory {
   }
 
   update(key: string, group: AggregateGroup): void {
-    const previous = this.charges.get(group);
-    const { bytes, rows } = group.memory(key, this.budget);
-    if (this.budget.maxMemoryBytes !== undefined && previous === undefined && this.charges.size > 0)
-      this.bytes += 1;
-    this.bytes += bytes - (previous?.bytes ?? 0);
-    this.rows += rows - (previous?.rows ?? 0);
-    if (previous) {
-      previous.bytes = bytes;
-      previous.rows = rows;
-    } else {
-      this.scope.allocate(
+    let charge = this.charges.get(group);
+    if (charge === undefined) {
+      if (this.budget.maxMemoryBytes !== undefined && this.charges.size > 0) this.bytes += 1;
+      charge = this.scope.allocate(
         2 * allocationCharges.object + 3 * allocationCharges.property,
         "aggregate accounting entry",
-        () => this.charges.set(group, { bytes, rows }),
-      );
+        () => {
+          const entry = { bytes: 0, rows: 0 };
+          this.charges.set(group, entry);
+          return entry;
+        },
+      ).value;
     }
+    const previousBytes = charge.bytes;
+    const previousRows = charge.rows;
+    group.memory(key, this.budget, charge);
+    this.bytes += charge.bytes - previousBytes;
+    this.rows += charge.rows - previousRows;
   }
 }
 

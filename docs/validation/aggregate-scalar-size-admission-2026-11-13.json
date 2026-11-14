@@ -15,9 +15,10 @@
     "workerTestsPassed": 61
   },
   "remaining": [
-    "Growing-state size bookkeeping still allocates small result/header records and formats changed values.",
+    "Growing-state header/result records and group measurement records are removed (linked evidence); changed-value formatting and mode entry temporaries remain.",
     "Numeric-only direct state estimates still use native numeric formatting without a separately retained output.",
     "Aggregate request-compatibility formatting, evaluator temporaries and runtime bookkeeping remain separate.",
     "No total-heap or latency improvement is inferred from structural allocation removal alone."
-  ]
+  ],
+  "measurementContractEvidence": "aggregate-measurement-contract-2026-11-13.json"
 }
