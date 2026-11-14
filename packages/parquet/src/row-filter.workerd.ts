@@ -81,6 +81,7 @@ it.each(
           "windowKeys",
           "windowPartitionKeys",
           "windowValues",
+          "windowFrameValues",
           "windowAggregateValues",
           "windowStateValues",
         ]
@@ -108,7 +109,32 @@ it.each(
                 .window("value", {
                   fn: route === "windowAggregateValues" ? { aggregate: "min" } : "first_value",
                   args: [predicate.left],
-                  over: { partitionBy: [], orderBy: [{ expr: { kind: "column", name: "id" } }] },
+                  over: {
+                    partitionBy: [],
+                    orderBy: [{ expr: { kind: "column", name: "id" } }],
+                    ...(route === "windowFrameValues"
+                      ? {
+                          frame: {
+                            mode: "rows" as const,
+                            exclude: "no-others" as const,
+                            start: {
+                              kind: "preceding" as const,
+                              offset: {
+                                kind: "case" as const,
+                                whens: [
+                                  {
+                                    when: predicate,
+                                    value: { kind: "literal" as const, value: 1 },
+                                  },
+                                ],
+                                else: { kind: "literal" as const, value: 0 },
+                              },
+                            },
+                            end: { kind: "current-row" as const },
+                          },
+                        }
+                      : {}),
+                  },
                 })
                 .select(["id", "text", "value"]);
             if (route.startsWith("window"))

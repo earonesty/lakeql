@@ -1,0 +1,47 @@
+{
+  "requirements": ["F4", "M1", "V2", "V3"],
+  "status": "Frame-bound and QUALIFY expression scratch is admitted and released per evaluation; full acceptance remains open",
+  "implementation": [
+    "ROWS, GROUPS and RANGE bound expressions receive a short-lived scope spanning bound calculation. Scratch releases before frame rows are consumed, including reversed frame traversal.",
+    "Both value-window iterators and aggregate adaptive frame traversal pass the execution budget into bound calculation. Frames without offset expressions avoid creating an unnecessary scratch scope.",
+    "QUALIFY uses per-row predicate scopes instead of accumulating all expression allocations in the full output scope."
+  ],
+  "validation": {
+    "default": {
+      "passed": 3319,
+      "skipped": 629
+    },
+    "worker": {
+      "passed": 75
+    },
+    "reference": {
+      "passed": 104
+    },
+    "newUnitCases": 20,
+    "cases": [
+      "ROWS/GROUPS/RANGE across row/run/vector backends with both aggregate and first-value windows; correct small expressions and oversized expansion rejection preserve sibling reservations",
+      "One hundred repeated frame calculations release all expression scratch after each calculation",
+      "One hundred QUALIFY rejections do not retain cumulative expansion payloads"
+    ],
+    "realFixtures": "Added a frame-expression route to the real Parquet HTTP 206/ignored-Range 200 and local workerd R2 matrices, with row/vector execution and shared 64/128 MiB pools.",
+    "build": "pnpm exec tsc -b passed before runtime tests",
+    "typecheck": "pnpm typecheck passed; fixture frame exclusions explicitly specify the existing no-others default",
+    "limitations": "External conformance, coverage and full packaging were not refreshed for this change."
+  },
+  "performance": {
+    "report": "docs/benchmarks/window-frame-scopes-2026-11-14.json",
+    "method": "Final report rerun without concurrent test suites; independent expected values and zero final reservations asserted on every sample.",
+    "numeric2048RowsMedianMilliseconds": {
+      "growingWithAvailableTreeBudget": 0.304854,
+      "alternatingWithoutTree": 231.818859,
+      "alternatingWithTree": 1.601267
+    },
+    "limitations": "Local numeric kernels only; no cloud latency, total VM heap or isolated before/after speedup claim."
+  },
+  "remainingAcceptance": [
+    "Window sort-group planning, other metadata and timestamp-bound arithmetic workspace still require complete admission review.",
+    "Legacy spill-read pre-allocation admission, delegated task intermediates, transactional spill cleanup and other operator/source gaps remain open.",
+    "The full mixed-job/adaptive scheduling matrix and production Cloudflare total-memory evidence remain open.",
+    "Allocation units do not establish a total VM heap, external backing or RSS cap."
+  ]
+}

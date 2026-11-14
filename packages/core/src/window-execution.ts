@@ -103,7 +103,14 @@ export async function* postWindowQueryBatches(
         () => [] as Row[],
       ).value;
       for (const row of rows) {
-        if (config.qualify !== undefined && !matches(config.qualify, row, scope)) continue;
+        if (config.qualify !== undefined) {
+          const predicateScope = scope.childScope();
+          try {
+            if (!matches(config.qualify, row, predicateScope)) continue;
+          } finally {
+            predicateScope.dispose();
+          }
+        }
         scope.allocate(c.arraySlot, "window output row reference", () => selected.push(row));
       }
       if (config.orderBy !== undefined) {

@@ -343,7 +343,7 @@ function evaluatePartitionWithPeers(
     if (segmentValues !== undefined) return segmentValues;
     return partition.map((_item, index) =>
       aggregateWindowValue(
-        frameRowIterator(partition, index, expr, peers),
+        frameRowIterator(partition, index, expr, peers, false, resultScope),
         expr,
         budget,
         resultScope,
@@ -374,12 +374,17 @@ function evaluatePartitionWithPeers(
       return offsetValues(partition, expr, 1, resultScope);
     case "first_value":
       return partition.map((_item, index) => {
-        return frameValueAt(frameRowIterator(partition, index, expr, peers), expr, 1, resultScope);
+        return frameValueAt(
+          frameRowIterator(partition, index, expr, peers, false, resultScope),
+          expr,
+          1,
+          resultScope,
+        );
       });
     case "last_value":
       return partition.map((_item, index) => {
         return frameValueAt(
-          frameRowIterator(partition, index, expr, peers, true),
+          frameRowIterator(partition, index, expr, peers, true, resultScope),
           expr,
           1,
           resultScope,
@@ -509,7 +514,12 @@ function nthValue(
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "nth_value requires a positive integer position");
   }
   return partition.map((_item, index) => {
-    return frameValueAt(frameRowIterator(partition, index, expr, peers), expr, nth, scope);
+    return frameValueAt(
+      frameRowIterator(partition, index, expr, peers, false, scope),
+      expr,
+      nth,
+      scope,
+    );
   });
 }
 

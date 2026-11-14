@@ -45,6 +45,7 @@ export function segmentTreeAggregateValues(
   if (!isSegmentAggregate(op)) return undefined;
   if (partition.length === 0) return [];
   const accumulator = createWindowAggregateAccumulator(expr, budget, resultScope);
+  const frameScope = budget === undefined ? undefined : new MemoryScope(budget);
   let treeScope = budget === undefined ? undefined : new MemoryScope(budget);
   let previousStart = -1;
   let previousEnd = 0;
@@ -54,7 +55,7 @@ export function segmentTreeAggregateValues(
   let reservation: MemoryReservation | undefined;
   try {
     return partition.map((_row, index) => {
-      const span = frameSpan(partition, index, expr, peers);
+      const span = frameSpan(partition, index, expr, peers, frameScope);
       if (tree !== undefined)
         return retainWindowValue(
           aggregateValue(op, tree.query(span)),
@@ -104,6 +105,7 @@ export function segmentTreeAggregateValues(
   } finally {
     accumulator.reset();
     treeScope?.dispose();
+    frameScope?.dispose();
     reservation?.release();
   }
 }

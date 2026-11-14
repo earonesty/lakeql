@@ -46,5 +46,6 @@
     "Transactional cleanup of already-created spill objects and adapter-owned persistent storage remain separate from in-flight read/parse/write accounting.",
     "Full mixed-job/adaptive scheduling acceptance and production Cloudflare total-memory evidence remain open.",
     "Shared reservations do not establish a total VM heap, external backing or RSS cap."
-  ]
+  ],
+  "followupEvidence": "docs/validation/window-frame-expression-admission-2026-11-14.json"
 }

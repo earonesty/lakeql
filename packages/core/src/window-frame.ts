@@ -6,6 +6,7 @@ import {
   isIntervalValue,
   isNonNegativeInterval,
 } from "./interval.js";
+import type { MemoryScope } from "./memory-scope.js";
 import { isTimestampValue, type TimestampValue } from "./timestamp.js";
 import type { Row } from "./types.js";
 import type { WindowExpr, WindowFrame, WindowFrameBound } from "./window.js";
@@ -22,8 +23,9 @@ export function frameRows(
   index: number,
   expr: WindowExpr,
   peers?: WindowPeers,
+  scope?: MemoryScope,
 ): Row[] {
-  return [...frameRowIterator(partition, index, expr, peers)];
+  return [...frameRowIterator(partition, index, expr, peers, false, scope)];
 }
 
 /** Borrow frame rows with constant iterator state. Excluded intervals are jumped
@@ -34,8 +36,9 @@ export function* frameRowIterator(
   expr: WindowExpr,
   peers?: WindowPeers,
   reverse = false,
+  scope?: MemoryScope,
 ): IterableIterator<Row> {
-  const span = frameSpan(partition, index, expr, peers);
+  const span = frameSpan(partition, index, expr, peers, scope);
   const exclude = expr.over.frame?.exclude ?? "no-others";
   let excludedStart = -1;
   let excludedEnd = -1;
@@ -78,15 +81,26 @@ export function frameSpan(
   index: number,
   expr: WindowExpr,
   peers?: WindowPeers,
+  scope?: MemoryScope,
 ): FrameSpan {
   const frame = effectiveFrame(expr);
-  switch (frame.mode) {
-    case "rows":
-      return rowsFrameSpan(partition, index, frame);
-    case "groups":
-      return groupsFrameSpan(partition, index, frame, peers);
-    case "range":
-      return rangeFrameSpan(partition, index, expr, frame, peers);
+  const temporary =
+    frame.start.offset === undefined && frame.end.offset === undefined
+      ? undefined
+      : scope?.childScope();
+  try {
+    switch (frame.mode) {
+      case "rows":
+        return rowsFrameSpan(partition, index, frame, temporary);
+      case "groups":
+        return groupsFrameSpan(partition, index, frame, peers, temporary);
+      case "range":
+        return rangeFrameSpan(partition, index, expr, frame, peers, temporary);
+      default:
+        throw new LakeqlError("LAKEQL_TYPE_ERROR", "Invalid window frame mode");
+    }
+  } finally {
+    temporary?.dispose();
   }
 }
 
@@ -112,10 +126,11 @@ function rowsFrameSpan(
   partition: readonly WindowRow[],
   index: number,
   frame: WindowFrame,
+  scope?: MemoryScope,
 ): FrameSpan {
   return normalizeSpan(partition.length, {
-    start: rowBoundIndex(partition, index, frame.start),
-    end: rowBoundIndex(partition, index, frame.end) + 1,
+    start: rowBoundIndex(partition, index, frame.start, scope),
+    end: rowBoundIndex(partition, index, frame.end, scope) + 1,
   });
 }
 
@@ -123,6 +138,7 @@ function rowBoundIndex(
   partition: readonly WindowRow[],
   index: number,
   bound: WindowFrameBound,
+  scope?: MemoryScope,
 ): number {
   switch (bound.kind) {
     case "unbounded-preceding":
@@ -132,9 +148,9 @@ function rowBoundIndex(
     case "current-row":
       return index;
     case "preceding":
-      return index - offset(bound, partition[index]?.row);
+      return index - offset(bound, partition[index]?.row, scope);
     case "following":
-      return index + offset(bound, partition[index]?.row);
+      return index + offset(bound, partition[index]?.row, scope);
   }
 }
 
@@ -143,6 +159,7 @@ function groupsFrameSpan(
   index: number,
   frame: WindowFrame,
   peers?: WindowPeers,
+  scope?: MemoryScope,
 ): FrameSpan {
   const groups = peers === undefined ? peerGroups(partition) : undefined;
   const groupCount = peers?.groupCount ?? groups?.length ?? 0;
@@ -152,8 +169,14 @@ function groupsFrameSpan(
     groups?.findIndex((group) => index >= group.start && index < group.end) ??
     -1;
   if (groupIndex === -1) return { start: 0, end: 0 };
-  const startGroup = groupBoundIndex(groupCount, groupIndex, frame.start, partition[index]?.row);
-  const endGroup = groupBoundIndex(groupCount, groupIndex, frame.end, partition[index]?.row);
+  const startGroup = groupBoundIndex(
+    groupCount,
+    groupIndex,
+    frame.start,
+    partition[index]?.row,
+    scope,
+  );
+  const endGroup = groupBoundIndex(groupCount, groupIndex, frame.end, partition[index]?.row, scope);
   if (endGroup < 0 || startGroup >= groupCount) return { start: 0, end: 0 };
   const clampedStartGroup = clamp(startGroup, 0, groupCount - 1);
   const clampedEndGroup = clamp(endGroup, 0, groupCount - 1);
@@ -169,6 +192,7 @@ function groupBoundIndex(
   groupIndex: number,
   bound: WindowFrameBound,
   row: Row | undefined,
+  scope?: MemoryScope,
 ): number {
   switch (bound.kind) {
     case "unbounded-preceding":
@@ -178,9 +202,9 @@ function groupBoundIndex(
     case "current-row":
       return groupIndex;
     case "preceding":
-      return groupIndex - offset(bound, row);
+      return groupIndex - offset(bound, row, scope);
     case "following":
-      return groupIndex + offset(bound, row);
+      return groupIndex + offset(bound, row, scope);
   }
 }
 
@@ -190,9 +214,10 @@ function rangeFrameSpan(
   expr: WindowExpr,
   frame: WindowFrame,
   peers?: WindowPeers,
+  scope?: MemoryScope,
 ): FrameSpan {
   if (frame.start.offset !== undefined || frame.end.offset !== undefined) {
-    return rangeOffsetFrameSpan(partition, index, expr, frame);
+    return rangeOffsetFrameSpan(partition, index, expr, frame, scope);
   }
   const peer = peers?.peer(index) ?? peerSpan(partition, index);
   return normalizeSpan(partition.length, {
@@ -228,6 +253,7 @@ function rangeOffsetFrameSpan(
   index: number,
   expr: WindowExpr,
   frame: WindowFrame,
+  scope?: MemoryScope,
 ): FrameSpan {
   if (expr.over.orderBy.length !== 1) {
     throw new LakeqlError(
@@ -237,8 +263,8 @@ function rangeOffsetFrameSpan(
   }
   const direction = expr.over.orderBy[0]?.direction ?? "asc";
   const current = rangePoint(partition[index]?.orderKey[0], direction);
-  const start = rangeOffsetBound(current, frame.start, partition[index]?.row, direction);
-  const end = rangeOffsetBound(current, frame.end, partition[index]?.row, direction);
+  const start = rangeOffsetBound(current, frame.start, partition[index]?.row, direction, scope);
+  const end = rangeOffsetBound(current, frame.end, partition[index]?.row, direction, scope);
   const first = rangeBoundary(partition, direction, start, 0, false);
   const afterLast = rangeBoundary(partition, direction, end, first, true);
   return normalizeSpan(partition.length, { start: first, end: afterLast });
@@ -273,6 +299,7 @@ function rangeOffsetBound(
   bound: WindowFrameBound,
   row: Row | undefined,
   direction: "asc" | "desc",
+  scope?: MemoryScope,
 ): number | bigint {
   switch (bound.kind) {
     case "unbounded-preceding":
@@ -282,22 +309,26 @@ function rangeOffsetBound(
     case "current-row":
       return current.normalized;
     case "preceding":
-      if (current.kind === "number") return current.normalized - numericRangeOffset(bound, row);
+      if (current.kind === "number")
+        return current.normalized - numericRangeOffset(bound, row, scope);
       return shiftedTimestampRangeBound(
         current,
         bound,
         row,
         direction === "asc" ? -1 : 1,
         direction,
+        scope,
       );
     case "following":
-      if (current.kind === "number") return current.normalized + numericRangeOffset(bound, row);
+      if (current.kind === "number")
+        return current.normalized + numericRangeOffset(bound, row, scope);
       return shiftedTimestampRangeBound(
         current,
         bound,
         row,
         direction === "asc" ? 1 : -1,
         direction,
+        scope,
       );
   }
 }
@@ -308,8 +339,9 @@ function shiftedTimestampRangeBound(
   row: Row | undefined,
   shiftDirection: -1 | 1,
   direction: "asc" | "desc",
+  scope?: MemoryScope,
 ): bigint {
-  const interval = intervalRangeOffset(bound, row);
+  const interval = intervalRangeOffset(bound, row, scope);
   const shifted = applyIntervalToTimestamp(current.value, interval, shiftDirection);
   return direction === "desc" ? -shifted.epochNanoseconds : shifted.epochNanoseconds;
 }
@@ -370,11 +402,11 @@ function peerGroups(partition: readonly WindowRow[]): FrameSpan[] {
   return groups;
 }
 
-function offset(bound: WindowFrameBound, row: Row | undefined): number {
+function offset(bound: WindowFrameBound, row: Row | undefined, scope?: MemoryScope): number {
   if (bound.offset === undefined) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Window frame offset is required");
   }
-  const value = evaluate(bound.offset, row ?? {});
+  const value = evaluate(bound.offset, row ?? {}, scope);
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
     throw new LakeqlError(
       "LAKEQL_TYPE_ERROR",
@@ -384,11 +416,15 @@ function offset(bound: WindowFrameBound, row: Row | undefined): number {
   return value;
 }
 
-function numericRangeOffset(bound: WindowFrameBound, row: Row | undefined): number {
+function numericRangeOffset(
+  bound: WindowFrameBound,
+  row: Row | undefined,
+  scope?: MemoryScope,
+): number {
   if (bound.offset === undefined) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Window frame offset is required");
   }
-  const value = evaluate(bound.offset, row ?? {});
+  const value = evaluate(bound.offset, row ?? {}, scope);
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
     throw new LakeqlError(
       "LAKEQL_TYPE_ERROR",
@@ -398,11 +434,15 @@ function numericRangeOffset(bound: WindowFrameBound, row: Row | undefined): numb
   return value;
 }
 
-function intervalRangeOffset(bound: WindowFrameBound, row: Row | undefined): IntervalValue {
+function intervalRangeOffset(
+  bound: WindowFrameBound,
+  row: Row | undefined,
+  scope?: MemoryScope,
+): IntervalValue {
   if (bound.offset === undefined) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Window frame offset is required");
   }
-  const value = evaluate(bound.offset, row ?? {});
+  const value = evaluate(bound.offset, row ?? {}, scope);
   if (!isIntervalValue(value) || !isNonNegativeInterval(value)) {
     throw new LakeqlError(
       "LAKEQL_TYPE_ERROR",
