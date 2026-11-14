@@ -50,8 +50,22 @@
   {
     "area": "Parquet",
     "feature": "Brotli compression",
-    "status": "planned",
-    "notes": "No bounded Brotli codec is registered. External read-conformance remains failing; the large string fixture also requires explicit oversized-value admission because its individual strings exceed the configured memory cap."
+    "status": "supported+tested",
+    "notes": "Fixed-output decoder admits per-call workspace and decoder metadata through owned scopes. Oversized actual pages reject under requested limits; static dictionary tables and caller-managed public results are outside per-call accounting. Worker R2 validation and codec performance measurements remain pending.",
+    "evidence": [
+      {
+        "file": "packages/parquet/src/brotli-reader.test.ts",
+        "pattern": "reads actual Brotli Parquet pages"
+      },
+      {
+        "file": "packages/parquet/src/brotli-reader.test.ts",
+        "pattern": "rejects the actual multi-gigabyte Brotli fixture"
+      },
+      {
+        "file": "packages/parquet/src/brotli-decoder.test.ts",
+        "pattern": "charges scoped output and workspace"
+      }
+    ]
   },
   {
     "area": "Parquet",

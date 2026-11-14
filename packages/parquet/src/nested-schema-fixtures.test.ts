@@ -253,8 +253,8 @@ for (const [name, expected] of [
       const firstDescriptor = descriptors[0];
       if (!firstDescriptor) throw Error("Missing first descriptor");
       const unsupported = {
-        metadata: { ...firstDescriptor.metadata, codec: "BROTLI" as const },
-        decoder: { ...firstDescriptor.decoder, codec: "BROTLI" as const },
+        metadata: { ...firstDescriptor.metadata, codec: "LZO" as const },
+        decoder: { ...firstDescriptor.decoder, codec: "LZO" as const },
       };
       let unexpectedReads = 0;
       const unreadable = {

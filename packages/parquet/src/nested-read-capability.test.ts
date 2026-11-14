@@ -16,7 +16,7 @@ it("preflights selected schema and columns with atomic planning cleanup", () => 
     }
     const column = metadata.row_groups[0]?.columns[0]?.meta_data;
     if (!column) throw Error("Missing column");
-    column.codec = "BROTLI";
+    column.codec = "LZO";
     expect(canReadNestedRowGroupBatches(metadata, { batchSize: 2, columns: ["a"] }, scope)).toBe(
       false,
     );

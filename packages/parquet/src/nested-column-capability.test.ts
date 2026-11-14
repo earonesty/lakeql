@@ -20,7 +20,7 @@ it("distinguishes level metadata from supported value encodings", () => {
     true,
   );
   expect(canReadNestedColumn({ ...column, encodings: ["DELTA_BYTE_ARRAY"] }, decoder)).toBe(false);
-  expect(canReadNestedColumn({ ...column, codec: "BROTLI" }, { ...decoder, codec: "BROTLI" })).toBe(
+  expect(canReadNestedColumn({ ...column, codec: "LZO" }, { ...decoder, codec: "LZO" })).toBe(
     false,
   );
   expect(canReadNestedColumn(column, { ...decoder, type: "INT64" })).toBe(false);

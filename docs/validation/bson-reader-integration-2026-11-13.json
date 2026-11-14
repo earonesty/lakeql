@@ -28,5 +28,6 @@
     "Decimal128 preserves exact bytes in a tagged logical value; SQL decimal128 arithmetic is not implied.",
     "Public borrowed reader results transfer to caller-managed JS storage; tracked query limits are not a total VM heap cap.",
     "Brotli capability and oversized-value admission remain open, along with broader performance audit gaps."
-  ]
+  ],
+  "followupEvidence": "brotli-reader-integration-2026-11-13.json"
 }

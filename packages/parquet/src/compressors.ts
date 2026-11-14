@@ -1,8 +1,14 @@
 import { snappyUncompress } from "hyparquet/src/snappy.js";
 import type { Compressors } from "hyparquet/src/types.js";
-import { decompressZstdInto as decompressInto, LakeqlError, type MemoryScope } from "lakeql-core";
+import {
+  MATERIALIZATION_CHARGES as c,
+  decompressZstdInto as decompressInto,
+  LakeqlError,
+  type MemoryScope,
+} from "lakeql-core";
 import { decodeGzipInto, GZIP_WORKSPACE_BYTES } from "./gzip.js";
 import { decodeLegacyLz4Into, decodeLz4Into } from "./lz4.js";
+import { decompressBrotliInto } from "./vendor/brotli.js";
 
 /** Conservative total-new backing bound for the exact-size reusable ZSTD pool.
  * Per block: at most three old and three new sequence FSE tables, plus one
@@ -15,7 +21,20 @@ import { decodeLegacyLz4Into, decodeLz4Into } from "./lz4.js";
 export const ZSTD_REUSABLE_WORKSPACE_BYTES =
   7 * (640 + 768 + 1024 + 1536 + 2560) + 2 * (8192 - 4) + 292 + 12 + 6 * 3;
 
+// Conservative reservation units for state, streams, closures and empty views.
+// Shared static dictionary/lookup tables are outside per-call ownership.
+export const BROTLI_STATE_BYTES = 8 * c.object + 128 * c.property + 32 * c.view + c.array;
+export const BROTLI_SLOT_BYTES = 2 * c.view + c.object + 4 * c.property;
+
 export const lakeqlParquetCompressors: Compressors = {
+  BROTLI(input, outputLength) {
+    return decompressBrotliInto(
+      input,
+      new Uint8Array(outputLength),
+      (bytes) => new Uint8Array(bytes),
+      () => {},
+    );
+  },
   SNAPPY: decodeSnappy,
   LZ4: (input, outputLength) => decodeLegacyLz4Into(input, new Uint8Array(outputLength)),
   LZ4_RAW: (input, outputLength) => decodeLz4Into(input, new Uint8Array(outputLength)),
@@ -33,8 +52,9 @@ export const lakeqlParquetCompressors: Compressors = {
 };
 
 /** Keeps decompression outputs charged for the caller-controlled decode lifetime.
- * ZSTD typed workspace is admitted separately and released after decoding.
- * JavaScript decoder objects and module-level constant tables are not included.
+ * Codec workspace is admitted separately and released after decoding. Brotli
+ * also reserves decoder metadata. Other codecs' JS metadata and all module-level
+ * constant tables are outside these per-call reservations.
  */
 export function scopedParquetCompressors(
   scope: MemoryScope | undefined,
@@ -42,6 +62,31 @@ export function scopedParquetCompressors(
 ): Compressors {
   if (scope === undefined) return lakeqlParquetCompressors;
   return {
+    BROTLI(input, outputLength) {
+      const workspace = scope.childScope();
+      try {
+        return scope.allocate(
+          outputLength,
+          "Brotli page output",
+          () =>
+            workspace.allocate(BROTLI_STATE_BYTES, "Brotli decoder state", () =>
+              decompressBrotliInto(
+                input,
+                new Uint8Array(outputLength),
+                (bytes) =>
+                  workspace.allocate(
+                    bytes + BROTLI_SLOT_BYTES,
+                    "Brotli codec workspace",
+                    () => new Uint8Array(bytes),
+                  ).value,
+                (buffer) => workspace.releaseAllocation(buffer),
+              ),
+            ).value,
+        ).value;
+      } finally {
+        workspace.dispose();
+      }
+    },
     LZ4(input, outputLength) {
       return scope.allocate(outputLength, "legacy LZ4 page output", () =>
         decodeLegacyLz4Into(input, new Uint8Array(outputLength)),

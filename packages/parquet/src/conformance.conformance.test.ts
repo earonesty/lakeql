@@ -1,10 +1,48 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { parquetMetadata } from "hyparquet";
-import { isTimestampValue, MemoryBudget, memoryStore, timestampFromEpoch } from "lakeql-core";
+import {
+  isTimestampValue,
+  MemoryBudget,
+  MemoryScope,
+  memoryStore,
+  timestampFromEpoch,
+} from "lakeql-core";
 import { EXTERNAL_CONFORMANCE, externalFixturePath } from "lakeql-fixtures";
 import { describe, expect, it } from "vitest";
-import { createParquetLake, readParquetObjects } from "./index.js";
+import { PAGE_HEADER_PROJECTION, readCompactHeader } from "./compact-header.js";
+import { createParquetLake, readParquetObjectBatches, readParquetObjects } from "./index.js";
+
+const conformanceMemoryBytes = 64 * 1024 * 1024;
+
+// Classify actual page extents, not codec names, file names or total column size.
+// A page exceeding the requested cap must be rejected before decompression;
+// a large column containing small pages remains a successful streaming case.
+function hasOversizedPage(bytes: Uint8Array): boolean {
+  const metadata = parquetMetadata(
+    bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
+  );
+  for (const group of metadata.row_groups)
+    for (const column of group.columns) {
+      const meta = column.meta_data;
+      if (!meta || Number(meta.total_uncompressed_size) <= conformanceMemoryBytes) continue;
+      const start = Number(meta.dictionary_page_offset ?? meta.data_page_offset);
+      const end = start + Number(meta.total_compressed_size);
+      const reader = {
+        view: new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+        offset: start,
+      };
+      while (reader.offset < end) {
+        const header = readCompactHeader(reader, PAGE_HEADER_PROJECTION);
+        if (Number(header.field_2) > conformanceMemoryBytes) return true;
+        const compressed = Number(header.field_3);
+        if (!Number.isSafeInteger(compressed) || compressed < 0)
+          throw new Error("Invalid conformance page extent");
+        reader.offset += compressed;
+      }
+    }
+  return false;
+}
 
 const parquetTestingDir = externalFixturePath(EXTERNAL_CONFORMANCE.parquetTestingDir);
 const parquetFiles = existsSync(parquetTestingDir)
@@ -37,10 +75,26 @@ describeExternal("apache/parquet-testing conformance", () => {
   it.each(readableFiles)("decodes %s through the public reader", async (file) => {
     const store = memoryStore();
     const objectPath = relative(parquetTestingDir, file);
-    await store.put(objectPath, readFileSync(file));
-
-    const rows = await readParquetObjects(store, objectPath);
     const bytes = readFileSync(file);
+    await store.put(objectPath, bytes);
+    if (hasOversizedPage(bytes)) {
+      const pool = new MemoryBudget(conformanceMemoryBytes);
+      const scope = new MemoryScope(pool);
+      try {
+        await expect(async () => {
+          for await (const batch of readParquetObjectBatches(store, objectPath, {
+            decompressionScope: scope,
+          }))
+            void batch;
+        }).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+      } finally {
+        scope.dispose();
+      }
+      expect(pool.usedBytes).toBe(0);
+      expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
+      return;
+    }
+    const rows = await readParquetObjects(store, objectPath);
     const metadata = parquetMetadata(
       bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
     );
@@ -60,6 +114,12 @@ describeExternal("apache/parquet-testing conformance", () => {
     await store.put(objectPath, bytes);
     let count = 0;
     try {
+      if (hasOversizedPage(bytes)) {
+        await expect(
+          lake.path(objectPath).batchSize(128).run().toOwnedArray(),
+        ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+        return;
+      }
       const metadata = parquetMetadata(
         bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
       );
