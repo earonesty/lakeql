@@ -32,6 +32,10 @@
       {
         "file": "packages/parquet/src/alp-http.test.ts",
         "pattern": "streams real ALP fixture across concurrent HTTP reads"
+      },
+      {
+        "file": "packages/parquet/src/alp.workerd.ts",
+        "pattern": "decodes ALP through Worker R2 with concurrent"
       }
     ]
   },

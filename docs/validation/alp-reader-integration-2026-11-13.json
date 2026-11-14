@@ -27,5 +27,6 @@
     "Generic nested ALP fallback uses the decoder hook, but new ALP fixtures specifically cover flat nullable FLOAT/DOUBLE columns.",
     "Tracked allocations exclude BigInt/VM scratch and do not establish a total Worker heap cap.",
     "No throughput speedup is claimed; ALP was previously unsupported."
-  ]
+  ],
+  "followupEvidence": "alp-worker-r2-2026-11-13.json"
 }

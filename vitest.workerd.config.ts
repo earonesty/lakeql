@@ -23,6 +23,12 @@ export default defineConfig({
       miniflare: {
         r2Buckets: ["MEMORY_TEST_BUCKET"],
         bindings: {
+          ALP_FIXTURE: readFileSync(
+            new URL(
+              "./fixtures/external/parquet-testing/data/alp_extended.zstd.parquet",
+              import.meta.url,
+            ),
+          ).toString("base64"),
           SHREDDED_DECIMAL_VARIANT_FIXTURE: existsSync(shreddedDecimalFixture)
             ? readFileSync(shreddedDecimalFixture).toString("base64")
             : "",
