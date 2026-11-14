@@ -1,0 +1,49 @@
+{
+  "requirements": ["M1", "M2", "V1", "V2"],
+  "baseCommit": "7cba928",
+  "sources": {
+    "packages/parquet/src/row-group-metadata.ts": "bd1499eb77682929e11afde75f675810d2c87c84c64bc177a4bf2a296892cdd2",
+    "packages/parquet/src/row-group-metadata.test.ts": "01338093bc1f4ec734b0a574b3f4f6d0af79840ba39b260a9ad349c868ea4e65",
+    "bench/row-group-metadata-scratch.mjs": "b9439b20826545a751e7f59f29dbaca926e0d0978067a873fdeea26baa07ee1f"
+  },
+  "contract": "Owned metadata admits one projected column raw tree at a time; retained raw aliases transfer before scratch disposal; borrowed decoding unchanged.",
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "regularPassed": 3748,
+    "regularSkipped": 645,
+    "workerPassed": 82,
+    "requiredExternalConformancePassed": 520,
+    "conformanceSkipped": 1,
+    "conformanceSkipReason": "Inactive missing-required-fixture guard; external Spark/PyIceberg checks executed"
+  },
+  "benchmarks": {
+    "local": "docs/benchmarks/row-group-metadata-scratch-2026-11-14.json",
+    "baselineSource": "7cba928:packages/parquet/src/row-group-metadata.ts compiled with TypeScript transpileModule ES2022 against same dependency build",
+    "wide32PeakBefore": 261222,
+    "wide32PeakAfter": 160150,
+    "scratchAboveRetainedAllWidths": 3478,
+    "wide32MedianBeforeMs": 0.7159400600000003,
+    "wide32MedianAfterMs": 0.7651889999999991,
+    "liveR2": "docs/benchmarks/cloud-range-column-scratch-2026-11-14.json",
+    "liveR2HeadroomBytes": 524288,
+    "liveR2ScenariosPassed": 52,
+    "liveR2MaximumIncrementalBytes": 397512,
+    "warmOrdinaryDataReads": 0
+  },
+  "lowHeadroomFailure": {
+    "headroomBytes": 131072,
+    "scenario": "four cold aggregate jobs at 64 MiB pool",
+    "code": "LAKEQL_BUDGET_EXCEEDED",
+    "purpose": "converted column metadata",
+    "limit": 67108864,
+    "attempted": 67109030,
+    "resolved": false
+  },
+  "limitations": [
+    "Extra parser passes trade CPU time for reduced transient storage; no speedup claim",
+    "Remaining object/helper/runtime allocation coverage is not closed",
+    "Overall measured live workload peak unchanged",
+    "512 KiB success does not prove a minimum headroom or exact VM heap bound"
+  ]
+}

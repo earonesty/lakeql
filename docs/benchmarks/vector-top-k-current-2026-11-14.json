@@ -1,0 +1,127 @@
+{
+  "sourceCommit": "a8ba6db",
+  "harnessSha256": "2b664a672876bf229bb0ab9f400368e6475603524723d09567e6b1130109996b",
+  "conditions": {
+    "warmups": 3,
+    "samples": 7,
+    "rows": [10000, 100000],
+    "limits": [10, 1000],
+    "distributions": ["ascending", "descending", "mixed"],
+    "poolMiB": 64
+  },
+  "results": [
+    {
+      "rows": 10000,
+      "distribution": "ascending",
+      "limit": 10,
+      "borrowedMs": 0.43201399999999524,
+      "ownedMs": 0.44126099999999724,
+      "inputBytes": 160000,
+      "peakIncrementalBytes": 664
+    },
+    {
+      "rows": 10000,
+      "distribution": "ascending",
+      "limit": 1000,
+      "borrowedMs": 0.8468439999999902,
+      "ownedMs": 0.5653939999999977,
+      "inputBytes": 160000,
+      "peakIncrementalBytes": 20464
+    },
+    {
+      "rows": 10000,
+      "distribution": "descending",
+      "limit": 10,
+      "borrowedMs": 1.1124140000000011,
+      "ownedMs": 0.4155329999999964,
+      "inputBytes": 160000,
+      "peakIncrementalBytes": 664
+    },
+    {
+      "rows": 10000,
+      "distribution": "descending",
+      "limit": 1000,
+      "borrowedMs": 1.0377239999999972,
+      "ownedMs": 0.7775739999999871,
+      "inputBytes": 160000,
+      "peakIncrementalBytes": 20464
+    },
+    {
+      "rows": 10000,
+      "distribution": "mixed",
+      "limit": 10,
+      "borrowedMs": 1.965360000000004,
+      "ownedMs": 0.421402999999998,
+      "inputBytes": 160000,
+      "peakIncrementalBytes": 664
+    },
+    {
+      "rows": 10000,
+      "distribution": "mixed",
+      "limit": 1000,
+      "borrowedMs": 3.6921210000000144,
+      "ownedMs": 2.505948000000018,
+      "inputBytes": 160000,
+      "peakIncrementalBytes": 20464
+    },
+    {
+      "rows": 100000,
+      "distribution": "ascending",
+      "limit": 10,
+      "borrowedMs": 4.909973999999977,
+      "ownedMs": 3.5711939999999913,
+      "inputBytes": 1600000,
+      "peakIncrementalBytes": 664
+    },
+    {
+      "rows": 100000,
+      "distribution": "ascending",
+      "limit": 1000,
+      "borrowedMs": 7.372310000000027,
+      "ownedMs": 3.788351999999975,
+      "inputBytes": 1600000,
+      "peakIncrementalBytes": 20464
+    },
+    {
+      "rows": 100000,
+      "distribution": "descending",
+      "limit": 10,
+      "borrowedMs": 11.321275000000014,
+      "ownedMs": 3.5434110000001056,
+      "inputBytes": 1600000,
+      "peakIncrementalBytes": 664
+    },
+    {
+      "rows": 100000,
+      "distribution": "descending",
+      "limit": 1000,
+      "borrowedMs": 7.500311000000011,
+      "ownedMs": 3.7995329999999967,
+      "inputBytes": 1600000,
+      "peakIncrementalBytes": 20464
+    },
+    {
+      "rows": 100000,
+      "distribution": "mixed",
+      "limit": 10,
+      "borrowedMs": 18.129962999999975,
+      "ownedMs": 2.9625979999998435,
+      "inputBytes": 1600000,
+      "peakIncrementalBytes": 664
+    },
+    {
+      "rows": 100000,
+      "distribution": "mixed",
+      "limit": 1000,
+      "borrowedMs": 34.95139300000005,
+      "ownedMs": 6.617848999999978,
+      "inputBytes": 1600000,
+      "peakIncrementalBytes": 20464
+    }
+  ],
+  "limitations": [
+    "Kernel comparison between current owned and legacy borrowed paths, not a before/after measurement.",
+    "Tracked peak excludes retained input; native heap and GC not measured.",
+    "No cloud throughput or cached-key alternative comparison."
+  ]
+}

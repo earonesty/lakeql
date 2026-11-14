@@ -1,0 +1,28 @@
+{
+  "date": "2026-11-14",
+  "requirements": ["M1", "M2"],
+  "changes": [
+    "Register each successful GPU buffer creation immediately in selection, reduction, vector top-k and resident-cache construction cleanup lists.",
+    "Destroy newly created upload buffers if queue.writeBuffer throws before ownership can transfer to the caller."
+  ],
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "targeted_tests": 26,
+    "injected_failure_positions": 36,
+    "coverage": [
+      "Every createBuffer and writeBuffer position across selection, reduction, vector top-k and resident cache upload.",
+      "Every successful allocation is destroyed exactly once when a later allocation or upload fails.",
+      "Existing Dawn execution tests verify successful selection and the full suite exercises successful reductions, vectors and resident reuse."
+    ],
+    "full_default_suite": {
+      "passed": 3496,
+      "skipped": 629
+    }
+  },
+  "remaining": [
+    "This closes a prerequisite resource leak; WebGPU allocation-scope support is still incomplete and required scoped selection remains unavailable.",
+    "Host/device workspace reservation and cancellation lifetimes must be implemented before advertising scoped selection support.",
+    "No GPU memory or Cloudflare whole-runtime cap is established by cleanup tests."
+  ]
+}

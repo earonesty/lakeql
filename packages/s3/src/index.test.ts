@@ -1,5 +1,7 @@
+import { createServer } from "node:http";
+import { MemoryBudget, MemoryScope } from "lakeql-core";
 import { describe, expect, it } from "vitest";
-import { s3JsonCache, s3Store, signS3Request } from "./index.js";
+import { S3ObjectStore, s3JsonCache, s3Store, signS3Request } from "./index.js";
 
 const enc = new TextEncoder();
 
@@ -414,5 +416,108 @@ describe("s3Store", () => {
       code: "LAKEQL_VALIDATION_ERROR",
     });
     expect(seen).toHaveLength(1);
+  });
+});
+
+describe("owned S3 ranges", () => {
+  it("reads a signed range over real HTTP with exact allocation admission", async () => {
+    const fixture = Uint8Array.from({ length: 4096 }, (_, i) => i % 251);
+    const requests: string[] = [];
+    const server = createServer((request, response) => {
+      requests.push(request.headers.range ?? "");
+      if (!request.headers.authorization?.startsWith("AWS4-HMAC-SHA256")) {
+        response.writeHead(403).end();
+        return;
+      }
+      const match = /^bytes=(\d+)-(\d+)$/u.exec(request.headers.range ?? "");
+      if (!match) {
+        response.writeHead(400).end();
+        return;
+      }
+      const start = Number(match[1]);
+      const end = Math.min(Number(match[2]), fixture.length - 1);
+      response.writeHead(206, {
+        "content-range": `bytes ${start}-${end}/${fixture.length}`,
+        "content-length": end - start + 1,
+      });
+      response.end(fixture.subarray(start, end + 1));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("missing address");
+    const store = new S3ObjectStore({
+      ...options(fetch),
+      endpoint: `http://127.0.0.1:${address.port}`,
+    });
+    const scope = new MemoryScope(new MemoryBudget(128));
+    try {
+      const output = await store.getRangeOwned("fixture", { offset: 1000, length: 128 }, scope);
+      expect([...output.value]).toEqual([...fixture.slice(1000, 1128)]);
+      expect(scope.budget.usedBytes).toBe(128);
+      output.release();
+      const tail = await store.getRangeOwned("fixture", { offset: 4090, length: 128 }, scope);
+      expect([...tail.value]).toEqual([...fixture.slice(4090)]);
+      expect(tail.value.byteOffset).toBe(0);
+      expect(tail.value.buffer.byteLength).toBe(6);
+      expect(store.getRangeOwnedAllocation("fixture", { offset: 4090, length: 128 })).toEqual({
+        bytes: 128,
+        output: "exact-buffer",
+      });
+      expect(scope.budget.usedBytes).toBe(6);
+      tail.release();
+      const tight = new MemoryScope(new MemoryBudget(127));
+      await expect(
+        store.getRangeOwned("fixture", { offset: 1000, length: 128 }, tight),
+      ).rejects.toMatchObject({
+        code: "LAKEQL_BUDGET_EXCEEDED",
+      });
+      expect(tight.budget.peakBytes).toBe(0);
+      tight.dispose();
+      expect(requests).toEqual(["bytes=1000-1127", "bytes=4090-4217"]);
+    } finally {
+      scope.dispose();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+    expect(scope.budget.usedBytes).toBe(0);
+  });
+
+  it.each([
+    { status: 200, contentRange: "bytes 0-3/4", bytes: 4 },
+    { status: 206, contentRange: "bytes 1-4/5", bytes: 4 },
+    { status: 206, contentRange: "bytes 0-3/4", bytes: 3 },
+    { status: 206, contentRange: "bytes 0-3/4", bytes: 5 },
+  ])("rejects incorrect or oversized responses: %j", async ({ status, contentRange, bytes }) => {
+    const store = new S3ObjectStore(
+      options(
+        async () =>
+          new Response(new Uint8Array(bytes), {
+            status,
+            headers: { "content-range": contentRange },
+          }),
+      ),
+    );
+    const scope = new MemoryScope(new MemoryBudget(4));
+    await expect(
+      store.getRangeOwned("fixture", { offset: 0, length: 4 }, scope),
+    ).rejects.toBeDefined();
+    expect(scope.budget.usedBytes).toBe(0);
+    scope.dispose();
+  });
+
+  it("propagates scope cancellation into the signed fetch", async () => {
+    const scope = new MemoryScope(new MemoryBudget(4));
+    const store = new S3ObjectStore(
+      options(async (_url, init) => {
+        expect(init?.signal).toBe(scope.signal);
+        scope.dispose();
+        throw new Error("transport aborted");
+      }),
+    );
+    await expect(
+      store.getRangeOwned("fixture", { offset: 0, length: 4 }, scope),
+    ).rejects.toMatchObject({ code: "LAKEQL_ABORTED" });
+    expect(scope.budget.usedBytes).toBe(0);
   });
 });

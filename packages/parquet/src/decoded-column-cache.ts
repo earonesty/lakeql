@@ -1,10 +1,14 @@
 import type {
   Batch,
   CachePolicy,
+  MemoryBudget,
+  MemoryScope,
   ObjectStoreCacheOptions,
+  OwnedMemory,
   SharedMemoryCache,
   Vector,
 } from "lakeql-core";
+import { isLakeqlError, retainedBatchBytes, retainedVectorBytes } from "lakeql-core";
 
 export class DecodedColumnCache {
   constructor(
@@ -12,40 +16,109 @@ export class DecodedColumnCache {
     private readonly options: ObjectStoreCacheOptions,
   ) {}
 
-  get(key: string): Batch | undefined {
+  acquireOwned(key: string, budget?: MemoryBudget): OwnedMemory<Batch> | undefined {
+    return this.cache.acquireOwned<Batch>(decodedKey(key), budget);
+  }
+
+  setOwned(key: string, owner: OwnedMemory<Batch>): boolean {
+    return this.cache.setOwned(decodedKey(key), owner, {
+      priority: decodedPriority(this.options.policy ?? "balanced"),
+    });
+  }
+
+  acquireVectorOwned(key: string, budget?: MemoryBudget): OwnedMemory<Vector> | undefined {
+    return this.cache.acquireOwned<Vector>(decodedVectorKey(key), budget);
+  }
+
+  setVectorOwned(key: string, owner: OwnedMemory<Vector>): boolean {
+    if (!this.shouldAdmitDecodedWorkProduct(owner.bytes)) return false;
+    return this.cache.setOwned(decodedVectorKey(key), owner, {
+      priority: decodedPriority(this.options.policy ?? "balanced"),
+    });
+  }
+
+  acquireValueOwned<T>(key: string, budget?: MemoryBudget): OwnedMemory<T> | undefined {
+    return this.cache.acquireOwned<T>(decodedValueKey(key), budget);
+  }
+
+  setValueOwned<T>(key: string, owner: OwnedMemory<T>): boolean {
+    if (!this.shouldAdmitDecodedWorkProduct(owner.bytes)) return false;
+    return this.cache.setOwned(decodedValueKey(key), owner, {
+      priority: decodedPriority(this.options.policy ?? "balanced"),
+    });
+  }
+
+  get(key: string, scope?: MemoryScope): Batch | undefined {
+    if (scope !== undefined) {
+      const owner = optionalCachePin(() => this.acquireOwned(key, scope.budget));
+      return adoptCachedOwner(scope, owner);
+    }
     const entry = this.cache.get<Batch>(decodedKey(key));
     if (entry === undefined) return undefined;
     return entry.value;
   }
 
-  set(key: string, batch: Batch): void {
-    this.cache.set(decodedKey(key), batch, estimateBatchBytes(batch), {
+  set(key: string, batch: Batch, scope?: MemoryScope): void {
+    if (scope !== undefined) {
+      const owner = scope.retainAllocations(batch);
+      try {
+        this.setOwned(key, owner);
+      } finally {
+        owner.release();
+      }
+      return;
+    }
+    this.cache.set(decodedKey(key), batch, retainedBatchBytes(batch), {
       priority: decodedPriority(this.options.policy ?? "balanced"),
     });
   }
 
-  getVector(key: string): Vector | undefined {
+  getVector(key: string, scope?: MemoryScope): Vector | undefined {
+    if (scope !== undefined) {
+      const owner = optionalCachePin(() => this.acquireVectorOwned(key, scope.budget));
+      return adoptCachedOwner(scope, owner);
+    }
     const entry = this.cache.get<Vector>(decodedVectorKey(key));
     if (entry === undefined) return undefined;
     return entry.value;
   }
 
-  setVector(key: string, vector: Vector): boolean {
-    const bytes = estimateVectorBytes(vector);
+  setVector(key: string, vector: Vector, scope?: MemoryScope): boolean {
+    if (scope !== undefined) {
+      const owner = scope.retainAllocations(vector);
+      try {
+        return this.setVectorOwned(key, owner);
+      } finally {
+        owner.release();
+      }
+    }
+    const bytes = retainedVectorBytes(vector);
     if (!this.shouldAdmitDecodedVector(bytes)) return false;
-    this.cache.set(decodedVectorKey(key), vector, bytes, {
+    return this.cache.setAllocated(decodedVectorKey(key), bytes, () => vector, {
       priority: decodedPriority(this.options.policy ?? "balanced"),
     });
-    return true;
   }
 
-  getValue<T>(key: string): T | undefined {
+  getValue<T>(key: string, scope?: MemoryScope): T | undefined {
+    if (scope !== undefined) {
+      const owner = optionalCachePin(() => this.acquireValueOwned<T>(key, scope.budget));
+      return adoptCachedOwner(scope, owner);
+    }
     const entry = this.cache.get<T>(decodedValueKey(key));
     if (entry === undefined) return undefined;
     return entry.value;
   }
 
-  setValue<T>(key: string, value: T, bytes: number): void {
+  setValue<T>(key: string, value: T, bytes: number, scope?: MemoryScope): void {
+    if (scope !== undefined) {
+      const owner = scope.retainAllocations(value);
+      try {
+        this.setValueOwned(key, owner);
+      } finally {
+        owner.release();
+      }
+      return;
+    }
     if (!this.shouldAdmitDecodedWorkProduct(bytes)) return;
     this.cache.set(decodedValueKey(key), value, bytes, {
       priority: decodedPriority(this.options.policy ?? "balanced"),
@@ -60,8 +133,10 @@ export class DecodedColumnCache {
     const maxBytes = this.options.maxBytes ?? 64 * 1024 * 1024;
     const policy = this.options.policy ?? "balanced";
     if (policy === "latency") return bytes <= maxBytes;
-    if (maxBytes < 128 * 1024 * 1024) return false;
-    return bytes * 8 <= maxBytes;
+    // Bound each decoded entry by a fraction of configured capacity, including
+    // small Worker caches. Shared cache priority/eviction and pool admission decide
+    // whether it fits current pressure; an absolute capacity cliff defeats reuse.
+    return bytes <= Math.floor(maxBytes / 8);
   }
 }
 
@@ -147,48 +222,29 @@ function decodedPriority(policy: CachePolicy): number {
   return 2;
 }
 
-function estimateBatchBytes(batch: Batch): number {
-  let bytes = 0;
-  for (const vector of Object.values(batch.columns)) {
-    bytes += estimateVectorBytes(vector);
+function adoptCachedOwner<T>(scope: MemoryScope, owner: OwnedMemory<T> | undefined): T | undefined {
+  if (owner === undefined) return undefined;
+  try {
+    return scope.adopt(owner).value;
+  } catch (error) {
+    owner.release();
+    throw error;
   }
-  return bytes;
 }
 
-function estimateVectorBytes(vector: Vector): number {
-  let bytes = "valid" in vector && vector.valid !== undefined ? vector.valid.byteLength : 0;
-  switch (vector.type) {
-    case "null":
-      return bytes;
-    case "f32":
-    case "f64":
-    case "i32":
-    case "u32":
-    case "u8":
-    case "i64":
-    case "u64":
-    case "timestamp":
-    case "bool":
-      return bytes + vector.values.byteLength;
-    case "utf8":
-      for (const value of vector.values) bytes += value.length * 2;
-      return bytes;
-    case "binary":
-      for (const value of vector.values) bytes += value.byteLength;
-      return bytes;
-    case "dict":
-      return bytes + vector.indices.byteLength + estimateVectorBytes(vector.dictionary);
-    case "list":
-      return bytes + vector.offsets.byteLength + estimateVectorBytes(vector.child);
-    case "struct":
-      for (const field of Object.values(vector.fields)) bytes += estimateVectorBytes(field);
-      return bytes;
-    case "map":
-      return (
-        bytes +
-        vector.offsets.byteLength +
-        estimateVectorBytes(vector.keys) +
-        estimateVectorBytes(vector.values)
-      );
+/** A conservative cached backing can exceed the working set of a fresh decode. */
+function optionalCachePin<T>(
+  acquire: () => OwnedMemory<T> | undefined,
+): OwnedMemory<T> | undefined {
+  try {
+    return acquire();
+  } catch (error) {
+    if (
+      isLakeqlError(error) &&
+      error.code === "LAKEQL_BUDGET_EXCEEDED" &&
+      error.details.metric === "allocated memory bytes"
+    )
+      return undefined;
+    throw error;
   }
 }

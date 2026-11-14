@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { col } from "./expr.js";
+import { col, lit } from "./expr.js";
+import { MemoryBudget } from "./memory-budget.js";
+import { MemoryScope } from "./memory-scope.js";
+import { memoryStore } from "./memory-store.js";
+import { Lake } from "./query.js";
 import type { WindowExpr } from "./window.js";
 import {
   compatibleWindowSortGroups,
+  windowReadColumns,
   windowSortGroupCount,
   windowTaskPlanForWindows,
 } from "./window-query.js";
@@ -52,3 +57,127 @@ function rowNumber(partitionBy: WindowExpr["over"]["partitionBy"], orderExprs: W
     },
   } satisfies WindowExpr;
 }
+
+it("prunes window source columns only with an explicit bounded projection", () => {
+  const windows = { rank: rowNumber([], [col("key")]) };
+  for (const select of [undefined, [], ["*"]]) {
+    expect(
+      windowReadColumns({ windows, ...(select === undefined ? {} : { select }) }),
+    ).toBeUndefined();
+  }
+  expect(windowReadColumns({ windows, select: ["payload", "rank"] })).toEqual(["key", "payload"]);
+  expect(windowReadColumns({ windows, projections: { renamed: col("payload") } })).toBeUndefined();
+});
+
+it("admits deduplicated window columns and excludes only own aliases", () => {
+  const windows = Object.assign(Object.create({ inherited: rowNumber([], [col("ignored")]) }), {
+    rank: rowNumber([col("constructor")], [col("key")]),
+  }) as Record<string, WindowExpr>;
+  const run = (capacity: number) => {
+    const pool = new MemoryBudget(capacity);
+    const scope = new MemoryScope(pool);
+    try {
+      expect(
+        windowReadColumns({ select: ["rank", "key", "key", "inherited", "列"], windows }, scope),
+      ).toEqual(["constructor", "inherited", "key", "列"]);
+      return pool.peakBytes;
+    } finally {
+      scope.dispose();
+      expect(pool.usedBytes).toBe(0);
+    }
+  };
+  const peak = run(65536);
+  expect(run(peak)).toBe(peak);
+  expect(() => run(peak - 1)).toThrow();
+});
+
+it("preserves prototype-named physical columns in window scans", async () => {
+  const store = memoryStore();
+  await store.put("table", new Uint8Array(1));
+  const pool = new MemoryBudget(65536);
+  const lake = new Lake({
+    store,
+    memoryPool: pool,
+    scanner: {
+      async *scan(_path, options) {
+        expect(options.columns).toEqual(["constructor"]);
+        yield [{ constructor: 2 }, { constructor: 1 }];
+      },
+    },
+  });
+  const rows = await lake
+    .path("table")
+    .select(["constructor", "rank"])
+    .window("rank", rowNumber([], [col("constructor")]))
+    .toArray();
+  expect(rows).toEqual([
+    { constructor: 2, rank: 2 },
+    { constructor: 1, rank: 1 },
+  ]);
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("keeps scoped task topology workspace bounded across window count", () => {
+  const run = (count: number, capacity: number) => {
+    const windows = Object.fromEntries(
+      Array.from({ length: count }, (_, index) => [
+        String(index),
+        rowNumber([col("account")], [col("event")]),
+      ]),
+    );
+    const pool = new MemoryBudget(capacity);
+    const scope = new MemoryScope(pool);
+    try {
+      expect(windowTaskPlanForWindows(windows, 100, scope)).toEqual({
+        topology: "window-partition-fanout",
+        available: true,
+        bucketCount: 64,
+        partitionBy: [col("account")],
+      });
+      return pool.peakBytes;
+    } finally {
+      scope.dispose();
+      expect(pool.usedBytes).toBe(0);
+    }
+  };
+  const peak = run(2, 65536);
+  expect(run(1000, peak)).toBe(peak);
+  expect(() => run(1000, peak - 1)).toThrow();
+});
+
+it("detaches scoped task partition expressions and preserves sibling allocations on failure", () => {
+  const bytes = Uint8Array.of(1, 2);
+  const partition = [lit(bytes)];
+  const pool = new MemoryBudget(65536);
+  const scope = new MemoryScope(pool);
+  const plan = windowTaskPlanForWindows({ rank: rowNumber(partition, []) }, 4, scope);
+  bytes.fill(9);
+  partition.length = 0;
+  expect(plan).toMatchObject({ available: true, partitionBy: [lit(Uint8Array.of(1, 2))] });
+  scope.dispose();
+  expect(pool.usedBytes).toBe(0);
+  const tiny = new MemoryScope(new MemoryBudget(256));
+  const sibling = tiny.allocate(8, "sibling", () => Uint8Array.of(7));
+  expect(() =>
+    windowTaskPlanForWindows({ rank: rowNumber([col("account")], []) }, 4, tiny),
+  ).toThrow();
+  expect(tiny.budget.usedBytes).toBe(8);
+  expect(sibling.value).toEqual(Uint8Array.of(7));
+  tiny.dispose();
+});
+
+it("keeps global/partitioned mismatch precedence after a partition mismatch", () => {
+  expect(
+    windowTaskPlanForWindows(
+      {
+        first: rowNumber([col("a")], []),
+        second: rowNumber([col("b")], []),
+        global: rowNumber([], []),
+      },
+      4,
+    ),
+  ).toMatchObject({
+    available: false,
+    reason: "window query mixes global and partitioned windows",
+  });
+});

@@ -1,0 +1,24 @@
+{
+  "status": "Implemented; default, reference and Worker validation passed",
+  "scope": "Shared quantile interpolation across ordinary reductions and window aggregates. Ordinary callers retain copied/native sorting; private window numeric state uses constant-scratch in-place heapsort.",
+  "demonstratedBug": "Before this change, continuousQuantile([-Number.MAX_VALUE, Number.MAX_VALUE], 0.5) returned Infinity because subtracting the endpoints overflowed.",
+  "fix": "Use weighted interpolation only when both endpoints are finite but their difference overflows. Preserve the existing subtraction-based arithmetic otherwise.",
+  "validation": {
+    "testsPassed": 35,
+    "build": "passed",
+    "cases": [
+      "finite extreme endpoints and quartiles",
+      "independent symmetric expected values with binary64 rounding tolerance",
+      "window quantile integration",
+      "borrowed input remains unchanged",
+      "private buffer sorts in place",
+      "empty/singleton/duplicate/same-sign inputs",
+      "existing vector aggregates and window memory boundaries"
+    ],
+    "defaultTestsPassed": 3021,
+    "defaultTestsSkipped": 629,
+    "referenceTestsPassed": 104,
+    "workerTestsPassed": 61
+  },
+  "remaining": "Broader audit requirements remain open. Existing HTTP and Worker numeric-window fixture paths passed; the extreme-value case is covered by deterministic core tests, not a new remote fixture."
+}

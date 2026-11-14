@@ -1,8 +1,14 @@
 import type { RowGroup } from "hyparquet";
-import type { Expr } from "lakeql-core";
+import type { Expr, MemoryBudget } from "lakeql-core";
+import { dictionaryPageOffset } from "./dictionary-offset.js";
 import { rowGroupMayMatch } from "./row-group-pruning.js";
 import { rejectUnsupportedParquetSchema } from "./schema.js";
 import type { ParquetMetadata } from "./types.js";
+
+interface RowGroupPlanOptions {
+  includeByteRanges?: boolean;
+  memoryBudget?: MemoryBudget | undefined;
+}
 
 export interface PlannedParquetRowGroup {
   index: number;
@@ -20,28 +26,68 @@ export function planRowGroupsFromMetadata(
   metadata: ParquetMetadata,
   where: Expr | undefined,
 ): ParquetRowGroupPlan {
-  rejectUnsupportedParquetSchema(metadata, { allowValueCheckedInt64Decimals: true });
+  return planRowGroupsFromSource(metadata, metadata.row_groups, where);
+}
+
+/** Consume one decoded group at a time; retained output contains plan entries only. */
+export function planRowGroupsFromSource(
+  metadata: Pick<ParquetMetadata, "schema">,
+  groups: Iterable<RowGroup | undefined>,
+  where: Expr | undefined,
+  options: RowGroupPlanOptions = {},
+): ParquetRowGroupPlan {
   const rowGroups: PlannedParquetRowGroup[] = [];
   const ranges: { start: number; end: number }[] = [];
-  let rowStart = 0;
-  for (let index = 0; index < metadata.row_groups.length; index += 1) {
-    const rowGroup = metadata.row_groups[index];
-    const rowCount = rowGroup === undefined ? 0 : Number(rowGroup.num_rows);
-    const nextRowStart = rowStart + rowCount;
-    if (rowGroup === undefined || !rowGroupMayMatch(rowGroup, where)) {
-      rowStart = nextRowStart;
-      continue;
-    }
-    const planned: PlannedParquetRowGroup = { index, rowStart, rowCount };
-    const byteRange = rowGroupByteRange(rowGroup);
-    if (byteRange !== undefined) planned.byteRange = byteRange;
+  for (const planned of iteratePlannedRowGroups(metadata, groups, where, options)) {
     rowGroups.push(planned);
-    const previous = ranges.at(-1);
-    if (previous && previous.end === index) previous.end = index + 1;
-    else ranges.push({ start: index, end: index + 1 });
-    rowStart = nextRowStart;
+    appendRowGroupRange(ranges, planned.index);
   }
   return { rowGroups, rowGroupRanges: ranges };
+}
+
+/** Task planning needs merged group ranges and a count, not retained per-group entries. */
+export function summarizePlannedRowGroups(groups: Iterable<PlannedParquetRowGroup>) {
+  const rowGroupRanges: { start: number; end: number }[] = [];
+  let plannedCount = 0;
+  for (const group of groups) {
+    plannedCount++;
+    appendRowGroupRange(rowGroupRanges, group.index);
+  }
+  return { plannedCount, rowGroupRanges };
+}
+
+function appendRowGroupRange(ranges: { start: number; end: number }[], index: number): void {
+  const previous = ranges.at(-1);
+  if (previous && previous.end === index) previous.end = index + 1;
+  else ranges.push({ start: index, end: index + 1 });
+}
+
+/** Demand-driven planning; consumers determine whether output entries are retained. */
+export function* iteratePlannedRowGroups(
+  metadata: Pick<ParquetMetadata, "schema">,
+  groups: Iterable<RowGroup | undefined>,
+  where: Expr | undefined,
+  options: RowGroupPlanOptions = {},
+): Generator<PlannedParquetRowGroup> {
+  rejectUnsupportedParquetSchema(metadata, {
+    allowValueCheckedScalarDecimals: true,
+    memoryBudget: options.memoryBudget,
+  });
+  let rowStart = 0;
+  let nextIndex = 0;
+  for (const rowGroup of groups) {
+    const index = nextIndex++;
+    const rowCount = rowGroup === undefined ? 0 : Number(rowGroup.num_rows);
+    const nextRowStart = rowStart + rowCount;
+    if (rowGroup !== undefined && rowGroupMayMatch(rowGroup, where)) {
+      const planned: PlannedParquetRowGroup = { index, rowStart, rowCount };
+      const byteRange =
+        options.includeByteRanges === false ? undefined : rowGroupByteRange(rowGroup);
+      if (byteRange !== undefined) planned.byteRange = byteRange;
+      yield planned;
+    }
+    rowStart = nextRowStart;
+  }
 }
 
 function rowGroupByteRange(rowGroup: RowGroup): { offset: number; length: number } | undefined {
@@ -56,7 +102,7 @@ function rowGroupByteRange(rowGroup: RowGroup): { offset: number; length: number
   for (const column of rowGroup.columns) {
     const metadata = column.meta_data;
     if (!metadata) continue;
-    const pageOffset = safeNumber(metadata.dictionary_page_offset ?? metadata.data_page_offset);
+    const pageOffset = safeNumber(dictionaryPageOffset(metadata) ?? metadata.data_page_offset);
     const compressedSize = safeNumber(metadata.total_compressed_size);
     if (pageOffset === undefined || compressedSize === undefined || compressedSize < 0) continue;
     start = start === undefined ? pageOffset : Math.min(start, pageOffset);

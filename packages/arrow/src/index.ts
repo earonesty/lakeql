@@ -13,6 +13,7 @@ import {
   type Batch,
   createInMemoryLake,
   type InMemoryLakeOptions,
+  isDecimalValue,
   isTimestampValue,
   type Lake,
   LakeqlError,
@@ -85,7 +86,7 @@ export function batchToArrowTable(batch: Batch, options: ArrowTableOptions = {})
     }
     out[column] = Array.from({ length: batch.rowCount }, (_value, index) => {
       const value = vectorValue(vector, index);
-      return isTimestampValue(value) ? value.toJSON() : value;
+      return isTimestampValue(value) || isDecimalValue(value) ? value.toJSON() : value;
     });
   }
   return tableFromArrays(out);
@@ -197,6 +198,7 @@ function arrowVectorType(values: readonly ArrowValue[]) {
 
 function normalizeArrowCell(value: unknown, rowIndex: number, column: string): ArrowValue {
   if (value === null || value === undefined) return null;
+  if (isDecimalValue(value)) return value.toJSON();
   if (
     typeof value === "string" ||
     typeof value === "number" ||

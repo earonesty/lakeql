@@ -22,3 +22,107 @@ adapter, scan adapter, or lower-level integration.
 - Manifests and resumability: output manifests, task checkpoints, bookmarks,
   and sidecar indexes.
 - Errors: `LakeqlError`, stable error codes, and `isLakeqlError`.
+
+Allocation-aware adapters receive a query child budget as `ScanOptions.memoryBudget`.
+`LakeConfig.memoryPool` can share a `MemoryBudget` across concurrent jobs or Lakes;
+`budget.maxAllocatedMemoryBytes` sets each query's ceiling. The default internal
+pool uses that limit, then `maxMemoryBytes`, then 64 MiB. A supplied pool provides
+the default child ceiling. Use `MemoryScope` for admitted allocations and release
+scratch in iterator cleanup; explicitly retain ownership for backing that escapes.
+These limits currently govern participating allocations, not all decoded objects,
+operator state, returned rows, or the process heap. `maxMemoryBytes` continues to
+have its separate serialized operator-state meaning.
+
+For queued execution, `query.planOwnedTasks()` returns `OwnedMemory<TaskInput[]>`.
+Hold that owner while tasks are queued or executing and release it in `finally`.
+Task records, ranges, partition values, shared column lists, predicates, and window
+partition topology remain charged until release. The plain `planTasks()` API
+admits construction but transfers returned storage out of query accounting.
+Adapter planning callbacks borrow arguments until their promises settle; adapters
+must account for their own workspace and retained results. This ownership contract
+does not account for every allocation made during object discovery or by external
+adapters and is not a total process-memory cap.
+
+Use `query.ownedTaskManifest(jobId)` to retain both task inputs and the normalized
+manifest under the query budget. Release the returned owner when finished. The
+lower-level `createOwnedTaskManifest({ jobId, tasks })` accepts an owned task list
+and retains it independently; release your original task handle separately.
+Manifest input backing is shared and must not be mutated while either owner is
+live. `taskManifest()` admits construction, then transfers the plain result out of
+accounting. Sorting, stable serialization and fingerprint overlap count during
+construction; this does not bound later caller-controlled serialization of a plain
+manifest.
+
+Adapters can implement `ScanAdapter.planOwnedObjects(input, options)` to account
+for added object-plan metadata such as schema maps and indexes. It takes priority
+over `planObjects`. The input owner is borrowed until the callback settles; retain
+input backing that the returned plan references. Return an owner using
+`options.memoryBudget`. The query retains that owner through execution and releases
+it on cancellation or failure. A plan returned under a different budget is
+rejected and released. Legacy `planObjects` remains supported, with adapter-owned
+workspace and retained metadata outside this ownership contract.
+
+Planning caches can implement `CacheAdapter.getOwnedEntry(key, budget)` and
+`setOwnedEntry(key, owner)` to participate in discovery allocation ownership.
+Reads return independently releasable `OwnedMemory<CacheEntry<T>>` in the supplied
+pool; discovery holds it through metadata copying and releases it on success,
+failure, or cancellation. Writes borrow the supplied owner until the callback
+settles. A cache retaining an entry must retain its owner in the shared cache
+budget before returning, and release that retained handle on eviction. Entries
+and their metadata must remain immutable while shared. Legacy `get`/`set` adapters
+remain supported, but their retained allocations are outside this ownership
+contract. The optional methods do not impose a retention policy on those adapters.
+
+Use `memoryPlanningCache({ memoryBudget: pool, maxBytes })` with the same shared
+pool passed to `Lake` to retain bounded discovery metadata between queries.
+`maxBytes` defaults to 64 MiB and remains subject to available shared-pool capacity;
+zero disables retention. Entries use LRU eviction and are reclaimable by sibling
+allocations. `ttlMs` and per-entry `expiresAt` support expiration. `clear()` releases
+cache retention; active owned readers keep their pins until release. Legacy reads
+return independent copies whose lifetime transfers to the caller.
+
+`OwnedEntryCache<T>` provides the same ownership and eviction machinery for other
+value domains. Its required `clone(value, scope)` callback must admit all copied
+storage through the supplied scope. The planning factory supplies this callback
+for object metadata, preserving dates and transport hints. Owned writes borrow
+immutable entries; callers must not mutate retained backing. Cache retention can
+be declined under pressure without failing an owned write.
+
+`ObjectStoreJsonCache.getOwnedEntry` admits read payloads and JSON parsing through
+the requested budget and returns releasable parsed entries. It uses the store's
+owned-range capability when available. Stores with `headOwned` also admit preliminary probe metadata. Legacy `head`
+metadata/probe storage and legacy adapter internals remain outside that query scope; this is not a total
+transport-memory guarantee. Owned writes use the standard JSON serialization path described below.
+
+Stores may implement `headOwned(path, scope)` to admit metadata and any probe
+buffers before allocation. Return owned metadata in the supplied scope, or null
+for a missing object. Discovery and owned JSON-cache reads preserve that lifetime;
+URI, read-control and cache wrappers forward the capability. The cache wrapper
+currently delegates owned metadata reads directly; it does not retain them in its
+legacy HEAD cache. Stores without the capability retain their legacy behavior.
+
+`cachedObjectStore` capacity includes retained entry/key metadata and byte views,
+not just object payloads. Empty objects and negative lookups therefore consume
+capacity, and `maxBytes: 0` disables their retention too. Owned range allocation
+forecasts include metadata for a possible cold cache copy.
+
+Valid cache replacements invalidate an older entry even when the new entry is
+too large to retain; existing reader pins remain valid until release. An owned
+entry-cache lookup that cannot pin the whole entry within the requesting child
+budget returns a miss, allowing the caller's normal read path to apply its limits.
+
+`ObjectStoreJsonCache.setOwnedEntry` retains the supplied input and admits the cache
+entry wrapper, path, UTF-8 output, and serialization workspace until `put` settles.
+It preserves standard JSON data semantics for dates, typed arrays, native boxed
+scalars, omitted fields, and non-finite numbers. BigInt and custom conversion
+callbacks are rejected; arbitrary callback allocations cannot be forecast. Inputs
+must remain immutable during serialization. Plain `set` retains its legacy native
+JSON behavior. Adapter-internal write buffering and copies remain external to the
+owned serialization budget.
+
+Stores may implement `putOwned(path, body, options)` to admit their write copies
+through the supplied immutable body's budget. Ownership is borrowed through
+settlement; stores retaining it must acquire their own handle. URI, cache, and
+read-control wrappers preserve the capability. JSON cache writes prefer it and
+fall back to legacy `put` when absent. This capability accounts for adapter-owned
+copies, not opaque runtime transport storage.

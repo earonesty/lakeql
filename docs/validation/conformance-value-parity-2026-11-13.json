@@ -1,0 +1,645 @@
+{
+  "description": "Full external corpus gate now checks public row count against metadata and compares every successfully drained owned row with the public reader. Both readers execute independently before parity comparison. No failures are skipped or reclassified.",
+  "testSha256": "3189bc6c20f91c2b11a50f9184e793c5c36e6b0e8573bd31556e36493d47aec4",
+  "result": {
+    "passed": 456,
+    "failed": 29,
+    "skipped": 1,
+    "previousFailures": 18,
+    "newParityDisagreements": 11
+  },
+  "disagreements": [
+    {
+      "fixture": "data/int96_from_spark.parquet",
+      "firstDisagreement": "AssertionError: row 5 of data/int96_from_spark.parquet: expected { a: TimestampValue{ \u2026(3) } } to deeply equal { a: TimestampValue{ \u2026(3) } }"
+    },
+    {
+      "fixture": "data/json.parquet",
+      "firstDisagreement": "AssertionError: row 0 of data/json.parquet: expected { json_field: { a: 1, b: null } } to deeply equal { json_field: { a: 1 } }"
+    },
+    {
+      "fixture": "data/map_no_value.parquet",
+      "firstDisagreement": "AssertionError: row 0 of data/map_no_value.parquet: expected { my_map: { '1': null, \u2026(2) }, \u2026(2) } to deeply equal { my_map: { '1': null, \u2026(2) }, \u2026(2) }"
+    },
+    {
+      "fixture": "data/repeated_primitive_no_list.parquet",
+      "firstDisagreement": "AssertionError: row 1 of data/repeated_primitive_no_list.parquet: expected { Int32_list: [], \u2026(2) } to deeply equal { Int32_list: null, \u2026(2) }"
+    },
+    {
+      "fixture": "shredded_variant/case-018.parquet",
+      "firstDisagreement": "AssertionError: row 0 of shredded_variant/case-018.parquet: expected { id: 1, var: TimestampValue{ \u2026(3) } } to deeply equal { Object (id, var) }"
+    },
+    {
+      "fixture": "shredded_variant/case-019.parquet",
+      "firstDisagreement": "AssertionError: row 0 of shredded_variant/case-019.parquet: expected { id: 1, var: TimestampValue{ \u2026(3) } } to deeply equal { Object (id, var) }"
+    },
+    {
+      "fixture": "shredded_variant/case-062.parquet",
+      "firstDisagreement": "AssertionError: row 0 of shredded_variant/case-062.parquet: expected { id: 1, var: TimestampValue{ \u2026(3) } } to deeply equal { Object (id, var) }"
+    },
+    {
+      "fixture": "shredded_variant/case-063.parquet",
+      "firstDisagreement": "AssertionError: row 0 of shredded_variant/case-063.parquet: expected { id: 1, var: TimestampValue{ \u2026(3) } } to deeply equal { Object (id, var) }"
+    },
+    {
+      "fixture": "shredded_variant/case-104.parquet",
+      "firstDisagreement": "AssertionError: row 0 of shredded_variant/case-104.parquet: expected { id: 1, var: TimestampValue{ \u2026(3) } } to deeply equal { Object (id, var) }"
+    },
+    {
+      "fixture": "shredded_variant/case-105.parquet",
+      "firstDisagreement": "AssertionError: row 0 of shredded_variant/case-105.parquet: expected { id: 1, var: TimestampValue{ \u2026(3) } } to deeply equal { Object (id, var) }"
+    },
+    {
+      "fixture": "shredded_variant/case-134.parquet",
+      "firstDisagreement": "AssertionError: row 0 of shredded_variant/case-134.parquet: expected { id: 1, var: { a: null, \u2026(2) } } to deeply equal { id: 1, var: { \u2026(3) } }"
+    }
+  ],
+  "limitations": [
+    "Public reader is a differential comparator, not an independent semantic oracle. Disagreements require fixture/specification or independent-engine validation before choosing a fix.",
+    "Test-side collected rows and public oracle allocations are outside the owned pool. Pool assertions prove tracked cleanup, not process memory.",
+    "Core struct vectors intentionally unify field names and fill missing fields with null; applying that contract to JSON/variant objects can change object shape.",
+    "Public INT96 conversion and owned wide timestamp decoding disagree for a far-future Spark value; do not truncate the owned value merely to match the public reader."
+  ],
+  "nextWork": [
+    "Establish canonical public/query value contracts for dynamic JSON/variant objects versus fixed-schema structs.",
+    "Validate timestamp and legacy repeated/map disagreements against independent fixture expectations.",
+    "Resolve original unsupported encoding/codec and variant failures; release gate remains failing."
+  ],
+  "temporalFollowup": {
+    "contractEvidence": [
+      "packages/core/src/batch.ts timestampSourceValue converts Date to millisecond TimestampValue",
+      "packages/parquet/src/temporal-values.test.ts asserts Date carriers from DATE parser",
+      "fixtures/external/parquet-testing/shredded_variant/cases.json documents independent expected dates"
+    ],
+    "change": "Parity comparison canonicalizes Date carriers only; retains timestamp precision/unit, bytes, bigint, object keys, null versus empty, and non-record objects. Seven explicit fixture tests assert documented public Dates and owned timestamps, including output release. No production API changes.",
+    "verifiedCases": [18, 19, 62, 63, 104, 105, 134],
+    "result": {
+      "passed": 471,
+      "failed": 22,
+      "skipped": 1
+    },
+    "remainingParityDisagreements": [
+      "data/int96_from_spark.parquet",
+      "data/json.parquet",
+      "data/map_no_value.parquet",
+      "data/repeated_primitive_no_list.parquet"
+    ],
+    "typecheck": "passed",
+    "testSha256": "e2f4cf7a19ebc4fc346a4e2a414b0114d4f518fd17ed708989b1e7d72abccb0c"
+  },
+  "int96Followup": {
+    "evidence": "../benchmarks/int96-reader-oracle-2026-11-13.json",
+    "oracleScriptSha256": "43a28c1c47ebce555a892aab5d3fdc0b6afd530ec22d5d8f8234dde6df7c522f",
+    "result": "Raw dictionary bytes reproduce documented Spark signed-microsecond writer arithmetic. Owned output matches all six rows including null and exact nanoseconds; public and DuckDB each disagree at row 5. Owned output releases to zero.",
+    "rootCause": "Upstream readPlainInt96 combines a signed low 64-bit word with the high word, allowing sign extension to erase the day word before timestamp parsing. A custom scalar timestamp parser alone cannot recover it.",
+    "remaining": "Share the correct physical INT96 decoding contract with public and fallback readers; preserve ordinary Julian interpretation and Spark auto selection. No decoder fix or conformance exemption applied."
+  },
+  "int96SharedHelpers": {
+    "change": "Scoped and borrowed readPlainValues now share validated INT96 carrier decoding; convertDecodedValues uses the same temporal conversion regardless of allocation scope. Scoped reservation and cleanup remain unchanged.",
+    "validation": "2708 default tests passed, 605 skipped; 25 focused carrier/temporal tests passed; seven temporal tests rerun with independent exact epoch constants passed. TypeScript build passed.",
+    "remaining": "Public object reader still calls upstream directly; the public fixture mismatch is not fixed by this shared-helper change."
+  },
+  "int96PublicIntegration": {
+    "change": "Pinned hyparquet patch preserves unsigned low words and adds optional physical INT96 parser hook. Public object/column and legacy scan paths select shared ordinary/Spark parser tables from writer metadata. Published package bundles the patched reader and includes its license.",
+    "evidence": "../benchmarks/int96-public-integrated-2026-11-13.json",
+    "validation": {
+      "defaultPassed": 2708,
+      "defaultSkipped": 605,
+      "workerPassed": 51,
+      "referencePassed": 104,
+      "conformancePassed": 472,
+      "conformanceFailed": 21,
+      "conformanceSkipped": 1,
+      "cleanNpmInstallRealFixture": "passed",
+      "buildLintTypes": "passed"
+    },
+    "remaining": "Original 18 corpus failures plus JSON shape, map-without-value shape, and legacy repeated null/empty discrepancies remain. Pool accounting limitations elsewhere are unchanged."
+  },
+  "jsonObjectContract": {
+    "change": "JSON objects use dynamic map vectors rather than fixed-schema structs. A shared map builder admits map entries before construction for parsed JSON and fallback column normalization. Arrays, nulls, absent keys and explicit null fields retain their distinctions. Public decoded-row normalization defines own properties, including __proto__.",
+    "focusedValidation": "17 focused tests passed, including exact/one-byte-short JSON allocation bounds, parse failure rollback, true/ignored HTTP ranges, concurrent cold/warm cache reuse, retained output after cache eviction, repeated gather/concat, and generated nested fixtures at batch sizes 1, 3, 32.",
+    "conformance": {
+      "passed": 473,
+      "failed": 20,
+      "skipped": 1
+    },
+    "limitations": [
+      "Native JSON parser/reviver workspace remains outside the parsed-tree allocation model.",
+      "Upstream fixture writer toJson drops __proto__ before encoding. Generated readback tests exclude that key; parser and public normalizer tests explicitly exercise it independently. Writer preservation remains an open finding.",
+      "Two remaining parity disagreements: map-without-value and unannotated repeated fields. Original 18 corpus failures remain."
+    ],
+    "regressionValidation": {
+      "defaultPassed": 2712,
+      "defaultSkipped": 605,
+      "workerPassed": 51,
+      "referencePassed": 104,
+      "buildLintTypecheck": "passed"
+    },
+    "tradeoff": "Dynamic map entries add explicitly admitted storage versus fixed-schema struct inference. The parser tree and replacement map storage remain conservatively charged together; this is needed to preserve member presence, not a tunable semantic choice."
+  },
+  "collectionShapeIntegration": {
+    "change": "Pinned reader recognizes key-only MAP schemas, supplies null values during assembly without constructing a synthetic value column, and distinguishes empty REPEATED leaves from null OPTIONAL values. Capability rejects absent/repeated keys and unknown second fields; key/value schema order is not assumed.",
+    "validation": {
+      "defaultPassed": 2718,
+      "defaultSkipped": 605,
+      "workerPassed": 51,
+      "referencePassed": 104,
+      "focusedAfterAdditionalSchemaTest": 7,
+      "conformancePassed": 475,
+      "conformanceFailed": 18,
+      "conformanceSkipped": 1,
+      "cleanNpmInstallRealFixtures": "passed",
+      "buildLintTypecheck": "passed, including final schema capability test"
+    },
+    "evidence": [
+      "packages/parquet/src/collection-shape-parity.test.ts",
+      "packages/parquet/src/nested-page-fixtures.test.ts",
+      "scripts/check-package-install.mjs"
+    ],
+    "remaining": "All eleven additional differential disagreements are resolved or independently validated representation differences. The original eighteen failures remain, along with the broader memory audit requirements."
+  },
+  "currentRevalidation": {
+    "commit": "330e85b",
+    "command": "pnpm test:conformance",
+    "passed": 475,
+    "failed": 18,
+    "skipped": 1,
+    "failedFixturesBothReaders": [
+      "data/alp_extended.zstd.parquet",
+      "data/bson.parquet",
+      "data/large_string_map.brotli.parquet",
+      "data/nation.dict-malformed.parquet",
+      "shredded_variant/case-026.parquet",
+      "shredded_variant/case-027.parquet",
+      "shredded_variant/case-028.parquet",
+      "shredded_variant/case-029.parquet",
+      "shredded_variant/case-030.parquet"
+    ],
+    "conclusion": "The release gate still fails. Recent JSON stream and string sizing changes introduce no additional failures in this corpus. No exclusions or assertions changed."
+  },
+  "dictionaryExtentInvestigation": {
+    "evidence": "../benchmarks/dictionary-extent-oracle-2026-11-13.json",
+    "reproducer": "bench/dictionary-extent-oracle.mjs",
+    "finding": "The name and comment_col metadata total_compressed_size each omit exactly their 15-byte dictionary-page header. Their declared ends are 451/2593, whereas the last data-page bodies end at 466/2608. Other columns have no shortfall.",
+    "validation": "Unmodified metadata rejects. Correcting only those two metadata extents in the diagnostic restores all 25 rows. All values match DuckDB, comparing binary values with UTF8 bytes from reader strings. Fixture bytes and production code remain unchanged.",
+    "next": "Implement generic bounded page-extent recovery with validated neighboring-column/footer boundaries and admission before extra cloud range reads. Do not globally pad every column, download whole objects, or classify this fixture as an expected rejection. Conformance remains 18 failures until production integration passes.",
+    "inspector": {
+      "implementation": "packages/parquet/src/dictionary-column-extent.ts",
+      "contract": "Given a validated next-column/footer boundary, inspect bounded page headers for a missing-dictionary-offset column. Return a correction only for exactly one omitted initial dictionary header and the exact declared value count. Empty encoding lists are permitted because this fixture has them; page types provide the proof. Do not mutate metadata or fetch separate page bodies.",
+      "validation": "Real fixture proves two 15-byte recoveries. Boundary one byte short, inconsistent value count, and size shortfall not equal to the dictionary header all reject. Already-corrected metadata stays unchanged. Tiny budgets reject at header-probe admission; scopes return to zero.",
+      "integration": "Internal inspector only; public/owned readers do not call it yet. No conformance improvement is claimed. Integrating validated physical bounds, owned metadata changes, and cloud transport tests remains required."
+    },
+    "productionIntegration": {
+      "change": "Public object/column/vector and owned indexed/cached readers apply proven dictionary extent corrections in private metadata. Source metadata and cached entries are not mutated. Corrected object/array directories are admitted before copying, and header reads use the existing allocation-aware page inspector. Physical bounds come from all column starts and the footer; indexed group owners are released while enumerating those bounds.",
+      "lazyPlanning": "Object/vector recovery occurs at the selected row group. Ordinary early exit preserves lazy prefetch; the existing planned-past-window regression passes. Full physical-boundary enumeration is reserved for candidate missing-dictionary-offset metadata.",
+      "validation": {
+        "defaultPassed": 2793,
+        "defaultSkipped": 605,
+        "workerPassed": 53,
+        "referencePassed": 104,
+        "conformancePassed": 477,
+        "conformanceFailed": 16,
+        "conformanceSkipped": 1,
+        "buildLintTypecheck": "passed",
+        "targeted": "58 reader/lazy-planning/malformed/HTTP checks passed; metadata immutability and scoped copy ownership assertions passed afterward."
+      },
+      "http": "Actual external fixture over true 206 and ignored-range 200 responses; indexed auto and cached modes; three concurrent queries at batch sizes 1/3/32 under a 64 MiB shared pool; complete value parity, independently specified nation names and keys, cancellation, zero final reservation usage. Requests remain within file bounds.",
+      "expectationChanges": "The historical nation.dict-malformed rejection case is replaced by successful real-fixture HTTP checks, supported by the independent 25-row DuckDB oracle. ARROW-RS-GH-6229-DICTHEADER still rejects, now at physical-boundary validation before its malformed compact header. No conformance exclusion or expected-failure waiver was added.",
+      "limitations": [
+        "The full conformance gate still fails on sixteen other cases.",
+        "Specific fixture recovery has HTTP coverage; existing Worker suite passes but does not newly exercise this external fixture via native R2.",
+        "Physical-boundary enumeration for anomalous candidates can inspect all row groups; no claim of unchanged malformed-file planning cost.",
+        "Remaining decoder/runtime workspace and broader audit allocation gaps are unchanged."
+      ]
+    },
+    "proofReuseAndNativeR2": {
+      "change": "Private recovered row groups carry a scoped projection proof. Repeated batch consumers skip already inspected columns without a process-wide cache or mutations to original metadata. Projection arrays are copied under the allocation scope; requesting another column does not inherit an unrelated proof.",
+      "validation": {
+        "defaultPassed": 2793,
+        "defaultSkipped": 605,
+        "workerPassed": 57,
+        "referencePassed": 104,
+        "buildLintTypecheck": "passed",
+        "targetedPassed": 55
+      },
+      "proofTest": "A reader that throws on either slice or sliceOwned proves repeated recovery and narrower projections perform zero reads and allocate no additional reservations. A name-only correction leaves comment_col unchanged; a later comment_col projection inspects and corrects it independently without changing the earlier metadata.",
+      "nativeR2": "The Worker test configuration loads the exact external fixture bytes into a test-only binding. Four native-R2 cases cover 64/128 MiB pools and indexed/cached metadata, concurrent owned outputs at batch sizes 1/3/32, output retention, cancellation, complete parity with the corrected public reader, independently specified keys/first-last names, and zero reservations after release. The suite ran all 57 cases without skips.",
+      "limits": "This is local workerd/Miniflare native R2 operation with reservation assertions, not deployed-cloud total-heap proof or near-cap workload stress. The conformance checkpoint remains 477 passed and 16 failed from the preceding full run."
+    }
+  },
+  "publishedPackageCheckpoint": {
+    "sourceCommit": "e6d5a80",
+    "distributionBuild": "pnpm build passed",
+    "cleanConsumer": "pnpm check:packages passed after extending scripts/check-package-install.mjs. npm installs packed lakeql/lance/webgpu into a temporary consumer outside workspace patch settings.",
+    "newAssertions": [
+      "Real nation.dict-malformed fixture recovers all 25 keys and independently specified first/last names through the installed entrypoint",
+      "JSON and NDJSON streams emit exact expected output from real Parquet at batch sizes 1 and 3",
+      "Shared 64 MiB allocation pool returns to zero after stream completion and explicit cancellation"
+    ],
+    "existingAssertions": "Installed types/entrypoints, patched INT96 values, key-only maps and empty repeated fields continue to pass.",
+    "additionalGates": [
+      "pnpm check:compatibility passed",
+      "pnpm check:large-files passed",
+      "Changed package-check script passes biome"
+    ],
+    "limits": "Conformance still has sixteen known failures. This refresh does not replace final coverage/fixture reproducibility checks, resolve outstanding allocation categories, or prove total Worker heap caps."
+  },
+  "typedBinaryVariant": {
+    "fixture": "shredded_variant/case-030.parquet",
+    "fixtureSha256": "621dc23161852e39b3cb9ef74c31b3ed2538ca90a626aa8725695fd3bc8b75dd",
+    "oracle": "Vendored cases.json specifies BINARY 0A0B0C0D. Tests assert those bytes independently of public/owned parity.",
+    "cause": "The upstream variant decoder treated Uint8Array in typed_value as an encoded variant payload, reading its data bytes as headers. typed_value is already decoded physical binary; encoded payloads belong to value wrappers.",
+    "change": "Pinned hyparquet patch preserves typed binary backing without copying or reparsing. The same rule applies to nested array elements. value wrappers continue to parse encoded variant payloads.",
+    "validation": {
+      "focusedPassed": 8,
+      "httpModes": ["206 range responses", "200 ignored ranges"],
+      "defaultPassed": 2841,
+      "defaultSkipped": 605,
+      "defaultScope": "Full suite before adding two HTTP tests; the final focused run includes both HTTP tests.",
+      "workerPassed": 57,
+      "build": "passed",
+      "typecheck": "passed",
+      "cleanPackageInstall": "passed",
+      "conformancePassed": 479,
+      "conformanceFailed": 14,
+      "conformanceSkipped": 1,
+      "referencePassed": 104,
+      "lint": "passed",
+      "compatibility": "passed",
+      "trackedFileSize": "passed"
+    },
+    "cases": [
+      "Empty binary",
+      "Zero byte",
+      "Bytes that resemble variant headers",
+      "Arbitrary high bytes",
+      "Nested arrays",
+      "Encoded value wrappers",
+      "Real fixture public/owned readers",
+      "HTTP modes with zero final pool usage",
+      "Clean installed package public/owned fixture reads"
+    ],
+    "remaining": "Four decimal variant fixtures require exact high-precision scalar representation; relaxing schema rejection would silently round values. Other remaining failures are ALP, BSON and BROTLI, each through both readers. No exclusions or assertion waivers added. HTTP tests do not establish production Cloudflare heap safety."
+  },
+  "independentDecimalOracle": {
+    "evidence": "../benchmarks/variant-decimal-oracle-2026-11-13.json",
+    "reproducer": "node bench/variant-decimal-oracle.mjs",
+    "cause": "The binary variant decimal decoder converts signed coefficients to Number and multiplies by 10**-scale. Both readers share this path, so parity does not detect lost digits. Shredded high-precision decimals reject earlier, while equivalent binary variants silently round.",
+    "observed": "123456789.987654321 becomes 123456789.98765433 in both readers. Cases 70-73 and 112-115 lose documented digits; cases 26-29 reject.",
+    "validation": {
+      "conformancePassed": 479,
+      "conformanceFailed": 30,
+      "conformanceSkipped": 1,
+      "newFailures": 16,
+      "runtimeChanged": false
+    },
+    "gateChange": "Sixteen independent decimal assertions compare documented exact spellings without converting expected values to Number. Existing corpus assertions and unsupported-format failures remain. This exposes existing loss; no expected-failure waiver or skip added.",
+    "requiredContract": [
+      "An exact decimal scalar must preserve a signed coefficient and scale across both shredded leaves and binary variants, with shared conversion hooks.",
+      "Generic vectors, literals, comparisons, grouping/hash keys, sorting, arithmetic and aggregates need explicit decimal capabilities and consistent numeric coercion; a generic object fallback must not silently change semantics.",
+      "Coefficient backing, scale alignment, arithmetic scratch, serialized text and vector directories must be admitted before allocation; huge scales must not trigger unbounded zero padding or powers of ten.",
+      "JSON/CSV output must preserve exact digits under a documented representation, without silently converting back to binary64.",
+      "Validate primitive and nested values, signed boundaries, scale normalization, null/empty values, budget caps, cancellation, real HTTP/R2 fixtures and clean package distribution."
+    ],
+    "scope": "Oracle uses memoryStore and vendored fixture documentation. No cloud performance or total-memory claim. Exact-decimal support remains unimplemented; removing the schema precision guard alone is not an acceptable fix."
+  },
+  "exactDecimalKernel": {
+    "status": "Internal representation/comparison/formatting implemented; not yet connected to readers or generic execution, and not exported from the package entry point.",
+    "source": "packages/core/src/decimal-value.ts",
+    "contract": "Immutable bigint coefficient with a nonnegative safe-integer scale. Canonical fixed spelling at adjusted exponents -6 through 20 and scientific spelling otherwise. Exact string/JSON conversion; implicit numeric coercion rejects.",
+    "comparison": "Compare signs and adjusted exponents, then virtual zero-extended coefficient digits. No powers of ten or scale-sized strings. Same-scale/sign/zero shortcuts avoid formatting entirely.",
+    "allocation": "Optional scope admits scalar backing and formatting before allocation. Comparison reserves coefficient strings and releases in finally. Formatting estimate includes slices, mantissa, exponent and output. VM/GC internals and BigInt arithmetic used for forecasts remain separate.",
+    "validation": {
+      "focusedPassed": 22,
+      "randomComparisonCases": 5000,
+      "randomExactFormattingCases": 1000,
+      "typescriptBuild": "passed",
+      "typecheck": "passed",
+      "lint": "passed"
+    },
+    "edgeCases": [
+      "Documented precision-loss values retain every digit",
+      "Equivalent scales canonicalize identically",
+      "Positive/negative/zero comparisons",
+      "MAX_SAFE_INTEGER scale with constant coefficient-sized workspace",
+      "Exact cap and one-byte-short construction/formatting/comparison",
+      "Invalid scales reject before admission",
+      "Implicit Number and unary-plus coercion reject",
+      "Immutable scalar storage"
+    ],
+    "benchmark": "../benchmarks/decimal-scale-workspace-2026-11-13.json",
+    "measurement": "For fixed coefficients at scales 4, 1000 and MAX_SAFE_INTEGER, comparison peak is 136 reservation bytes and formatting retains 1036 reservation bytes in every case. Microbenchmark medians are approximately 0.00016-0.00017ms; this is a kernel check, not query/cloud performance.",
+    "remaining": "Connect exact decimal capabilities to vectors, readers, generic comparison/hash/sort, arithmetic/aggregates and owned output. Preserve existing low-precision number behavior where required by compatibility. The 30 conformance failures remain unresolved at this checkpoint."
+  },
+  "exactDecimalArithmetic": {
+    "status": "Internal add/subtract/multiply kernel implemented; generic vector/operator and reader integration remain outstanding.",
+    "source": "packages/core/src/decimal-arithmetic.ts",
+    "contract": "Caller must supply MemoryScope. Scale alignment, powers, aligned coefficients, result coefficient and scalar storage are admitted as one stage before arithmetic. Only retained result backing survives stage cleanup. Zero operands avoid needless alignment. Result scale must fit a nonnegative safe integer.",
+    "validation": {
+      "focusedPassed": 40,
+      "randomOperationChecks": 3000,
+      "build": "passed",
+      "typecheck": "passed",
+      "lint": "passed"
+    },
+    "edgeCases": [
+      "Exact documented 18/19-digit decimal values",
+      "Signed addition/subtraction/multiplication with unequal scales",
+      "Exact-cap success and one-byte-short rejection",
+      "Billion-digit and MAX_SAFE_INTEGER alignment gaps reject with zero peak admission",
+      "Same MAX_SAFE_INTEGER scales compute without rounding the size forecast",
+      "Zero addition, subtraction/negation and multiplication do not expand scale gaps",
+      "Scale overflow preserves existing live reservations",
+      "Shared-pool sibling arithmetic rejects while a previous result is retained, then succeeds after release"
+    ],
+    "discoveredDuringTesting": "Compute digit growth as coefficientDigits + (resultScale - inputScale); adding the scale before subtracting can round the size forecast near MAX_SAFE_INTEGER. Tests cover equal extreme scales.",
+    "remaining": "The explicit backing forecast is not a portable bound on native BigInt implementation scratch or delayed GC. Division/rounding semantics, generic decimal vector capabilities, comparisons/hash/sort/aggregates, readers and cloud fixture integration remain. The 30 conformance failures are unchanged."
+  },
+  "binaryVariantDecimalIntegration": {
+    "change": "Pinned hyparquet adds an optional decimalFromUnscaled parser hook for binary variant decimal4/8/16 carriers. LakeQL preserves unsafe coefficients as DecimalValue; safe coefficients retain numeric compatibility with correctly rounded scaling. Public decoded-row normalization preserves the scalar class. Owned object/column readers supply scoped parser tables for variant schemas, admitting scalar backing and large-scale formatting scratch before allocation; other schemas reuse shared tables.",
+    "boundary": "Binary variant coefficients have a format-defined 4/8/16-byte extent and a one-byte scale. This integration does not relax the schema guard for ordinary/shredded high-precision decimal leaves, whose conversion and operator contracts still need integration.",
+    "evidence": "../benchmarks/variant-decimal-integrated-2026-11-13.json",
+    "previousEvidence": "../benchmarks/variant-decimal-oracle-2026-11-13.json",
+    "validation": {
+      "defaultPassed": 2907,
+      "defaultSkipped": 621,
+      "focusedParserHttpPassed": 25,
+      "independentDocumentedDecimalPassed": 16,
+      "workerPassed": 59,
+      "referencePassed": 104,
+      "conformancePassed": 495,
+      "conformanceFailed": 14,
+      "conformanceSkipped": 1,
+      "build": "passed",
+      "typecheck": "passed",
+      "lint": "passed",
+      "cleanNpmInstall": "passed"
+    },
+    "edgeCases": [
+      "Signed 32/64/128-bit coefficient extremes",
+      "Scales 0/9/23/255",
+      "Positive and negative safe-integer representation boundaries",
+      "Truncated carriers reject before parser invocation",
+      "Nested scalar class preservation",
+      "Exact and one-byte-short parser/scalar admission; closed scopes reject callbacks",
+      "Non-variant schemas allocate no parser table",
+      "All eight previously rounded real fixture values match documented exact digits through both readers"
+    ],
+    "cloudEvidence": "Real case-070 fixture passes public/owned reads and exact JSON output over HTTP 206 and ignored-range 200 responses. Local workerd native R2 tests exercise 64/128 MiB shared pools, three concurrent owned queries and a cancelled peer, with per-query pool/4 limits and zero final reservations. This is not production Cloudflare total-heap certification.",
+    "distribution": "Clean npm-install smoke reads the real decimal fixture through public and owned APIs and checks exact spelling plus pool cleanup, proving bundled consumers receive the parser patch.",
+    "timeoutObservation": "An initial conformance run concurrent with the default suite timed out on overflow_i16_page_cnt, giving 15 failures. Two subsequent isolated conformance runs passed that case and reported the same 14 remaining failures. No timeout setting or assertion was changed.",
+    "remaining": "Four shredded high-precision decimal fixtures still reject through both readers; ALP, BSON and BROTLI account for six other failures. Generic decimal expression/order/group/aggregate integration and broader decoder/runtime memory accounting remain open. No tests were waived."
+  },
+  "boundedDecimalDiagnostics": {
+    "change": "Rejected decimal values no longer retain byte-carrier backing, malformed object graphs or arbitrary strings in error details. BigInt diagnostic formatting is restricted to signed 128-bit coefficients; larger values use a fixed message before any toString call. Existing physical integer diagnostics remain exact.",
+    "validation": {
+      "focusedDecimalAndRealFixturePassed": 22,
+      "typescriptBuild": "passed",
+      "defaultPassed": 2909,
+      "defaultSkipped": 621,
+      "lint": "passed"
+    },
+    "edgeCases": [
+      "An 8-byte invalid carrier aliases a 1 MiB backing buffer; the error contains only carrier type and length.",
+      "Malformed object with hostile toJSON is never retained or invoked.",
+      "A 1 MiB malformed string is replaced by its type.",
+      "Positive and negative million-bit integers reject without invoking BigInt.toString.",
+      "Signed 128-bit boundaries retain exact diagnostic text.",
+      "Failed scoped scalar conversion releases its reservation."
+    ],
+    "limits": "This bounds input-dependent diagnostic payloads, not Error stack/runtime allocation. Shredded decimal integration and the remaining audit requirements are still open."
+  },
+  "shreddedVariantDecimals": {
+    "change": "Shared scoped decimal conversion now accepts physical integer and signed big-endian byte leaves inside VARIANT. Pinned hyparquet bypasses binary UTF-8 handling for decimal annotations, preserves nulls, recognizes logical-only DECIMAL annotations, and exposes a scalar predicate so DecimalValue and TimestampValue survive shredded-object assembly.",
+    "contract": "Schema traversal tracks the outermost VARIANT ancestor in constant additional state. Precision through 38 is admitted for supported physical decimal carriers inside that logical container. Ordinary high-precision nested decimal vectors retain their guard until their numeric execution shape supports exact scalars. Byte carriers strip redundant sign extension without copying, reject empty or more than 16 significant bytes, and admit fixed coefficient workspace before BigInt construction. Scales must be nonnegative safe integers through 38. Scoped result backing is admitted through the same factory as binary variants.",
+    "evidence": "../benchmarks/variant-decimal-shredded-2026-11-13.json",
+    "validation": {
+      "defaultPassed": 2921,
+      "defaultSkipped": 629,
+      "additionalLogicalOnlyAndNullableTestsPassed": 2,
+      "focusedParserHttpSchemaPassed": 42,
+      "workerPassed": 61,
+      "build": "passed",
+      "typecheck": "passed",
+      "lint": "passed",
+      "cleanNpmInstall": "passed",
+      "compatibility": "passed",
+      "referencePassed": 104,
+      "conformancePassed": 511,
+      "conformanceFailed": 6,
+      "conformanceSkipped": 1,
+      "trackedFileSizes": "passed"
+    },
+    "edgeCases": [
+      "Both signs and signed 128-bit extremes; sign-extended carriers of 16 and 65536 bytes.",
+      "Empty and oversized byte carriers, noninteger numbers and invalid scale reject.",
+      "Exact capacity succeeds and one-byte-short capacity rejects while releasing coefficient workspace.",
+      "Logical-only and converted DECIMAL annotations preserve nullable values.",
+      "Decoded decimal and timestamp objects remain scalar through direct and nested shredded wrappers.",
+      "A VARIANT sibling cannot relax the ordinary nested decimal schema guard.",
+      "All twelve independent documented decimal fixtures preserve exact spelling through public and owned readers; eight additional independent assertions cover formerly rejected fixtures."
+    ],
+    "cloudEvidence": "Cases 026\u2013029 pass public/owned/exact-JSON checks over HTTP 206 and ignored-range 200 responses. Case 028 also passes local workerd native R2 reads with 64/128 MiB shared pools, three concurrent owned queries and a cancelled peer, per-query pool/4 limits, no range cache and zero final reservations. Case 070 binary coverage remains. Clean npm install checks both binary and shredded real fixtures.",
+    "limits": "The fixture oracle measures tracked reservations and exact output, not CPU speed or production Cloudflare total heap. Native BigInt scratch/GC and broader allocation accounting remain open. Generic decimal expression/order/group/aggregate integration and ordinary high-precision vector integration remain unfinished. No unsupported-codec tests were waived."
+  },
+  "decimalPredicateIntegration": {
+    "change": "Row and vector expression comparisons share the exact decimal comparison boundary. Decimal columns are recognized as scalar values in row evaluation. Nullable comparisons, IN and BETWEEN use the same kernel; decimal vector reads borrow immutable scalar objects and are classified allocation-free, avoiding per-row child scopes. Cross-scale digit workspace is admitted and released for each comparison.",
+    "validation": {
+      "defaultPassed": 2926,
+      "defaultSkipped": 629,
+      "workerPassed": 61,
+      "focusedHttpPassed": 18,
+      "build": "passed",
+      "typecheck": "passed",
+      "cleanNpmInstall": "passed",
+      "referencePassed": 104,
+      "conformancePassed": 511,
+      "conformanceFailed": 6,
+      "conformanceSkipped": 1,
+      "lint": "passed",
+      "compatibility": "passed",
+      "trackedFileSizes": "passed"
+    },
+    "evidence": "../benchmarks/decimal-predicate-2026-11-13.json",
+    "edgeCases": [
+      "All six comparison operators agree between row and vector evaluation, including nulls and equal values with different scales.",
+      "IN and BETWEEN retain SQL three-valued semantics.",
+      "Scales 3, 1000 and MAX_SAFE_INTEGER use the same workspace for 1 and 10000 rows.",
+      "Exact peak capacity succeeds; one-byte-short capacity rejects and scope cleanup leaves zero reservations.",
+      "Decimal vector comparisons create no per-row child scopes.",
+      "Decimal-versus-number/bigint/string/boolean comparisons reject explicitly rather than invoking implicit numeric coercion."
+    ],
+    "cloudEvidence": "All five binary/shredded decimal fixture cases pass matching and nonmatching owned predicates over HTTP 206 and ignored-range 200. Local workerd R2 checks use three concurrent matching queries with differently scaled decimal literals plus a cancelled peer at 64/128 MiB. Clean npm-install smoke compares a real shredded value against a threshold one coefficient unit smaller, which would be lost by Number coercion.",
+    "measurement": "Local 10000-row vector comparisons measured about 1.7\u20131.9 ms median, with 142 bytes of tracked scratch beyond the output mask. Input vectors are constructed before timing and excluded from predicate reservations. No before/after speedup, cloud throughput or whole-heap claim.",
+    "remaining": "Mixed decimal/numeric coercion, general order/group/aggregate/arithmetic operator integration, ordinary high-precision decimal vectors and broad allocation coverage remain unfinished. CPU-wide decimal vector capability is not advertised merely because predicate selection now works."
+  },
+  "mixedDecimalNumericComparisons": {
+    "change": "A shared numeric comparison module extends exact decimal predicates to bigint and finite binary64 operands. Existing decimal operands never become Number. Safe integers and large represented integer numbers use bounded BigInt conversion; fractional numbers decode IEEE-754 bits and construct coefficient = significand * 5^scale, with scale at most 1074. Intermediate integer workspace, reader storage and scalar wrapper are reserved before construction and released after comparison.",
+    "semantics": "Comparison uses represented mathematical values, not display-string coercion. Decimal 0.1 is less than binary64 0.1; decimal 0.5 equals binary64 0.5. Bigints compare exactly. Null remains SQL unknown in evaluators. Strings, booleans, objects, NaN and infinities reject as nonnumeric/nonfinite. This replaces the prior checkpoint's rejection of mixed numeric operands.",
+    "validation": {
+      "defaultPassed": 2931,
+      "defaultSkipped": 629,
+      "workerPassed": 61,
+      "focusedCorePassed": 8,
+      "focusedCoreAndHttpPassed": 26,
+      "build": "passed",
+      "typecheck": "passed",
+      "lint": "passed",
+      "cleanNpmInstall": "passed",
+      "referencePassed": 104,
+      "conformancePassed": 511,
+      "conformanceFailed": 6,
+      "conformanceSkipped": 1,
+      "compatibility": "passed",
+      "trackedFileSizes": "passed"
+    },
+    "evidence": "../benchmarks/decimal-numeric-comparison-2026-11-13.json",
+    "edgeCases": [
+      "2000 deterministic random binary64 patterns checked against an independent cross-multiplied binary-rational oracle.",
+      "Both signs, negative zero, exact half, inexact tenth, MAX_SAFE_INTEGER boundary, largest finite number and smallest subnormal.",
+      "Positive/negative exact decimal representations of the smallest subnormal compare equal.",
+      "Decimal scales through MAX_SAFE_INTEGER do not expand conversion workspace.",
+      "Exact reservation capacity succeeds and one-byte-short rejects with zero remaining reservations.",
+      "Mixed decimal/number/bigint union batches preserve row/vector predicate agreement.",
+      "Real binary/shredded HTTP fixtures reject equality with their rounded Number equivalents, retaining every documented digit."
+    ],
+    "cloudEvidence": "The existing 64/128 MiB native R2 concurrency tests now combine exact decimal equality with a numeric integer threshold. Clean npm-install smoke also filters the real shredded fixture with an ordinary numeric literal. HTTP checks include both 206 and ignored-range 200 responses.",
+    "measurement": "10000 scalar comparisons measured about 1.8 ms for safe integer zero, 12 ms for numeric 0.1, 153 ms for the smallest subnormal, 30 ms for the largest finite number, and 3.1 ms for bigint. Tracked peak workspace ranged from 264 to 5816 bytes. Timing includes assertions and repeated conversion; these are local kernel measurements, not cloud throughput or total heap.",
+    "next": "Prepare repeated numeric literals once per bounded batch: the subnormal measurement exposes repeated exponentiation cost. General sorting/grouping/aggregate/arithmetic integration, ordinary high-precision vectors and broader allocation coverage remain unfinished. Native BigInt implementation scratch/GC remains outside explicit reservation accounting."
+  },
+  "preparedDecimalLiterals": {
+    "change": "Direct and dictionary decimal-vector predicates prepare numeric literals once per mask operation. A shared synchronous operand callback keeps conversion workspace admitted for the operation; a prepared comparator lazily sizes and formats the literal coefficient once. The original and prepared comparison paths share the same sign/scale/digit-order kernel. All retained literal text and preparation state release on success or failure.",
+    "evidence": "../benchmarks/decimal-literal-preparation-2026-11-13.json",
+    "intermediateEvidence": "../benchmarks/decimal-literal-conversion-only-2026-11-13.json",
+    "validation": {
+      "defaultPassed": 2935,
+      "defaultSkipped": 629,
+      "workerPassed": 61,
+      "build": "passed",
+      "typecheck": "passed",
+      "lint": "passed",
+      "cleanNpmInstall": "passed",
+      "referencePassed": 104,
+      "conformancePassed": 511,
+      "conformanceFailed": 6,
+      "conformanceSkipped": 1,
+      "compatibility": "passed",
+      "trackedFileSizes": "passed"
+    },
+    "edgeCases": [
+      "A 10000-row direct vector and dictionary vector each decode the numeric literal exactly once.",
+      "All six operators, either operand orientation, nulls, empty/all-null decimal vectors and invalid literals preserve evaluation semantics.",
+      "Positive and negative prepared literals agree with the original comparator across equal/different scales, zero and MAX_SAFE_INTEGER scale.",
+      "Repeated comparisons retain constant literal storage; callback exceptions release both state and cached text.",
+      "Exact peak capacity succeeds; one-byte-short and malformed-vector failures leave zero reservations."
+    ],
+    "measurement": "For 10000 comparisons, prepared vectors measured 1.5\u20131.6 ms versus a same-process scalar-conversion reference loop at about 13 ms for 0.1, 154 ms for the smallest subnormal and 30 ms for the largest finite number. Conversion-only preparation left the subnormal case at 134 ms; eliminating repeated digit sizing/formatting reduced it to 1.5 ms. Tracked scratch remains independent of row count, with 384 bytes of additional preparation state; the measured subnormal peak scratch is 6200 bytes beyond the mask.",
+    "cloudEvidence": "Existing binary/shredded real fixtures continue to exercise mixed numeric and exact decimal predicates over HTTP range/ignored-range responses, concurrent local workerd native R2 at 64/128 MiB, and clean npm installation.",
+    "limits": "Controlled local comparison, not an archived revision speedup or production Cloudflare throughput/heap claim. The fast path covers explicit direct/dictionary decimal vector shapes; mixed union and computed-expression operands retain the correct generic path. Broad allocation accounting, generic sorting/grouping/aggregate/arithmetic integration and ordinary high-precision vectors remain unfinished."
+  },
+  "admissionAwareDecimalPreparation": {
+    "change": "Prepared direct/dictionary decimal comparison is opportunistic. Only a scoped LAKEQL_BUDGET_EXCEEDED triggers one retry using the original scalar comparison path; synchronous helpers release prepared text/state/conversion workspace before retry. The already-admitted mask is reused, and both paths share one fill loop. Other errors propagate. The optimization no longer increases the minimum executable predicate budget.",
+    "evidence": "../benchmarks/decimal-literal-budget-2026-11-13.json",
+    "validation": {
+      "defaultPassed": 2936,
+      "defaultSkipped": 629,
+      "focusedPredicatePassed": 9,
+      "additionalOutputOnlyBoundaryTestPassed": 1,
+      "workerPassed": 61,
+      "build": "passed",
+      "typecheck": "passed",
+      "lint": "passed",
+      "cleanNpmInstall": "passed",
+      "referencePassed": 104,
+      "conformancePassed": 511,
+      "conformanceFailed": 6,
+      "conformanceSkipped": 1,
+      "compatibility": "passed",
+      "trackedFileSizes": "passed"
+    },
+    "edgeCases": [
+      "One byte below prepared peak succeeds through fallback; one byte below scalar minimum rejects and cleans up.",
+      "A late coefficient-workspace rejection retries once and returns the correct full mask, including nulls and differing results.",
+      "Retained sibling reservations remain intact through retry and output release.",
+      "Same-scale comparisons run with only the three-byte output-mask budget.",
+      "Malformed decimal vectors still propagate validation errors rather than triggering a budget retry."
+    ],
+    "measurement": "With synthetic peer reservations filling 64/128 MiB pools, 10000-row fraction comparisons succeed with 11754 bytes available for preparation or 11370 for scalar fallback. Subnormal comparisons succeed with 16200 or 15816 bytes respectively. Preparation measured about 1.7\u20131.8 ms; constrained scalar fallback about 12 ms for fractions and 154 ms for subnormals. No configuration flag is required.",
+    "cloudEvidence": "The unchanged real HTTP and local workerd native R2 decimal predicate tests pass in the full/Worker suites; clean installed-package checks pass. The new deliberately tight budget and sibling-retention proof is a core accounting test, not a cloud heap measurement.",
+    "limits": "Peer reservations in the benchmark are synthetic, not matching live heap payloads. Native runtime allocation/GC and broader audit gaps remain open. Generic sorting/grouping/aggregate/arithmetic integration and ordinary high-precision vectors remain unfinished."
+  },
+  "scopedTopKScalarReads": {
+    "finding": "Owned vector top-K admitted its heap but read comparison operands through unscoped vectorValue. Typed bigint/timestamp reads and packed UTF-8 decoding could allocate outside the caller pool. Vector ordering also duplicated the row comparator and omitted its finite-number validation.",
+    "change": "Owned top-K uses the generic scalar-read allocation capability and scoped scalarVectorValue. Allocating reads share a short-lived scope per comparison term, keeping both operands admitted until comparison completes and releasing them on success or error. Allocation-free vectors avoid child scopes. Vector sorting delegates scalar ordering to the row comparator, removing duplicated ordering logic and rejecting NaN/infinities consistently.",
+    "evidence": "../benchmarks/top-k-scalar-workspace-2026-11-13.json",
+    "validation": {
+      "defaultPassed": 2945,
+      "defaultSkipped": 629,
+      "workerPassed": 61,
+      "focusedCoreAndRealTimestampPassed": 33,
+      "build": "passed",
+      "typecheck": "passed",
+      "lint": "passed",
+      "cleanNpmInstall": "passed",
+      "referencePassed": 104,
+      "conformancePassed": 511,
+      "conformanceFailed": 6,
+      "conformanceSkipped": 1,
+      "compatibility": "passed",
+      "trackedFileSizes": "passed"
+    },
+    "edgeCases": [
+      "Bigint, timestamp64, timestamp96 and packed-text comparisons succeed at the exact input-plus-heap-plus-two-scalars capacity and reject one byte short.",
+      "Failed second-operand admission releases first-operand scratch while preserving input ownership.",
+      "Insufficient first-text-read capacity rejects before TextDecoder.decode is called.",
+      "Row/vector stable ordering, null placement, offsets and selected rows retain existing regression coverage.",
+      "Both vector full sort and top-K reject NaN, positive infinity and negative infinity."
+    ],
+    "cloudEvidence": "The documented FLBA12 timestamp fixture now passes four concurrent owned top-3 queries over HTTP 206 and ignored-range 200, with cache cleanup and the existing two-read concurrency bound. Native R2 64/128 MiB tests add four concurrent top-3 queries ordered by generated 1024-byte text keys. This distinguishes cloud object-store operation from local-buffer kernel tests.",
+    "measurement": "For fixed top-3, explicit peak beyond retained input is 140 bytes for bigint, 524 for timestamp96 and 908 for 128-byte packed text, unchanged between 100 and 10000 input rows. The 10000-row medians are about 44 ms. No before/after speedup or total-heap claim is made.",
+    "next": "Investigate a shared reusable comparison-reader reservation to reduce per-comparison scope/allocator work without removing admission. Then extend scoped ordering to exact decimals across vector and row operators. General decimal sorting/grouping/aggregate/arithmetic integration and broader allocation coverage remain incomplete."
+  },
+  "reusableTopKScalarReads": {
+    "change": "Scalar vector reads share a VectorAllocator contract between owning scopes and a synchronous ScalarReadWorkspace. Owned top-K reuses admitted capacity instead of constructing a child scope per comparison. Growth reserves only the additional live-pair extent and merges exclusive reservation ledgers without releasing or readmitting charges. Workspace releases before output gathering and in final cleanup.",
+    "contract": "Each scalar leaf emits one admitted payload; dictionary/union reads delegate to their leaf. One merged reservation tracks the maximum pair extent without an input-sized directory. Numeric callback results cannot directly expose borrowed scalars; active disposal retains admission until callback completion. Closed scopes and failed growth clean up reservations. Allocation-free reads retain their existing path.",
+    "evidence": "../benchmarks/top-k-scalar-workspace-reused-2026-11-13.json",
+    "previousEvidence": "../benchmarks/top-k-scalar-workspace-2026-11-13.json",
+    "validation": {
+      "defaultPassed": 2958,
+      "defaultSkipped": 629,
+      "workerPassed": 61,
+      "build": "passed",
+      "typecheck": "passed",
+      "lint": "passed",
+      "cleanNpmInstall": "passed",
+      "focusedMergePartitionWorkspacePassed": 17,
+      "focusedTimestampWorkspaceMergePassed": 19,
+      "referencePassed": 104,
+      "conformance": {
+        "passed": 511,
+        "failed": 6,
+        "skipped": 1,
+        "remaining": "ALP, BSON and BROTLI through both readers"
+      }
+    },
+    "edgeCases": [
+      "Changing left/right packed-text extents grow by the exact additional live-pair cost without double charging previous capacity.",
+      "One-byte-short second-read admission rejects before its decoder runs and releases the first scalar.",
+      "Consumer exceptions, disposed readers and parent-scope closure leave no retained reservations.",
+      "Disposal during a consumer callback preserves admission until callback completion.",
+      "A reclaimer that closes the scope during growth aborts safely.",
+      "10000 stable dictionary comparisons use two reserve calls and no child scopes.",
+      "Original bigint/timestamp64/timestamp96/packed-text exact-capacity tests still pass.",
+      "Reversed union-leaf reads reuse capacity within one exactly admitted stage without spending the allowance twice.",
+      "Reservation merge keeps root/child charges unchanged, invokes no reclaimer, and preserves input handles on rejected merges."
+    ],
+    "cloudEvidence": "Real HTTP wide-timestamp owned top-K and concurrent native R2 text-key top-K tests remain passing. Clean npm install additionally orders the real Spark INT96 fixture through owned top-K and checks exact nanoseconds and zero final reservations. Timings remain local kernel measurements, not cloud throughput.",
+    "measurement": "At 10000 rows and top-3, median bigint selection improves from 43.5 to 0.9 ms, timestamp96 from 44.0 to 1.6 ms, and 128-byte packed text from 44.2 to 3.0 ms. Explicit peak beyond retained input remains 140, 524 and 908 bytes respectively, unchanged from 100 to 10000 rows. Input construction and output checks are outside timing.",
+    "next": "Connect exact decimal ordering to the shared comparator while propagating comparison scopes through vector, late-materialized and row/window paths before advertising broad operator capabilities. Generic decimal grouping/aggregate/arithmetic integration, ordinary high-precision vectors and broader allocation coverage remain unfinished. Runtime metadata and delayed GC are not covered by the explicit payload bounds.",
+    "discoveredDuringTesting": "The added prepaid-stage test caught that releasing a reservation does not restore the stage allowance. The initial consolidation implementation failed that test. MemoryReservation.merge now consumes two exclusive same-budget handles and transfers existing charges to one handle. Shared, cross-budget, released and self merges reject without consuming live admission; merge/partition round trips and repeated growth preserve parent/child charges.",
+    "intermediateEvidence": "../benchmarks/top-k-scalar-workspace-reused-initial-2026-11-13.json",
+    "concatRegression": "The expanded clean-install Spark INT96 top-K test exposed a shared-dictionary execution mismatch: planning admitted only indices while execution expanded timestamp96 payload. Execution now preserves the shared dictionary, matching the admitted plan. Exact 16-byte and one-byte-short core regression checks and the real installed-package fixture pass.",
+    "postConcatEvidence": "../benchmarks/top-k-scalar-workspace-reused-concat-fixed-2026-11-13.json",
+    "postConcatMeasurement": "Repeat under concurrent validation load: 0.78/1.76/3.74 ms for bigint/timestamp96/packed text; tracked workspace unchanged at 140/524/908 bytes. Timing is indicative, not a cloud throughput measurement."
+  }
+}

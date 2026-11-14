@@ -1,0 +1,26 @@
+{
+  "date": "2026-11-14",
+  "finding": "Window checkpoint queries did not recheck cancellation after an asynchronous batch commit; sort scopes did detect cancellation there.",
+  "changes": [
+    "Shared batch helper accepts a query budget check before staging, before commit and after commit.",
+    "Window and sort supply their existing query budget checks.",
+    "Batch contract explicitly preserves successfully published data when cancellation arrives during commit."
+  ],
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "targeted_tests": 37,
+    "new_cases": [
+      "Sort and window commits are held in flight, the query is cancelled, and commit is allowed to succeed. Both queries report LAKEQL_ABORTED, both checkpoint files remain published, and query reservations return to zero."
+    ],
+    "full_default_suite": {
+      "passed": 3446,
+      "skipped": 629
+    }
+  },
+  "remaining": [
+    "Commit cannot be retracted after successful publication; callers must not interpret cancellation as proof of no side effect.",
+    "No cloud spill adapter atomicity or total Worker heap claim follows from controlled in-memory fixtures.",
+    "Full audit acceptance remains open."
+  ]
+}

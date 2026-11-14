@@ -1,0 +1,77 @@
+{
+  "scope": "Local owned concatenation including source construction; explicit allocation accounting, not measured VM heap. One diagnostic run per case, no timing speedup claim. Every output value checked after timing; all owners release to zero. Repeated append followed by selecting [newest, previous] to keep exactly two rows. No cloud transport.",
+  "results": [
+    {
+      "appends": 32,
+      "rows": 2,
+      "modes": {
+        "selected": {
+          "elapsedMs": 15.335501,
+          "retainedBytes": 2175,
+          "peakBytes": 7580,
+          "unionDepth": 2
+        },
+        "strings": {
+          "elapsedMs": 9.183018000000004,
+          "retainedBytes": 2391,
+          "peakBytes": 7676,
+          "unionDepth": 2
+        },
+        "binary": {
+          "elapsedMs": 9.128867,
+          "retainedBytes": 2559,
+          "peakBytes": 8340,
+          "unionDepth": 2
+        }
+      }
+    },
+    {
+      "appends": 128,
+      "rows": 2,
+      "modes": {
+        "selected": {
+          "elapsedMs": 31.835222,
+          "retainedBytes": 2175,
+          "peakBytes": 7580,
+          "unionDepth": 2
+        },
+        "strings": {
+          "elapsedMs": 31.78984700000001,
+          "retainedBytes": 2391,
+          "peakBytes": 7676,
+          "unionDepth": 2
+        },
+        "binary": {
+          "elapsedMs": 31.617072999999976,
+          "retainedBytes": 2559,
+          "peakBytes": 8340,
+          "unionDepth": 2
+        }
+      }
+    },
+    {
+      "appends": 512,
+      "rows": 2,
+      "modes": {
+        "selected": {
+          "elapsedMs": 104.77624800000001,
+          "retainedBytes": 2175,
+          "peakBytes": 7580,
+          "unionDepth": 2
+        },
+        "strings": {
+          "elapsedMs": 70.88988699999999,
+          "retainedBytes": 2391,
+          "peakBytes": 7676,
+          "unionDepth": 2
+        },
+        "binary": {
+          "elapsedMs": 80.57524800000004,
+          "retainedBytes": 2559,
+          "peakBytes": 8340,
+          "unionDepth": 2
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "description": "Owned decimal vector compaction with nulls and real class/value assertions. Input arrays supplied by the caller are outside the pool. Reservation units are not measured VM heap. No IO or cloud claim.",
+  "node": "v24.18.1",
+  "sources": {
+    "batch": "e6abf5ff051223f668d5c8a9cb203b52b4f03fccd489f34144b54123ce773cbe",
+    "decimal-value": "79ad93bbc03aa2ba663b5d8440736e909a0dd5ba77fa3a34c69d2c8d741a0f40",
+    "selected-concat": "d6df9819cad9ad3c0ea095169c456111a5d19fd2d4606ae82421877969f2c9aa",
+    "vector-selection": "b73274428b1597be947853fb99a74328eaa8587ccf735fa6fd7f08a1df9f9bbb",
+    "vector-sort": "18ffa8a4e686322fbff488710417322c55b02c4bb6764dffbc44bd293349bdb2",
+    "packed-gather": "b1e98de45006ac4ed3b4a3e89473fec3026ce0e517dceeea10f33e0cbdd9ae9e"
+  },
+  "results": [
+    {
+      "rows": 100,
+      "inputBytes": 25260,
+      "outputBytes": 827,
+      "peakReservedBytes": 26087
+    },
+    {
+      "rows": 10000,
+      "inputBytes": 2543160,
+      "outputBytes": 827,
+      "peakReservedBytes": 2543987
+    }
+  ]
+}

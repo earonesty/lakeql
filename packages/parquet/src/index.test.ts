@@ -1315,7 +1315,7 @@ describe("createParquetLake", () => {
     await writeParquet(schemaStore, "schemas/compatible/a.parquet", {
       columnData: [
         { name: "id", data: [1], type: "INT32" },
-        { name: "extra", data: ["a"], type: "BYTE_ARRAY", converted_type: "UTF8" },
+        { name: "extra", data: ["a"], type: "STRING" },
       ],
     });
     await writeParquet(schemaStore, "schemas/compatible/b.parquet", {
@@ -2209,6 +2209,57 @@ describe("createParquetLake", () => {
     expect(second.stats.cacheMisses).toBe(0);
   });
 
+  it("reclaims default planning cache storage and rediscovers real fixtures under pressure", async () => {
+    const taskStore = countingObjectStore(store);
+    let heads = 0;
+    const head = taskStore.head.bind(taskStore);
+    taskStore.head = async (path) => {
+      heads++;
+      return head(path);
+    };
+    const lake = createParquetLake({ store: taskStore, cache: { maxBytes: 1024 * 1024 } });
+    const run = () => lake.path(`data/${STATS.file}`).where(lt("metric", 0)).count();
+    expect(await run()).toBe(0);
+    expect(lake.memoryPool.usedBytes).toBeGreaterThan(0);
+    taskStore.resetCounters();
+    heads = 0;
+    expect(await run()).toBe(0);
+    expect(heads).toBe(0);
+    const sibling = lake.memoryPool.reserve(lake.memoryPool.maxBytes, "sibling pressure");
+    sibling.release();
+    expect(lake.memoryPool.usedBytes).toBe(0);
+    taskStore.resetCounters();
+    heads = 0;
+    expect(await run()).toBe(0);
+    expect(heads).toBeGreaterThan(0);
+    const cleanup = lake.memoryPool.reserve(lake.memoryPool.maxBytes, "cache cleanup");
+    cleanup.release();
+    expect(lake.memoryPool.usedBytes).toBe(0);
+  });
+
+  it.each([
+    { maxBytes: 0 },
+    { maxBytes: 1024 * 1024, ttlMs: 0 },
+  ])("applies disabled or expired cache configuration to discovery: %j", async (cache) => {
+    const taskStore = countingObjectStore(store);
+    let heads = 0;
+    const head = taskStore.head.bind(taskStore);
+    taskStore.head = async (path) => {
+      heads++;
+      return head(path);
+    };
+    const lake = createParquetLake({ store: taskStore, cache });
+    const run = () => lake.path(`data/${STATS.file}`).where(lt("metric", 0)).count();
+    expect(await run()).toBe(0);
+    taskStore.resetCounters();
+    heads = 0;
+    expect(await run()).toBe(0);
+    expect(heads).toBeGreaterThan(0);
+    const cleanup = lake.memoryPool.reserve(lake.memoryPool.maxBytes, "cache cleanup");
+    cleanup.release();
+    expect(lake.memoryPool.usedBytes).toBe(0);
+  });
+
   it("reuses decoded column batches from the shared cache budget", async () => {
     const lake = createParquetLake({
       store,
@@ -2225,6 +2276,8 @@ describe("createParquetLake", () => {
     const firstRows = await first.toArray();
     expect(firstRows).toHaveLength(2);
     expect(first.stats.cacheMisses).toBeGreaterThan(0);
+    expect(lake.memoryPool.usedBytes).toBeGreaterThan(0);
+    expect(lake.memoryPool.peakBytes).toBeLessThanOrEqual(lake.memoryPool.maxBytes);
 
     const second = lake
       .path(`data/${STATS.file}`)
@@ -2235,6 +2288,8 @@ describe("createParquetLake", () => {
       .run();
     await expect(second.toArray()).resolves.toEqual(firstRows);
     expect(second.stats.cacheHits).toBeGreaterThan(1);
+    expect(lake.memoryPool.usedBytes).toBeGreaterThan(0);
+    expect(lake.memoryPool.peakBytes).toBeLessThanOrEqual(lake.memoryPool.maxBytes);
   });
 
   it("spends scan range cache entries from the shared cache budget", async () => {
@@ -2621,6 +2676,37 @@ describe("timestamp logical values", () => {
         .select(["id"])
         .toArray(),
     ).resolves.toEqual([{ id: 2 }]);
+    // A nanosecond literal between stored microsecond ticks must not be rounded
+    // to the first row's timestamp by the vector comparison fast path.
+    await expect(
+      lake
+        .path(path)
+        .where(lt("loaded_at", "2023-11-14T22:13:20.000001001Z"))
+        .select(["id"])
+        .toArray(),
+    ).resolves.toEqual([{ id: 1 }]);
+    await expect(
+      lake
+        .path(path)
+        .where(eq("loaded_at", "2023-11-14T22:13:20.000001001Z"))
+        .select(["id"])
+        .toArray(),
+    ).resolves.toEqual([]);
+    await expect(
+      lake
+        .path(path)
+        .groupBy([])
+        .aggregate({
+          matching: {
+            op: "sum",
+            expr: {
+              kind: "case",
+              whens: [{ when: lt("loaded_at", "2023-11-14T22:13:20.000001001Z"), value: lit(1) }],
+              else: lit(0),
+            },
+          },
+        }),
+    ).resolves.toEqual([{ matching: 1 }]);
   });
 });
 
@@ -2632,7 +2718,7 @@ describe("rejectUnsupportedParquetSchema", () => {
     ).not.toThrow();
   });
 
-  it("rejects unannotated Parquet groups as unsupported structs", () => {
+  it("accepts unannotated groups supported by generic struct vectors", () => {
     expect(() =>
       rejectUnsupportedParquetSchema(
         metadataWithSchema([
@@ -2641,19 +2727,10 @@ describe("rejectUnsupportedParquetSchema", () => {
           { name: "street", type: "BYTE_ARRAY", converted_type: "UTF8" },
         ]),
       ),
-    ).toThrowError(LakeqlError);
-    expect(() =>
-      rejectUnsupportedParquetSchema(
-        metadataWithSchema([
-          { name: "root", num_children: 1 },
-          { name: "address", num_children: 1, repetition_type: "OPTIONAL" },
-          { name: "street", type: "BYTE_ARRAY", converted_type: "UTF8" },
-        ]),
-      ),
-    ).toThrow(/struct/u);
+    ).not.toThrow();
   });
 
-  it("allows projected scalar columns when unprojected columns are unsupported structs", () => {
+  it("accepts scalar and struct projections through generic vector capabilities", () => {
     const metadata = metadataWithSchema([
       { name: "root", num_children: 2 },
       { name: "id", type: "INT32" },
@@ -2665,10 +2742,8 @@ describe("rejectUnsupportedParquetSchema", () => {
     ]);
 
     expect(() => rejectUnsupportedParquetSchema(metadata, { columns: ["id"] })).not.toThrow();
-    expect(() => rejectUnsupportedParquetSchema(metadata, { columns: ["bbox"] })).toThrowError(
-      LakeqlError,
-    );
-    expect(() => rejectUnsupportedParquetSchema(metadata)).toThrowError(LakeqlError);
+    expect(() => rejectUnsupportedParquetSchema(metadata, { columns: ["bbox"] })).not.toThrow();
+    expect(() => rejectUnsupportedParquetSchema(metadata)).not.toThrow();
   });
 
   it("rejects unsupported precision-sensitive decimals without rejecting timestamps", () => {
@@ -2698,7 +2773,7 @@ describe("rejectUnsupportedParquetSchema", () => {
             scale: 4,
           },
         ]),
-        { allowValueCheckedInt64Decimals: true },
+        { allowValueCheckedScalarDecimals: true },
       ),
     ).not.toThrow();
     expect(() =>
@@ -2714,9 +2789,9 @@ describe("rejectUnsupportedParquetSchema", () => {
             scale: 4,
           },
         ]),
-        { allowValueCheckedInt64Decimals: true },
+        { allowValueCheckedScalarDecimals: true },
       ),
-    ).toThrow(/precision 15/u);
+    ).not.toThrow();
     expect(() =>
       rejectUnsupportedParquetSchema(
         metadataWithSchema([
@@ -2779,7 +2854,7 @@ describe("rejectUnsupportedParquetSchema", () => {
             scale: 4,
           },
         ]),
-        { allowValueCheckedInt64Decimals: true },
+        { allowValueCheckedScalarDecimals: true },
       ),
     ).toThrowError(
       expect.objectContaining({
@@ -2799,7 +2874,7 @@ describe("rejectUnsupportedParquetSchema", () => {
             logical_type: { type: "DECIMAL", precision: 18, scale: 4 },
           },
         ]),
-        { allowValueCheckedInt64Decimals: true },
+        { allowValueCheckedScalarDecimals: true },
       ),
     ).toThrowError(
       expect.objectContaining({
@@ -2809,7 +2884,7 @@ describe("rejectUnsupportedParquetSchema", () => {
     );
   });
 
-  it("applies the struct rejection before row-group planning", () => {
+  it("allows generic struct shapes during row-group planning", () => {
     expect(() =>
       planRowGroupsFromMetadata(
         metadataWithSchema([
@@ -2819,7 +2894,7 @@ describe("rejectUnsupportedParquetSchema", () => {
         ]),
         undefined,
       ),
-    ).toThrowError(LakeqlError);
+    ).not.toThrow();
   });
 });
 

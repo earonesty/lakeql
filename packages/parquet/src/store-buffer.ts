@@ -1,7 +1,9 @@
 import {
   LakeqlError,
+  type MemoryScope,
   type ObjectInfo,
   type ObjectStore,
+  type OwnedMemory,
   type ScanOptions,
   throwIfAborted,
   withObjectStoreReadControls,
@@ -28,7 +30,14 @@ export async function asyncBufferFromStore(
   if (!head) {
     throw new LakeqlError("LAKEQL_OBJECT_NOT_FOUND", `No object at ${path}`, { path });
   }
-  return storeAsyncBuffer(controlledStore, path, head.size, head.etag, options);
+  return storeAsyncBuffer(
+    controlledStore,
+    path,
+    head.size,
+    head.etag,
+    options,
+    ownedStore(store, options),
+  );
 }
 
 export function asyncBufferFromObjectInfo(
@@ -38,7 +47,22 @@ export function asyncBufferFromObjectInfo(
 ): StoreAsyncBuffer {
   const controlledStore =
     options === undefined ? store : withObjectStoreReadControls(store, options.budget);
-  return storeAsyncBuffer(controlledStore, object.path, object.size, object.etag, options);
+  return storeAsyncBuffer(
+    controlledStore,
+    object.path,
+    object.size,
+    object.etag,
+    options,
+    ownedStore(store, options),
+  );
+}
+
+function ownedStore(store: ObjectStore, options: ScanOptions | undefined): ObjectStore {
+  // Owned I/O follows the supplied stage lifetime, which may have several query
+  // waiters. The initiating query must not own cancellation of that shared read.
+  return options?.budget.maxConcurrentReads === undefined
+    ? store
+    : withObjectStoreReadControls(store, { maxConcurrentReads: options.budget.maxConcurrentReads });
 }
 
 function storeAsyncBuffer(
@@ -47,25 +71,101 @@ function storeAsyncBuffer(
   byteLength: number,
   etag: string | undefined,
   options: ScanOptions | undefined,
+  ownedSource: ObjectStore,
 ): StoreAsyncBuffer {
+  if (!Number.isSafeInteger(byteLength) || byteLength < 0)
+    throw new LakeqlError("LAKEQL_PARQUET_READ_ERROR", "Invalid Parquet object size", {
+      path,
+      byteLength,
+    });
+  function validateRange(start: number, end: number): void {
+    if (
+      !Number.isSafeInteger(start) ||
+      !Number.isSafeInteger(end) ||
+      start < 0 ||
+      end < start ||
+      end > byteLength
+    )
+      throw new LakeqlError("LAKEQL_PARQUET_READ_ERROR", "Invalid Parquet byte range", {
+        path,
+        start,
+        end,
+        byteLength,
+      });
+  }
+  function beginRead(length: number, signal = options?.budget.signal): number | undefined {
+    if (options) {
+      throwIfAborted(signal);
+      options.stats.rangeRequests += 1;
+      options.stats.bytesRequested += length;
+      options.stats.physicalBytesRequested = (options.stats.physicalBytesRequested ?? 0) + length;
+      enforcePhysicalReadBudget(options);
+    }
+    return options?.now();
+  }
+  function endRead(started: number | undefined, signal = options?.budget.signal): void {
+    if (options !== undefined && started !== undefined) {
+      options.stats.objectStoreWaitMs =
+        (options.stats.objectStoreWaitMs ?? 0) + (options.now() - started);
+    }
+    throwIfAborted(signal);
+  }
+  const ownedRead = ownedSource.getRangeOwned?.bind(ownedSource);
   const buffer: StoreAsyncBuffer = {
     byteLength,
-    slice: async (start: number, end?: number): Promise<ArrayBuffer> => {
-      const length = (end ?? byteLength) - start;
-      if (options) {
-        throwIfAborted(options.budget.signal);
-        options.stats.rangeRequests += 1;
-        options.stats.bytesRequested += length;
-        options.stats.physicalBytesRequested = (options.stats.physicalBytesRequested ?? 0) + length;
-        enforcePhysicalReadBudget(options);
-      }
-      const readStartedAt = options?.now();
+    ...(ownedRead === undefined
+      ? {}
+      : {
+          // The object-store result and a possible contiguous ArrayBuffer copy.
+          ownedReadAllocationBytes: (start: number, end: number) => {
+            validateRange(start, end);
+            const forecast = ownedSource.getRangeOwnedAllocation?.(path, {
+              offset: start,
+              length: end - start,
+            });
+            if (forecast === undefined) return 2 * (end - start);
+            if (!Number.isSafeInteger(forecast.bytes) || forecast.bytes < 0)
+              throw new LakeqlError(
+                "LAKEQL_VALIDATION_ERROR",
+                "Invalid owned store allocation forecast",
+              );
+            return forecast.bytes + (forecast.output === "exact-buffer" ? 0 : end - start);
+          },
+          async sliceOwned(
+            start: number,
+            end: number,
+            scope: MemoryScope,
+          ): Promise<OwnedMemory<ArrayBuffer>> {
+            validateRange(start, end);
+            const started = beginRead(end - start, scope.signal);
+            const owner = await ownedRead(path, { offset: start, length: end - start }, scope);
+            try {
+              endRead(started, scope.signal);
+              const bytes = owner.value;
+              if (
+                bytes.buffer instanceof ArrayBuffer &&
+                bytes.byteOffset === 0 &&
+                bytes.byteLength === bytes.buffer.byteLength
+              ) {
+                return arrayBufferOwner(owner, bytes.buffer);
+              }
+              const output = scope.allocate(bytes.byteLength, "Parquet contiguous range", () =>
+                bytesToArrayBuffer(bytes),
+              );
+              owner.release();
+              return output;
+            } catch (error) {
+              owner.release();
+              throw error;
+            }
+          },
+        }),
+    slice: async (start: number, end = byteLength): Promise<ArrayBuffer> => {
+      validateRange(start, end);
+      const length = end - start;
+      const started = beginRead(length);
       const bytes = await store.getRange(path, { offset: start, length });
-      if (options !== undefined && readStartedAt !== undefined) {
-        options.stats.objectStoreWaitMs =
-          (options.stats.objectStoreWaitMs ?? 0) + (options.now() - readStartedAt);
-      }
-      throwIfAborted(options?.budget.signal);
+      endRead(started);
       return bytesToArrayBuffer(bytes);
     },
   };
@@ -111,4 +211,18 @@ function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   const out = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(out).set(bytes);
   return out;
+}
+
+function arrayBufferOwner(
+  owner: OwnedMemory<Uint8Array>,
+  value: ArrayBuffer,
+): OwnedMemory<ArrayBuffer> {
+  return {
+    value,
+    bytes: owner.bytes,
+    budget: owner.budget,
+    retain: () => arrayBufferOwner(owner.retain(), value),
+    retainIn: (budget) => arrayBufferOwner(owner.retainIn(budget), value),
+    release: () => owner.release(),
+  };
 }

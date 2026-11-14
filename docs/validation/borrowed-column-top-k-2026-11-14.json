@@ -1,0 +1,121 @@
+{
+  "date": "2026-11-14",
+  "requirements": ["F3", "F5", "M1", "V1"],
+  "changes": [
+    "Columnar top-k always admits physical execution scratch and retains an owned selected batch. Borrowed candidates detach before scanner advance; owned candidates retain their existing backing.",
+    "Remove duplicate unowned merge and output branches, using owned concatenation, top-k and row materialization for both scanner capabilities.",
+    "Enable explicit owned results for borrowed column scanners.",
+    "Normalize ordering through the existing scoped normalization helper, releasing planning storage at query completion."
+  ],
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "full_default_suite": {
+      "passed": 3457,
+      "skipped": 629
+    },
+    "targeted_initial_tests": 107,
+    "new_boundary_cases": [
+      "Plain and owned results preserve binary winners across two reused borrowed batches.",
+      "Exact observed allocation peak succeeds; one byte below rejects; success and failure release query reservations."
+    ],
+    "http_tests": 8,
+    "http_routes": "Borrowed eager baseline explicitly asserts scanColumns execution; range-honoring deferred route still asserts rank-only then winner-only reads. Four concurrent cold/warm jobs at 64/128 MiB and read cap two.",
+    "http_metrics": [
+      {
+        "ignoreRange": false,
+        "ranked": false,
+        "borrowed": false,
+        "poolMiB": 64,
+        "fixtureBytes": 269115,
+        "eagerBytes": 219157,
+        "deferredBytes": 84933,
+        "peakReads": 2,
+        "peakAllocatedBytes": 901387
+      },
+      {
+        "ignoreRange": true,
+        "ranked": false,
+        "borrowed": false,
+        "poolMiB": 64,
+        "fixtureBytes": 269115,
+        "eagerBytes": 5382300,
+        "deferredBytes": 5382300,
+        "peakReads": 2,
+        "peakAllocatedBytes": 694186
+      },
+      {
+        "ignoreRange": false,
+        "ranked": true,
+        "borrowed": false,
+        "poolMiB": 64,
+        "fixtureBytes": 269115,
+        "eagerBytes": 332786,
+        "deferredBytes": 101371,
+        "peakReads": 2,
+        "peakAllocatedBytes": 584595
+      },
+      {
+        "ignoreRange": false,
+        "ranked": true,
+        "borrowed": true,
+        "poolMiB": 64,
+        "fixtureBytes": 269115,
+        "eagerBytes": 332786,
+        "deferredBytes": 84826,
+        "peakReads": 2,
+        "peakAllocatedBytes": 358656
+      },
+      {
+        "ignoreRange": false,
+        "ranked": true,
+        "borrowed": true,
+        "poolMiB": 128,
+        "fixtureBytes": 269115,
+        "eagerBytes": 332786,
+        "deferredBytes": 84826,
+        "peakReads": 2,
+        "peakAllocatedBytes": 358656
+      },
+      {
+        "ignoreRange": true,
+        "ranked": true,
+        "borrowed": false,
+        "poolMiB": 64,
+        "fixtureBytes": 269115,
+        "eagerBytes": 9149910,
+        "deferredBytes": 9149910,
+        "peakReads": 2,
+        "peakAllocatedBytes": 848624
+      },
+      {
+        "ignoreRange": true,
+        "ranked": true,
+        "borrowed": true,
+        "poolMiB": 64,
+        "fixtureBytes": 269115,
+        "eagerBytes": 269115,
+        "deferredBytes": 269115,
+        "peakReads": 2,
+        "peakAllocatedBytes": 384806
+      },
+      {
+        "ignoreRange": true,
+        "ranked": true,
+        "borrowed": true,
+        "poolMiB": 128,
+        "fixtureBytes": 269115,
+        "eagerBytes": 269115,
+        "deferredBytes": 269115,
+        "peakReads": 2,
+        "peakAllocatedBytes": 384806
+      }
+    ]
+  },
+  "remaining": [
+    "Caller/borrowed scanner source allocations remain outside admission; this covers retained candidate data and supported execution workspaces.",
+    "Selected physical views can reference larger dictionaries; detachment charges the physical backing it copies, not just logical selected rows.",
+    "Other planner/decoder/runtime allocations and whole-Worker heap limits remain open.",
+    "Earlier HTTP metrics are historical; the current borrowed adapter now exposes scanColumns as well as scanVectorBatches."
+  ]
+}

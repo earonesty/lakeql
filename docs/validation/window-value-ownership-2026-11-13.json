@@ -1,0 +1,48 @@
+{
+  "requirements": ["F4", "M1", "V3"],
+  "status": "Computed non-aggregate window values admitted through their consumption lifetime; full acceptance remains open",
+  "implementation": [
+    "One shared value-ownership helper serves row, run and vector backends for LAG, LEAD, FIRST_VALUE, LAST_VALUE and NTH_VALUE, including defaults and IGNORE NULLS.",
+    "Per-probe expression scopes release skipped candidates and null-check scratch immediately. Selected payloads transfer to a result scope retained through streaming suspension and awaited checkpoint writes.",
+    "Equal immutable scalar outputs reuse the retained value and its reservation. Mutable values use owned detachment. Failed backend construction rolls back new allocations without releasing pre-existing caller allocations."
+  ],
+  "validation": {
+    "default": {
+      "command": "pnpm exec vitest run",
+      "passed": 3250,
+      "skipped": 629
+    },
+    "worker": {
+      "command": "pnpm exec vitest run -c vitest.workerd.config.ts",
+      "passed": 75
+    },
+    "focusedCloudAndOwnership": {
+      "passed": 41
+    },
+    "newOwnershipCases": 36,
+    "cases": [
+      "Five value functions across row/run/vector execution with both null policies and oversized expansion rejection",
+      "Retained immutable scalar reuse and repeated scratch-probe cleanup",
+      "Rollback with a pre-existing caller reservation",
+      "Streaming suspension and early-return release",
+      "Oversized LAG/LEAD defaults",
+      "Delayed checkpoint-write retention"
+    ],
+    "realFixtures": "Extended Parquet expression routes cover computed window values and resumable window values over local HTTP 206 and ignored-Range 200 responses, plus local workerd R2; shared 64/128 MiB pools remain distinct from per-query limits.",
+    "reference": {
+      "command": "pnpm test:reference",
+      "passed": 104
+    },
+    "typecheck": "pnpm typecheck passed",
+    "build": "pnpm exec tsc -b passed before cross-package tests",
+    "lint": "pnpm lint passed"
+  },
+  "remainingAcceptance": [
+    "Aggregate window payloads, copied backend result rows/properties, vector row materialization and sort-group planning metadata still require complete ownership coverage.",
+    "Final collection, checkpoint serialization/state parsing, projected checkpoint output and delegated task output remain open.",
+    "Checkpoint cancellation after asynchronous writes and the complete mixed-job acceptance matrix remain open.",
+    "Unknown input scalar provenance can be conservatively double charged. No per-row whole-state provenance walk was introduced.",
+    "Tracked reservations do not certify total heap, external backing, RSS or production Cloudflare memory safety. Prior benchmark evidence is kernel-specific and was not rerun for this ownership change."
+  ],
+  "followupEvidence": "docs/validation/window-result-records-2026-11-13.json"
+}

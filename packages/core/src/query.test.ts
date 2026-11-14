@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { batchFromColumns } from "./batch.js";
 import { LakeqlError } from "./errors.js";
 import { add, and, between, col, eq, fn, gt, isIn, isNull, like, lit, not, or } from "./expr.js";
@@ -120,6 +120,8 @@ class FakeScanner implements ScanAdapter {
   readonly requestedVectorBatchColumns: (string[] | undefined)[] = [];
   readonly requestedVectorBatchWindows: { rowStart?: number; rowEnd?: number }[] = [];
   readonly requestedBatchSizes: number[] = [];
+  readonly requestedVectorBatchSizes: number[] = [];
+  readonly requestedColumnBatchSizes: number[] = [];
   readonly requestedPaths: string[] = [];
   readonly requestedWindowTasks: TaskInput[][] = [];
   readonly scanColumns?: ScanAdapter["scanColumns"];
@@ -150,6 +152,7 @@ class FakeScanner implements ScanAdapter {
       ): AsyncIterable<ScanColumnBatch> {
         this.requestedPaths.push(path);
         this.requestedVectorBatchColumns.push(options.columns);
+        this.requestedVectorBatchSizes.push(options.batchSize);
         this.requestedVectorBatchWindows.push({
           ...(options.rowStart === undefined ? {} : { rowStart: options.rowStart }),
           ...(options.rowEnd === undefined ? {} : { rowEnd: options.rowEnd }),
@@ -173,6 +176,7 @@ class FakeScanner implements ScanAdapter {
       this.scanColumns = async function* (this: FakeScanner, path: string, options: ScanOptions) {
         this.requestedPaths.push(path);
         this.requestedColumnBatchColumns.push(options.columns);
+        this.requestedColumnBatchSizes.push(options.batchSize);
         const rows = this.rowsByPath[path] ?? [];
         for (let offset = 0; offset < rows.length; offset += options.batchSize) {
           const slice = rows.slice(offset, offset + options.batchSize);
@@ -266,6 +270,64 @@ async function makeLake(config: {
 }
 
 describe("Lake query runtime", () => {
+  it("keeps row top-k stable and enforces exact serialized limits after replacements", async () => {
+    const rows = [
+      { id: 0, score: 2 },
+      { id: 1, score: 2 },
+      { id: 2, score: 1 },
+    ];
+    const maxMemoryBytes = new TextEncoder().encode(JSON.stringify(rows.slice(0, 2))).byteLength;
+    const create = (bytes: number) =>
+      makeLake({
+        rowsByPath: { table: rows },
+        vectorBatches: false,
+        columnBatches: false,
+        budget: { maxMemoryBytes: bytes, maxAllocatedMemoryBytes: 65536 },
+      });
+    const { lake } = await create(maxMemoryBytes);
+    await expect(
+      lake
+        .path("table")
+        .select(["id", "score"])
+        .orderBy([{ column: "score" }])
+        .limit(2)
+        .topKWithState(),
+    ).resolves.toMatchObject({ rows: [rows[2], rows[0]] });
+    const tooSmall = await create(maxMemoryBytes - 1);
+    await expect(
+      tooSmall.lake
+        .path("table")
+        .select(["id", "score"])
+        .orderBy([{ column: "score" }])
+        .limit(2)
+        .topKWithState(),
+    ).rejects.toMatchObject({
+      code: "LAKEQL_BUDGET_EXCEEDED",
+      details: { actual: maxMemoryBytes },
+    });
+  });
+
+  it("accounts DISTINCT keys incrementally with escaped Unicode and duplicate rows", async () => {
+    const rows = [{ label: 'é😀\n"' }, { label: "other" }];
+    const maxMemoryBytes = new TextEncoder().encode(
+      JSON.stringify(rows.map((row) => JSON.stringify(row))),
+    ).byteLength;
+    const create = (bytes: number) =>
+      makeLake({
+        rowsByPath: { table: [...rows, ...rows] },
+        vectorBatches: false,
+        columnBatches: false,
+        budget: { maxMemoryBytes: bytes, maxAllocatedMemoryBytes: 65536 },
+      });
+    const { lake } = await create(maxMemoryBytes);
+    await expect(lake.path("table").distinct().toArray()).resolves.toEqual(rows);
+    const tooSmall = await create(maxMemoryBytes - 1);
+    await expect(tooSmall.lake.path("table").distinct().toArray()).rejects.toMatchObject({
+      code: "LAKEQL_BUDGET_EXCEEDED",
+      details: { actual: maxMemoryBytes },
+    });
+  });
+
   it("expands globs, filters, offsets, limits, projects, and records stats", async () => {
     const { lake, scanner } = await makeLake({
       rowsByPath: {
@@ -1125,11 +1187,16 @@ describe("Lake query runtime", () => {
       .toArray();
     await lake
       .path("table")
+      .select(["id"])
       .where(between("a", col("b"), 4))
       .toArray();
-    await lake.path("table").where(like("c", "Los%")).toArray();
+    await lake.path("table").select(["id"]).where(like("c", "Los%")).toArray();
 
-    expect(scanner.requestedColumns).toEqual([["c", "d", "id"], ["a", "b"], ["c"]]);
+    expect(scanner.requestedColumns).toEqual([
+      ["c", "d", "id"],
+      ["a", "b", "id"],
+      ["c", "id"],
+    ]);
   });
 
   it("plans hive partition tasks, prunes files, and explains the plan", async () => {
@@ -2003,14 +2070,17 @@ describe("Lake query runtime", () => {
         .orderBy([{ column: "score", direction: "asc" }])
         .limit(2)
         .toArray(),
-    ).resolves.toEqual([{ score: 10 }, { score: 30 }]);
+    ).resolves.toEqual([
+      { id: 4, score: 10, name: "low" },
+      { id: 3, score: 30, name: "same-a" },
+    ]);
     await expect(
       lake
         .path("data/*.parquet")
         .orderBy([{ column: "score", direction: "desc" }])
         .limit(1)
         .toArray(),
-    ).resolves.toEqual([{ score: null }]);
+    ).resolves.toEqual([{ id: 1, score: null, name: "missing" }]);
     await expect(
       lake
         .path("data/*.parquet")
@@ -2020,7 +2090,7 @@ describe("Lake query runtime", () => {
         ])
         .limit(1)
         .toArray(),
-    ).resolves.toEqual([{ id: 3, score: 30 }]);
+    ).resolves.toEqual([{ id: 3, score: 30, name: "same-a" }]);
     expect(
       (
         await lake
@@ -2028,7 +2098,7 @@ describe("Lake query runtime", () => {
           .orderBy([{ column: "score" }])
           .planTasks()
       )[0],
-    ).toMatchObject({ projectedColumns: ["score"] });
+    ).not.toHaveProperty("projectedColumns");
   });
 
   it("applies top-k over sparse selected vector rows", async () => {
@@ -2108,7 +2178,7 @@ describe("Lake query runtime", () => {
       (
         await makeLake({
           rowsByPath: { table: [{ id: 2 }, { id: 1 }] },
-          budget: { maxMemoryBytes: 1 },
+          budget: { maxMemoryBytes: 1, maxAllocatedMemoryBytes: 65536 },
         })
       ).lake
         .path("table")
@@ -2466,7 +2536,12 @@ describe("Lake query runtime", () => {
             { id: 6, region: "c", amount: 60 },
           ],
         },
-        budget: { maxBufferedRows: 2, maxWindowPartitionRows: 2, maxMemoryBytes: 170 },
+        budget: {
+          maxBufferedRows: 2,
+          maxWindowPartitionRows: 2,
+          maxMemoryBytes: 170,
+          maxAllocatedMemoryBytes: 65536,
+        },
       })
     ).lake
       .path("table")
@@ -3058,7 +3133,12 @@ describe("Lake query runtime", () => {
     ).rejects.toMatchObject({ code: "LAKEQL_GROUP_LIMIT_EXCEEDED" });
 
     await expect(
-      (await makeLake({ rowsByPath, budget: { maxMemoryBytes: 1 } })).lake
+      (
+        await makeLake({
+          rowsByPath,
+          budget: { maxMemoryBytes: 1, maxAllocatedMemoryBytes: 65536 },
+        })
+      ).lake
         .path("table")
         .groupBy(["region"])
         .aggregate({ rows: { op: "count" } }),
@@ -3857,4 +3937,261 @@ describe("Lake query runtime", () => {
         .windowWithState({ spill: memorySpillAdapter() }),
     ).rejects.toMatchObject({ code: "LAKEQL_TYPE_ERROR" });
   });
+});
+
+it.each([
+  false,
+  true,
+])("bounds retained late-materialization state (ordered=%s)", async (ordered) => {
+  async function run(maxMemoryBytes: number) {
+    const { lake } = await makeLake({
+      vectorBatches: true,
+      rowsByPath: { table: [{ score: 2, payload: "winner" }] },
+      // Isolate serialized-state limits from admitted allocation workspace.
+      budget: { maxMemoryBytes, maxAllocatedMemoryBytes: 65536 },
+    });
+    let query = lake.path("table").select(["score", "payload"]).where(gt("score", 0)).limit(1);
+    if (ordered) query = query.orderBy([{ column: "score", direction: "desc" }]);
+    return query.toArray();
+  }
+  if (!ordered) {
+    // Streaming deferred limits no longer retain serialized row references.
+    await expect(run(1)).resolves.toEqual([{ score: 2, payload: "winner" }]);
+    return;
+  }
+
+  let actual = 0;
+  try {
+    await run(1);
+  } catch (error) {
+    expect(error).toBeInstanceOf(LakeqlError);
+    if (error instanceof LakeqlError) actual = Number(error.details.actual);
+  }
+  expect(actual).toBeGreaterThan(1);
+  await expect(run(actual)).resolves.toEqual([{ score: 2, payload: "winner" }]);
+  await expect(run(actual - 1)).rejects.toMatchObject({
+    code: "LAKEQL_BUDGET_EXCEEDED",
+    details: { actual },
+  });
+});
+
+it("preserves late-materialized top-k ties and offsets", async () => {
+  const rows = Array.from({ length: 100 }, (_, index) => ({
+    score: index % 7,
+    payload: `row-${index}`,
+  }));
+  const { lake, scanner } = await makeLake({
+    vectorBatches: true,
+    rowsByPath: { table: rows },
+    budget: { maxMemoryBytes: 64 * 1024 },
+  });
+  const actual = await lake
+    .path("table")
+    .select(["score", "payload"])
+    .batchSize(7)
+    .orderBy([{ column: "score", direction: "desc" }])
+    .offset(3)
+    .limit(12)
+    .toArray();
+  expect(actual).toEqual([...rows].sort((a, b) => b.score - a.score).slice(3, 15));
+  expect(scanner.requestedVectorBatchColumns[0]).toEqual(["score"]);
+  expect(scanner.requestedVectorBatchSizes.length).toBeGreaterThan(0);
+  expect(scanner.requestedVectorBatchSizes.every((size) => size <= 7)).toBe(true);
+});
+
+it("matches full aggregate snapshots at exact byte and buffered-value boundaries", async () => {
+  const rows = [
+    { key: "é", value: 1 },
+    { key: 'a"b', value: 2 },
+    { key: "é", value: 3 },
+    { key: "😀", value: 4 },
+    { key: 'a"b', value: 2 },
+  ];
+  const spec = {
+    count: { op: "count" },
+    median: { op: "median", column: "value" },
+    distinct: { op: "count_distinct", column: "value" },
+  } satisfies AggregateSpec;
+  for (let count = 1; count <= rows.length; count += 1) {
+    const prefix = rows.slice(0, count);
+    const baseline = await (await makeLake({ rowsByPath: { table: prefix } })).lake
+      .path("table")
+      .groupBy(["key"])
+      .aggregateWithState(spec);
+    const exact = baseline.operatorState.byteLength;
+    const run = async (maxMemoryBytes: number) =>
+      (
+        await makeLake({
+          rowsByPath: { table: prefix },
+          budget: { maxMemoryBytes, maxAllocatedMemoryBytes: 1024 * 1024 },
+        })
+      ).lake
+        .path("table")
+        .groupBy(["key"])
+        .aggregateWithState(spec);
+    expect((await run(exact)).rows).toEqual(baseline.rows);
+    await expect(run(exact - 1)).rejects.toMatchObject({
+      code: "LAKEQL_BUDGET_EXCEEDED",
+      details: { actual: exact },
+    });
+  }
+  const first = await (await makeLake({ rowsByPath: { table: rows.slice(0, 2) } })).lake
+    .path("table")
+    .groupBy(["key"])
+    .aggregateWithState(spec);
+  const all = await (await makeLake({ rowsByPath: { table: rows } })).lake
+    .path("table")
+    .groupBy(["key"])
+    .aggregateWithState(spec);
+  const resumed = await (
+    await makeLake({
+      rowsByPath: { table: rows.slice(2) },
+      budget: {
+        maxMemoryBytes: all.operatorState.byteLength,
+        maxBufferedRows: 9,
+        maxAllocatedMemoryBytes: 1024 * 1024,
+      },
+    })
+  ).lake
+    .path("table")
+    .groupBy(["key"])
+    .aggregateWithState(spec, { operatorState: first.operatorState });
+  expect(resumed.rows.toSorted((a, b) => String(a.key).localeCompare(String(b.key)))).toEqual(
+    all.rows.toSorted((a, b) => String(a.key).localeCompare(String(b.key))),
+  );
+  await expect(
+    (await makeLake({ rowsByPath: { table: rows }, budget: { maxBufferedRows: 8 } })).lake
+      .path("table")
+      .groupBy(["key"])
+      .aggregateWithState(spec),
+  ).rejects.toMatchObject({
+    code: "LAKEQL_BUDGET_EXCEEDED",
+    details: { metric: "buffered rows", actual: 9 },
+  });
+});
+
+it("accounts growing row aggregate states exactly across Unicode, duplicates, and restore", async () => {
+  const labels = ["é", 'a"b', "😀", "\ud800", "\n", "", "日本語"];
+  const rows = Array.from({ length: 80 }, (_, index) => ({
+    label: labels[index % labels.length],
+    amount: index % 3 === 0 ? null : index / 7,
+  }));
+  const spec = {
+    median: { op: "median", column: "label" },
+    quantile: { op: "quantile", column: "amount", quantile: 0.9 },
+    distinct: { op: "count_distinct", column: "label" },
+    approx: { op: "approx_count_distinct", column: "label" },
+    mode: { op: "mode", column: "label" },
+  } satisfies AggregateSpec;
+  const run = async (input: typeof rows, maxMemoryBytes?: number, operatorState?: Uint8Array) =>
+    (
+      await makeLake({
+        rowsByPath: { table: input },
+        budget: { maxMemoryBytes, maxAllocatedMemoryBytes: 1024 * 1024 },
+      })
+    ).lake
+      .path("table")
+      .groupBy([])
+      .aggregateWithState(spec, { operatorState });
+  const restored = await run(rows.slice(0, 7));
+  for (let count = 8; count <= rows.length; count += 1) {
+    const baseline = await run(rows.slice(0, count));
+    const exact = baseline.operatorState.byteLength;
+    expect((await run(rows.slice(0, count), exact)).rows).toEqual(baseline.rows);
+    expect((await run(rows.slice(7, count), exact, restored.operatorState)).rows).toEqual(
+      baseline.rows,
+    );
+    await expect(run(rows.slice(0, count), exact - 1)).rejects.toMatchObject({
+      code: "LAKEQL_BUDGET_EXCEEDED",
+      details: { actual: exact },
+    });
+  }
+});
+
+it("keeps growing row aggregate budget serialization linear", async () => {
+  const rows = Array.from({ length: 2000 }, (_, index) => ({
+    label: `row-${index}`,
+    amount: index,
+  }));
+  const { lake } = await makeLake({
+    rowsByPath: { table: rows },
+    budget: { maxMemoryBytes: 8 * 1024 * 1024 },
+  });
+  const stringify = JSON.stringify;
+  let serialized = 0;
+  const spy = vi
+    .spyOn(JSON, "stringify")
+    .mockImplementation((...args: Parameters<typeof stringify>) => {
+      const json = stringify(...args);
+      serialized += json?.length ?? 0;
+      return json;
+    });
+  try {
+    const result = await lake
+      .path("table")
+      .groupBy([])
+      .aggregateWithState({
+        median: { op: "median", column: "amount" },
+        quantile: { op: "quantile", column: "amount", quantile: 0.9 },
+        distinct: { op: "count_distinct", column: "label" },
+        mode: { op: "mode", column: "label" },
+      });
+    expect(result.rows[0]).toMatchObject({ median: 999.5, distinct: 2000, mode: "row-0" });
+    expect(serialized).toBeLessThan(result.operatorState.byteLength * 40);
+  } finally {
+    spy.mockRestore();
+  }
+});
+
+it.each([
+  1, 3, 17,
+])("preserves explicit batch size %i through columnar aggregation", async (batchSize) => {
+  const rows = Array.from({ length: 23 }, (_, index) => ({ amount: index + 1 }));
+  const { lake, scanner } = await makeLake({ rowsByPath: { table: rows }, columnBatches: true });
+  expect(
+    await lake
+      .path("table")
+      .batchSize(batchSize)
+      .groupBy([])
+      .aggregate({ total: { op: "sum", column: "amount" } }),
+  ).toEqual([{ total: 276 }]);
+  expect(scanner.requestedColumnBatchSizes.length).toBeGreaterThan(0);
+  expect(scanner.requestedColumnBatchSizes.every((size) => size <= batchSize)).toBe(true);
+});
+
+it.each([
+  "streamNdjson",
+  "streamJson",
+  "streamCsv",
+] as const)("%s closes its row producer when encoding a yielded row fails", async (format) => {
+  const { MemoryBudget } = await import("./memory-budget.js");
+  const { MemoryScope } = await import("./memory-scope.js");
+  const { lake } = await makeLake({ rowsByPath: { "data/stream.parquet": [{ id: 1 }] } });
+  const result = lake.path("data/stream.parquet").run();
+  const pool = new MemoryBudget(32);
+  const failure = new Error("injected serialization failure");
+  let releases = 0;
+  const row = Object.defineProperty({}, "bad", {
+    enumerable: true,
+    get() {
+      throw failure;
+    },
+  });
+  const spy = vi.spyOn(result, "rows").mockImplementation(async function* () {
+    const scope = new MemoryScope(pool);
+    try {
+      scope.allocate(32, "held row backing", () => new Uint8Array(32));
+      yield row;
+    } finally {
+      scope.dispose();
+      releases++;
+    }
+  });
+  try {
+    await expect(new Response(result[format]()).text()).rejects.toBe(failure);
+    expect(pool.usedBytes).toBe(0);
+    expect(releases).toBe(1);
+  } finally {
+    spy.mockRestore();
+  }
 });

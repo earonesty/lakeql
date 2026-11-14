@@ -12,7 +12,9 @@
       "!**/coverage",
       "!fixtures/data",
       "!fixtures/external/iceberg-reference",
-      "!packages/lance/fixtures"
+      "!packages/lance/fixtures",
+      "!packages/core/src/vendor/zstd.ts",
+      "!packages/parquet/src/vendor/brotli.ts"
     ]
   },
   "formatter": {

@@ -1,0 +1,39 @@
+{
+  "status": "Implemented; focused, default and Worker runtime tests passed",
+  "scope": "Shared pre-format admission for mode and distinct window aggregate keys, preserving JSON-safe key semantics.",
+  "contract": [
+    "Forecast escaped scalar key storage without creating the key first.",
+    "Admit normalization, key, collection entry and first collection overhead before insertion.",
+    "Retain admission for new keys; release duplicate-key scratch after lookup.",
+    "Drop maps and sets before releasing reservations on reset or error.",
+    "Partition the pre-admitted extent after formatting, retaining actual UTF16 key storage and entry overhead while releasing normalization scratch without readmission."
+  ],
+  "validation": {
+    "focusedTestsPassed": 22,
+    "build": "pnpm exec tsc -b passed",
+    "cases": [
+      "exact first-key admission",
+      "one byte below admission",
+      "duplicate scratch denial and cleanup",
+      "duplicate reuse without retained growth",
+      "escaped controls and lone surrogate",
+      "shared sibling reservation",
+      "timestamp formatting not called when admission fails",
+      "safe bigint/number JSON equality and actual retained key extent"
+    ],
+    "defaultTestsPassed": 3003,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61,
+    "remoteCoverage": [
+      "Local HTTP 206 and ignored-range 200 wide timestamp fixture with count_distinct over decoded timestamps, four concurrent queries.",
+      "Native-emulated R2 fixture in workerd with mode and count_distinct over decoded ids, four concurrent queries and 64/128 MiB shared-pool caps."
+    ]
+  },
+  "limitations": [
+    "Scalar input payload ownership and runtime/GC scratch are outside this key charge.",
+    "Formatting forecasts are conservative, so transient headroom can exceed actual temporary storage.",
+    "No total-heap or production Cloudflare claim. Local admission-overhead benchmark is recorded separately."
+  ],
+  "benchmark": "docs/benchmarks/window-buffered-aggregate-2026-11-13.json",
+  "performanceFinding": "Same-implementation local diagnostic shows material per-row admission overhead: at 16384 unique numeric rows, mode ~23.54ms admitted versus ~2.40ms unadmitted, count_distinct ~22.37ms versus ~2.03ms. Duplicate-heavy retained state stays bounded, but admission still repeats per row. Next action: amortize allocation admission while preserving exact-cap denial, scratch overlap, shared-pool fairness, and complete cleanup. This is not a before/after regression measurement or cloud latency result."
+}

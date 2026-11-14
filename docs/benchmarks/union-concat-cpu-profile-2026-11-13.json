@@ -1,0 +1,166 @@
+{
+  "scope": "Single Node CPU profile of the complete local concat scaling benchmark (all sizes and modes, including startup). Sample counts are diagnostic, not isolated compaction timings or cloud/Worker measurements. Explicit allocation accounting excludes VM heap and GC overhead.",
+  "command": "node --cpu-prof --cpu-prof-dir=/tmp bench/union-concat-scaling.mjs file:///tmp/lakeql-concat-profile-results.json",
+  "totalSamples": 426,
+  "topFrames": [
+    {
+      "function": "(garbage collector)",
+      "source": "",
+      "samples": 107
+    },
+    {
+      "function": "trackOwner",
+      "source": "packages/core/dist/memory-scope.js",
+      "samples": 85
+    },
+    {
+      "function": "ownedMemory",
+      "source": "packages/core/dist/memory-scope.js",
+      "samples": 72
+    },
+    {
+      "function": "pin",
+      "source": "packages/core/dist/memory-budget.js",
+      "samples": 19
+    },
+    {
+      "function": "release",
+      "source": "packages/core/dist/memory-scope.js",
+      "samples": 18
+    },
+    {
+      "function": "compileSourceTextModule",
+      "source": "node:internal/modules/esm/utils",
+      "samples": 11
+    },
+    {
+      "function": "compositeHandle",
+      "source": "packages/core/dist/memory-scope.js",
+      "samples": 6
+    },
+    {
+      "function": "retain",
+      "source": "packages/core/dist/memory-scope.js",
+      "samples": 6
+    },
+    {
+      "function": "resolveSync",
+      "source": "node:internal/modules/esm/loader",
+      "samples": 5
+    },
+    {
+      "function": "collectInputVectors",
+      "source": "packages/core/dist/vector-sort.js",
+      "samples": 5
+    },
+    {
+      "function": "retainSelectedAllocations",
+      "source": "packages/core/dist/memory-scope.js",
+      "samples": 5
+    },
+    {
+      "function": "release",
+      "source": "packages/core/dist/memory-budget.js",
+      "samples": 5
+    },
+    {
+      "function": "captureCompositeBacking",
+      "source": "packages/core/dist/memory-scope.js",
+      "samples": 5
+    },
+    {
+      "function": "MemoryScope",
+      "source": "packages/core/dist/memory-scope.js",
+      "samples": 4
+    },
+    {
+      "function": "flattenUnionConcatInputs",
+      "source": "packages/core/dist/union-flatten.js",
+      "samples": 4
+    },
+    {
+      "function": "concatBatches",
+      "source": "packages/core/dist/vector-sort.js",
+      "samples": 3
+    },
+    {
+      "function": "allocateWithReservation",
+      "source": "packages/core/dist/memory-scope.js",
+      "samples": 3
+    },
+    {
+      "function": "indexVectorStorage",
+      "source": "packages/core/dist/vector-reachability.js",
+      "samples": 3
+    },
+    {
+      "function": "reserve",
+      "source": "packages/core/dist/memory-scope.js",
+      "samples": 3
+    },
+    {
+      "function": "syncLink",
+      "source": "node:internal/modules/esm/module_job",
+      "samples": 2
+    }
+  ],
+  "benchmark": {
+    "scope": "Local owned concatenation including source construction; explicit allocation accounting, not measured VM heap. One diagnostic run per case, no timing speedup claim. Every output value checked after timing; all owners release to zero. Compare one-shot versus repeated appends with identical values. No cloud transport.",
+    "results": [
+      {
+        "appends": 32,
+        "rows": 34,
+        "modes": {
+          "oneShot": {
+            "elapsedMs": 4.028503999999998,
+            "retainedBytes": 2876,
+            "peakBytes": 2876,
+            "unionDepth": 2
+          },
+          "incremental": {
+            "elapsedMs": 8.803053000000006,
+            "retainedBytes": 7730,
+            "peakBytes": 20793,
+            "unionDepth": 6
+          }
+        }
+      },
+      {
+        "appends": 128,
+        "rows": 130,
+        "modes": {
+          "oneShot": {
+            "elapsedMs": 2.8398879999999878,
+            "retainedBytes": 5660,
+            "peakBytes": 5660,
+            "unionDepth": 2
+          },
+          "incremental": {
+            "elapsedMs": 46.17720299999999,
+            "retainedBytes": 21368,
+            "peakBytes": 59474,
+            "unionDepth": 10
+          }
+        }
+      },
+      {
+        "appends": 512,
+        "rows": 514,
+        "modes": {
+          "oneShot": {
+            "elapsedMs": 4.656824,
+            "retainedBytes": 20673,
+            "peakBytes": 20673,
+            "unionDepth": 3
+          },
+          "incremental": {
+            "elapsedMs": 343.120141,
+            "retainedBytes": 52712,
+            "peakBytes": 224658,
+            "unionDepth": 7
+          }
+        }
+      }
+    ]
+  }
+}

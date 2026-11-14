@@ -1,0 +1,41 @@
+{
+  "description": "CPU physical grouped-aggregate snapshot continuation. Counts prior-group key reads during restore; validates all final groups. One timing sample, compilation/instrumentation excluded. This is not an owned-state, cloud latency or heap-budget benchmark.",
+  "results": [
+    {
+      "rows": 2000,
+      "batchSize": 128,
+      "restoredGroups": 15360,
+      "ms": 42.07406699999997
+    },
+    {
+      "rows": 2000,
+      "batchSize": 512,
+      "restoredGroups": 3072,
+      "ms": 11.723213000000001
+    },
+    {
+      "rows": 4000,
+      "batchSize": 128,
+      "restoredGroups": 63488,
+      "ms": 95.83562599999995
+    },
+    {
+      "rows": 4000,
+      "batchSize": 512,
+      "restoredGroups": 14336,
+      "ms": 32.089117000000044
+    },
+    {
+      "rows": 8000,
+      "batchSize": 128,
+      "restoredGroups": 249984,
+      "ms": 387.54983199999975
+    },
+    {
+      "rows": 8000,
+      "batchSize": 512,
+      "restoredGroups": 61440,
+      "ms": 92.65515699999992
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "method": "Separate Node processes; explicit GC; one warmup and five measured samples; same Node version; source hashes identify compared generated scope modules",
+  "reports": [
+    {
+      "implementation": "separate-index-node",
+      "count": 10000,
+      "sourceSha256": "48c74517499aa57e2a6f41dd54ac0f4cb2e65329fb2be8e9eced8e3a5dbba7ce",
+      "node": "v24.18.1",
+      "allocateMedianMs": 7.9041229999999985,
+      "releaseMedianMs": 4.031868000000003,
+      "liveHeapDeltaMedianBytes": 17964304,
+      "samples": 5,
+      "scope": "Node V8 post-GC heap delta for live owners, values, reservations and indexes; one-byte typed buffer per owner; not a Worker heap-cap proof"
+    },
+    {
+      "implementation": "separate-index-node",
+      "count": 50000,
+      "sourceSha256": "48c74517499aa57e2a6f41dd54ac0f4cb2e65329fb2be8e9eced8e3a5dbba7ce",
+      "node": "v24.18.1",
+      "allocateMedianMs": 58.08817699999997,
+      "releaseMedianMs": 18.547099000000003,
+      "liveHeapDeltaMedianBytes": 88905952,
+      "samples": 5,
+      "scope": "Node V8 post-GC heap delta for live owners, values, reservations and indexes; one-byte typed buffer per owner; not a Worker heap-cap proof"
+    },
+    {
+      "implementation": "combined-handle-node",
+      "count": 10000,
+      "sourceSha256": "1e7f6123624f82586034a46fd884f51ad7ccf11b3f019bc63ff4779d62f5c562",
+      "node": "v24.18.1",
+      "allocateMedianMs": 10.198677000000004,
+      "releaseMedianMs": 3.8947799999999972,
+      "liveHeapDeltaMedianBytes": 17585952,
+      "samples": 5,
+      "scope": "Node V8 post-GC heap delta for live owners, values, reservations and indexes; one-byte typed buffer per owner; not a Worker heap-cap proof"
+    },
+    {
+      "implementation": "combined-handle-node",
+      "count": 50000,
+      "sourceSha256": "1e7f6123624f82586034a46fd884f51ad7ccf11b3f019bc63ff4779d62f5c562",
+      "node": "v24.18.1",
+      "allocateMedianMs": 80.2146009999999,
+      "releaseMedianMs": 17.121743000000038,
+      "liveHeapDeltaMedianBytes": 86899952,
+      "samples": 5,
+      "scope": "Node V8 post-GC heap delta for live owners, values, reservations and indexes; one-byte typed buffer per owner; not a Worker heap-cap proof"
+    }
+  ]
+}

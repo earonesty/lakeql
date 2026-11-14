@@ -1,0 +1,49 @@
+{
+  "source": "https://pub-9d5bcb33a5384d79875a943eef183b6d.r2.dev/plotly/2015_flights.parquet",
+  "fixtureRows": 5819079,
+  "fixtureBytes": 25238218,
+  "operation": "first 2048 rows, three numeric columns; local DuckDB reference versus remote HTTP ranges",
+  "scope": "large-object bounded projection, not full scan or total Worker heap proof; active count measures requests until response headers",
+  "reports": [
+    {
+      "memoryMiB": 64,
+      "concurrency": 1,
+      "rowsVerified": 2048,
+      "requests": 17,
+      "wireBytes": 20990720,
+      "peakRequestsAwaitingHeaders": 2,
+      "peakTrackedBytes": 16724760,
+      "elapsedMs": 5616.412575
+    },
+    {
+      "memoryMiB": 64,
+      "concurrency": 2,
+      "rowsVerified": 4096,
+      "requests": 19,
+      "wireBytes": 20990724,
+      "peakRequestsAwaitingHeaders": 2,
+      "peakTrackedBytes": 33449520,
+      "elapsedMs": 5101.483029
+    },
+    {
+      "memoryMiB": 128,
+      "concurrency": 1,
+      "rowsVerified": 2048,
+      "requests": 17,
+      "wireBytes": 20990720,
+      "peakRequestsAwaitingHeaders": 2,
+      "peakTrackedBytes": 16724760,
+      "elapsedMs": 4688.270122999998
+    },
+    {
+      "memoryMiB": 128,
+      "concurrency": 2,
+      "rowsVerified": 4096,
+      "requests": 19,
+      "wireBytes": 20990724,
+      "peakRequestsAwaitingHeaders": 2,
+      "peakTrackedBytes": 33449520,
+      "elapsedMs": 4675.369701
+    }
+  ]
+}

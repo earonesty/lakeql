@@ -1,0 +1,32 @@
+{
+  "date": "2026-11-14",
+  "requirements": ["F4", "M1"],
+  "changes": [
+    "Replace Object.values/map/rest partition-spec lists with one streaming scan of own window definitions.",
+    "Preserve global/mixed/incompatible topology precedence and skip further key comparisons once the result is known.",
+    "Add optional scoped topology planning with admitted stable-key comparison workspace, detached partition expressions and transactional result ownership.",
+    "Release each comparison workspace immediately and preserve parent/sibling ownership on failure."
+  ],
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "targeted_tests": 96,
+    "full_default_suite": {
+      "passed": 3540,
+      "skipped": 629
+    },
+    "coverage": [
+      "Equivalent 2-window and 1000-window plans use the same reserved peak; exact peak succeeds and one byte less rejects.",
+      "Binary partition literal and input-list mutation cannot alter a scoped returned plan.",
+      "Failed planning leaves a preexisting sibling allocation intact.",
+      "Mixed global/partitioned reason retains precedence after an earlier partition mismatch.",
+      "Existing query/window/task and HTTP fixtures remain green."
+    ]
+  },
+  "remaining": [
+    "Task discovery still returns plain TaskInput arrays; scoped topology integration is a prerequisite for completing owned task discovery, not completion of that larger contract.",
+    "Unscoped callers preserve borrowed partition-expression behavior; only explicitly scoped results own detached expressions.",
+    "Task ranges, path/partition metadata, callback outputs and internal window-task plan lifetimes still require ownership integration.",
+    "No wall-clock speedup or whole-runtime heap cap is claimed from the workspace test."
+  ]
+}

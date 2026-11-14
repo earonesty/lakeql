@@ -1,0 +1,865 @@
+{
+  "description": "Four overlapping public queries over a real written Parquet fixture, shared raw-range cache, retained prior output, cold/warm rounds and two-read transport control. Node memory/local HTTP only; configured pools are not total runtime heap caps. One run per scenario, not stable latency or fairness evidence.",
+  "sourceCommit": "4f20d13c19993cb6936a0849b9e8978fa576cd90",
+  "harnessSha256": "c8d161ef611a0141ce825d69914eeee13434027352f3619a6cbdd7ffbda89435",
+  "runtime": "v24.18.1",
+  "platform": "linux/x64",
+  "fixtureSha256": "eeadbba296b9b44d6e171bdf9016f346b0db89f19fe281b7c641740a3e0abcb6",
+  "httpResponseDelayMs": 2,
+  "runtimeMemoryBoundary": "Node process includes the HTTP server and generated fixture. Samples may miss transient peaks and are not Worker memory measurements.",
+  "factoryCache": false,
+  "cacheCleanup": "Explicit shared range-cache eviction",
+  "rows": 2048,
+  "textBytesPerRow": 4096,
+  "fixtureBytes": 8407891,
+  "reports": [
+    {
+      "transport": "memory",
+      "poolMiB": 64,
+      "cacheMiB": 4,
+      "queryLimitMiB": 32,
+      "pinnedBytes": 17406400,
+      "rounds": [
+        {
+          "temperature": "cold",
+          "elapsedMs": 182.793178,
+          "sampledRuntimePeak": {
+            "rss": 239616000,
+            "heapTotal": 189415424,
+            "heapUsed": 49813280,
+            "external": 76143938,
+            "arrayBuffers": 42538787
+          },
+          "runtimeSampleIntervalMs": 10,
+          "peakActiveHttpReads": 0,
+          "outcomes": [
+            {
+              "kind": "collect",
+              "status": "completed",
+              "elapsedMs": 180.465488
+            },
+            {
+              "kind": "select",
+              "status": "completed",
+              "elapsedMs": 134.890066
+            },
+            {
+              "kind": "top-k",
+              "status": "completed",
+              "elapsedMs": 165.90728000000001
+            },
+            {
+              "kind": "aggregate",
+              "status": "completed",
+              "elapsedMs": 146.84229200000004
+            }
+          ],
+          "requests": 0,
+          "transferredBytes": 0,
+          "peakActiveJobs": 4,
+          "peakAdmittedBytes": 48329874,
+          "retainedBeforeRelease": 47736546,
+          "retainedAfterJobRelease": 21083990,
+          "runtimeMemorySample": {
+            "rss": 239616000,
+            "heapTotal": 189415424,
+            "heapUsed": 50668424,
+            "external": 76143938,
+            "arrayBuffers": 14544123
+          }
+        },
+        {
+          "temperature": "warm",
+          "elapsedMs": 116.02460500000001,
+          "sampledRuntimePeak": {
+            "rss": 295976960,
+            "heapTotal": 189677568,
+            "heapUsed": 86667048,
+            "external": 76143938,
+            "arrayBuffers": 36433631
+          },
+          "runtimeSampleIntervalMs": 10,
+          "peakActiveHttpReads": 0,
+          "outcomes": [
+            {
+              "kind": "collect",
+              "status": "completed",
+              "elapsedMs": 113.32258000000002
+            },
+            {
+              "kind": "select",
+              "status": "completed",
+              "elapsedMs": 70.98232700000005
+            },
+            {
+              "kind": "top-k",
+              "status": "completed",
+              "elapsedMs": 106.68019600000002
+            },
+            {
+              "kind": "aggregate",
+              "status": "completed",
+              "elapsedMs": 87.05924000000005
+            }
+          ],
+          "requests": 0,
+          "transferredBytes": 0,
+          "peakActiveJobs": 4,
+          "peakAdmittedBytes": 48329874,
+          "retainedBeforeRelease": 47736546,
+          "retainedAfterJobRelease": 21083990,
+          "runtimeMemorySample": {
+            "rss": 296763392,
+            "heapTotal": 189677568,
+            "heapUsed": 87517312,
+            "external": 40254548,
+            "arrayBuffers": 36433631
+          }
+        }
+      ],
+      "remainingBytes": 0
+    },
+    {
+      "transport": "memory",
+      "poolMiB": 64,
+      "cacheMiB": 16,
+      "queryLimitMiB": 32,
+      "pinnedBytes": 17406400,
+      "rounds": [
+        {
+          "temperature": "cold",
+          "elapsedMs": 97.51757999999995,
+          "sampledRuntimePeak": {
+            "rss": 357974016,
+            "heapTotal": 211173376,
+            "heapUsed": 116063232,
+            "external": 65419658,
+            "arrayBuffers": 61598741
+          },
+          "runtimeSampleIntervalMs": 10,
+          "peakActiveHttpReads": 0,
+          "outcomes": [
+            {
+              "kind": "collect",
+              "status": "completed",
+              "elapsedMs": 95.44278800000006
+            },
+            {
+              "kind": "select",
+              "status": "completed",
+              "elapsedMs": 65.22579300000007
+            },
+            {
+              "kind": "top-k",
+              "status": "completed",
+              "elapsedMs": 91.74367400000006
+            },
+            {
+              "kind": "aggregate",
+              "status": "completed",
+              "elapsedMs": 80.20011799999997
+            }
+          ],
+          "requests": 0,
+          "transferredBytes": 0,
+          "peakActiveJobs": 4,
+          "peakAdmittedBytes": 53123740,
+          "retainedBeforeRelease": 52530412,
+          "retainedAfterJobRelease": 25877856,
+          "runtimeMemorySample": {
+            "rss": 357974016,
+            "heapTotal": 211173376,
+            "heapUsed": 116488184,
+            "external": 65419658,
+            "arrayBuffers": 61598741
+          }
+        },
+        {
+          "temperature": "warm",
+          "elapsedMs": 81.782331,
+          "sampledRuntimePeak": {
+            "rss": 375406592,
+            "heapTotal": 220086272,
+            "heapUsed": 144142656,
+            "external": 84110260,
+            "arrayBuffers": 80289343
+          },
+          "runtimeSampleIntervalMs": 10,
+          "peakActiveHttpReads": 0,
+          "outcomes": [
+            {
+              "kind": "collect",
+              "status": "completed",
+              "elapsedMs": 79.92031000000009
+            },
+            {
+              "kind": "select",
+              "status": "completed",
+              "elapsedMs": 59.06884500000001
+            },
+            {
+              "kind": "top-k",
+              "status": "completed",
+              "elapsedMs": 74.70229199999994
+            },
+            {
+              "kind": "aggregate",
+              "status": "completed",
+              "elapsedMs": 64.32050600000002
+            }
+          ],
+          "requests": 0,
+          "transferredBytes": 0,
+          "peakActiveJobs": 4,
+          "peakAdmittedBytes": 53123740,
+          "retainedBeforeRelease": 52530412,
+          "retainedAfterJobRelease": 25877856,
+          "runtimeMemorySample": {
+            "rss": 375406592,
+            "heapTotal": 220086272,
+            "heapUsed": 144560528,
+            "external": 84110260,
+            "arrayBuffers": 80289343
+          }
+        }
+      ],
+      "remainingBytes": 0
+    },
+    {
+      "transport": "memory",
+      "poolMiB": 128,
+      "cacheMiB": 4,
+      "queryLimitMiB": 32,
+      "pinnedBytes": 17406400,
+      "rounds": [
+        {
+          "temperature": "cold",
+          "elapsedMs": 78.21035599999993,
+          "sampledRuntimePeak": {
+            "rss": 379338752,
+            "heapTotal": 185221120,
+            "heapUsed": 83269768,
+            "external": 56169146,
+            "arrayBuffers": 52348229
+          },
+          "runtimeSampleIntervalMs": 10,
+          "peakActiveHttpReads": 0,
+          "outcomes": [
+            {
+              "kind": "collect",
+              "status": "completed",
+              "elapsedMs": 76.3761179999999
+            },
+            {
+              "kind": "select",
+              "status": "completed",
+              "elapsedMs": 53.499373000000105
+            },
+            {
+              "kind": "top-k",
+              "status": "completed",
+              "elapsedMs": 71.40033599999992
+            },
+            {
+              "kind": "aggregate",
+              "status": "completed",
+              "elapsedMs": 60.95127400000001
+            }
+          ],
+          "requests": 0,
+          "transferredBytes": 0,
+          "peakActiveJobs": 4,
+          "peakAdmittedBytes": 48329874,
+          "retainedBeforeRelease": 47736546,
+          "retainedAfterJobRelease": 21083990,
+          "runtimeMemorySample": {
+            "rss": 379338752,
+            "heapTotal": 185221120,
+            "heapUsed": 83678872,
+            "external": 56169146,
+            "arrayBuffers": 52348229
+          }
+        },
+        {
+          "temperature": "warm",
+          "elapsedMs": 86.116894,
+          "sampledRuntimePeak": {
+            "rss": 380780544,
+            "heapTotal": 190464000,
+            "heapUsed": 83679520,
+            "external": 56169146,
+            "arrayBuffers": 52348229
+          },
+          "runtimeSampleIntervalMs": 10,
+          "peakActiveHttpReads": 0,
+          "outcomes": [
+            {
+              "kind": "collect",
+              "status": "completed",
+              "elapsedMs": 83.834791
+            },
+            {
+              "kind": "select",
+              "status": "completed",
+              "elapsedMs": 50.694785000000024
+            },
+            {
+              "kind": "top-k",
+              "status": "completed",
+              "elapsedMs": 79.27150699999993
+            },
+            {
+              "kind": "aggregate",
+              "status": "completed",
+              "elapsedMs": 59.31803500000001
+            }
+          ],
+          "requests": 0,
+          "transferredBytes": 0,
+          "peakActiveJobs": 4,
+          "peakAdmittedBytes": 48329874,
+          "retainedBeforeRelease": 47736546,
+          "retainedAfterJobRelease": 21083990,
+          "runtimeMemorySample": {
+            "rss": 380780544,
+            "heapTotal": 190464000,
+            "heapUsed": 53929768,
+            "external": 24548824,
+            "arrayBuffers": 20727907
+          }
+        }
+      ],
+      "remainingBytes": 0
+    },
+    {
+      "transport": "memory",
+      "poolMiB": 128,
+      "cacheMiB": 16,
+      "queryLimitMiB": 32,
+      "pinnedBytes": 17406400,
+      "rounds": [
+        {
+          "temperature": "cold",
+          "elapsedMs": 94.53007700000012,
+          "sampledRuntimePeak": {
+            "rss": 381042688,
+            "heapTotal": 190464000,
+            "heapUsed": 113776048,
+            "external": 71293854,
+            "arrayBuffers": 67472937
+          },
+          "runtimeSampleIntervalMs": 10,
+          "peakActiveHttpReads": 0,
+          "outcomes": [
+            {
+              "kind": "collect",
+              "status": "completed",
+              "elapsedMs": 92.06896699999993
+            },
+            {
+              "kind": "select",
+              "status": "completed",
+              "elapsedMs": 65.30175700000018
+            },
+            {
+              "kind": "top-k",
+              "status": "completed",
+              "elapsedMs": 86.8872060000001
+            },
+            {
+              "kind": "aggregate",
+              "status": "completed",
+              "elapsedMs": 74.36605800000007
+            }
+          ],
+          "requests": 0,
+          "transferredBytes": 0,
+          "peakActiveJobs": 4,
+          "peakAdmittedBytes": 53123740,
+          "retainedBeforeRelease": 52530412,
+          "retainedAfterJobRelease": 25877856,
+          "runtimeMemorySample": {
+            "rss": 381173760,
+            "heapTotal": 190464000,
+            "heapUsed": 114210408,
+            "external": 71293854,
+            "arrayBuffers": 67472937
+          }
+        },
+        {
+          "temperature": "warm",
+          "elapsedMs": 98.26200399999993,
+          "sampledRuntimePeak": {
+            "rss": 381698048,
+            "heapTotal": 211959808,
+            "heapUsed": 114211056,
+            "external": 71293854,
+            "arrayBuffers": 67472937
+          },
+          "runtimeSampleIntervalMs": 10,
+          "peakActiveHttpReads": 0,
+          "outcomes": [
+            {
+              "kind": "collect",
+              "status": "completed",
+              "elapsedMs": 96.05456200000003
+            },
+            {
+              "kind": "select",
+              "status": "completed",
+              "elapsedMs": 70.72336999999993
+            },
+            {
+              "kind": "top-k",
+              "status": "completed",
+              "elapsedMs": 91.00244599999996
+            },
+            {
+              "kind": "aggregate",
+              "status": "completed",
+              "elapsedMs": 75.17112600000019
+            }
+          ],
+          "requests": 0,
+          "transferredBytes": 0,
+          "peakActiveJobs": 4,
+          "peakAdmittedBytes": 53123740,
+          "retainedBeforeRelease": 52530412,
+          "retainedAfterJobRelease": 25877856,
+          "runtimeMemorySample": {
+            "rss": 381698048,
+            "heapTotal": 211959808,
+            "heapUsed": 108690088,
+            "external": 49448878,
+            "arrayBuffers": 45627961
+          }
+        }
+      ],
+      "remainingBytes": 0
+    },
+    {
+      "transport": "http-206",
+      "poolMiB": 64,
+      "cacheMiB": 4,
+      "queryLimitMiB": 32,
+      "pinnedBytes": 17406400,
+      "rounds": [
+        {
+          "temperature": "cold",
+          "elapsedMs": 172.80482499999994,
+          "sampledRuntimePeak": {
+            "rss": 422445056,
+            "heapTotal": 236077056,
+            "heapUsed": 144049160,
+            "external": 86857340,
+            "arrayBuffers": 82826845
+          },
+          "runtimeSampleIntervalMs": 10,
+          "peakActiveHttpReads": 2,
+          "outcomes": [
+            {
+              "kind": "collect",
+              "status": "completed",
+              "elapsedMs": 170.814261
+            },
+            {
+              "kind": "select",
+              "status": "completed",
+              "elapsedMs": 99.20109400000001
+            },
+            {
+              "kind": "top-k",
+              "status": "completed",
+              "elapsedMs": 168.57170300000007
+            },
+            {
+              "kind": "aggregate",
+              "status": "completed",
+              "elapsedMs": 156.68197499999997
+            }
+          ],
+          "requests": 37,
+          "transferredBytes": 8471464,
+          "peakActiveJobs": 4,
+          "peakAdmittedBytes": 48621892,
+          "retainedBeforeRelease": 47736546,
+          "retainedAfterJobRelease": 21083990,
+          "runtimeMemorySample": {
+            "rss": 422445056,
+            "heapTotal": 209862656,
+            "heapUsed": 59431400,
+            "external": 31979735,
+            "arrayBuffers": 27949240
+          }
+        },
+        {
+          "temperature": "warm",
+          "elapsedMs": 156.60460899999998,
+          "sampledRuntimePeak": {
+            "rss": 422576128,
+            "heapTotal": 209862656,
+            "heapUsed": 107259560,
+            "external": 73747813,
+            "arrayBuffers": 69717318
+          },
+          "runtimeSampleIntervalMs": 10,
+          "peakActiveHttpReads": 2,
+          "outcomes": [
+            {
+              "kind": "collect",
+              "status": "completed",
+              "elapsedMs": 154.91790800000012
+            },
+            {
+              "kind": "select",
+              "status": "completed",
+              "elapsedMs": 88.63964099999998
+            },
+            {
+              "kind": "top-k",
+              "status": "completed",
+              "elapsedMs": 153.0237169999998
+            },
+            {
+              "kind": "aggregate",
+              "status": "completed",
+              "elapsedMs": 144.1597139999999
+            }
+          ],
+          "requests": 37,
+          "transferredBytes": 8471464,
+          "peakActiveJobs": 4,
+          "peakAdmittedBytes": 48621892,
+          "retainedBeforeRelease": 47736546,
+          "retainedAfterJobRelease": 21083990,
+          "runtimeMemorySample": {
+            "rss": 422576128,
+            "heapTotal": 209862656,
+            "heapUsed": 100892552,
+            "external": 66363473,
+            "arrayBuffers": 62332978
+          }
+        }
+      ],
+      "remainingBytes": 0
+    },
+    {
+      "transport": "http-206",
+      "poolMiB": 64,
+      "cacheMiB": 16,
+      "queryLimitMiB": 32,
+      "pinnedBytes": 17406400,
+      "rounds": [
+        {
+          "temperature": "cold",
+          "elapsedMs": 158.26991900000007,
+          "sampledRuntimePeak": {
+            "rss": 423362560,
+            "heapTotal": 224804864,
+            "heapUsed": 125899736,
+            "external": 84166929,
+            "arrayBuffers": 80136434
+          },
+          "runtimeSampleIntervalMs": 10,
+          "peakActiveHttpReads": 2,
+          "outcomes": [
+            {
+              "kind": "collect",
+              "status": "completed",
+              "elapsedMs": 156.14774699999998
+            },
+            {
+              "kind": "select",
+              "status": "completed",
+              "elapsedMs": 91.33722699999998
+            },
+            {
+              "kind": "top-k",
+              "status": "completed",
+              "elapsedMs": 154.0625050000001
+            },
+            {
+              "kind": "aggregate",
+              "status": "completed",
+              "elapsedMs": 144.75267099999996
+            }
+          ],
+          "requests": 37,
+          "transferredBytes": 8471464,
+          "peakActiveJobs": 4,
+          "peakAdmittedBytes": 53415758,
+          "retainedBeforeRelease": 52530412,
+          "retainedAfterJobRelease": 25877856,
+          "runtimeMemorySample": {
+            "rss": 423362560,
+            "heapTotal": 224804864,
+            "heapUsed": 116624680,
+            "external": 66798863,
+            "arrayBuffers": 62768368
+          }
+        },
+        {
+          "temperature": "warm",
+          "elapsedMs": 81.21551199999999,
+          "sampledRuntimePeak": {
+            "rss": 428474368,
+            "heapTotal": 231620608,
+            "heapUsed": 154976448,
+            "external": 79576331,
+            "arrayBuffers": 75545836
+          },
+          "runtimeSampleIntervalMs": 10,
+          "peakActiveHttpReads": 2,
+          "outcomes": [
+            {
+              "kind": "collect",
+              "status": "completed",
+              "elapsedMs": 19.65729299999998
+            },
+            {
+              "kind": "select",
+              "status": "completed",
+              "elapsedMs": 29.616933000000017
+            },
+            {
+              "kind": "top-k",
+              "status": "completed",
+              "elapsedMs": 68.94838299999992
+            },
+            {
+              "kind": "aggregate",
+              "status": "completed",
+              "elapsedMs": 79.2509379999999
+            }
+          ],
+          "requests": 4,
+          "transferredBytes": 8,
+          "peakActiveJobs": 4,
+          "peakAdmittedBytes": 53926602,
+          "retainedBeforeRelease": 52530412,
+          "retainedAfterJobRelease": 25877856,
+          "runtimeMemorySample": {
+            "rss": 428474368,
+            "heapTotal": 231620608,
+            "heapUsed": 58714800,
+            "external": 24348322,
+            "arrayBuffers": 20321877
+          }
+        }
+      ],
+      "remainingBytes": 0
+    },
+    {
+      "transport": "http-206",
+      "poolMiB": 128,
+      "cacheMiB": 4,
+      "queryLimitMiB": 32,
+      "pinnedBytes": 17406400,
+      "rounds": [
+        {
+          "temperature": "cold",
+          "elapsedMs": 160.63826500000005,
+          "sampledRuntimePeak": {
+            "rss": 428998656,
+            "heapTotal": 232407040,
+            "heapUsed": 110423592,
+            "external": 78977352,
+            "arrayBuffers": 74950907
+          },
+          "runtimeSampleIntervalMs": 10,
+          "peakActiveHttpReads": 2,
+          "outcomes": [
+            {
+              "kind": "collect",
+              "status": "completed",
+              "elapsedMs": 158.77881800000023
+            },
+            {
+              "kind": "select",
+              "status": "completed",
+              "elapsedMs": 89.83321100000012
+            },
+            {
+              "kind": "top-k",
+              "status": "completed",
+              "elapsedMs": 156.564484
+            },
+            {
+              "kind": "aggregate",
+              "status": "completed",
+              "elapsedMs": 146.69830000000002
+            }
+          ],
+          "requests": 37,
+          "transferredBytes": 8471464,
+          "peakActiveJobs": 4,
+          "peakAdmittedBytes": 48621892,
+          "retainedBeforeRelease": 47736546,
+          "retainedAfterJobRelease": 21083990,
+          "runtimeMemorySample": {
+            "rss": 428998656,
+            "heapTotal": 232407040,
+            "heapUsed": 108881560,
+            "external": 68641828,
+            "arrayBuffers": 64615383
+          }
+        },
+        {
+          "temperature": "warm",
+          "elapsedMs": 153.6060349999998,
+          "sampledRuntimePeak": {
+            "rss": 429654016,
+            "heapTotal": 232407040,
+            "heapUsed": 132914032,
+            "external": 95798278,
+            "arrayBuffers": 85335049
+          },
+          "runtimeSampleIntervalMs": 10,
+          "peakActiveHttpReads": 2,
+          "outcomes": [
+            {
+              "kind": "collect",
+              "status": "completed",
+              "elapsedMs": 151.89421700000003
+            },
+            {
+              "kind": "select",
+              "status": "completed",
+              "elapsedMs": 86.60996300000033
+            },
+            {
+              "kind": "top-k",
+              "status": "completed",
+              "elapsedMs": 150.0397499999999
+            },
+            {
+              "kind": "aggregate",
+              "status": "completed",
+              "elapsedMs": 140.13536599999998
+            }
+          ],
+          "requests": 37,
+          "transferredBytes": 8471464,
+          "peakActiveJobs": 4,
+          "peakAdmittedBytes": 48621892,
+          "retainedBeforeRelease": 47736546,
+          "retainedAfterJobRelease": 21083990,
+          "runtimeMemorySample": {
+            "rss": 429654016,
+            "heapTotal": 216416256,
+            "heapUsed": 59406664,
+            "external": 31975685,
+            "arrayBuffers": 27949240
+          }
+        }
+      ],
+      "remainingBytes": 0
+    },
+    {
+      "transport": "http-206",
+      "poolMiB": 128,
+      "cacheMiB": 16,
+      "queryLimitMiB": 32,
+      "pinnedBytes": 17406400,
+      "rounds": [
+        {
+          "temperature": "cold",
+          "elapsedMs": 166.29420900000014,
+          "sampledRuntimePeak": {
+            "rss": 429654016,
+            "heapTotal": 216678400,
+            "heapUsed": 110484736,
+            "external": 86604715,
+            "arrayBuffers": 82578270
+          },
+          "runtimeSampleIntervalMs": 10,
+          "peakActiveHttpReads": 2,
+          "outcomes": [
+            {
+              "kind": "collect",
+              "status": "completed",
+              "elapsedMs": 164.32011699999975
+            },
+            {
+              "kind": "select",
+              "status": "completed",
+              "elapsedMs": 95.44871899999998
+            },
+            {
+              "kind": "top-k",
+              "status": "completed",
+              "elapsedMs": 162.42952100000002
+            },
+            {
+              "kind": "aggregate",
+              "status": "completed",
+              "elapsedMs": 152.987799
+            }
+          ],
+          "requests": 37,
+          "transferredBytes": 8471464,
+          "peakActiveJobs": 4,
+          "peakAdmittedBytes": 53415758,
+          "retainedBeforeRelease": 52530412,
+          "retainedAfterJobRelease": 25877856,
+          "runtimeMemorySample": {
+            "rss": 429654016,
+            "heapTotal": 216678400,
+            "heapUsed": 107762168,
+            "external": 67531227,
+            "arrayBuffers": 63504782
+          }
+        },
+        {
+          "temperature": "warm",
+          "elapsedMs": 79.6271869999996,
+          "sampledRuntimePeak": {
+            "rss": 429785088,
+            "heapTotal": 216678400,
+            "heapUsed": 139812896,
+            "external": 83329055,
+            "arrayBuffers": 79302610
+          },
+          "runtimeSampleIntervalMs": 10,
+          "peakActiveHttpReads": 2,
+          "outcomes": [
+            {
+              "kind": "collect",
+              "status": "completed",
+              "elapsedMs": 21.98853999999983
+            },
+            {
+              "kind": "select",
+              "status": "completed",
+              "elapsedMs": 39.05739300000005
+            },
+            {
+              "kind": "top-k",
+              "status": "completed",
+              "elapsedMs": 71.91906400000016
+            },
+            {
+              "kind": "aggregate",
+              "status": "completed",
+              "elapsedMs": 77.52457300000015
+            }
+          ],
+          "requests": 4,
+          "transferredBytes": 8,
+          "peakActiveJobs": 4,
+          "peakAdmittedBytes": 53926602,
+          "retainedBeforeRelease": 52530412,
+          "retainedAfterJobRelease": 25877856,
+          "runtimeMemorySample": {
+            "rss": 429785088,
+            "heapTotal": 216678400,
+            "heapUsed": 140221752,
+            "external": 83329055,
+            "arrayBuffers": 79302610
+          }
+        }
+      ],
+      "remainingBytes": 0
+    }
+  ]
+}

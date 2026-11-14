@@ -1,0 +1,31 @@
+{
+  "date": "2026-11-14",
+  "requirements": ["F3", "M1"],
+  "changes": [
+    "General projected scan read-column planning uses the admitted shared column collector.",
+    "Compute deferred predicate/late read columns once per execution, with admitted deduplication, ordering, name/list storage, combined emulated-read list and plan record.",
+    "Release the separate planning scope when iteration succeeds, fails or closes; returned output ownership does not retain the planning scope.",
+    "Remove dedicated unscoped predicate/output column collectors and avoid repeated emulated-read concatenation per object."
+  ],
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "targeted_existing_tests": 117,
+    "new_boundary_tests": 3,
+    "full_default_suite": {
+      "passed": 3531,
+      "skipped": 629
+    },
+    "coverage": [
+      "Oversized ordinary, predicate and late column plans reject before scanner opening and release all reservations.",
+      "Unicode name size is covered by the admission test.",
+      "Existing exact-peak borrowed projection/deferred-limit, offset scaling, mutable payload and cleanup tests pass.",
+      "Real HTTP range/emulated fallback and concurrent cold/warm fixture matrix remains green in the full suite."
+    ]
+  },
+  "remaining": [
+    "Unscoped projectedReadColumns callers remain in explain, task discovery and object planning; those require ownership contracts for returned plans as well as scratch admission.",
+    "Window read-column planning and broader metadata/compiler/converter workspace remain separate audit gaps.",
+    "No total Worker heap bound is inferred from read-plan reservation charges."
+  ]
+}

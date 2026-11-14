@@ -1,0 +1,167 @@
+{
+  "description": "Identical decimal-less-than-number results, comparing a scoped scalar conversion loop against prepared vector literals. Inputs excluded from timing and output reservations. Both modes admit output and comparison storage. Two warmups, seven measured samples. This is a local controlled comparison, not an archived before/after revision, cloud throughput or VM-heap measurement.",
+  "node": "v24.18.1",
+  "sources": {
+    "packages/core/src/decimal-comparison.ts": "04e5ce5220ad24857593c7bcc8a34f7979b3a2330d582eac886b434a704c1264",
+    "packages/core/src/decimal-value.ts": "79ad93bbc03aa2ba663b5d8440736e909a0dd5ba77fa3a34c69d2c8d741a0f40",
+    "packages/core/src/batch.ts": "fc96f9d6576e0d354af0c2be3af6b952ff5c9d614ab68922e3954275cbb32e2a"
+  },
+  "results": [
+    {
+      "name": "fraction",
+      "rows": 100,
+      "mode": "scalar conversion loop",
+      "peakBytes": 1470,
+      "retainedBytes": 100,
+      "scratchBytes": 1370,
+      "medianMilliseconds": 0.42138299999999873,
+      "samples": [
+        0.42138299999999873, 0.45232099999999775, 0.5145380000000017, 0.49090400000000045,
+        0.238900000000001, 0.19556800000000152, 0.29885300000000115
+      ]
+    },
+    {
+      "name": "fraction",
+      "rows": 100,
+      "mode": "prepared vector literal",
+      "peakBytes": 1470,
+      "retainedBytes": 100,
+      "scratchBytes": 1370,
+      "medianMilliseconds": 0.12252099999999899,
+      "samples": [
+        0.12252099999999899, 0.1214689999999976, 0.14461300000000676, 0.1331910000000036,
+        0.11444500000000346, 0.10937599999999748, 0.14598399999999856
+      ]
+    },
+    {
+      "name": "fraction",
+      "rows": 10000,
+      "mode": "scalar conversion loop",
+      "peakBytes": 11370,
+      "retainedBytes": 10000,
+      "scratchBytes": 1370,
+      "medianMilliseconds": 12.548985000000002,
+      "samples": [
+        12.070284000000001, 11.613584000000003, 13.632653999999988, 12.548985000000002,
+        14.340355999999986, 11.550375000000003, 14.18778900000001
+      ]
+    },
+    {
+      "name": "fraction",
+      "rows": 10000,
+      "mode": "prepared vector literal",
+      "peakBytes": 11370,
+      "retainedBytes": 10000,
+      "scratchBytes": 1370,
+      "medianMilliseconds": 3.6510609999999986,
+      "samples": [
+        3.7421719999999823, 3.6445089999999993, 3.6347800000000063, 3.6510809999999765,
+        3.6693449999999928, 3.6510609999999986, 3.587130000000002
+      ]
+    },
+    {
+      "name": "subnormal",
+      "rows": 100,
+      "mode": "scalar conversion loop",
+      "peakBytes": 5916,
+      "retainedBytes": 100,
+      "scratchBytes": 5816,
+      "medianMilliseconds": 1.5878379999999765,
+      "samples": [
+        1.5878379999999765, 1.7561649999999815, 1.5507080000000144, 3.086939000000001,
+        1.7416169999999909, 1.5719980000000078, 1.5302190000000166
+      ]
+    },
+    {
+      "name": "subnormal",
+      "rows": 100,
+      "mode": "prepared vector literal",
+      "peakBytes": 5916,
+      "retainedBytes": 100,
+      "scratchBytes": 5816,
+      "medianMilliseconds": 1.3593670000000202,
+      "samples": [
+        1.371660999999989, 1.354820000000018, 1.3593670000000202, 1.5073270000000036,
+        1.3538969999999892, 1.3633050000000253, 1.342396000000008
+      ]
+    },
+    {
+      "name": "subnormal",
+      "rows": 10000,
+      "mode": "scalar conversion loop",
+      "peakBytes": 15816,
+      "retainedBytes": 10000,
+      "scratchBytes": 5816,
+      "medianMilliseconds": 155.808713,
+      "samples": [
+        155.808713, 156.82187899999997, 152.86791900000003, 155.86541899999986, 154.8753160000001,
+        156.83168799999999, 154.79510600000003
+      ]
+    },
+    {
+      "name": "subnormal",
+      "rows": 10000,
+      "mode": "prepared vector literal",
+      "peakBytes": 15816,
+      "retainedBytes": 10000,
+      "scratchBytes": 5816,
+      "medianMilliseconds": 134.04751299999998,
+      "samples": [
+        133.039266, 135.032827, 132.730955, 134.68441100000018, 134.04751299999998,
+        135.90868599999976, 133.87947699999995
+      ]
+    },
+    {
+      "name": "largest finite",
+      "rows": 100,
+      "mode": "scalar conversion loop",
+      "peakBytes": 1232,
+      "retainedBytes": 100,
+      "scratchBytes": 1132,
+      "medianMilliseconds": 0.3069969999996829,
+      "samples": [
+        0.5263810000001286, 0.31000300000005154, 0.30088700000032986, 0.3069969999996829,
+        0.2997940000000199, 0.3014469999998255, 0.3098129999998491
+      ]
+    },
+    {
+      "name": "largest finite",
+      "rows": 100,
+      "mode": "prepared vector literal",
+      "peakBytes": 1232,
+      "retainedBytes": 100,
+      "scratchBytes": 1132,
+      "medianMilliseconds": 0.27854400000023816,
+      "samples": [
+        0.28605900000002293, 0.2753490000000056, 0.2753579999998692, 0.45002700000031837,
+        0.2975099999998747, 0.27854400000023816, 0.27622999999994136
+      ]
+    },
+    {
+      "name": "largest finite",
+      "rows": 10000,
+      "mode": "scalar conversion loop",
+      "peakBytes": 11132,
+      "retainedBytes": 10000,
+      "scratchBytes": 1132,
+      "medianMilliseconds": 30.802344000000176,
+      "samples": [
+        31.343292999999903, 30.959060000000136, 29.224585999999817, 30.933810999999878,
+        30.802344000000176, 29.21131000000014, 30.64276400000017
+      ]
+    },
+    {
+      "name": "largest finite",
+      "rows": 10000,
+      "mode": "prepared vector literal",
+      "peakBytes": 11132,
+      "retainedBytes": 10000,
+      "scratchBytes": 1132,
+      "medianMilliseconds": 27.711639000000105,
+      "samples": [
+        27.205485999999837, 28.78295500000013, 27.711639000000105, 27.14521300000024,
+        29.246566999999686, 27.41137400000025, 29.332378999999946
+      ]
+    }
+  ]
+}

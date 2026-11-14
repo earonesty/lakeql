@@ -1,0 +1,24 @@
+{
+  "date": "2026-11-14",
+  "changes": [
+    "Admit aggregate physical-column directory, result array and sorting workspace using the task metadata scope.",
+    "Replace partition-key and aggregate-value temporary arrays with own-property iteration and a shared column-add callback.",
+    "Treat only own partition properties as virtual columns; inherited names such as __proto__ remain physical read candidates."
+  ],
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "targeted_tests": 52,
+    "edge_cases": [
+      "duplicate residual/group references",
+      "partition exclusion",
+      "inherited special-name physical column",
+      "peak-minus-one rejection and scope cleanup",
+      "existing real Parquet scalar/grouped task fixtures"
+    ]
+  },
+  "remaining": [
+    "Other unscoped helper callers and runtime recursion/container overhead are outside this specific admission proof.",
+    "Full release gates and remaining legacy/spill/resume/concurrency acceptance are open."
+  ]
+}

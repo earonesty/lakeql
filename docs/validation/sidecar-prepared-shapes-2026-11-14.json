@@ -1,0 +1,22 @@
+{
+  "sourceBase": "afd8576",
+  "scope": "Admitted per-pruning spatial shape preparation",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 112,
+    "fullSuite": {
+      "passed": 3623,
+      "skipped": 629,
+      "log": "/tmp/sidecar-prepared-shapes-full.log"
+    }
+  },
+  "evidence": [
+    "Exactly one H3 array validation over 100 files for valid and invalid shapes",
+    "Existing exact-capacity and failure rollback coverage includes prepared records"
+  ],
+  "limitations": [
+    "H3 membership still depends on file index and query cells",
+    "Caller configuration storage and broader runtime allocation gaps remain open"
+  ]
+}

@@ -1,0 +1,104 @@
+{
+  "scope": "Local Node synthetic compact footer projection only; two warmups/five samples; both paths inspect all bounds. Retained projected column objects are counted structurally; process heap and peak allocations are not measured. Input generation excluded.",
+  "node": "v24.18.1",
+  "gcEnabled": true,
+  "parserSha256": "cb7b4d64ff3aae870677eb421fa2c8510cd92afb39e9b96e0e858eda35a65217",
+  "reports": [
+    {
+      "groups": 16,
+      "columns": 16,
+      "inputBytes": 4420,
+      "incremental": false,
+      "samplesMs": [
+        0.22671699999999362, 0.19158099999999934, 0.2550109999999961, 0.27832499999999527,
+        0.26252499999999657
+      ],
+      "medianMs": 0.2550109999999961,
+      "retainedColumnObjects": 256
+    },
+    {
+      "groups": 16,
+      "columns": 16,
+      "inputBytes": 4420,
+      "incremental": true,
+      "samplesMs": [
+        0.32685599999999226, 0.2871799999999922, 0.3123679999999922, 0.33851799999999344,
+        0.31364100000000406
+      ],
+      "medianMs": 0.31364100000000406,
+      "retainedColumnObjects": 0
+    },
+    {
+      "groups": 128,
+      "columns": 16,
+      "inputBytes": 35333,
+      "incremental": false,
+      "samplesMs": [
+        2.494277999999994, 2.286787000000004, 2.5823040000000077, 2.1743160000000046,
+        2.3463390000000004
+      ],
+      "medianMs": 2.3463390000000004,
+      "retainedColumnObjects": 2048
+    },
+    {
+      "groups": 128,
+      "columns": 16,
+      "inputBytes": 35333,
+      "incremental": true,
+      "samplesMs": [
+        1.9038260000000093, 1.8725469999999973, 2.2164750000000026, 2.058686999999992,
+        1.624779999999987
+      ],
+      "medianMs": 1.9038260000000093,
+      "retainedColumnObjects": 0
+    },
+    {
+      "groups": 1024,
+      "columns": 16,
+      "inputBytes": 282629,
+      "incremental": false,
+      "samplesMs": [
+        13.717287999999996, 12.083289999999977, 10.972747999999996, 10.266888000000023,
+        9.66825099999997
+      ],
+      "medianMs": 10.972747999999996,
+      "retainedColumnObjects": 16384
+    },
+    {
+      "groups": 1024,
+      "columns": 16,
+      "inputBytes": 282629,
+      "incremental": true,
+      "samplesMs": [
+        10.373759000000007, 11.006832000000031, 6.330132999999989, 8.659571000000028,
+        8.547019000000034
+      ],
+      "medianMs": 8.659571000000028,
+      "retainedColumnObjects": 0
+    },
+    {
+      "groups": 4096,
+      "columns": 16,
+      "inputBytes": 1130501,
+      "incremental": false,
+      "samplesMs": [
+        40.36247500000002, 36.63664600000004, 40.191502000000014, 27.300621999999976,
+        28.797020999999972
+      ],
+      "medianMs": 36.63664600000004,
+      "retainedColumnObjects": 65536
+    },
+    {
+      "groups": 4096,
+      "columns": 16,
+      "inputBytes": 1130501,
+      "incremental": true,
+      "samplesMs": [
+        34.46765199999993, 27.28363999999999, 25.559513000000038, 26.435613000000103,
+        25.892470000000003
+      ],
+      "medianMs": 26.435613000000103,
+      "retainedColumnObjects": 0
+    }
+  ]
+}

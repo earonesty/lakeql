@@ -1,0 +1,31 @@
+{
+  "date": "2026-11-14",
+  "requirements": ["F1", "M1"],
+  "finding": "Physical allocation-scope capability covered selection/projection/top-k but excluded reduction snapshot outputs, preventing query fallback checkpoints from adopting the same contract.",
+  "changes": [
+    "Advertise scalar/grouped reduction and snapshot outputs under the CPU allocation-scope capability.",
+    "Execute scoped one-shot reductions through the existing owned continuation, then adopt its checkpoint into the caller scope and dispose reducer state.",
+    "Apply reduction input-shape and expression validation during allocation-scoped placement, including select/reduce fragments.",
+    "Keep ordinary unscoped execution compatibility; continuation capability remains separately planned."
+  ],
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "targeted_tests": 26,
+    "scenarios": [
+      "Select plus scalar/grouped reduction produces correct snapshots across two batches with restore.",
+      "Explicit checkpoint owners remain valid after execution scopes dispose, and all reservations release after the last owner.",
+      "Generous observed peak succeeds; one byte less succeeds through arena adaptation while remaining within the reduced cap.",
+      "A 16-byte pool rejects with LAKEQL_BUDGET_EXCEEDED and releases partial state."
+    ],
+    "full_default_suite": {
+      "passed": 3468,
+      "skipped": 629
+    }
+  },
+  "remaining": [
+    "Query aggregate fallback still needs to pass allocation scope and retain snapshot ownership between executions.",
+    "Unsupported input shapes and fallback routing must retain explicit capability semantics when integrated.",
+    "No full lifecycle, cloud or total Worker heap acceptance is claimed by these physical operator tests."
+  ]
+}

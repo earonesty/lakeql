@@ -3,13 +3,18 @@ import {
   predicateSelection,
   type Selection,
   selectedRowCount,
-  selectedRowIndices,
+  selectedRowIndexBuffer,
   type Vector,
 } from "./batch.js";
+import { CpuReductionContinuation } from "./cpu-reduction-continuation.js";
+import { decimalValueAllocationBytes } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
 import type { Expr } from "./expr.js";
+import type { MemoryScope, OwnedMemory } from "./memory-scope.js";
+import { ownedAggregateExpressionBytesForColumns } from "./owned-aggregate-input.js";
 import type { AggregateSpec, OrderByTerm, QueryBudget } from "./query.js";
 import { throwIfAborted } from "./store.js";
+import type { Row } from "./types.js";
 import {
   createVectorAggregateStates,
   restoreVectorAggregateStates,
@@ -17,6 +22,7 @@ import {
   updateVectorAggregateStates,
   type VectorAggregateStateSnapshots,
 } from "./vector-aggregate.js";
+import { admitVectorBuffer } from "./vector-buffer.js";
 import {
   type PhysicalScoredCandidates,
   type PhysicalVectorCandidateBlock,
@@ -32,8 +38,17 @@ import {
   updateVectorGroupByState,
   type VectorGroupByStateSnapshot,
 } from "./vector-group-by.js";
-import { type VectorProjectionSpec, vectorProjectBatch } from "./vector-project.js";
-import { gatherBatch, vectorOrderByBatch, vectorTopKBatch } from "./vector-sort.js";
+import {
+  isIdentityVectorProjection,
+  type VectorProjectionSpec,
+  vectorProjectBatch,
+} from "./vector-project.js";
+import {
+  gatherSelectedBatch,
+  vectorOrderByBatch,
+  vectorTopKBatch,
+  vectorTopKOwnedBatch,
+} from "./vector-sort.js";
 
 export type PhysicalVectorShape = Vector["type"];
 
@@ -41,6 +56,7 @@ export interface PhysicalColumnShape {
   shape: PhysicalVectorShape;
   nullable: boolean;
   dictionaryValueShape?: PhysicalColumnShape;
+  unionChildShapes?: readonly PhysicalColumnShape[];
 }
 
 interface PhysicalInputBase {
@@ -203,6 +219,8 @@ export interface PhysicalCapabilities {
   vectorShapes: readonly PhysicalVectorShape[];
   semantics: PhysicalSemanticCapabilities;
   limits: PhysicalBackendLimits;
+  /** Operators that propagate caller-owned allocation scopes and backing lifetimes. */
+  allocationScopeOperators?: readonly PhysicalOperatorKind[];
   supportsResidentInput: boolean;
   supportsResidentOutput: boolean;
 }
@@ -247,6 +265,9 @@ export interface BackendAssessment {
 export type AcceleratorPolicy = "auto" | "disabled" | "required";
 
 export interface BackendPlanningContext {
+  /** Assess persistent, allocation-owned terminal reduction instead of execute(). */
+  requireReductionContinuation?: boolean;
+  requireAllocationScope?: boolean;
   policy?: AcceleratorPolicy;
   budget?: QueryBudget;
   inputResidencyKeys?: ReadonlySet<string>;
@@ -254,6 +275,8 @@ export interface BackendPlanningContext {
 }
 
 export interface BackendExecutionContext {
+  /** Caller pins input backing here and retains output before disposing this scope. */
+  allocationScope?: MemoryScope;
   budget?: QueryBudget;
   now?: () => number;
   queryStartedAt?: number;
@@ -335,8 +358,31 @@ export interface PhysicalFragmentResult {
   metrics: PhysicalExecutionMetrics;
 }
 
+/** Exclusive terminal-operator lifetime. Inputs remain caller-owned. Appends are
+ * ordered and never implicitly checkpoint. Retained outputs own their backing.
+ */
+export interface PhysicalReductionContinuation {
+  readonly backendId: string;
+  append(
+    batch: Batch,
+    selection?: Selection,
+  ): Promise<{ inputRows: number; selectedRows: number; elapsedMs: number }>;
+  /** Optional checkpoint fan-in capability. Source stays borrowed until settled;
+   * failed merges close the continuation because a prefix may have committed. */
+  mergeCheckpoint?(checkpoint: PhysicalOutputValue): Promise<void>;
+  checkpoint(): Promise<OwnedMemory<PhysicalOutputValue>>;
+  finish(): Promise<OwnedMemory<Row[]>>;
+  dispose(): void;
+}
+
 export interface PhysicalExecutionBackend {
   readonly id: string;
+  /** Optional explicit continuation; assess() must honor requireReductionContinuation.
+   * Ordinary execute capabilities do not imply support. */
+  openReduction?(
+    operator: PhysicalReduce | PhysicalGroupedReduce,
+    context: BackendExecutionContext & { allocationScope: MemoryScope },
+  ): PhysicalReductionContinuation;
   capabilities(): PhysicalCapabilities;
   assess(fragment: PhysicalFragment, context: BackendPlanningContext): BackendAssessment;
   compile(fragment: PhysicalFragment): Promise<CompiledPhysicalFragment>;
@@ -398,9 +444,12 @@ const CPU_VECTOR_SHAPES: readonly PhysicalVectorShape[] = [
   "i64",
   "u64",
   "timestamp",
+  "timestamp96",
   "bool",
   "utf8",
   "binary",
+  "binary-view",
+  "utf8-view",
   "dict",
   "list",
   "struct",
@@ -442,6 +491,7 @@ const CPU_CAPABILITIES: PhysicalCapabilities = {
     aggregateState: "lakeql-snapshot",
   },
   limits: {},
+  allocationScopeOperators: ["select", "project", "top-k", "reduce", "grouped-reduce"],
   supportsResidentInput: false,
   supportsResidentOutput: false,
 };
@@ -453,12 +503,25 @@ export class CpuPhysicalBackend implements PhysicalExecutionBackend {
     this.id = id;
   }
 
+  openReduction(
+    operator: PhysicalReduce | PhysicalGroupedReduce,
+    context: BackendExecutionContext & { allocationScope: MemoryScope },
+  ): PhysicalReductionContinuation {
+    return new CpuReductionContinuation(this.id, operator, context);
+  }
+
   capabilities(): PhysicalCapabilities {
     return CPU_CAPABILITIES;
   }
 
   assess(fragment: PhysicalFragment, context: BackendPlanningContext): BackendAssessment {
-    const reasons = [...validatePhysicalFragment(fragment), ...validateCpuPlacement(fragment)];
+    const reasons = [
+      ...validatePhysicalFragment(fragment),
+      ...validateCpuPlacement(fragment),
+      ...(context.requireReductionContinuation || context.requireAllocationScope
+        ? cpuReductionInputReasons(fragment)
+        : []),
+    ];
     return {
       supported: reasons.length === 0,
       reasons,
@@ -495,6 +558,10 @@ export class CpuPhysicalBackend implements PhysicalExecutionBackend {
         details: { inputKind: input.kind },
       });
     }
+    if (context.allocationScope !== undefined) {
+      const reasons = allocationScopeReasons(compiled.fragment, this.capabilities());
+      if (reasons.length > 0) throw unsupportedBackend(this.id, compiled.fragment, reasons);
+    }
     const now = context.now ?? (() => Date.now());
     const startedAt = now();
     const budget = context.budget;
@@ -524,15 +591,56 @@ export class CpuPhysicalBackend implements PhysicalExecutionBackend {
           { replayable: false, details: { fragmentId: compiled.fragment.id } },
         );
       }
+      if (
+        context.allocationScope &&
+        (operator.kind === "reduce" || operator.kind === "grouped-reduce")
+      ) {
+        const reduction = this.openReduction(operator, {
+          ...context,
+          allocationScope: context.allocationScope,
+        });
+        try {
+          await reduction.append(batch, selection);
+          const checkpoint = await reduction.checkpoint();
+          try {
+            const value = checkpoint.value;
+            if (value.kind !== "aggregate-snapshot" && value.kind !== "grouped-aggregate-snapshot")
+              throw new LakeqlError(
+                "LAKEQL_PHYSICAL_BACKEND_FAILURE",
+                "Invalid reduction checkpoint",
+              );
+            context.allocationScope.adopt(checkpoint);
+            terminal = value;
+          } catch (error) {
+            checkpoint.release();
+            throw error;
+          }
+        } finally {
+          reduction.dispose();
+        }
+        continue;
+      }
       switch (operator.kind) {
         case "select": {
-          const next = predicateSelection(batch, operator.predicate);
-          selection = selection === undefined ? next : intersectSelections(selection, next);
+          const next = predicateSelection(batch, operator.predicate, context.allocationScope);
+          if (selection === undefined) selection = next;
+          else {
+            const previous = selection;
+            selection = intersectSelections(previous, next, context.allocationScope);
+            context.allocationScope?.releaseAllocation(previous);
+            context.allocationScope?.releaseAllocation(next);
+          }
           matchedRows = selectedRowCount(batch.rowCount, selection);
           break;
         }
         case "project":
-          batch = vectorProjectBatch(batch, operator.select, operator.projections);
+          if (!isIdentityVectorProjection(batch, operator.select, operator.projections))
+            batch = vectorProjectBatch(
+              batch,
+              operator.select,
+              operator.projections,
+              context.allocationScope,
+            );
           break;
         case "reduce": {
           if (
@@ -605,21 +713,54 @@ export class CpuPhysicalBackend implements PhysicalExecutionBackend {
             budget,
             compiled.fragment.id,
           );
-          batch = vectorTopKBatch(
-            batch,
-            operator.orderBy,
-            {
-              limit: operator.limit,
-              ...(operator.offset === undefined ? {} : { offset: operator.offset }),
-            },
-            selection,
-          );
+          if (context.allocationScope === undefined) {
+            batch = vectorTopKBatch(
+              batch,
+              operator.orderBy,
+              {
+                limit: operator.limit,
+                ...(operator.offset === undefined ? {} : { offset: operator.offset }),
+              },
+              selection,
+            );
+          } else {
+            const maskOwner =
+              selection === undefined
+                ? undefined
+                : context.allocationScope.retainAllocation(selection);
+            try {
+              if (selection !== undefined) context.allocationScope.releaseAllocation(selection);
+              const inputOwner = context.allocationScope.retainAllocations(batch);
+              try {
+                const outputOwner = vectorTopKOwnedBatch(
+                  inputOwner,
+                  operator.orderBy,
+                  {
+                    limit: operator.limit,
+                    ...(operator.offset === undefined ? {} : { offset: operator.offset }),
+                  },
+                  selection,
+                );
+                batch = context.allocationScope.adopt(outputOwner).value;
+              } finally {
+                inputOwner.release();
+              }
+            } finally {
+              maskOwner?.release();
+            }
+          }
           selection = undefined;
           break;
       }
     }
 
-    const output = cpuOutput(compiled.fragment.output, batch, selection, terminal);
+    const output = cpuOutput(
+      compiled.fragment.output,
+      batch,
+      selection,
+      terminal,
+      context.allocationScope,
+    );
     const finishedAt = now();
     const elapsedMs = finishedAt - startedAt;
     const budgetElapsedMs = finishedAt - (context.queryStartedAt ?? startedAt);
@@ -693,6 +834,110 @@ export function estimateBatchBytes(batch: Batch): number {
   return bytes;
 }
 
+function reductionContinuationReasons(
+  fragment: PhysicalFragment,
+  backend: PhysicalExecutionBackend,
+): BackendRejection[] {
+  const operator = fragment.operators[0];
+  if (
+    !backend.openReduction ||
+    fragment.input.kind !== "batch" ||
+    fragment.operators.length !== 1 ||
+    (operator?.kind !== "reduce" && operator?.kind !== "grouped-reduce")
+  )
+    return [{ code: "operator", message: "Backend does not support this reduction continuation" }];
+  return [];
+}
+
+function cpuReductionInputReasons(fragment: PhysicalFragment): BackendRejection[] {
+  const operator = fragment.operators.find(
+    (value) => value.kind === "reduce" || value.kind === "grouped-reduce",
+  );
+  if (
+    fragment.input.kind !== "batch" ||
+    (operator?.kind !== "reduce" && operator?.kind !== "grouped-reduce")
+  )
+    return [];
+  const columns = fragment.input.columns;
+  const requireShape = (shape: PhysicalColumnShape | undefined): void => {
+    if (!shape) throw new Error("Missing reduction input column");
+    if (shape.shape === "dict") {
+      requireShape(shape.dictionaryValueShape);
+      return;
+    }
+    if (shape.shape === "union") {
+      if (!shape.unionChildShapes) throw new Error("Missing union child allocation metadata");
+      for (const child of shape.unionChildShapes) requireShape(child);
+      return;
+    }
+    if (["binary", "binary-view", "list", "struct", "map"].includes(shape.shape))
+      throw new Error(`Reduction continuation lacks allocation metadata for ${shape.shape}`);
+  };
+  const reductionIndex = fragment.operators.indexOf(operator);
+  const requireColumnAt = (name: string, before: number): void => {
+    for (let index = before - 1; index >= 0; index--) {
+      const project = fragment.operators[index];
+      if (project?.kind !== "project") continue;
+      const expression =
+        project.projections !== undefined && Object.hasOwn(project.projections, name)
+          ? project.projections[name]
+          : undefined;
+      if (expression !== undefined) {
+        ownedAggregateExpressionBytesForColumns(expression, (source) =>
+          requireColumnAt(source, index),
+        );
+        return;
+      }
+      if (
+        project.select !== undefined &&
+        project.select.length > 0 &&
+        !project.select.includes("*") &&
+        !project.select.includes(name)
+      )
+        throw new Error(`Reduction column ${name} was removed by projection`);
+    }
+    requireShape(Object.hasOwn(columns, name) ? columns[name] : undefined);
+  };
+  const requireColumn = (name: string): void => requireColumnAt(name, reductionIndex);
+  try {
+    if (operator.kind === "grouped-reduce") for (const key of operator.keys) requireColumn(key);
+    for (const alias in operator.aggregates) {
+      if (!Object.hasOwn(operator.aggregates, alias)) continue;
+      const aggregate = operator.aggregates[alias];
+      if (!aggregate) continue;
+      if (aggregate.expr) ownedAggregateExpressionBytesForColumns(aggregate.expr, requireColumn);
+      else if (aggregate.column !== undefined) requireColumn(aggregate.column);
+    }
+    return [];
+  } catch (error) {
+    return [
+      {
+        code: "input-shape",
+        message: error instanceof Error ? error.message : "Unsupported reduction input",
+      },
+    ];
+  }
+}
+
+function allocationScopeReasons(
+  fragment: PhysicalFragment,
+  capabilities: PhysicalCapabilities,
+): BackendRejection[] {
+  const supported = capabilities.allocationScopeOperators ?? [];
+  if (
+    fragment.input.kind !== "batch" ||
+    !["batch", "selection", "indices", "aggregate-snapshot", "grouped-aggregate-snapshot"].includes(
+      fragment.output.kind,
+    ) ||
+    fragment.operators.some((operator) => !supported.includes(operator.kind))
+  ) {
+    return [
+      { code: "operator", message: "Backend does not support allocation scopes for this fragment" },
+    ];
+  }
+  return [];
+}
+
 export function planPhysicalFragment(
   fragment: PhysicalFragment,
   backends: readonly PhysicalExecutionBackend[],
@@ -729,6 +974,11 @@ export function planPhysicalFragment(
     const costReasons = invalidCostReasons(assessment.cost);
     const reasons = uniqueRejections([
       ...contractReasons,
+      ...(context.requireReductionContinuation
+        ? reductionContinuationReasons(fragment, backend)
+        : context.requireAllocationScope
+          ? allocationScopeReasons(fragment, capabilities)
+          : []),
       ...assessment.reasons,
       ...policyReasons,
       ...budgetReasons,
@@ -793,6 +1043,10 @@ export async function executePlannedPhysicalFragment(
       { fragmentId: plan.fragment.id, backendId: plan.backendId },
     );
   }
+  if (context.allocationScope !== undefined) {
+    const reasons = allocationScopeReasons(plan.fragment, selected.capabilities());
+    if (reasons.length > 0) throw unsupportedBackend(selected.id, plan.fragment, reasons);
+  }
   try {
     const compiled = await selected.compile(plan.fragment);
     return await selected.execute(compiled, input, context);
@@ -807,6 +1061,11 @@ export async function executePlannedPhysicalFragment(
     }
     const cpu = backends.find((backend) => backend.capabilities().backendKind === "cpu");
     if (cpu === undefined) throw error;
+    if (
+      context.allocationScope !== undefined &&
+      allocationScopeReasons(plan.fragment, cpu.capabilities()).length > 0
+    )
+      throw error;
     const compiled = await cpu.compile(plan.fragment);
     const replay = await cpu.execute(compiled, input, context);
     const attempt = error.attemptedMetrics;
@@ -1141,20 +1400,35 @@ function physicalColumnShape(vector: Vector): PhysicalColumnShape {
     ...(vector.type === "dict"
       ? { dictionaryValueShape: physicalColumnShape(vector.dictionary) }
       : {}),
+    ...(vector.type === "union"
+      ? { unionChildShapes: vector.children.map(physicalColumnShape) }
+      : {}),
   };
 }
 
 function sameColumnShape(left: PhysicalColumnShape, right: PhysicalColumnShape): boolean {
   if (left.shape !== right.shape || left.nullable !== right.nullable) return false;
   if (left.dictionaryValueShape === undefined || right.dictionaryValueShape === undefined) {
-    return left.dictionaryValueShape === right.dictionaryValueShape;
-  }
-  return sameColumnShape(left.dictionaryValueShape, right.dictionaryValueShape);
+    if (left.dictionaryValueShape !== right.dictionaryValueShape) return false;
+  } else if (!sameColumnShape(left.dictionaryValueShape, right.dictionaryValueShape)) return false;
+  if (left.unionChildShapes === undefined || right.unionChildShapes === undefined)
+    return left.unionChildShapes === right.unionChildShapes;
+  return (
+    left.unionChildShapes.length === right.unionChildShapes.length &&
+    left.unionChildShapes.every((child, index) => {
+      const other = right.unionChildShapes?.[index];
+      return other !== undefined && sameColumnShape(child, other);
+    })
+  );
 }
 
 function estimateVectorBytes(vector: Vector): number {
   let bytes = "valid" in vector && vector.valid !== undefined ? vector.valid.byteLength : 0;
   switch (vector.type) {
+    case "union":
+      bytes += vector.tags.byteLength + vector.offsets.byteLength;
+      for (const child of vector.children) bytes += estimateVectorBytes(child);
+      return bytes;
     case "null":
       return bytes;
     case "f32":
@@ -1167,9 +1441,17 @@ function estimateVectorBytes(vector: Vector): number {
     case "timestamp":
     case "bool":
       return bytes + vector.values.byteLength;
+    case "timestamp96":
+      return bytes + vector.low.byteLength + vector.high.byteLength;
+    case "decimal":
+      for (const value of vector.values) bytes += decimalValueAllocationBytes(value.coefficient);
+      return bytes;
     case "utf8":
       for (const value of vector.values) bytes += value.length * 2;
       return bytes;
+    case "binary-view":
+    case "utf8-view":
+      return bytes + vector.data.byteLength + (vector.ranges?.byteLength ?? 0);
     case "binary":
       for (const value of vector.values) bytes += value.byteLength;
       return bytes;
@@ -1190,14 +1472,14 @@ function estimateVectorBytes(vector: Vector): number {
   }
 }
 
-function intersectSelections(left: Selection, right: Selection): Selection {
+function intersectSelections(left: Selection, right: Selection, scope?: MemoryScope): Selection {
   if (left.length !== right.length) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Physical selections have different lengths", {
       left: left.length,
       right: right.length,
     });
   }
-  const selection = new Uint8Array(left.length);
+  const selection = admitVectorBuffer(scope, left.length, () => new Uint8Array(left.length));
   for (let index = 0; index < left.length; index += 1) {
     selection[index] = left[index] === 1 && right[index] === 1 ? 1 : 0;
   }
@@ -1211,6 +1493,7 @@ function cpuOutput(
   terminal:
     | Extract<PhysicalOutputValue, { kind: "aggregate-snapshot" | "grouped-aggregate-snapshot" }>
     | undefined,
+  scope?: MemoryScope,
 ): PhysicalOutputValue {
   if (terminal !== undefined) {
     if (terminal.kind !== expected.kind) {
@@ -1223,29 +1506,21 @@ function cpuOutput(
   }
   switch (expected.kind) {
     case "batch": {
-      const indices =
-        selection === undefined
-          ? undefined
-          : Array.from(selectedRowIndices(batch.rowCount, selection));
-      return {
-        kind: "batch",
-        batch: indices === undefined ? batch : gatherBatch(batch, indices),
-      };
+      if (selection === undefined) return { kind: "batch", batch };
+      return { kind: "batch", batch: gatherSelectedBatch(batch, selection, scope) };
     }
     case "selection":
       return {
         kind: "selection",
-        selection: selection ?? new Uint8Array(batch.rowCount).fill(1),
+        selection:
+          selection ??
+          admitVectorBuffer(scope, batch.rowCount, () => new Uint8Array(batch.rowCount).fill(1)),
       };
-    case "indices": {
-      const indices = Array.from(selectedRowIndices(batch.rowCount, selection));
-      if (indices.some((index) => index > 0xffff_ffff)) {
-        throw new LakeqlError("LAKEQL_TYPE_ERROR", "Physical index output exceeds u32", {
-          rowCount: batch.rowCount,
-        });
-      }
-      return { kind: "indices", indices: Uint32Array.from(indices) };
-    }
+    case "indices":
+      return {
+        kind: "indices",
+        indices: selectedRowIndexBuffer(batch.rowCount, selection, scope),
+      };
     case "aggregate-snapshot":
     case "grouped-aggregate-snapshot":
     case "vector-candidates":

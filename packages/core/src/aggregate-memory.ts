@@ -1,3 +1,7 @@
+import { LakeqlError } from "./errors.js";
+import { jsonStringUtf8Bytes } from "./json-string-size.js";
+import type { QueryBudget } from "./query.js";
+
 /**
  * Buffering aggregates (count_distinct, approx_count_distinct, mode, median, quantile) charge a
  * memory budget the UTF-8 bytes of `JSON.stringify` of the list they buffer. They keep that size
@@ -10,14 +14,10 @@
  */
 export const unmeasuredMemoryBytes = 0;
 
-const textEncoder = new TextEncoder();
-// JSON.stringify escapes control characters, so printable ASCII covers most of what it writes.
-const printableAscii = /^[ -~]*$/;
-
 /** UTF-8 bytes of one buffered item as `JSON.stringify` writes it inside a list. */
 export function jsonItemBytes(value: string | number): number {
-  const json = JSON.stringify(value);
-  return printableAscii.test(json) ? json.length : textEncoder.encode(json).byteLength;
+  if (typeof value === "string") return jsonStringUtf8Bytes(value);
+  return Number.isFinite(value) ? String(value).length : 4;
 }
 
 /** UTF-8 bytes of `JSON.stringify(values)` for a whole list. */
@@ -41,4 +41,32 @@ export function jsonListBytesAfterAppend(
   itemBytes: number,
 ): number {
   return itemsBefore === 0 ? 2 + itemBytes : listBytes + 1 + itemBytes;
+}
+
+/** Validate prospective buffered growth before mutating a collection. The input
+ * total must already be measured when a serialized-byte limit is enabled. */
+export function bufferedAppendBytes(
+  bytesBefore: number,
+  itemsBefore: number,
+  value: string | number,
+  budget?: QueryBudget,
+): number {
+  const rows = itemsBefore + 1;
+  const bytes =
+    budget?.maxMemoryBytes === undefined
+      ? unmeasuredMemoryBytes
+      : jsonListBytesAfterAppend(bytesBefore, itemsBefore, jsonItemBytes(value));
+  if (budget?.maxBufferedRows !== undefined && rows > budget.maxBufferedRows)
+    rejectAppend("buffered rows", budget.maxBufferedRows, rows);
+  if (budget?.maxMemoryBytes !== undefined && bytes > budget.maxMemoryBytes)
+    rejectAppend("operator memory bytes", budget.maxMemoryBytes, bytes);
+  return bytes;
+}
+
+function rejectAppend(metric: string, limit: number, actual: number): never {
+  throw new LakeqlError(
+    "LAKEQL_BUDGET_EXCEEDED",
+    `Query exceeded ${metric} budget (${actual} > ${limit})`,
+    { metric, limit, actual },
+  );
 }

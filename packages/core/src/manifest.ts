@@ -1,8 +1,12 @@
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
+import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
 import { isPrototypeMutationKey } from "./object-key.js";
+import { stringifyOwnedStableData } from "./owned-checkpoint-encoding.js";
 import type { TaskInput } from "./query.js";
 import type { ObjectStore } from "./store.js";
 import type { Bookmark, BookmarkQuery } from "./types.js";
+import { fnv1a64Utf8 } from "./utf8-fingerprint.js";
 import { isWindowExprSnapshot } from "./window-snapshot.js";
 
 export interface TaskManifestTask {
@@ -85,31 +89,105 @@ export interface BookmarkInit {
   operatorState?: Bookmark["operatorState"];
 }
 
-export function createTaskManifest(input: {
+interface TaskManifestInput {
   jobId: string;
   snapshot?: string;
   tasks: TaskInput[];
   outputRole?: TaskManifestTask["outputRole"];
-}): TaskManifest {
-  const normalizedTasks = input.tasks.map(normalizeTaskInput);
-  const snapshot = input.snapshot ?? snapshotFromTasks(normalizedTasks);
-  const tasks = normalizedTasks.map((task, index) => ({
-    id: taskId(input.jobId, index, task),
-    input: task,
-    outputRole: input.outputRole ?? "rows",
-  }));
-  const planFingerprint = fingerprint({
-    version: 1,
-    snapshot,
-    tasks: tasks.map((task) => task.input),
-  });
-  return {
-    version: 1,
-    jobId: input.jobId,
-    planFingerprint,
-    snapshot,
-    tasks,
-  };
+}
+
+export function createTaskManifest(input: TaskManifestInput): TaskManifest {
+  return buildTaskManifest(input);
+}
+
+/** Retains the input owner; the caller keeps responsibility for its own handle.
+ * Input backing is shared, so callers must not mutate it while the manifest is live.
+ */
+export function createOwnedTaskManifest(
+  input: Omit<TaskManifestInput, "tasks"> & { tasks: OwnedMemory<TaskInput[]> },
+): OwnedMemory<TaskManifest> {
+  const scope = new MemoryScope(input.tasks.budget);
+  try {
+    scope.adopt(input.tasks.retain());
+    const args = scope.childScope();
+    try {
+      const borrowed = args.allocate(c.object + 4 * c.property, "manifest arguments", () => ({
+        ...input,
+        tasks: input.tasks.value,
+      })).value;
+      const manifest = buildTaskManifest(borrowed, scope);
+      return scope.retainAllocations(manifest);
+    } finally {
+      args.dispose();
+    }
+  } finally {
+    scope.dispose();
+  }
+}
+
+function buildTaskManifest(input: TaskManifestInput, scope?: MemoryScope): TaskManifest {
+  const scratch = scope?.childScope();
+  const allocate = <T>(
+    owner: MemoryScope | undefined,
+    bytes: number,
+    purpose: string,
+    create: () => T,
+  ): T => (owner === undefined ? create() : owner.allocate(bytes, purpose, create).value);
+  try {
+    const normalizedTasks = allocate(
+      scratch,
+      c.array + input.tasks.length * c.arraySlot,
+      "normalized task list",
+      () => [] as TaskInput[],
+    );
+    for (const task of input.tasks) normalizedTasks.push(normalizeTaskInput(task, scope));
+    const snapshot = input.snapshot ?? snapshotFromTasks(normalizedTasks, scope);
+    if (input.snapshot !== undefined)
+      scope?.allocate(
+        c.string + input.snapshot.length * c.stringCodeUnit,
+        "manifest snapshot",
+        () => undefined,
+      );
+    scope?.allocate(
+      c.string + input.jobId.length * c.stringCodeUnit,
+      "manifest job id",
+      () => undefined,
+    );
+    const tasks = allocate(
+      scope,
+      c.array + normalizedTasks.length * c.arraySlot,
+      "manifest task list",
+      () => [] as TaskManifestTask[],
+    );
+    for (let index = 0; index < normalizedTasks.length; index++) {
+      const task = normalizedTasks[index];
+      if (task === undefined) continue;
+      const id = taskId(input.jobId, index, task, scope);
+      tasks.push(
+        allocate(scope, c.object + 3 * c.property, "manifest task", () => ({
+          id,
+          input: task,
+          outputRole: input.outputRole ?? "rows",
+        })),
+      );
+    }
+    // Reuse the normalized input list instead of mapping the manifest entries again.
+    const plan = allocate(scratch, c.object + 3 * c.property, "manifest fingerprint input", () => ({
+      version: 1,
+      snapshot,
+      tasks: normalizedTasks,
+    }));
+    const planFingerprint = fingerprint(plan, scope);
+    return allocate(scope, c.object + 5 * c.property, "task manifest", () => ({
+      version: 1 as const,
+      jobId: input.jobId,
+      planFingerprint,
+      snapshot,
+      tasks,
+    }));
+  } finally {
+    scratch?.dispose();
+  }
 }
 
 export function createOutputManifest(input: {
@@ -345,14 +423,72 @@ export function stableStringify(value: unknown): string {
   return JSON.stringify(toStableJson(value));
 }
 
-export function fingerprint(value: unknown): string {
-  return `fp_${fnv1a64(stableStringify(value)).toString(16).padStart(16, "0")}`;
+export function fingerprint(value: unknown, parent?: MemoryScope): string {
+  if (parent === undefined) return fingerprintText(stableStringify(value));
+  const output = parent.childScope();
+  const scratch = output.childScope();
+  try {
+    const text = scratch.adopt(stringifyOwnedStableData(value, scratch)).value;
+    // Hash arithmetic and hexadecimal formatting have constant live extent.
+    scratch.allocate(
+      8 * c.bigint + 2 * c.string + 32 * c.stringCodeUnit,
+      "fingerprint workspace",
+      () => undefined,
+    );
+    const result = output.allocate(c.string + 19 * c.stringCodeUnit, "fingerprint", () =>
+      fingerprintText(text),
+    );
+    const owner = output.retainAllocations(result.value);
+    try {
+      return parent.adopt(owner).value;
+    } catch (error) {
+      owner.release();
+      throw error;
+    }
+  } finally {
+    scratch.dispose();
+    output.dispose();
+  }
 }
 
-function normalizeTaskInput(task: TaskInput): TaskInput {
+function fingerprintText(text: string): string {
+  return `fp_${fnv1a64Utf8(text).toString(16).padStart(16, "0")}`;
+}
+
+function normalizeTaskInput(task: TaskInput, scope?: MemoryScope): TaskInput {
+  if (scope !== undefined) {
+    let partitions = 0;
+    for (const key in task.partitionValues)
+      if (Object.hasOwn(task.partitionValues, key)) partitions++;
+    const columns = task.projectedColumns?.length ?? 0;
+    const ranges = task.rowGroupRanges.length;
+    const retained =
+      c.object +
+      9 * c.property +
+      c.array +
+      ranges * (c.arraySlot + c.object + 2 * c.property) +
+      c.object +
+      partitions * c.property +
+      (task.projectedColumns === undefined ? 0 : c.array + columns * c.arraySlot) +
+      (task.window === undefined ? 0 : c.object + 4 * c.property);
+    // Keys, range sorting, and column sorting overlap normalized output.
+    const sorting = scope.reserve(
+      c.array +
+        c.object +
+        4 * c.property +
+        (partitions * 3 + ranges * 2 + columns * 2) * c.arraySlot,
+      "task normalization sorting",
+    );
+    try {
+      return scope.allocate(retained, "normalized task storage", () => normalizeTaskInput(task))
+        .value;
+    } finally {
+      sorting.release();
+    }
+  }
   const normalized: TaskInput = {
     path: task.path,
-    rowGroupRanges: [...task.rowGroupRanges]
+    rowGroupRanges: task.rowGroupRanges
       .map((range) => ({ start: range.start, end: range.end }))
       .sort((a, b) => a.start - b.start || a.end - b.end),
     partitionValues: sortRecord(task.partitionValues),
@@ -473,18 +609,48 @@ function parseOutputIcebergMetadata(value: unknown): NonNullable<OutputManifestE
   };
 }
 
-function snapshotFromTasks(tasks: TaskInput[]): string {
-  return fingerprint(
-    tasks.map((task) => ({
-      path: task.path,
-      etag: task.etag ?? null,
-      size: task.size ?? null,
-    })),
-  );
+function snapshotFromTasks(tasks: TaskInput[], scope?: MemoryScope): string {
+  const scratch = scope?.childScope();
+  try {
+    const create = () =>
+      tasks.map((task) => ({ path: task.path, etag: task.etag ?? null, size: task.size ?? null }));
+    const value =
+      scratch === undefined
+        ? create()
+        : scratch.allocate(
+            c.array + tasks.length * (c.arraySlot + c.object + 3 * c.property),
+            "task snapshot input",
+            create,
+          ).value;
+    return fingerprint(value, scope);
+  } finally {
+    scratch?.dispose();
+  }
 }
 
-function taskId(jobId: string, index: number, task: TaskInput): string {
-  return `${jobId}-task-${String(index).padStart(6, "0")}-${fingerprint(task).slice(3, 11)}`;
+function taskId(jobId: string, index: number, task: TaskInput, scope?: MemoryScope): string {
+  const scratch = scope?.childScope();
+  try {
+    const hash = fingerprint(task, scratch);
+    const create = () => `${jobId}-task-${String(index).padStart(6, "0")}-${hash.slice(3, 11)}`;
+    if (scope === undefined) return create();
+    const digits = index === 0 ? 6 : Math.max(6, Math.floor(Math.log10(index)) + 1);
+    const formatting = scratch?.reserve(
+      3 * c.string + (digits * 2 + 8) * c.stringCodeUnit,
+      "task id formatting",
+    );
+    try {
+      return scope.allocate(
+        c.string + (jobId.length + 7 + digits + 8) * c.stringCodeUnit,
+        "task id",
+        create,
+      ).value;
+    } finally {
+      formatting?.release();
+    }
+  } finally {
+    scratch?.dispose();
+  }
 }
 
 function jobIdFromTaskId(taskId: string): string {
@@ -549,7 +715,13 @@ function toStableJson(value: unknown): unknown {
 
 function sortRecord(record: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const key of Object.keys(record).sort()) out[key] = record[key] ?? "";
+  for (const key of Object.keys(record).sort())
+    Object.defineProperty(out, key, {
+      value: record[key] ?? "",
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
   return out;
 }
 
@@ -569,16 +741,6 @@ function assertSafeRecordKey(key: string, message: string): void {
 
 function isStringRecord(value: unknown): value is Record<string, string> {
   return isRecord(value) && Object.values(value).every((inner) => typeof inner === "string");
-}
-
-function fnv1a64(input: string): bigint {
-  let hash = 0xcbf29ce484222325n;
-  const prime = 0x100000001b3n;
-  for (const byte of new TextEncoder().encode(input)) {
-    hash ^= BigInt(byte);
-    hash = BigInt.asUintN(64, hash * prime);
-  }
-  return hash;
 }
 
 async function hmac(payload: string, secret: string | Uint8Array): Promise<string> {

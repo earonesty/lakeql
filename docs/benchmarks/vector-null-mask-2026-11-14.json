@@ -1,0 +1,254 @@
+{
+  "runtimeBase": "145c854",
+  "node": "v24.18.1",
+  "harnessSha256": "09e24ae2e8098b6bd00050b2e28f977f58234d556be0ee945fb8c93395909655",
+  "batchModuleSha256": "5ccf86ab7ffa4e67dfab664babaeb08899b05d6a54524d2707d4eb397abb7285",
+  "description": "Metadata-only IS NULL versus the removed value-materializing loop. Two warmups/six samples, alternating order. Independent validity oracle, exact mask-only pool and complete cleanup. Packed text and two-element lists, source construction excluded.",
+  "limitations": [
+    "Reference reproduces the removed loop using current vectorValue, not a historical whole-revision build.",
+    "Source is borrowed and excluded from the predicate pool. The reference reports the same mask charge despite allocating untracked decoded strings/list payload; decode volume exposes that accounting gap.",
+    "Local Node kernel, not HTTP/cloud latency or whole-runtime memory."
+  ],
+  "results": [
+    {
+      "shape": "packed",
+      "rows": 256,
+      "width": 32,
+      "borrowedSourceBytes": 8448,
+      "variants": {
+        "materializedReference": {
+          "medianMs": 0.07198100000000096,
+          "ms": 0.6248980000000017,
+          "decodeCalls": 219,
+          "decodedBytes": 7008,
+          "chargedPeak": 256,
+          "samplesMs": [
+            0.6248980000000017, 0.10286299999999926, 0.08576200000000256, 0.05816000000000088,
+            0.052859999999995466, 0.05819999999999936
+          ]
+        },
+        "metadata": {
+          "medianMs": 0.04721849999999961,
+          "ms": 0.09957699999999647,
+          "decodeCalls": 0,
+          "decodedBytes": 0,
+          "chargedPeak": 256,
+          "samplesMs": [
+            0.09957699999999647, 0.08257599999998888, 0.05765800000000354, 0.036778999999995676,
+            0.02920500000000459, 0.024286000000003582
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "rows": 4096,
+      "width": 32,
+      "borrowedSourceBytes": 135168,
+      "variants": {
+        "materializedReference": {
+          "medianMs": 0.6276080000000022,
+          "ms": 0.7297149999999988,
+          "decodeCalls": 3510,
+          "decodedBytes": 112320,
+          "chargedPeak": 4096,
+          "samplesMs": [
+            0.7297149999999988, 0.6328430000000083, 0.8621550000000013, 0.6126749999999959,
+            0.6180250000000029, 0.6223729999999961
+          ]
+        },
+        "metadata": {
+          "medianMs": 0.06583900000000398,
+          "ms": 0.15409099999999398,
+          "decodeCalls": 0,
+          "decodedBytes": 0,
+          "chargedPeak": 4096,
+          "samplesMs": [
+            0.15409099999999398, 0.09612099999999657, 0.06372000000000355, 0.0519480000000101,
+            0.0679580000000044, 0.06306899999999871
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "rows": 256,
+      "width": 4096,
+      "borrowedSourceBytes": 1048832,
+      "variants": {
+        "materializedReference": {
+          "medianMs": 0.11733100000000007,
+          "ms": 0.11939499999999725,
+          "decodeCalls": 219,
+          "decodedBytes": 897024,
+          "chargedPeak": 256,
+          "samplesMs": [
+            0.11939499999999725, 0.28426600000000235, 0.1152670000000029, 0.10912599999998918,
+            0.10896499999999776, 0.2615920000000074
+          ]
+        },
+        "metadata": {
+          "medianMs": 0.01630049999999983,
+          "ms": 0.02028900000000533,
+          "decodeCalls": 0,
+          "decodedBytes": 0,
+          "chargedPeak": 256,
+          "samplesMs": [
+            0.02028900000000533, 0.015850000000000364, 0.023083999999997218, 0.015409000000005335,
+            0.016750999999999294, 0.014887999999999124
+          ]
+        }
+      }
+    },
+    {
+      "shape": "packed",
+      "rows": 4096,
+      "width": 4096,
+      "borrowedSourceBytes": 16781312,
+      "variants": {
+        "materializedReference": {
+          "medianMs": 2.240036999999994,
+          "ms": 2.6061710000000033,
+          "decodeCalls": 3510,
+          "decodedBytes": 14376960,
+          "chargedPeak": 4096,
+          "samplesMs": [
+            2.6061710000000033, 2.841073999999992, 2.2665619999999933, 2.2135119999999944,
+            2.1292529999999914, 2.2066580000000044
+          ]
+        },
+        "metadata": {
+          "medianMs": 0.050470000000004234,
+          "ms": 0.08791600000000699,
+          "decodeCalls": 0,
+          "decodedBytes": 0,
+          "chargedPeak": 4096,
+          "samplesMs": [
+            0.08791600000000699, 0.04448399999999708, 0.06800799999999185, 0.031179000000008728,
+            0.056456000000011386, 0.0315389999999951
+          ]
+        }
+      }
+    },
+    {
+      "shape": "list",
+      "rows": 256,
+      "width": 32,
+      "borrowedSourceBytes": 17668,
+      "variants": {
+        "materializedReference": {
+          "medianMs": 0.06910550000000626,
+          "ms": 0.1564249999999987,
+          "decodeCalls": 438,
+          "decodedBytes": 14016,
+          "chargedPeak": 256,
+          "samplesMs": [
+            0.1564249999999987, 0.06820900000001018, 0.07010199999999145, 0.07000200000000234,
+            0.06528300000000797, 0.065101999999996
+          ]
+        },
+        "metadata": {
+          "medianMs": 0.030242000000001212,
+          "ms": 0.04941300000000126,
+          "decodeCalls": 0,
+          "decodedBytes": 0,
+          "chargedPeak": 256,
+          "samplesMs": [
+            0.04941300000000126, 0.029044999999996435, 0.03143900000000599, 0.04117800000000216,
+            0.01856499999999528, 0.016200999999995247
+          ]
+        }
+      }
+    },
+    {
+      "shape": "list",
+      "rows": 4096,
+      "width": 32,
+      "borrowedSourceBytes": 282628,
+      "variants": {
+        "materializedReference": {
+          "medianMs": 0.968419499999996,
+          "ms": 0.9823319999999995,
+          "decodeCalls": 7020,
+          "decodedBytes": 224640,
+          "chargedPeak": 4096,
+          "samplesMs": [
+            0.9823319999999995, 0.9668519999999887, 0.9946040000000096, 0.8567049999999767,
+            0.9699870000000033, 0.860793000000001
+          ]
+        },
+        "metadata": {
+          "medianMs": 0.08098249999999041,
+          "ms": 0.09071100000001309,
+          "decodeCalls": 0,
+          "decodedBytes": 0,
+          "chargedPeak": 4096,
+          "samplesMs": [
+            0.09071100000001309, 0.08355800000001068, 0.08138299999998821, 0.06677600000000439,
+            0.0805819999999926, 0.05678700000001413
+          ]
+        }
+      }
+    },
+    {
+      "shape": "list",
+      "rows": 256,
+      "width": 4096,
+      "borrowedSourceBytes": 2098436,
+      "variants": {
+        "materializedReference": {
+          "medianMs": 0.551093999999992,
+          "ms": 0.7445629999999994,
+          "decodeCalls": 438,
+          "decodedBytes": 1794048,
+          "chargedPeak": 256,
+          "samplesMs": [
+            0.7445629999999994, 0.43113299999998844, 0.6828759999999932, 0.4243400000000008,
+            0.6710549999999955, 0.3954750000000047
+          ]
+        },
+        "metadata": {
+          "medianMs": 0.02629949999999326,
+          "ms": 0.04694799999998622,
+          "decodeCalls": 0,
+          "decodedBytes": 0,
+          "chargedPeak": 256,
+          "samplesMs": [
+            0.04694799999998622, 0.016189999999994598, 0.040807000000000926, 0.017101999999994177,
+            0.03549699999999234, 0.013474999999999682
+          ]
+        }
+      }
+    },
+    {
+      "shape": "list",
+      "rows": 4096,
+      "width": 4096,
+      "borrowedSourceBytes": 33574916,
+      "variants": {
+        "materializedReference": {
+          "medianMs": 5.24947250000001,
+          "ms": 5.458536000000009,
+          "decodeCalls": 7020,
+          "decodedBytes": 28753920,
+          "chargedPeak": 4096,
+          "samplesMs": [
+            5.458536000000009, 5.456252000000006, 5.179470000000009, 4.462689999999981,
+            4.889624999999995, 5.319475000000011
+          ]
+        },
+        "metadata": {
+          "medianMs": 0.06589399999998591,
+          "ms": 0.09102099999998359,
+          "decodeCalls": 0,
+          "decodedBytes": 0,
+          "chargedPeak": 4096,
+          "samplesMs": [
+            0.09102099999998359, 0.040406000000018594, 0.09244400000000041, 0.038623000000001184,
+            0.1134839999999997, 0.04076699999998823
+          ]
+        }
+      }
+    }
+  ]
+}

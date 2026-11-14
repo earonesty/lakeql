@@ -12,9 +12,13 @@ import {
   isIn,
   isNull,
   isTimestampValue,
+  jsonSafeValue,
+  Lake,
   like,
+  MemoryBudget,
   memoryStore,
   not,
+  notIn,
   or,
   type Row,
   stableStringify,
@@ -22,10 +26,110 @@ import {
 import { fixturePath, SALES, STATS, TYPES } from "lakeql-fixtures";
 import { describe, expect, it } from "vitest";
 import { createParquetLake } from "./index.js";
+import { ParquetScanAdapter } from "./scan-adapter.js";
 
 const describeReference = process.env.LAKEQL_REFERENCE === "1" ? describe : describe.skip;
 
 describeReference("DuckDB reference comparisons", () => {
+  it.each([
+    "PLAIN",
+    "RLE_DICTIONARY",
+  ] as const)("preserves serialized top-k limits on real SNAPPY %s fixtures", async (encoding) => {
+    const bytes = new Uint8Array(
+      parquetWriteBuffer({
+        codec: "SNAPPY",
+        columnData: [
+          { name: "id", type: "INT32", data: Array.from({ length: 200 }, (_, i) => 1000 + i) },
+          { name: "text", type: "STRING", encoding, data: new Array<string>(200).fill("猫😀\n") },
+        ],
+      }),
+    );
+    const dir = mkdtempSync(join(tmpdir(), "lakeql-topk-size-"));
+    const path = join(dir, "fixture.parquet");
+    writeFileSync(path, bytes);
+    try {
+      const expected = await duckDbRows(
+        `select id, text from read_parquet('${sqlString(path)}') order by id desc limit 20`,
+      );
+      const cap = new TextEncoder().encode(stableStringify(jsonSafeValue(expected))).length;
+      const store = memoryStore();
+      await store.put("fixture.parquet", bytes);
+      for (const batchSize of [7, 128]) {
+        for (const limit of [cap, cap - 1]) {
+          const pool = new MemoryBudget(8 * 1024 * 1024);
+          const lake = createParquetLake({
+            store,
+            memoryPool: pool,
+            budget: { maxMemoryBytes: limit, maxAllocatedMemoryBytes: pool.maxBytes },
+          });
+          const query = lake
+            .path("fixture.parquet")
+            .batchSize(batchSize)
+            .orderBy([{ column: "id", direction: "desc" }])
+            .limit(20);
+          if (limit === cap) expect(await query.toArray()).toEqual(expected);
+          else
+            await expect(query.toArray()).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+          expect(pool.usedBytes).toBe(0);
+        }
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    "PLAIN",
+    "RLE_DICTIONARY",
+  ] as const)("matches DuckDB for large numeric IN lists on nullable %s Parquet", async (encoding) => {
+    const data = Array.from({ length: 2048 }, (_, i) => (i % 19 === 0 ? null : (i % 300) - 20));
+    const candidates = Array.from({ length: 128 }, (_, i) => (i * 7) % 100);
+    const bytes = new Uint8Array(
+      parquetWriteBuffer({
+        columnData: [
+          { name: "id", data: Array.from({ length: data.length }, (_, i) => i) },
+          { name: "value", data, encoding },
+        ],
+        schema: [
+          { name: "root", num_children: 2 },
+          { name: "id", type: "INT32", repetition_type: "REQUIRED" },
+          { name: "value", type: "INT32", repetition_type: "OPTIONAL" },
+        ],
+        codec: "SNAPPY",
+      }),
+    );
+    const dir = mkdtempSync(join(tmpdir(), "lakeql-in-reference-"));
+    const path = join(dir, "numeric-in.parquet");
+    writeFileSync(path, bytes);
+    try {
+      const store = memoryStore();
+      await store.put("numeric-in.parquet", bytes);
+      for (const withNull of [false, true]) {
+        for (const negated of [false, true]) {
+          const literals = withNull ? [...candidates, null] : candidates;
+          const reference = await duckDbRows(
+            `select id, value from read_parquet('${sqlString(path)}') where value ${negated ? "not in" : "in"} (${candidates.join(",")}${withNull ? ",NULL" : ""})`,
+          );
+          // Small batches exercise scalar fallback; large batches allow the lookup.
+          for (const batchSize of [3, 2048]) {
+            const pool = new MemoryBudget(1024 * 1024);
+            const lake = createParquetLake({ store, memoryPool: pool });
+            const result = await lake
+              .path("numeric-in.parquet")
+              .batchSize(batchSize)
+              .select(["id", "value"])
+              .where((negated ? notIn : isIn)("value", literals))
+              .toArray();
+            expect(canonicalRows(result)).toEqual(canonicalRows(reference));
+            expect(pool.usedBytes).toBe(0);
+          }
+        }
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("matches DuckDB for a filtered sales Parquet scan", async () => {
     const lakeqlRows = await lakeqlRowsFor(SALES.file, async (lake) =>
       lake
@@ -190,7 +294,8 @@ describeReference("DuckDB reference comparisons", () => {
               cast(3 as ubigint),
               cast('\\x00\\x01' as blob)
             ),
-            (3, null, null, null, null, null)
+            (3, null, null, null, null, null),
+            (4, null, null, null, null, from_hex('FF8000'))
           ) as t(id, u8, u16, u32, u64, payload)
         ) to '${sqlString(path)}' (format parquet)
       `);
@@ -205,7 +310,7 @@ describeReference("DuckDB reference comparisons", () => {
           u16: row.u16,
           u32: row.u32,
           u64: row.u64 === null ? null : String(row.u64),
-          payload: row.payload === null ? null : stringToHex(row.payload),
+          payload: row.payload === null ? null : bytesToHex(row.payload),
         }),
       );
       const referenceRows = await connection.runAndReadAll(`
@@ -229,7 +334,10 @@ describeReference("DuckDB reference comparisons", () => {
     }
   });
 
-  it("matches DuckDB for fixed-length byte arrays", async () => {
+  it.each([
+    "UNCOMPRESSED",
+    "SNAPPY",
+  ] as const)("matches DuckDB for fixed-length byte arrays (%s)", async (codec) => {
     const schema: SchemaElement[] = [
       { name: "root", num_children: 2 },
       { name: "id", type: "INT32", repetition_type: "OPTIONAL" },
@@ -242,10 +350,12 @@ describeReference("DuckDB reference comparisons", () => {
     ];
     const bytes = new Uint8Array(
       parquetWriteBuffer({
+        codec,
         columnData: [
           { name: "id", data: [1, 2, 3] },
           {
             name: "fixed",
+            encoding: "PLAIN",
             data: [new Uint8Array([1, 2, 3, 4]), new Uint8Array([255, 0, 16, 32]), null],
           },
         ],
@@ -271,6 +381,23 @@ describeReference("DuckDB reference comparisons", () => {
       `);
 
       expect(canonicalRows(lakeqlRows)).toEqual(canonicalRows(referenceRows));
+      const owned = async (limit: number) => {
+        const pool = new MemoryBudget(limit);
+        const lake = new Lake({ store, scanner: new ParquetScanAdapter(store), memoryPool: pool });
+        try {
+          const rows = (await lake.path("fixed-len.parquet").batchSize(2).toArray()).map((row) => ({
+            id: row.id,
+            fixed: row.fixed === null ? null : bytesToHex(row.fixed),
+          }));
+          expect(canonicalRows(rows)).toEqual(canonicalRows(referenceRows));
+          return pool.peakBytes;
+        } finally {
+          expect(pool.usedBytes).toBe(0);
+        }
+      };
+      const peak = await owned(1024 * 1024);
+      expect(await owned(peak)).toBe(peak);
+      await expect(owned(peak - 1)).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -386,7 +513,7 @@ describeReference("DuckDB reference comparisons", () => {
         maybe_ts: isoDateString(row.maybe_ts),
         maybe_list: row.maybe_list === null ? null : stableStringify(row.maybe_list),
         maybe_map: row.maybe_map === null ? null : stableStringify(row.maybe_map),
-        maybe_blob: row.maybe_blob === null ? null : stringToHex(row.maybe_blob),
+        maybe_blob: row.maybe_blob === null ? null : bytesToHex(row.maybe_blob),
       }));
       const referenceRows = await connection.runAndReadAll(`
         select
@@ -632,14 +759,6 @@ function isoDateString(value: unknown): string | null {
   if (value instanceof Date) return value.toISOString();
   if (isTimestampValue(value)) return value.toJSON();
   throw new Error(`Expected Date-compatible Parquet value, got ${String(value)}`);
-}
-
-function stringToHex(value: unknown): string {
-  if (typeof value !== "string") throw new Error(`Expected string-compatible bytes, got ${value}`);
-  return [...new TextEncoder().encode(value)]
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("")
-    .toUpperCase();
 }
 
 function bytesToHex(value: unknown): string {

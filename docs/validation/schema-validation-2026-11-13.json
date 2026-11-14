@@ -1,0 +1,40 @@
+{
+  "finding": "Schema validation copied ancestor paths and joined a column string at every node, checked group nodes twice, and recursed while skipping unselected subtrees. Deep selected schemas incurred quadratic path work and could overflow the JS call stack.",
+  "change": "One iterative traversal with a mutable path and remaining-child stack; subtree skipping uses a pending-node counter. Column strings are constructed only for rejected leaves. Workspace is O(depth), traversal is O(schema nodes), excluding the one error-path string.",
+  "validation": {
+    "defaultPassed": 2722,
+    "defaultSkipped": 605,
+    "workerPassed": 51,
+    "referencePassed": 104,
+    "focusedTests": 4,
+    "build": "passed",
+    "lintTypecheck": "passed",
+    "conformance": {
+      "passed": 475,
+      "failed": 18,
+      "skipped": 1,
+      "change": "unchanged known failures"
+    }
+  },
+  "benchmark": "../benchmarks/schema-validation-2026-11-13.json",
+  "limitations": [
+    "Synthetic schema-only timings do not measure whole queries, IO, codec costs or VM heap usage.",
+    "Schema workspace is charged on the listed budget-aware paths; borrowed callers without a budget remain untracked. Error-message strings and other metadata/planner allocations are outside this workspace model.",
+    "Other schema consumers may still recurse. This change does not establish support for arbitrary nesting throughout query execution."
+  ],
+  "allocationAdmission": {
+    "change": "Temporary selection Set, path array, and remaining-child stack are admitted before allocation/growth. Geometric capacity growth needs logarithmically many reservations and stays bounded by schema size. Validation scope releases on success, unsupported schema, or budget failure. Empty projection returns before traversal.",
+    "callers": "Scan adapters (including owned indexed/cached multi-file discovery), aggregate/task scans, and owned indexed task planning propagate the caller budget.",
+    "validation": {
+      "focusedPassed": 33,
+      "defaultPassed": 2726,
+      "defaultSkipped": 605,
+      "workerPassed": 51,
+      "referencePassed": 104,
+      "buildLintTypes": "passed"
+    },
+    "cloudEvidence": "../benchmarks/cloud-schema-admission-2026-11-13.json",
+    "scalingEvidence": "../benchmarks/schema-validation-admitted-2026-11-13.json",
+    "sourceSha256": "f6e276132fee8eb80e0c1c78965e3b2f51756aef54322b4cde5f15e543605ffc"
+  }
+}

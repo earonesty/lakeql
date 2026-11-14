@@ -1,0 +1,30 @@
+{
+  "date": "2026-11-14",
+  "requirements": ["F3", "M1"],
+  "changes": [
+    "Add generic admitted column-name collection with deduplication and optional ordering.",
+    "Deferred top-k rank and output column lists use the same scoped collector rather than untracked Set/spread/map allocations.",
+    "Allow expression column traversal to target a narrow add interface, so admitted collection does not duplicate expression traversal.",
+    "Keep planning ownership in a child scope excluded from returned owned results."
+  ],
+  "validation": {
+    "targeted_tests": 89,
+    "scenarios": [
+      "Exact measured peak and one-byte-below rejection with and without sorting.",
+      "Unicode names, duplicate expression references and prototype-like names.",
+      "Allocation and traversal failures release partial planner storage while preserving sibling ownership.",
+      "Existing borrowed/owned deferred top-k boundary and query semantics tests."
+    ],
+    "build": "passed",
+    "typecheck": "passed",
+    "full_default_suite": {
+      "passed": 3455,
+      "skipped": 629
+    }
+  },
+  "remaining": [
+    "Earlier query-builder configuration and order-term normalization are not covered by this planning helper.",
+    "Other query planners and expression/runtime traversal workspace still require allocation review.",
+    "No total Worker heap claim or new performance-speedup claim."
+  ]
+}

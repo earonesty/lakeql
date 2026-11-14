@@ -1,0 +1,24 @@
+{
+  "status": "Implemented; build, focused, full default and Worker validation passed",
+  "change": "Shared transformStringWithAdmission owns the output forecast for lower, upper, trim and substr in both row and vector evaluators. Casing reserves three UTF-16 units per input unit; trim and slice reserve input extent. This preserves existing vector admission bounds and brings scoped aggregate row expressions under the same contract without duplicate formulas.",
+  "validation": {
+    "build": "passed",
+    "focusedTestsPassed": 39,
+    "workerTestsPassed": 61,
+    "cases": [
+      "Row/vector result parity for Unicode expansions including sharp s, dotted I and ligatures",
+      "Supplementary characters and lone surrogates retain JavaScript semantics",
+      "Empty and 10000-unit inputs",
+      "Negative substring offsets",
+      "Exact retained extent succeeds and one byte less rejects; disposal releases partial argument charges"
+    ],
+    "defaultTestsPassed": 3100,
+    "defaultTestsSkipped": 629
+  },
+  "limits": [
+    "Native VM allocation and scratch are not measured by explicit reservation units.",
+    "Regex, date, spatial and comparison allocations, and scope integration in additional row evaluator call sites, remain open.",
+    "No throughput improvement is claimed by this sharing change."
+  ],
+  "followupEvidence": "having-admission-2026-11-13.json"
+}

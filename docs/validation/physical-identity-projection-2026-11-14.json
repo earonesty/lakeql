@@ -1,0 +1,49 @@
+{
+  "runtimeBase": "c6a848a",
+  "requirements": ["F3", "F5", "M1", "V2"],
+  "finding": "CPU physical projection rebuilt a batch descriptor and column directory for identity mappings on every scanner batch. On the many-page fixture, projection and ownership work were substantial sampled costs.",
+  "fix": [
+    "Recognize identity mappings in the generic CPU project operator: implicit/all-column selections, wildcard selections with only existing names, and explicit unchanged column order, with no computed projection entries.",
+    "Reuse the physical input batch without new descriptor allocation; preserve backend selection, assessment, execution metrics and budget checks.",
+    "Keep the standalone vectorProjectBatch directory-copy contract; subsets, reordering, aliases and errors use the existing projector."
+  ],
+  "validation": {
+    "regularPassed": 3907,
+    "regularSkipped": 645,
+    "focusedPhysicalPassed": 35,
+    "newIdentityCases": 10,
+    "build": "pnpm exec tsc -b passed",
+    "types": "pnpm typecheck passed",
+    "worker": {
+      "passed": 84,
+      "command": "pnpm test:workerd --no-file-parallelism",
+      "inTestConcurrency": "unchanged"
+    },
+    "conformance": {
+      "passed": 520,
+      "skipped": 1,
+      "timeoutUnchangedMs": 5000,
+      "history": "First identity-projection run still timed out on the page-count fixture. After clean timing comparisons, the complete unchanged suite passed; no timeout or assertion adjustment."
+    },
+    "lint": "pnpm lint passed"
+  },
+  "benchmark": {
+    "artifacts": [
+      "docs/benchmarks/page-count-identity-projection-2026-11-14.json",
+      "docs/benchmarks/page-count-identity-projection-repeat-2026-11-14.json"
+    ],
+    "initialPriorMedianMs": 4060.529682,
+    "initialCurrentMedianMs": 3291.1385315,
+    "priorPeakBytes": 802047,
+    "currentPeakBytes": 801657,
+    "caveat": "Initial comparison overlapped type checking early in the run. The clean repeat ran without other agent tests/checks and confirms the improvement. Alternating fresh processes substitute only the prior physical executor with current dependencies; not a full historical build or cloud measurement.",
+    "cleanRepeatPriorMedianMs": 4023.252556,
+    "cleanRepeatCurrentMedianMs": 3221.033899,
+    "cleanRepeatAllReleaseToZero": true
+  },
+  "boundaries": [
+    "Input vectors remain borrowed by the physical result; existing execution scopes/owners retain their backing.",
+    "Physical fragment construction/fingerprinting and planning still occur for each batch; this introduces no growing cache.",
+    "A passing full conformance run and lower standalone medians do not guarantee a wall-clock bound under arbitrary host load. No timeout or assertions were weakened."
+  ]
+}

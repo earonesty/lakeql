@@ -1,0 +1,32 @@
+{
+  "change": "Ungrouped Parquet aggregate tasks now use generic CPU owned reduction continuations for batch updates and checkpoint merges. New owned task and fan-in entrypoints retain partials through asynchronous transport and expose final ownership; plain functions release at caller transfer. Partial owners are released after reduction or drained failure. Custom transport returns are detached under admission even when object identity is unchanged, covering in-place mutation for aggregate and window task boundaries.",
+  "validation": {
+    "defaultSuiteBeforeFinalBoundaryMutationFollowup": {
+      "testsPassed": 3368,
+      "testsSkipped": 629,
+      "filesPassed": 365
+    },
+    "finalTargetedTaskTests": 24,
+    "typescriptBuild": "passed",
+    "typecheck": "passed before final mutation-only followup",
+    "edgeCases": [
+      "real Parquet median/sum/count with null input across two concurrent tasks",
+      "delayed transport holds shared pool reservations",
+      "transport rejection cleans all state and partial owners",
+      "owned final output remains charged until release",
+      "in-place enlarged median checkpoint rejects under 64 KiB and cleans up",
+      "in-place enlarged window row rejects under 64 KiB and cleans up"
+    ]
+  },
+  "compatibility": [
+    "Checkpoint merge capability remains optional for third-party backends.",
+    "Owned scalar vector-shape/expression contracts now apply to task aggregation; unsupported shapes raise the generic typed capability error.",
+    "Generic final output-row budget checks now apply to owned task finalization."
+  ],
+  "remaining": [
+    "Grouped Parquet task state and result shaping remain on legacy functions and need owned integration.",
+    "Task topology/metadata and predicate/partition-column scratch require admission review.",
+    "Allocation inside a custom callback is external; admission bounds the retained copy after callback return.",
+    "Full mixed-operator constrained acceptance remains open."
+  ]
+}

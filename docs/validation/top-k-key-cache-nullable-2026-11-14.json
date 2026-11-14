@@ -1,0 +1,30 @@
+{
+  "runtimeSourceCommit": "a8ba6db",
+  "requirements": ["F5", "V2"],
+  "harness": "bench/top-k-key-cache.mjs",
+  "artifact": "docs/benchmarks/top-k-key-cache-nullable-2026-11-14.json",
+  "matrix": {
+    "scenarios": 36,
+    "variants": 2,
+    "nullOrdering": ["none", "first", "last"],
+    "nullFrequency": "every seventh row",
+    "widths": [16, 128, 1024],
+    "rows": [100, 10000],
+    "limits": [3, 100]
+  },
+  "checks": [
+    "Every iteration matches an independently sorted expected result.",
+    "Null payloads are not decoded into cache; cached validity is copied with admitted storage.",
+    "All iterations end with zero reservations."
+  ],
+  "findings": [
+    "Cached medians were lower in 35 of 36 scenarios in this run, with wide-text top-3/nulls-first slightly slower.",
+    "Timing winners differ from earlier runs, so no production threshold is inferred.",
+    "At width 1024 and 10000 rows, nullable cache uses about 18.3 MB versus roughly 5 KB direct workspace."
+  ],
+  "limitations": [
+    "One ASCII key column; dictionaries, multiple keys, Unicode payloads and cross-job reuse remain unmeasured.",
+    "Sequential Node kernel timings, not cloud/Worker runtime bounds.",
+    "No production cache policy changed."
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "baseCommit": "e9e1529",
+  "acceptanceItems": ["F1", "V2"],
+  "defect": "Duplicate restored group keys silently overwrote earlier accumulator state",
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 32,
+    "fullSuite": {
+      "passed": 3714,
+      "skipped": 629,
+      "filesPassed": 407
+    }
+  },
+  "proof": [
+    "Inline and spilled row checkpoints reject duplicate keys before scanning",
+    "No residual scope charges after rejection",
+    "Vector restore rejects duplicate canonical keys",
+    "Real HTTP206/200 Parquet fixtures reject without further data requests"
+  ],
+  "limitations": ["Full lifecycle and production spill atomicity remain open"]
+}

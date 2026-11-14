@@ -1,0 +1,41 @@
+{
+  "scope": "Local owned concatenation including source construction; explicit allocation accounting, not measured VM heap. One diagnostic run per case, no timing speedup claim. Every output value checked after timing; all owners release to zero. Repeated append followed by selecting [newest, previous] to keep exactly two rows. No cloud transport.",
+  "results": [
+    {
+      "appends": 32,
+      "rows": 2,
+      "modes": {
+        "selected": {
+          "elapsedMs": 19.628517999999993,
+          "retainedBytes": 10689,
+          "peakBytes": 15478,
+          "unionDepth": 2
+        }
+      }
+    },
+    {
+      "appends": 128,
+      "rows": 2,
+      "modes": {
+        "selected": {
+          "elapsedMs": 110.25737000000001,
+          "retainedBytes": 36801,
+          "peakBytes": 41590,
+          "unionDepth": 2
+        }
+      }
+    },
+    {
+      "appends": 512,
+      "rows": 2,
+      "modes": {
+        "selected": {
+          "elapsedMs": 1108.22774,
+          "retainedBytes": 141249,
+          "peakBytes": 146038,
+          "unionDepth": 2
+        }
+      }
+    }
+  ]
+}

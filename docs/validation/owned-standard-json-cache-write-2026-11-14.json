@@ -1,0 +1,28 @@
+{
+  "baseCommit": "ff4f0c4",
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "fullSuite": {
+      "passed": 3693,
+      "skipped": 629,
+      "filesPassed": 402
+    },
+    "workerd": {
+      "passed": 78,
+      "files": 22
+    },
+    "realHttpWriteRead": "passed"
+  },
+  "contract": [
+    "Immutable standard JSON data values",
+    "Custom conversion callbacks and BigInt rejected",
+    "Serialized output and retained input held through put settlement",
+    "Legacy set preserves native JSON.stringify behavior"
+  ],
+  "limitations": [
+    "Adapter-internal write buffering remains external",
+    "Row-array query encoding remains slower than recursive reference",
+    "Not a total Worker heap cap"
+  ]
+}

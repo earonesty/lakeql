@@ -1,0 +1,12 @@
+{
+  "scope": "Public HTTP 206 through scheduled stage, controlled store and owned range cache; exact engine buffer accounting, not full heap or automatic query scheduling",
+  "requests": 1,
+  "metadataProbeRequests": 1,
+  "metadataProbeBytes": 2,
+  "wireBytes": 4096,
+  "copies": 3,
+  "extent": 4144,
+  "peakChargedBytes": 4144,
+  "cachedBytesAfterStage": 4096,
+  "finalChargedBytes": 0
+}

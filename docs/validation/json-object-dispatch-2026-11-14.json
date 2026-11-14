@@ -1,0 +1,20 @@
+{
+  "baseCommit": "041c629566aeefb3cf8c8410376677b039e6278b",
+  "requirements": ["F3", "V2"],
+  "change": "Move object-only query scalar predicates into object branches in sizing and encoding; no changed reservation charges or traversal semantics.",
+  "benchmark": "docs/validation/json-object-dispatch-benchmark-2026-11-14.json",
+  "verification": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedJsonTests": 58,
+    "regularPassed": 3723,
+    "regularSkipped": 629,
+    "workerPassed": 81,
+    "workerFiles": 23
+  },
+  "limitations": [
+    "Kernel timings are sequential short samples, not production throughput.",
+    "Regression against original recursive implementation remains open.",
+    "Full audit acceptance remains open."
+  ]
+}

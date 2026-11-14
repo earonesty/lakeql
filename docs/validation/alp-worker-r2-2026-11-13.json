@@ -1,0 +1,26 @@
+{
+  "status": "Dedicated Worker R2 ALP fixture validation passed",
+  "implementationCommit": "65ecb72",
+  "change": "Worker configuration binds the actual ALP fixture; a dedicated workerd suite uploads it into the local native R2 test binding and queries it through R2ObjectStore and createParquetLake. Fixture presence is required, not silently skipped.",
+  "validation": {
+    "fullTypecheck": "passed",
+    "workerTypecheck": "passed",
+    "workerTestsPassed": 63,
+    "workerFilesPassed": 18,
+    "cases": [
+      "64 and 128 MiB shared pools with 8 MiB per-query caps",
+      "Three concurrent queries using batch sizes 64,128,256; cold and warm shared 512 KiB range cache",
+      "All 9032 rows compare ALP float/double values at vector sizes 32,1024,4096 against independent in-file PLAIN columns; Object.is preserves NaN and negative-zero distinctions",
+      "Early iterator return after first row releases query ownership",
+      "Cache eviction returns pool usage to zero; peak remains within configured cap"
+    ]
+  },
+  "limits": [
+    "Local workerd/Miniflare R2 binding, not a deployed Cloudflare service or hosted performance benchmark.",
+    "Query-level scalar comparisons do not inspect NaN payload bits; decoder fixture tests provide separate byte-level evidence.",
+    "Reservation limits are not a complete JavaScript heap cap.",
+    "No production code changed in this checkpoint; default suite baseline remains 3119 passed and 629 skipped.",
+    "Four BSON/Brotli conformance failures remain unresolved."
+  ],
+  "followupEvidence": "bson-framing-2026-11-13.json"
+}

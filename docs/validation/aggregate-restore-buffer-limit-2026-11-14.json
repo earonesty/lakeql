@@ -1,0 +1,27 @@
+{
+  "baseCommit": "2e3537d",
+  "acceptanceItems": ["F1", "F2", "M2", "V2"],
+  "defect": "Restored aggregate buffer limits were enforced only after a new scanned row",
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedAggregateTests": 36,
+    "realHttpParquetTests": 2,
+    "fullSuite": {
+      "passed": 3711,
+      "skipped": 629,
+      "filesPassed": 407
+    }
+  },
+  "proof": [
+    "Inline/spilled median state rejected before empty scanner invocation at two-row cap",
+    "Exact three-row cap resumes empty scan correctly",
+    "Real Parquet median checkpoint rejected before HTTP206/200 requests",
+    "Shared budget enforcement for restore and per-row updates",
+    "No retained pool usage after success/rejection"
+  ],
+  "limitations": [
+    "General fallback/spill lifecycle acceptance remains open",
+    "Production remote spill atomicity is not covered"
+  ]
+}

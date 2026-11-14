@@ -1,0 +1,128 @@
+{
+  "node": "v24.18.1",
+  "rows": 50000,
+  "fields": 8,
+  "scope": "Local microbenchmark of one-level numeric struct materialization only; alternating order after warmup; not real Parquet or end-to-end latency evidence.",
+  "samples": [
+    {
+      "previous": {
+        "ms": 9.177313999999996,
+        "checksum": 2500300000
+      },
+      "current": {
+        "ms": 10.696679000000017,
+        "checksum": 2500300000
+      }
+    },
+    {
+      "current": {
+        "ms": 9.525959,
+        "checksum": 2500300000
+      },
+      "previous": {
+        "ms": 9.214884999999981,
+        "checksum": 2500300000
+      }
+    },
+    {
+      "previous": {
+        "ms": 9.119935999999996,
+        "checksum": 2500300000
+      },
+      "current": {
+        "ms": 9.634472999999986,
+        "checksum": 2500300000
+      }
+    },
+    {
+      "current": {
+        "ms": 9.448664000000008,
+        "checksum": 2500300000
+      },
+      "previous": {
+        "ms": 9.836453000000006,
+        "checksum": 2500300000
+      }
+    },
+    {
+      "previous": {
+        "ms": 8.839650000000006,
+        "checksum": 2500300000
+      },
+      "current": {
+        "ms": 9.349367,
+        "checksum": 2500300000
+      }
+    },
+    {
+      "current": {
+        "ms": 9.338908000000004,
+        "checksum": 2500300000
+      },
+      "previous": {
+        "ms": 10.589076000000006,
+        "checksum": 2500300000
+      }
+    },
+    {
+      "previous": {
+        "ms": 9.274676999999997,
+        "checksum": 2500300000
+      },
+      "current": {
+        "ms": 10.149340999999993,
+        "checksum": 2500300000
+      }
+    },
+    {
+      "current": {
+        "ms": 9.740642000000037,
+        "checksum": 2500300000
+      },
+      "previous": {
+        "ms": 8.951089999999965,
+        "checksum": 2500300000
+      }
+    },
+    {
+      "previous": {
+        "ms": 9.18531999999999,
+        "checksum": 2500300000
+      },
+      "current": {
+        "ms": 11.134460999999988,
+        "checksum": 2500300000
+      }
+    },
+    {
+      "current": {
+        "ms": 10.88098599999995,
+        "checksum": 2500300000
+      },
+      "previous": {
+        "ms": 8.87197100000003,
+        "checksum": 2500300000
+      }
+    },
+    {
+      "previous": {
+        "ms": 8.894191999999975,
+        "checksum": 2500300000
+      },
+      "current": {
+        "ms": 9.492034999999987,
+        "checksum": 2500300000
+      }
+    },
+    {
+      "current": {
+        "ms": 9.43373600000001,
+        "checksum": 2500300000
+      },
+      "previous": {
+        "ms": 8.943685000000016,
+        "checksum": 2500300000
+      }
+    }
+  ]
+}

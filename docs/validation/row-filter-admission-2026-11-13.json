@@ -1,0 +1,29 @@
+{
+  "requirements": ["M1", "F2", "F3", "V1", "V2"],
+  "status": "Row fallback WHERE temporary admission integrated; broader allocation coverage remains open",
+  "finding": "Ordinary row batches, aggregate matchedRows, collectOrderedMatches and collectSortRuns called matches without a scope. Retained row/state ownership did not admit temporary filter string expansion.",
+  "change": "Aggregate and ordered collectors pass their existing owning scope to matches. Ordinary fallback batches own one predicate parent scope for the generator lifetime and dispose it on all exits. The shared evaluator creates and disposes each predicate temporary scope before exposing the row, including false results and errors. No copy of accepted input rows is introduced by this filter change. parquetScanner now declares its existing scanRangeCache option in the public type.",
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedCoreTestsPassed": 26,
+    "newCoreCases": "Five fallback routes: ordinary batches, aggregateWithState, unlimited ordering, topKWithState and sortWithState. Normal replacement preserves results; oversized replacement rejects with LAKEQL_BUDGET_EXCEEDED. Scanner finally runs and unrelated sibling reservation survives. Early iterator return closes the source; filter scratch is already released before yielding.",
+    "http": "Two actual localhost HTTP cases, 206 ranges and ignored Range 200 responses. Real serialized Brotli Parquet fixture, all five fallback routes concurrently, 64/128 MiB pools, 2 MiB per-query cap, two-read transport limit. Success parity and expansion failure; cache eviction returns pool to zero. This is row-only adapter execution, deliberately bypassing owned vector selection.",
+    "workerR2": "Two native local workerd/Miniflare R2 cases with the same real fixture, five concurrent route types, 64/128 MiB pools and 2 MiB query caps. Success and failure cleanup verified; not deployed cloud certification.",
+    "fullDefault": {
+      "passed": 3157,
+      "skipped": 629
+    },
+    "fullWorker": {
+      "passed": 69
+    },
+    "lintSizeChangeset": "passed"
+  },
+  "remaining": [
+    "Fallback projection, DISTINCT directories, partition-row merging and unscoped planning predicates require separate admission review.",
+    "Scalar evaluator functions without admission remain a separate gap; scope propagation alone does not cover their internal work.",
+    "Borrowed scanner input and caller-managed output lifetimes are unchanged. Tracked reservations are not complete VM heap accounting.",
+    "Full F1-F6/M1-M2/V1-V3 acceptance remains active."
+  ],
+  "followupEvidence": "row-projection-checkpoint-2026-11-13.json"
+}

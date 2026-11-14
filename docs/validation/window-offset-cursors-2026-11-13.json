@@ -1,0 +1,32 @@
+{
+  "change": "LAG/LEAD IGNORE NULLS use monotone current/target cursors and a count of non-null values between them. Target values are borrowed, not copied. Advancing the current row removes one boundary value from the count; advancing the target finds new values. No offset-sized ring or per-row value directory is allocated.",
+  "complexity": "At most two value-expression reads per input row, with constant auxiliary state excluding returned output. Empty, all-null, sparse and dense partitions and offsets larger than the partition use the same contract. Offset zero directly reads the current value.",
+  "otherRemovals": "Ranking and positional functions operate directly on WindowRow entries or partition length. The unconditional partition-to-source-row array is gone; percent_rank normalizes its existing rank output array in place. Offset functions read WindowRow.row only as required.",
+  "evidence": {
+    "before": "../benchmarks/window-offset-values-before-2026-11-13.json",
+    "after": "../benchmarks/window-offset-values-after-2026-11-13.json",
+    "method": "Sparse non-null values with offset 3; independent slice/filter oracle; two warmups and three timed local samples; construction and validation excluded; compiled backend hashes record executed code.",
+    "rows": 2048,
+    "lagMilliseconds": [10.868, 0.072],
+    "leadMilliseconds": [10.859, 0.053]
+  },
+  "edgeCases": [
+    "Independent lag/lead oracle for 0/1/128 rows, all-null/sparse/dense values, null-respecting and null-ignoring modes, offsets 0/1/2/5/31/200/MAX_SAFE_INTEGER and per-row default expressions.",
+    "Getter counts enforce at most two value reads per source row.",
+    "Ranking, row_number and ntile run with a throwing source-row getter, proving they need only precomputed keys and positions.",
+    "Real flba12_timestamp.parquet HTTP 206/ignored-range 200 queries now verify lag and lead over signed wide timestamps. Concurrent 64/128 MiB R2 queries verify lag over 1024-byte text along with existing window outputs and cache cleanup."
+  ],
+  "validation": {
+    "defaultPassed": 2995,
+    "defaultSkipped": 629,
+    "workerPassed": 61,
+    "referencePassed": 104,
+    "build": "passed",
+    "typecheck": "passed",
+    "lint": "passed",
+    "cleanPackageInstall": "passed",
+    "compatibility": "passed",
+    "fileSizeGate": "passed"
+  },
+  "limits": "This assumes immutable input rows and deterministic expressions, as the window execution contract does. Returned arrays, retained input materialization and whole-runtime heap accounting remain separate unfinished work. No cloud-latency or total Cloudflare-memory guarantee is inferred from local kernel timings. Decimal and ALP/BSON/BROTLI gaps remain open."
+}

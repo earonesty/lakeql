@@ -48,6 +48,29 @@ export async function queryScores() {
 }
 ```
 
+Allocation-scoped physical execution supports selection over the backend's
+advertised scalar vector shapes. It admits upload/device backing, modeled
+execution descriptors and views, pipeline metadata, and the returned mask and
+result records. Workspace stays charged through asynchronous cleanup; reusable
+pipeline metadata stays in the shared pool until eviction or backend close.
+Scoped reduction and vector-distance execution are not advertised. These are
+library reservation bounds, not measurements of driver-internal memory or total
+process memory.
+
+Compiled pipeline reuse is bounded by two backend options:
+`maxPipelineCacheEntries` (default 64) and `maxPipelineCacheBytes` (default
+1 MiB of modeled source/key metadata). The cache evicts the least recently
+used entries; an oversized pipeline executes without being retained. Setting
+either limit to zero disables retention. Device invalidation and `close()`
+clear the cache. These limits bound retained references and modeled metadata,
+not opaque GPU-driver compiled-code memory. For allocation-scoped selection,
+retained cache metadata also charges the query's shared root memory pool and can
+be reclaimed for sibling work. Active scoped execution pins that charge to the query
+through dispatch and readback. Uncached pipeline metadata is admitted before
+shader/pipeline creation; caching retains the same reservation without charging
+its backing twice. Calls without an allocation scope use the cache's
+configured limits without joining a query pool.
+
 Repeated vector queries can keep an immutable candidate block on the device.
 The cache has an explicit byte capacity, uses reference-counted leases and LRU
 eviction, and binds every descriptor to both an immutable source identity and

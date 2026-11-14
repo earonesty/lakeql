@@ -1,0 +1,29 @@
+{
+  "date": "2026-11-13",
+  "scope": "Post metadata admission and collection cancellation validation; failures remain release blockers, not expected passes.",
+  "passed": 232,
+  "failed": 18,
+  "skipped": 1,
+  "newFailures": [],
+  "resolvedFailures": [],
+  "failingTests": [
+    "FAIL  packages/parquet/src/conformance.conformance.test.ts > apache/parquet-testing conformance > decodes fixtures/external/parquet-testing/bad_data/ARROW-GH-41317.parquet through the public reader",
+    "FAIL  packages/parquet/src/conformance.conformance.test.ts > apache/parquet-testing conformance > decodes fixtures/external/parquet-testing/bad_data/ARROW-GH-41321.parquet through the public reader",
+    "FAIL  packages/parquet/src/conformance.conformance.test.ts > apache/parquet-testing conformance > decodes fixtures/external/parquet-testing/bad_data/ARROW-GH-45185.parquet through the public reader",
+    "FAIL  packages/parquet/src/conformance.conformance.test.ts > apache/parquet-testing conformance > decodes fixtures/external/parquet-testing/bad_data/ARROW-GH-47662.parquet through the public reader",
+    "FAIL  packages/parquet/src/conformance.conformance.test.ts > apache/parquet-testing conformance > decodes fixtures/external/parquet-testing/bad_data/ARROW-RS-GH-11261-FLBA-DICT.parquet through the public reader",
+    "FAIL  packages/parquet/src/conformance.conformance.test.ts > apache/parquet-testing conformance > decodes fixtures/external/parquet-testing/bad_data/ARROW-RS-GH-6229-DICTHEADER.parquet through the public reader",
+    "FAIL  packages/parquet/src/conformance.conformance.test.ts > apache/parquet-testing conformance > decodes fixtures/external/parquet-testing/bad_data/ARROW-RS-GH-6229-LEVELS.parquet through the public reader",
+    "FAIL  packages/parquet/src/conformance.conformance.test.ts > apache/parquet-testing conformance > decodes fixtures/external/parquet-testing/bad_data/PARQUET-1481.parquet through the public reader",
+    "FAIL  packages/parquet/src/conformance.conformance.test.ts > apache/parquet-testing conformance > decodes fixtures/external/parquet-testing/data/alp_extended.zstd.parquet through the public reader",
+    "FAIL  packages/parquet/src/conformance.conformance.test.ts > apache/parquet-testing conformance > decodes fixtures/external/parquet-testing/data/bson.parquet through the public reader",
+    "FAIL  packages/parquet/src/conformance.conformance.test.ts > apache/parquet-testing conformance > decodes fixtures/external/parquet-testing/data/fixed_length_decimal.parquet through the public reader",
+    "FAIL  packages/parquet/src/conformance.conformance.test.ts > apache/parquet-testing conformance > decodes fixtures/external/parquet-testing/data/large_string_map.brotli.parquet through the public reader",
+    "FAIL  packages/parquet/src/conformance.conformance.test.ts > apache/parquet-testing conformance > decodes fixtures/external/parquet-testing/data/nation.dict-malformed.parquet through the public reader",
+    "FAIL  packages/parquet/src/conformance.conformance.test.ts > apache/parquet-testing conformance > decodes fixtures/external/parquet-testing/shredded_variant/case-026.parquet through the public reader",
+    "FAIL  packages/parquet/src/conformance.conformance.test.ts > apache/parquet-testing conformance > decodes fixtures/external/parquet-testing/shredded_variant/case-027.parquet through the public reader",
+    "FAIL  packages/parquet/src/conformance.conformance.test.ts > apache/parquet-testing conformance > decodes fixtures/external/parquet-testing/shredded_variant/case-028.parquet through the public reader",
+    "FAIL  packages/parquet/src/conformance.conformance.test.ts > apache/parquet-testing conformance > decodes fixtures/external/parquet-testing/shredded_variant/case-029.parquet through the public reader",
+    "FAIL  packages/parquet/src/conformance.conformance.test.ts > apache/parquet-testing conformance > decodes fixtures/external/parquet-testing/shredded_variant/case-030.parquet through the public reader"
+  ]
+}

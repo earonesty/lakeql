@@ -1,0 +1,654 @@
+{
+  "node": "v24.18.1",
+  "mode": "owned",
+  "diagnosticGc": false,
+  "recoveryProbe": false,
+  "roundCount": 2,
+  "runtimeHeapMiB": null,
+  "transport": "native emulated R2",
+  "rows": 32768,
+  "payloadLength": 256,
+  "fixtureBytes": 692574,
+  "fixtureSha256": "3183ea10297987458746fb7aeecf2640fef90c4607533ebf4cd8a3b80b22d9c6",
+  "bundleSha256": "c3b73fd1d0b0cc73309b75d63aebb6f6138c4ee193ae088c9102d60ee125c1cb",
+  "scope": "Local workerd using the recorded transport; host-generated real Parquet fixture; fresh isolate per capacity/concurrency scenario. Runtime.getHeapUsage sampled approximately every 5ms while requests run; samples are lower bounds on peaks, not enforced Cloudflare production heap limits. No forced GC during measured rounds; diagnosticGc optionally collects only after final eviction. In materialized/owned mode output rows are pinned through a post-query snapshot then explicitly released; stream mode keeps only checksums. Only checksums leave Worker. Pool bounds cover tracked allocations only. Optional runtimeHeapMiB supplies a verified V8 managed-heap flag, not a cap on external buffers, total process memory, or production Cloudflare accounting. Raw JS/embedder/backing counters retained separately; no assumed additive total.",
+  "scenarios": [
+    {
+      "mib": 64,
+      "jobs": 1,
+      "status": "complete",
+      "baseline": {
+        "atMs": 990.139116,
+        "usedSize": 4241020,
+        "totalSize": 6422528,
+        "embedderHeapUsedSize": 257936,
+        "backingStorageSize": 492016
+      },
+      "rounds": [
+        {
+          "round": "cold",
+          "elapsedMs": 142.00560700000005,
+          "result": {
+            "reports": [
+              {
+                "status": "ok",
+                "rows": 32768,
+                "ids": 536854528,
+                "characters": 8388608,
+                "ranges": 5
+              }
+            ],
+            "usedBytes": 27472566,
+            "peakBytes": 28370863
+          },
+          "samples": [
+            {
+              "atMs": 991.277241,
+              "usedSize": 4241020,
+              "totalSize": 6422528,
+              "embedderHeapUsedSize": 257936,
+              "backingStorageSize": 492016
+            },
+            {
+              "atMs": 997.37408,
+              "usedSize": 17061744,
+              "totalSize": 40112128,
+              "embedderHeapUsedSize": 257936,
+              "backingStorageSize": 7160940
+            },
+            {
+              "atMs": 1126.786976,
+              "usedSize": 17061744,
+              "totalSize": 40112128,
+              "embedderHeapUsedSize": 257936,
+              "backingStorageSize": 7160940
+            }
+          ],
+          "retainedOutput": {
+            "atMs": 1130.991289,
+            "usedSize": 17064228,
+            "totalSize": 40112128,
+            "embedderHeapUsedSize": 257936,
+            "backingStorageSize": 7160940
+          },
+          "afterRelease": {
+            "atMs": 1133.026885,
+            "usedSize": 17075112,
+            "totalSize": 40112128,
+            "embedderHeapUsedSize": 257936,
+            "backingStorageSize": 7160940
+          }
+        },
+        {
+          "round": "warm",
+          "elapsedMs": 81.66201000000001,
+          "result": {
+            "reports": [
+              {
+                "status": "ok",
+                "rows": 32768,
+                "ids": 536854528,
+                "characters": 8388608,
+                "ranges": 0
+              }
+            ],
+            "usedBytes": 27472566,
+            "peakBytes": 28370863
+          },
+          "samples": [
+            {
+              "atMs": 1133.285293,
+              "usedSize": 17075112,
+              "totalSize": 40112128,
+              "embedderHeapUsedSize": 257936,
+              "backingStorageSize": 7160940
+            },
+            {
+              "atMs": 1139.064433,
+              "usedSize": 44047536,
+              "totalSize": 63053824,
+              "embedderHeapUsedSize": 257936,
+              "backingStorageSize": 8427612
+            },
+            {
+              "atMs": 1210.022953,
+              "usedSize": 44047536,
+              "totalSize": 63053824,
+              "embedderHeapUsedSize": 257936,
+              "backingStorageSize": 8427612
+            }
+          ],
+          "retainedOutput": {
+            "atMs": 1213.307192,
+            "usedSize": 44049296,
+            "totalSize": 63053824,
+            "embedderHeapUsedSize": 257936,
+            "backingStorageSize": 8427612
+          },
+          "afterRelease": {
+            "atMs": 1214.797541,
+            "usedSize": 44060108,
+            "totalSize": 63053824,
+            "embedderHeapUsedSize": 257936,
+            "backingStorageSize": 8427612
+          }
+        }
+      ],
+      "evicted": {
+        "usedBytes": 0,
+        "peakBytes": 28370863
+      },
+      "afterEvict": {
+        "atMs": 1216.266268,
+        "usedSize": 44064020,
+        "totalSize": 63053824,
+        "embedderHeapUsedSize": 257936,
+        "backingStorageSize": 8427612
+      }
+    },
+    {
+      "mib": 64,
+      "jobs": 4,
+      "status": "complete",
+      "baseline": {
+        "atMs": 1616.448664,
+        "usedSize": 4241020,
+        "totalSize": 5636096,
+        "embedderHeapUsedSize": 257936,
+        "backingStorageSize": 492016
+      },
+      "rounds": [
+        {
+          "round": "cold",
+          "elapsedMs": 332.32625299999995,
+          "result": {
+            "reports": [
+              {
+                "status": "ok",
+                "rows": 32768,
+                "ids": 536854528,
+                "characters": 8388608,
+                "ranges": 9
+              },
+              {
+                "status": "ok",
+                "rows": 32768,
+                "ids": 536854528,
+                "characters": 8388608,
+                "ranges": 0
+              },
+              {
+                "status": "budget",
+                "code": "LAKEQL_BUDGET_EXCEEDED",
+                "allocation": {
+                  "metric": "allocated memory bytes",
+                  "limit": 67108864,
+                  "actual": 67923023,
+                  "purpose": "materialized output"
+                },
+                "rowsReturned": 26624,
+                "ranges": 0
+              },
+              {
+                "status": "budget",
+                "code": "LAKEQL_BUDGET_EXCEEDED",
+                "allocation": {
+                  "metric": "allocated memory bytes",
+                  "limit": 67108864,
+                  "actual": 67607600,
+                  "purpose": "materialized output"
+                },
+                "rowsReturned": 19456,
+                "ranges": 0
+              }
+            ],
+            "usedBytes": 53662590,
+            "peakBytes": 67103613
+          },
+          "samples": [
+            {
+              "atMs": 1616.946733,
+              "usedSize": 4241020,
+              "totalSize": 5636096,
+              "embedderHeapUsedSize": 257936,
+              "backingStorageSize": 492016
+            },
+            {
+              "atMs": 1622.57572,
+              "usedSize": 34066204,
+              "totalSize": 97918976,
+              "embedderHeapUsedSize": 79192,
+              "backingStorageSize": 7376161
+            },
+            {
+              "atMs": 1945.506567,
+              "usedSize": 34066204,
+              "totalSize": 97918976,
+              "embedderHeapUsedSize": 79192,
+              "backingStorageSize": 7376161
+            }
+          ],
+          "retainedOutput": {
+            "atMs": 1947.556721,
+            "usedSize": 34068508,
+            "totalSize": 97918976,
+            "embedderHeapUsedSize": 79192,
+            "backingStorageSize": 7376161
+          },
+          "afterRelease": {
+            "atMs": 1949.117101,
+            "usedSize": 34088676,
+            "totalSize": 97918976,
+            "embedderHeapUsedSize": 79192,
+            "backingStorageSize": 7376161
+          }
+        },
+        {
+          "round": "warm",
+          "elapsedMs": 221.77911799999993,
+          "result": {
+            "reports": [
+              {
+                "status": "ok",
+                "rows": 32768,
+                "ids": 536854528,
+                "characters": 8388608,
+                "ranges": 8
+              },
+              {
+                "status": "ok",
+                "rows": 32768,
+                "ids": 536854528,
+                "characters": 8388608,
+                "ranges": 0
+              },
+              {
+                "status": "budget",
+                "code": "LAKEQL_BUDGET_EXCEEDED",
+                "allocation": {
+                  "metric": "allocated memory bytes",
+                  "limit": 67108864,
+                  "actual": 67923023,
+                  "purpose": "materialized output"
+                },
+                "rowsReturned": 26624,
+                "ranges": 0
+              },
+              {
+                "status": "budget",
+                "code": "LAKEQL_BUDGET_EXCEEDED",
+                "allocation": {
+                  "metric": "allocated memory bytes",
+                  "limit": 67108864,
+                  "actual": 67607600,
+                  "purpose": "materialized output"
+                },
+                "rowsReturned": 19456,
+                "ranges": 0
+              }
+            ],
+            "usedBytes": 53662590,
+            "peakBytes": 67103613
+          },
+          "samples": [
+            {
+              "atMs": 1949.271312,
+              "usedSize": 34088676,
+              "totalSize": 97918976,
+              "embedderHeapUsedSize": 79192,
+              "backingStorageSize": 7376161
+            },
+            {
+              "atMs": 1954.832863,
+              "usedSize": 85183000,
+              "totalSize": 133840896,
+              "embedderHeapUsedSize": 79192,
+              "backingStorageSize": 11070489
+            },
+            {
+              "atMs": 2165.777634,
+              "usedSize": 85183000,
+              "totalSize": 133840896,
+              "embedderHeapUsedSize": 79192,
+              "backingStorageSize": 11070489
+            }
+          ],
+          "retainedOutput": {
+            "atMs": 2168.721161,
+            "usedSize": 85184768,
+            "totalSize": 133840896,
+            "embedderHeapUsedSize": 79192,
+            "backingStorageSize": 11070489
+          },
+          "afterRelease": {
+            "atMs": 2170.835856,
+            "usedSize": 85204864,
+            "totalSize": 133840896,
+            "embedderHeapUsedSize": 79192,
+            "backingStorageSize": 11070489
+          }
+        }
+      ],
+      "evicted": {
+        "usedBytes": 0,
+        "peakBytes": 67103613
+      },
+      "afterEvict": {
+        "atMs": 2172.867825,
+        "usedSize": 85207788,
+        "totalSize": 133840896,
+        "embedderHeapUsedSize": 79192,
+        "backingStorageSize": 11070489
+      }
+    },
+    {
+      "mib": 128,
+      "jobs": 1,
+      "status": "complete",
+      "baseline": {
+        "atMs": 2550.608681,
+        "usedSize": 4250676,
+        "totalSize": 5636096,
+        "embedderHeapUsedSize": 257936,
+        "backingStorageSize": 492016
+      },
+      "rounds": [
+        {
+          "round": "cold",
+          "elapsedMs": 134.34391800000003,
+          "result": {
+            "reports": [
+              {
+                "status": "ok",
+                "rows": 32768,
+                "ids": 536854528,
+                "characters": 8388608,
+                "ranges": 5
+              }
+            ],
+            "usedBytes": 27472566,
+            "peakBytes": 28370863
+          },
+          "samples": [
+            {
+              "atMs": 2551.018954,
+              "usedSize": 4250676,
+              "totalSize": 5636096,
+              "embedderHeapUsedSize": 257936,
+              "backingStorageSize": 492016
+            },
+            {
+              "atMs": 2556.890348,
+              "usedSize": 24723128,
+              "totalSize": 35917824,
+              "embedderHeapUsedSize": 97152,
+              "backingStorageSize": 4759934
+            },
+            {
+              "atMs": 2681.935754,
+              "usedSize": 24723128,
+              "totalSize": 35917824,
+              "embedderHeapUsedSize": 97152,
+              "backingStorageSize": 4759934
+            }
+          ],
+          "retainedOutput": {
+            "atMs": 2684.121273,
+            "usedSize": 24725424,
+            "totalSize": 35917824,
+            "embedderHeapUsedSize": 97152,
+            "backingStorageSize": 4759934
+          },
+          "afterRelease": {
+            "atMs": 2685.21284,
+            "usedSize": 24736308,
+            "totalSize": 35917824,
+            "embedderHeapUsedSize": 97152,
+            "backingStorageSize": 4759934
+          }
+        },
+        {
+          "round": "warm",
+          "elapsedMs": 77.85978499999965,
+          "result": {
+            "reports": [
+              {
+                "status": "ok",
+                "rows": 32768,
+                "ids": 536854528,
+                "characters": 8388608,
+                "ranges": 0
+              }
+            ],
+            "usedBytes": 27472566,
+            "peakBytes": 28370863
+          },
+          "samples": [
+            {
+              "atMs": 2685.362361,
+              "usedSize": 24736308,
+              "totalSize": 35917824,
+              "embedderHeapUsedSize": 97152,
+              "backingStorageSize": 4759934
+            },
+            {
+              "atMs": 2690.791432,
+              "usedSize": 40035116,
+              "totalSize": 58859520,
+              "embedderHeapUsedSize": 97152,
+              "backingStorageSize": 4825822
+            },
+            {
+              "atMs": 2759.244281,
+              "usedSize": 40035116,
+              "totalSize": 58859520,
+              "embedderHeapUsedSize": 97152,
+              "backingStorageSize": 4825822
+            }
+          ],
+          "retainedOutput": {
+            "atMs": 2761.346342,
+            "usedSize": 40036876,
+            "totalSize": 58859520,
+            "embedderHeapUsedSize": 97152,
+            "backingStorageSize": 4825822
+          },
+          "afterRelease": {
+            "atMs": 2763.03274,
+            "usedSize": 40047688,
+            "totalSize": 58859520,
+            "embedderHeapUsedSize": 97152,
+            "backingStorageSize": 4825822
+          }
+        }
+      ],
+      "evicted": {
+        "usedBytes": 0,
+        "peakBytes": 28370863
+      },
+      "afterEvict": {
+        "atMs": 2764.793498,
+        "usedSize": 40051620,
+        "totalSize": 58859520,
+        "embedderHeapUsedSize": 97152,
+        "backingStorageSize": 4825822
+      }
+    },
+    {
+      "mib": 128,
+      "jobs": 4,
+      "status": "complete",
+      "baseline": {
+        "atMs": 3143.910096,
+        "usedSize": 4240756,
+        "totalSize": 5636096,
+        "embedderHeapUsedSize": 257936,
+        "backingStorageSize": 492016
+      },
+      "rounds": [
+        {
+          "round": "cold",
+          "elapsedMs": 332.5189049999999,
+          "result": {
+            "reports": [
+              {
+                "status": "ok",
+                "rows": 32768,
+                "ids": 536854528,
+                "characters": 8388608,
+                "ranges": 5
+              },
+              {
+                "status": "ok",
+                "rows": 32768,
+                "ids": 536854528,
+                "characters": 8388608,
+                "ranges": 0
+              },
+              {
+                "status": "ok",
+                "rows": 32768,
+                "ids": 536854528,
+                "characters": 8388608,
+                "ranges": 0
+              },
+              {
+                "status": "ok",
+                "rows": 32768,
+                "ids": 536854528,
+                "characters": 8388608,
+                "ranges": 0
+              }
+            ],
+            "usedBytes": 107714022,
+            "peakBytes": 110913514
+          },
+          "samples": [
+            {
+              "atMs": 3144.225731,
+              "usedSize": 4240756,
+              "totalSize": 5636096,
+              "embedderHeapUsedSize": 257936,
+              "backingStorageSize": 492016
+            },
+            {
+              "atMs": 3149.763106,
+              "usedSize": 47819320,
+              "totalSize": 109199360,
+              "embedderHeapUsedSize": 96992,
+              "backingStorageSize": 20563562
+            },
+            {
+              "atMs": 3472.155177,
+              "usedSize": 47819320,
+              "totalSize": 109199360,
+              "embedderHeapUsedSize": 96992,
+              "backingStorageSize": 20563562
+            }
+          ],
+          "retainedOutput": {
+            "atMs": 3475.104425,
+            "usedSize": 47821644,
+            "totalSize": 109199360,
+            "embedderHeapUsedSize": 96992,
+            "backingStorageSize": 20563562
+          },
+          "afterRelease": {
+            "atMs": 3476.584144,
+            "usedSize": 47860956,
+            "totalSize": 109199360,
+            "embedderHeapUsedSize": 96992,
+            "backingStorageSize": 20563562
+          }
+        },
+        {
+          "round": "warm",
+          "elapsedMs": 266.9679369999999,
+          "result": {
+            "reports": [
+              {
+                "status": "ok",
+                "rows": 32768,
+                "ids": 536854528,
+                "characters": 8388608,
+                "ranges": 0
+              },
+              {
+                "status": "ok",
+                "rows": 32768,
+                "ids": 536854528,
+                "characters": 8388608,
+                "ranges": 0
+              },
+              {
+                "status": "ok",
+                "rows": 32768,
+                "ids": 536854528,
+                "characters": 8388608,
+                "ranges": 0
+              },
+              {
+                "status": "ok",
+                "rows": 32768,
+                "ids": 536854528,
+                "characters": 8388608,
+                "ranges": 0
+              }
+            ],
+            "usedBytes": 107714022,
+            "peakBytes": 110913514
+          },
+          "samples": [
+            {
+              "atMs": 3476.748093,
+              "usedSize": 47860956,
+              "totalSize": 109199360,
+              "embedderHeapUsedSize": 96992,
+              "backingStorageSize": 20563562
+            },
+            {
+              "atMs": 3482.215436,
+              "usedSize": 105901752,
+              "totalSize": 151420928,
+              "embedderHeapUsedSize": 96992,
+              "backingStorageSize": 4957422
+            },
+            {
+              "atMs": 3740.219861,
+              "usedSize": 105901752,
+              "totalSize": 151420928,
+              "embedderHeapUsedSize": 96992,
+              "backingStorageSize": 4957422
+            }
+          ],
+          "retainedOutput": {
+            "atMs": 3742.208248,
+            "usedSize": 105903540,
+            "totalSize": 151420928,
+            "embedderHeapUsedSize": 96992,
+            "backingStorageSize": 4957422
+          },
+          "afterRelease": {
+            "atMs": 3743.584601,
+            "usedSize": 105942184,
+            "totalSize": 151420928,
+            "embedderHeapUsedSize": 96992,
+            "backingStorageSize": 4957422
+          }
+        }
+      ],
+      "evicted": {
+        "usedBytes": 0,
+        "peakBytes": 110913514
+      },
+      "afterEvict": {
+        "atMs": 3744.707608,
+        "usedSize": 105946120,
+        "totalSize": 151420928,
+        "embedderHeapUsedSize": 96992,
+        "backingStorageSize": 4957422
+      }
+    }
+  ],
+  "sourceCommit": "12527c2658f2c0836679b6f75f83e37da4665b43"
+}

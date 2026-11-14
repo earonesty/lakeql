@@ -1,0 +1,102 @@
+{
+  "reference": "041c629",
+  "current": "041c629566aeefb3cf8c8410376677b039e6278b",
+  "node": "v24.18.1",
+  "builtModuleHashes": {
+    "json-output-size": "7ca48d3b05484a856f3e4a68354d07026cf2efa53ff4f03dde2ce09c0e58e2da",
+    "json-output-encoding": "1ee8755d82849be50e678a2b1cfa96e61aa4a9a9f7cf1aaade456c1a311a48b1",
+    "json-traversal-budget": "55f9ccd5f1d4d8a47c1c012211a86423191b319f11b2722ce76b3c8bf100b9a3",
+    "json-container-entries": "c7fb72ee7d2bc3a0ad66bf220ad7d85b0cf50eef4f46968c0a01fe3d67fb824e",
+    "json-standard-scalars": "971c66727c5b3c02d9878cd714820477d0fe03c86e61025a8a2cdcce7cd3801f"
+  },
+  "results": [
+    {
+      "name": "small-row",
+      "iterations": 1000,
+      "outputBytes": 39,
+      "variants": {
+        "reference": {
+          "samplesMs": [
+            0.013855545999999948, 0.015453998000000012, 0.008598570999999992, 0.010587999000000025,
+            0.012787503999999957
+          ],
+          "peakTrackedBytes": 1504
+        },
+        "current": {
+          "samplesMs": [
+            0.014432873000000028, 0.00781362200000001, 0.00864479799999998, 0.006061310999999989,
+            0.02393713100000002
+          ],
+          "peakTrackedBytes": 1504
+        }
+      }
+    },
+    {
+      "name": "wide-numbers",
+      "iterations": 20,
+      "outputBytes": 78891,
+      "variants": {
+        "reference": {
+          "samplesMs": [
+            2.0987188000000003, 2.1930780999999997, 2.215191249999998, 2.153976399999999, 2.42054665
+          ],
+          "peakTrackedBytes": 80267
+        },
+        "current": {
+          "samplesMs": [
+            2.0153085999999973, 1.9558155499999998, 2.14478105, 2.1380989999999995,
+            2.3930052999999987
+          ],
+          "peakTrackedBytes": 80267
+        }
+      }
+    },
+    {
+      "name": "row-array",
+      "iterations": 20,
+      "outputBytes": 39891,
+      "variants": {
+        "reference": {
+          "samplesMs": [
+            0.5743360999999993, 0.5949389499999995, 0.5593198499999972, 0.5594446000000005,
+            0.8105586999999957
+          ],
+          "peakTrackedBytes": 42067
+        },
+        "current": {
+          "samplesMs": [
+            0.6049483000000009, 0.5369797500000004, 0.5055304999999976, 0.5813468499999999,
+            0.5346608999999944
+          ],
+          "peakTrackedBytes": 42067
+        }
+      }
+    },
+    {
+      "name": "deep-20000",
+      "iterations": 2,
+      "outputBytes": 40009,
+      "variants": {
+        "reference": {
+          "samplesMs": [
+            23.326480500000002, 22.352505500000007, 23.069245499999965, 20.981021000000055,
+            22.647921999999994
+          ],
+          "peakTrackedBytes": 22400256
+        },
+        "current": {
+          "samplesMs": [
+            20.526725499999998, 22.681961, 26.068861999999967, 23.637846999999965,
+            20.291517500000054
+          ],
+          "peakTrackedBytes": 22400256
+        }
+      }
+    }
+  ],
+  "limitations": [
+    "Kernel benchmark; not query or cloud throughput",
+    "Tracked reservation units are not heap measurements",
+    "Variants run sequentially; five measured rounds after warmup"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "date": "2026-11-14",
+  "changes": [
+    "Row, column and aggregate task scans iterate row windows lazily instead of constructing whole-file prefix and window arrays.",
+    "Only the current window descriptor is admitted, and it releases when iteration advances, closes or fails.",
+    "Retain the array-returning helper as a compatibility wrapper for direct callers.",
+    "For backward traversal after at least a full metadata pass, build an admitted Float64 prefix index only when it fits within half available capacity and leaves room for the window descriptor. Otherwise continue rescanning."
+  ],
+  "validation": {
+    "targeted_tests": 49,
+    "build": "passed",
+    "structural_test": "1000 ordered disjoint windows read exactly 1000 metadata counts and retain constant descriptor reservations; first next reads only one count.",
+    "edge_cases": [
+      "early return releases descriptor",
+      "backward and overlapping ranges preserve order",
+      "existing invalid-span tests and real task fixtures"
+    ],
+    "typecheck": "passed",
+    "real_http_tests": "4 passed before adaptive-index follow-up; not rerun for this follow-up",
+    "adaptive_index": "Twenty descending ranges across 1000 groups: 19810 metadata reads under a 1 KiB pool, 2000 reads under a 64 KiB pool, identical output; both normal completion and early return release index and descriptor reservations.",
+    "contention_followup": {
+      "task_unit_tests": 12,
+      "scenario": "Suspend after first window, reserve all but 1 KiB of shared headroom in a competing job, verify rescan fallback, release competing storage, verify later index admission. Force metadata failure during index construction and verify the next job can reserve the entire pool.",
+      "scope": "Deterministic shared-pool interleaving; not a threaded scheduler or production-cloud stress test."
+    }
+  },
+  "tradeoffs": [
+    "Ordered disjoint ranges remain linear without an index. Backward/overlapping ranges use an index when measured work and available headroom justify it; low-headroom operation retains the rescan CPU cost.",
+    "The compatibility array helper still materializes its return value; scan execution uses the admitted iterator."
+  ],
+  "remaining": [
+    "Task splitting/grouping topology, borrowed parser boundaries and other allocation-matrix gaps remain open.",
+    "No total-heap bound or cloud-latency improvement is claimed."
+  ]
+}

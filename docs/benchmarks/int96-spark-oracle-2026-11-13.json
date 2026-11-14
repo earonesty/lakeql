@@ -1,0 +1,60 @@
+{
+  "fixture": "fixtures/external/parquet-testing/data/int96_from_spark.parquet",
+  "sha256": "e769aaa996dee57f1104470dcce16d6871cd720d314c13361db16bf9e49f5c97",
+  "source": "https://raw.githubusercontent.com/apache/spark/v3.4.3/sql/catalyst/src/main/scala/org/apache/spark/sql/catalyst/util/DateTimeUtils.scala",
+  "contract": "Signed int64 microsecond overflow in toJulianDay/fromJulianDay; signed nanos remainder. This reproduces writer arithmetic, not a Spark-runtime execution.",
+  "records": [
+    {
+      "days": "2460311",
+      "nanos": "74096123456000",
+      "documentedMicros": "1704141296123456",
+      "recoveredMicros": "1704141296123456"
+    },
+    {
+      "days": "2460311",
+      "nanos": "3600000000000",
+      "documentedMicros": "1704070800000000",
+      "recoveredMicros": "1704070800000000"
+    },
+    {
+      "days": "5373484",
+      "nanos": "10800000000000",
+      "documentedMicros": "253402225200000000",
+      "recoveredMicros": "253402225200000000"
+    },
+    {
+      "days": "2460675",
+      "nanos": "82800000000000",
+      "documentedMicros": "1735599600000000",
+      "recoveredMicros": "1735599600000000"
+    },
+    {
+      "days": "-105862232",
+      "nanos": "-32509551616000",
+      "documentedMicros": "9089380393200000000",
+      "recoveredMicros": "9089380393200000000"
+    }
+  ],
+  "duckdbVersion": "v1.5.3",
+  "duckdb": [
+    {
+      "micros": "1704141296123456"
+    },
+    {
+      "micros": "1704070800000000"
+    },
+    {
+      "micros": "253402225200000000"
+    },
+    {
+      "micros": "1735599600000000"
+    },
+    {
+      "micros": null
+    },
+    {
+      "micros": "-7207070780300583936"
+    }
+  ],
+  "conclusion": "All raw dictionary records exactly match Spark encoding and recover documented microseconds. DuckDB differs on the extreme value; do not use it as the oracle for that value."
+}

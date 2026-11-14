@@ -1,0 +1,78 @@
+{
+  "runtimeSourceCommit": "384c4f5",
+  "requirements": ["F5", "M2", "V2"],
+  "decision": "Reject and revert the scalar memo prototype; keep the production direct reader unchanged.",
+  "artifacts": [
+    "docs/benchmarks/top-k-right-reuse-cardinality-2026-11-14.json",
+    "docs/benchmarks/top-k-right-reuse-shapes-2026-11-14.json"
+  ],
+  "experimentPatch": "docs/benchmarks/top-k-right-reuse-experiment-2026-11-14.patch",
+  "reproduce": [
+    "Apply the experiment patch to runtime 384c4f5 and run pnpm exec tsc -b.",
+    "Run node bench/top-k-reader-comparison.mjs for shapes; set LAKEQL_KEY_CACHE_MATRIX=cardinality for cardinality/pressure.",
+    "Baseline defaults to 384c4f5; report records source/module hashes and distinguishes shared dependencies from a whole-revision comparison."
+  ],
+  "prototype": [
+    "Initially tried two scalar slots, then reduced to a single retained right operand to reduce bookkeeping.",
+    "Enabled reuse only for steady candidate probing, keeping detection/heap construction/final sorting direct.",
+    "Admitted optional metadata; released it when required scalar growth needed its capacity.",
+    "Declined optional reuse inside fixed admitted stages, whose released reservations do not replenish stage allowance."
+  ],
+  "validation": {
+    "prototypeFocusedTestsPassed": 26,
+    "unchangedFocusedTestsAfterRevert": 21,
+    "phasedCardinalityCases": 72,
+    "phasedCardinalityCandidateFaster": 59,
+    "exactBaselineCapFailures": 0,
+    "shapeCases": 64,
+    "shapeCandidateFaster": 37,
+    "cleanup": "All successful/failed benchmark trials ended with zero reservations.",
+    "correctness": "Every result matched the independent stable row-sort oracle.",
+    "buildAfterRevert": "pnpm exec tsc -b passed"
+  },
+  "shapeSummary": [
+    {
+      "shape": "packed",
+      "nulls": "first",
+      "candidateFaster": 2,
+      "cases": 16,
+      "medianSpeedupRatio": 0.8867761380424539,
+      "minSpeedupRatio": 0.5510343353258289
+    },
+    {
+      "shape": "packed",
+      "nulls": "last",
+      "candidateFaster": 16,
+      "cases": 16,
+      "medianSpeedupRatio": 1.3409282948899146,
+      "minSpeedupRatio": 1.1387233890095991
+    },
+    {
+      "shape": "dictionary",
+      "nulls": "first",
+      "candidateFaster": 3,
+      "cases": 16,
+      "medianSpeedupRatio": 0.979689456394532,
+      "minSpeedupRatio": 0.8918903509299853
+    },
+    {
+      "shape": "dictionary",
+      "nulls": "last",
+      "candidateFaster": 16,
+      "cases": 16,
+      "medianSpeedupRatio": 1.3886620257233062,
+      "minSpeedupRatio": 1.1352033815556468
+    }
+  ],
+  "reason": [
+    "The prototype wins all 32 nulls-last shape cases but loses 27 of 32 nulls-first cases.",
+    "Scope/optional-metadata bookkeeping adds complexity without a broadly reliable improvement.",
+    "Null-heavy comparisons warrant direct inspection before adding cache-policy heuristics; no new configuration knob is justified by this evidence."
+  ],
+  "boundaries": [
+    "Prototype tests cover repeated decode counts, exact-cap growth with sibling isolation, fixed-stage fallback, vector identity, consumer failure and mutable reads with reuse disabled.",
+    "This is local synchronous Node kernel evidence, not cloud or whole-runtime memory proof.",
+    "Production runtime and its last complete regular/Worker checks remain unchanged after reverting the experiment.",
+    "Broader F5/M1/M2 integration and final release acceptance remain open."
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "date": "2026-11-14",
+  "requirements": ["F1", "M1", "M2", "V1"],
+  "changes": [
+    "Replace borrowed deferred aggregate row-reference collection and separate vector group updates with the existing bounded gather plus owned reduction continuation.",
+    "Add a positioned scan ownership adapter: retain owned inputs, detach borrowed vector backing and admit positioned descriptors.",
+    "Remove obsolete aggregate reference directory, row conversion and window helpers.",
+    "Hold an independent early-input handle until a late read settles; recheck cancellation before reducer append.",
+    "Preserve existing density/headroom fallback behavior without requiring new user configuration."
+  ],
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "targeted_final_tests": 107,
+    "scenarios": [
+      "Grouped and scalar aggregates across owned/borrowed scan APIs, zero matches, selective joins and density-triggered eager fallback.",
+      "Late read failure and cancellation close both scanner iterators and release all reservations; cancellation remains LAKEQL_ABORTED.",
+      "Eight real Parquet HTTP cases now include grouped deferred min/count, with borrowed range-honoring runs asserting early id-only and late text-only row-window reads.",
+      "HTTP ignored-range execution exercises fallback; shared pool/cache cleanup still reaches zero."
+    ],
+    "full_default_suite": {
+      "passed": 3465,
+      "skipped": 629
+    }
+  },
+  "remaining": [
+    "Aggregate column planning, physical-plan containers and fallback/resumable-state routes still require allocation review.",
+    "Borrowed source creation and VM/runtime overhead remain outside this admission claim.",
+    "The real HTTP fixture is local transport, not production cloud or near-capacity total-heap evidence.",
+    "Byte-aware scheduling and whole-Worker memory limits remain broader open requirements."
+  ]
+}

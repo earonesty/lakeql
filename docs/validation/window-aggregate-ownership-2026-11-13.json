@@ -1,0 +1,50 @@
+{
+  "requirements": ["F4", "M1", "M2", "V2", "V3"],
+  "status": "Aggregate expression and retained scalar ownership integrated across scans and adaptive trees; full acceptance remains open",
+  "implementation": [
+    "Aggregate arguments and filters use per-row temporary scopes. Rejected rows do not evaluate their arguments.",
+    "MIN/MAX/FIRST/LAST/ANY replace retained state ownership as candidates change; MODE retains each inserted value alongside its admitted key. Numeric state does not acquire payload reservations.",
+    "Published aggregate values transfer to the existing window result scope before frame state resets. Adaptive tree leaves retain scalar payloads until tree disposal and published results retain their own ownership.",
+    "If optional tree construction exceeds payload headroom after its workspace was admitted, construction rolls back and the scan recomputes the current frame. Other errors propagate; the optional tree is attempted only once."
+  ],
+  "validation": {
+    "default": {
+      "passed": 3278,
+      "skipped": 629,
+      "note": "Full run before adding the final filter-only regression case and strengthening direct fallback observations; production sources unchanged afterward."
+    },
+    "focusedFinal": {
+      "passed": 25,
+      "scope": "Seven aggregates across row/run/vector routes; 64 KiB oversized expansion rejection with a retained sibling; replacement and published-result lifetime; direct observation of both tree and fallback reads; filter admission and short-circuiting."
+    },
+    "worker": {
+      "passed": 75,
+      "scope": "Includes new aggregate-value route on real Parquet via local workerd R2 with shared 64/128 MiB pools."
+    },
+    "reference": {
+      "passed": 104
+    },
+    "http": "Full default suite includes real Parquet aggregate-value routes over HTTP 206 and ignored-Range 200 responses, row and vector execution.",
+    "build": "pnpm exec tsc -b passed before cross-package tests and benchmarks",
+    "typecheck": "pnpm typecheck passed",
+    "limitations": "Coverage, external conformance and clean package installation were not rerun for this change."
+  },
+  "performance": {
+    "bufferedReport": "docs/benchmarks/window-aggregate-owned-values-2026-11-13.json",
+    "segmentReport": "docs/benchmarks/window-segment-owned-values-2026-11-13.json",
+    "numeric2048RowsMedianMilliseconds": {
+      "growing": 0.308471,
+      "alternatingWithoutTree": 249.264894,
+      "alternatingWithTree": 1.425025
+    },
+    "assertions": "Independent expected values and final zero reservations checked on every benchmark run.",
+    "limitations": "Local numeric kernels; no cloud latency, VM heap or before/after ownership speedup claim. Buffered report compares admitted and unadmitted modes of the same implementation."
+  },
+  "remainingAcceptance": [
+    "Sort-group and frame-bound planning/evaluation metadata, final collectors and checkpoint serialization/parsing remain incomplete.",
+    "Delegated task output ownership, post-write cancellation and full mixed-job/adaptive scheduling acceptance remain open.",
+    "Custom reserve-only kernel budgets retain their legacy reservation-only contract; full payload ownership uses MemoryBudget/MemoryScope as public query execution does.",
+    "Tracked allocation units are not total VM heap, external backing or production Cloudflare memory certification."
+  ],
+  "followupEvidence": "docs/validation/window-collection-ownership-2026-11-13.json"
+}

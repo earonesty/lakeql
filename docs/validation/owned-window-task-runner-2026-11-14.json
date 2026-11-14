@@ -1,0 +1,22 @@
+{
+  "change": "ScanAdapter exposes executeOwnedWindowTasks. Query planning recognizes owned-only adapters, Parquet supplies owned output, and the window runner prefers and adopts that output until postprocessing/streaming finishes. Plain adapters remain compatible via admitted retained copies. Returned ownership is released on abort, expired execution budget or incompatible ownership budget.",
+  "validation": {
+    "targetedCoreQueryRunnerAndParquetTests": 100,
+    "typescriptBuild": "passed",
+    "typecheck": "passed before final abort-only followup",
+    "localWorkerTests": 75,
+    "workerScope": "Owned integration before final post-task abort check; no production Cloudflare limit claim.",
+    "edgeCases": [
+      "owned capability preferred over throwing legacy method",
+      "task output stays charged between streaming batches",
+      "normal completion and early iterator return release all charges",
+      "abort before returned-owner adoption releases source owner",
+      "incompatible memory budget rejects and releases source owner"
+    ]
+  },
+  "remaining": [
+    "Legacy task adapter and custom transport allocations happen externally before retained-copy admission.",
+    "Task planning/fan-in metadata admission and redundant detach overlap still need review.",
+    "Full mixed-job 64/128 MiB acceptance and production Worker heap safety remain unproven."
+  ]
+}

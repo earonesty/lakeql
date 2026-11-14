@@ -1,0 +1,31 @@
+{
+  "runtimeSourceCommit": "8aed327",
+  "acceptanceItems": ["F1", "F2", "M1", "V2"],
+  "validation": {
+    "typecheck": "passed",
+    "workerd": {
+      "passed": 81,
+      "files": 23
+    }
+  },
+  "fixtures": {
+    "poolMiB": [64, 128],
+    "source": "Actual SNAPPY Parquet, two row groups, workerd R2 binding",
+    "spill": "R2 objects via test SpillAdapter with no staged/batch capability",
+    "assertions": [
+      "Grouped aggregate continuation totals",
+      "Sort continuation order",
+      "Unowned spill reads prohibited",
+      "Checkpoint bytes charged while write callback runs",
+      "Changed spill run rejected",
+      "Zero final query reservations",
+      "Peak tracked bytes within pool"
+    ]
+  },
+  "limitations": [
+    "Small correctness fixture, not memory-pressure benchmark",
+    "workerd binding is not production cloud network evidence",
+    "No atomic multi-object publication claimed",
+    "Native binding buffers remain external"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "status": "Implemented; build, default and Worker validation passed",
+  "contract": "A byte-level lexical forecast admits decoded text and parsed JSON tree overlap before TextDecoder/JSON.parse. UTF8 input length bounds decoded string payload; punctuation and scalar tokens bound container, property and slot charges. Native JSON.parse validates syntax. Query scope now precedes asynchronous restore and owns parsed trees through query cleanup.",
+  "integration": [
+    "Top-k encoded checkpoint restore",
+    "Sort encoded checkpoint restore",
+    "Sort spilled run restore"
+  ],
+  "validation": {
+    "focusedTestsPassed": 98,
+    "build": "passed",
+    "cases": [
+      "Nested arrays and records, escaped quotes/backslashes, Unicode and own __proto__ key",
+      "Exact overlap cap and cap-minus-one rejection",
+      "Malformed JSON cleanup",
+      "Retained parse output survives scope disposal"
+    ],
+    "defaultTestsPassed": 3051,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61
+  },
+  "remaining": [
+    "Internal validator row copies and request-compatibility JSON serialization have been removed (linked evidence).",
+    "Object state now receives admitted detachment; public standalone deserializers retain their existing unscoped contract.",
+    "Spill adapters allocate read buffers before returning them; this interface still lacks pre-read size admission.",
+    "Parsed source trees remain charged through query completion even after detached copies become available.",
+    "Charges are conservative accounting units, not a portable VM heap guarantee."
+  ],
+  "restoreCopyEvidence": "checkpoint-restore-copy-elimination-2026-11-13.json"
+}

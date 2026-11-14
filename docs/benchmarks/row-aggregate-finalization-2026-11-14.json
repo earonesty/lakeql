@@ -1,0 +1,159 @@
+{
+  "baseCommit": "354133a56b373b2644b41eca3264755fa919a3b9",
+  "node": "v24.18.1",
+  "conditions": {
+    "warmupRounds": 4,
+    "measuredRounds": 6,
+    "alternatingOrder": true
+  },
+  "results": [
+    {
+      "groups": 100,
+      "rows": 400,
+      "batchRows": 128,
+      "variants": {
+        "rows-only": [
+          {
+            "elapsedMs": 6.748231000000004,
+            "peakChargedBytes": 751196,
+            "checkpointBytes": 0
+          },
+          {
+            "elapsedMs": 14.246634000000029,
+            "peakChargedBytes": 751196,
+            "checkpointBytes": 0
+          },
+          {
+            "elapsedMs": 11.299171999999999,
+            "peakChargedBytes": 751196,
+            "checkpointBytes": 0
+          },
+          {
+            "elapsedMs": 6.139974999999993,
+            "peakChargedBytes": 751196,
+            "checkpointBytes": 0
+          },
+          {
+            "elapsedMs": 5.6949860000000285,
+            "peakChargedBytes": 751196,
+            "checkpointBytes": 0
+          },
+          {
+            "elapsedMs": 13.423032999999975,
+            "peakChargedBytes": 751196,
+            "checkpointBytes": 0
+          }
+        ],
+        "checkpoint-and-rows": [
+          {
+            "elapsedMs": 16.830220999999995,
+            "peakChargedBytes": 1412366,
+            "checkpointBytes": 12487
+          },
+          {
+            "elapsedMs": 15.166697,
+            "peakChargedBytes": 1412366,
+            "checkpointBytes": 12487
+          },
+          {
+            "elapsedMs": 14.068149000000005,
+            "peakChargedBytes": 1412366,
+            "checkpointBytes": 12487
+          },
+          {
+            "elapsedMs": 24.387325000000033,
+            "peakChargedBytes": 1412366,
+            "checkpointBytes": 12487
+          },
+          {
+            "elapsedMs": 9.783678000000009,
+            "peakChargedBytes": 1412366,
+            "checkpointBytes": 12487
+          },
+          {
+            "elapsedMs": 8.048779999999965,
+            "peakChargedBytes": 1412366,
+            "checkpointBytes": 12487
+          }
+        ]
+      }
+    },
+    {
+      "groups": 1000,
+      "rows": 4000,
+      "batchRows": 128,
+      "variants": {
+        "rows-only": [
+          {
+            "elapsedMs": 88.80587999999989,
+            "peakChargedBytes": 7506596,
+            "checkpointBytes": 0
+          },
+          {
+            "elapsedMs": 86.35575600000016,
+            "peakChargedBytes": 7506596,
+            "checkpointBytes": 0
+          },
+          {
+            "elapsedMs": 84.74992100000009,
+            "peakChargedBytes": 7506596,
+            "checkpointBytes": 0
+          },
+          {
+            "elapsedMs": 89.89740600000005,
+            "peakChargedBytes": 7506596,
+            "checkpointBytes": 0
+          },
+          {
+            "elapsedMs": 90.16610300000002,
+            "peakChargedBytes": 7506596,
+            "checkpointBytes": 0
+          },
+          {
+            "elapsedMs": 92.01705899999979,
+            "peakChargedBytes": 7506596,
+            "checkpointBytes": 0
+          }
+        ],
+        "checkpoint-and-rows": [
+          {
+            "elapsedMs": 123.89516299999991,
+            "peakChargedBytes": 14083466,
+            "checkpointBytes": 129787
+          },
+          {
+            "elapsedMs": 130.905888,
+            "peakChargedBytes": 14083466,
+            "checkpointBytes": 129787
+          },
+          {
+            "elapsedMs": 122.03833600000007,
+            "peakChargedBytes": 14083466,
+            "checkpointBytes": 129787
+          },
+          {
+            "elapsedMs": 128.46557200000007,
+            "peakChargedBytes": 14083466,
+            "checkpointBytes": 129787
+          },
+          {
+            "elapsedMs": 125.65825500000028,
+            "peakChargedBytes": 14083466,
+            "checkpointBytes": 129787
+          },
+          {
+            "elapsedMs": 120.90681500000028,
+            "peakChargedBytes": 14083466,
+            "checkpointBytes": 129787
+          }
+        ]
+      }
+    }
+  ],
+  "limitations": [
+    "Current rows-only versus explicit checkpoint finalization; not a full historical-revision comparison.",
+    "Borrowed in-memory row scanner; HTTP and native-cloud latency are outside this benchmark.",
+    "Input/oracle fixtures are caller-owned; charged peak is not whole-runtime heap."
+  ],
+  "builtQuerySha256": "f49e448e41879201840929a186203f6fdc2daeba809a33970d3a9469a3a361b6"
+}

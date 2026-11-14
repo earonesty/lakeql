@@ -1,0 +1,27 @@
+{
+  "baseCommit": "61c4f8b",
+  "scope": "Iterative canonical schema serialization with optional admission",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 28,
+    "fullSuite": {
+      "passed": 3603,
+      "skipped": 629,
+      "log": "/tmp/schema-signature-full.log"
+    }
+  },
+  "evidence": [
+    "Canonical output matches prior schema serializer for nested/escaped/Unicode/numeric fixtures",
+    "Twenty-thousand-level schema-shaped input serializes without recursive calls",
+    "Exact-capacity success and one-byte-below rollback",
+    "Cycles rejected; repeated acyclic references accepted; bigint formatting failure releases storage",
+    "Existing adapter and real-fixture query tests pass"
+  ],
+  "remaining": [
+    "Scoped descriptor integration",
+    "Owned multi-file Parquet planning",
+    "Schema tree construction workspace",
+    "Final runtime and release acceptance"
+  ]
+}

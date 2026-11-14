@@ -1,0 +1,27 @@
+{
+  "warmups": 1,
+  "samples": 3,
+  "scope": "Local grouping only; baseline reproduces previous range merge with simplified equivalent keys for these empty-partition fixtures. No I/O or heap-cap measurement.",
+  "results": [
+    {
+      "count": 1000,
+      "name": "repeated-merge-baseline",
+      "medianMs": 14.023768000000018
+    },
+    {
+      "count": 1000,
+      "name": "single-merge",
+      "medianMs": 0.3312650000000019
+    },
+    {
+      "count": 4000,
+      "name": "repeated-merge-baseline",
+      "medianMs": 197.19442800000002
+    },
+    {
+      "count": 4000,
+      "name": "single-merge",
+      "medianMs": 1.0947419999999966
+    }
+  ]
+}

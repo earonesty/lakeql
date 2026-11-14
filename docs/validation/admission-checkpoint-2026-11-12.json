@@ -1,0 +1,47 @@
+{
+  "scope": "Admission integration checkpoint; tracked allocations, not total Worker heap proof",
+  "sourceSha256": {
+    "packages/core/src/memory-budget.ts": "14857124350cef3df3fb58250fa7988720fb0a53aafcaf4f804d165726070d5a",
+    "packages/core/src/memory-scope.ts": "214a711248a2637941a4258e84728429c8b08a6f477651d5a9dd8249508f7ee7",
+    "packages/core/src/packed-gather.ts": "454e12de67c2b92a4ba91cda55db92ac835c1fda87ab11b9cfa50b540a5c447a",
+    "packages/core/src/vector-sort.ts": "aff63b88cfff1f49042089c4558a4e8a06690480230ff5664879aac46eac8aaa"
+  },
+  "default": {
+    "passed": 1419,
+    "skipped": 353
+  },
+  "referencePassed": 94,
+  "workerdPassed": 18,
+  "coverage": {
+    "statements": 91.03,
+    "branches": 84.73,
+    "functions": 95.17,
+    "lines": 93
+  },
+  "cloud": {
+    "checks": 52,
+    "normalQueryCases": 40,
+    "singleRowBatchesVerified": 3456,
+    "queryHeadroomBytes": 131072,
+    "maxIncrementalChargedBytes": 127995,
+    "warmDataRequests": 0,
+    "artifact": "docs/benchmarks/cloud-range-admission-2026-11-12.json"
+  },
+  "limitations": [
+    "Small 144-row public fixture",
+    "No historical whole-query latency comparison",
+    "External conformance not rerun in this checkpoint",
+    "JS heap and mandatory scheduler remain incomplete"
+  ],
+  "provenanceClarification": {
+    "kind": "Historical intermediate worktree checkpoint",
+    "currentRevisionAttestation": false,
+    "explanation": "Recorded source hashes identify the intermediate contents used for this dated run. Later implementation changed these files; hashes are intentionally not replaced with current hashes because that would attach old measurements to unmeasured source. Consult subsequent validation checkpoints for current evidence.",
+    "mismatchedPathsAtReview": [
+      "packages/core/src/memory-budget.ts",
+      "packages/core/src/memory-scope.ts",
+      "packages/core/src/packed-gather.ts",
+      "packages/core/src/vector-sort.ts"
+    ]
+  }
+}

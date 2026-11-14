@@ -1,0 +1,33 @@
+{
+  "productionRevision": "6851e2f",
+  "gates": {
+    "coverage": {
+      "testsPassed": 3360,
+      "testsSkipped": 629,
+      "statementsPercent": 90.93,
+      "branchesPercent": 84.95,
+      "functionsPercent": 95.56,
+      "linesPercent": 92.8,
+      "thresholdsChanged": false
+    },
+    "workerTests": 75,
+    "referenceTests": 104,
+    "lint": "passed",
+    "changeset": "passed",
+    "largeFiles": "passed after historical log split"
+  },
+  "initialParallelRun": "Coverage gzip fixture hit 5-second timeout and Worker import hit 15-second timeout while heavy gates ran concurrently. Sequential reruns passed without timeout or threshold changes.",
+  "auditArchive": {
+    "reason": "Main audit reached 1049089 bytes, exceeding the 1048576-byte tracked-file limit.",
+    "historyParts": 3,
+    "preservation": "Reassembled historical body equals the prior committed historical body exactly.",
+    "sha256": "c022b0b7d23a3786131655d8833efb5f0a500be8b7592987a024a7c389718f72",
+    "mainBytes": 32857
+  },
+  "completionAudit": {
+    "F1-M1": "Parquet aggregate state lifetime is not yet integrated with the existing owned reduction engine. Generic continuation checkpoint merge is the next required contract.",
+    "F2-F6": "Latest task ownership/cache fixes and adaptive reuse are tested; other documented lifecycle and planning gaps remain.",
+    "M2-V1": "Constrained concurrent local/HTTP fixture evidence does not prove complete mixed-job, fairness/deadlock or production Worker memory acceptance.",
+    "V2-V3": "Current gates pass but do not complete the full audit. Conformance, consumer install and fixture regeneration were not rerun in this checkpoint."
+  }
+}

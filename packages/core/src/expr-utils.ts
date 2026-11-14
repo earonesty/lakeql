@@ -1,6 +1,9 @@
 import type { Expr } from "./expr.js";
 
-export function collectExprColumns(expr: Expr | undefined, columns: Set<string>): void {
+export function collectExprColumns(
+  expr: Expr | undefined,
+  columns: { add(name: string): unknown },
+): void {
   if (!expr) return;
   switch (expr.kind) {
     case "column":

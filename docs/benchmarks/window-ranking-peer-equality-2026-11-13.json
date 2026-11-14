@@ -1,0 +1,54 @@
+{
+  "description": "Presorted cume_dist kernel; 2 warmups, 3 timed rounds; independent peer-end oracle. Row construction and output validation excluded. Tracked workspace is peer-index admission only, not output arrays or total VM heap. Local execution, not cloud throughput.",
+  "sourceHash": "7352ed892f3f137ee4e8097d8388e362e95099ecfc66920cf83557e2e90a5f01",
+  "sourceHashes": {
+    "window-backend": "7352ed892f3f137ee4e8097d8388e362e95099ecfc66920cf83557e2e90a5f01",
+    "window-utils": "240459674ba7458a1bd412a5bd3ae8fa16d115be75e2350e8899dfa7b4bc3dca",
+    "window-peers": "9fab3a3fc84d05f3d6e8422e5bf7d83dd886dcc0a22004864ef476c2b40d8cbb",
+    "scalar-order": "d2ce42b29f2a030cf8ef884dce0a13ff1bf488a555d1687b88834e90bfe88387"
+  },
+  "results": [
+    {
+      "rows": 256,
+      "groups": 1,
+      "medianMilliseconds": 0.08715399999999818,
+      "samples": [0.16344799999999893, 0.08715399999999818, 0.061755999999999034],
+      "trackedPeerWorkspaceBytes": 0
+    },
+    {
+      "rows": 256,
+      "groups": 8,
+      "medianMilliseconds": 0.06410100000000085,
+      "samples": [0.06410100000000085, 0.11145000000000138, 0.06369000000000113],
+      "trackedPeerWorkspaceBytes": 0
+    },
+    {
+      "rows": 1024,
+      "groups": 1,
+      "medianMilliseconds": 0.08282600000000073,
+      "samples": [0.08334700000000339, 0.08282600000000073, 0.05297000000000196],
+      "trackedPeerWorkspaceBytes": 0
+    },
+    {
+      "rows": 1024,
+      "groups": 8,
+      "medianMilliseconds": 0.058270000000000266,
+      "samples": [0.040295000000000414, 0.058270000000000266, 0.0672770000000007],
+      "trackedPeerWorkspaceBytes": 0
+    },
+    {
+      "rows": 2048,
+      "groups": 1,
+      "medianMilliseconds": 0.12857199999999835,
+      "samples": [0.12857199999999835, 0.5784799999999954, 0.12110799999999955],
+      "trackedPeerWorkspaceBytes": 0
+    },
+    {
+      "rows": 2048,
+      "groups": 8,
+      "medianMilliseconds": 0.10247299999999626,
+      "samples": [0.10247299999999626, 0.10415600000000325, 0.09252399999999739],
+      "trackedPeerWorkspaceBytes": 0
+    }
+  ]
+}

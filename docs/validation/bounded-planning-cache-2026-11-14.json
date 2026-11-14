@@ -1,0 +1,28 @@
+{
+  "sourceBase": "65078d1",
+  "scope": "Shared-pool generic owned entry cache and planning metadata factory",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 14,
+    "fullSuite": {
+      "passed": 3637,
+      "skipped": 629,
+      "log": "/tmp/bounded-planning-cache-full.log"
+    }
+  },
+  "evidence": [
+    "LRU eviction preserves active owned readers",
+    "Sibling allocations reclaim unpinned cache storage",
+    "Legacy copies isolate mutable metadata and dates",
+    "Explicit expiration and oversized replacement release stale entries",
+    "Real query cold/warm discovery reuse with final clear returning pool to zero",
+    "Exact capacity includes key and directory charges; one byte below declines retention"
+  ],
+  "limitations": [
+    "Generic clone callbacks must admit their supported value domain",
+    "Legacy get transfers returned copies outside pool lifetime accounting",
+    "Owned backing must remain immutable",
+    "Remote cache transport and serialization remain open"
+  ]
+}

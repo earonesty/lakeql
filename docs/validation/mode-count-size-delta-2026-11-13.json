@@ -1,0 +1,23 @@
+{
+  "status": "Implemented; build, default and Worker validation passed",
+  "change": "Mode caches the serialized size of its actual retained entries. New keys add one entry extent; duplicate updates adjust only the serialized count width. Initial restored contents are measured once. Per-update temporary entry records and the mode measurement generator are removed, along with the now-unused generic removal method.",
+  "validation": {
+    "build": "passed",
+    "focusedTestsPassed": 116,
+    "cases": [
+      "Exact full-checkpoint size and one-byte-short rejection at counts 9,10,99,100,1000 with escaped Unicode keys",
+      "Existing mixed-key Unicode and restored mode serialized-limit parity",
+      "Existing bounded retained growth and duplicate-storage tests"
+    ],
+    "defaultTestsPassed": 3093,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61
+  },
+  "remaining": [
+    "Mode key formatting still occurs before Map lookup; its scratch is admitted, but avoiding formatting may need a broader key representation contract.",
+    "Native numeric count formatting and runtime bookkeeping are not total-heap accounting.",
+    "Aggregate checkpoint request comparisons are now admitted (linked evidence); expression/evaluator allocation remains open.",
+    "No measured latency improvement is claimed from this structural change alone."
+  ],
+  "compatibilityEvidence": "aggregate-compatibility-admission-2026-11-13.json"
+}

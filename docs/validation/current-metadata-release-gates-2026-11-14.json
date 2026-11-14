@@ -1,0 +1,50 @@
+{
+  "runtimeSourceCommit": "4bfbe7dcd0d61e03a44768fa8e35699821510afc",
+  "gates": {
+    "coverage": {
+      "passed": true,
+      "testsPassed": 3748,
+      "testsSkipped": 645,
+      "filesPassed": 410,
+      "statements": 91.29,
+      "branches": 85.43,
+      "functions": 95.83,
+      "lines": 93.1,
+      "thresholdsUnchanged": true
+    },
+    "build": "passed",
+    "typecheck": "passed",
+    "cleanPackageConsumer": {
+      "passed": true,
+      "installedPackages": 66
+    },
+    "reference": {
+      "passed": 120,
+      "files": 4
+    },
+    "workerd": {
+      "passed": 82,
+      "files": 23,
+      "evidence": "column-metadata-scratch-2026-11-14.json; identical runtime, subsequent commit only benchmarks/docs"
+    },
+    "requiredExternalConformance": {
+      "passed": 520,
+      "skipped": 1,
+      "evidence": "column-metadata-scratch-2026-11-14.json; identical runtime",
+      "skipReason": "Missing-required-fixtures guard inactive; required external matrix executed"
+    },
+    "lint": "passed; 1567 files",
+    "compatibility": "passed",
+    "largeFiles": "passed",
+    "changeset": "passed",
+    "fixtureReproducibility": "passed; regenerated hashes identical and worktree clean"
+  },
+  "acceptance": "Release checks pass; complete F1-F6/M1-M2/V1-V3 scope remains open.",
+  "remaining": [
+    "Full operator/decoder/converter and output ownership coverage",
+    "Concurrent metadata/output overlap: four cold aggregates still reject at 128 KiB shared headroom",
+    "Broader scheduling, cancellation and self-held capacity cases",
+    "Whole-runtime headroom including VM/GC/native allocations",
+    "Final requirement-by-requirement scope review"
+  ]
+}

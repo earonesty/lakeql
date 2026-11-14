@@ -1,0 +1,30 @@
+{
+  "baseCommit": "2f56d70",
+  "scope": "Independent discovery lifetimes across deferred, physical, row, window and explain routes",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 17,
+    "fullSuite": {
+      "passed": 3593,
+      "skipped": 629,
+      "log": "/tmp/discovery-lifetime-full-final.log"
+    }
+  },
+  "evidence": [
+    "Private object planner requires receiving scope at every internal call",
+    "Delayed ordered/deferred/window scan cancellation preserves long-path metadata until callback settlement",
+    "All reservations release after scan cleanup",
+    "Row/vector window options share helper and carry discovered ObjectInfo",
+    "Explain retains task owner and discovery through construction",
+    "Failed deferred output cleanup distinguishes released output from live planning storage"
+  ],
+  "remaining": [
+    "Sidecar containers",
+    "Adapter-added schema plan ownership",
+    "Discovery auxiliary workspace",
+    "External cache retention",
+    "Owned explain and slice output contracts",
+    "Final memory/runtime/release acceptance"
+  ]
+}

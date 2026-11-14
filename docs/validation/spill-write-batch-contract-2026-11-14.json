@@ -1,0 +1,30 @@
+{
+  "date": "2026-11-14",
+  "changes": [
+    "Add optional beginWriteBatch capability for multi-file checkpoint publication.",
+    "MemorySpillAdapter stages all files privately, validates the complete observed-version set before publishing, and performs publication without asynchronous interleaving.",
+    "Share prepared-write validation, publication and accounting between single staged writes and batches.",
+    "Include all pending payloads in spill capacity; reject duplicate batch targets and writes after closure; clear transaction descriptors after commit/rollback."
+  ],
+  "validation": {
+    "build": "passed",
+    "targeted_tests": 16,
+    "cases": [
+      "later-target conflict leaves earlier target unchanged",
+      "rollback preserves a competing writer",
+      "successful multi-target commit",
+      "repeated commit and rollback",
+      "new target invisibility before commit",
+      "duplicate-target rejection",
+      "overlap budget rejection followed by complete rollback",
+      "post-rollback commit rejection"
+    ],
+    "typecheck": "passed"
+  },
+  "remaining": [
+    "Query sort and window writers are not yet wired to batch publication.",
+    "Remote/persistent adapters need an explicitly atomic implementation; an adapter must not advertise this capability through sequential ordinary writes.",
+    "Adapter directory/transaction metadata and native allocation failures are not an exact whole-heap accounting guarantee.",
+    "Full release gates and broader acceptance remain open."
+  ]
+}

@@ -3,6 +3,7 @@ import worker from "../../../examples/worker/src/index.js";
 import { writeParquet } from "./cloudflare.js";
 
 class WorkerR2Object {
+  readonly body: ReadableStream<Uint8Array>;
   readonly size: number;
   readonly uploaded = new Date("2026-06-15T00:00:00Z");
   readonly httpMetadata = { contentType: "application/octet-stream" };
@@ -11,8 +12,15 @@ class WorkerR2Object {
     readonly key: string,
     private readonly bytes: Uint8Array,
     readonly etag = "etag",
+    objectSize = bytes.byteLength,
   ) {
-    this.size = bytes.byteLength;
+    this.size = objectSize;
+    this.body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes);
+        controller.close();
+      },
+    });
   }
 
   async arrayBuffer(): Promise<ArrayBuffer> {
@@ -32,7 +40,7 @@ class WorkerR2Bucket {
       options?.range === undefined
         ? bytes
         : bytes.slice(options.range.offset, options.range.offset + options.range.length);
-    return new WorkerR2Object(key, ranged);
+    return new WorkerR2Object(key, ranged, undefined, bytes.byteLength);
   }
 
   async head(key: string) {

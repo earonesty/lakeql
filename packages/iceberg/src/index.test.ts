@@ -1208,6 +1208,74 @@ describe("loadIcebergTable", () => {
     expect(reads.get("manifests/shared.json")).toBe(1);
   });
 
+  it.each([
+    "snapshots",
+    "manifests",
+  ] as const)("bounds hydration work and drains active %s after failure", async (level) => {
+    const paths = ["first.json", "second.json", "third.json"];
+    const snapshot = (id: number, manifests: { path: string }[]) => ({
+      "snapshot-id": id,
+      "timestamp-ms": id,
+      "schema-id": 1,
+      manifests,
+    });
+    const metadata = {
+      "format-version": 2,
+      "table-uuid": "bounded",
+      location: "memory",
+      "current-snapshot-id": 1,
+      schemas: [{ "schema-id": 1, fields: [{ id: 1, name: "id", type: "int", required: true }] }],
+      snapshots:
+        level === "snapshots"
+          ? paths.map((path, index) => snapshot(index + 1, [{ path }]))
+          : [
+              snapshot(
+                1,
+                paths.map((path) => ({ path })),
+              ),
+            ],
+    };
+    const failed = Promise.withResolvers<void>();
+    const pending = Promise.withResolvers<void>();
+    const reads: string[] = [];
+    const store: ObjectStore = {
+      async get(path) {
+        if (path === "metadata.json") return new TextEncoder().encode(JSON.stringify(metadata));
+        reads.push(path);
+        await (path === paths[0] ? failed.promise : pending.promise);
+        return new TextEncoder().encode(JSON.stringify({ path, files: [] }));
+      },
+      getRange: async () => new Uint8Array(),
+      put: async () => {},
+      delete: async () => {},
+      list: async function* () {},
+      head: async () => null,
+    };
+    let settled = false;
+    const result = loadIcebergTable({
+      store,
+      metadataPath: "metadata.json",
+      maxConcurrentReads: 2,
+    }).then(
+      () => {
+        throw new Error("expected failure");
+      },
+      (error: unknown) => {
+        settled = true;
+        return error;
+      },
+    );
+    await expect.poll(() => reads.length).toBe(2);
+    const cause = new Error("manifest failure");
+    failed.reject(cause);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+    expect(reads).toEqual(paths.slice(0, 2));
+    pending.resolve();
+    expect(await result).toMatchObject({ code: "LAKEQL_CATALOG_ERROR", details: { cause } });
+    expect(reads).toEqual(paths.slice(0, 2));
+  });
+
   it("reuses Iceberg manifest metadata from a caller-provided durable cache", async () => {
     const baseStore = memoryStore();
     const reads = new Map<string, number>();

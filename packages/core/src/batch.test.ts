@@ -3,6 +3,7 @@ import {
   batchExprValues,
   batchFromColumns,
   batchFromVectors,
+  materializeBatchRow,
   materializeBatchRows,
   materializeSelectedBatchRows,
   predicateSelection,
@@ -65,12 +66,17 @@ describe("column batches", () => {
     ]);
   });
 
-  it("rejects ragged columns and mixed primitive types", () => {
+  it("rejects ragged/unsupported values and preserves mixed primitive types", () => {
     expect(() => batchFromColumns({ a: [1], b: [1, 2] })).toThrowError(LakeqlError);
-    expect(() => batchFromColumns({ a: [1, "two"] })).toThrowError(LakeqlError);
-    expect(() =>
-      batchFromColumns({ occurredAt: [timestampFromEpoch(1n, "millis", true), 2] }),
-    ).toThrowError(LakeqlError);
+    expect(materializeBatchRows(batchFromColumns({ a: [1, "two"] }))).toEqual([
+      { a: 1 },
+      { a: "two" },
+    ]);
+    expect(
+      materializeBatchRows(
+        batchFromColumns({ occurredAt: [timestampFromEpoch(1n, "millis", true), 2] }),
+      ),
+    ).toEqual([{ occurredAt: timestampFromEpoch(1n, "millis", true) }, { occurredAt: 2 }]);
     expect(() => batchFromColumns({ a: [Symbol("x")] })).toThrowError(
       expect.objectContaining({
         code: "LAKEQL_TYPE_ERROR",
@@ -718,4 +724,33 @@ describe("column batches", () => {
     expect(() => predicateSelection(batch, eq("payload", first))).toThrowError(LakeqlError);
     expect(() => evaluate(eq(lit(first), lit(second)), {})).toThrowError(LakeqlError);
   });
+});
+
+it("preserves prototype-like data keys in selected and single-row materialization", () => {
+  const columns = Object.create(null);
+  Object.defineProperty(columns, "__proto__", {
+    value: { type: "i32", values: Int32Array.of(7, 8) },
+    enumerable: true,
+  });
+  columns.constructor = { type: "utf8", values: ["first", "second"] };
+  const batch = batchFromVectors(columns);
+  const selected = materializeSelectedBatchRows(batch, Uint8Array.of(0, 1));
+  expect(selected).toHaveLength(1);
+  const row = selected[0];
+  if (row === undefined) throw new Error("Missing selected row");
+  expect(row).toEqual(materializeBatchRow(batch, 1));
+  expect(Object.hasOwn(row, "__proto__")).toBe(true);
+  expect(Object.getOwnPropertyDescriptor(row, "__proto__")?.value).toBe(8);
+  expect(row?.constructor).toBe("second");
+  expect(Object.getPrototypeOf(row)).toBe(Object.prototype);
+});
+
+it("preserves prototype-like keys when constructing column vectors", () => {
+  const columns = Object.fromEntries([
+    ["__proto__", [7, 8]],
+    ["constructor", [9, 10]],
+  ]);
+  const rows = materializeBatchRows(batchFromColumns(columns));
+  expect(Object.getOwnPropertyDescriptor(rows[0], "__proto__")?.value).toBe(7);
+  expect(Object.getOwnPropertyDescriptor(rows[1], "__proto__")?.value).toBe(8);
 });

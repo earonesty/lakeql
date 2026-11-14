@@ -1,4 +1,5 @@
 import { LakeqlError } from "./errors.js";
+import type { MemoryScope, OwnedMemory } from "./memory-scope.js";
 import type {
   ConditionalPutOptions,
   ListOptions,
@@ -45,18 +46,42 @@ export class MemoryObjectStore implements ObjectStore {
   }
 
   async getRange(path: string, range: { offset: number; length: number }): Promise<Uint8Array> {
+    return new Uint8Array(this.rangeView(path, range));
+  }
+
+  getRangeOwnedAllocation(_path: string, range: { offset: number; length: number }) {
+    return { bytes: range.length, output: "exact-buffer" as const };
+  }
+
+  async getRangeOwned(
+    path: string,
+    range: { offset: number; length: number },
+    scope: MemoryScope,
+  ): Promise<OwnedMemory<Uint8Array>> {
+    const view = this.rangeView(path, range);
+    return scope.allocate(view.byteLength, "memory store range", () => new Uint8Array(view));
+  }
+
+  private rangeView(path: string, range: { offset: number; length: number }): Uint8Array {
     const obj = this.objects.get(path);
     if (!obj) {
       throw new LakeqlError("LAKEQL_OBJECT_NOT_FOUND", `No object at ${path}`, { path });
     }
-    if (range.offset < 0 || range.length < 0 || range.offset + range.length > obj.bytes.length) {
+    if (
+      !Number.isSafeInteger(range.offset) ||
+      !Number.isSafeInteger(range.length) ||
+      !Number.isSafeInteger(range.offset + range.length) ||
+      range.offset < 0 ||
+      range.length < 0 ||
+      range.offset + range.length > obj.bytes.length
+    ) {
       throw new LakeqlError("LAKEQL_OBJECT_NOT_FOUND", `Range out of bounds for ${path}`, {
         path,
         range,
         size: obj.bytes.length,
       });
     }
-    return obj.bytes.slice(range.offset, range.offset + range.length);
+    return obj.bytes.subarray(range.offset, range.offset + range.length);
   }
 
   async put(

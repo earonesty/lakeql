@@ -1,0 +1,30 @@
+{
+  "date": "2026-11-14",
+  "requirements": ["F2", "M1", "M2"],
+  "changes": [
+    "Admit modeled selection execution records, typed-array views, API descriptors/handles, labels and result records in addition to payload backing.",
+    "Include ownership/reclaimer fields in retained pipeline metadata charges.",
+    "Advertise allocationScopeOperators select, restoring required-accelerator projected queries without bypassing scoped admission.",
+    "Document explicit scalar-shape capability and reservation-versus-driver-memory boundary."
+  ],
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "full_default_suite": {
+      "passed": 3520,
+      "skipped": 629
+    },
+    "coverage": [
+      "Real Dawn required and automatic placement projected queries return correct rows; required placement executes WebGPU selection.",
+      "Exact observed peak succeeds, one byte below rejects, and pre-admitted stage capacity operates correctly.",
+      "Zero, one and 257-row nullable multi-shape selection matches CPU WHERE truth acceptance and dispatch counts.",
+      "Mutable borrowed projections, real fixtures and HTTP tests remain green in the full suite.",
+      "Existing pending compile/dispatch cancellation, cache eviction, sibling pressure and partial-buffer failure coverage remains green."
+    ]
+  },
+  "remaining": [
+    "Scoped GPU reduction and vector-distance operators remain unsupported.",
+    "Planning/compiler scratch and opaque device/driver/runtime internals are not a portable whole-process bound.",
+    "The broader F1\u2013F6/M1\u2013M2/V1\u2013V3 audit and 64/128 MiB concurrent cloud-runtime validation remain open."
+  ]
+}

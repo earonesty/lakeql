@@ -1,0 +1,24 @@
+{
+  "status": "Implemented; build, default and Worker validation passed",
+  "change": "Snapshot scalar validation/forecast is shared by conversion and direct byte measurement. Strings/bytes/bools/null measure directly; other scalar formatting reserves and releases scratch. First/last/any measure their syntax and normalized scalar sizes without snapshot records. Immutable group key headers are measured field-by-field instead of constructing a normalized key record.",
+  "validation": {
+    "build": "passed",
+    "focusedTestsPassed": 115,
+    "scalarTestsPassed": 12,
+    "cases": [
+      "Byte-for-byte parity with stableStringify(jsonSafeValue(value)) for null/bool/large numbers/nonfinite/bigint/bytes/Unicode",
+      "Scalar measurement leaves no retained scratch",
+      "Existing exact aggregate serialized caps, restore and Unicode group-key tests"
+    ],
+    "defaultTestsPassed": 3088,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61
+  },
+  "remaining": [
+    "Growing-state header/result records and group measurement records are removed (linked evidence); changed-value formatting and mode entry temporaries remain.",
+    "Numeric-only direct state estimates still use native numeric formatting without a separately retained output.",
+    "Aggregate request-compatibility formatting, evaluator temporaries and runtime bookkeeping remain separate.",
+    "No total-heap or latency improvement is inferred from structural allocation removal alone."
+  ],
+  "measurementContractEvidence": "aggregate-measurement-contract-2026-11-13.json"
+}

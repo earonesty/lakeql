@@ -1,0 +1,37 @@
+{
+  "date": "2026-11-14",
+  "source_revision": "af304899b44607c59eba9b19b79a648249047305",
+  "checks": {
+    "worker": {
+      "passed": 75,
+      "files": 21
+    },
+    "reference": {
+      "passed": 104,
+      "files": 4
+    },
+    "required_external_iceberg_conformance": {
+      "passed": 520,
+      "skipped": 1,
+      "skip": "Inactive missing-fixture guard; required external matrix assertions passed."
+    },
+    "lint": "passed",
+    "compatibility": "passed",
+    "large_files": "passed",
+    "changeset": "passed",
+    "coverage": {
+      "statements": 91.14,
+      "branches": 85.08,
+      "functions": 95.76,
+      "lines": 93.01,
+      "thresholds": "unchanged",
+      "passed": 3452,
+      "skipped": 629
+    }
+  },
+  "not_refreshed": [
+    "Full package build and clean npm consumer install",
+    "Deterministic fixture regeneration"
+  ],
+  "scope": "Current Worker, reference, required external conformance and coverage gates for accumulated spill transactions and borrowed deferred top-k ownership. This is not full F1-F6/M1-M2/V1-V3 acceptance or a whole-Worker memory cap."
+}

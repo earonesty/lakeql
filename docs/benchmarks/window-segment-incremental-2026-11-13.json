@@ -1,0 +1,59 @@
+{
+  "description": "Running sum over presorted numeric input, two warmups and three timed rounds. Construction and independent triangular-number validation excluded. Tree workspace admission only; row storage, expression results, output arrays and total VM heap are not measured. Local execution, not cloud latency.",
+  "sourceHashes": {
+    "window-segment-tree": "61c9777ffb78afb5a6390e6cf601c305de56ffbe149e3a81b18b9fe505abed2c",
+    "window-aggregate": "c278529b7661b6a9013f8a9bd340e52ce2f0093f6c776e5dd67cf884d13a67a9",
+    "window-backend": "08049c6bd3cff75f0a9040fe0d3fb7de4be1554cdbfd0e2d75081431f69ff5f0"
+  },
+  "results": [
+    {
+      "rows": 256,
+      "budgetBytes": 238719,
+      "mode": "span",
+      "peakBytes": 0,
+      "medianMilliseconds": 0.1811720000000001,
+      "samples": [0.1811720000000001, 0.1320990000000002, 0.22552400000000006]
+    },
+    {
+      "rows": 256,
+      "budgetBytes": 238720,
+      "mode": "tree",
+      "peakBytes": 238720,
+      "medianMilliseconds": 0.340170999999998,
+      "samples": [0.34182500000000005, 0.340170999999998, 0.11656999999999584]
+    },
+    {
+      "rows": 1024,
+      "budgetBytes": 951423,
+      "mode": "span",
+      "peakBytes": 0,
+      "medianMilliseconds": 0.2847459999999984,
+      "samples": [0.2847459999999984, 0.43430800000000147, 0.13342199999999593]
+    },
+    {
+      "rows": 1024,
+      "budgetBytes": 951424,
+      "mode": "tree",
+      "peakBytes": 951424,
+      "medianMilliseconds": 0.26682299999999515,
+      "samples": [0.25475000000000136, 0.444307000000002, 0.26682299999999515]
+    },
+    {
+      "rows": 2048,
+      "budgetBytes": 1901695,
+      "mode": "span",
+      "peakBytes": 0,
+      "medianMilliseconds": 0.5238370000000003,
+      "samples": [1.0026590000000013, 0.3787840000000031, 0.5238370000000003]
+    },
+    {
+      "rows": 2048,
+      "budgetBytes": 1901696,
+      "mode": "tree",
+      "peakBytes": 1901696,
+      "medianMilliseconds": 0.8262870000000007,
+      "samples": [0.8262870000000007, 1.045691000000005, 0.3550690000000003]
+    }
+  ],
+  "status": "Intermediate incremental-only fallback measurement, before measured tree selection. Superseded by window-segment-measured-2026-11-13.json; not the final implementation checkpoint."
+}

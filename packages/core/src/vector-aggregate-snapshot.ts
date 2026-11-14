@@ -1,3 +1,6 @@
+import { isAggregateCount } from "./aggregate-count.js";
+import { unmeasuredMemoryBytes } from "./aggregate-memory.js";
+import { LakeqlError } from "./errors.js";
 import { isTimestampValue, TimestampValue } from "./timestamp.js";
 import type {
   VectorAggregateSnapshotValue,
@@ -32,15 +35,13 @@ export function snapshotVectorAggregateState(
     case "count_distinct":
     case "approx_count_distinct":
       return { op: state.op, values: distinctSnapshotValues(state) };
-    case "mode":
-      return {
-        op: "mode",
-        values: [...state.values.entries()].map(([key, entry]) => ({
-          key,
-          value: snapshotValue(entry.value),
-          count: entry.count,
-        })),
-      };
+    case "mode": {
+      const values: Extract<VectorAggregateStateSnapshot, { op: "mode" }>["values"] = [];
+      for (const [key, entry] of state.values) {
+        values.push({ key, value: snapshotValue(entry.value), count: entry.count });
+      }
+      return { op: "mode", values };
+    }
     case "first":
     case "last":
     case "any":
@@ -51,6 +52,8 @@ export function snapshotVectorAggregateState(
 export function vectorAggregateStateFromSnapshot(
   snapshot: VectorAggregateStateSnapshot,
 ): VectorAggregateState {
+  if ("count" in snapshot && !isAggregateCount(snapshot.count))
+    throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Invalid aggregate checkpoint count");
   switch (snapshot.op) {
     case "count":
       return { op: "count", count: snapshot.count };
@@ -81,16 +84,16 @@ export function vectorAggregateStateFromSnapshot(
       return { op: snapshot.op, values, memoryBytes: distinctMemoryBytes(values) };
     }
     case "mode": {
-      const values = new Map(
-        snapshot.values.map((entry) => [
-          entry.key,
-          {
-            value: restoreValue(entry.value) as Exclude<VectorAggregateValue, null>,
-            count: entry.count,
-          },
-        ]),
-      );
-      return { op: "mode", values, memoryBytes: distinctMemoryBytes(new Set(values.keys())) };
+      const values: Extract<VectorAggregateState, { op: "mode" }>["values"] = new Map();
+      for (const entry of snapshot.values) {
+        if (!isAggregateCount(entry.count))
+          throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Invalid aggregate checkpoint count");
+        values.set(entry.key, {
+          value: restoreValue(entry.value) as Exclude<VectorAggregateValue, null>,
+          count: entry.count,
+        });
+      }
+      return { op: "mode", values, memoryBytes: values.size === 0 ? 2 : unmeasuredMemoryBytes };
     }
     case "first":
     case "last":
@@ -112,6 +115,7 @@ function snapshotValue(value: VectorAggregateValue): VectorAggregateSnapshotValu
 }
 
 function restoreValue(value: VectorAggregateSnapshotValue): VectorAggregateValue {
+  validateAggregateSnapshotScalar(value);
   if (isBigintSnapshot(value)) return BigInt(value.value);
   if (isTimestampSnapshot(value)) {
     return new TimestampValue(BigInt(value.epochNanoseconds), value.unit, value.isAdjustedToUTC);
@@ -150,4 +154,18 @@ function isTimestampSnapshot(value: VectorAggregateSnapshotValue): value is {
     "isAdjustedToUTC" in value &&
     typeof value.isAdjustedToUTC === "boolean"
   );
+}
+
+/** Validate serialized scalar shape without parsing or allocating bigint payloads. */
+export function validateAggregateSnapshotScalar(value: VectorAggregateSnapshotValue): void {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  )
+    return;
+  if (isBigintSnapshot(value) && /^-?[0-9]+$/.test(value.value)) return;
+  if (isTimestampSnapshot(value) && /^-?[0-9]+$/.test(value.epochNanoseconds)) return;
+  throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Invalid aggregate checkpoint scalar");
 }

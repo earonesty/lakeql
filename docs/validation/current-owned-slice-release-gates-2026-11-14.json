@@ -1,0 +1,54 @@
+{
+  "runtimeSourceCommit": "f17f6c246d7538b00ac7057462f4078ed8ecb759",
+  "gates": {
+    "coverage": {
+      "passed": true,
+      "testsPassed": 3817,
+      "testsSkipped": 645,
+      "filesPassed": 413,
+      "statements": 91.31,
+      "branches": 85.44,
+      "functions": 95.86,
+      "lines": 93.11,
+      "thresholdsUnchanged": true
+    },
+    "build": "passed",
+    "typecheck": "passed on identical f17f6c2 runtime; owned-slice-bookmark-2026-11-14.json",
+    "cleanPackageConsumer": {
+      "passed": true,
+      "installedPackages": 66,
+      "addedCoverage": "Public packed ownedSlice API returns charged rows/bookmarks, resumes the real nation fixture, and releases all owners."
+    },
+    "reference": {
+      "passed": 120,
+      "files": 4
+    },
+    "workerd": {
+      "passed": 82,
+      "files": 23,
+      "evidence": "owned-slice-bookmark-2026-11-14.json; identical runtime"
+    },
+    "requiredExternalConformance": {
+      "passed": 520,
+      "skipped": 1,
+      "skipReason": "Missing-required-fixtures guard inactive",
+      "retry": "Initial run concurrent with coverage timed out on overflow_i16_page_cnt.parquet at the default 5000 ms. Full isolated run passed with timeout unchanged; no implementation/test weakening."
+    },
+    "lint": "passed",
+    "compatibility": "passed",
+    "largeFiles": "passed",
+    "changeset": "passed",
+    "fixtureReproducibility": "passed; regenerated fixture hashes identical; Git status confirms no fixture changes"
+  },
+  "executionNotes": [
+    "Unescalated Git diff after fixture regeneration hit a read-only Git LFS temporary directory. Escalated read-only Git status/diff checks passed; only intended package smoke script was modified."
+  ],
+  "acceptance": "Release command checks pass; full F1-F6/M1-M2/V1-V3 acceptance remains open.",
+  "remaining": [
+    "Broader query configuration, decoder/converter and helper allocation ownership",
+    "Metadata/output overlap and whole-runtime 64/128 MiB headroom under concurrency",
+    "Broader scheduling, cancellation and self-held-capacity cases",
+    "JSON traversal slowdown and measured key-cache policy tradeoffs",
+    "Final requirement-by-requirement scope review"
+  ]
+}

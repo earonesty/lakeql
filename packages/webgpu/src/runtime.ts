@@ -101,7 +101,15 @@ export class WebGpuDeviceManager {
         }
       }
       if (failure !== undefined || errors.length > 0) {
-        if (errors.length === 0 && failure instanceof LakeqlError) throw failure;
+        if (
+          errors.length === 0 &&
+          (failure instanceof LakeqlError ||
+            // A caller-provided allocation scope can come from another core instance.
+            (failure instanceof Error &&
+              "code" in failure &&
+              failure.code === "LAKEQL_BUDGET_EXCEEDED"))
+        )
+          throw failure;
         throw new PhysicalBackendExecutionError(
           backendId,
           errors.map((error) => error.message).join("; ") || errorMessage(failure),

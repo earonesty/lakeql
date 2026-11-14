@@ -1,0 +1,26 @@
+{
+  "date": "2026-11-14",
+  "tested_base": "a45349d",
+  "changes_since_base": [
+    "Remove unused internal eager taskRowWindows helper and cloneTaskWithRanges helper.",
+    "Keep historical unadmitted clone only within benchmark baseline; update tests to use production grouping and iteration.",
+    "Update allocation matrix for owned planning and scoped grouping."
+  ],
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "lint": "passed",
+    "targeted_tests": 55,
+    "full_default_suite": {
+      "passed": 3423,
+      "skipped": 629
+    },
+    "worker_tests": 75
+  },
+  "scope": "Current full suite and cleanup evidence; earlier coverage/consumer/conformance evidence is versioned separately and not represented as rerun here.",
+  "remaining": [
+    "Borrowed external parser/adapters and callback-created storage before admission",
+    "Legacy/spill/resume and complete runtime allocation coverage",
+    "Higher-pressure mixed-job/runtime observations and complete acceptance review"
+  ]
+}

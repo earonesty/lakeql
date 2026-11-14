@@ -1,0 +1,42 @@
+{
+  "requirements": ["F2", "F4", "M1", "M2", "V1", "V2"],
+  "status": "Row-window input and resumable run retention now detach and charge rows; complete vector/task/backend/output ownership remains open",
+  "contract": [
+    "WindowRowBuffer detaches supported scanner data before scanner advance, admits retained row references and directories, and preserves incremental serialized-size tracking.",
+    "Ordinary row-window execution retains the input scope through yielded output. Resumable execution retains it through evaluation, state serialization and awaited spill writes. Completion, failure and early return dispose the scope.",
+    "Flush transfers the current run array into the run directory and allocates a new current array, avoiding splice copying. Serialized run-size accounting resets without releasing retained earlier runs.",
+    "Restored rows are detached and admitted when attached to their retained row/run buffer. Existing state parsing and initial run chunk construction still need pre-allocation admission.",
+    "Standalone internal collection calls without a supplied parent scope release reservations when returning plain rows to their caller; public execution supplies the parent scope."
+  ],
+  "validation": {
+    "focused": {
+      "passed": 98
+    },
+    "default": {
+      "passed": 3196,
+      "skipped": 629
+    },
+    "worker": {
+      "passed": 71
+    },
+    "build": "passed",
+    "typecheck": "passed",
+    "cases": [
+      "Ordinary, checkpoint and spill window execution preserve earlier rows when a scanner repeatedly mutates and yields one object.",
+      "Detached byte views survive scanner buffer mutation; input reservations remain live while streaming output is suspended, and early return preserves an unrelated sibling reservation.",
+      "16 KiB admission rejects growing input before all 100 rows are scanned, for ordinary and spill execution, closing the scanner and releasing reservations.",
+      "A pending asynchronous spill write keeps at least the detached input payload reserved until the write settles; afterward only the sibling reservation remains.",
+      "HTTP 206 and ignored-Range 200 real Brotli fixtures now include checkpoint window execution, alongside ordinary window execution; the same route passes native local Worker R2 under 64/128 MiB shared pools and 2 MiB query caps.",
+      "The serialized-budget error test retains its one-byte serialized limit and expected metric, with an explicit independent 64 KiB allocation cap."
+    ],
+    "lintSizeChangeset": "passed"
+  },
+  "limits": [
+    "Non-resumable vector-window batch capture and delegated window task outputs still require ownership integration. These real-fixture tests intentionally exercise the row scanner fallback.",
+    "Window backend copied rows, sort/partition structures, computed values, accumulated returned rows, checkpoint encoding, initial state parsing/chunking and source adapter backing remain partially or wholly unadmitted.",
+    "Spill configuration does not guarantee external streaming execution: retained runs still consume admitted memory and reject on exhaustion.",
+    "The established detachable-data contract excludes cycles, accessors and unsupported custom prototypes. No CPU throughput speedup or whole-runtime heap bound is claimed.",
+    "Final release gates and the broader audit remain open."
+  ],
+  "followupEvidence": "docs/validation/vector-window-ownership-2026-11-13.json"
+}

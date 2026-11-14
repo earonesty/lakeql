@@ -1,0 +1,20 @@
+{
+  "runtimeSourceCommit": "9224149",
+  "requirements": ["F6", "M2", "V2"],
+  "fixture": "packages/http/src/owned-head-cancellation-http.test.ts",
+  "checks": {
+    "httpTestsPassed": 2,
+    "typecheck": "passed",
+    "formatting": "passed"
+  },
+  "observations": [
+    "Real localhost HTTP cancellation before headers closes the pending server response.",
+    "Partial response case waits for tracked body storage before cancellation.",
+    "A queued reader stays undispatched until cancellation releases the single read slot, then returns correct metadata.",
+    "Both cases finish with zero tracked storage."
+  ],
+  "limitations": [
+    "Local HTTP fixture, not production network or R2 cancellation evidence.",
+    "No global fairness guarantee or whole-runtime heap bound."
+  ]
+}

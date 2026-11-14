@@ -1,0 +1,33 @@
+{
+  "date": "2026-11-14",
+  "baseCommit": "4f92a58",
+  "scope": "Queued task construction and window callback ownership; admitted Hive parser",
+  "validation": {
+    "build": "pnpm exec tsc -b passed",
+    "typecheck": "pnpm typecheck passed",
+    "fullSuite": {
+      "passed": 3550,
+      "skipped": 629,
+      "log": "/tmp/task-planning-full-verified.log"
+    },
+    "focusedTaskLifetime": {
+      "passed": 7
+    },
+    "realParquetAdapter": {
+      "passed": 25
+    }
+  },
+  "evidence": [
+    "Exact task-planning peak succeeds; peak minus one rejects and releases all reservations",
+    "Shared columns and detached predicates across tasks; mutable source ranges and binary literals cannot modify retained tasks",
+    "Delayed planner and window executor success/failure/cancellation retain charges until settlement",
+    "Generated Parquet fixture retains two plans, reuses one encoded read cold/warm, runs at measured exact capacity, and preserves task charges after cache eviction",
+    "Hive parser admits decoded storage and encoded overlap, handles prototype names, rolls back errors, and avoids path-wide split arrays"
+  ],
+  "limitations": [
+    "Object discovery and explain/manifest output ownership remain incomplete",
+    "External adapter workspace requires separate admission",
+    "No new total Worker heap-cap or production cloud assertion",
+    "Final release gates and runtime benchmarks must be refreshed after final changes"
+  ]
+}

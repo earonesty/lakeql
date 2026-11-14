@@ -1,0 +1,24 @@
+{
+  "status": "Implemented; build, default and Worker validation passed",
+  "contract": "Top-k and sort snapshot row directories, records, property keys and scalar normalization storage are admitted before construction. Shared builder rejects non-scalar nested inputs without recursively normalizing them. Returned ownership survives builder scope disposal. Spilled run snapshots are scoped to each run write.",
+  "validation": {
+    "focusedTestsPassed": 99,
+    "workerTestsPassed": 61,
+    "cases": [
+      "Scalar normalization parity including bytes and large/small bigint",
+      "Independent ownership and byte-source mutation",
+      "Exact-cap success and cap-minus-one failure with sibling preservation",
+      "Cyclic and nested rejection with partial construction cleanup"
+    ],
+    "defaultTestsPassed": 3049,
+    "defaultTestsSkipped": 629,
+    "build": "passed"
+  },
+  "remaining": [
+    "Checkpoint envelope, order terms and run descriptor metadata still need admission.",
+    "Encoded top-k/sort restore parsing is now admitted (linked evidence); validation copies and object-state restore remain outstanding.",
+    "Legacy aggregate snapshots still use the unscoped scalar builder.",
+    "Returned query output ownership and total runtime heap are outside this change."
+  ],
+  "parseEvidence": "checkpoint-parse-admission-2026-11-13.json"
+}

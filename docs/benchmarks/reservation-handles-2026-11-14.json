@@ -1,0 +1,180 @@
+{
+  "reference": "995120b",
+  "node": "v24.18.1",
+  "currentModuleSha256": "a323641dd3661671606f8b83de715af3006989f9189d0ddd3a5b0fd057a450d8",
+  "conditions": "Four alternating fresh-process pairs per case. Timings include admission and sparse heap sampling. Diagnostic forced GC occurs before timing and after measured operations, never during them. Node kernel only; sampled heap is not an exact peak or Worker guarantee. Prior budget module uses current error dependency.",
+  "results": [
+    {
+      "mode": "retained",
+      "count": 32768,
+      "runs": [
+        {
+          "round": 0,
+          "variant": "reference",
+          "elapsedMs": 54.984295,
+          "sampledHeapDelta": 31485504,
+          "retainedHeapDelta": 31016592,
+          "releasedHeapDelta": 91208,
+          "admittedPeak": 524288,
+          "finalUsedBytes": 0
+        },
+        {
+          "round": 0,
+          "variant": "current",
+          "elapsedMs": 12.732979999999998,
+          "sampledHeapDelta": 10511936,
+          "retainedHeapDelta": 10034096,
+          "releasedHeapDelta": 65032,
+          "admittedPeak": 524288,
+          "finalUsedBytes": 0
+        },
+        {
+          "round": 1,
+          "variant": "current",
+          "elapsedMs": 14.594932999999997,
+          "sampledHeapDelta": 10746008,
+          "retainedHeapDelta": 10035928,
+          "releasedHeapDelta": 66864,
+          "admittedPeak": 524288,
+          "finalUsedBytes": 0
+        },
+        {
+          "round": 1,
+          "variant": "reference",
+          "elapsedMs": 53.140597000000014,
+          "sampledHeapDelta": 31475248,
+          "retainedHeapDelta": 31016240,
+          "releasedHeapDelta": 90856,
+          "admittedPeak": 524288,
+          "finalUsedBytes": 0
+        },
+        {
+          "round": 2,
+          "variant": "reference",
+          "elapsedMs": 53.31062800000001,
+          "sampledHeapDelta": 31336816,
+          "retainedHeapDelta": 31010472,
+          "releasedHeapDelta": 84944,
+          "admittedPeak": 524288,
+          "finalUsedBytes": 0
+        },
+        {
+          "round": 2,
+          "variant": "current",
+          "elapsedMs": 14.559926000000019,
+          "sampledHeapDelta": 10504448,
+          "retainedHeapDelta": 10035728,
+          "releasedHeapDelta": 65072,
+          "admittedPeak": 524288,
+          "finalUsedBytes": 0
+        },
+        {
+          "round": 3,
+          "variant": "current",
+          "elapsedMs": 13.362527999999998,
+          "sampledHeapDelta": 10644120,
+          "retainedHeapDelta": 10034928,
+          "releasedHeapDelta": 69608,
+          "admittedPeak": 524288,
+          "finalUsedBytes": 0
+        },
+        {
+          "round": 3,
+          "variant": "reference",
+          "elapsedMs": 55.77321300000003,
+          "sampledHeapDelta": 31459000,
+          "retainedHeapDelta": 31013376,
+          "releasedHeapDelta": 87920,
+          "admittedPeak": 524288,
+          "finalUsedBytes": 0
+        }
+      ]
+    },
+    {
+      "mode": "growth",
+      "count": 32768,
+      "runs": [
+        {
+          "round": 0,
+          "variant": "reference",
+          "elapsedMs": 36.69024400000001,
+          "sampledHeapDelta": 4345208,
+          "retainedHeapDelta": 94680,
+          "releasedHeapDelta": 102720,
+          "admittedPeak": 524288,
+          "finalUsedBytes": 0
+        },
+        {
+          "round": 0,
+          "variant": "current",
+          "elapsedMs": 19.680777000000006,
+          "sampledHeapDelta": 3877432,
+          "retainedHeapDelta": -333992,
+          "releasedHeapDelta": -334200,
+          "admittedPeak": 524288,
+          "finalUsedBytes": 0
+        },
+        {
+          "round": 1,
+          "variant": "current",
+          "elapsedMs": 23.481687000000022,
+          "sampledHeapDelta": 4314272,
+          "retainedHeapDelta": 90640,
+          "releasedHeapDelta": 90104,
+          "admittedPeak": 524288,
+          "finalUsedBytes": 0
+        },
+        {
+          "round": 1,
+          "variant": "reference",
+          "elapsedMs": 31.020348000000013,
+          "sampledHeapDelta": 4133448,
+          "retainedHeapDelta": 87832,
+          "releasedHeapDelta": 95872,
+          "admittedPeak": 524288,
+          "finalUsedBytes": 0
+        },
+        {
+          "round": 2,
+          "variant": "reference",
+          "elapsedMs": 30.129789000000017,
+          "sampledHeapDelta": 4308016,
+          "retainedHeapDelta": 94648,
+          "releasedHeapDelta": 102688,
+          "admittedPeak": 524288,
+          "finalUsedBytes": 0
+        },
+        {
+          "round": 2,
+          "variant": "current",
+          "elapsedMs": 17.98614999999998,
+          "sampledHeapDelta": 4335880,
+          "retainedHeapDelta": 90304,
+          "releasedHeapDelta": 89768,
+          "admittedPeak": 524288,
+          "finalUsedBytes": 0
+        },
+        {
+          "round": 3,
+          "variant": "current",
+          "elapsedMs": 17.151264999999995,
+          "sampledHeapDelta": 4215184,
+          "retainedHeapDelta": 84616,
+          "releasedHeapDelta": 84408,
+          "admittedPeak": 524288,
+          "finalUsedBytes": 0
+        },
+        {
+          "round": 3,
+          "variant": "reference",
+          "elapsedMs": 34.89892500000002,
+          "sampledHeapDelta": 4305280,
+          "retainedHeapDelta": 87816,
+          "releasedHeapDelta": 95856,
+          "admittedPeak": 524288,
+          "finalUsedBytes": 0
+        }
+      ]
+    }
+  ]
+}

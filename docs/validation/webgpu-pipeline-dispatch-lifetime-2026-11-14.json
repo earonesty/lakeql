@@ -1,0 +1,30 @@
+{
+  "date": "2026-11-14",
+  "requirements": ["M1", "M2"],
+  "changes": [
+    "Reserve active pipeline metadata before shader/pipeline creation even when caching is disabled or the entry is too large to retain.",
+    "Cache retention shares the active reservation in the root pool, avoiding duplicate physical charges.",
+    "Hold active pipeline metadata through dispatch/readback and release it after selection work settles, independently of cache eviction and caller-scope disposal.",
+    "Preserve LAKEQL_BUDGET_EXCEEDED from caller allocation scopes supplied by another core-package instance rather than wrapping it as a GPU backend failure."
+  ],
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "targeted_tests": 54,
+    "coverage": [
+      "Real Dawn uncached selection at measured exact peak, one byte less, and pre-admitted stage capacity.",
+      "Controlled pending dispatch: sibling pressure evicts the cached reference but cannot reclaim active metadata; scope disposal preserves all charges until work settles.",
+      "Cache shares an existing reservation at exact root capacity; releasing the query holder leaves only reusable cache ownership.",
+      "Selection correctness, partial GPU construction cleanup and existing runtime lifecycle cases."
+    ],
+    "full_default_suite": {
+      "passed": 3517,
+      "skipped": 629
+    }
+  },
+  "remaining": [
+    "Selection execution descriptor/header accounting remains incomplete; planner allocationScopeOperators remains disabled.",
+    "Opaque driver compiled-code and runtime memory are not portable byte measurements.",
+    "Broader audit acceptance, cloud-memory concurrency validation and final release gates remain open."
+  ]
+}

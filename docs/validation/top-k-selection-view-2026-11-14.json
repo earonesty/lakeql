@@ -1,0 +1,18 @@
+{
+  "baseCommit": "1d4624c",
+  "requirements": ["F5", "M1", "V2"],
+  "change": "Share final gather, reuse whole candidate arrays, admit sliced selection views and remove redundant intermediate subarray.",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 13,
+    "regularPassed": 3733,
+    "regularSkipped": 645,
+    "workerPassed": 82
+  },
+  "boundaries": "Exact capacity and one byte below for offsets zero, one and beyond all rows; existing reference comparisons cover sparse selection, ties, nulls, directions and limits.",
+  "limitations": [
+    "Normalized ordering metadata and broader gather/operator bookkeeping remain under review.",
+    "No cloud throughput or complete heap accounting claim."
+  ]
+}

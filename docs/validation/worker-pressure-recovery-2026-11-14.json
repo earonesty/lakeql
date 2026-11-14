@@ -1,0 +1,26 @@
+{
+  "runtimeSourceCommit": "717b121",
+  "harnessChange": "Adds mandatory successful retry after pinned outputs are released, preserving the same lake, pool and cache.",
+  "harnessSha256": "20b93602284a9eca66a7ae0f8e9238510352a7f271d6cbb0d5b8231903f160a8",
+  "requirements": ["M2", "V1", "V2"],
+  "artifacts": [
+    "docs/benchmarks/worker-recovery-r2-2026-11-14.json",
+    "docs/benchmarks/worker-recovery-heap64-2026-11-14.json"
+  ],
+  "scenarios": 8,
+  "roundsPerScenario": 4,
+  "primaryJobs": 80,
+  "primarySucceeded": 64,
+  "primaryTypedBudgetFailures": 16,
+  "pinnedRetryTypedBudgetFailures": 8,
+  "postReleaseRetrySucceeded": 8,
+  "allScenariosCompleted": true,
+  "finalTrackedBytes": 0,
+  "limitations": [
+    "No cancellation or fairness proof; jobs launch in a fixed order.",
+    "Observed recovery is for owned collection of the stated Parquet fixture, not every operator.",
+    "R2 is the local workerd binding; HTTP is localhost with a verified 64 MiB managed-heap flag.",
+    "Managed heap excludes external/native backing; sparse samples are not whole-runtime peak bounds.",
+    "Additional recovery operations affect later cache state and round elapsed time; not comparable to the baseline latency benchmark."
+  ]
+}

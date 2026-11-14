@@ -1,0 +1,235 @@
+{
+  "runtimeSourceCommit": "4f20d13c19993cb6936a0849b9e8978fa576cd90",
+  "requirements": ["F6", "M2", "V1", "V2"],
+  "liveCloud": {
+    "artifact": "docs/benchmarks/cloud-range-identity-refresh-2026-11-14.json",
+    "transport": "Read-only public R2 endpoint via Node HTTP; not deployed Worker bindings",
+    "scenarios": 52,
+    "ordinaryCases": 40,
+    "poolMiB": [64, 128],
+    "concurrency": [1, 4],
+    "sharedQueryHeadroomBytes": 524288,
+    "maximumIncrementalChargedBytes": 416968,
+    "maximumReadConcurrency": 4,
+    "ordinaryWarmDataReads": 0,
+    "olderRuntimeMaximumIncrementalBytes": 398024,
+    "interpretation": "Different runtime/accounting than 8db3935; higher admitted charge is not a throughput or heap-regression measurement. The earlier 128 KiB headroom failure was not rerun."
+  },
+  "mixedQueries": {
+    "artifacts": [
+      "docs/benchmarks/mixed-query-factory-identity-2026-11-14.json",
+      "docs/benchmarks/mixed-query-range-identity-2026-11-14.json"
+    ],
+    "transports": ["memory", "real localhost HTTP 206"],
+    "cacheModes": ["factory plus shared range", "shared range only"],
+    "poolMiB": [64, 128],
+    "cacheMiB": [4, 16],
+    "queryLimitMiB": 32,
+    "concurrentJobs": 4,
+    "queryKinds": ["collect", "filter", "top-k", "aggregate"],
+    "totalJobs": 128,
+    "completedJobs": 128,
+    "allScenariosReleaseToZero": true,
+    "maximumHttpReadConcurrency": 2,
+    "peak64MiBFactoryScenarioBytes": 67076718,
+    "boundary": "10 ms process samples include fixture/server and may miss peaks; pool high-water counters span cold/warm rounds. Not Worker heap measurements."
+  },
+  "worker": {
+    "artifacts": [
+      "docs/benchmarks/worker-recovery-r2-identity-2026-11-14.json",
+      "docs/benchmarks/worker-recovery-heap64-identity-2026-11-14.json"
+    ],
+    "workerdPackageVersion": "1.20260611.1",
+    "primaryJobs": 80,
+    "primarySucceeded": 64,
+    "primaryTypedBudgetFailures": 16,
+    "pinnedRetryTypedBudgetFailures": 8,
+    "postReleaseRetriesSucceeded": 8,
+    "allScenariosReleaseToZero": true,
+    "scenarios": [
+      {
+        "transport": "native emulated R2",
+        "managedHeapFlagMiB": null,
+        "poolMiB": 64,
+        "jobs": 1,
+        "rounds": 4,
+        "primaryOutcomes": {
+          "ok": 4
+        },
+        "pinnedRetryOutcomes": {},
+        "postReleaseRetryOutcomes": {},
+        "sampledMaxCounters": {
+          "usedSize": 49233304,
+          "totalSize": 99446784,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 7159532
+        },
+        "afterEvictionAdmittedBytes": 0
+      },
+      {
+        "transport": "native emulated R2",
+        "managedHeapFlagMiB": null,
+        "poolMiB": 64,
+        "jobs": 4,
+        "rounds": 4,
+        "primaryOutcomes": {
+          "ok": 8,
+          "budget": 8
+        },
+        "pinnedRetryOutcomes": {
+          "budget": 4
+        },
+        "postReleaseRetryOutcomes": {
+          "ok": 4
+        },
+        "sampledMaxCounters": {
+          "usedSize": 108379340,
+          "totalSize": 153591808,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 18844518
+        },
+        "afterEvictionAdmittedBytes": 0
+      },
+      {
+        "transport": "native emulated R2",
+        "managedHeapFlagMiB": null,
+        "poolMiB": 128,
+        "jobs": 1,
+        "rounds": 4,
+        "primaryOutcomes": {
+          "ok": 4
+        },
+        "pinnedRetryOutcomes": {},
+        "postReleaseRetryOutcomes": {},
+        "sampledMaxCounters": {
+          "usedSize": 50971344,
+          "totalSize": 98922496,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 7159532
+        },
+        "afterEvictionAdmittedBytes": 0
+      },
+      {
+        "transport": "native emulated R2",
+        "managedHeapFlagMiB": null,
+        "poolMiB": 128,
+        "jobs": 4,
+        "rounds": 4,
+        "primaryOutcomes": {
+          "ok": 16
+        },
+        "pinnedRetryOutcomes": {},
+        "postReleaseRetryOutcomes": {},
+        "sampledMaxCounters": {
+          "usedSize": 101893088,
+          "totalSize": 154648576,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 10958114
+        },
+        "afterEvictionAdmittedBytes": 0
+      },
+      {
+        "transport": "localhost HTTP ranges",
+        "managedHeapFlagMiB": 64,
+        "poolMiB": 64,
+        "jobs": 1,
+        "rounds": 4,
+        "primaryOutcomes": {
+          "ok": 4
+        },
+        "pinnedRetryOutcomes": {},
+        "postReleaseRetryOutcomes": {},
+        "sampledMaxCounters": {
+          "usedSize": 50935296,
+          "totalSize": 54493184,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 33784362
+        },
+        "afterEvictionAdmittedBytes": 0
+      },
+      {
+        "transport": "localhost HTTP ranges",
+        "managedHeapFlagMiB": 64,
+        "poolMiB": 64,
+        "jobs": 4,
+        "rounds": 4,
+        "primaryOutcomes": {
+          "ok": 8,
+          "budget": 8
+        },
+        "pinnedRetryOutcomes": {
+          "budget": 4
+        },
+        "postReleaseRetryOutcomes": {
+          "ok": 4
+        },
+        "sampledMaxCounters": {
+          "usedSize": 55575684,
+          "totalSize": 59076608,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 43281224
+        },
+        "afterEvictionAdmittedBytes": 0
+      },
+      {
+        "transport": "localhost HTTP ranges",
+        "managedHeapFlagMiB": 64,
+        "poolMiB": 128,
+        "jobs": 1,
+        "rounds": 4,
+        "primaryOutcomes": {
+          "ok": 4
+        },
+        "pinnedRetryOutcomes": {},
+        "postReleaseRetryOutcomes": {},
+        "sampledMaxCounters": {
+          "usedSize": 50693380,
+          "totalSize": 54231040,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 31366549
+        },
+        "afterEvictionAdmittedBytes": 0
+      },
+      {
+        "transport": "localhost HTTP ranges",
+        "managedHeapFlagMiB": 64,
+        "poolMiB": 128,
+        "jobs": 4,
+        "rounds": 4,
+        "primaryOutcomes": {
+          "ok": 16
+        },
+        "pinnedRetryOutcomes": {},
+        "postReleaseRetryOutcomes": {},
+        "sampledMaxCounters": {
+          "usedSize": 49956668,
+          "totalSize": 54755328,
+          "embedderHeapUsedSize": 257936,
+          "backingStorageSize": 32649206
+        },
+        "afterEvictionAdmittedBytes": 0
+      }
+    ]
+  },
+  "heapFlagProbe": {
+    "artifact": "docs/benchmarks/worker-heap64-probe-identity-2026-11-14.json",
+    "managedHeapMiB": 64,
+    "successfulMillionElementArrays": 7,
+    "observedReachedHeapLimit": true,
+    "scope": "Intentional allocation failure in a separate disposable local Worker; does not establish a total-memory cap."
+  },
+  "postMeasurementGc": {
+    "artifact": "docs/benchmarks/worker-recovery-r2-identity-gc-2026-11-14.json",
+    "allFourProbesCollected": true,
+    "managedUsedBytesRange": [5028800, 5352656],
+    "backingStorageBytes": 366064,
+    "interpretation": "After release/eviction, diagnostic GC greatly reduces heap/backing. This supports pending reclamation rather than large reachable retained state; it does not prove production peak limits or eliminate all possible retention."
+  },
+  "acceptance": "Current transport, ownership, typed-pressure and recovery cases pass. Whole-runtime 64/128 MiB acceptance remains unproven: native R2 sampled managed heap reached 108379340 bytes at a 64 MiB admission pool.",
+  "remaining": [
+    "Do not equate an admission pool with whole Worker memory; raw JS/embedder/backing counters are not assumed additive.",
+    "No forced GC occurred during measured rounds; production cannot depend on the diagnostic GC.",
+    "Mixed-query fairness/cancellation and broader cross-operator scheduler integration remain open.",
+    "These fixed fixtures and sparse samples do not establish a universal headroom setting."
+  ]
+}

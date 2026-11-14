@@ -1,0 +1,23 @@
+{
+  "status": "Implemented; build, default and Worker validation passed",
+  "change": "AggregateState now requires serializedBytes and optionally reports bufferedRows. Growing states measure constant header syntax plus their incremental value bytes without allocating header/result objects. AggregateGroup writes measurements into the admitted per-group accounting record rather than returning a new record. AggregateValuesMemory captures one initial-value supplier; restored contents are traversed only when the cache initializes, avoiding a new mode iterator on every measurement. The snapshot fallback is removed.",
+  "validation": {
+    "build": "passed",
+    "focusedTestsPassed": 111,
+    "coverage": [
+      "Exact serialized byte and buffered-row limits for growing states across prefixes, Unicode, duplicates and restore",
+      "Fixed-state byte limits including nonfinite values",
+      "Aggregate checkpoint lifecycle and low-allocation failures",
+      "Typecheck requires each aggregate class to provide direct byte measurement"
+    ],
+    "defaultTestsPassed": 3088,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61
+  },
+  "remaining": [
+    "Mode changed-count entry temporaries are removed via cached entry sizes/count deltas (linked evidence).",
+    "Native scalar formatting, expression/evaluator temporaries and request compatibility serialization need broader allocation review.",
+    "No wall-clock improvement is claimed without an isolated before/after benchmark."
+  ],
+  "modeDeltaEvidence": "mode-count-size-delta-2026-11-13.json"
+}

@@ -1,5 +1,8 @@
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
 import type { Expr } from "./expr.js";
+import type { MemoryScope } from "./memory-scope.js";
+import { parseOwnedJson } from "./owned-json-parse.js";
 
 export type IndexValue = string | number | bigint | boolean;
 
@@ -28,17 +31,133 @@ export interface IndexPruneResult<T extends SidecarFileIndex = SidecarFileIndex>
   skipped: T[];
 }
 
+export interface IndexPruneOptions<T extends SidecarFileIndex> {
+  /** Own result containers; the caller retains the referenced file metadata. */
+  scope?: MemoryScope;
+  /** Resolve index metadata separately without copying it onto each file. */
+  indexForFile?: (file: T) => SidecarFileIndex | undefined;
+}
+
 export function pruneFilesWithIndex<T extends SidecarFileIndex>(
   files: T[],
   where: Expr | undefined,
+  options: IndexPruneOptions<T> = {},
 ): IndexPruneResult<T> {
-  const planned: T[] = [];
-  const skipped: T[] = [];
-  for (const file of [...files].sort((a, b) => a.path.localeCompare(b.path))) {
-    if (fileMayMatch(file, where)) planned.push(file);
-    else skipped.push(file);
+  const output = options.scope?.childScope();
+  const scratch = output?.childScope();
+  const allocate = <V>(
+    scope: MemoryScope | undefined,
+    bytes: number,
+    purpose: string,
+    create: () => V,
+  ): V => (scope === undefined ? create() : scope.allocate(bytes, purpose, create).value);
+  try {
+    // Lazy preparation preserves short-circuit and missing-index behavior.
+    let literals: Map<string, PreparedSpatialLiteral> | undefined;
+    const parseLiteral = (text: string): PreparedSpatialLiteral => {
+      const existing = literals?.get(text);
+      if (existing !== undefined) return existing;
+      literals ??= allocate(scratch, c.object, "sidecar literal directory", () => new Map());
+      scratch?.allocate(c.property + 2 * c.arraySlot, "sidecar literal entry", () => undefined);
+      let parsed: unknown;
+      if (scratch === undefined) parsed = JSON.parse(text);
+      else {
+        const owner = parseOwnedJson(text, scratch);
+        try {
+          parsed = owner.value;
+        } finally {
+          owner.release();
+        }
+      }
+      const prepared = allocate(
+        scratch,
+        c.object + 2 * c.property,
+        "sidecar prepared literal",
+        () => ({
+          bbox: parseBBoxLiteral(parsed),
+          cells: parseStringArray(parsed),
+        }),
+      );
+      literals.set(text, prepared);
+      return prepared;
+    };
+    const frames = allocate(
+      scratch,
+      c.array,
+      "sidecar predicate stack",
+      () => [] as PredicateFrame[],
+    );
+    const enter = (expr: LogicalExpr, depth: number): PredicateFrame => {
+      let frame = frames[depth];
+      if (frame === undefined) {
+        frame = allocate(
+          scratch,
+          c.arraySlot + c.object + 2 * c.property,
+          "sidecar predicate frame",
+          () => ({ expr, next: 0 }),
+        );
+        frames.push(frame);
+      }
+      frame.expr = expr;
+      frame.next = 0;
+      return frame;
+    };
+    let ordered = files;
+    for (let index = 1; index < files.length; index++) {
+      const previous = files[index - 1],
+        current = files[index];
+      if (
+        previous !== undefined &&
+        current !== undefined &&
+        previous.path.localeCompare(current.path) > 0
+      ) {
+        ordered = allocate(
+          scratch,
+          c.array + files.length * c.arraySlot,
+          "sidecar ordering input",
+          () => [...files],
+        );
+        const ordering = scratch?.reserve(
+          c.array + files.length * 2 * c.arraySlot,
+          "sidecar sorting workspace",
+        );
+        try {
+          ordered.sort((a, b) => a.path.localeCompare(b.path));
+        } finally {
+          ordering?.release();
+        }
+        break;
+      }
+    }
+    const planned = allocate(output, c.array, "sidecar planned list", () => [] as T[]);
+    const skipped = allocate(output, c.array, "sidecar skipped list", () => [] as T[]);
+    for (const file of ordered) {
+      const index = options.indexForFile === undefined ? file : options.indexForFile(file);
+      const target =
+        index === undefined || fileMayMatch(index, where, parseLiteral, frames, enter)
+          ? planned
+          : skipped;
+      output?.allocate(c.arraySlot, "sidecar result slot", () => undefined);
+      target.push(file);
+    }
+    const result = allocate(output, c.object + 2 * c.property, "sidecar result", () => ({
+      planned,
+      skipped,
+    }));
+    if (output !== undefined && options.scope !== undefined) {
+      const owner = output.retainAllocations(result);
+      try {
+        return options.scope.adopt(owner).value;
+      } catch (error) {
+        owner.release();
+        throw error;
+      }
+    }
+    return result;
+  } finally {
+    scratch?.dispose();
+    output?.dispose();
   }
-  return { planned, skipped };
 }
 
 export function bboxMayIntersect(index: BBoxIndex, query: BBoxIndex): boolean {
@@ -56,7 +175,7 @@ export function buildMinMaxIndex<T extends Record<string, unknown>>(
   rows: T[],
   columns: string[],
 ): Record<string, MinMaxColumnIndex> {
-  const out: Record<string, MinMaxColumnIndex> = {};
+  const out: Record<string, MinMaxColumnIndex> = Object.create(null);
   for (const column of columns) {
     let min: IndexValue | undefined;
     let max: IndexValue | undefined;
@@ -108,29 +227,68 @@ export function buildBBoxIndex<T extends Record<string, unknown>>(
   return { minx, miny, maxx, maxy };
 }
 
-function fileMayMatch(file: SidecarFileIndex, expr: Expr | undefined): boolean {
-  if (!expr) return true;
+interface PreparedSpatialLiteral {
+  bbox: BBoxIndex | undefined;
+  cells: string[] | undefined;
+}
+
+type LogicalExpr = Extract<Expr, { kind: "logical" }>;
+interface PredicateFrame {
+  expr: LogicalExpr;
+  next: number;
+}
+
+function fileMayMatch(
+  file: SidecarFileIndex,
+  expr: Expr | undefined,
+  parseLiteral: (text: string) => PreparedSpatialLiteral,
+  frames: PredicateFrame[],
+  enter: (expr: LogicalExpr, depth: number) => PredicateFrame,
+): boolean {
+  let current = expr;
+  let depth = 0;
+  for (;;) {
+    let result: boolean;
+    if (current?.kind === "logical") {
+      if (current.operands.length > 0) {
+        const frame = enter(current, depth++);
+        current = frame.expr.operands[frame.next++];
+        continue;
+      }
+      result = current.op === "and";
+    } else {
+      result = leafMayMatch(file, current, parseLiteral);
+    }
+    for (;;) {
+      if (depth === 0) return result;
+      const frame = frames[depth - 1];
+      if (frame === undefined) throw new Error("Missing predicate frame");
+      const shortCircuit = frame.expr.op === "and" ? !result : result;
+      if (shortCircuit || frame.next >= frame.expr.operands.length) {
+        depth--;
+        continue;
+      }
+      current = frame.expr.operands[frame.next++];
+      break;
+    }
+  }
+}
+
+function leafMayMatch(
+  file: SidecarFileIndex,
+  expr: Expr | undefined,
+  parseLiteral: (text: string) => PreparedSpatialLiteral,
+): boolean {
+  if (expr === undefined) return true;
   switch (expr.kind) {
-    case "literal":
-    case "column":
-    case "null-check":
-    case "like":
-    case "arithmetic":
-    case "case":
-    case "call":
-      return callMayMatch(file, expr);
-    case "not":
-      return true;
-    case "logical":
-      return expr.op === "and"
-        ? expr.operands.every((operand) => fileMayMatch(file, operand))
-        : expr.operands.some((operand) => fileMayMatch(file, operand));
     case "compare":
       return compareMayMatch(file, expr);
     case "between":
       return betweenMayMatch(file, expr);
     case "in":
       return inMayMatch(file, expr);
+    default:
+      return callMayMatch(file, expr, parseLiteral);
   }
 }
 
@@ -138,32 +296,63 @@ function compareMayMatch(
   file: SidecarFileIndex,
   expr: Extract<Expr, { kind: "compare" }>,
 ): boolean {
-  const pair = columnLiteralPair(expr.left, expr.right);
-  if (!pair) return true;
-  const stats = file.columns?.[pair.column];
-  if (!stats) return true;
-  if (!sameComparableType(stats.min, pair.value) || !sameComparableType(stats.max, pair.value)) {
-    return true;
+  if (
+    expr.left.kind === "column" &&
+    expr.right.kind === "literal" &&
+    isIndexValue(expr.right.value)
+  ) {
+    return compareColumn(file, expr.left.name, expr.right.value, expr.op);
   }
-  switch (expr.op) {
+  if (
+    expr.right.kind === "column" &&
+    expr.left.kind === "literal" &&
+    isIndexValue(expr.left.value)
+  ) {
+    const op =
+      expr.op === "lt"
+        ? "gt"
+        : expr.op === "lte"
+          ? "gte"
+          : expr.op === "gt"
+            ? "lt"
+            : expr.op === "gte"
+              ? "lte"
+              : expr.op;
+    return compareColumn(file, expr.right.name, expr.left.value, op);
+  }
+  return true;
+}
+
+function ownIndex<T>(directory: Record<string, T> | undefined, column: string): T | undefined {
+  return directory !== undefined && Object.hasOwn(directory, column)
+    ? directory[column]
+    : undefined;
+}
+
+function compareColumn(
+  file: SidecarFileIndex,
+  column: string,
+  value: IndexValue,
+  op: Extract<Expr, { kind: "compare" }>["op"],
+): boolean {
+  const stats = ownIndex(file.columns, column);
+  if (!stats || !sameComparableType(stats.min, value) || !sameComparableType(stats.max, value))
+    return true;
+  switch (op) {
     case "eq":
-      return (
-        compareIndexValues(pair.value, stats.min) >= 0 &&
-        compareIndexValues(pair.value, stats.max) <= 0
-      );
+      return compareIndexValues(value, stats.min) >= 0 && compareIndexValues(value, stats.max) <= 0;
     case "ne":
       return !(
-        compareIndexValues(stats.min, pair.value) === 0 &&
-        compareIndexValues(stats.max, pair.value) === 0
+        compareIndexValues(stats.min, value) === 0 && compareIndexValues(stats.max, value) === 0
       );
     case "lt":
-      return compareIndexValues(stats.min, pair.value) < 0;
+      return compareIndexValues(stats.min, value) < 0;
     case "lte":
-      return compareIndexValues(stats.min, pair.value) <= 0;
+      return compareIndexValues(stats.min, value) <= 0;
     case "gt":
-      return compareIndexValues(stats.max, pair.value) > 0;
+      return compareIndexValues(stats.max, value) > 0;
     case "gte":
-      return compareIndexValues(stats.max, pair.value) >= 0;
+      return compareIndexValues(stats.max, value) >= 0;
   }
 }
 
@@ -180,7 +369,7 @@ function betweenMayMatch(
   ) {
     return true;
   }
-  const stats = file.columns?.[expr.target.name];
+  const stats = ownIndex(file.columns, expr.target.name);
   if (!stats) return true;
   if (
     !sameComparableType(stats.min, expr.low.value) ||
@@ -196,7 +385,7 @@ function betweenMayMatch(
 
 function inMayMatch(file: SidecarFileIndex, expr: Extract<Expr, { kind: "in" }>): boolean {
   if (expr.negated || expr.target.kind !== "column") return true;
-  const stats = file.columns?.[expr.target.name];
+  const stats = ownIndex(file.columns, expr.target.name);
   if (!stats) return true;
   return expr.values.some((valueExpr) => {
     if (valueExpr.kind !== "literal" || !isIndexValue(valueExpr.value)) return true;
@@ -213,10 +402,14 @@ function inMayMatch(file: SidecarFileIndex, expr: Extract<Expr, { kind: "in" }>)
   });
 }
 
-function callMayMatch(file: SidecarFileIndex, expr: Expr): boolean {
+function callMayMatch(
+  file: SidecarFileIndex,
+  expr: Expr,
+  parseLiteral: (text: string) => PreparedSpatialLiteral,
+): boolean {
   if (expr.kind !== "call") return true;
-  if (expr.fn === "st_intersects") return stIntersectsMayMatch(file, expr);
-  if (expr.fn === "h3_in") return h3InMayMatch(file, expr);
+  if (expr.fn === "st_intersects") return stIntersectsMayMatch(file, expr, parseLiteral);
+  if (expr.fn === "h3_in") return h3InMayMatch(file, expr, parseLiteral);
   if (expr.fn === "h3_within") return h3WithinMayMatch(file, expr);
   return true;
 }
@@ -224,23 +417,28 @@ function callMayMatch(file: SidecarFileIndex, expr: Expr): boolean {
 function stIntersectsMayMatch(
   file: SidecarFileIndex,
   expr: Extract<Expr, { kind: "call" }>,
+  parseLiteral: (text: string) => PreparedSpatialLiteral,
 ): boolean {
   const [target, query] = expr.args;
   if (target?.kind !== "column" || query?.kind !== "literal" || typeof query.value !== "string")
     return true;
-  const index = file.bbox?.[target.name];
+  const index = ownIndex(file.bbox, target.name);
   if (!index) return true;
-  const parsed = parseBBoxLiteral(query.value);
+  const parsed = parseLiteral(query.value).bbox;
   return parsed ? bboxMayIntersect(index, parsed) : true;
 }
 
-function h3InMayMatch(file: SidecarFileIndex, expr: Extract<Expr, { kind: "call" }>): boolean {
+function h3InMayMatch(
+  file: SidecarFileIndex,
+  expr: Extract<Expr, { kind: "call" }>,
+  parseLiteral: (text: string) => PreparedSpatialLiteral,
+): boolean {
   const [target, cells] = expr.args;
   if (target?.kind !== "column" || cells?.kind !== "literal" || typeof cells.value !== "string")
     return true;
-  const indexed = file.h3?.[target.name];
+  const indexed = ownIndex(file.h3, target.name);
   if (!indexed) return true;
-  const wanted = parseStringArray(cells.value);
+  const wanted = parseLiteral(cells.value).cells;
   return wanted ? wanted.some((cell) => indexed.includes(cell)) : true;
 }
 
@@ -257,14 +455,13 @@ function h3WithinMayMatch(file: SidecarFileIndex, expr: Extract<Expr, { kind: "c
   ) {
     return true;
   }
-  const indexed = file.h3?.[target.name];
+  const indexed = ownIndex(file.h3, target.name);
   if (!indexed) return true;
   if (k.value > 0) return true;
   return indexed.includes(origin.value);
 }
 
-function parseBBoxLiteral(value: string): BBoxIndex | undefined {
-  const parsed: unknown = JSON.parse(value);
+function parseBBoxLiteral(parsed: unknown): BBoxIndex | undefined {
   if (
     typeof parsed === "object" &&
     parsed !== null &&
@@ -280,30 +477,16 @@ function parseBBoxLiteral(value: string): BBoxIndex | undefined {
       typeof box.maxx === "number" &&
       typeof box.maxy === "number"
     ) {
-      return { minx: box.minx, miny: box.miny, maxx: box.maxx, maxy: box.maxy };
+      return box as unknown as BBoxIndex;
     }
   }
   return undefined;
 }
 
-function parseStringArray(value: string): string[] | undefined {
-  const parsed: unknown = JSON.parse(value);
+function parseStringArray(parsed: unknown): string[] | undefined {
   return Array.isArray(parsed) && parsed.every((item) => typeof item === "string")
     ? parsed
     : undefined;
-}
-
-function columnLiteralPair(
-  left: Expr,
-  right: Expr,
-): { column: string; value: IndexValue } | undefined {
-  if (left.kind === "column" && right.kind === "literal" && isIndexValue(right.value)) {
-    return { column: left.name, value: right.value };
-  }
-  if (right.kind === "column" && left.kind === "literal" && isIndexValue(left.value)) {
-    return { column: right.name, value: left.value };
-  }
-  return undefined;
 }
 
 function rowBBox(

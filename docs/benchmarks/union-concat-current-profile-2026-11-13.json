@@ -1,0 +1,165 @@
+{
+  "scope": "Single local CPU profile including startup and all concat sizes/modes; diagnostic samples, not isolated timings or VM heap measurement.",
+  "totalSamples": 372,
+  "topFrames": [
+    {
+      "function": "(garbage collector)",
+      "source": "",
+      "samples": 95
+    },
+    {
+      "function": "ownedMemory",
+      "source": "packages/core/dist/memory-scope.js",
+      "samples": 59
+    },
+    {
+      "function": "trackOwner",
+      "source": "packages/core/dist/memory-scope.js",
+      "samples": 58
+    },
+    {
+      "function": "release",
+      "source": "packages/core/dist/memory-scope.js",
+      "samples": 23
+    },
+    {
+      "function": "compileSourceTextModule",
+      "source": "node:internal/modules/esm/utils",
+      "samples": 10
+    },
+    {
+      "function": "pin",
+      "source": "packages/core/dist/memory-budget.js",
+      "samples": 9
+    },
+    {
+      "function": "retainSelectedAllocations",
+      "source": "packages/core/dist/memory-scope.js",
+      "samples": 8
+    },
+    {
+      "function": "compositeHandle",
+      "source": "packages/core/dist/memory-scope.js",
+      "samples": 8
+    },
+    {
+      "function": "collectInputVectors",
+      "source": "packages/core/dist/vector-sort.js",
+      "samples": 8
+    },
+    {
+      "function": "release",
+      "source": "packages/core/dist/memory-budget.js",
+      "samples": 7
+    },
+    {
+      "function": "indexVectorStorage",
+      "source": "packages/core/dist/vector-reachability.js",
+      "samples": 6
+    },
+    {
+      "function": "retain",
+      "source": "packages/core/dist/memory-scope.js",
+      "samples": 6
+    },
+    {
+      "function": "resolveSync",
+      "source": "node:internal/modules/esm/loader",
+      "samples": 4
+    },
+    {
+      "function": "captureCompositeBacking",
+      "source": "packages/core/dist/memory-scope.js",
+      "samples": 4
+    },
+    {
+      "function": "add",
+      "source": "packages/core/dist/vector-reachability.js",
+      "samples": 4
+    },
+    {
+      "function": "dispose",
+      "source": "packages/core/dist/memory-scope.js",
+      "samples": 3
+    },
+    {
+      "function": "visit",
+      "source": "packages/core/dist/union-flatten.js",
+      "samples": 3
+    },
+    {
+      "function": "compactOwnedUnionBatch",
+      "source": "packages/core/dist/union-compaction.js",
+      "samples": 3
+    },
+    {
+      "function": "reserve",
+      "source": "packages/core/dist/memory-scope.js",
+      "samples": 3
+    },
+    {
+      "function": "(program)",
+      "source": "",
+      "samples": 2
+    }
+  ],
+  "benchmark": {
+    "scope": "Local owned concatenation including source construction; explicit allocation accounting, not measured VM heap. One diagnostic run per case, no timing speedup claim. Every output value checked after timing; all owners release to zero. Compare one-shot versus repeated appends with identical values. No cloud transport.",
+    "results": [
+      {
+        "appends": 32,
+        "rows": 34,
+        "modes": {
+          "oneShot": {
+            "elapsedMs": 3.442070000000001,
+            "retainedBytes": 2876,
+            "peakBytes": 2876,
+            "unionDepth": 2
+          },
+          "incremental": {
+            "elapsedMs": 8.218808999999993,
+            "retainedBytes": 7251,
+            "peakBytes": 15958,
+            "unionDepth": 7
+          }
+        }
+      },
+      {
+        "appends": 128,
+        "rows": 130,
+        "modes": {
+          "oneShot": {
+            "elapsedMs": 2.496662999999998,
+            "retainedBytes": 5660,
+            "peakBytes": 5660,
+            "unionDepth": 2
+          },
+          "incremental": {
+            "elapsedMs": 43.16820200000001,
+            "retainedBytes": 5980,
+            "peakBytes": 42658,
+            "unionDepth": 2
+          }
+        }
+      },
+      {
+        "appends": 512,
+        "rows": 514,
+        "modes": {
+          "oneShot": {
+            "elapsedMs": 4.738556000000003,
+            "retainedBytes": 20673,
+            "peakBytes": 20673,
+            "unionDepth": 3
+          },
+          "incremental": {
+            "elapsedMs": 273.54770099999996,
+            "retainedBytes": 43405,
+            "peakBytes": 139042,
+            "unionDepth": 10
+          }
+        }
+      }
+    ]
+  }
+}

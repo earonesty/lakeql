@@ -1,3 +1,4 @@
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import {
   type Batch,
   type BatchExprValues,
@@ -9,10 +10,14 @@ import {
   type Vector,
   vectorLength,
 } from "./batch.js";
+import { isDecimalValue } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
 import type { Scalar } from "./expr.js";
+import { groupKey, scalarGroupKeyPart } from "./group-key.js";
 import { isIntervalValue } from "./interval.js";
+import type { MemoryScope } from "./memory-scope.js";
 import type { AggregateExpr, AggregateSpec, QueryBudget } from "./query.js";
+import { decimalStringAllocationBytes } from "./scalar-allocation.js";
 import { isTimestampValue, TimestampValue } from "./timestamp.js";
 import type { Row } from "./types.js";
 import {
@@ -40,6 +45,7 @@ export interface VectorGroupByState {
 }
 
 export interface VectorGroup {
+  /** Mutate aggregate values through updateVectorGroupAggregateValue. */
   keyValues: Scalar[];
   states: VectorAggregateStates;
 }
@@ -83,7 +89,7 @@ export function createVectorGroupByState(
   return {
     keys: [...keys],
     spec,
-    groups: new Map(),
+    groups: new GroupMemoryMap(),
   };
 }
 
@@ -101,23 +107,9 @@ export function updateVectorGroupByState(
   for (const index of selectedRowIndices(batch.rowCount, selection)) {
     matched += 1;
     const key = keyReader.keyAt(index);
-    let group = state.groups.get(key);
-    if (group === undefined) {
-      if (options.maxGroups !== undefined && state.groups.size >= options.maxGroups) {
-        throw new LakeqlError(
-          "LAKEQL_GROUP_LIMIT_EXCEEDED",
-          `Query exceeded group budget (${state.groups.size + 1} > ${options.maxGroups})`,
-          { limit: options.maxGroups, actual: state.groups.size + 1 },
-        );
-      }
-      const keyValues = keyReader.valuesAt(index);
-      group = {
-        keyValues,
-        states: createVectorAggregateStates(state.spec, options),
-      };
-      state.groups.set(key, group);
-      enforceGroupByMemoryBudget(state, options.budget);
-    }
+    const group =
+      state.groups.get(key) ??
+      createVectorGroup(state, key, () => keyReader.valuesAt(index), options);
     for (const input of aggregateInputs) {
       input.update(group, index, options);
     }
@@ -160,22 +152,7 @@ export function getOrCreateVectorGroupByValues(
   options: VectorGroupByOptions = {},
 ): VectorGroup {
   const key = groupKey(keyValues);
-  let group = state.groups.get(key);
-  if (group !== undefined) return group;
-  if (options.maxGroups !== undefined && state.groups.size >= options.maxGroups) {
-    throw new LakeqlError(
-      "LAKEQL_GROUP_LIMIT_EXCEEDED",
-      `Query exceeded group budget (${state.groups.size + 1} > ${options.maxGroups})`,
-      { limit: options.maxGroups, actual: state.groups.size + 1 },
-    );
-  }
-  group = {
-    keyValues: [...keyValues],
-    states: createVectorAggregateStates(state.spec, options),
-  };
-  state.groups.set(key, group);
-  enforceGroupByMemoryBudget(state, options.budget);
-  return group;
+  return state.groups.get(key) ?? createVectorGroup(state, key, () => [...keyValues], options);
 }
 
 function createGroupKeyEncoder(keys: readonly string[], batch: Batch): GroupKeyEncoder | undefined {
@@ -199,6 +176,9 @@ function createGroupKeyEncoder(keys: readonly string[], batch: Batch): GroupKeyE
 
 function canEncodeScalarVector(vector: Vector): boolean {
   switch (vector.type) {
+    case "decimal":
+    case "union":
+      return false;
     case "null":
     case "f32":
     case "f64":
@@ -207,11 +187,14 @@ function canEncodeScalarVector(vector: Vector): boolean {
     case "u8":
     case "i64":
     case "u64":
+    case "timestamp96":
     case "timestamp":
     case "bool":
     case "utf8":
+    case "utf8-view":
     case "dict":
       return true;
+    case "binary-view":
     case "binary":
     case "list":
     case "struct":
@@ -282,17 +265,23 @@ export function getOrCreateVectorGroup(
 ): VectorGroup {
   const keyReader = vectorGroupKeyReader(state.keys, batch);
   const key = keyReader.keyAt(index);
-  let group = state.groups.get(key);
-  if (group !== undefined) return group;
-  if (options.maxGroups !== undefined && state.groups.size >= options.maxGroups) {
-    throw new LakeqlError(
-      "LAKEQL_GROUP_LIMIT_EXCEEDED",
-      `Query exceeded group budget (${state.groups.size + 1} > ${options.maxGroups})`,
-      { limit: options.maxGroups, actual: state.groups.size + 1 },
-    );
-  }
-  group = {
-    keyValues: keyReader.valuesAt(index),
+  return (
+    state.groups.get(key) ?? createVectorGroup(state, key, () => keyReader.valuesAt(index), options)
+  );
+}
+
+/** Single insertion boundary for general, encoded and direct group updates.
+ * Key values remain lazy so a rejected group limit never constructs them. */
+function createVectorGroup(
+  state: VectorGroupByState,
+  key: string,
+  keyValues: () => Scalar[],
+  options: VectorGroupByOptions,
+): VectorGroup {
+  if (options.maxGroups !== undefined && state.groups.size >= options.maxGroups)
+    throw groupLimitError(options.maxGroups, state.groups.size + 1);
+  const group = {
+    keyValues: keyValues(),
     states: createVectorAggregateStates(state.spec, options),
   };
   state.groups.set(key, group);
@@ -312,7 +301,12 @@ export function updateVectorGroupAggregateValue(
       alias,
     });
   }
-  updateVectorAggregateStateValue(aggregateState, value, options);
+  const before = estimateAggregateStateBytes(aggregateState);
+  try {
+    updateVectorAggregateStateValue(aggregateState, value, options);
+  } finally {
+    refreshGroupMemory(group, estimateAggregateStateBytes(aggregateState) - before);
+  }
 }
 
 export function enforceVectorGroupByBudget(state: VectorGroupByState, budget?: QueryBudget): void {
@@ -366,6 +360,12 @@ function vectorGroupKeyPart(vector: Vector, index: number): string {
     return scalarGroupKeyPart(null);
   }
   switch (vector.type) {
+    case "decimal":
+    case "union":
+      throw new LakeqlError(
+        "LAKEQL_TYPE_ERROR",
+        "Group key shape requires an explicit comparison capability",
+      );
     case "null":
       return scalarGroupKeyPart(null);
     case "f32":
@@ -377,12 +377,16 @@ function vectorGroupKeyPart(vector: Vector, index: number): string {
     case "i64":
     case "u64":
       return scalarGroupKeyPart(vector.values[index] ?? 0n);
+    case "timestamp96":
     case "timestamp":
       return scalarGroupKeyPart(scalarVectorValue(vector, index));
     case "bool":
       return scalarGroupKeyPart(vector.values[index] === 1);
+    case "utf8-view":
+      return scalarGroupKeyPart(scalarVectorValue(vector, index));
     case "utf8":
       return scalarGroupKeyPart(vector.values[index] ?? "");
+    case "binary-view":
     case "binary":
       throw new LakeqlError("LAKEQL_TYPE_ERROR", "Binary values are not group keys");
     case "dict":
@@ -423,7 +427,7 @@ export function finalizeVectorGroupByBatch(state: VectorGroupByState): Batch {
 export function snapshotVectorGroupByState(state: VectorGroupByState): VectorGroupByStateSnapshot {
   return {
     groups: [...state.groups.values()].map((group) => ({
-      keyValues: group.keyValues.map(snapshotGroupValue),
+      keyValues: group.keyValues.map((value) => snapshotGroupValue(value)),
       states: snapshotVectorAggregateStates(group.states),
     })),
   };
@@ -440,8 +444,11 @@ export function restoreVectorGroupByState(
   }
   const state = createVectorGroupByState(keys, spec);
   for (const groupSnapshot of snapshot.groups) {
-    const keyValues = groupSnapshot.keyValues.map(restoreGroupValue);
-    state.groups.set(groupKey(keyValues), {
+    const keyValues = groupSnapshot.keyValues.map((value) => restoreGroupValue(value));
+    const key = groupKey(keyValues);
+    if (state.groups.has(key))
+      throw new LakeqlError("LAKEQL_TYPE_ERROR", "Duplicate aggregate checkpoint group", { key });
+    state.groups.set(key, {
       keyValues,
       states: restoreVectorAggregateStates(groupSnapshot.states, options),
     });
@@ -487,7 +494,12 @@ export function mergeVectorGroupByStates(
         ),
       });
     } else {
-      mergeVectorAggregateStates(targetGroup.states, sourceGroup.states, options);
+      const before = groupMemoryBytes(targetGroup);
+      try {
+        mergeVectorAggregateStates(targetGroup.states, sourceGroup.states, options);
+      } finally {
+        refreshGroupMemory(targetGroup, groupMemoryBytes(targetGroup) - before);
+      }
     }
     enforceGroupByMemoryBudget(target, options.budget);
   }
@@ -652,41 +664,34 @@ function aggregateScalarValue(value: Scalar): VectorAggregateValue {
   if (value instanceof Uint8Array) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Binary values are not aggregate values");
   }
-  if (isIntervalValue(value)) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Interval values are not aggregate values");
+  if (isIntervalValue(value) || isDecimalValue(value)) {
+    throw new LakeqlError(
+      "LAKEQL_TYPE_ERROR",
+      "Scalar shape is not supported by aggregate execution",
+    );
   }
   return value;
 }
 
-function groupKey(values: readonly Scalar[]): string {
-  if (values.length === 1) return scalarGroupKeyPart(values[0] ?? null);
-  let key = "";
-  for (const value of values) {
-    const part = scalarGroupKeyPart(value ?? null);
-    key += `${part.length}:${part}`;
-  }
-  return key;
-}
-
-function scalarGroupKeyPart(value: Scalar): string {
-  if (value === null) return "null:";
-  if (typeof value === "bigint") return `bigint:${value}`;
+export function snapshotGroupValue(value: Scalar, scope?: MemoryScope): VectorGroupBySnapshotValue {
   if (value instanceof Uint8Array) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Binary values are not group keys");
   }
-  if (isIntervalValue(value)) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Interval values are not group keys");
+  if (isIntervalValue(value) || isDecimalValue(value)) {
+    throw new LakeqlError(
+      "LAKEQL_TYPE_ERROR",
+      "Scalar shape is not supported by group checkpoints",
+    );
   }
-  if (isTimestampValue(value)) return `timestamp:${value.epochNanoseconds}`;
-  return `${typeof value}:${value}`;
-}
-
-function snapshotGroupValue(value: Scalar): VectorGroupBySnapshotValue {
-  if (value instanceof Uint8Array) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Binary values are not group keys");
-  }
-  if (isIntervalValue(value)) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Interval values are not group keys");
+  if (scope) {
+    const bytes = isTimestampValue(value)
+      ? c.object + 4 * c.property + decimalStringAllocationBytes(value.epochNanoseconds)
+      : typeof value === "bigint"
+        ? c.object + 2 * c.property + decimalStringAllocationBytes(value)
+        : typeof value === "string"
+          ? c.string + c.stringCodeUnit * value.length
+          : c.number;
+    return scope.allocate(bytes, "group checkpoint key", () => snapshotGroupValue(value)).value;
   }
   if (isTimestampValue(value)) {
     return {
@@ -699,7 +704,19 @@ function snapshotGroupValue(value: Scalar): VectorGroupBySnapshotValue {
   return typeof value === "bigint" ? { type: "bigint", value: value.toString() } : value;
 }
 
-function restoreGroupValue(value: VectorGroupBySnapshotValue): Scalar {
+export function restoreGroupValue(value: VectorGroupBySnapshotValue, scope?: MemoryScope): Scalar {
+  if (scope) {
+    const bytes =
+      typeof value === "object" && value !== null
+        ? c.bigint +
+          (value.type === "timestamp"
+            ? c.timestamp + c.stringCodeUnit * value.epochNanoseconds.length
+            : c.stringCodeUnit * value.value.length)
+        : typeof value === "string"
+          ? c.string + c.stringCodeUnit * value.length
+          : c.number;
+    return scope.allocate(bytes, "restored group key", () => restoreGroupValue(value)).value;
+  }
   if (typeof value !== "object" || value === null) return value;
   if (value.type === "timestamp") {
     return new TimestampValue(BigInt(value.epochNanoseconds), value.unit, value.isAdjustedToUTC);
@@ -720,6 +737,7 @@ function enforceGroupByMemoryBudget(state: VectorGroupByState, budget?: QueryBud
 }
 
 function estimateVectorGroupByMemoryBytes(state: VectorGroupByState): number {
+  if (state.groups instanceof GroupMemoryMap) return state.groups.memoryBytes;
   let bytes = 0;
   for (const [key, group] of state.groups) {
     bytes += 64 + key.length * 2 + group.keyValues.length * 16;
@@ -730,7 +748,79 @@ function estimateVectorGroupByMemoryBytes(state: VectorGroupByState): number {
   return bytes;
 }
 
-function estimateAggregateStateBytes(state: VectorAggregateState): number {
+// Weak owners avoid retaining an entire query when a caller retains one group.
+const groupMemoryOwners = new WeakMap<VectorGroup, Set<WeakRef<GroupMemoryMap>>>();
+
+class GroupMemoryMap extends Map<string, VectorGroup> {
+  memoryBytes = 0;
+  private readonly reference = new WeakRef(this);
+  private readonly charges = new Map<VectorGroup, { bytes: number; count: number }>();
+
+  override set(key: string, group: VectorGroup): this {
+    this.delete(key);
+    super.set(key, group);
+    let charge = this.charges.get(group);
+    if (charge === undefined) {
+      charge = { bytes: groupMemoryBytes(group), count: 0 };
+      this.charges.set(group, charge);
+      let owners = groupMemoryOwners.get(group);
+      if (owners === undefined) {
+        owners = new Set();
+        groupMemoryOwners.set(group, owners);
+      }
+      owners.add(this.reference);
+    }
+    charge.count += 1;
+    this.memoryBytes += 64 + key.length * 2 + charge.bytes;
+    return this;
+  }
+
+  override delete(key: string): boolean {
+    const group = this.get(key);
+    if (group === undefined) return false;
+    const charge = this.charges.get(group);
+    if (charge !== undefined) {
+      this.memoryBytes -= 64 + key.length * 2 + charge.bytes;
+      charge.count -= 1;
+      if (charge.count === 0) {
+        this.charges.delete(group);
+        groupMemoryOwners.get(group)?.delete(this.reference);
+      }
+    }
+    return super.delete(key);
+  }
+
+  override clear(): void {
+    for (const key of this.keys()) this.delete(key);
+  }
+
+  refresh(group: VectorGroup, delta: number): void {
+    const charge = this.charges.get(group);
+    if (charge === undefined) return;
+    this.memoryBytes += delta * charge.count;
+    charge.bytes += delta;
+  }
+}
+
+function groupMemoryBytes(group: VectorGroup): number {
+  let bytes = group.keyValues.length * 16;
+  for (const aggregate of Object.values(group.states))
+    bytes += estimateAggregateStateBytes(aggregate);
+  return bytes;
+}
+
+function refreshGroupMemory(group: VectorGroup, delta: number): void {
+  if (delta === 0) return;
+  const owners = groupMemoryOwners.get(group);
+  if (owners === undefined) return;
+  for (const reference of owners) {
+    const owner = reference.deref();
+    if (owner === undefined) owners.delete(reference);
+    else owner.refresh(group, delta);
+  }
+}
+
+export function estimateAggregateStateBytes(state: VectorAggregateState): number {
   switch (state.op) {
     case "count":
     case "sum":

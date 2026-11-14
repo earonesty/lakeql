@@ -6,10 +6,14 @@ import {
   type ConditionalPutOptions,
   LakeqlError,
   type ListOptions,
+  type MemoryScope,
   type ObjectHead,
   type ObjectInfo,
+  type OwnedMemory,
   objectStoreJsonCache,
   type PutOptions,
+  readOwnedStream,
+  throwIfAborted,
 } from "lakeql-core";
 
 export const PACKAGE = "lakeql-s3" as const;
@@ -80,6 +84,90 @@ export class S3ObjectStore implements ConditionalObjectStore {
     });
     assertOk(response, path);
     return new Uint8Array(await response.arrayBuffer());
+  }
+
+  getRangeOwnedAllocation(_path: string, range: { offset: number; length: number }) {
+    return { bytes: range.length, output: "exact-buffer" as const };
+  }
+
+  async getRangeOwned(
+    path: string,
+    range: { offset: number; length: number },
+    scope: MemoryScope,
+  ): Promise<OwnedMemory<Uint8Array>> {
+    if (
+      !Number.isSafeInteger(range.offset) ||
+      range.offset < 0 ||
+      !Number.isSafeInteger(range.length) ||
+      range.length < 0 ||
+      !Number.isSafeInteger(range.offset + range.length)
+    ) {
+      throw new LakeqlError(
+        "LAKEQL_VALIDATION_ERROR",
+        "S3 range must use nonnegative safe integers",
+      );
+    }
+    throwIfAborted(scope.signal);
+    if (range.length === 0) return scope.allocate(0, "empty S3 range", () => new Uint8Array());
+    let reservation = scope.reserve(range.length, "S3 range response");
+    let response: Response | undefined;
+    try {
+      response = await this.request(
+        "GET",
+        path,
+        {
+          Range: `bytes=${range.offset}-${range.offset + range.length - 1}`,
+        },
+        undefined,
+        undefined,
+        scope.signal,
+      );
+      throwIfAborted(scope.signal);
+      assertOk(response, path);
+      const match = /^bytes (\d+)-(\d+)\/(\d+)$/u.exec(response.headers.get("content-range") ?? "");
+      const start = Number(match?.[1]);
+      const end = Number(match?.[2]);
+      const total = Number(match?.[3]);
+      if (
+        response.status !== 206 ||
+        !match ||
+        ![start, end, total].every(Number.isSafeInteger) ||
+        start !== range.offset ||
+        end < start ||
+        end !== Math.min(range.offset + range.length, total) - 1 ||
+        (response.headers.get("content-encoding") ?? "identity").toLowerCase() !== "identity"
+      ) {
+        throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "S3 returned an invalid range response", {
+          path,
+        });
+      }
+      const length = end - start + 1;
+      if (length < reservation.bytes) {
+        const [body, unused] = reservation.partition([length, reservation.bytes - length]);
+        unused?.release();
+        if (body === undefined)
+          throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Missing S3 body reservation");
+        reservation = body;
+      }
+      const output = await readOwnedStream(response.body, scope, {
+        maxBytes: length,
+        knownLength: length,
+        purpose: "S3 range buffer",
+        metric: "S3 range bytes",
+        initialReservation: reservation,
+      });
+      if (output.value.byteLength !== length) {
+        output.release();
+        throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "S3 returned a truncated range", { path });
+      }
+      return output;
+    } catch (error) {
+      await response?.body?.cancel().catch(() => undefined);
+      throwIfAborted(scope.signal);
+      throw error;
+    } finally {
+      reservation.release();
+    }
   }
 
   async put(
@@ -162,7 +250,9 @@ export class S3ObjectStore implements ConditionalObjectStore {
     headers: Record<string, string> = {},
     body?: Uint8Array | ReadableStream<Uint8Array>,
     query = new URLSearchParams(),
+    signal?: AbortSignal,
   ): Promise<Response> {
+    throwIfAborted(signal);
     const url = new URL(
       `${encodeURIComponent(this.options.bucket)}/${encodeObjectPath(path)}`,
       ensureSlash(this.options.endpoint),
@@ -178,7 +268,9 @@ export class S3ObjectStore implements ConditionalObjectStore {
     };
     const requestBody = body === undefined ? undefined : bodyInit(body);
     const signed = await signS3Request(signRequest, undefined, requestBody);
+    throwIfAborted(signal);
     const init: RequestInit = { method, headers: signed };
+    if (signal !== undefined) init.signal = signal;
     if (requestBody !== undefined) init.body = requestBody;
     return this.fetchImpl(url, init);
   }

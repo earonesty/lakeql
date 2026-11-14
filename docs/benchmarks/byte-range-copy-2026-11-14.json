@@ -1,0 +1,80 @@
+{
+  "node": "v24.18.1",
+  "warmups": 2,
+  "samples": 8,
+  "scope": "Local byte-copy microbenchmark; borrowed source and output buffers excluded. Alternating variants. No cloud or whole-query claim; no production threshold selected.",
+  "cases": [
+    {
+      "width": 0,
+      "count": 100000,
+      "nativeMs": 5.396343999999999,
+      "loopMs": 1.1748149999999953
+    },
+    {
+      "width": 1,
+      "count": 100000,
+      "nativeMs": 7.581061999999989,
+      "loopMs": 2.0088369999999998
+    },
+    {
+      "width": 2,
+      "count": 100000,
+      "nativeMs": 7.629162000000008,
+      "loopMs": 1.8253210000000024
+    },
+    {
+      "width": 4,
+      "count": 100000,
+      "nativeMs": 5.402265,
+      "loopMs": 1.4133350000000178
+    },
+    {
+      "width": 8,
+      "count": 100000,
+      "nativeMs": 5.774125999999967,
+      "loopMs": 2.2578869999999824
+    },
+    {
+      "width": 16,
+      "count": 100000,
+      "nativeMs": 5.9311120000000415,
+      "loopMs": 2.769040000000018
+    },
+    {
+      "width": 32,
+      "count": 100000,
+      "nativeMs": 5.402966000000106,
+      "loopMs": 4.161895999999956
+    },
+    {
+      "width": 64,
+      "count": 100000,
+      "nativeMs": 5.6439699999999675,
+      "loopMs": 7.493637000000035
+    },
+    {
+      "width": 128,
+      "count": 100000,
+      "nativeMs": 7.153496000000018,
+      "loopMs": 15.258776000000012
+    },
+    {
+      "width": 256,
+      "count": 62500,
+      "nativeMs": 3.0447999999998956,
+      "loopMs": 17.372580999999855
+    },
+    {
+      "width": 1024,
+      "count": 15625,
+      "nativeMs": 0.9011190000001079,
+      "loopMs": 14.19667400000003
+    },
+    {
+      "width": 65536,
+      "count": 244,
+      "nativeMs": 0.3768110000000888,
+      "loopMs": 13.842866999999842
+    }
+  ]
+}

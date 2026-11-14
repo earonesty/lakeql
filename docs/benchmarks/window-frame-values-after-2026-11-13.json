@@ -1,0 +1,63 @@
+{
+  "description": "Full-partition first/last/nth value with IGNORE NULLS, two warmups and three timed samples. Construction and independent constant-output validation excluded. Local runtime; no whole-heap or cloud measurement.",
+  "compiledSourceHashes": {
+    "window-backend": "fa7dd3d2cbf33e781550830c3883e473e601ecb5e637e6b1a232af1167b24d88",
+    "window-frame": "6b3d6946b657125b522f5f9aa4f8f4310af741f1348796efa159224288222dd0"
+  },
+  "results": [
+    {
+      "rows": 256,
+      "fn": "first_value",
+      "medianMilliseconds": 0.20830400000000537,
+      "samples": [0.20830400000000537, 0.2144049999999993, 0.1431699999999978]
+    },
+    {
+      "rows": 256,
+      "fn": "last_value",
+      "medianMilliseconds": 0.07909999999999684,
+      "samples": [0.3718029999999999, 0.07902899999999846, 0.07909999999999684]
+    },
+    {
+      "rows": 256,
+      "fn": "nth_value",
+      "medianMilliseconds": 0.14198799999999778,
+      "samples": [0.14198799999999778, 0.14554499999999848, 0.13906300000000016]
+    },
+    {
+      "rows": 1024,
+      "fn": "first_value",
+      "medianMilliseconds": 0.16201600000000127,
+      "samples": [0.16201600000000127, 0.34997200000000106, 0.15322999999999354]
+    },
+    {
+      "rows": 1024,
+      "fn": "last_value",
+      "medianMilliseconds": 0.14590499999999906,
+      "samples": [0.13174899999999923, 0.14590499999999906, 0.2970419999999976]
+    },
+    {
+      "rows": 1024,
+      "fn": "nth_value",
+      "medianMilliseconds": 0.20230199999999599,
+      "samples": [0.20230199999999599, 0.1943770000000029, 0.44577199999999806]
+    },
+    {
+      "rows": 2048,
+      "fn": "first_value",
+      "medianMilliseconds": 0.7747039999999998,
+      "samples": [0.7747039999999998, 0.9678490000000011, 0.1830049999999943]
+    },
+    {
+      "rows": 2048,
+      "fn": "last_value",
+      "medianMilliseconds": 0.17586199999999508,
+      "samples": [0.45302600000000126, 0.16843799999999476, 0.17586199999999508]
+    },
+    {
+      "rows": 2048,
+      "fn": "nth_value",
+      "medianMilliseconds": 0.2688980000000001,
+      "samples": [0.25641499999999695, 0.5036810000000003, 0.2688980000000001]
+    }
+  ]
+}

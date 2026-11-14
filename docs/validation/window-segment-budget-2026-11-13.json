@@ -1,0 +1,77 @@
+{
+  "change": "Mergeable aggregate windows admit their segment-tree workspace against the query budget before constructing nodes. Exact-size planning covers the directory, possible leaf/internal nodes, tree metadata and three live query accumulator nodes. Tree construction writes leaves directly into the directory rather than building a separate leaf array.",
+  "dynamicDefault": "When admission is unavailable, the same aggregate evaluates frame spans through an iterator. No per-frame row array is materialized. Supported aggregate semantics, filtering and frame bounds are unchanged. This consumes less auxiliary memory at the cost of repeated expression evaluation; no user flag is required.",
+  "integration": "WindowExecutionOptions.memoryBudget now reaches segment-tree execution. The aggregate branch also avoids the unused partition-to-row array previously allocated before dispatch.",
+  "evidence": "../benchmarks/window-segment-budget-2026-11-13.json",
+  "measurement": "For 2048 running-sum rows, admitted tree workspace is 1901696 bytes and local median time is 0.65 ms. One byte below that availability selects span recomputation at 59.4 ms, with zero tree admission. Both outputs match an independent triangular-number oracle. Construction and output validation excluded; two warmups and three timed samples.",
+  "edgeCases": [
+    "Exact, one-byte-short and zero-byte tree budgets at power-of-two and non-power-of-two sizes.",
+    "Sibling query retains 37 bytes throughout; completed and failed operations leave that reservation intact and return their own charges to zero.",
+    "Input getter counts prove a tree evaluates each leaf once and fallback visits the frame spans; reservation is present before every tree input evaluation.",
+    "Empty inputs, invalid lengths, null values, filters and expression failure cleanup.",
+    "Zero-budget recomputation agrees with frame recomputation for all nine supported mergeable aggregate operations."
+  ],
+  "cloudFixtures": "Four concurrent real flba12_timestamp.parquet HTTP window queries now also verify running_count through 206 and ignored-range 200 responses. Native R2 64/128 MiB shared-pool fixtures verify running_count together with ranking, tied peers and preserved 1024-byte text payloads.",
+  "validation": {
+    "defaultPassed": 2970,
+    "defaultSkipped": 629,
+    "focusedPassed": 7,
+    "build": "passed",
+    "typecheck": "passed",
+    "lint": "passed",
+    "workerPassed": 61,
+    "referencePassed": 104,
+    "cleanPackageInstall": "passed",
+    "compatibility": "passed",
+    "fileSizeGate": "passed"
+  },
+  "limits": "The explicit reservation is a conservative allocation model, not a portable VM-heap measurement. Scalar expression payload ownership, returned arrays, input row materialization and fixed recomputation metadata remain separate coverage work. Low-budget span recomputation can be quadratic for growing/wide frames. Whole-window and Cloudflare total-memory safety remain unproven. Exact decimal operators and the six ALP/BSON/BROTLI conformance failures remain open.",
+  "reusedState": {
+    "change": "Span recomputation creates one operation-local evaluator and resets its scalar state after each frame, including exceptions. Aggregate value arrays, mode maps and distinct sets are lazy, so the supported fixed-state fallback never creates those collections. The evaluator rejects reentry and clears references before returning.",
+    "evidence": "../benchmarks/window-segment-reused-state-2026-11-13.json",
+    "measurement": "No clear latency improvement: 2048-row span recomputation measured 63.3 ms versus 59.4 ms previously; tree execution 0.59 ms versus 0.65 ms. Three timed local samples are insufficient for a regression conclusion. Repeated row visits dominate; this change reduces state construction and collection churn without changing the quadratic worst case.",
+    "edgeCases": "Repeated populated/empty/singleton frames across twelve aggregate operations; distinct sum and variance; iterator exceptions followed by successful reuse; reentry rejection; constructor instrumentation proves zero Map/Set instances over 100 fixed-state frames.",
+    "validation": {
+      "defaultPassed": 2984,
+      "defaultSkipped": 629,
+      "workerPassed": 61,
+      "referencePassed": 104,
+      "additionalAllocationProof": "passed; focused aggregate-state suite 15 tests",
+      "build": "passed",
+      "typecheck": "passed",
+      "lint": "passed",
+      "cleanPackageInstall": "passed",
+      "compatibility": "passed",
+      "fileSizeGate": "passed"
+    },
+    "next": "Investigate generic incremental accumulation for frames whose start is unchanged and end grows. Moving or shrinking frames still require reset/recomputation or another admitted structure. Output arrays, scalar expression payloads and whole-runtime limits remain unproven."
+  },
+  "measuredFrames": {
+    "change": "Start with an operation-local append-only aggregate over immutable ordered rows. Reuse state when frame start stays fixed and end does not retreat. Reset and recompute whenever rows leave the frame. Only after estimated visits exceed four partition passes is a segment tree attempted; successful admission replaces the accumulator, failed admission retains recomputation.",
+    "contract": "This is a generic frame transition rule, independent of query text, column names and row values. It supports the existing nine mergeable non-distinct aggregates and all admitted frame-span modes; exclusion/distinct capability checks remain intact. No inverse arithmetic or per-row accumulator directory is introduced.",
+    "evidence": "../benchmarks/window-segment-measured-2026-11-13.json",
+    "intermediateEvidence": "../benchmarks/window-segment-incremental-2026-11-13.json",
+    "measurement": "At 2048 rows growing frames use zero tree bytes and take 0.14\u20130.35 ms across zero, one-byte-short and full tree budgets, versus about 63 ms before incremental reuse. Alternating full/narrow frames take about 65 ms without tree capacity and 0.52 ms with measured admission of 1901696 bytes. Three local timed samples; not a cloud-throughput claim.",
+    "edgeCases": [
+      "Growing frames read each input exactly once even with enough budget for a tree; no tree reservation is created.",
+      "Dynamic bounds grow, repeat, shrink, empty and move; all nine aggregate outputs match independent full-frame recomputation, including nulls and filters.",
+      "Exact and one-byte-short shared-pool tree admission preserves a sibling reservation; tree starts only after repeated visits.",
+      "Failures during admitted tree construction release workspace. Append failures discard partial state; empty appends preserve state; explicit reset empties it; reentrant append/reset reject safely."
+    ],
+    "validation": {
+      "defaultPassed": 2987,
+      "defaultSkipped": 629,
+      "workerPassed": 61,
+      "referencePassed": 104,
+      "focusedAggregateAndMemoryPassed": 24,
+      "emptyAndSharedFrameChecks": "passed",
+      "build": "passed",
+      "typecheck": "passed",
+      "lint": "passed",
+      "cleanPackageInstall": "passed",
+      "compatibility": "passed",
+      "fileSizeGate": "passed"
+    },
+    "limits": "The four-pass threshold is a conservative work heuristic, not a universal latency optimum. Adverse moving frames remain quadratic when tree admission is unavailable. Output arrays, scalar payloads, fixed execution metadata and whole-runtime allocation coverage remain separate unfinished work. Existing decimal and ALP/BSON/BROTLI gaps remain."
+  }
+}

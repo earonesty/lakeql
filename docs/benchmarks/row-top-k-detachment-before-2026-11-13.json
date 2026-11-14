@@ -1,0 +1,29 @@
+{
+  "description": "Local borrowed row scanner, ascending input, two warmups and three timed rounds. Eight winners, all later rows rejected. Binary allocation charge includes view overhead. Input payload is shared/borrowed and outside the pool; this measures detached copies, not total VM heap or remote latency.",
+  "sourceHashes": {
+    "query": "509ec6842aa7016fd442b3934cd6d5124b291180b6952ccfd5fa935e49e92f6d",
+    "owned-bounded-top-k": "9b337181049c7650f0656555c7b1ca524098c5303259d5f025654e708beafd83",
+    "bounded-top-k": "dd4a4f1fb3fa427c4c9086258e8f75794f1102c84ff83acac4c07d000bea3635",
+    "owned-row-detachment": "559c605321bb835922391c99302c480408b7ea36394a68d12b06a51f0d4b0256"
+  },
+  "results": [
+    {
+      "width": 64,
+      "rows": 4096,
+      "k": 8,
+      "medianMilliseconds": 89.76543799999996,
+      "samples": [89.76543799999996, 94.31448999999998, 86.60723600000006],
+      "allocatedBinaryBytes": 786432,
+      "peakBytes": 8846
+    },
+    {
+      "width": 65536,
+      "rows": 4096,
+      "k": 8,
+      "medianMilliseconds": 103.81611699999985,
+      "samples": [109.09417399999995, 99.635629, 103.81611699999985],
+      "allocatedBinaryBytes": 268959744,
+      "peakBytes": 598094
+    }
+  ]
+}

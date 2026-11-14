@@ -1,0 +1,24 @@
+{
+  "baseCommit": "70023fc",
+  "requirements": ["F1", "V2"],
+  "change": "Count/average/variance/mode checkpoint counts require nonnegative safe integers.",
+  "fixture": "packages/core/src/aggregate-checkpoint-memory.test.ts",
+  "malformedCases": 24,
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "checkpointTests": 31,
+    "regularPassed": 3736,
+    "regularSkipped": 645,
+    "workerPassed": 82
+  },
+  "observations": [
+    "Inline and owned-spill restore reject negative, fractional and unsafe counters with BOOKMARK_INVALID.",
+    "Scanner is never invoked on rejection.",
+    "All malformed cases leave zero tracked storage."
+  ],
+  "limitations": [
+    "Malformed cases use memory spill/scan adapters; HTTP/R2 operation evidence is separate.",
+    "Full aggregate lifecycle and allocation acceptance remains open."
+  ]
+}

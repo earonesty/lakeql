@@ -1,0 +1,24 @@
+{
+  "runtimeSourceCommit": "d9e53bf",
+  "worker": {
+    "command": "pnpm test:workerd",
+    "passed": 78,
+    "files": 22,
+    "newTests": "Deep NDJSON at 64/128 MiB reservation pools, exact/one-byte-below peaks, cleanup after rejection"
+  },
+  "typecheck": "passed",
+  "coverage": {
+    "command": "pnpm coverage",
+    "passed": true,
+    "statements": 91.28,
+    "branches": 85.39,
+    "functions": 95.8,
+    "lines": 93.08,
+    "thresholdsUnchanged": true
+  },
+  "limitations": [
+    "Reservation caps are not total Worker heap limits",
+    "Shallow row-array encoding regression remains open",
+    "Standard JSON cache write serialization remains open"
+  ]
+}

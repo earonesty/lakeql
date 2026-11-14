@@ -1,0 +1,26 @@
+{
+  "baseCommit": "2f2eccd",
+  "requirements": ["F4", "M1", "V2"],
+  "change": "Admit typed-array view plus backing before constructing optional adaptive peer index.",
+  "boundaries": {
+    "groups": 40,
+    "backingBytes": 164,
+    "viewCharge": 128,
+    "exactCapacity": 292,
+    "fallbackCapacity": 291
+  },
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "regularPassed": 3731,
+    "regularSkipped": 645,
+    "referencePassed": 120,
+    "workerPassed": 82
+  },
+  "skipAccounting": "Regular skipped count includes sixteen new opt-in reference cases; all execute and pass with LAKEQL_REFERENCE=1.",
+  "limitations": [
+    "Reservation units are not portable VM heap measurements.",
+    "Fixed helper/cursor object accounting and full window lifecycle review remain open.",
+    "Historical 164/163-byte boundary evidence predates the added view charge."
+  ]
+}

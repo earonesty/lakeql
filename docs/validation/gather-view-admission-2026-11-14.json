@@ -1,0 +1,56 @@
+{
+  "runtimeBase": "86e5794",
+  "requirements": ["F5", "M1", "V2"],
+  "finding": "Shared and compact gathers admitted output backing but omitted retained typed-array views. A first anonymous metadata charge also retained obsolete charges through repeated union compaction.",
+  "fix": [
+    "Forecast backing and retained views together for shared/compact selection, and include both in the measured compact-versus-shared decision.",
+    "Use existing child-stage admission for scoped borrowed gather so failure rolls back the whole output without disturbing existing allocations.",
+    "Associate each view charge with its actual typed array; existing compaction provenance can release obsolete views with their backing.",
+    "Share one index buffer/view across text and nested columns; avoid Object.entries/Object.values arrays in gather planning and construction."
+  ],
+  "validation": {
+    "build": "pnpm exec tsc -b passed",
+    "types": "pnpm typecheck passed",
+    "regularPassed": 3885,
+    "regularSkipped": 645,
+    "workerPassed": 84,
+    "workerCommand": "pnpm test:workerd --no-file-parallelism",
+    "workerConcurrency": "Only file startup serialized; in-test concurrent queries unchanged.",
+    "lint": "pnpm lint passed",
+    "expandedLocalFixture": "29 scan-adapter tests pass, including four small/large and direct/generic gather cases.",
+    "coverage": {
+      "passed": true,
+      "statements": 91.34,
+      "branches": 85.45,
+      "functions": 95.88,
+      "lines": 93.15,
+      "thresholdsUnchanged": true
+    },
+    "compatibility": "passed",
+    "largeFiles": "passed",
+    "changeset": "passed"
+  },
+  "evidence": [
+    "Exact caps, cap-minus-one failure, empty arrays, repeated/null selections, sibling pools, timestamp96 planes, nested dictionary validity and detached numeric precision.",
+    "Repeated union compaction runs 512 selections for each numeric/text/binary/struct/list shape without accumulated obsolete view charges.",
+    "Real Parquet and native R2 fixtures each cover 9/900-row inputs and direct/generic scans, proving both shared and compact selected output survives scanner shutdown and releases to zero.",
+    "Existing HTTP and Worker fixtures are distinct from the local gather benchmark; current live-cloud validation is not claimed."
+  ],
+  "benchmark": {
+    "artifact": "docs/benchmarks/gather-view-admission-2026-11-14.json",
+    "cases": 18,
+    "samples": 6,
+    "warmups": 2,
+    "shared32Columns1000RowsBytes": 4128,
+    "numeric32Columns1000RowsBytes": 260096,
+    "allReleaseToZero": true,
+    "capMinusOneFailsBeforeOutputAllocation": true,
+    "scope": "Local allocation scaling with borrowed inputs excluded; timings do not establish a before/after speedup."
+  },
+  "initialFailures": "Initial full run: 30 failed, 3852 passed. Fixed anonymous-charge retention, then individually derived view-inclusive boundary expectations and updated small-input policy fixture. Final regular suite passes. First Worker run: 80 passed and two old compact-shape expectations failed; expanded small/large fixtures then pass all 84.",
+  "boundaries": [
+    "Batch/vector records, planner objects, temporary copy subarray views and other conversion helpers remain separate open accounting gaps.",
+    "Modeled view charges are not exact VM heap measurements; descriptors and caller-owned source/selection are excluded from the benchmark.",
+    "Final release gates and full audit acceptance remain open."
+  ]
+}

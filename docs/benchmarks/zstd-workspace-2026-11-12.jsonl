@@ -1,0 +1,2 @@
+{"lifetime":"frame","inputBytes":1048576,"compressedBytes":679860,"peakBytes":1069207,"workspacePeakBytes":20631,"medianMs":18.104330000000004,"samples":5,"scope":"admitted typed output and codec workspace; excludes input and JS heap"}
+{"lifetime":"block","inputBytes":1048576,"compressedBytes":679860,"peakBytes":1062232,"workspacePeakBytes":13656,"medianMs":18.426828,"samples":5,"scope":"admitted typed output and codec workspace; excludes input and JS heap"}

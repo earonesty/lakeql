@@ -1,0 +1,56 @@
+{
+  "scope": "Local generated real Parquet footer decoding. Explicit allocation model, not measured VM heap. Both modes admit exact footer backing; full retains all groups, indexed releases each decoded group before advancing. No timing or cloud transport claim.",
+  "results": [
+    {
+      "groups": 1,
+      "rows": 8,
+      "footerBytes": 175,
+      "rawGroupCharges": 11022,
+      "fixtureSha256": "3ee379a9e78bb1b86c8d995372f7eee99f769138d31001005ccd18bd5a8ce2e1",
+      "modes": {
+        "full": {
+          "peakBytes": 25259,
+          "retainedBytes": 18557
+        },
+        "indexed": {
+          "peakBytes": 26587,
+          "retainedBytes": 8907
+        }
+      }
+    },
+    {
+      "groups": 16,
+      "rows": 128,
+      "footerBytes": 1998,
+      "rawGroupCharges": 176352,
+      "fixtureSha256": "fc43d1a5135f177eb8cc0545b05946fb4cad5ae7d384fc93e5141e330320f108",
+      "modes": {
+        "full": {
+          "peakBytes": 186064,
+          "retainedBytes": 179242
+        },
+        "indexed": {
+          "peakBytes": 28538,
+          "retainedBytes": 10850
+        }
+      }
+    },
+    {
+      "groups": 256,
+      "rows": 2048,
+      "footerBytes": 32551,
+      "rawGroupCharges": 2821632,
+      "fixtureSha256": "67ccbb9754811bbc6c544e91c57170c2d46df06f4b4928b30ee6f5088722061c",
+      "modes": {
+        "full": {
+          "peakBytes": 2761621,
+          "retainedBytes": 2752879
+        },
+        "indexed": {
+          "peakBytes": 61015,
+          "retainedBytes": 43323
+        }
+      }
+    }
+  ]
+}

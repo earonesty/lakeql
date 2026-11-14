@@ -1,0 +1,25 @@
+{
+  "baseCommit": "ebdc366",
+  "scope": "Lazy per-pruning JSON literal reuse and borrowed-text JSON admission",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 26,
+    "fullSuite": {
+      "passed": 3618,
+      "skipped": 629,
+      "log": "/tmp/sidecar-literals-full.log"
+    }
+  },
+  "evidence": [
+    "100 indexed files invoke JSON.parse once",
+    "Missing indexes leave malformed literals unevaluated",
+    "Reached parse failures release partial scratch allocations",
+    "Exact measured capacity succeeds and one byte below rejects",
+    "Borrowed UTF16 input avoids encoded and decoded copies; Unicode and escaped surrogate fixtures preserve JSON semantics"
+  ],
+  "limitations": [
+    "Expression traversal and repeated shape validation remain open",
+    "No new cloud transport benchmark or runtime heap cap evidence"
+  ]
+}

@@ -1,0 +1,274 @@
+{
+  "source": "https://pub-9d5bcb33a5384d79875a943eef183b6d.r2.dev/bench/window-events.parquet",
+  "scope": "Actual R2 HTTP 206, internal grouped numeric iterator; excludes metadata/oracle allocation and JS heap; optional shared-cache accounting is reported separately; not normal-query scheduler integration",
+  "reports": [
+    {
+      "jobs": 1,
+      "jobBytes": 4096,
+      "cacheBytes": 4096,
+      "decodedCacheEnabled": false,
+      "scheduled": true,
+      "temperature": "cold",
+      "retainedCacheBytes": 2838,
+      "maxConcurrentReads": 1,
+      "peakReads": 1,
+      "reads": 8,
+      "transferredBytes": 2838,
+      "ranges": [
+        {
+          "offset": 0,
+          "length": 512
+        },
+        {
+          "offset": 512,
+          "length": 512
+        },
+        {
+          "offset": 1024,
+          "length": 512
+        },
+        {
+          "offset": 1868,
+          "length": 209
+        },
+        {
+          "offset": 1891,
+          "length": 186
+        },
+        {
+          "offset": 2048,
+          "length": 512
+        },
+        {
+          "offset": 2971,
+          "length": 209
+        },
+        {
+          "offset": 2994,
+          "length": 186
+        }
+      ],
+      "peakBytes": 5376,
+      "poolBytes": 8192,
+      "elapsedMs": 760.3303560000002
+    },
+    {
+      "jobs": 1,
+      "jobBytes": 4096,
+      "cacheBytes": 4096,
+      "decodedCacheEnabled": false,
+      "scheduled": true,
+      "temperature": "warm",
+      "retainedCacheBytes": 2838,
+      "maxConcurrentReads": 1,
+      "peakReads": 0,
+      "reads": 0,
+      "transferredBytes": 0,
+      "ranges": [],
+      "peakBytes": 6214,
+      "poolBytes": 8192,
+      "elapsedMs": 1.3251659999998537
+    },
+    {
+      "jobs": 4,
+      "jobBytes": 4096,
+      "cacheBytes": 4096,
+      "decodedCacheEnabled": false,
+      "scheduled": true,
+      "temperature": "cold",
+      "retainedCacheBytes": 2838,
+      "maxConcurrentReads": 1,
+      "peakReads": 1,
+      "reads": 8,
+      "transferredBytes": 2838,
+      "ranges": [
+        {
+          "offset": 0,
+          "length": 512
+        },
+        {
+          "offset": 512,
+          "length": 512
+        },
+        {
+          "offset": 1024,
+          "length": 512
+        },
+        {
+          "offset": 1868,
+          "length": 209
+        },
+        {
+          "offset": 1891,
+          "length": 186
+        },
+        {
+          "offset": 2048,
+          "length": 512
+        },
+        {
+          "offset": 2971,
+          "length": 209
+        },
+        {
+          "offset": 2994,
+          "length": 186
+        }
+      ],
+      "peakBytes": 12012,
+      "poolBytes": 20480,
+      "elapsedMs": 698.9633390000001
+    },
+    {
+      "jobs": 4,
+      "jobBytes": 4096,
+      "cacheBytes": 4096,
+      "decodedCacheEnabled": false,
+      "scheduled": true,
+      "temperature": "warm",
+      "retainedCacheBytes": 2838,
+      "maxConcurrentReads": 1,
+      "peakReads": 0,
+      "reads": 0,
+      "transferredBytes": 0,
+      "ranges": [],
+      "peakBytes": 13270,
+      "poolBytes": 20480,
+      "elapsedMs": 2.2701560000000427
+    },
+    {
+      "jobs": 1,
+      "jobBytes": 4096,
+      "cacheBytes": 4096,
+      "decodedCacheEnabled": false,
+      "scheduled": true,
+      "temperature": "cold",
+      "retainedCacheBytes": 2838,
+      "maxConcurrentReads": 2,
+      "peakReads": 1,
+      "reads": 8,
+      "transferredBytes": 2838,
+      "ranges": [
+        {
+          "offset": 0,
+          "length": 512
+        },
+        {
+          "offset": 512,
+          "length": 512
+        },
+        {
+          "offset": 1024,
+          "length": 512
+        },
+        {
+          "offset": 1868,
+          "length": 209
+        },
+        {
+          "offset": 1891,
+          "length": 186
+        },
+        {
+          "offset": 2048,
+          "length": 512
+        },
+        {
+          "offset": 2971,
+          "length": 209
+        },
+        {
+          "offset": 2994,
+          "length": 186
+        }
+      ],
+      "peakBytes": 5376,
+      "poolBytes": 8192,
+      "elapsedMs": 740.7832960000001
+    },
+    {
+      "jobs": 1,
+      "jobBytes": 4096,
+      "cacheBytes": 4096,
+      "decodedCacheEnabled": false,
+      "scheduled": true,
+      "temperature": "warm",
+      "retainedCacheBytes": 2838,
+      "maxConcurrentReads": 2,
+      "peakReads": 0,
+      "reads": 0,
+      "transferredBytes": 0,
+      "ranges": [],
+      "peakBytes": 6214,
+      "poolBytes": 8192,
+      "elapsedMs": 0.9671509999998307
+    },
+    {
+      "jobs": 4,
+      "jobBytes": 4096,
+      "cacheBytes": 4096,
+      "decodedCacheEnabled": false,
+      "scheduled": true,
+      "temperature": "cold",
+      "retainedCacheBytes": 2838,
+      "maxConcurrentReads": 2,
+      "peakReads": 1,
+      "reads": 8,
+      "transferredBytes": 2838,
+      "ranges": [
+        {
+          "offset": 0,
+          "length": 512
+        },
+        {
+          "offset": 512,
+          "length": 512
+        },
+        {
+          "offset": 1024,
+          "length": 512
+        },
+        {
+          "offset": 1868,
+          "length": 209
+        },
+        {
+          "offset": 1891,
+          "length": 186
+        },
+        {
+          "offset": 2048,
+          "length": 512
+        },
+        {
+          "offset": 2971,
+          "length": 209
+        },
+        {
+          "offset": 2994,
+          "length": 186
+        }
+      ],
+      "peakBytes": 12012,
+      "poolBytes": 20480,
+      "elapsedMs": 704.699404
+    },
+    {
+      "jobs": 4,
+      "jobBytes": 4096,
+      "cacheBytes": 4096,
+      "decodedCacheEnabled": false,
+      "scheduled": true,
+      "temperature": "warm",
+      "retainedCacheBytes": 2838,
+      "maxConcurrentReads": 2,
+      "peakReads": 0,
+      "reads": 0,
+      "transferredBytes": 0,
+      "ranges": [],
+      "peakBytes": 13270,
+      "poolBytes": 20480,
+      "elapsedMs": 2.9316220000000612
+    }
+  ]
+}

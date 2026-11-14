@@ -1,0 +1,62 @@
+diff --git a/src/column.js b/src/column.js
+index 9daafef6e3b0a7eea0c5e976e52c3975b91c3fb5..1cdf8357fd15cc56e26da54afb402c1408acc6dc 100644
+--- a/src/column.js
++++ b/src/column.js
+@@ -77,7 +77,7 @@ export function writeColumn({ writer, column, pageData }) {
+ 
+   // Initialize index structures if requested
+   /** @type {ColumnIndex | undefined} */
+-  const columnIndex = column.columnIndex && pageBoundaries.length > 1 ? {
++  let columnIndex = column.columnIndex && pageBoundaries.length > 1 ? {
+     null_pages: [],
+     min_values: [],
+     max_values: [],
+@@ -115,6 +115,11 @@ export function writeColumn({ writer, column, pageData }) {
+       const pageValues = values.slice(start, end) // original values not indexes
+       const { min_value, max_value, null_count = 0n } = getStatistics(pageValues)
+ 
++      // Optional indexes must never encode missing bounds as empty non-null values.
++      // Decline this column index if any non-null page lacks safe exact bounds.
++      if ((min_value === undefined || max_value === undefined) && null_count !== BigInt(end - start)) {
++        columnIndex = undefined
++      } else {
+       columnIndex.null_pages.push(null_count === BigInt(end - start)) // all nulls
+       // Spec: for all-null pages set "byte[0]"
+       columnIndex.min_values.push(unconvertMinMax(min_value, element) ?? new Uint8Array())
+@@ -132,6 +137,7 @@ export function writeColumn({ writer, column, pageData }) {
+       }
+       prevMinValue = min_value
+       prevMaxValue = max_value
++      }
+     }
+ 
+     // OffsetIndex construction
+@@ -244,11 +250,13 @@ function getStatistics(values) {
+   let min_value = undefined
+   let max_value = undefined
+   let null_count = 0n
++  let unsupportedStringOrder = false
+   for (const value of values) {
+     if (value === null || value === undefined) {
+       null_count++
+       continue
+     }
++    if (typeof value === 'string' && /[\uD800-\uDFFF]/.test(value)) unsupportedStringOrder = true
+     if (typeof value === 'object') continue // skip objects
+     if (typeof value === 'number' && Number.isNaN(value)) continue // skip NaN per parquet spec
+     if (min_value === undefined || value < min_value) min_value = value
+@@ -257,5 +265,14 @@ function getStatistics(values) {
+   // Normalize signed zero per parquet spec: min becomes -0, max becomes +0
+   if (min_value === 0) min_value = -0
+   if (max_value === 0) max_value = 0
++  // unconvertMinMax has a 16-code-unit string bound. A truncated maximum is
++  // not an upper bound. Omit optional bounds instead of emitting false metadata.
++  // Surrogate-containing strings also lack a UTF-8 ordering proof under the JS
++  // comparator used above. Null counts remain valid independently of bounds.
++  if (unsupportedStringOrder ||
++      (typeof min_value === 'string' && min_value.length > 16) ||
++      (typeof max_value === 'string' && max_value.length > 16)) {
++    return { null_count }
++  }
+   return { min_value, max_value, null_count }
+ }

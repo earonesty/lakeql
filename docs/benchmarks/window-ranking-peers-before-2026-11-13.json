@@ -1,0 +1,48 @@
+{
+  "description": "Presorted cume_dist kernel; 2 warmups, 3 timed rounds; independent peer-end oracle. Row construction and output validation excluded. Tracked workspace is peer-index admission only, not output arrays or total VM heap. Local execution, not cloud throughput.",
+  "sourceHash": "c9cb50cdef06431a64a8190581c20be121bb935d06704e3bc789fcda5b1eb9fd",
+  "results": [
+    {
+      "rows": 256,
+      "groups": 1,
+      "medianMilliseconds": 7.52415899999999,
+      "samples": [6.889603000000001, 8.409785999999997, 7.52415899999999],
+      "trackedPeerWorkspaceBytes": 0
+    },
+    {
+      "rows": 256,
+      "groups": 8,
+      "medianMilliseconds": 1.0646440000000013,
+      "samples": [1.0884000000000071, 0.9428450000000055, 1.0646440000000013],
+      "trackedPeerWorkspaceBytes": 0
+    },
+    {
+      "rows": 1024,
+      "groups": 1,
+      "medianMilliseconds": 104.18252799999999,
+      "samples": [105.62060599999995, 104.18252799999999, 103.25574300000005],
+      "trackedPeerWorkspaceBytes": 0
+    },
+    {
+      "rows": 1024,
+      "groups": 8,
+      "medianMilliseconds": 13.286639000000037,
+      "samples": [13.286639000000037, 13.198844000000008, 16.97070599999995],
+      "trackedPeerWorkspaceBytes": 0
+    },
+    {
+      "rows": 2048,
+      "groups": 1,
+      "medianMilliseconds": 414.5451500000004,
+      "samples": [409.47714599999995, 422.8993310000001, 414.5451500000004],
+      "trackedPeerWorkspaceBytes": 0
+    },
+    {
+      "rows": 2048,
+      "groups": 8,
+      "medianMilliseconds": 52.420138999999836,
+      "samples": [61.75584799999979, 51.650188999999955, 52.420138999999836],
+      "trackedPeerWorkspaceBytes": 0
+    }
+  ]
+}

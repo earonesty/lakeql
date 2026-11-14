@@ -467,3 +467,153 @@ function containsRuntimeHandle(value: unknown): boolean {
   if (Array.isArray(value)) return value.some(containsRuntimeHandle);
   return Object.values(value).some(containsRuntimeHandle);
 }
+
+it("budgets work-unit metadata and releases it after row-limit planning", async () => {
+  const { MemoryBudget } = await import("lakeql-core");
+  const store = memoryStore();
+  await writeParquet(store, "planning.parquet", {
+    rowGroupSize: [2, 2],
+    columnData: [{ name: "id", type: "INT32", data: [1, 2, 3, 4] }],
+  });
+  const task: TaskInput = {
+    path: "planning.parquet",
+    rowGroupRanges: [{ start: 0, end: 2 }],
+    partitionValues: {},
+  };
+  const pool = new MemoryBudget(128 * 1024);
+  const units = await planParquetTaskWorkUnits(store, task, {
+    maxRowsPerTask: 2,
+    memoryBudget: pool,
+  });
+  expect(units.map((unit) => unit.rowGroupRanges)).toEqual([
+    [{ start: 0, end: 1 }],
+    [{ start: 1, end: 2 }],
+  ]);
+  expect(pool.peakBytes).toBeGreaterThan(0);
+  expect(pool.usedBytes).toBe(0);
+  await expect(
+    planParquetTaskWorkUnits(store, task, { maxRowsPerTask: 1, memoryBudget: pool }),
+  ).rejects.toMatchObject({ code: "LAKEQL_TYPE_ERROR" });
+  expect(pool.usedBytes).toBe(0);
+  const tight = new MemoryBudget(1);
+  await expect(
+    planParquetTaskWorkUnits(store, task, { maxRowsPerTask: 2, memoryBudget: tight }),
+  ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  expect(tight.usedBytes).toBe(0);
+});
+
+it("admits metadata-free work-unit descriptors and detaches their mutable task state", async () => {
+  const { MemoryBudget } = await import("lakeql-core");
+  const task: TaskInput = {
+    window: {
+      topology: "window-partition-fanout",
+      available: true,
+      bucketCount: 4,
+      partitionBy: [],
+    },
+    path: "not-read.parquet",
+    rowGroupCount: 4,
+    rowGroupRanges: [{ start: 0, end: 4 }],
+    partitionValues: { region: "west" },
+    projectedColumns: ["id"],
+    residualPredicate: gte("id", 1),
+  };
+  const pool = new MemoryBudget(64 * 1024);
+  const units = await planParquetTaskWorkUnits(memoryStore(), task, {
+    maxRowGroupsPerTask: 1,
+    memoryBudget: pool,
+  });
+  expect(units).toHaveLength(4);
+  expect(units[0]?.window).toEqual(task.window);
+  expect(units[0]?.window).not.toBe(task.window);
+  expect(pool.peakBytes).toBeGreaterThan(0);
+  expect(pool.usedBytes).toBe(0);
+  expect(units[0]?.residualPredicate).toEqual(task.residualPredicate);
+  expect(units[0]?.residualPredicate).not.toBe(task.residualPredicate);
+  const boundary = new MemoryBudget(pool.peakBytes - 1);
+  await expect(
+    planParquetTaskWorkUnits(memoryStore(), task, {
+      maxRowGroupsPerTask: 1,
+      memoryBudget: boundary,
+    }),
+  ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  expect(boundary.usedBytes).toBe(0);
+  task.projectedColumns?.push("changed");
+  task.partitionValues.region = "east";
+  expect(units[0]?.projectedColumns).toEqual(["id"]);
+  expect(units[0]?.partitionValues).toEqual({ region: "west" });
+  const tight = new MemoryBudget(1);
+  await expect(
+    planParquetTaskWorkUnits(memoryStore(), task, { maxRowGroupsPerTask: 1, memoryBudget: tight }),
+  ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  expect(tight.usedBytes).toBe(0);
+});
+
+it.each([
+  false,
+  true,
+])("retains owned work-unit storage after planning (metadata=%s)", async (metadata) => {
+  const { MemoryBudget } = await import("lakeql-core");
+  const { planParquetTaskWorkUnitsOwned } = await import("./index.js");
+  const store = memoryStore();
+  await writeParquet(store, "owned-plan.parquet", {
+    rowGroupSize: [2, 2],
+    columnData: [{ name: "id", type: "INT32", data: [1, 2, 3, 4] }],
+  });
+  const task: TaskInput = {
+    path: "owned-plan.parquet",
+    rowGroupCount: 2,
+    rowGroupRanges: [{ start: 0, end: 2 }],
+    partitionValues: { region: "west" },
+  };
+  const pool = new MemoryBudget(128 * 1024);
+  const options = metadata ? { maxRowsPerTask: 2 } : { maxRowGroupsPerTask: 1 };
+  const owned = await planParquetTaskWorkUnitsOwned(store, task, {
+    ...options,
+    memoryBudget: pool,
+  });
+  expect(owned.value).toHaveLength(2);
+  expect(pool.usedBytes).toBe(owned.bytes);
+  expect(owned.bytes).toBeGreaterThan(0);
+  expect(() => pool.reserve(pool.maxBytes, "competing job")).toThrow(/budget/);
+  const retained = owned.retain();
+  owned.release();
+  expect(retained.value[0]?.partitionValues).toEqual({ region: "west" });
+  expect(pool.usedBytes).toBe(retained.bytes);
+  retained.release();
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("rejects cancelled and expired work-unit planning before retained allocation", async () => {
+  const { MemoryBudget } = await import("lakeql-core");
+  const { planParquetTaskWorkUnitsOwned } = await import("./index.js");
+  const task: TaskInput = {
+    path: "not-read.parquet",
+    rowGroupCount: 2,
+    rowGroupRanges: [{ start: 0, end: 2 }],
+    partitionValues: {},
+  };
+  const pool = new MemoryBudget(64 * 1024);
+  const controller = new AbortController();
+  controller.abort();
+  for (const metadata of [false, true]) {
+    await expect(
+      planParquetTaskWorkUnitsOwned(memoryStore(), task, {
+        ...(metadata ? { maxRowsPerTask: 2 } : { maxRowGroupsPerTask: 1 }),
+        memoryBudget: pool,
+        budget: { signal: controller.signal },
+      }),
+    ).rejects.toMatchObject({ code: "LAKEQL_ABORTED" });
+  }
+  expect(pool.peakBytes).toBe(0);
+  await expect(
+    planParquetTaskWorkUnitsOwned(memoryStore(), task, {
+      maxRowGroupsPerTask: 1,
+      memoryBudget: pool,
+      now: () => 20,
+      startedAt: 0,
+      budget: { maxElapsedMs: 10 },
+    }),
+  ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  expect(pool.usedBytes).toBe(0);
+});

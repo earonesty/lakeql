@@ -1,0 +1,30 @@
+{
+  "command": "pnpm test:conformance",
+  "passed": 465,
+  "failed": 20,
+  "skipped": 1,
+  "scope": "235 ordinary fixtures exercised through each reader, plus eight documented malformed fixtures each checked against both readers for typed rejection and owned-pool cleanup; eight additional fixture-manifest checks. Success checks are not complete independent value oracles.",
+  "failures": [
+    "decodes data/alp_extended.zstd.parquet through the public reader",
+    "decodes data/bson.parquet through the public reader",
+    "decodes data/fixed_length_decimal.parquet through the public reader",
+    "decodes data/large_string_map.brotli.parquet through the public reader",
+    "decodes data/nation.dict-malformed.parquet through the public reader",
+    "decodes shredded_variant/case-026.parquet through the public reader",
+    "decodes shredded_variant/case-027.parquet through the public reader",
+    "decodes shredded_variant/case-028.parquet through the public reader",
+    "decodes shredded_variant/case-029.parquet through the public reader",
+    "decodes shredded_variant/case-030.parquet through the public reader",
+    "streams data/alp_extended.zstd.parquet through the owned query reader",
+    "streams data/bson.parquet through the owned query reader",
+    "streams data/fixed_length_decimal.parquet through the owned query reader",
+    "streams data/large_string_map.brotli.parquet through the owned query reader",
+    "streams data/nation.dict-malformed.parquet through the owned query reader",
+    "streams shredded_variant/case-026.parquet through the owned query reader",
+    "streams shredded_variant/case-027.parquet through the owned query reader",
+    "streams shredded_variant/case-028.parquet through the owned query reader",
+    "streams shredded_variant/case-029.parquet through the owned query reader",
+    "streams shredded_variant/case-030.parquet through the owned query reader"
+  ],
+  "negativeFixtureContract": "Eight explicitly enumerated corruptions from bad_data/README.md must reject with LAKEQL_PARQUET_READ_ERROR or LAKEQL_VALIDATION_ERROR. No whole-directory exclusion or unsupported-feature xfail."
+}

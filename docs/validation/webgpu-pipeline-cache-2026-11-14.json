@@ -1,0 +1,30 @@
+{
+  "date": "2026-11-14",
+  "requirements": ["M1", "M2"],
+  "changes": [
+    "Replace unbounded pipeline promise map with LRU retention bounded by both entry count and modeled source/key metadata bytes.",
+    "Default limits are 64 entries and 1 MiB modeled metadata; zero disables retention and oversized entries execute uncached.",
+    "Rejected compilation removes only its own current entry, preserving replacements after eviction or device invalidation.",
+    "Document limits and opaque GPU-driver memory boundary in package README."
+  ],
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "targeted_tests": 39,
+    "full_default_suite": {
+      "passed": 3509,
+      "skipped": 629
+    },
+    "coverage": [
+      "Recency and 1000-entry churn under a two-entry cap.",
+      "Exact metadata capacity, one byte less, oversized entries, clearing, disabled retention and invalid configuration.",
+      "Stale rejection after replacement and current compilation failure cleanup.",
+      "Real Dawn eviction/recompilation preserves output and updates compiledResident planning cost signals."
+    ]
+  },
+  "remaining": [
+    "Pipeline metadata capacity is currently separate from shared/per-query allocation pools; integration remains required.",
+    "Selection descriptors and cache ownership must be admitted before enabling allocationScopeOperators for WebGPU.",
+    "Opaque driver compiled-code bytes are not measured; bounded references do not prove a whole-runtime byte cap."
+  ]
+}

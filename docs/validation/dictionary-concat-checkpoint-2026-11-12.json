@@ -1,0 +1,46 @@
+{
+  "scope": "Dictionary concat validation; tracked typed allocations, not total heap proof",
+  "sourceSha256": {
+    "packages/core/src/packed-gather.ts": "72c611002fe5a8617d3ae94db6140c76c1feddd4dade10d21776f722e736b080",
+    "packages/core/src/vector-sort.ts": "1ab89ec8e79bd9f3363fa895678ab01c56bafdd5be36e41607ea4912d36de911",
+    "packages/core/src/batch.ts": "d30c066093ab3c44c70aea89d6b3b39c16c77c12eae94d3e0377de82344d1ab9",
+    "packages/parquet/src/parsers.ts": "c9810e4e2e161d88c95838c4bd4cabc6eaf8c444e0db384944452d8a03db37e8",
+    "packages/core/src/dictionary-concat.workerd.ts": "875cbe73741d00aec013ec3940443a0aea6c7b80a5334a7292da0af07f037d27"
+  },
+  "defaultCoverageRun": {
+    "passed": 1494,
+    "skipped": 359
+  },
+  "coverage": {
+    "statements": 91.04,
+    "branches": 84.77,
+    "functions": 95.09,
+    "lines": 93.01
+  },
+  "workerd": {
+    "passed": 20,
+    "newUnionCases": 2,
+    "exactPeakBytes": 1670,
+    "capMinusOneBytes": 1669,
+    "retainedOutputBytes": 854
+  },
+  "dedicatedTypecheck": "passed",
+  "fullLint": "passed before new workerd test; new test lint passed",
+  "limitations": [
+    "Borrowed source strings in workerd regression",
+    "No total Worker heap bound",
+    "No new public-cloud run",
+    "Mandatory scheduler and general nested fallbacks incomplete"
+  ],
+  "provenanceClarification": {
+    "kind": "Historical intermediate worktree checkpoint",
+    "currentRevisionAttestation": false,
+    "explanation": "Recorded source hashes identify the intermediate contents used for this dated run. Later implementation changed these files; hashes are intentionally not replaced with current hashes because that would attach old measurements to unmeasured source. Consult subsequent validation checkpoints for current evidence.",
+    "mismatchedPathsAtReview": [
+      "packages/core/src/packed-gather.ts",
+      "packages/core/src/vector-sort.ts",
+      "packages/core/src/batch.ts",
+      "packages/parquet/src/parsers.ts"
+    ]
+  }
+}

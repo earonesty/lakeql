@@ -1,0 +1,36 @@
+{
+  "requirements": ["F1", "F2", "V2"],
+  "runtimeSourceCommit": "7d2ddb5",
+  "test": "packages/core/src/aggregate-memory.test.ts",
+  "sha256": "ca976f08f1a079fea89d2b22a8b6ef6dbbe428493a9c526352f341bff31ca5dc",
+  "replacedWeakEvidence": "JSON.stringify-call count cannot detect rescans by direct UTF-8 sizing code.",
+  "currentEvidence": {
+    "aggregates": ["median", "quantile", "mode", "count_distinct", "approx_count_distinct"],
+    "restoredValues": 1024,
+    "firstBudgetedUpdates": 512,
+    "traversalsAfterFirstPhase": 1,
+    "unbudgetedMutations": 1,
+    "secondBudgetedUpdates": 511,
+    "totalTraversals": 2,
+    "sizeOracle": "TextEncoder(JSON.stringify(actual buffered values/keys))"
+  },
+  "validation": {
+    "focusedPassed": 59,
+    "focusedFiles": 5,
+    "typecheck": "passed"
+  },
+  "lifecycleReview": [
+    "RowDistinctSet new-key deltas",
+    "BufferMemory add/remove/restore/clear",
+    "Ordered candidate changes and explicit restored-state validation",
+    "Sort-run counter reset on flush",
+    "Row AggregateValuesMemory lazy measurement",
+    "Row AggregateMemory changed-group accounting",
+    "Window output/partition boundary measurements"
+  ],
+  "limits": [
+    "No runtime changes in this commit",
+    "Focused kernel and query-memory tests do not prove all cloud/spill lifecycle coverage",
+    "Full physical ownership and final acceptance remain open"
+  ]
+}

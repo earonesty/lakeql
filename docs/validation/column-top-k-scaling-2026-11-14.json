@@ -1,0 +1,35 @@
+{
+  "date": "2026-11-14",
+  "requirements": ["F3", "F5", "M1", "V2"],
+  "source_revision": "8e49438",
+  "command": "node bench/borrowed-column-top-k.mjs",
+  "evidence": "docs/benchmarks/borrowed-column-top-k-2026-11-14.json",
+  "matrix": {
+    "input_rows": [4096, 16384, 65536],
+    "k": [1, 64],
+    "batch_rows": 256,
+    "payload_bytes": 128,
+    "input_order": ["ascending retains early winners", "descending replaces winners each batch"],
+    "warmups": 1,
+    "samples": 3
+  },
+  "assertions": [
+    "All output scores and binary payloads equal expected winners, despite scanner overwriting buffers after each yield.",
+    "Actual scanner batch count equals expected count.",
+    "Peak reservations and retained-output charges are identical across input lengths at fixed k and input order.",
+    "All query reservations release after output release."
+  ],
+  "results": {
+    "k_1_peak_reserved_bytes": 231848,
+    "k_64_peak_reserved_bytes": 242996,
+    "k_1_retained_output_bytes": 1364,
+    "k_64_retained_output_bytes": 33368,
+    "large_step_time_ratio": "For 16384 to 65536 rows, 4x input takes approximately 3.8x-4.2x median time across the four scenarios."
+  },
+  "limits": [
+    "Current-path scaling, not a before/after speedup comparison.",
+    "Single local run with three measured samples; timings include fixture generation and are not a CI time threshold.",
+    "No I/O, cloud latency, total heap/RSS or external scanner allocation bound is established.",
+    "Other vector shapes, wider batches and larger k remain separate validation obligations."
+  ]
+}

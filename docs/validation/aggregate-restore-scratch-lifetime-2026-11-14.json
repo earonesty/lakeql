@@ -1,0 +1,26 @@
+{
+  "baseCommit": "e5059a4",
+  "acceptanceItems": ["F1", "M1", "M2", "V2"],
+  "change": "Release parsed checkpoint and owned spill-read scratch after independently restoring group keys and accumulator state",
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "checkpointTests": 29,
+    "fullSuite": {
+      "passed": 3716,
+      "skipped": 629,
+      "filesPassed": 407
+    }
+  },
+  "proof": [
+    "Adding 65536 bytes of unused checkpoint data increases restore peak but not live memory at scanner entry",
+    "Inline and spilled continuations return unchanged results across seven aggregate kinds",
+    "Exact capacity, cancellation, malformed state and real HTTP continuation regressions pass",
+    "Pool returns to zero after execution"
+  ],
+  "limitations": [
+    "Restore-time overlap remains required and charged",
+    "Runtime GC is not measured by reservation release",
+    "Full aggregate lifecycle acceptance remains open"
+  ]
+}

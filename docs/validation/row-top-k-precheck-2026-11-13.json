@@ -1,0 +1,26 @@
+{
+  "status": "Implemented; focused, default and Worker validation passed",
+  "change": "Owned top-k exposes a read-only competitiveness check against its worst retained candidate. Borrowed row queries perform this check before detachment; authoritative offer still rechecks the owned candidate. Later ties cannot displace earlier winners. Comparator failure closes the selector.",
+  "validation": {
+    "focusedTestsPassed": 104,
+    "build": "passed",
+    "cases": [
+      "precheck requires no allocation under full sibling pressure",
+      "precheck leaves stable winners unchanged",
+      "oversized later ties and worse payloads do not require copies",
+      "better replacement still admitted",
+      "existing null/direction/multiple-key/offset and ownership tests"
+    ],
+    "defaultTestsPassed": 3031,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61,
+    "followup": "After the full run, all nine owned-top-k tests passed including the new precheck comparator-failure cleanup case."
+  },
+  "benchmarks": {
+    "before": "docs/benchmarks/row-top-k-detachment-before-2026-11-13.json",
+    "after": "docs/benchmarks/row-top-k-detachment-after-2026-11-13.json",
+    "conditions": "4096 ascending borrowed rows, k=8, two warmups and three timed rounds; 64-byte and 64-KiB binary payloads. Deterministic winner checks and zero final usage every round. Source hashes recorded; baseline query hash verified against prior commit.",
+    "wideResult": "Median time 103.82ms to 2.03ms; cumulative detached binary allocation charges 268959744 to 525312 bytes; peak explicit reservations 598094 to 532464 bytes. These are local runs and reservation units, not remote latency or total VM heap."
+  },
+  "remaining": "Input keys must remain stable between synchronous precheck and offer. Broader fallback output, serialization and unlimited-sort ownership remain open."
+}

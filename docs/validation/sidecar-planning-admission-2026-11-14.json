@@ -1,0 +1,27 @@
+{
+  "baseCommit": "d7f39bc",
+  "scope": "Sidecar pruning container admission and removal of copied file metadata",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 105,
+    "fullSuite": {
+      "passed": 3615,
+      "skipped": 629,
+      "log": "/tmp/sidecar-planning-full.log"
+    }
+  },
+  "evidence": [
+    "Original file identity and transport hints survive separate index resolution",
+    "Sorted input avoids ordering copy; unordered input preserves deterministic results without mutation",
+    "Exact capacity succeeds; one byte below and lookup failures roll back while preserving sibling reservations",
+    "10,000 unrelated caller-supplied indexes do not increase internally allocated lookup peak"
+  ],
+  "remaining": [
+    "Spatial literal parsing and expression workspace",
+    "External cache retention",
+    "Auxiliary runtime and adapter allocations",
+    "Owned output API gaps",
+    "Final constrained runtime and release gates"
+  ]
+}

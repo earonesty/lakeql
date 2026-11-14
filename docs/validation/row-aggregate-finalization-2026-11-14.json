@@ -1,0 +1,72 @@
+{
+  "base": "354133a",
+  "requirements": ["F1", "F2", "V2"],
+  "finding": "Row-fallback aggregate called aggregateWithState and discarded serialized continuation state.",
+  "change": "Shared runRowAggregate accumulates/restores/enforces limits once; finalizers choose rows or checkpoint/explicit spill.",
+  "validation": {
+    "build": "pnpm exec tsc -b passed",
+    "types": "pnpm typecheck passed",
+    "regularPassed": 3819,
+    "regularSkipped": 645,
+    "workerPassed": 82,
+    "httpModes": [206, 200]
+  },
+  "edgeCases": [
+    "Plain aggregate succeeds at measured exact output peak while checkpoint emission at that same cap rejects and releases charges.",
+    "Restored rows-only aggregation preserves accumulated values and explicit output ordering.",
+    "Explicit spill passed to plain aggregate still writes byte-identical checkpoint state.",
+    "Three successive grouped spilled continuations over real HTTP verify count, sum, median, quantile, distinct, approximate distinct and mode.",
+    "Restored buffered limit rejects before HTTP requests; a fresh same-pool run has no leaked counters or charges."
+  ],
+  "lifecycleTrace": {
+    "vectorGeneral": "GroupMemoryMap maintains group deltas on update, set/delete/clear, aliases and merge; full-map estimator remains the compatibility path for externally substituted plain Maps.",
+    "vectorRestoreMerge": "Restore traverses snapshot groups once; merge traverses source groups and updates changed targets. Independent full-map oracles and traversal spies cover cached totals.",
+    "rowUpdate": "AggregateMemory measures only the changed AggregateGroup; group serialized header is cached and buffering state counters are incremental.",
+    "rowRestore": "aggregateGroupsFromState parses inline/spilled state, checks schema/group constraints, reconstructs state and disposes restore scratch before scanning.",
+    "rowFinish": "Row-only finalizer now skips aggregateOperatorState and encodeOwnedCheckpoint. Checkpoint emission remains an explicit full-state boundary.",
+    "spill": "Checkpoint ownership remains live until writeOwnedCheckpoint settles; scope cleanup remains shared across both finalizers."
+  },
+  "benchmark": {
+    "raw": "docs/benchmarks/row-aggregate-finalization-2026-11-14.json",
+    "cases": [
+      {
+        "groups": 100,
+        "rows": 400,
+        "variants": {
+          "rows-only": {
+            "medianMs": 9.023701500000001,
+            "peakChargedBytes": 751196,
+            "checkpointBytes": 0
+          },
+          "checkpoint-and-rows": {
+            "medianMs": 14.617423000000002,
+            "peakChargedBytes": 1412366,
+            "checkpointBytes": 12487
+          }
+        }
+      },
+      {
+        "groups": 1000,
+        "rows": 4000,
+        "variants": {
+          "rows-only": {
+            "medianMs": 89.35164299999997,
+            "peakChargedBytes": 7506596,
+            "checkpointBytes": 0
+          },
+          "checkpoint-and-rows": {
+            "medianMs": 124.7767090000001,
+            "peakChargedBytes": 14083466,
+            "checkpointBytes": 129787
+          }
+        }
+      }
+    ]
+  },
+  "limits": [
+    "Benchmark compares current row-only and checkpoint finalizers with a borrowed in-memory scanner, not cloud latency or a full historical revision.",
+    "Results returned through plain APIs transfer to caller management.",
+    "Other state/decoder ownership and whole-runtime acceptance remain open.",
+    "Complete release gate refresh predates this runtime change; full regular/Worker/type/build checks are current."
+  ]
+}

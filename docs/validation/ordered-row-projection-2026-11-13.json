@@ -1,0 +1,39 @@
+{
+  "requirements": ["F2", "M1", "M2", "V1", "V2"],
+  "status": "Ordered fallback projection uses batch-scoped admission and owned collection; broader audit remains open",
+  "contract": [
+    "Ordinary and ordered fallback producers share appendProjectedOutput. Exact retained ordered rows reuse their owner; changed projections detach selected fields and preserve known immutable projection allocations.",
+    "Ordered projection uses per-row scratch and per-output-batch ownership. Advancing or closing a borrowed stream releases projection scratch without releasing retained sorting input prematurely.",
+    "Ordered fallback toOwnedArray and toArray use the existing owned collector. Vector top-k fast paths remain ahead of fallback collection."
+  ],
+  "validation": {
+    "core": {
+      "passed": 1655
+    },
+    "workerFixture": {
+      "passed": 4
+    },
+    "initialFocused": {
+      "passed": 105
+    },
+    "build": "passed",
+    "finalDefault": {
+      "passed": 3178,
+      "skipped": 629
+    },
+    "typecheck": "passed",
+    "cases": [
+      "Exact measured peak succeeds and cap-minus-one rejects for ordinary, ordered sort and ordered top-k owned projection.",
+      "Ordered full-sort and top-k streaming batch advance holds stable reservations; early return preserves sibling ownership and releases query allocations.",
+      "Real Brotli Parquet fixture projections now include ordered collection in HTTP 206, ignored-Range 200, and native local Worker R2 tests at 64/128 MiB shared pool sizes."
+    ],
+    "lintAndSize": "passed"
+  },
+  "limits": [
+    "No throughput improvement claimed. Selected mutable data detachment adds work.",
+    "DISTINCT, hive, windows, borrowed references, partition merging, source input allocations and remaining scalar internals still need their complete ownership contracts.",
+    "Reservation bounds are not a total Worker heap or production Cloudflare memory certification.",
+    "The entire release checklist is still open; older release gate results must not be attributed to this revision."
+  ],
+  "followupEvidence": "docs/validation/row-distinct-ownership-2026-11-13.json"
+}

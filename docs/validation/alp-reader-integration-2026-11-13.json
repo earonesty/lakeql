@@ -1,0 +1,32 @@
+{
+  "status": "ALP reader integration implemented and verified; full goal and release gate remain incomplete",
+  "change": "The existing hyparquet patch recognizes ALP and exposes generic valueDecoders hooks for V1/V2. All public/legacy/owned fallback routes share parquetValueDecoders. Native numeric decoding and V1/V2 allocation forecasts include ALP output backing plus view charges. Prior patch fixes are preserved; lockfile hash updated.",
+  "validation": {
+    "build": "passed",
+    "focusedTestsPassed": 62,
+    "httpFixtureTestsPassed": 2,
+    "defaultTestsPassed": 3119,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61,
+    "packageInstallation": "passed",
+    "conformance": {
+      "passed": 513,
+      "failed": 4,
+      "skipped": 1,
+      "remaining": [
+        "bson.parquet (public and owned)",
+        "large_string_map.brotli.parquet (public and owned)"
+      ],
+      "assertionsWeakened": false
+    },
+    "http": "Actual local HTTP server serving the vendored ALP fixture; HTTP 206 and ignored-range 200, four concurrent jobs, 64/128 MiB pools, 8 MiB/query, two-read global concurrency limit, cold/warm shared cache. Every row compared with in-file PLAIN columns, including NaN and negative zero. Cache eviction returns tracked usage to zero. Not a hosted object-store benchmark.",
+    "planner": "Nullable V1/V2 pages exercise both injected upstream dispatch and native numeric plans. Exact planned bytes succeed; one byte below rejects and releases ownership."
+  },
+  "limits": [
+    "BSON and Brotli decoding remain unresolved release work.",
+    "Generic nested ALP fallback uses the decoder hook, but new ALP fixtures specifically cover flat nullable FLOAT/DOUBLE columns.",
+    "Tracked allocations exclude BigInt/VM scratch and do not establish a total Worker heap cap.",
+    "No throughput speedup is claimed; ALP was previously unsupported."
+  ],
+  "followupEvidence": "alp-worker-r2-2026-11-13.json"
+}

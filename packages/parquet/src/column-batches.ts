@@ -1,31 +1,82 @@
 import type { ColumnData } from "hyparquet";
 import { parquetRead, parquetSchema } from "hyparquet";
-import { getSchemaPath } from "hyparquet/src/schema.js";
-import { type Batch, batchFromColumns } from "lakeql-core";
-import { lakeqlParquetCompressors } from "./compressors.js";
-import { normalizeIntegerDecimalColumns, rawIntegerDecimalMetadata } from "./decimal.js";
+import {
+  type Batch,
+  batchFromColumns,
+  type MemoryBudget,
+  type MemoryScope,
+  type OwnedMemory,
+} from "lakeql-core";
+import { parquetBatchSize } from "./batch-size.js";
+import { lakeqlParquetCompressors, scopedParquetCompressors } from "./compressors.js";
+import { normalizeDecimalColumns, rawDecimalMetadata } from "./decimal.js";
 import { decodedColumnCacheKey } from "./decoded-column-cache.js";
-import { lakeqlParquetParsers } from "./parsers.js";
+import { nestedValueNormalizer } from "./nested-values.js";
+import { parquetParsersForMetadata } from "./parsers.js";
 import {
   recordReadColumns,
   recordRowGroupRead,
   recordRowGroupSkipped,
   recordRowsDecoded,
 } from "./read-metrics.js";
+import { ParquetReadScope } from "./read-scope.js";
+import { recoverColumnExtents } from "./recover-column-extents.js";
 import { rowGroupMayMatch, rowGroupMustMatch } from "./row-group-pruning.js";
+import { schemaPathIndex } from "./schema-path-index.js";
 import type {
   ParquetColumnBatch,
   ParquetMetadata,
   ReadParquetBatchOptions,
   StoreAsyncBuffer,
 } from "./types.js";
+import { parquetValueDecoders } from "./value-decoders.js";
+
+interface ColumnBatchPlan {
+  readColumns: string[];
+  rowStart: number;
+  rowEnd: number;
+  residualPredicateSatisfied: boolean;
+}
 
 export async function* readParquetColumnBatchesFromFile(
   file: StoreAsyncBuffer,
   metadata: ParquetMetadata,
   options: ReadParquetBatchOptions,
 ): AsyncIterable<ParquetColumnBatch> {
-  const batchSize = options.batchSize ?? 4096;
+  for (const plan of columnBatchPlans(metadata, options)) {
+    yield await readColumnBatchPlan(file, metadata, options, plan);
+  }
+}
+
+/** Each fallback batch owns only its own input/decode stage, not previous batches. */
+export async function* readOwnedParquetColumnBatches(
+  source: StoreAsyncBuffer,
+  metadata: ParquetMetadata,
+  budget: MemoryBudget,
+  options: ReadParquetBatchOptions,
+  signals: readonly AbortSignal[] = [],
+): AsyncIterable<OwnedMemory<ParquetColumnBatch>> {
+  for (const plan of columnBatchPlans(metadata, options)) {
+    const stage = new ParquetReadScope(source, budget, signals);
+    try {
+      const output = await readColumnBatchPlan(
+        stage.file,
+        metadata,
+        { ...options, allocationScope: stage.allocations },
+        plan,
+      );
+      yield stage.retainInputBacking(output);
+    } finally {
+      stage.dispose();
+    }
+  }
+}
+
+function* columnBatchPlans(
+  metadata: ParquetMetadata,
+  options: ReadParquetBatchOptions,
+): Iterable<ColumnBatchPlan> {
+  const batchSize = parquetBatchSize(options.batchSize);
   const requestedStart = options.rowStart ?? 0;
   const requestedEnd = options.rowEnd ?? Number(metadata.num_rows);
   const readColumns = options.columns ?? parquetTopLevelColumns(metadata);
@@ -47,36 +98,58 @@ export async function* readParquetColumnBatchesFromFile(
     const start = Math.max(rowGroupStart, requestedStart);
     const end = Math.min(rowGroupEnd, requestedEnd);
     for (let rowStart = start; rowStart < end; rowStart += batchSize) {
-      const rowEnd = Math.min(rowStart + batchSize, end);
-      const cache = options.decodedColumnCache;
-      const key =
-        cache === undefined || options.decodedColumnCacheKey === undefined
-          ? undefined
-          : decodedColumnCacheKey({
-              path: options.decodedColumnCacheKey,
-              byteLength: file.byteLength,
-              ...(file.etag === undefined ? {} : { etag: file.etag }),
-              columns: readColumns,
-              rowStart,
-              rowEnd,
-            });
-      const cached = key === undefined || cache === undefined ? undefined : cache.get(key);
-      let batch: Batch;
-      if (cached !== undefined) {
-        batch = cached;
-      } else {
-        batch = await readParquetColumnBatch(file, metadata, readColumns, rowStart, rowEnd);
-        if (key !== undefined && cache !== undefined) cache.set(key, batch);
-      }
-      if (key !== undefined && options.stats !== undefined) {
-        if (cached === undefined) options.stats.cacheMisses += 1;
-        else options.stats.cacheHits += 1;
-      }
-      recordRowsDecoded(options.stats, batch.rowCount);
-      yield { rowOffset: rowStart, batch, residualPredicateSatisfied };
+      yield {
+        readColumns,
+        rowStart,
+        rowEnd: Math.min(rowStart + batchSize, end),
+        residualPredicateSatisfied,
+      };
     }
     rowGroupStart = rowGroupEnd;
   }
+}
+
+async function readColumnBatchPlan(
+  file: StoreAsyncBuffer,
+  metadata: ParquetMetadata,
+  options: ReadParquetBatchOptions,
+  plan: ColumnBatchPlan,
+): Promise<ParquetColumnBatch> {
+  const { readColumns, rowStart, rowEnd, residualPredicateSatisfied } = plan;
+  const cache = options.decodedColumnCache;
+  const key =
+    cache === undefined || options.decodedColumnCacheKey === undefined
+      ? undefined
+      : decodedColumnCacheKey({
+          path: options.decodedColumnCacheKey,
+          byteLength: file.byteLength,
+          ...(file.etag === undefined ? {} : { etag: file.etag }),
+          columns: readColumns,
+          rowStart,
+          rowEnd,
+        });
+  const cached =
+    key === undefined || cache === undefined ? undefined : cache.get(key, options.allocationScope);
+  let batch: Batch;
+  if (cached !== undefined) {
+    batch = cached;
+  } else {
+    batch = await readParquetColumnBatch(
+      file,
+      metadata,
+      readColumns,
+      rowStart,
+      rowEnd,
+      options.allocationScope ?? options.decompressionScope,
+    );
+    if (key !== undefined && cache !== undefined) cache.set(key, batch, options.allocationScope);
+  }
+  if (key !== undefined && options.stats !== undefined) {
+    if (cached === undefined) options.stats.cacheMisses += 1;
+    else options.stats.cacheHits += 1;
+  }
+  recordRowsDecoded(options.stats, batch.rowCount);
+  return { rowOffset: rowStart, batch, residualPredicateSatisfied };
 }
 
 export async function readParquetColumnBatch(
@@ -85,18 +158,30 @@ export async function readParquetColumnBatch(
   columns: string[],
   rowStart: number,
   rowEnd: number,
+  decompressionScope?: MemoryScope,
 ): Promise<Batch> {
+  metadata = await recoverColumnExtents(
+    file,
+    metadata,
+    { columns, rowStart, rowEnd },
+    decompressionScope,
+  );
   const columnValues: Record<string, ArrayLike<unknown>> = Object.fromEntries(
     columns.map((column) => [column, []]),
   );
   const readOptions: Parameters<typeof parquetRead>[0] = {
     file,
-    metadata: rawIntegerDecimalMetadata(metadata, columns),
+    metadata: rawDecimalMetadata(metadata, columns),
     columns,
     rowStart,
     rowEnd,
-    compressors: lakeqlParquetCompressors,
-    parsers: lakeqlParquetParsers,
+    compressors:
+      decompressionScope === undefined
+        ? lakeqlParquetCompressors
+        : scopedParquetCompressors(decompressionScope),
+    parsers: parquetParsersForMetadata(metadata, decompressionScope),
+    valueDecoders: parquetValueDecoders(decompressionScope),
+    utf8: false,
     onChunk(chunk) {
       appendColumnChunk(columnValues, chunk, rowStart, rowEnd);
     },
@@ -106,8 +191,10 @@ export async function readParquetColumnBatch(
     normalizeParquetColumnValues(
       metadata,
       columns,
-      normalizeIntegerDecimalColumns(metadata, columns, columnValues),
+      normalizeDecimalColumns(metadata, columns, columnValues),
+      decompressionScope,
     ),
+    decompressionScope,
   );
 }
 
@@ -115,45 +202,19 @@ function normalizeParquetColumnValues(
   metadata: ParquetMetadata,
   columns: readonly string[],
   columnValues: Record<string, ArrayLike<unknown>>,
+  scope?: MemoryScope,
 ): Record<string, ArrayLike<unknown>> {
   const normalized = { ...columnValues };
+  const lookup = schemaPathIndex(metadata.schema);
   for (const column of columns) {
     const values = normalized[column];
-    if (values === undefined || !isParquetMapColumn(metadata, column)) continue;
-    normalized[column] = Array.from(values, parquetMapValue);
+    if (values === undefined) continue;
+    const schema = lookup([column]).at(-1);
+    const normalize =
+      schema === undefined ? undefined : nestedValueNormalizer(schema, false, scope);
+    if (normalize !== undefined) normalized[column] = Array.from(values, normalize);
   }
   return normalized;
-}
-
-function isParquetMapColumn(metadata: ParquetMetadata, column: string): boolean {
-  try {
-    const element = getSchemaPath(metadata.schema, [column]).at(-1)?.element;
-    const logicalType = element?.logical_type;
-    return (
-      element?.converted_type === "MAP" ||
-      element?.converted_type === "MAP_KEY_VALUE" ||
-      logicalTypeName(logicalType) === "MAP"
-    );
-  } catch {
-    return false;
-  }
-}
-
-function logicalTypeName(logicalType: unknown): string | undefined {
-  if (typeof logicalType === "string") return logicalType;
-  if (typeof logicalType !== "object" || logicalType === null) return undefined;
-  if ("type" in logicalType && typeof logicalType.type === "string") return logicalType.type;
-  for (const key of ["LIST", "MAP"]) {
-    if (key in logicalType) return key;
-  }
-  return undefined;
-}
-
-function parquetMapValue(value: unknown): unknown {
-  if (value === null || value === undefined || value instanceof Map) return value;
-  if (Array.isArray(value)) return new Map(value as Iterable<readonly [unknown, unknown]>);
-  if (typeof value === "object") return new Map(Object.entries(value));
-  return value;
 }
 
 function appendColumnChunk(

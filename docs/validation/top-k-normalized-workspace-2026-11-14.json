@@ -1,0 +1,29 @@
+{
+  "sourceCommit": "a8ba6db",
+  "requirements": ["F5", "V2"],
+  "artifacts": [
+    "docs/benchmarks/top-k-normalized-workspace-2026-11-14.json",
+    "docs/benchmarks/vector-top-k-current-2026-11-14.json"
+  ],
+  "checks": [
+    "All scalar output/cleanup assertions passed for ten shape/row-count cases.",
+    "All twelve numeric owned/borrowed equality and cleanup cases passed.",
+    "Numeric peak incremental reservations are invariant across row counts/distributions at fixed limit."
+  ],
+  "trackedWorkspaceBytes": {
+    "bigintTop3": 604,
+    "timestamp96Top3": 988,
+    "packedTextTop3": {
+      "16": 924,
+      "128": 1372,
+      "1024": 4956
+    },
+    "numericTop10": 664,
+    "numericTop1000": 20464
+  },
+  "limitations": [
+    "No before/after speedup claim.",
+    "Alternative admitted key-cache tradeoff remains unmeasured.",
+    "Tracked reservations are not whole-runtime memory."
+  ]
+}

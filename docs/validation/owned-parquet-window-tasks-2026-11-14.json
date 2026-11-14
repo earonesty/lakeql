@@ -1,0 +1,27 @@
+{
+  "change": "Added windowParquetTaskOwned and windowParquetTasksOwned. Scan rows detach under admission before scanner advancement; partial owners remain in a shared input scope through fan-in and transport callbacks. The evaluator produces separately owned output. Plain APIs release owners at caller transfer. Failed fan-in drains started tasks before enclosing scopes dispose.",
+  "validation": {
+    "defaultSuite": {
+      "filesPassed": 363,
+      "filesSkipped": 8,
+      "testsPassed": 3342,
+      "testsSkipped": 629
+    },
+    "targetedCoreAndParquetTests": 21,
+    "typescriptBuild": "passed",
+    "formatting": "passed",
+    "realFixtureCases": [
+      "delayed transport boundary retains pool charges and rejects oversized competing allocation",
+      "transport failure releases all retained reservations",
+      "transport replacement is independently detached and admitted",
+      "owned output stays charged until explicit release"
+    ]
+  },
+  "remaining": [
+    "Core ScanAdapter/window runner still needs owned task capability to keep returned output charged through postprocessing.",
+    "Custom transport callback allocations precede retention admission and remain externally bounded.",
+    "Generic fan-in scheduling metadata still needs an admission audit.",
+    "Scan, partition and evaluation currently detach separately; ownership transfer can reduce overlap without weakening immutable/mutable backing contracts.",
+    "No whole-Worker heap or production memory-limit certification."
+  ]
+}

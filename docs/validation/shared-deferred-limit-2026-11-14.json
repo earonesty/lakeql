@@ -1,0 +1,35 @@
+{
+  "date": "2026-11-14",
+  "requirements": ["F2", "F3", "M1", "M2"],
+  "changes": [
+    "Use ownedProjectedScanInputs and the shared bounded deferred gather for borrowed and owned projected limit queries.",
+    "Remove the accumulated row-reference implementation and unused row-key/batching helpers; offset skipping no longer retains a query-wide reference list.",
+    "Enable owned projected results for borrowed vector scanners, preserving detached mutable values and explicit result lifetime.",
+    "Retain the early input independently through asynchronous late reads and enforce cancellation before output projection."
+  ],
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "targeted_core_tests": 109,
+    "real_http_tests": 12,
+    "coverage": [
+      "Offset 9 versus 999 at fixed batch size has the same observed allocation peak; exact peak succeeds and one byte less rejects.",
+      "Borrowed binary payload remains unchanged after scanner reuse; owned outputs retain charges until release.",
+      "Late read failure/cancellation closes early and late iterators and releases reservations.",
+      "Real Parquet HTTP matrix covers borrowed/owned, ranked/unranked, valid 206/ignored Range, 64/128 MiB pools and four concurrent cold/warm jobs.",
+      "Deferred 206 output transfers less than half the eager bytes; ignored-range fallback transfers no more than eager; warm jobs need no data ranges beyond discovery probes."
+    ],
+    "full_default_suite": {
+      "passed": 3528,
+      "skipped": 629
+    }
+  },
+  "compatibility": [
+    "Unordered deferred limits no longer charge a serialized row-reference list because that state was removed. Allocation budgets still bound batch/gather/output work; ordered top-k retains its serialized-state boundary tests."
+  ],
+  "remaining": [
+    "Projected read-column planning helpers still need complete admission integration.",
+    "Borrowed scanner internal decode/metadata allocations and runtime overhead are not made globally bounded by detaching returned batches.",
+    "Broader audit and whole-runtime cloud memory acceptance remain open."
+  ]
+}

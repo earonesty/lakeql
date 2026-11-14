@@ -1,0 +1,47 @@
+{
+  "date": "2026-11-14",
+  "source_revision": "e18cf4af33ebaf135bf3b1fabdc63cbea82b3198",
+  "checks": {
+    "default_suite": {
+      "passed": 3399,
+      "skipped": 629,
+      "evidence": "materialization-planner-workspace-2026-11-14.json"
+    },
+    "worker": {
+      "passed": 75,
+      "files": 21
+    },
+    "reference": {
+      "passed": 104,
+      "files": 4
+    },
+    "conformance": {
+      "passed": 517,
+      "skipped": 1,
+      "skip": "Conditional missing-external-Iceberg-fixtures failure guard; no claim of required-external matrix mode in this run."
+    },
+    "lint": "passed",
+    "compatibility": "passed",
+    "large_files": "passed after sandbox denied child-process Git; rerun with escalation",
+    "changeset": "passed",
+    "coverage": {
+      "passed": 3399,
+      "skipped": 629,
+      "statements": 91.01,
+      "branches": 84.98,
+      "functions": 95.71,
+      "lines": 92.88,
+      "thresholds": "unchanged"
+    },
+    "full_build": "passed",
+    "clean_package_install": "passed; 66 dependencies installed in a temporary external consumer",
+    "fixture_regeneration": "passed; content hashes unchanged and Git worktree clean",
+    "required_external_iceberg_conformance": {
+      "passed": 520,
+      "skipped": 1,
+      "skip": "Inactive missing-fixture failure guard; required external matrix assertions passed."
+    }
+  },
+  "not_refreshed": [],
+  "scope": "Release command refresh at source revision e18cf4a (7e080d0 changes only audit documentation). All listed commands pass; full F1-F6/M1-M2/V1-V3 acceptance remains open."
+}

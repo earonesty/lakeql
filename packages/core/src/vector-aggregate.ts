@@ -1,10 +1,10 @@
-import {
-  jsonItemBytes,
-  jsonListBytes,
-  jsonListBytesAfterAppend,
-  unmeasuredMemoryBytes,
-} from "./aggregate-memory.js";
+import { aggregateFinalizeAllocation } from "./aggregate-finalize-allocation.js";
+import { bufferedAppendBytes, jsonListBytes, unmeasuredMemoryBytes } from "./aggregate-memory.js";
+import { finalizeMode } from "./aggregate-mode.js";
 import { continuousQuantile, requiredQuantile } from "./aggregate-quantile.js";
+import { aggregateRestoreAllocationBytes } from "./aggregate-restore-allocation.js";
+import { aggregateSnapshotAllocationBytes } from "./aggregate-snapshot-allocation.js";
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import {
   type Batch,
   batchExprValues,
@@ -13,9 +13,11 @@ import {
   selectedRowCount,
   type Vector,
 } from "./batch.js";
+import { isDecimalValue } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
 import type { Scalar } from "./expr.js";
 import { isIntervalValue } from "./interval.js";
+import type { MemoryScope } from "./memory-scope.js";
 import type { AggregateExpr, AggregateSpec, QueryBudget } from "./query.js";
 import { compareTimestampValues, isTimestampValue, type TimestampValue } from "./timestamp.js";
 import {
@@ -106,13 +108,68 @@ export interface VectorAggregateOptions {
 export function createVectorAggregateStates(
   spec: AggregateSpec,
   options: VectorAggregateOptions = {},
+  creationScope?: MemoryScope,
 ): VectorAggregateStates {
-  const states: VectorAggregateStates = {};
-  for (const [alias, aggregate] of Object.entries(spec)) {
-    states[alias] = createVectorAggregateState(aggregate);
-    enforceStateBudget(states[alias], options.budget);
+  // This scope admits construction only. Mutation/restore/merge lifetimes are
+  // separate contracts; callers must not infer whole-state admission from it.
+  const construction = creationScope?.childScope();
+  try {
+    const states = construction
+      ? construction.allocate(
+          c.object,
+          "aggregate state directory",
+          () => ({}) as VectorAggregateStates,
+        ).value
+      : ({} as VectorAggregateStates);
+    for (const alias in spec) {
+      if (!Object.hasOwn(spec, alias)) continue;
+      const aggregate = spec[alias];
+      if (!aggregate)
+        throw new LakeqlError("LAKEQL_TYPE_ERROR", "Missing aggregate specification", { alias });
+      const state = construction
+        ? construction.allocate(
+            c.property + aggregateStateCreationBytes(aggregate.op),
+            "aggregate accumulator construction",
+            () => createVectorAggregateState(aggregate),
+          ).value
+        : createVectorAggregateState(aggregate);
+      enforceStateBudget(state, options.budget);
+      states[alias] = state;
+    }
+    if (construction) creationScope?.adopt(construction.retainAllocations(undefined));
+    return states;
+  } finally {
+    construction?.dispose();
   }
-  return states;
+}
+
+export function aggregateStateCreationBytes(op: AggregateExpr["op"]): number {
+  switch (op) {
+    case "count":
+    case "sum":
+    case "min":
+    case "max":
+      return c.object + 2 * c.property;
+    case "avg":
+    case "first":
+    case "last":
+    case "any":
+      return c.object + 3 * c.property;
+    case "var_samp":
+    case "var_pop":
+    case "stddev_samp":
+    case "stddev_pop":
+      return c.object + 4 * c.property;
+    case "median":
+      return c.object + 3 * c.property + c.array;
+    case "quantile":
+      return c.object + 4 * c.property + c.array;
+    case "mode":
+    case "count_distinct":
+    case "approx_count_distinct":
+      // Empty collection metadata, independent of future entry/payload charges.
+      return 2 * c.object + 7 * c.property;
+  }
 }
 
 export function updateVectorAggregateStates(
@@ -171,19 +228,46 @@ export function mergeVectorAggregateStateSnapshots(
 
 export function finalizeVectorAggregateStates(
   states: VectorAggregateStates,
+  allocationScope?: MemoryScope,
 ): Record<string, unknown> {
+  if (allocationScope) {
+    const plan = aggregateFinalizeAllocation(states);
+    return allocationScope.allocate(plan.outputBytes, "aggregate result", () => {
+      const scratch = allocationScope.childScope();
+      try {
+        return scratch.allocate(plan.scratchBytes, "aggregate finalization scratch", () =>
+          finalizeVectorAggregateStates(states),
+        ).value;
+      } finally {
+        scratch.dispose();
+      }
+    }).value;
+  }
   const row: Record<string, unknown> = {};
-  for (const [alias, state] of Object.entries(states))
-    row[alias] = finalizeVectorAggregateState(state);
+  for (const alias in states) {
+    if (!Object.hasOwn(states, alias)) continue;
+    const state = states[alias];
+    if (state) row[alias] = finalizeVectorAggregateState(state);
+  }
   return row;
 }
 
 export function snapshotVectorAggregateStates(
   states: VectorAggregateStates,
+  allocationScope?: MemoryScope,
 ): VectorAggregateStateSnapshots {
+  if (allocationScope) {
+    return allocationScope.allocate(
+      aggregateSnapshotAllocationBytes(states),
+      "aggregate checkpoint",
+      () => snapshotVectorAggregateStates(states),
+    ).value;
+  }
   const snapshots: VectorAggregateStateSnapshots = {};
-  for (const [alias, state] of Object.entries(states)) {
-    snapshots[alias] = snapshotVectorAggregateState(state);
+  for (const alias in states) {
+    if (!Object.hasOwn(states, alias)) continue;
+    const state = states[alias];
+    if (state) snapshots[alias] = snapshotVectorAggregateState(state);
   }
   return snapshots;
 }
@@ -191,9 +275,20 @@ export function snapshotVectorAggregateStates(
 export function restoreVectorAggregateStates(
   snapshots: VectorAggregateStateSnapshots,
   options: VectorAggregateOptions = {},
+  allocationScope?: MemoryScope,
 ): VectorAggregateStates {
+  if (allocationScope) {
+    return allocationScope.allocate(
+      aggregateRestoreAllocationBytes(snapshots),
+      "aggregate checkpoint restore",
+      () => restoreVectorAggregateStates(snapshots, options),
+    ).value;
+  }
   const states: VectorAggregateStates = {};
-  for (const [alias, snapshot] of Object.entries(snapshots)) {
+  for (const alias in snapshots) {
+    if (!Object.hasOwn(snapshots, alias)) continue;
+    const snapshot = snapshots[alias];
+    if (!snapshot) continue;
     states[alias] = vectorAggregateStateFromSnapshot(snapshot);
     enforceStateBudget(states[alias], options.budget);
   }
@@ -293,8 +388,11 @@ function aggregateScalarValue(value: Scalar): VectorAggregateValue {
   if (value instanceof Uint8Array) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Binary values are not aggregate values");
   }
-  if (isIntervalValue(value)) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Interval values are not aggregate values");
+  if (isIntervalValue(value) || isDecimalValue(value)) {
+    throw new LakeqlError(
+      "LAKEQL_TYPE_ERROR",
+      "Scalar shape is not supported by aggregate execution",
+    );
   }
   return value;
 }
@@ -419,7 +517,14 @@ function updateMinMax(
   state: Extract<VectorAggregateState, { op: "min" | "max" }>,
   value: VectorAggregateValue,
 ): void {
-  if (value === null) return;
+  if (minMaxShouldReplace(state, value)) state.value = value;
+}
+
+export function minMaxShouldReplace(
+  state: Extract<VectorAggregateState, { op: "min" | "max" }>,
+  value: VectorAggregateValue,
+): boolean {
+  if (value === null) return false;
   if (
     typeof value !== "string" &&
     typeof value !== "number" &&
@@ -429,18 +534,14 @@ function updateMinMax(
   ) {
     throwAggregateType(state.op);
   }
-  if (state.value === null) {
-    state.value = value;
-    return;
-  }
+  if (state.value === null) return true;
   if (typeof state.value !== typeof value) throwAggregateType(state.op);
   if (isTimestampValue(state.value) || isTimestampValue(value)) {
     if (!isTimestampValue(state.value) || !isTimestampValue(value)) throwAggregateType(state.op);
     const comparison = compareTimestampValues(value, state.value);
-    if (state.op === "min" ? comparison < 0 : comparison > 0) state.value = value;
-    return;
+    return state.op === "min" ? comparison < 0 : comparison > 0;
   }
-  if (state.op === "min" ? value < state.value : value > state.value) state.value = value;
+  return state.op === "min" ? value < state.value : value > state.value;
 }
 
 function updateVariance(
@@ -482,7 +583,7 @@ function mergeVariance(
   target.count = count;
 }
 
-function mergeVectorAggregateState(
+export function mergeVectorAggregateState(
   target: VectorAggregateState,
   source: VectorAggregateState,
   budget?: QueryBudget,
@@ -518,12 +619,12 @@ function mergeVectorAggregateState(
       return;
     case "median": {
       const next = sameState(source, "median");
-      for (const value of next.values) addMedianValue(target, value, budget);
+      for (const value of next.values) appendBufferedValue(target, value, budget);
       return;
     }
     case "quantile": {
       const next = sameState(source, "quantile");
-      for (const value of next.values) addQuantileValue(target, value, budget);
+      for (const value of next.values) appendBufferedValue(target, value, budget);
       return;
     }
     case "min":
@@ -693,18 +794,18 @@ function updateMedian(
 ): void {
   if (value === null) return;
   if (typeof value !== "number" && typeof value !== "string") throwAggregateType("median");
-  addMedianValue(state, value, budget);
+  appendBufferedValue(state, value, budget);
 }
 
-function addMedianValue(
-  state: Extract<VectorAggregateState, { op: "median" }>,
-  value: number | string,
+function appendBufferedValue<T extends number | string>(
+  state: { values: T[]; memoryBytes: number },
+  value: T,
   budget?: QueryBudget,
 ): void {
   measureBufferedBytes(state, budget);
+  const bytes = bufferedAppendBytes(state.memoryBytes, state.values.length, value, budget);
   state.values.push(value);
-  state.memoryBytes = bufferedBytesAfterPush(state, value, budget);
-  enforceMedianBudget(state, budget);
+  state.memoryBytes = bytes;
 }
 
 function finalizeMedian(
@@ -739,19 +840,10 @@ function enforceMedianBudget(
   }
 }
 
-type BufferedListState = Extract<VectorAggregateState, { op: "median" | "quantile" }>;
-
-/** The list's size after pushing `value` onto a list measured before the push. */
-function bufferedBytesAfterPush(
-  state: BufferedListState,
-  value: number | string,
+function measureBufferedBytes(
+  state: { values: readonly (number | string)[]; memoryBytes: number },
   budget?: QueryBudget,
-): number {
-  if (budget?.maxMemoryBytes === undefined) return unmeasuredMemoryBytes;
-  return jsonListBytesAfterAppend(state.memoryBytes, state.values.length - 1, jsonItemBytes(value));
-}
-
-function measureBufferedBytes(state: BufferedListState, budget?: QueryBudget): void {
+): void {
   if (budget?.maxMemoryBytes !== undefined && state.memoryBytes === unmeasuredMemoryBytes) {
     state.memoryBytes = jsonListBytes(state.values);
   }
@@ -764,18 +856,7 @@ function updateQuantile(
 ): void {
   if (value === null) return;
   if (typeof value !== "number") throwAggregateType("quantile");
-  addQuantileValue(state, value, budget);
-}
-
-function addQuantileValue(
-  state: Extract<VectorAggregateState, { op: "quantile" }>,
-  value: number,
-  budget?: QueryBudget,
-): void {
-  measureBufferedBytes(state, budget);
-  state.values.push(value);
-  state.memoryBytes = bufferedBytesAfterPush(state, value, budget);
-  enforceQuantileBudget(state, budget);
+  appendBufferedValue(state, value, budget);
 }
 
 function finalizeQuantile(state: Extract<VectorAggregateState, { op: "quantile" }>): number | null {
@@ -807,7 +888,7 @@ function addModeValue(
   addModeEntry(state, distinctKey(value), value, 1, budget);
 }
 
-function addModeEntry(
+export function addModeEntry(
   state: Extract<VectorAggregateState, { op: "mode" }>,
   key: string,
   value: Exclude<VectorAggregateValue, null>,
@@ -821,20 +902,9 @@ function addModeEntry(
     enforceModeBudget(state, budget);
     return;
   }
+  const bytes = bufferedAppendBytes(state.memoryBytes, state.values.size, key, budget);
   state.values.set(key, { value, count });
-  state.memoryBytes =
-    budget?.maxMemoryBytes === undefined
-      ? unmeasuredMemoryBytes
-      : jsonListBytesAfterAppend(state.memoryBytes, state.values.size - 1, jsonItemBytes(key));
-  enforceModeBudget(state, budget);
-}
-
-function finalizeMode(state: Extract<VectorAggregateState, { op: "mode" }>): VectorAggregateValue {
-  let best: { value: Exclude<VectorAggregateValue, null>; count: number } | undefined;
-  for (const entry of state.values.values()) {
-    if (best === undefined || entry.count > best.count) best = entry;
-  }
-  return best?.value ?? null;
+  state.memoryBytes = bytes;
 }
 
 function enforceModeBudget(

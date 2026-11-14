@@ -1,0 +1,54 @@
+{
+  "implementationCommit": "6eb57bb",
+  "status": "Verification baseline refreshed; release gate remains failing on six conformance cases; goal incomplete",
+  "passed": {
+    "coverage": {
+      "testsPassed": 3063,
+      "testsSkipped": 629,
+      "statements": 91.6,
+      "branches": 85.53,
+      "functions": 95.75,
+      "lines": 93.69,
+      "thresholdsChanged": false
+    },
+    "referenceTests": 104,
+    "workerTests": 61,
+    "workerEvidence": "aggregate-checkpoint-io-admission-2026-11-13.json",
+    "gates": [
+      "full build",
+      "full lint (1191 files)",
+      "typecheck",
+      "package installation/export checks",
+      "compatibility documentation",
+      "changeset presence",
+      "file-size limits",
+      "deterministic fixture regeneration"
+    ]
+  },
+  "conformance": {
+    "passed": 511,
+    "failed": 6,
+    "skipped": 1,
+    "failures": [
+      {
+        "fixture": "alp_extended.zstd.parquet",
+        "paths": ["public reader", "owned query reader"]
+      },
+      {
+        "fixture": "bson.parquet",
+        "paths": ["public reader", "owned query reader"]
+      },
+      {
+        "fixture": "large_string_map.brotli.parquet",
+        "paths": ["public reader", "owned query reader"]
+      }
+    ],
+    "assertionsWeakened": false
+  },
+  "nextImplementationFinding": {
+    "area": "F1 legacy row aggregate continuation",
+    "evidence": "AggregateGroup and AggregateState in query.ts use distinct legacy state classes. OwnedAggregateState wraps VectorAggregateStates and AggregateStateMemory; these are not drop-in representations for legacy scalar snapshot semantics. Median/quantile arrays, mode/distinct collections and scalar retention require admission before each mutation, not a final snapshot charge.",
+    "requiredWork": "Integrate pre-allocation state mutation and restoration ownership while preserving legacy scalar semantics, serialized snapshot compatibility and exact serialized-size tests. Admit group directories and snapshot construction too."
+  },
+  "scope": "This verification covers current code and existing fixture/gate inventory, not completion of F1-F6, M1-M2 or V1-V3. No new cloud-wide or total-heap certification."
+}

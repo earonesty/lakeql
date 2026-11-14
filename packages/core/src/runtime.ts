@@ -1,4 +1,7 @@
+import { MATERIALIZATION_CHARGES } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
+import type { MemoryBudget } from "./memory-budget.js";
+import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
 import type { Bookmark } from "./types.js";
 
 export interface CacheEntry<T> {
@@ -7,6 +10,17 @@ export interface CacheEntry<T> {
 }
 
 export interface CacheAdapter<T = Uint8Array> {
+  /** Return independently owned entry storage in the requested allocation pool.
+   * The caller releases it after copying/consuming the entry, including abort.
+   */
+  getOwnedEntry?(
+    key: string,
+    budget: MemoryBudget,
+  ): Promise<OwnedMemory<CacheEntry<T>> | undefined>;
+  /** Borrow an admitted entry until this callback settles. Retain ownership in
+   * the cache's shared budget before returning if keeping it for future queries.
+   */
+  setOwnedEntry?(key: string, entry: OwnedMemory<CacheEntry<T>>): Promise<void>;
   get(key: string): Promise<CacheEntry<T> | undefined>;
   set(key: string, entry: CacheEntry<T>): Promise<void>;
   delete(key: string): Promise<void>;
@@ -115,9 +129,39 @@ export interface SpillUsage {
   byteSize: number;
 }
 
+/** A staged write leaves the published entry untouched until commit. Commit
+ * atomically compares the current entry with the observed version. Rollback is idempotent and
+ * affects only uncommitted storage; it never deletes a published checkpoint.
+ */
+export interface StagedSpillWrite {
+  readonly ref: SpillRef;
+  commit(): Promise<SpillRef>;
+  rollback(): Promise<void>;
+}
+
+/** Writes remain private until an atomic, version-checked batch commit.
+ * Callers must commit or roll back, and must await writes before commit.
+ * Rollback is idempotent and affects only uncommitted storage. Once commit
+ * succeeds, later cancellation or rollback must not remove published entries.
+ * Cancellation while commit is in flight does not imply publication was stopped.
+ */
+export interface SpillWriteBatch {
+  write(id: string, data: Uint8Array): Promise<SpillRef>;
+  commit(): Promise<void>;
+  rollback(): Promise<void>;
+}
+
 export interface SpillAdapter {
   write(id: string, data: Uint8Array): Promise<SpillRef>;
+  /** Caller must commit or roll back every staged write. Adapter usage and caps
+   * include pending payloads as well as published entries. */
+  stageWrite?(id: string, data: Uint8Array): Promise<StagedSpillWrite>;
+  beginWriteBatch?(): SpillWriteBatch;
   read(ref: SpillRef | string): Promise<Uint8Array>;
+  /** Admit the read buffer before allocating it. The returned independent owner
+   * remains charged until released by the consumer. Adapter storage is separate.
+   */
+  readOwned?(ref: SpillRef | string, budget: MemoryBudget): Promise<OwnedMemory<Uint8Array>>;
   delete(ref: SpillRef | string): Promise<void>;
   usage(): Promise<SpillUsage>;
 }
@@ -127,7 +171,10 @@ export interface MemorySpillAdapterOptions {
 }
 
 export class MemorySpillAdapter implements SpillAdapter {
-  private readonly entries = new Map<string, Uint8Array>();
+  private readonly entries = new Map<string, { data: Uint8Array; version: symbol }>();
+  private byteSize = 0;
+  private stagedBytes = 0;
+  private stagedEntries = 0;
   private readonly maxBytes: number | undefined;
 
   constructor(options: MemorySpillAdapterOptions = {}) {
@@ -139,7 +186,111 @@ export class MemorySpillAdapter implements SpillAdapter {
       throw new LakeqlError("LAKEQL_TYPE_ERROR", "spill id must be non-empty");
     }
     const nextBytes =
-      this.currentBytes() - (this.entries.get(id)?.byteLength ?? 0) + data.byteLength;
+      this.byteSize - (this.entries.get(id)?.data.byteLength ?? 0) + data.byteLength;
+    this.requireCapacity(nextBytes + this.stagedBytes);
+    const copy = copyBytes(data);
+    this.entries.set(id, { data: copy, version: Symbol() });
+    this.byteSize = nextBytes;
+    return { id, byteSize: copy.byteLength };
+  }
+
+  async stageWrite(id: string, data: Uint8Array): Promise<StagedSpillWrite> {
+    const prepared = this.prepareWrite(id, data);
+    return {
+      ref: prepared.ref,
+      commit: async () => {
+        prepared.validate();
+        return prepared.publish();
+      },
+      rollback: async () => prepared.rollback(),
+    };
+  }
+
+  beginWriteBatch(): SpillWriteBatch {
+    const writes = new Map<string, ReturnType<MemorySpillAdapter["prepareWrite"]>>();
+    let state: "open" | "committed" | "rolled-back" = "open";
+    return {
+      write: async (id, data) => {
+        if (state !== "open")
+          throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Spill batch is closed");
+        if (writes.has(id))
+          throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Duplicate spill batch target", { id });
+        const prepared = this.prepareWrite(id, data);
+        try {
+          writes.set(id, prepared);
+        } catch (error) {
+          prepared.rollback();
+          throw error;
+        }
+        return prepared.ref;
+      },
+      commit: async () => {
+        if (state === "committed") return;
+        if (state !== "open")
+          throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Spill batch was rolled back");
+        // Validate the entire write set before publication. No await or external
+        // callback can observe an intermediate commit in this in-memory adapter.
+        for (const prepared of writes.values()) prepared.validate();
+        for (const prepared of writes.values()) prepared.publish();
+        state = "committed";
+        writes.clear();
+      },
+      rollback: async () => {
+        if (state !== "open") return;
+        for (const prepared of writes.values()) prepared.rollback();
+        writes.clear();
+        state = "rolled-back";
+      },
+    };
+  }
+
+  private prepareWrite(id: string, data: Uint8Array) {
+    if (!id) throw new LakeqlError("LAKEQL_TYPE_ERROR", "spill id must be non-empty");
+    this.requireCapacity(this.byteSize + this.stagedBytes + data.byteLength);
+    const previousVersion = this.entries.get(id)?.version;
+    const previousBytes = this.entries.get(id)?.data.byteLength ?? 0;
+    let pending: { data: Uint8Array; version: symbol } | undefined = {
+      data: copyBytes(data),
+      version: Symbol(),
+    };
+    const ref = Object.freeze({ id, byteSize: pending.data.byteLength });
+    this.stagedBytes += pending.data.byteLength;
+    this.stagedEntries++;
+    let committed = false;
+    const release = () => {
+      if (pending === undefined) return;
+      this.stagedBytes -= pending.data.byteLength;
+      this.stagedEntries--;
+      pending = undefined;
+    };
+    return {
+      ref,
+      validate: () => {
+        if (committed) return;
+        if (pending === undefined)
+          throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Spill write was rolled back");
+        if (this.entries.get(id)?.version !== previousVersion)
+          throw new LakeqlError(
+            "LAKEQL_VALIDATION_ERROR",
+            "Spill entry changed during staged write",
+            { id },
+          );
+      },
+      publish: () => {
+        if (committed) return ref;
+        if (pending === undefined)
+          throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Spill write was rolled back");
+        this.entries.set(id, pending);
+        this.byteSize += pending.data.byteLength - previousBytes;
+        committed = true;
+        release();
+        return ref;
+      },
+      rollback: release,
+    };
+  }
+
+  private requireCapacity(nextBytes: number): void {
     if (this.maxBytes !== undefined && nextBytes > this.maxBytes) {
       throw new LakeqlError(
         "LAKEQL_BUDGET_EXCEEDED",
@@ -147,32 +298,44 @@ export class MemorySpillAdapter implements SpillAdapter {
         { metric: "spill bytes", limit: this.maxBytes, actual: nextBytes },
       );
     }
-    const copy = copyBytes(data);
-    this.entries.set(id, copy);
-    return { id, byteSize: copy.byteLength };
   }
 
   async read(ref: SpillRef | string): Promise<Uint8Array> {
     const id = spillId(ref);
-    const data = this.entries.get(id);
+    const data = this.entries.get(id)?.data;
     if (!data) {
       throw new LakeqlError("LAKEQL_OBJECT_NOT_FOUND", `No spill entry ${id}`, { id });
     }
     return copyBytes(data);
   }
 
+  async readOwned(ref: SpillRef | string, budget: MemoryBudget): Promise<OwnedMemory<Uint8Array>> {
+    const id = spillId(ref);
+    const data = this.entries.get(id)?.data;
+    if (!data) throw new LakeqlError("LAKEQL_OBJECT_NOT_FOUND", `No spill entry ${id}`, { id });
+    const scope = new MemoryScope(budget);
+    try {
+      return scope
+        .allocate(MATERIALIZATION_CHARGES.view + data.byteLength, "spill read buffer", () =>
+          copyBytes(data),
+        )
+        .retain();
+    } finally {
+      scope.dispose();
+    }
+  }
+
   async delete(ref: SpillRef | string): Promise<void> {
-    this.entries.delete(spillId(ref));
+    const id = spillId(ref);
+    const previous = this.entries.get(id);
+    if (this.entries.delete(id)) this.byteSize -= previous?.data.byteLength ?? 0;
   }
 
   async usage(): Promise<SpillUsage> {
-    return { entries: this.entries.size, byteSize: this.currentBytes() };
-  }
-
-  private currentBytes(): number {
-    let total = 0;
-    for (const data of this.entries.values()) total += data.byteLength;
-    return total;
+    return {
+      entries: this.entries.size + this.stagedEntries,
+      byteSize: this.byteSize + this.stagedBytes,
+    };
   }
 }
 

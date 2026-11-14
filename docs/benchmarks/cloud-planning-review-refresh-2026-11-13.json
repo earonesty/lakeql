@@ -1,0 +1,450 @@
+{
+  "source": "https://pub-9d5bcb33a5384d79875a943eef183b6d.r2.dev/bench/window-events.parquet",
+  "scope": "Actual public R2 HTTP 206 responses; tracked metadata allocation bounds, including admitted conversion containers; runtime overhead and whole-worker heap are not bounded",
+  "reports": [
+    {
+      "mode": "full",
+      "cap": 1558,
+      "sample": 0,
+      "rejected": true,
+      "milliseconds": 536.2074379999999,
+      "footerBytes": 1535,
+      "directoryBytes": 24,
+      "peakBytes": 1558,
+      "requests": [
+        {
+          "range": "bytes=3296-4853",
+          "bytes": 1558
+        },
+        {
+          "range": "bytes=3319-4853",
+          "bytes": 1535
+        }
+      ]
+    },
+    {
+      "mode": "full",
+      "cap": 1558,
+      "sample": 1,
+      "rejected": true,
+      "milliseconds": 516.9301669999998,
+      "footerBytes": 1535,
+      "directoryBytes": 24,
+      "peakBytes": 1558,
+      "requests": [
+        {
+          "range": "bytes=3296-4853",
+          "bytes": 1558
+        },
+        {
+          "range": "bytes=3319-4853",
+          "bytes": 1535
+        }
+      ]
+    },
+    {
+      "mode": "full",
+      "cap": 1558,
+      "sample": 2,
+      "rejected": true,
+      "milliseconds": 410.15474300000005,
+      "footerBytes": 1535,
+      "directoryBytes": 24,
+      "peakBytes": 1558,
+      "requests": [
+        {
+          "range": "bytes=3296-4853",
+          "bytes": 1558
+        },
+        {
+          "range": "bytes=3319-4853",
+          "bytes": 1535
+        }
+      ]
+    },
+    {
+      "mode": "full",
+      "cap": 1559,
+      "sample": 0,
+      "rejected": true,
+      "milliseconds": 402.547184,
+      "footerBytes": 1535,
+      "directoryBytes": 24,
+      "peakBytes": 1559,
+      "requests": [
+        {
+          "range": "bytes=3295-4853",
+          "bytes": 1559
+        },
+        {
+          "range": "bytes=3319-4853",
+          "bytes": 1535
+        }
+      ]
+    },
+    {
+      "mode": "full",
+      "cap": 1559,
+      "sample": 1,
+      "rejected": true,
+      "milliseconds": 526.857532,
+      "footerBytes": 1535,
+      "directoryBytes": 24,
+      "peakBytes": 1559,
+      "requests": [
+        {
+          "range": "bytes=3295-4853",
+          "bytes": 1559
+        },
+        {
+          "range": "bytes=3319-4853",
+          "bytes": 1535
+        }
+      ]
+    },
+    {
+      "mode": "full",
+      "cap": 1559,
+      "sample": 2,
+      "rejected": true,
+      "milliseconds": 502.88052800000014,
+      "footerBytes": 1535,
+      "directoryBytes": 24,
+      "peakBytes": 1559,
+      "requests": [
+        {
+          "range": "bytes=3295-4853",
+          "bytes": 1559
+        },
+        {
+          "range": "bytes=3319-4853",
+          "bytes": 1535
+        }
+      ]
+    },
+    {
+      "mode": "full",
+      "cap": 65536,
+      "sample": 0,
+      "rejected": true,
+      "milliseconds": 491.3680029999996,
+      "footerBytes": 1535,
+      "directoryBytes": 24,
+      "peakBytes": 63344,
+      "requests": [
+        {
+          "range": "bytes=0-4853",
+          "bytes": 4854
+        },
+        {
+          "range": "bytes=3319-4853",
+          "bytes": 1535
+        }
+      ]
+    },
+    {
+      "mode": "full",
+      "cap": 65536,
+      "sample": 1,
+      "rejected": true,
+      "milliseconds": 418.4703559999998,
+      "footerBytes": 1535,
+      "directoryBytes": 24,
+      "peakBytes": 63344,
+      "requests": [
+        {
+          "range": "bytes=0-4853",
+          "bytes": 4854
+        },
+        {
+          "range": "bytes=3319-4853",
+          "bytes": 1535
+        }
+      ]
+    },
+    {
+      "mode": "full",
+      "cap": 65536,
+      "sample": 2,
+      "rejected": true,
+      "milliseconds": 513.486981,
+      "footerBytes": 1535,
+      "directoryBytes": 24,
+      "peakBytes": 63344,
+      "requests": [
+        {
+          "range": "bytes=0-4853",
+          "bytes": 4854
+        },
+        {
+          "range": "bytes=3319-4853",
+          "bytes": 1535
+        }
+      ]
+    },
+    {
+      "mode": "full",
+      "cap": 67108864,
+      "sample": 0,
+      "rejected": false,
+      "milliseconds": 219.61310299999968,
+      "footerBytes": 1535,
+      "directoryBytes": 24,
+      "peakBytes": 163758,
+      "requests": [
+        {
+          "range": "bytes=0-4853",
+          "bytes": 4854
+        }
+      ]
+    },
+    {
+      "mode": "full",
+      "cap": 67108864,
+      "sample": 1,
+      "rejected": false,
+      "milliseconds": 196.3702629999998,
+      "footerBytes": 1535,
+      "directoryBytes": 24,
+      "peakBytes": 163758,
+      "requests": [
+        {
+          "range": "bytes=0-4853",
+          "bytes": 4854
+        }
+      ]
+    },
+    {
+      "mode": "full",
+      "cap": 67108864,
+      "sample": 2,
+      "rejected": false,
+      "milliseconds": 224.852715,
+      "footerBytes": 1535,
+      "directoryBytes": 24,
+      "peakBytes": 163758,
+      "requests": [
+        {
+          "range": "bytes=0-4853",
+          "bytes": 4854
+        }
+      ]
+    },
+    {
+      "mode": "indexed",
+      "cap": 1558,
+      "sample": 0,
+      "rejected": true,
+      "milliseconds": 436.5010849999999,
+      "footerBytes": 1535,
+      "directoryBytes": 24,
+      "peakBytes": 1558,
+      "requests": [
+        {
+          "range": "bytes=3296-4853",
+          "bytes": 1558
+        },
+        {
+          "range": "bytes=3319-4853",
+          "bytes": 1535
+        }
+      ]
+    },
+    {
+      "mode": "indexed",
+      "cap": 1558,
+      "sample": 1,
+      "rejected": true,
+      "milliseconds": 458.8752450000002,
+      "footerBytes": 1535,
+      "directoryBytes": 24,
+      "peakBytes": 1558,
+      "requests": [
+        {
+          "range": "bytes=3296-4853",
+          "bytes": 1558
+        },
+        {
+          "range": "bytes=3319-4853",
+          "bytes": 1535
+        }
+      ]
+    },
+    {
+      "mode": "indexed",
+      "cap": 1558,
+      "sample": 2,
+      "rejected": true,
+      "milliseconds": 456.39660000000003,
+      "footerBytes": 1535,
+      "directoryBytes": 24,
+      "peakBytes": 1558,
+      "requests": [
+        {
+          "range": "bytes=3296-4853",
+          "bytes": 1558
+        },
+        {
+          "range": "bytes=3319-4853",
+          "bytes": 1535
+        }
+      ]
+    },
+    {
+      "mode": "indexed",
+      "cap": 1559,
+      "sample": 0,
+      "rejected": true,
+      "milliseconds": 456.2004799999995,
+      "footerBytes": 1535,
+      "directoryBytes": 24,
+      "peakBytes": 1559,
+      "requests": [
+        {
+          "range": "bytes=3295-4853",
+          "bytes": 1559
+        },
+        {
+          "range": "bytes=3319-4853",
+          "bytes": 1535
+        }
+      ]
+    },
+    {
+      "mode": "indexed",
+      "cap": 1559,
+      "sample": 1,
+      "rejected": true,
+      "milliseconds": 680.4459289999995,
+      "footerBytes": 1535,
+      "directoryBytes": 24,
+      "peakBytes": 1559,
+      "requests": [
+        {
+          "range": "bytes=3295-4853",
+          "bytes": 1559
+        },
+        {
+          "range": "bytes=3319-4853",
+          "bytes": 1535
+        }
+      ]
+    },
+    {
+      "mode": "indexed",
+      "cap": 1559,
+      "sample": 2,
+      "rejected": true,
+      "milliseconds": 456.32705799999894,
+      "footerBytes": 1535,
+      "directoryBytes": 24,
+      "peakBytes": 1559,
+      "requests": [
+        {
+          "range": "bytes=3295-4853",
+          "bytes": 1559
+        },
+        {
+          "range": "bytes=3319-4853",
+          "bytes": 1535
+        }
+      ]
+    },
+    {
+      "mode": "indexed",
+      "cap": 65536,
+      "sample": 0,
+      "rejected": true,
+      "milliseconds": 228.4926890000006,
+      "footerBytes": 1535,
+      "directoryBytes": 24,
+      "peakBytes": 27938,
+      "requests": [
+        {
+          "range": "bytes=0-4853",
+          "bytes": 4854
+        }
+      ]
+    },
+    {
+      "mode": "indexed",
+      "cap": 65536,
+      "sample": 1,
+      "rejected": true,
+      "milliseconds": 226.70893500000057,
+      "footerBytes": 1535,
+      "directoryBytes": 24,
+      "peakBytes": 27938,
+      "requests": [
+        {
+          "range": "bytes=0-4853",
+          "bytes": 4854
+        }
+      ]
+    },
+    {
+      "mode": "indexed",
+      "cap": 65536,
+      "sample": 2,
+      "rejected": true,
+      "milliseconds": 225.68926199999987,
+      "footerBytes": 1535,
+      "directoryBytes": 24,
+      "peakBytes": 27938,
+      "requests": [
+        {
+          "range": "bytes=0-4853",
+          "bytes": 4854
+        }
+      ]
+    },
+    {
+      "mode": "indexed",
+      "cap": 67108864,
+      "sample": 0,
+      "rejected": false,
+      "milliseconds": 278.39645499999824,
+      "footerBytes": 1535,
+      "directoryBytes": 24,
+      "peakBytes": 90994,
+      "requests": [
+        {
+          "range": "bytes=0-4853",
+          "bytes": 4854
+        }
+      ]
+    },
+    {
+      "mode": "indexed",
+      "cap": 67108864,
+      "sample": 1,
+      "rejected": false,
+      "milliseconds": 212.79434000000037,
+      "footerBytes": 1535,
+      "directoryBytes": 24,
+      "peakBytes": 90994,
+      "requests": [
+        {
+          "range": "bytes=0-4853",
+          "bytes": 4854
+        }
+      ]
+    },
+    {
+      "mode": "indexed",
+      "cap": 67108864,
+      "sample": 2,
+      "rejected": false,
+      "milliseconds": 190.3030889999991,
+      "footerBytes": 1535,
+      "directoryBytes": 24,
+      "peakBytes": 90994,
+      "requests": [
+        {
+          "range": "bytes=0-4853",
+          "bytes": 4854
+        }
+      ]
+    }
+  ]
+}

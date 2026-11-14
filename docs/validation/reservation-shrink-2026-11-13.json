@@ -1,0 +1,35 @@
+{
+  "status": "Implemented; broad default and Worker regressions passed",
+  "contract": "An exclusive live reservation may shrink after released storage is dropped. No growth, reclamation, alias resizing or readmission is allowed. Live handle byte count is updated; consumed handle byte count remains historical.",
+  "implementation": "Window key admission shrinks formatting scratch in place instead of partitioning into two new ownership handles.",
+  "validation": {
+    "testsPassed": 16,
+    "build": "passed",
+    "cases": [
+      "shared ownership rejection",
+      "invalid extent atomicity",
+      "child/root accounting",
+      "sibling preservation",
+      "peak unchanged",
+      "zero extent",
+      "released handle",
+      "merge and partition composition"
+    ],
+    "defaultTestsPassed": 3005,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61,
+    "additionalStageTest": "Added after the full suite; all three memory-shrink tests then passed. Shrinking does not recycle stage allocation allowance; externally held reservations outlive scope disposal."
+  },
+  "benchmarks": {
+    "baseline": "docs/benchmarks/window-buffered-aggregate-2026-11-13.json",
+    "getterExperiment": "docs/benchmarks/window-buffered-shrink-2026-11-13.json",
+    "currentDataField": "docs/benchmarks/window-buffered-shrink-data-2026-11-13.json",
+    "finding": "At 16384 unique numeric rows, local medians changed from mode 23.54ms / distinct 22.37ms to 15.29ms / 12.25ms. The rejected getter implementation was slower at 35.25ms / 33.73ms. Duplicate-heavy current cases remain around 6.4-6.7ms. Single local benchmark runs are directional evidence, not a cloud latency or total-heap claim. Further amortization remains open."
+  },
+  "mutableLedgerFollowup": {
+    "change": "Partial mutable-ledger trimming now shrinks the existing exclusive handle instead of partitioning and releasing a new handle.",
+    "validation": "128 tests passed across mutable-memory-ledger, owned-aggregate-state and owned-group-directory; TypeScript build passed.",
+    "newTest": "Partial trimming keeps the live handle, updates its bytes, preserves logical payload after repeated release/trim, and releases all usage on scope disposal. Partition is instrumented to throw if invoked.",
+    "reuseFinding": "MutableMemoryLedger already provides chunked admission, exact-size fallback, bookkeeping charges, reclaimable spare capacity, mutation rollback and scope cleanup. Window integration should reuse this mechanism, preserving scope versus standalone-budget lifetime and admitting ledger metadata. Window per-value admission remains unchanged in this followup."
+  }
+}

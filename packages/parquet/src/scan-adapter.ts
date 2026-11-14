@@ -3,9 +3,13 @@ import {
   type Batch,
   batchFromVectors,
   type CacheAdapter,
+  MATERIALIZATION_CHARGES as c,
   LakeqlError,
+  type MemoryBudget,
+  MemoryScope,
   type ObjectInfo,
   type ObjectStore,
+  type OwnedMemory,
   type Row,
   type ScanAdapter,
   type ScanColumnBatch,
@@ -22,24 +26,34 @@ import {
 } from "lakeql-core";
 import { readParquetColumnBatchesFromFile } from "./column-batches.js";
 import { lakeqlParquetCompressors } from "./compressors.js";
-import { normalizeIntegerDecimalRows, rawIntegerDecimalMetadata } from "./decimal.js";
+import { normalizeDecimalRows, rawDecimalMetadata } from "./decimal.js";
 import type { DecodedColumnCache } from "./decoded-column-cache.js";
 import { normalizeDecodedRows } from "./decoded-rows.js";
-import { readCachedParquetMetadata } from "./metadata-cache.js";
-import { lakeqlParquetParsers } from "./parsers.js";
+import { iterateIndexedGroups } from "./indexed-row-group-plan.js";
+import { acquireIndexedParquetSource } from "./indexed-source.js";
+import type { OwnedMetadataCache } from "./metadata-cache.js";
+import { readCachedParquetMetadata, readOwnedParquetMetadata } from "./metadata-cache.js";
+import { readOwnedParquetVectorBatches } from "./owned-vector-batches.js";
+import { parquetParsersForMetadata } from "./parsers.js";
 import { cachedRangeBuffer, type RangeCacheOptions } from "./range-cache.js";
 import { recordReadColumns } from "./read-metrics.js";
-import { planRowGroupsFromMetadata } from "./row-group-plan.js";
+import { ParquetReadScope } from "./read-scope.js";
+import { iteratePlannedRowGroups, summarizePlannedRowGroups } from "./row-group-plan.js";
 import { rowGroupMayMatch } from "./row-group-pruning.js";
 import { rejectUnsupportedParquetSchema } from "./schema.js";
+import { type ParquetColumnDescriptor, parquetColumnDescriptors } from "./schema-descriptors.js";
 import { asyncBufferFromObjectInfo, asyncBufferFromStore } from "./store-buffer.js";
 import type { ParquetMetadata, StoreAsyncBuffer } from "./types.js";
+import { parquetValueDecoders } from "./value-decoders.js";
 import { canReadParquetVectorBatches, readParquetVectorBatchesFromFile } from "./vector-batches.js";
-import { windowParquetTasks } from "./window-task.js";
+import { windowParquetTasksOwned } from "./window-task.js";
 
 export class ParquetScanAdapter implements ScanAdapter {
+  readonly scanOwnedVectorBatches?: NonNullable<ScanAdapter["scanOwnedVectorBatches"]>;
   private readonly store: ObjectStore;
   private readonly defaultBatchSize: number;
+  private readonly scanMetadataMode: "indexed" | "cached";
+  private readonly taskMetadataMode: "indexed" | "cached";
   private readonly metadataCache: CacheAdapter<ParquetMetadata> | undefined;
   private readonly decodedColumnCache: DecodedColumnCache | undefined;
   private readonly scanRangeCache: RangeCacheOptions | undefined;
@@ -49,68 +63,244 @@ export class ParquetScanAdapter implements ScanAdapter {
     options: {
       batchSize?: number;
       metadataCache?: CacheAdapter<ParquetMetadata>;
+      taskMetadataMode?: "auto" | "indexed" | "cached";
+      scanMetadataMode?: "auto" | "indexed" | "cached";
       decodedColumnCache?: DecodedColumnCache;
       scanRangeCache?: RangeCacheOptions;
     } = {},
   ) {
     this.store = store;
+    const cache = options.metadataCache as OwnedMetadataCache | undefined;
+    this.scanMetadataMode =
+      options.scanMetadataMode === undefined || options.scanMetadataMode === "auto"
+        ? cache === undefined
+          ? "indexed"
+          : "cached"
+        : options.scanMetadataMode;
+    // Legacy cache adapters expose borrowed values, not independently pinnable backing.
+    if (
+      store.getRangeOwned !== undefined &&
+      (this.scanMetadataMode === "indexed" ||
+        cache === undefined ||
+        (cache.acquireOwned !== undefined && cache.setOwned !== undefined))
+    ) {
+      this.scanOwnedVectorBatches = this.readOwnedVectorBatches.bind(this);
+    }
     this.defaultBatchSize = options.batchSize ?? 4096;
     this.metadataCache = options.metadataCache;
+    this.taskMetadataMode =
+      options.taskMetadataMode === undefined || options.taskMetadataMode === "auto"
+        ? options.metadataCache === undefined
+          ? "indexed"
+          : "cached"
+        : options.taskMetadataMode;
     this.decodedColumnCache = options.decodedColumnCache;
     this.scanRangeCache = options.scanRangeCache;
   }
 
-  async planObjects(objects: ObjectInfo[], _options: ScanObjectPlanOptions): Promise<ObjectInfo[]> {
-    if (objects.length <= 1) return objects;
-    const unified = new Map<string, ParquetColumnDescriptor>();
-    const perFile = new Map<string, Map<string, ParquetColumnDescriptor>>();
+  async planObjects(objects: ObjectInfo[], options: ScanObjectPlanOptions): Promise<ObjectInfo[]> {
+    const scope =
+      options.memoryBudget === undefined ? undefined : new MemoryScope(options.memoryBudget);
+    try {
+      return await this.planObjectList(objects, options, scope);
+    } finally {
+      scope?.dispose();
+    }
+  }
 
-    for (const object of objects) {
-      const file = await asyncBufferFromObjectInfo(this.store, object);
-      const metadata = await this.metadata(object.path, file);
-      rejectUnsupportedParquetSchema(metadata, { allowValueCheckedInt64Decimals: true });
-      const columns = parquetColumnDescriptors(metadata, object.path);
-      perFile.set(object.path, columns);
-      for (const [column, descriptor] of columns) {
-        const existing = unified.get(column);
-        if (existing === undefined) {
-          unified.set(column, descriptor);
-        } else if (!parquetColumnCompatible(existing, descriptor)) {
-          throw new LakeqlError(
-            "LAKEQL_SCHEMA_CONFLICT",
-            `Parquet schema conflict for column ${column}`,
-            {
-              column,
-              leftPath: existing.path,
-              leftType: existing.signature,
-              rightPath: object.path,
-              rightType: descriptor.signature,
-            },
-          );
+  async planOwnedObjects(
+    objects: OwnedMemory<ObjectInfo[]>,
+    options: ScanObjectPlanOptions & { memoryBudget: MemoryBudget },
+  ): Promise<OwnedMemory<ObjectInfo[]>> {
+    const scope = new MemoryScope(options.memoryBudget);
+    try {
+      const input = objects.retain();
+      try {
+        scope.adopt(input);
+      } catch (error) {
+        input.release();
+        throw error;
+      }
+      const result = await this.planObjectList(objects.value, options, scope);
+      return scope.retainAllocations(result);
+    } finally {
+      scope.dispose();
+    }
+  }
+
+  private async planObjectList(
+    objects: ObjectInfo[],
+    options: ScanObjectPlanOptions,
+    output?: MemoryScope,
+  ): Promise<ObjectInfo[]> {
+    throwIfAborted(options.signal);
+    if (objects.length <= 1) return objects;
+    const scratch = output?.childScope();
+    const allocate = <T>(
+      scope: MemoryScope | undefined,
+      bytes: number,
+      purpose: string,
+      create: () => T,
+    ): T => (scope === undefined ? create() : scope.allocate(bytes, purpose, create).value);
+    try {
+      const unified = allocate(
+        scratch,
+        c.object,
+        "unified schema directory",
+        () => new Map<string, ParquetColumnDescriptor>(),
+      );
+      const perFile = allocate(
+        scratch,
+        c.array + objects.length * c.arraySlot,
+        "per-file schema directory",
+        () => [] as Map<string, ParquetColumnDescriptor>[],
+      );
+      for (const object of objects) {
+        throwIfAborted(options.signal);
+        const file = await asyncBufferFromObjectInfo(this.store, object);
+        const columns = await this.objectColumnDescriptors(object.path, file, options, scratch);
+        throwIfAborted(options.signal);
+        perFile.push(columns);
+        for (const [column, descriptor] of columns) {
+          const existing = unified.get(column);
+          if (existing === undefined) {
+            scratch?.allocate(c.property, "unified schema entry", () => undefined);
+            unified.set(column, descriptor);
+          } else if (!parquetColumnCompatible(existing, descriptor)) {
+            throw new LakeqlError(
+              "LAKEQL_SCHEMA_CONFLICT",
+              `Parquet schema conflict for column ${column}`,
+              {
+                column,
+                leftPath: existing.path,
+                leftType: existing.signature,
+                rightPath: object.path,
+                rightType: descriptor.signature,
+              },
+            );
+          }
         }
       }
-    }
-
-    const unifiedColumns = [...unified.keys()].sort();
-    return objects.map((object) => {
-      const fileColumns = perFile.get(object.path) ?? new Map();
-      return {
-        ...object,
-        parquetSchemaPlan: {
+      const unifiedColumns = allocate(
+        output,
+        c.array + unified.size * c.arraySlot,
+        "unified schema columns",
+        () => [] as string[],
+      );
+      for (const name of unified.keys()) {
+        output?.allocate(
+          c.string + name.length * c.stringCodeUnit,
+          "unified schema name",
+          () => undefined,
+        );
+        unifiedColumns.push(name);
+      }
+      const sorting = scratch?.reserve(
+        c.array + unifiedColumns.length * 2 * c.arraySlot,
+        "unified schema ordering",
+      );
+      try {
+        unifiedColumns.sort();
+      } finally {
+        sorting?.release();
+      }
+      const result = allocate(
+        output,
+        c.array + objects.length * c.arraySlot,
+        "planned parquet objects",
+        () => [] as ObjectInfo[],
+      );
+      for (let index = 0; index < objects.length; index++) {
+        const object = objects[index],
+          columns = perFile[index];
+        if (object === undefined || columns === undefined)
+          throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Missing planned schema");
+        const present = allocate(
+          output,
+          c.object,
+          "present schema columns",
+          () => new Set<string>(),
+        );
+        for (const name of columns.keys()) {
+          output?.allocate(
+            c.property + c.string + name.length * c.stringCodeUnit,
+            "present schema name",
+            () => undefined,
+          );
+          present.add(name);
+        }
+        const plan = allocate(output, c.object + 2 * c.property, "parquet schema plan", () => ({
           columns: unifiedColumns,
-          present: new Set(fileColumns.keys()),
-        },
-      };
-    });
+          present,
+        }));
+        result.push(
+          allocate(output, c.object + 6 * c.property, "planned parquet object", () => ({
+            ...object,
+            parquetSchemaPlan: plan,
+          })),
+        );
+      }
+      return result;
+    } finally {
+      scratch?.dispose();
+    }
+  }
+
+  private async objectColumnDescriptors(
+    path: string,
+    file: StoreAsyncBuffer,
+    options: ScanObjectPlanOptions,
+    scope?: MemoryScope,
+  ): Promise<Map<string, ParquetColumnDescriptor>> {
+    if (
+      this.taskMetadataMode === "indexed" &&
+      options.memoryBudget !== undefined &&
+      file.sliceOwned !== undefined
+    ) {
+      const source = await acquireIndexedParquetSource(
+        this.scanBuffer(path, file),
+        options.memoryBudget,
+      );
+      try {
+        rejectUnsupportedParquetSchema(source.metadata, {
+          allowValueCheckedScalarDecimals: true,
+          memoryBudget: options.memoryBudget,
+        });
+        return parquetColumnDescriptors(source.metadata, path, scope);
+      } finally {
+        source.dispose();
+      }
+    }
+    if (options.memoryBudget !== undefined && file.sliceOwned !== undefined) {
+      const loaded = await readOwnedParquetMetadata(
+        path,
+        this.scanBuffer(path, file),
+        options.memoryBudget,
+        this.metadataCache,
+      );
+      try {
+        rejectUnsupportedParquetSchema(loaded.owner.value, {
+          memoryBudget: options.memoryBudget,
+          allowValueCheckedScalarDecimals: true,
+        });
+        return parquetColumnDescriptors(loaded.owner.value, path, scope);
+      } finally {
+        loaded.owner.release();
+      }
+    }
+    const metadata = await this.metadata(path, file);
+    rejectUnsupportedParquetSchema(metadata, { allowValueCheckedScalarDecimals: true });
+    return parquetColumnDescriptors(metadata, path, scope);
   }
 
   async *scan(path: string, options: ScanOptions): AsyncIterable<Row[]> {
     const batchSize = options.batchSize || this.defaultBatchSize;
-    const file = this.scanBuffer(path, await asyncBufferFromStore(this.store, path, options));
+    const file = this.scanBuffer(path, await this.scanFile(path, options));
     const metadata = await this.metadata(path, file, options);
     rejectUnsupportedParquetSchema(metadata, {
+      memoryBudget: options.memoryBudget,
       columns: options.columns,
-      allowValueCheckedInt64Decimals: true,
+      allowValueCheckedScalarDecimals: true,
     });
     const planned = plannedParquetSchema(options.object);
     const requestedColumns = options.columns ?? planned?.columns;
@@ -137,12 +327,14 @@ export class ParquetScanAdapter implements ScanAdapter {
         const rowEnd = Math.min(rowStart + batchSize, rowGroupEnd);
         const readOptions: Parameters<typeof parquetReadObjects>[0] = {
           file,
-          metadata: rawIntegerDecimalMetadata(metadata, decodedColumns),
+          metadata: rawDecimalMetadata(metadata, decodedColumns),
           rowFormat: "object",
           rowStart,
           rowEnd,
           compressors: lakeqlParquetCompressors,
-          parsers: lakeqlParquetParsers,
+          parsers: parquetParsersForMetadata(metadata),
+          valueDecoders: parquetValueDecoders(),
+          utf8: false,
         };
         if (readColumns) readOptions.columns = readColumns;
         try {
@@ -155,11 +347,7 @@ export class ParquetScanAdapter implements ScanAdapter {
           }
           yield fillMissingRowColumns(
             normalizeDecodedRows(
-              normalizeIntegerDecimalRows(
-                metadata,
-                decodedColumns,
-                await parquetReadObjects(readOptions),
-              ),
+              normalizeDecimalRows(metadata, decodedColumns, await parquetReadObjects(readOptions)),
             ),
             missingColumns,
           );
@@ -186,7 +374,7 @@ export class ParquetScanAdapter implements ScanAdapter {
 
   async *scanVectorBatches(path: string, options: ScanOptions): AsyncIterable<ScanVectorBatch> {
     const batchSize = options.batchSize || this.defaultBatchSize;
-    const file = this.scanBuffer(path, await asyncBufferFromStore(this.store, path, options));
+    const file = this.scanBuffer(path, await this.scanFile(path, options));
     const metadata = await this.metadata(path, file, options);
     const planned = plannedParquetSchema(options.object);
     const requestedColumns = options.columns ?? planned?.columns;
@@ -217,8 +405,9 @@ export class ParquetScanAdapter implements ScanAdapter {
         present.length > 0 &&
         canReadParquetVectorBatches(metadata, vectorOptions);
       rejectUnsupportedParquetSchema(metadata, {
+        memoryBudget: options.memoryBudget,
         columns: options.columns,
-        allowValueCheckedInt64Decimals: true,
+        allowValueCheckedScalarDecimals: true,
       });
       if (useVectorReader) {
         for await (const vectorBatch of readParquetVectorBatchesFromFile(
@@ -272,11 +461,161 @@ export class ParquetScanAdapter implements ScanAdapter {
     }
   }
 
+  private async *readOwnedVectorBatches(
+    path: string,
+    options: ScanOptions & { memoryBudget: MemoryBudget },
+  ): AsyncIterable<OwnedMemory<ScanVectorBatch>> {
+    try {
+      yield* this.executeOwnedVectorScan(path, options);
+    } catch (cause) {
+      if (cause instanceof LakeqlError) throw cause;
+      throw new LakeqlError("LAKEQL_PARQUET_READ_ERROR", `Failed to read ${path}`, { path, cause });
+    }
+  }
+
+  private async *executeOwnedVectorScan(
+    path: string,
+    options: ScanOptions & { memoryBudget: MemoryBudget },
+  ): AsyncIterable<OwnedMemory<ScanVectorBatch>> {
+    throwIfAborted(options.budget.signal);
+    const signals = options.budget.signal === undefined ? [] : [options.budget.signal];
+    if (options.budget.maxElapsedMs !== undefined) {
+      const remaining = Math.max(
+        0,
+        Math.ceil(options.budget.maxElapsedMs - (options.now() - options.startedAt)),
+      );
+      signals.push(AbortSignal.timeout(remaining));
+    }
+    const rawFile = await this.scanFile(path, options);
+    const ownedRead = rawFile.sliceOwned?.bind(rawFile);
+    let metadataReads = 0;
+    const file = this.scanBuffer(
+      path,
+      ownedRead === undefined
+        ? rawFile
+        : {
+            ...rawFile,
+            sliceOwned: (...args) => {
+              metadataReads++;
+              return ownedRead(...args);
+            },
+          },
+    );
+    const metadataStarted = options.now();
+    const indexed =
+      this.scanMetadataMode === "indexed"
+        ? await acquireIndexedParquetSource(file, options.memoryBudget, signals)
+        : undefined;
+    const loaded =
+      indexed === undefined
+        ? await readOwnedParquetMetadata(
+            path,
+            file,
+            options.memoryBudget,
+            this.metadataCache,
+            signals,
+          )
+        : undefined;
+    if (loaded?.cached || (indexed !== undefined && metadataReads === 0))
+      options.stats.cacheHits += 1;
+    else {
+      options.stats.cacheMisses += 1;
+      options.stats.footerFetchMs =
+        (options.stats.footerFetchMs ?? 0) + options.now() - metadataStarted;
+    }
+    try {
+      const metadata =
+        indexed === undefined ? loaded?.owner.value : { ...indexed.metadata, row_groups: [] };
+      if (metadata === undefined)
+        throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Missing scan metadata source");
+      const planned = plannedParquetSchema(options.object);
+      // Omitted projection means all schema columns, not a request to bypass
+      // owned vector decoding. Physical shape checks still choose fallback for
+      // unsupported columns; packed text stays undecoded until output admission.
+      const requested =
+        options.columns ??
+        planned?.columns ??
+        parquetSchema(metadata).children.map((child) => child.element.name);
+      const present = presentColumns(requested, planned, metadata);
+      const missing = missingColumnsFor(requested, planned);
+      const readOptions = {
+        ...(options.object?.rangeReadMode === undefined
+          ? {}
+          : { rangeReadMode: options.object.rangeReadMode }),
+        batchSize: options.batchSize ?? this.defaultBatchSize,
+        ...(present === undefined ? {} : { columns: present }),
+        ...(options.rowStart === undefined ? {} : { rowStart: options.rowStart }),
+        ...(options.rowEnd === undefined ? {} : { rowEnd: options.rowEnd }),
+        ...(options.where === undefined ? {} : { where: options.where }),
+        ...(options.canStopEarly === undefined ? {} : { canStopEarly: options.canStopEarly }),
+        ...(options.budget.maxConcurrentReads === undefined
+          ? {}
+          : { maxConcurrentReads: options.budget.maxConcurrentReads }),
+        ...(this.decodedColumnCache === undefined
+          ? {}
+          : { decodedColumnCache: this.decodedColumnCache, decodedColumnCacheKey: path }),
+        stats: options.stats,
+        now: options.now,
+      };
+      rejectUnsupportedParquetSchema(metadata, {
+        memoryBudget: options.memoryBudget,
+        columns: options.columns,
+        allowValueCheckedScalarDecimals: true,
+      });
+      if (present === undefined || present.length > 0) {
+        for await (const owner of readOwnedParquetVectorBatches(
+          file,
+          indexed ?? metadata,
+          options.memoryBudget,
+          readOptions,
+          signals,
+        )) {
+          const handoff = new MemoryScope(options.memoryBudget, signals);
+          try {
+            handoff.adopt(owner);
+            const value = {
+              ...owner.value,
+              batch: fillMissingBatchColumns(owner.value.batch, missing),
+            };
+            yield handoff.retainAllocations(value);
+          } finally {
+            owner.release();
+            handoff.dispose();
+          }
+        }
+        return;
+      }
+      const stage = new ParquetReadScope(file, options.memoryBudget, signals);
+      try {
+        const batches = nullOnlyVectorBatches(
+          metadata,
+          options,
+          missing,
+          readOptions.batchSize,
+          indexed === undefined ? metadata.row_groups : iterateIndexedGroups(indexed, signals),
+        );
+        for await (const output of batches) {
+          throwIfAborted(options.budget.signal);
+          yield stage.retainInputBacking({
+            ...output,
+            batch: fillMissingBatchColumns(output.batch, missing),
+          });
+        }
+      } finally {
+        stage.dispose();
+      }
+    } finally {
+      indexed?.dispose();
+      loaded?.owner.release();
+    }
+  }
+
   async planTask(path: string, options: ScanTaskPlanOptions): Promise<ScanTaskPlan> {
     const planningReadOptions: ScanOptions | undefined =
       options.stats === undefined || options.budget === undefined || options.now === undefined
         ? undefined
         : {
+            ...(options.memoryBudget === undefined ? {} : { memoryBudget: options.memoryBudget }),
             batchSize: this.defaultBatchSize,
             stats: options.stats,
             budget: options.budget,
@@ -287,18 +626,81 @@ export class ParquetScanAdapter implements ScanAdapter {
       options.object === undefined
         ? await asyncBufferFromStore(this.store, path, planningReadOptions)
         : asyncBufferFromObjectInfo(this.store, options.object, planningReadOptions);
-    const metadata = await this.metadata(path, file, planningReadOptions);
-    const plan = planRowGroupsFromMetadata(metadata, options.where);
-    if (options.stats !== undefined) {
-      options.stats.rowGroupsTotal =
-        (options.stats.rowGroupsTotal ?? 0) + metadata.row_groups.length;
-      options.stats.rowGroupsPlanned =
-        (options.stats.rowGroupsPlanned ?? 0) + plan.rowGroups.length;
+    if (
+      options.memoryBudget !== undefined &&
+      this.taskMetadataMode === "indexed" &&
+      file.sliceOwned !== undefined
+    ) {
+      const signals = options.budget?.signal === undefined ? [] : [options.budget.signal];
+      const started = options.now?.();
+      const source = await acquireIndexedParquetSource(
+        this.scanBuffer(path, file),
+        options.memoryBudget,
+        signals,
+      );
+      try {
+        const plan = summarizePlannedRowGroups(
+          iteratePlannedRowGroups(
+            source.metadata,
+            iterateIndexedGroups(source, signals),
+            options.where,
+            { includeByteRanges: false, memoryBudget: options.memoryBudget },
+          ),
+        );
+        if (options.stats !== undefined) {
+          options.stats.cacheMisses++;
+          options.stats.rowGroupsTotal = (options.stats.rowGroupsTotal ?? 0) + source.rowGroupCount;
+          options.stats.rowGroupsPlanned =
+            (options.stats.rowGroupsPlanned ?? 0) + plan.plannedCount;
+          if (started !== undefined && options.now !== undefined)
+            options.stats.footerFetchMs =
+              (options.stats.footerFetchMs ?? 0) + options.now() - started;
+        }
+        return { rowGroupCount: source.rowGroupCount, rowGroupRanges: plan.rowGroupRanges };
+      } finally {
+        source.dispose();
+      }
     }
-    return {
-      rowGroupCount: metadata.row_groups.length,
-      rowGroupRanges: plan.rowGroupRanges,
+    const finish = (metadata: ParquetMetadata): ScanTaskPlan => {
+      const plan = summarizePlannedRowGroups(
+        iteratePlannedRowGroups(metadata, metadata.row_groups, options.where, {
+          includeByteRanges: false,
+          memoryBudget: options.memoryBudget,
+        }),
+      );
+      if (options.stats !== undefined) {
+        options.stats.rowGroupsTotal =
+          (options.stats.rowGroupsTotal ?? 0) + metadata.row_groups.length;
+        options.stats.rowGroupsPlanned = (options.stats.rowGroupsPlanned ?? 0) + plan.plannedCount;
+      }
+      return {
+        rowGroupCount: metadata.row_groups.length,
+        rowGroupRanges: plan.rowGroupRanges,
+      };
     };
+    if (options.memoryBudget !== undefined && file.sliceOwned !== undefined) {
+      const started = options.now?.();
+      const loaded = await readOwnedParquetMetadata(
+        path,
+        this.scanBuffer(path, file),
+        options.memoryBudget,
+        this.metadataCache,
+        options.budget?.signal === undefined ? [] : [options.budget.signal],
+      );
+      try {
+        if (options.stats) {
+          if (loaded.cached) options.stats.cacheHits++;
+          else options.stats.cacheMisses++;
+          if (started !== undefined && options.now)
+            options.stats.footerFetchMs =
+              (options.stats.footerFetchMs ?? 0) + options.now() - started;
+        }
+        return finish(loaded.owner.value);
+      } finally {
+        loaded.owner.release();
+      }
+    }
+    return finish(await this.metadata(path, file, planningReadOptions));
   }
 
   async executeWindowTasks(
@@ -306,7 +708,22 @@ export class ParquetScanAdapter implements ScanAdapter {
     windows: Record<string, WindowExpr>,
     options: WindowTaskExecutionOptions,
   ): Promise<Row[]> {
-    return windowParquetTasks(this.store, tasks, windows, {
+    const owned = await this.executeOwnedWindowTasks(tasks, windows, options);
+    try {
+      return owned.value;
+    } finally {
+      owned.release();
+    }
+  }
+
+  async executeOwnedWindowTasks(
+    tasks: TaskInput[],
+    windows: Record<string, WindowExpr>,
+    options: WindowTaskExecutionOptions,
+  ): Promise<OwnedMemory<Row[]>> {
+    return windowParquetTasksOwned(this.store, tasks, windows, {
+      ...(this.scanRangeCache === undefined ? {} : { scanRangeCache: this.scanRangeCache }),
+      ...(options.memoryBudget === undefined ? {} : { memoryBudget: options.memoryBudget }),
       batchSize: options.batchSize,
       budget: options.budget,
       stats: options.stats,
@@ -341,6 +758,13 @@ export class ParquetScanAdapter implements ScanAdapter {
     return metadata;
   }
 
+  private async scanFile(path: string, options: ScanOptions): Promise<StoreAsyncBuffer> {
+    throwIfAborted(options.budget.signal);
+    return options.object?.path === path
+      ? asyncBufferFromObjectInfo(this.store, options.object, options)
+      : await asyncBufferFromStore(this.store, path, options);
+  }
+
   private scanBuffer(path: string, file: StoreAsyncBuffer): StoreAsyncBuffer {
     return this.scanRangeCache === undefined
       ? file
@@ -361,53 +785,6 @@ function plannedParquetSchema(object: ObjectInfo | undefined): PlannedParquetSch
   return (object as PlannedParquetObjectInfo | undefined)?.parquetSchemaPlan;
 }
 
-interface ParquetColumnDescriptor {
-  path: string;
-  signature: string;
-  physicalType?: string;
-}
-
-function parquetColumnDescriptors(
-  metadata: ParquetMetadata,
-  path: string,
-): Map<string, ParquetColumnDescriptor> {
-  const columns = new Map<string, ParquetColumnDescriptor>();
-  for (const child of parquetSchema(metadata).children) {
-    const element = child.element as unknown as Record<string, unknown>;
-    const name = String(element.name ?? "");
-    if (name.length === 0) continue;
-    columns.set(name, {
-      path,
-      signature: parquetColumnSignature(element),
-      ...(typeof element.type === "string" ? { physicalType: element.type } : {}),
-    });
-  }
-  return columns;
-}
-
-function parquetColumnSignature(element: Record<string, unknown>): string {
-  return stableSchemaSignature({
-    type: element.type,
-    converted_type: element.converted_type,
-    logical_type: element.logical_type,
-    repetition_type: element.repetition_type,
-    type_length: element.type_length,
-    precision: element.precision,
-    scale: element.scale,
-  });
-}
-
-function stableSchemaSignature(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableSchemaSignature).join(",")}]`;
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record)
-    .sort()
-    .filter((key) => record[key] !== undefined)
-    .map((key) => `${JSON.stringify(key)}:${stableSchemaSignature(record[key])}`)
-    .join(",")}}`;
-}
-
 function parquetColumnCompatible(
   left: ParquetColumnDescriptor,
   right: ParquetColumnDescriptor,
@@ -416,8 +793,7 @@ function parquetColumnCompatible(
 }
 
 function isNumericColumn(descriptor: ParquetColumnDescriptor): boolean {
-  const physicalType =
-    descriptor.physicalType ?? /"type":"([^"]+)"/u.exec(descriptor.signature)?.[1];
+  const physicalType = descriptor.physicalType;
   return (
     physicalType === "INT32" ||
     physicalType === "INT64" ||
@@ -467,11 +843,12 @@ async function* nullOnlyVectorBatches(
   options: ScanOptions,
   columns: readonly string[],
   batchSize: number,
+  groups: Iterable<ParquetMetadata["row_groups"][number]> = metadata.row_groups,
 ): AsyncIterable<ScanVectorBatch> {
   const requestedStart = options.rowStart ?? 0;
   const requestedEnd = options.rowEnd ?? Number(metadata.num_rows);
   let rowGroupStart = 0;
-  for (const rowGroup of metadata.row_groups) {
+  for (const rowGroup of groups) {
     const rowGroupEnd = rowGroupStart + Number(rowGroup.num_rows);
     if (
       rowGroupEnd <= requestedStart ||

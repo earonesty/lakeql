@@ -1,0 +1,37 @@
+{
+  "date": "2026-11-14",
+  "source_revision": "caa1ffd",
+  "validation": {
+    "http_tests": 12,
+    "matrix": {
+      "pool_mib": [64, 128],
+      "per_job_mib": 16,
+      "http_modes": ["206 range response", "200 ignored Range response"],
+      "workloads": ["4 window jobs", "2 window jobs + 2 grouped aggregate jobs"],
+      "cache_rounds": ["cold", "warm"],
+      "shared_read_concurrency": 2,
+      "fixture_rows": 256,
+      "row_groups": 4,
+      "pressure": "Mixed jobs also run with a synthetic retained competing reservation leaving exactly 8 MiB shared headroom."
+    },
+    "assertions": [
+      "exact window row-number outputs and aggregate sums/counts",
+      "observed parallel HTTP reads greater than one and at most two",
+      "cold run performs data reads; warm run performs zero data reads excluding 0-1 probes",
+      "returned owners remain charged and oversized competing request rejects",
+      "all output release plus cache eviction returns shared reservations to zero",
+      "Constrained-headroom cases preserve exact results, warm-cache reuse, bounded read concurrency and complete cleanup."
+    ],
+    "typecheck": "passed"
+  },
+  "limits": [
+    "Actual localhost HTTP and Parquet decoding, not a production Cloudflare Worker or remote cloud service.",
+    "Fixture size is unchanged. Reduced headroom comes from a synthetic live reservation, not physically allocated competing-job storage; this is an admission-pressure test, not near-capacity heap/RSS stress.",
+    "No whole-heap or RSS guarantee."
+  ],
+  "remaining": [
+    "Higher-pressure mixed-operator decode/cache matrix and runtime memory observation",
+    "Remaining legacy/spill/resume allocation coverage",
+    "Final current-revision release acceptance"
+  ]
+}

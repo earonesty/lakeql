@@ -1,4 +1,7 @@
 import { LakeqlError } from "./errors.js";
+import type { MemoryBudget } from "./memory-budget.js";
+import type { MemoryScope, OwnedMemory } from "./memory-scope.js";
+import { ReadSemaphore } from "./read-semaphore.js";
 
 export interface PutOptions {
   contentType?: string;
@@ -21,6 +24,10 @@ export interface ListOptions {
 }
 
 export interface ObjectInfo {
+  /** Observed range transport behavior; omitted when unknown. A planning hint,
+   * not a correctness guarantee: emulated reads may transfer the whole object.
+   */
+  rangeReadMode?: "native" | "emulated";
   path: string;
   size: number;
   etag?: string;
@@ -28,6 +35,8 @@ export interface ObjectInfo {
 }
 
 export interface ObjectHead {
+  /** Observed range behavior for choosing between eager and deferred reads. */
+  rangeReadMode?: "native" | "emulated";
   size: number;
   etag?: string;
   lastModified?: Date;
@@ -40,9 +49,27 @@ export interface ObjectHead {
  * a runtime API directly.
  */
 export interface ObjectStore {
+  /** Return a store using these default cache bounds without mutating the source
+   * or overriding explicit adapter configuration.
+   */
+  withDefaultMemoryBudget?(budget: MemoryBudget, maxCacheBytes?: number): ObjectStore;
   get(path: string): Promise<Uint8Array | null>;
 
   getRange(path: string, range: { offset: number; length: number }): Promise<Uint8Array>;
+  /** Optional allocation-aware range capability; ownership must be released after use. */
+  getRangeOwned?(
+    path: string,
+    range: { offset: number; length: number },
+    scope: MemoryScope,
+  ): Promise<OwnedMemory<Uint8Array>>;
+
+  /** Forecast new owned-read capacity, including adapter workspace. Exact-buffer
+   * output occupies its entire ArrayBuffer and needs no contiguous copy.
+   */
+  getRangeOwnedAllocation?(
+    path: string,
+    range: { offset: number; length: number },
+  ): { bytes: number; output: "exact-buffer" | "view" };
 
   put(
     path: string,
@@ -50,11 +77,18 @@ export interface ObjectStore {
     options?: PutOptions,
   ): Promise<void>;
 
+  /** Borrow immutable body ownership through settlement; admit adapter-owned
+   * copies in body.budget. Runtime/transport-internal allocations remain external.
+   */
+  putOwned?(path: string, body: OwnedMemory<Uint8Array>, options?: PutOptions): Promise<void>;
+
   delete(path: string): Promise<void>;
 
   list(prefix: string, options?: ListOptions): AsyncIterable<ObjectInfo>;
 
   head(path: string): Promise<ObjectHead | null>;
+  /** Admit metadata/probe allocation and return ownership through caller use. */
+  headOwned?(path: string, scope: MemoryScope): Promise<OwnedMemory<ObjectHead> | null>;
 }
 
 export interface ConditionalObjectStore extends ObjectStore {
@@ -92,13 +126,56 @@ export function uriObjectStore(
   const mappings = (Array.isArray(authorities) ? authorities : [authorities]).map(
     normalizeUriAuthority,
   );
+  const ownedRead = store.getRangeOwned?.bind(store);
+  const allocation = store.getRangeOwnedAllocation?.bind(store);
+  const ownedHead = store.headOwned?.bind(store);
   const wrapped: ObjectStore = {
+    ...(store.withDefaultMemoryBudget === undefined
+      ? {}
+      : {
+          withDefaultMemoryBudget: (budget: MemoryBudget, maxCacheBytes?: number) =>
+            uriObjectStore(
+              store.withDefaultMemoryBudget?.(budget, maxCacheBytes) ?? store,
+              authorities,
+            ),
+        }),
+    ...(ownedHead === undefined
+      ? {}
+      : {
+          headOwned: (path: string, scope: MemoryScope) =>
+            ownedHead(normalizeObjectStorePath(path, mappings), scope),
+        }),
+    ...(allocation === undefined
+      ? {}
+      : {
+          getRangeOwnedAllocation: (path: string, range: { offset: number; length: number }) =>
+            allocation(normalizeObjectStorePath(path, mappings), range),
+        }),
+    ...(ownedRead === undefined
+      ? {}
+      : {
+          getRangeOwned: (
+            path: string,
+            range: { offset: number; length: number },
+            scope: MemoryScope,
+          ) => ownedRead(normalizeObjectStorePath(path, mappings), range, scope),
+        }),
     async get(path) {
       return await store.get(normalizeObjectStorePath(path, mappings));
     },
     async getRange(path, range) {
       return await store.getRange(normalizeObjectStorePath(path, mappings), range);
     },
+    ...(store.putOwned === undefined
+      ? {}
+      : {
+          putOwned: (path: string, body: OwnedMemory<Uint8Array>, options?: PutOptions) =>
+            (store.putOwned as NonNullable<ObjectStore["putOwned"]>)(
+              normalizeObjectStorePath(path, mappings),
+              body,
+              options,
+            ),
+        }),
     async put(path, body, options) {
       return await store.put(normalizeObjectStorePath(path, mappings), body, options);
     },
@@ -144,10 +221,106 @@ export function withObjectStoreReadControls(
     normalized.maxConcurrentReads === undefined
       ? undefined
       : new ReadSemaphore(normalized.maxConcurrentReads);
+  return controlledObjectStore(store, normalized, semaphore);
+}
+
+function controlledObjectStore(
+  store: ObjectStore,
+  normalized: ObjectStoreReadControls,
+  semaphore: ReadSemaphore | undefined,
+): ObjectStore {
+  const ownedRead = store.getRangeOwned?.bind(store);
+  const ownedHead = store.headOwned?.bind(store);
   return {
+    ...(store.withDefaultMemoryBudget === undefined
+      ? {}
+      : {
+          withDefaultMemoryBudget: (budget: MemoryBudget, maxCacheBytes?: number) =>
+            controlledObjectStore(
+              store.withDefaultMemoryBudget?.(budget, maxCacheBytes) ?? store,
+              normalized,
+              semaphore,
+            ),
+        }),
+    ...(ownedHead === undefined
+      ? {}
+      : {
+          headOwned: async (path: string, scope: MemoryScope) => {
+            const readScope = scope.childScope(
+              normalized.signal === undefined ? [] : [normalized.signal],
+            );
+            try {
+              return await controlledRead(
+                { ...normalized, signal: readScope.signal },
+                semaphore,
+                async () => {
+                  const owner = await ownedHead(path, readScope);
+                  if (owner === null) return null;
+                  const retained = owner.retain();
+                  try {
+                    return scope.adopt(retained);
+                  } catch (error) {
+                    retained.release();
+                    throw error;
+                  } finally {
+                    owner.release();
+                  }
+                },
+                (owner) => owner?.release(),
+              );
+            } finally {
+              readScope.dispose();
+            }
+          },
+        }),
+    ...(store.getRangeOwnedAllocation === undefined
+      ? {}
+      : {
+          getRangeOwnedAllocation: store.getRangeOwnedAllocation.bind(store),
+        }),
+    ...(ownedRead === undefined
+      ? {}
+      : {
+          getRangeOwned: async (
+            path: string,
+            range: { offset: number; length: number },
+            scope: MemoryScope,
+          ) => {
+            const readScope = scope.childScope(
+              normalized.signal === undefined ? [] : [normalized.signal],
+            );
+            try {
+              return await controlledRead(
+                { ...normalized, signal: readScope.signal },
+                semaphore,
+                async () => {
+                  const owner = await ownedRead(path, range, readScope);
+                  const retained = owner.retain();
+                  try {
+                    return scope.adopt(retained);
+                  } catch (error) {
+                    retained.release();
+                    throw error;
+                  }
+                },
+                (owner) => owner.release(),
+              );
+            } finally {
+              readScope.dispose();
+            }
+          },
+        }),
     get: (path) => controlledRead(normalized, semaphore, () => store.get(path)),
     getRange: (path, range) =>
       controlledRead(normalized, semaphore, () => store.getRange(path, range)),
+    ...(store.putOwned === undefined
+      ? {}
+      : {
+          putOwned: (path: string, body: OwnedMemory<Uint8Array>, options?: PutOptions) => {
+            throwIfAborted(normalized.signal);
+            return (store.putOwned as NonNullable<ObjectStore["putOwned"]>)(path, body, options);
+          },
+        }),
     put: (path, body, options) => {
       throwIfAborted(normalized.signal);
       return store.put(path, body, options);
@@ -157,12 +330,9 @@ export function withObjectStoreReadControls(
       return store.delete(path);
     },
     list: (prefix, options) => controlledList(store, prefix, options, normalized),
-    head: async (path) => {
-      throwIfAborted(normalized.signal);
-      const result = await store.head(path);
-      throwIfAborted(normalized.signal);
-      return result;
-    },
+    // Discovery may issue a range GET (HTTP) or another remote request. It
+    // competes with payload reads for the same configured concurrency slots.
+    head: (path) => controlledRead(normalized, semaphore, () => store.head(path)),
   };
 }
 
@@ -193,12 +363,14 @@ async function controlledRead<T>(
   controls: ObjectStoreReadControls,
   semaphore: ReadSemaphore | undefined,
   read: () => Promise<T>,
+  discard?: (value: T) => void,
 ): Promise<T> {
   throwIfAborted(controls.signal);
   const release = semaphore === undefined ? undefined : await semaphore.acquire(controls.signal);
   try {
     throwIfAborted(controls.signal);
     const result = await read();
+    if (controls.signal?.aborted) discard?.(result);
     throwIfAborted(controls.signal);
     return result;
   } finally {
@@ -327,57 +499,5 @@ async function* controlledList(
   for await (const object of store.list(prefix, options)) {
     throwIfAborted(controls.signal);
     yield object;
-  }
-}
-
-class ReadSemaphore {
-  private active = 0;
-  private readonly queue: (() => void)[] = [];
-
-  constructor(private readonly limit: number) {
-    if (!Number.isInteger(limit) || limit < 1) {
-      throw new LakeqlError(
-        "LAKEQL_VALIDATION_ERROR",
-        "maxConcurrentReads must be a positive integer",
-        {
-          maxConcurrentReads: limit,
-        },
-      );
-    }
-  }
-
-  async acquire(signal: AbortSignal | undefined): Promise<() => void> {
-    throwIfAborted(signal);
-    if (this.active < this.limit) {
-      this.active += 1;
-      return () => this.release();
-    }
-    await new Promise<void>((resolve, reject) => {
-      const resume = () => {
-        cleanup();
-        resolve();
-      };
-      const abort = () => {
-        const index = this.queue.indexOf(resume);
-        if (index >= 0) this.queue.splice(index, 1);
-        cleanup();
-        reject(
-          new LakeqlError("LAKEQL_ABORTED", "Query aborted", {
-            reason: signal?.reason instanceof Error ? signal.reason.message : signal?.reason,
-          }),
-        );
-      };
-      const cleanup = () => signal?.removeEventListener("abort", abort);
-      this.queue.push(resume);
-      signal?.addEventListener("abort", abort, { once: true });
-    });
-    throwIfAborted(signal);
-    this.active += 1;
-    return () => this.release();
-  }
-
-  private release(): void {
-    this.active -= 1;
-    this.queue.shift()?.();
   }
 }

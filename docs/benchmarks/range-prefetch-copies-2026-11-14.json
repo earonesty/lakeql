@@ -1,0 +1,636 @@
+{
+  "runtimeSource": "8db393581c8e987dc39ff47f3513d9084003727b",
+  "node": "v24.18.1",
+  "conditions": {
+    "windows": 4,
+    "concurrency": 2,
+    "simulatedReadDelayMs": 1,
+    "warmupRounds": 4,
+    "measuredRounds": 8,
+    "alternatingOrder": true
+  },
+  "results": [
+    {
+      "windowBytes": 262144,
+      "shared": false,
+      "variants": {
+        "ensure-cache": [
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.572100000000006
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.958157
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.5564099999999996
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.5658990000000017
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.9101459999999975
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.5830509999999975
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.8224209999999914
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.757007999999985
+          }
+        ],
+        "discarded-demand-control": [
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 1048576,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 3.077260999999993
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 1048576,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 3.016244999999998
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 1048576,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 3.1748839999999916
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 1048576,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 3.021847000000008
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 1048576,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 3.005666000000005
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 1048576,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 3.367486999999997
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 1048576,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 3.0123590000000036
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 1048576,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 4.142505
+          }
+        ]
+      }
+    },
+    {
+      "windowBytes": 262144,
+      "shared": true,
+      "variants": {
+        "ensure-cache": [
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.885820999999993
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.6087389999999857
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.568592999999993
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 3.0395189999999843
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.588179999999994
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.829343999999992
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.9396309999999914
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.202484999999996
+          }
+        ],
+        "discarded-demand-control": [
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 1048576,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 3.059186000000011
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 1048576,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 4.06166300000001
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 1048576,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.992451999999986
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 1048576,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 3.143374999999992
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 1048576,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.989073999999988
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 1048576,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 3.2387139999999874
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 1048576,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 3.1486950000000036
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 1048576,
+            "copiedBytes": 1048576,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.441504000000009
+          }
+        ]
+      }
+    },
+    {
+      "windowBytes": 1048576,
+      "shared": false,
+      "variants": {
+        "ensure-cache": [
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 3.1571010000000115
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.3570960000000127
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.3847279999999955
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.3402729999999963
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.35019299999999
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.3420869999999923
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.3507640000000265
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.4493289999999774
+          }
+        ],
+        "discarded-demand-control": [
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 4194304,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.507078000000007
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 4194304,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 4.065460000000002
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 4194304,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.5757569999999816
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 4194304,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.4856379999999945
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 4194304,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.6061240000000225
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 4194304,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.5239890000000287
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 4194304,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 4.336770000000001
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 4194304,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 4.684084999999982
+          }
+        ]
+      }
+    },
+    {
+      "windowBytes": 1048576,
+      "shared": true,
+      "variants": {
+        "ensure-cache": [
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.3916510000000244
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.381751999999949
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.3766919999999914
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.393974999999955
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.3572050000000218
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.400667999999996
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 3.21031099999999
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 0,
+            "copies": 0,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.3874629999999684
+          }
+        ],
+        "discarded-demand-control": [
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 4194304,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 6.423918999999955
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 4194304,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 3.3306779999999776
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 4194304,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.6608779999999683
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 4194304,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.548845999999969
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 4194304,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.602357999999981
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 4194304,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 2.5414630000000216
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 4194304,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 4.277087999999992
+          },
+          {
+            "requests": 4,
+            "fetchedBytes": 4194304,
+            "copiedBytes": 4194304,
+            "copies": 4,
+            "active": 0,
+            "peakReads": 2,
+            "elapsedMs": 3.768141000000014
+          }
+        ]
+      }
+    }
+  ],
+  "limitations": [
+    "Controlled in-memory transport; not cloud latency or throughput.",
+    "Counts ArrayBuffer slice output bytes, not heap or GC residency.",
+    "Control models discarded demand-copy behavior after identical range coalescing; not a full historical implementation.",
+    "Independent ownership, cache identity and cancellation contracts also require the focused test suite."
+  ]
+}

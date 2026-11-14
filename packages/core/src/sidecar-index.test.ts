@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { Expr } from "./expr.js";
 import { and, between, col, eq, fn, gt, gte, isIn, lit, lt, lte, ne, not, or } from "./expr.js";
+import { MemoryBudget } from "./memory-budget.js";
+import { MemoryScope } from "./memory-scope.js";
 import {
   bboxMayIntersect,
   buildBBoxIndex,
@@ -311,4 +314,223 @@ describe("sidecar bbox and h3 indexes", () => {
       ).planned,
     ).toHaveLength(1);
   });
+});
+
+it("resolves sidecars separately while preserving file identity and conservative missing indexes", () => {
+  const a = { path: "a", size: 3, rangeReadMode: "emulated" };
+  const b = { path: "b", size: 4, rangeReadMode: "native" };
+  const input = [b, a];
+  const result = pruneFilesWithIndex(input, gt("amount", 10), {
+    indexForFile: (file) =>
+      file.path === "a" ? { path: "a", columns: { amount: { min: 0, max: 5 } } } : undefined,
+  });
+  expect(result.planned).toEqual([b]);
+  expect(result.planned[0]).toBe(b);
+  expect(result.skipped[0]).toBe(a);
+  expect(input).toEqual([b, a]);
+});
+
+it("admits result lists and only sorts unsorted inputs, with exact-capacity rollback", () => {
+  const run = (capacity: number, sorted: boolean) => {
+    const budget = new MemoryBudget(capacity);
+    const scope = new MemoryScope(budget);
+    scope.allocate(8, "sibling", () => undefined);
+    const input = sorted ? [files[1], files[0], files[2]] : [...files];
+    const valid = input.filter((file): file is SidecarFileIndex => file !== undefined);
+    try {
+      const result = pruneFilesWithIndex(valid, gt("amount", 150), { scope });
+      expect(result.planned.map((file) => file.path)).toEqual(["lake/b.parquet", "lake/c.parquet"]);
+      return budget.peakBytes;
+    } catch (error) {
+      expect(budget.usedBytes).toBe(8);
+      throw error;
+    } finally {
+      scope.dispose();
+      expect(budget.usedBytes).toBe(0);
+    }
+  };
+  const sortedPeak = run(65536, true),
+    unsortedPeak = run(65536, false);
+  expect(unsortedPeak).toBeGreaterThan(sortedPeak);
+  for (const sorted of [false, true]) {
+    const peak = sorted ? sortedPeak : unsortedPeak;
+    expect(run(peak, sorted)).toBe(peak);
+    expect(() => run(peak - 1, sorted)).toThrowError(
+      expect.objectContaining({ code: "LAKEQL_BUDGET_EXCEEDED" }),
+    );
+  }
+});
+
+it("rolls back partial pruning when index lookup fails", () => {
+  const pool = new MemoryBudget(65536);
+  const scope = new MemoryScope(pool);
+  scope.allocate(8, "sibling", () => undefined);
+  let calls = 0;
+  expect(() =>
+    pruneFilesWithIndex(files, undefined, {
+      scope,
+      indexForFile: (file) => {
+        if (++calls === 2) throw Error("lookup failed");
+        return file;
+      },
+    }),
+  ).toThrow("lookup failed");
+  expect(pool.usedBytes).toBe(8);
+  scope.dispose();
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("parses spatial literals once per pruning operation and admits their lifetime", () => {
+  const input = Array.from({ length: 100 }, (_, i) => ({
+    path: String(i).padStart(3, "0"),
+    h3: { cell: ["a"] },
+  }));
+  const predicate = fn("h3_in", col("cell"), '["a","雪"]');
+  const pool = new MemoryBudget(65536);
+  const scope = new MemoryScope(pool);
+  const parse = vi.spyOn(JSON, "parse");
+  try {
+    expect(pruneFilesWithIndex(input, predicate, { scope }).planned).toHaveLength(100);
+    expect(parse).toHaveBeenCalledTimes(1);
+  } finally {
+    parse.mockRestore();
+  }
+  const peak = pool.peakBytes;
+  scope.dispose();
+  expect(pool.usedBytes).toBe(0);
+  for (const cap of [peak - 1, peak]) {
+    const target = new MemoryScope(new MemoryBudget(cap));
+    try {
+      if (cap < peak)
+        expect(() => pruneFilesWithIndex(input, predicate, { scope: target })).toThrow(/budget/i);
+      else
+        expect(pruneFilesWithIndex(input, predicate, { scope: target }).planned).toHaveLength(100);
+    } finally {
+      target.dispose();
+    }
+    expect(target.budget.usedBytes).toBe(0);
+  }
+});
+it("keeps malformed spatial literals lazy and rolls back on reached parse failures", () => {
+  const predicate = fn("h3_in", col("cell"), "[");
+  const scope = new MemoryScope(new MemoryBudget(65536));
+  expect(pruneFilesWithIndex([{ path: "a" }], predicate, { scope }).planned).toHaveLength(1);
+  const baseline = scope.budget.usedBytes;
+  expect(() =>
+    pruneFilesWithIndex([{ path: "b", h3: { cell: ["a"] } }], predicate, { scope }),
+  ).toThrow(SyntaxError);
+  expect(scope.budget.usedBytes).toBe(baseline);
+  scope.dispose();
+});
+
+it("reverses ordered comparisons when the literal is on the left", () => {
+  const input = [{ path: "a", columns: { x: { min: 10, max: 20 } } }];
+  for (const [op, expected] of [
+    ["lt", true],
+    ["lte", true],
+    ["gt", false],
+    ["gte", false],
+    ["eq", false],
+    ["ne", true],
+  ] as const) {
+    const result = pruneFilesWithIndex(input, {
+      kind: "compare",
+      op,
+      left: lit(5),
+      right: col("x"),
+    });
+    expect(result.planned.length, op).toBe(expected ? 1 : 0);
+  }
+  for (const [op, expected] of [
+    ["lt", false],
+    ["lte", true],
+    ["gt", false],
+    ["gte", true],
+  ] as const) {
+    const result = pruneFilesWithIndex([{ path: "a", columns: { x: { min: 10, max: 10 } } }], {
+      kind: "compare",
+      op,
+      left: lit(10),
+      right: col("x"),
+    });
+    expect(result.planned.length, op).toBe(expected ? 1 : 0);
+  }
+});
+it("treats inherited index names as absent and preserves explicit prototype-named columns", () => {
+  for (const name of ["constructor", "toString", "__proto__"]) {
+    const file = { path: "a", columns: {}, bbox: {}, h3: {} };
+    for (const predicate of [
+      eq(col(name), 1),
+      fn("h3_in", col(name), '["a"]'),
+      fn("h3_within", col(name), "a", 0),
+      fn("st_intersects", col(name), '{"minx":0,"miny":0,"maxx":1,"maxy":1}'),
+    ]) {
+      expect(pruneFilesWithIndex([file], predicate).planned).toEqual([file]);
+    }
+    const row = { [name]: 10 };
+    const columns = buildMinMaxIndex([row], [name]);
+    expect(Object.hasOwn(columns, name)).toBe(true);
+    expect(pruneFilesWithIndex([{ path: "a", columns }], eq(col(name), 1)).skipped).toHaveLength(1);
+  }
+});
+
+it("uses admitted reusable frames for deeply nested logical pruning", () => {
+  let predicate: Expr = eq(col("x"), 1);
+  for (let i = 0; i < 20000; i++)
+    predicate = { kind: "logical", op: i % 2 ? "and" : "or", operands: [predicate] };
+  const input = [
+    { path: "a", columns: { x: { min: 1, max: 1 } } },
+    { path: "b", columns: { x: { min: 2, max: 2 } } },
+  ];
+  const pool = new MemoryBudget(10_000_000);
+  const scope = new MemoryScope(pool);
+  expect(pruneFilesWithIndex(input, predicate, { scope }).planned).toEqual([input[0]]);
+  const peak = pool.peakBytes;
+  // Two files share the same 20,000 frames, rather than allocating two stacks.
+  expect(peak).toBeLessThan(5_000_000);
+  scope.dispose();
+  for (const capacity of [peak - 1, peak]) {
+    const target = new MemoryScope(new MemoryBudget(capacity));
+    try {
+      if (capacity < peak)
+        expect(() => pruneFilesWithIndex(input, predicate, { scope: target })).toThrow(/budget/i);
+      else
+        expect(pruneFilesWithIndex(input, predicate, { scope: target }).skipped).toEqual([
+          input[1],
+        ]);
+    } finally {
+      target.dispose();
+    }
+    expect(target.budget.usedBytes).toBe(0);
+  }
+});
+it("preserves empty logic and nested short-circuit behavior", () => {
+  const input = [{ path: "a", columns: { x: { min: 1, max: 1 } }, h3: { cell: ["a"] } }];
+  const bad = fn("h3_in", col("cell"), "[");
+  const yes: Expr = { kind: "logical", op: "and", operands: [] };
+  const no: Expr = { kind: "logical", op: "or", operands: [] };
+  expect(pruneFilesWithIndex(input, yes).planned).toHaveLength(1);
+  expect(pruneFilesWithIndex(input, no).skipped).toHaveLength(1);
+  expect(pruneFilesWithIndex(input, or(and(no, bad), yes, bad)).planned).toHaveLength(1);
+  expect(pruneFilesWithIndex(input, and(or(yes, bad), no, bad)).skipped).toHaveLength(1);
+});
+
+it("validates each spatial literal shape once across files, including rejected shapes", () => {
+  const input = Array.from({ length: 100 }, (_, i) => ({
+    path: String(i).padStart(3, "0"),
+    h3: { cell: ["a"] },
+  }));
+  for (const text of ['["a","b"]', '["a",7]']) {
+    const every = vi.spyOn(Array.prototype, "every");
+    let validations: number;
+    let result: ReturnType<typeof pruneFilesWithIndex>;
+    try {
+      result = pruneFilesWithIndex(input, fn("h3_in", col("cell"), text));
+      validations = every.mock.calls.length;
+    } finally {
+      every.mockRestore();
+    }
+    expect(result.planned).toHaveLength(100);
+    expect(validations).toBe(1);
+  }
 });

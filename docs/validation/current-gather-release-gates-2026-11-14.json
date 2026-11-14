@@ -1,0 +1,57 @@
+{
+  "runtimeSourceCommit": "beebd97fef0a35976f4cd5dbdf036981f5945e39",
+  "gates": {
+    "coverage": {
+      "passed": true,
+      "testsPassed": 3885,
+      "testsSkipped": 645,
+      "filesPassed": 419,
+      "statements": 91.34,
+      "branches": 85.45,
+      "functions": 95.88,
+      "lines": 93.15,
+      "thresholdsUnchanged": true,
+      "evidence": "gather-view-admission-2026-11-14.json; identical runtime"
+    },
+    "build": "pnpm build passed, including published bundles, declarations and fixture TypeScript",
+    "typecheck": "pnpm typecheck passed on identical runtime; gather-view-admission-2026-11-14.json",
+    "cleanPackageConsumer": {
+      "passed": true,
+      "installedPackages": 66,
+      "coverage": "Packed public imports, declarations, query value parity, temporal/decimal/variant fixtures, owned result and ownedSlice lifetimes, plugin compatibility."
+    },
+    "reference": {
+      "passed": 120,
+      "files": 4
+    },
+    "workerd": {
+      "passed": 84,
+      "files": 23,
+      "command": "pnpm test:workerd --no-file-parallelism",
+      "evidence": "gather-view-admission-2026-11-14.json; identical runtime. In-test query concurrency remains intact."
+    },
+    "requiredExternalConformance": {
+      "command": "LAKEQL_REQUIRE_EXTERNAL_ICEBERG=1 pnpm test:conformance",
+      "passed": 520,
+      "skipped": 1,
+      "skipReason": "Missing-required-fixtures guard inactive",
+      "retry": "Initial isolated run passed 519 cases but overflow_i16_page_cnt.parquet owned query exceeded the unchanged 5000 ms timeout. Complete unchanged retry passed all 520; elapsed 12.85 seconds. No timeout or assertion changes."
+    },
+    "lint": "passed on identical runtime",
+    "compatibility": "passed",
+    "largeFiles": "passed",
+    "changeset": "passed",
+    "fixtureReproducibility": "passed; regenerated hashes identical and escalated Git/LFS comparison confirms no fixture changes"
+  },
+  "executionNotes": [
+    "Unescalated fixture Git diff encountered read-only LFS temporary metadata. Escalated status/diff confirmed only the intended audit document changed."
+  ],
+  "acceptance": "Current release command checks pass. This does not close full F1-F6/M1-M2/V1-V3 scope acceptance.",
+  "remaining": [
+    "Query configuration, decoder/converter and helper allocation ownership; gather records/plans/temporary views remain separate from retained typed views.",
+    "Metadata/output overlap and whole-runtime 64/128 MiB headroom under concurrency.",
+    "Broader scheduling, cancellation and self-held-capacity integration.",
+    "JSON traversal slowdown and measured adaptive key-cache policy tradeoffs.",
+    "Final requirement-by-requirement scope review."
+  ]
+}

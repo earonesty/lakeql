@@ -1,0 +1,289 @@
+{
+  "sourceCommit": "a8ba6db",
+  "node": "v24.18.1",
+  "harnessSha256": "01128a7dfd440fbf7a70d3a3a9832f6c4b3da8d3c2e3d140a52d3cf1cab9f58c",
+  "description": "Experimental whole-batch decoded-key cache versus direct packed reads using the same owned top-k operator. Cache construction included; source creation excluded. ASCII fixed-width permutation fixture, two warmups/five samples, 64 MiB tracked pool. Both source and cache remain charged through selection.",
+  "limitations": [
+    "One key column; no dictionary/null/multi-column/cache-reuse model.",
+    "Reservation units exclude VM/native decoder and GC overhead.",
+    "Experimental benchmark only; no production cache/default change.",
+    "Variants run sequentially; no cloud throughput claim."
+  ],
+  "results": [
+    {
+      "width": 16,
+      "rows": 100,
+      "limit": 3,
+      "variants": {
+        "direct": {
+          "incrementalPeak": 924,
+          "samplesMs": [
+            0.8225089999999966, 0.2753179999999986, 0.2721520000000055, 0.19969600000000298,
+            0.16373800000000927
+          ],
+          "medianMs": 0.2721520000000055
+        },
+        "cachedIncludingConstruction": {
+          "incrementalPeak": 12496,
+          "samplesMs": [
+            0.18736300000000483, 0.17773499999999842, 0.16092299999999682, 0.14999300000000915,
+            0.15091400000000021
+          ],
+          "medianMs": 0.16092299999999682
+        }
+      }
+    },
+    {
+      "width": 16,
+      "rows": 100,
+      "limit": 100,
+      "variants": {
+        "direct": {
+          "incrementalPeak": 1312,
+          "samplesMs": [
+            0.5725180000000023, 0.6040480000000059, 0.9183489999999921, 0.643422000000001,
+            0.597795000000005
+          ],
+          "medianMs": 0.6040480000000059
+        },
+        "cachedIncludingConstruction": {
+          "incrementalPeak": 13168,
+          "samplesMs": [
+            0.16680399999999906, 0.17244400000001292, 0.17177300000000173, 0.1706220000000087,
+            0.23072400000000926
+          ],
+          "medianMs": 0.17177300000000173
+        }
+      }
+    },
+    {
+      "width": 16,
+      "rows": 10000,
+      "limit": 3,
+      "variants": {
+        "direct": {
+          "incrementalPeak": 924,
+          "samplesMs": [
+            2.3996580000000023, 2.4004890000000074, 2.3762839999999983, 2.3960019999999815,
+            2.3878559999999993
+          ],
+          "medianMs": 2.3960019999999815
+        },
+        "cachedIncludingConstruction": {
+          "incrementalPeak": 1121296,
+          "samplesMs": [
+            1.233161999999993, 1.2602629999999806, 1.1510870000000182, 1.1397960000000182, 2.25188
+          ],
+          "medianMs": 1.233161999999993
+        }
+      }
+    },
+    {
+      "width": 16,
+      "rows": 10000,
+      "limit": 100,
+      "variants": {
+        "direct": {
+          "incrementalPeak": 1312,
+          "samplesMs": [
+            3.248946999999987, 3.396474999999981, 3.040233999999998, 3.5031459999999868,
+            3.126767000000001
+          ],
+          "medianMs": 3.248946999999987
+        },
+        "cachedIncludingConstruction": {
+          "incrementalPeak": 1121968,
+          "samplesMs": [
+            1.3332699999999988, 1.5624420000000043, 1.9926320000000146, 2.670217000000008,
+            2.4597610000000145
+          ],
+          "medianMs": 1.9926320000000146
+        }
+      }
+    },
+    {
+      "width": 128,
+      "rows": 100,
+      "limit": 3,
+      "variants": {
+        "direct": {
+          "incrementalPeak": 1372,
+          "samplesMs": [
+            0.06691599999999198, 0.06610500000002162, 0.06675500000000056, 0.06848899999999958,
+            0.07234599999998181
+          ],
+          "medianMs": 0.06691599999999198
+        },
+        "cachedIncludingConstruction": {
+          "incrementalPeak": 34896,
+          "samplesMs": [
+            0.045246000000020103, 0.05310000000000059, 0.04370199999999613, 0.05441200000001345,
+            0.04907200000002376
+          ],
+          "medianMs": 0.04907200000002376
+        }
+      }
+    },
+    {
+      "width": 128,
+      "rows": 100,
+      "limit": 100,
+      "variants": {
+        "direct": {
+          "incrementalPeak": 1760,
+          "samplesMs": [
+            1.063964000000027, 0.26993799999999624, 0.44060000000001764, 0.27704199999999446,
+            0.2621639999999843
+          ],
+          "medianMs": 0.27704199999999446
+        },
+        "cachedIncludingConstruction": {
+          "incrementalPeak": 35568,
+          "samplesMs": [
+            0.08539999999999281, 0.08480900000000702, 0.4838310000000092, 0.09096099999999296,
+            0.08749399999999241
+          ],
+          "medianMs": 0.08749399999999241
+        }
+      }
+    },
+    {
+      "width": 128,
+      "rows": 10000,
+      "limit": 3,
+      "variants": {
+        "direct": {
+          "incrementalPeak": 1372,
+          "samplesMs": [
+            2.461063999999965, 2.7398279999999886, 2.6280080000000225, 2.5774230000000102,
+            2.4670849999999973
+          ],
+          "medianMs": 2.5774230000000102
+        },
+        "cachedIncludingConstruction": {
+          "incrementalPeak": 3361296,
+          "samplesMs": [
+            1.6996499999999628, 2.9310990000000174, 4.659522999999979, 1.5320239999999785,
+            1.8212290000000166
+          ],
+          "medianMs": 1.8212290000000166
+        }
+      }
+    },
+    {
+      "width": 128,
+      "rows": 10000,
+      "limit": 100,
+      "variants": {
+        "direct": {
+          "incrementalPeak": 1760,
+          "samplesMs": [
+            3.029183000000046, 3.4391160000000127, 3.227936999999997, 3.4154499999999643,
+            3.2924090000000206
+          ],
+          "medianMs": 3.2924090000000206
+        },
+        "cachedIncludingConstruction": {
+          "incrementalPeak": 3361968,
+          "samplesMs": [
+            1.5090609999999742, 1.4916689999999448, 1.8773449999999912, 1.4317760000000135,
+            1.4269069999999147
+          ],
+          "medianMs": 1.4916689999999448
+        }
+      }
+    },
+    {
+      "width": 1024,
+      "rows": 100,
+      "limit": 3,
+      "variants": {
+        "direct": {
+          "incrementalPeak": 4956,
+          "samplesMs": [
+            0.07134400000006735, 0.07862800000009429, 0.07717600000000857, 0.07376899999997022,
+            0.09190300000000207
+          ],
+          "medianMs": 0.07717600000000857
+        },
+        "cachedIncludingConstruction": {
+          "incrementalPeak": 214096,
+          "samplesMs": [
+            0.04755000000000109, 0.04997400000002017, 0.047319000000015876, 0.04880200000002333,
+            0.06282800000008137
+          ],
+          "medianMs": 0.04880200000002333
+        }
+      }
+    },
+    {
+      "width": 1024,
+      "rows": 100,
+      "limit": 100,
+      "variants": {
+        "direct": {
+          "incrementalPeak": 5344,
+          "samplesMs": [
+            0.5578500000000304, 0.4687220000000707, 1.0234070000000202, 0.3985500000000002,
+            0.37856200000010176
+          ],
+          "medianMs": 0.4687220000000707
+        },
+        "cachedIncludingConstruction": {
+          "incrementalPeak": 214768,
+          "samplesMs": [
+            0.09165199999995366, 0.09382700000003297, 0.08997900000008485, 0.09104200000001583,
+            0.09421799999995528
+          ],
+          "medianMs": 0.09165199999995366
+        }
+      }
+    },
+    {
+      "width": 1024,
+      "rows": 10000,
+      "limit": 3,
+      "variants": {
+        "direct": {
+          "incrementalPeak": 4956,
+          "samplesMs": [
+            3.7591069999999718, 3.901245000000017, 4.6493130000000065, 7.095189000000005,
+            4.463162000000011
+          ],
+          "medianMs": 4.463162000000011
+        },
+        "cachedIncludingConstruction": {
+          "incrementalPeak": 21281296,
+          "samplesMs": [
+            5.189710999999988, 7.695288000000005, 2.138345999999956, 5.387142999999924,
+            2.1509700000000294
+          ],
+          "medianMs": 5.189710999999988
+        }
+      }
+    },
+    {
+      "width": 1024,
+      "rows": 10000,
+      "limit": 100,
+      "variants": {
+        "direct": {
+          "incrementalPeak": 5344,
+          "samplesMs": [
+            5.139596999999981, 5.416027000000099, 5.830486999999948, 8.661107000000015,
+            5.362917000000039
+          ],
+          "medianMs": 5.416027000000099
+        },
+        "cachedIncludingConstruction": {
+          "incrementalPeak": 21281968,
+          "samplesMs": [
+            4.5482529999999315, 2.863652000000002, 2.8511070000001837, 2.6394900000000234,
+            2.7208029999999326
+          ],
+          "medianMs": 2.8511070000001837
+        }
+      }
+    }
+  ]
+}

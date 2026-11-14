@@ -124,8 +124,16 @@ window. The 10M work-unit benchmark uses this cache to prove warm planning avoid
 re-listing and re-heading the same 100 files before splitting row-group work
 units.
 
-Each Parquet lake keeps a local metadata cache, so planning and execution through
-that lake reuse parsed footer statistics. Pass a shared Parquet `metadataCache`
+Each Parquet lake keeps reusable encoded ranges and supports parsed metadata caches.
+Budgeted task planning over owned reads defaults to an indexed footer source,
+decoding one row group at a time and reusing encoded ranges on warm runs.
+`taskMetadataMode: "auto"` and `scanMetadataMode: "auto"` choose indexed owned
+planning/scanning unless a custom `metadataCache` is
+supplied; custom caches retain decoded-metadata reuse. Set `"indexed"` or
+`"cached"` explicitly to choose between lower decoded retention and parsed reuse.
+The allocation budget currently accounts for encoded backing and the index;
+JavaScript envelope, group and task-output objects are not fully accounted.
+Pass a shared Parquet `metadataCache`
 when separate lake instances or Worker invocations should reuse metadata.
 `encodedParquetMetadataCache` adapts a persistent byte `CacheAdapter`—including
 the Cloudflare Cache API adapter—to Parquet metadata while preserving Thrift
@@ -150,6 +158,12 @@ lakeql ratios identify whether the gap is broad fan-out overhead, numeric vector
 work, or distinct hashing. Treat Node DuckDB as a strong local CPU baseline, not
 the DuckDB-WASM product comparison: browser WASM needs a separate lane for
 download/compile/init time, HTTP range behavior, warm queries, and browser memory.
+
+Row-fallback `aggregate()` finalizes only the requested rows. It does not build
+and serialize a checkpoint that the caller would discard. Use
+`aggregateWithState()` when continuation bytes are needed; supplying a spill
+adapter explicitly still writes the checkpoint. Both routes share the same
+accumulation, restore, limits and cleanup logic.
 
 For bounded top-k sorts, use `orderBy(...).limit(...).topKWithState()` to
 serialize or spill the retained heap state between slices. For full global sorts,

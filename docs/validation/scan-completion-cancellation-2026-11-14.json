@@ -1,0 +1,25 @@
+{
+  "baseCommit": "603a1e0",
+  "scope": "Shared cancellation checks at borrowed/owned scan advancement and completion",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "fullSuite": {
+      "passed": 3573,
+      "skipped": 629,
+      "log": "/tmp/scan-completion-full-final.log"
+    }
+  },
+  "evidence": [
+    "Delayed no-output scanner cancellation rejects and releases retained slice manifest",
+    "Owned values allocated after cancellation are discarded before handoff and release all reservations",
+    "Cancellation while a consumer holds a value prevents another source advancement",
+    "Early consumer return closes source without discarding handed-off values",
+    "No configured signal returns the original iterable without another async-generator layer"
+  ],
+  "limits": [
+    "In-flight I/O is awaited, not forcibly interrupted",
+    "This does not close object discovery or returned output ownership",
+    "Runtime headroom and final release gates remain open"
+  ]
+}

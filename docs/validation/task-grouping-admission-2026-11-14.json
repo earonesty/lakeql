@@ -1,0 +1,30 @@
+{
+  "date": "2026-11-14",
+  "changes": [
+    "Group aggregate tasks within a child memory scope and transfer grouped output allocations into the aggregate input lifetime.",
+    "Admit canonical grouping key formatting through the shared stable-data key helper, plus directory entries, detached task payloads, range copies, result slots and sort workspace.",
+    "Release grouping keys and lookup directory after grouping; release all child allocations immediately when grouping fails.",
+    "Use canonical data-key semantics for partition/property ordering and detach complete task descriptors."
+  ],
+  "validation": {
+    "build": "passed",
+    "initial_targeted_tests": 48,
+    "final_task_unit_tests": 14,
+    "budget_test": "Group 20 fragmented tasks under 128 KiB, assert retained capacity, reject peak-minus-one and return to zero without requiring caller scope disposal.",
+    "benchmark": "docs/benchmarks/task-range-grouping-admitted-2026-11-14.json",
+    "typecheck": "passed",
+    "full_default_suite": {
+      "passed": 3409,
+      "skipped": 629
+    }
+  },
+  "tradeoffs": [
+    "Admission and stable-key formatting cost more CPU than the unadmitted intermediate implementation. At 4000 ranges this run measured 45.3 ms versus 196.7 ms for the prior repeated-merge baseline; the earlier 1.09 ms unadmitted measurement is not current performance.",
+    "Removed overlapping range objects remain conservatively charged until grouped task lifetime ends.",
+    "Native sort/runtime bookkeeping is represented by conservative accounting charges, not an exact JS heap cap."
+  ],
+  "remaining": [
+    "Broader legacy/spill/resume allocation integration and mixed-job 64/128 MiB acceptance remain open.",
+    "Refresh full release gates after this implementation."
+  ]
+}

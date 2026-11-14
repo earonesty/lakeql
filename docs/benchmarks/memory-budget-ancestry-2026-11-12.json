@@ -1,0 +1,51 @@
+{
+  "method": "Node post-GC live heap; prior combined-handle baseline versus shared immutable budget ancestry; timing samples are not isolated throughput proof",
+  "reports": [
+    {
+      "implementation": "per-reservation-ancestry",
+      "count": 10000,
+      "sourceSha256": "1e7f6123624f82586034a46fd884f51ad7ccf11b3f019bc63ff4779d62f5c562",
+      "node": "v24.18.1",
+      "allocateMedianMs": 10.198677000000004,
+      "releaseMedianMs": 3.8947799999999972,
+      "liveHeapDeltaMedianBytes": 17585952,
+      "samples": 5,
+      "scope": "Node V8 post-GC heap delta for live owners, values, reservations and indexes; one-byte typed buffer per owner; not a Worker heap-cap proof"
+    },
+    {
+      "implementation": "per-reservation-ancestry",
+      "count": 50000,
+      "sourceSha256": "1e7f6123624f82586034a46fd884f51ad7ccf11b3f019bc63ff4779d62f5c562",
+      "node": "v24.18.1",
+      "allocateMedianMs": 80.2146009999999,
+      "releaseMedianMs": 17.121743000000038,
+      "liveHeapDeltaMedianBytes": 86899952,
+      "samples": 5,
+      "scope": "Node V8 post-GC heap delta for live owners, values, reservations and indexes; one-byte typed buffer per owner; not a Worker heap-cap proof"
+    },
+    {
+      "implementation": "shared-budget-ancestry",
+      "count": 10000,
+      "sourceSha256": "1e7f6123624f82586034a46fd884f51ad7ccf11b3f019bc63ff4779d62f5c562",
+      "budgetSourceSha256": "5d3ba5f6a66f8345370e7191e310f259688be5753f5be95400077305cf2a044a",
+      "node": "v24.18.1",
+      "allocateMedianMs": 11.498579000000007,
+      "releaseMedianMs": 2.730705999999998,
+      "liveHeapDeltaMedianBytes": 15724120,
+      "samples": 5,
+      "scope": "Node V8 post-GC heap delta for live owners, values, reservations and indexes; one-byte typed buffer per owner; not a Worker heap-cap proof"
+    },
+    {
+      "implementation": "shared-budget-ancestry",
+      "count": 50000,
+      "sourceSha256": "1e7f6123624f82586034a46fd884f51ad7ccf11b3f019bc63ff4779d62f5c562",
+      "budgetSourceSha256": "5d3ba5f6a66f8345370e7191e310f259688be5753f5be95400077305cf2a044a",
+      "node": "v24.18.1",
+      "allocateMedianMs": 64.95001500000001,
+      "releaseMedianMs": 14.930805999999961,
+      "liveHeapDeltaMedianBytes": 77717768,
+      "samples": 5,
+      "scope": "Node V8 post-GC heap delta for live owners, values, reservations and indexes; one-byte typed buffer per owner; not a Worker heap-cap proof"
+    }
+  ]
+}

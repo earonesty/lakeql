@@ -42,6 +42,7 @@ describe("httpStore", () => {
 
     await expect(store.head("file.parquet")).resolves.toMatchObject({
       size: 5,
+      rangeReadMode: "native",
       etag: "v1",
       contentType: "application/octet-stream",
     });
@@ -184,7 +185,10 @@ describe("httpStore", () => {
       },
     });
 
-    await expect(store.head("file.parquet")).resolves.toMatchObject({ size: whole.byteLength });
+    await expect(store.head("file.parquet")).resolves.toMatchObject({
+      size: whole.byteLength,
+      rangeReadMode: "emulated",
+    });
     await expect(store.getRange("file.parquet", { offset: 4, length: 7 })).resolves.toEqual(
       enc.encode("decoded"),
     );
@@ -235,6 +239,25 @@ describe("httpStore", () => {
       },
     });
 
-    await expect(store.head("file.parquet")).resolves.toMatchObject({ size: whole.byteLength });
+    await expect(store.head("file.parquet")).resolves.toMatchObject({
+      size: whole.byteLength,
+      rangeReadMode: "emulated",
+    });
   });
+});
+
+it("does not serve stale cached ranges after a fresh object exceeds cache capacity", async () => {
+  let requests = 0;
+  const store = httpStore({
+    baseUrl: "https://example.test",
+    maxFullObjectCacheBytes: 4,
+    fetch: async () => {
+      requests++;
+      return new Response(requests === 1 ? Uint8Array.of(1) : new Uint8Array(8).fill(2));
+    },
+  });
+  expect(await store.get("file")).toEqual(Uint8Array.of(1));
+  expect(await store.get("file")).toEqual(new Uint8Array(8).fill(2));
+  expect(await store.getRange("file", { offset: 0, length: 1 })).toEqual(Uint8Array.of(2));
+  expect(requests).toBe(3);
 });

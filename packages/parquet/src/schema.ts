@@ -1,85 +1,106 @@
-import { LakeqlError } from "lakeql-core";
+import {
+  MATERIALIZATION_CHARGES as c,
+  LakeqlError,
+  type MemoryBudget,
+  MemoryScope,
+} from "lakeql-core";
 import type { ParquetMetadata } from "./types.js";
 
 export interface RejectUnsupportedParquetSchemaOptions {
   columns?: readonly string[] | undefined;
-  /** Permit exact value-checked decoding for top-level scalar INT64 decimal leaves. */
-  allowValueCheckedInt64Decimals?: boolean;
+  /** Permit exact value-checked decoding for top-level scalar decimal leaves. */
+  allowValueCheckedScalarDecimals?: boolean;
+  /** Admit temporary validation directories against the caller's allocation pool. */
+  memoryBudget?: MemoryBudget | undefined;
 }
 
 export function rejectUnsupportedParquetSchema(
-  metadata: ParquetMetadata,
+  metadata: Pick<ParquetMetadata, "schema">,
   options: RejectUnsupportedParquetSchemaOptions = {},
 ): void {
   const schema = metadata.schema;
   if (!Array.isArray(schema) || schema.length === 0) return;
+  if (options.columns?.length === 0 || schemaChildCount(schema[0]) === 0) return;
+  const scope =
+    options.memoryBudget === undefined ? undefined : new MemoryScope(options.memoryBudget);
+  try {
+    validateSchema(schema, options, scope);
+  } finally {
+    scope?.dispose();
+  }
+}
+
+function validateSchema(
+  schema: ParquetSchemaElement[],
+  options: RejectUnsupportedParquetSchemaOptions,
+  scope?: MemoryScope,
+): void {
+  if (options.columns !== undefined)
+    scope?.allocate(
+      c.object + options.columns.length * c.property,
+      "schema selection directory",
+      () => undefined,
+    );
   const selected = options.columns === undefined ? undefined : new Set(options.columns);
-  const root = schema[0];
-  const childCount = schemaChildCount(root);
+  scope?.allocate(2 * c.array, "schema traversal arrays", () => undefined);
+  let capacity = 0;
+  const reserveDepth = (needed: number) => {
+    if (scope === undefined || needed <= capacity) return;
+    const next = Math.min(schema.length, Math.max(needed, 16, capacity * 2));
+    scope.allocate(
+      (next - capacity) * (2 * c.arraySlot + c.number),
+      "schema traversal capacity",
+      () => undefined,
+    );
+    capacity = next;
+  };
+  reserveDepth(1);
+  // One path and remaining-child stack: linear traversal, O(depth) workspace.
+  // Join the path only when reporting a rejected leaf, not at every group.
+  const remaining = [schemaChildCount(schema[0])];
+  const path: string[] = [];
   let index = 1;
-  for (let child = 0; child < childCount && index < schema.length; child += 1) {
-    index = rejectUnsupportedParquetSchemaNode(schema, index, [], selected, options);
+  let variantDepth: number | undefined;
+  while (remaining.length > 0 && index < schema.length) {
+    const depth = remaining.length - 1;
+    if (variantDepth !== undefined && depth <= variantDepth) variantDepth = undefined;
+    const children = remaining[depth] ?? 0;
+    if (children === 0) {
+      remaining.pop();
+      continue;
+    }
+    remaining[depth] = children - 1;
+    const element = schema[index];
+    if (element === undefined) break;
+    const name = String(element.name ?? `field_${index}`);
+    if (depth === 0 && selected !== undefined && !selected.has(name)) {
+      index = skipParquetSchemaSubtree(schema, index);
+      continue;
+    }
+    reserveDepth(depth + 1);
+    path.length = depth;
+    path.push(name);
+    if (variantDepth === undefined && parquetLogicalTypeName(element.logical_type) === "VARIANT")
+      variantDepth = depth;
+    rejectUnsupportedParquetLeaf(element, path, options, variantDepth !== undefined);
+    index++;
+    const count = schemaChildCount(element);
+    if (count > 0) {
+      reserveDepth(remaining.length + 1);
+      remaining.push(count);
+    }
   }
 }
 
 type ParquetSchemaElement = NonNullable<ParquetMetadata["schema"]>[number];
 
-function rejectUnsupportedParquetSchemaNode(
-  schema: ParquetSchemaElement[],
-  index: number,
-  path: string[],
-  selected: ReadonlySet<string> | undefined,
-  options: RejectUnsupportedParquetSchemaOptions,
-): number {
-  const element = schema[index];
-  if (element === undefined) return index + 1;
-  const name = String(element.name ?? `field_${index}`);
-  const nodePath = [...path, name];
-  if (selected !== undefined && path.length === 0 && !selected.has(name)) {
-    return skipParquetSchemaSubtree(schema, index);
-  }
-  const childCount = schemaChildCount(element);
-  rejectUnsupportedParquetLeaf(element, nodePath, options);
-  if (childCount === 0) return index + 1;
-  if (isSupportedNestedParquetGroup(element)) {
-    return rejectUnsupportedNestedParquetDecimals(schema, index, path, options);
-  }
-  throw new LakeqlError(
-    "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
-    "Parquet struct columns are not supported",
-    {
-      column: nodePath.join("."),
-      feature: "struct",
-    },
-  );
-}
-
-function rejectUnsupportedNestedParquetDecimals(
-  schema: ParquetSchemaElement[],
-  index: number,
-  path: string[],
-  options: RejectUnsupportedParquetSchemaOptions,
-): number {
-  const element = schema[index];
-  if (element === undefined) return index + 1;
-  const name = String(element.name ?? `field_${index}`);
-  const nodePath = [...path, name];
-  rejectUnsupportedParquetLeaf(element, nodePath, options);
-  let next = index + 1;
-  for (let child = 0; child < schemaChildCount(element) && next < schema.length; child += 1) {
-    next = rejectUnsupportedNestedParquetDecimals(schema, next, nodePath, options);
-  }
-  return next;
-}
-
 function skipParquetSchemaSubtree(schema: ParquetSchemaElement[], index: number): number {
-  const element = schema[index];
-  if (element === undefined) return index + 1;
-  let next = index + 1;
-  for (let child = 0; child < schemaChildCount(element) && next < schema.length; child += 1) {
-    next = skipParquetSchemaSubtree(schema, next);
+  let pending = 1;
+  while (pending > 0 && index < schema.length) {
+    pending += schemaChildCount(schema[index]) - 1;
+    index++;
   }
-  return next;
+  return index;
 }
 
 function schemaChildCount(element: ParquetSchemaElement | undefined): number {
@@ -91,24 +112,19 @@ function schemaChildCount(element: ParquetSchemaElement | undefined): number {
   return 0;
 }
 
-function isSupportedNestedParquetGroup(element: ParquetSchemaElement): boolean {
-  const convertedType = String(element.converted_type ?? "").toUpperCase();
-  if (convertedType === "LIST" || convertedType === "MAP" || convertedType === "MAP_KEY_VALUE") {
-    return true;
-  }
-  const logicalType = parquetLogicalTypeName(element.logical_type);
-  return logicalType === "LIST" || logicalType === "MAP";
-}
-
 function rejectUnsupportedParquetLeaf(
   element: ParquetSchemaElement,
   path: string[],
   options: RejectUnsupportedParquetSchemaOptions,
+  insideVariant: boolean,
 ): void {
-  const column = path.join(".");
   const convertedType = String(element.converted_type ?? "").toUpperCase();
   const logicalType = logicalTypeRecord(element.logical_type);
   const logicalTypeName = parquetLogicalTypeName(element.logical_type);
+  if ((convertedType === "BSON" || logicalTypeName === "BSON") && element.type !== "BYTE_ARRAY")
+    throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "BSON requires BYTE_ARRAY storage", {
+      column: path.join("."),
+    });
   const decimalPrecision =
     typeof element.precision === "number"
       ? element.precision
@@ -120,15 +136,18 @@ function rejectUnsupportedParquetLeaf(
     decimalPrecision !== undefined &&
     decimalPrecision > 15 &&
     !(
-      options.allowValueCheckedInt64Decimals === true &&
-      path.length === 1 &&
-      element.type === "INT64"
+      ((options.allowValueCheckedScalarDecimals === true && path.length === 1) ||
+        (insideVariant && decimalPrecision <= 38)) &&
+      (element.type === "INT32" ||
+        element.type === "INT64" ||
+        element.type === "BYTE_ARRAY" ||
+        element.type === "FIXED_LEN_BYTE_ARRAY")
     )
   ) {
     throw new LakeqlError(
       "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
       "Parquet decimals above precision 15 are not supported",
-      { column, feature: "decimal-precision", precision: decimalPrecision },
+      { column: path.join("."), feature: "decimal-precision", precision: decimalPrecision },
     );
   }
 }

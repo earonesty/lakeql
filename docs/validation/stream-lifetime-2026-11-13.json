@@ -1,0 +1,270 @@
+{
+  "finding": "NDJSON, JSON, and CSV query streams closed their row iterator only on explicit cancellation. Encoding failure after a yielded row could leave a suspended producer and its allocation lifetime open.",
+  "change": "A shared iterator stream wrapper closes the producer on start/pull failure and cancellation. Concurrent cleanup paths share one promise. Encoding errors remain authoritative if cleanup also fails; explicit cancellation propagates cleanup failure.",
+  "validation": {
+    "defaultPassed": 2733,
+    "defaultSkipped": 605,
+    "workerPassed": 51,
+    "referencePassed": 104,
+    "buildLintTypecheck": "passed",
+    "cases": [
+      "Each actual query stream API closes a fault-injected row producer on serialization error and releases held backing exactly once",
+      "Producer allocation remains live during the suspended yield, then returns to zero after encoding failure",
+      "Original encoding error survives a cleanup error",
+      "Cancellation racing an in-flight pull releases backing once",
+      "Existing format output, empty results, and cancellation tests remain passing"
+    ]
+  },
+  "limitations": [
+    "JSON/NDJSON and CSV now admit encoded backing. CSV also admits its cell directory, prepared cell buffers and inferred columns. Scalar formatting, traversal workspace and runtime bookkeeping remain separate.",
+    "Consumer-retained stream chunks remain outside explicit owned-output accounting.",
+    "Fault-injected encoding tests use real MemoryScope lifetimes with synthetic row producers; broader suites include existing real Parquet/HTTP/Worker fixtures."
+  ],
+  "outputExtentPlanning": {
+    "finding": "serializedValueBytes describes stableStringify(jsonSafeValue), not stream JSON.stringify output. Non-finite numbers and prototype-named keys differ; it cannot be reused blindly for output-buffer admission.",
+    "change": "Added internal jsonOutputUtf8Bytes extent calculator matching actual JSON output semantics for supported immutable values, without constructing the cloned JSON value tree or complete serialized string/buffer. Cycles and custom toJSON functions are rejected.",
+    "validation": "23 focused tests compare actual JSON.stringify/jsonSafeValue/TextEncoder output, including Unicode, surrogate pairs/lone surrogates, escaping, binary, non-finite numbers, bigint, sparse arrays, undefined/function/symbol omission, timestamp/interval values, and shared references. Build, lint, and typecheck pass.",
+    "remaining": "Extent planning is wired into JSON/NDJSON streams; CSV now admits prepared cells and final output through the shared queue owner. Scalar formatting and traversal/runtime workspace remain open. Stateful accessors are outside the immutable JSON planning contract."
+  },
+  "ownedJsonOutput": {
+    "change": "JSON and NDJSON encode directly into one exactly admitted byte buffer, without a cloned JSON-safe tree or whole JSON string. Queued backing stays owned until the next pull or cancellation. The query result supplies the same budget used by execution, so source and output charges overlap.",
+    "validation": {
+      "defaultPassed": 2784,
+      "defaultSkipped": 605,
+      "workerPassed": 51,
+      "referencePassed": 104,
+      "additionalFocusedTests": "Eight stream-lifetime tests pass; two were added after the full default run. Encoder/extent/query/iterator focused run: 133 passed.",
+      "build": "tsc -b passed",
+      "typecheck": "passed",
+      "cases": [
+        "Every UTF16 code unit and surrogate boundary matches native JSON bytes",
+        "Output allocation exact cap succeeds and cap minus one rejects without retained charges",
+        "Empty and populated JSON/NDJSON completion releases output",
+        "Queued output and suspended source are both released by cancellation",
+        "Shared source/output budget rejection closes the producer",
+        "Pending source read arriving after cancellation is not encoded",
+        "Delivered chunks remain valid after accounting transfers out of the queue",
+        "Empty JSON framing is admitted at exact cap and rejected one byte below"
+      ]
+    },
+    "benchmark": "../benchmarks/json-output-2026-11-13.json",
+    "tradeoff": "Synthetic alternating-order medians (rerun after test processes finished) show direct admitted encoding slower on small objects, ASCII and nested objects, roughly equal on Unicode, and faster on binary. This is an output memory-lifetime improvement, not a universal CPU improvement. Small-object legacy ~0.00074ms vs owned ~0.00622ms; ASCII ~0.234ms vs ~0.573ms. No cloud throughput or total heap conclusion.",
+    "remaining": [
+      "Consumer-retained buffers need caller accounting",
+      "Scalar formatting and recursive traversal workspace are not yet fully admitted",
+      "Worker/reference suites passed but do not establish production Cloudflare total-heap caps",
+      "A bounded native encoding fast path needs measurement and complete workspace admission before adoption"
+    ],
+    "cloudFixtureValidation": {
+      "worker": "24 tests passed in packages/parquet/src/index.workerd.ts, including two new native R2 stream cases at 64/128 MiB shared pool limits. Real written SNAPPY Parquet with three row groups includes Unicode, quotes/newlines, null and empty strings. Each of two rounds runs three completing JSON/NDJSON queries alongside one cancelled NDJSON query. Per-query and root charges return to zero; measured reservation peak stays within the pool.",
+      "http": "Both packages/parquet/src/json-http.test.ts cases passed. External parquet-testing json.parquet contains mixed objects, missing keys versus explicit null, arrays and null. Four concurrent JSON/NDJSON streams run with batchSize=1 against HTTP 206 ranges and ignored-range HTTP 200 responses. Cold and warm shared-cache rounds preserve exact JSON bytes; warm rounds perform no data reads beyond head probing. Per-query charges return to zero while shared cache backing remains separately owned.",
+      "limits": "Worker fixtures run under Miniflare native R2 bindings, not a deployed Cloudflare service. Pool limits are reservation limits; these small fixtures do not stress near-cap total runtime heap. Existing synthetic tests cover exact output cap and one-byte-short rejection.",
+      "checks": "tsc -b and typecheck passed after Worker test additions; focused HTTP tests passed after HTTP additions."
+    },
+    "asciiFastPath": {
+      "change": "Shared native regular-expression scan recognizes strings that need no JSON escaping and already occupy one byte per UTF16 code unit. Sizing returns length plus quotes; encoding writes directly into the same admitted output buffer with a local start offset. No escaped copy or scratch byte buffer is introduced. The predicate uses UTF16 code-unit matching so astral characters cannot enter the ASCII path.",
+      "validation": {
+        "defaultPassed": 2791,
+        "defaultSkipped": 605,
+        "workerPassed": 53,
+        "referencePassed": 104,
+        "buildLintTypecheck": "passed",
+        "edgeCases": "Existing exhaustive individual UTF16 sizing and combined UTF16 encoding tests remain green. Added isolated astral pair, lone high/low surrogate, DEL, and plain ASCII encoding cases; exact-cap and cap-minus-one tests apply to each."
+      },
+      "benchmark": "../benchmarks/json-output-ascii-2026-11-13.json",
+      "interpretation": "Separate-run ASCII fixture medians improved from about 0.573ms to 0.386ms; legacy unaccounted encoding measured about 0.213ms in the latter run. These are synthetic output-only observations, not a paired statistical comparison or whole-query throughput claim. Small-object scope/admission overhead remains; binary and Unicode timings vary between runs. Historical pre-fast-path evidence is preserved."
+    }
+  },
+  "ownedCsvOutput": {
+    "change": "CSV prepares cells under a scope, admits the overlapping final output, and encodes directly without whole-row CSV strings or a cloned JSON-safe tree. Nested cells reuse the owned JSON encoder. A shared ownedOutputStream now controls queued ownership and cleanup for JSON, NDJSON and CSV. Inferred column directories are admitted before Object.keys.",
+    "validation": {
+      "defaultPassed": 2823,
+      "defaultSkipped": 605,
+      "workerPassed": 57,
+      "referencePassed": 104,
+      "buildLintTypecheck": "passed",
+      "cleanNpmInstall": "passed with an added exact CSV output and zero-pool-usage assertion"
+    },
+    "edgeCases": [
+      "Commas, quotes, CR/LF, Unicode and lone surrogate replacement",
+      "Null/undefined/missing values, finite/non-finite numbers, bigint, binary, nested JSON, timestamp and interval values",
+      "Exact measured preparation/output overlap cap succeeds; one byte short rejects and releases to zero",
+      "Header-only, no-header and empty-column outputs",
+      "Late getter failure rolls back earlier prepared cells",
+      "Queued output, inferred columns and suspended source release on cancellation",
+      "Rows arriving after cancellation are not prepared",
+      "Exhaustive UTF16 byte-sizing comparison with TextEncoder; strict lossless sizing remains available"
+    ],
+    "fixtures": "Existing mixed-JSON external Parquet HTTP tests now include CSV in concurrent cold/warm cache rounds for native and ignored ranges. Native R2 64/128 MiB stream tests include CSV with quotes/newlines/Unicode/nulls alongside JSON/NDJSON and a cancelling peer. These expanded targeted cases pass after integration.",
+    "benchmarks": [
+      "../benchmarks/csv-output-2026-11-13.json",
+      "../benchmarks/csv-output-bulk-2026-11-13.json"
+    ],
+    "performance": "Moving owned-handle access outside the byte loop and bulk-copying unquoted cells reduced the separate-run ASCII median from ~1.40ms to ~0.336ms. Final paired synthetic medians: small owned ~0.0157ms vs legacy ~0.00077ms; ASCII ~0.336ms vs ~0.126ms; Unicode ~0.756ms vs ~1.154ms; binary ~1.499ms vs ~2.587ms; nested ~0.458ms vs ~0.459ms. No universal speedup or IO-throughput claim. Small-row admission overhead remains a measured optimization opportunity.",
+    "limits": [
+      "Prepared cell backing overlaps final output and is charged conservatively; callers may see earlier typed budget rejection than the old unaccounted encoder.",
+      "Bigint/timestamp/interval scalar formatting, recursive JSON traversal and native/runtime workspace are not complete heap admission.",
+      "Chunks retained by consumers after delivery require caller accounting.",
+      "Worker reservation tests are not production total-heap proof. The broader memory audit and remaining conformance failures are still open."
+    ],
+    "directPrimitiveText": {
+      "change": "Primitive cells retain text through preparation and write UTF8 directly into the final admitted buffer. No per-cell UTF8 allocation or scratch view is created. Nested JSON/binary cells retain admitted backing. UTF8 writing matches TextEncoder replacement behavior and doubles only CSV quotes.",
+      "validation": {
+        "defaultPassed": 2825,
+        "defaultSkipped": 605,
+        "workerPassed": 57,
+        "referencePassed": 104,
+        "buildLintTypecheck": "passed",
+        "edgeCases": "Wide ASCII and quoted Unicode cells succeed with output bytes plus 1 KiB of preparation capacity. All UTF16 code units and explicit surrogate boundaries match native CSV/TextEncoder output. Existing exact-cap, cap-minus-one, lifetime, HTTP and native R2 cases pass.",
+        "cleanNpmInstall": "passed"
+      },
+      "benchmark": "../benchmarks/csv-output-direct-text-2026-11-13.json",
+      "reservationChanges": {
+        "asciiBefore": 200657,
+        "asciiAfter": 100529,
+        "quotedUnicodeBefore": 380659,
+        "quotedUnicodeAfter": 200531,
+        "smallBefore": 1613,
+        "smallAfter": 1216
+      },
+      "timing": "Final alternating-order medians in milliseconds: small owned 0.00727 / legacy 0.000789; ASCII 0.363 / 0.132; Unicode 0.758 / 1.104; binary 1.086 / 2.555; nested 0.444 / 0.461. Prior small-row owned median was 0.0157 in a separate run. Timing variation prevents causal whole-query claims; tiny rows remain slower than unaccounted legacy output.",
+      "remaining": "Native scalar formatting still creates strings before admission; existing scalarStringWithAdmission and decimalStringAllocationBytes provide reusable machinery for the next integration. BigInt arithmetic/traversal/runtime overhead and consumer-retained output remain separate gaps."
+    },
+    "scalarFormattingAdmission": {
+      "change": "CSV reuses scalarStringWithAdmission for number/boolean/bigint conversion, while borrowed strings stay allocation-free. Timestamp toJSON formatting reserves the shared scalarStringAllocationBytes estimate first. intervalToString accepts an optional scope and reserves component/joined strings, the parts directory and parsed bigint backing before conversion. Existing unscoped interval behavior is unchanged.",
+      "validation": {
+        "defaultPassed": 2829,
+        "defaultSkipped": 605,
+        "workerPassed": 57,
+        "referencePassed": 104,
+        "buildLintTypecheck": "passed",
+        "cleanNpmInstall": "passed"
+      },
+      "edgeCases": [
+        "Insufficient timestamp capacity rejects before its formatter is called",
+        "A 4097-digit signed bigint is charged concurrently with final CSV output; one-byte-short admission rolls back",
+        "Interval formatting at exact/one-byte-short caps, large components and canonicalized leading zeros",
+        "Invalid interval nanoseconds release formatting admission after conversion failure",
+        "Existing real HTTP/native-R2 CSV fixture cases and package output/cleanup smoke assertions pass"
+      ],
+      "benchmark": "../benchmarks/csv-output-scalar-admitted-2026-11-13.json",
+      "tradeoff": "Small synthetic rows reserve 1472 bytes, versus 1216 before primitive string accounting. Their median is ~0.0127ms, versus ~0.00727ms in the prior separate run and ~0.000632ms for the unaccounted legacy encoder in this run. Wide-text peaks stay 100529 bytes (ASCII) and 200531 bytes (quoted Unicode). The extra bookkeeping is not presented as a speedup.",
+      "remaining": "This admits top-level CSV formatted storage, not all serializer workspace. Nested JSON scalar formatting and recursive traversal still need integration. BigInt forecast arithmetic, native formatting/GC internals, accounting metadata and consumer-retained output are not a portable total-heap bound."
+    }
+  },
+  "jsonScalarWorkspace": {
+    "change": "JSON sizing and writing admit scalar formatting before conversion. Each synchronous traversal reuses one reservation sized to its largest formatted scalar; growth replaces capacity only after the prior string last use. Safe integers write directly without formatted strings. CSV nested JSON uses the same encoder. Interval allocation estimates are shared with scoped interval conversion.",
+    "validation": {
+      "focusedPassed": 85,
+      "defaultPassed": 2835,
+      "defaultSkipped": 605,
+      "typescriptBuild": "passed",
+      "lint": "passed",
+      "workerPassed": 57,
+      "referencePassed": 104,
+      "distributionBuild": "passed",
+      "typecheck": "passed",
+      "cleanNpmInstall": "passed",
+      "compatibility": "passed",
+      "trackedFileSize": "passed"
+    },
+    "edgeCases": [
+      "Exact peak and one-byte-short caps for representative scalar/nested output",
+      "1000 and 10000 fractional values retain constant scalar workspace",
+      "1000 repeated floats reserve once; larger bigint grows at exact capacity without double charging",
+      "Failed growth skips consumption and releases old capacity",
+      "Thousands of safe integer boundary/random values match native JSON bytes, including negative zero",
+      "Timestamp admission rejects before formatting; write-pass formatter failure releases output and workspace"
+    ],
+    "benchmarks": {
+      "beforeJson": "../benchmarks/json-output-scalar-admitted-2026-11-13.json",
+      "beforeCsv": "../benchmarks/csv-output-nested-scalar-admitted-2026-11-13.json",
+      "afterJson": "../benchmarks/json-output-reused-scalar-2026-11-13.json",
+      "afterCsv": "../benchmarks/csv-output-reused-nested-scalar-2026-11-13.json",
+      "fractional1000MedianMilliseconds": {
+        "jsonBefore": 4.638071,
+        "jsonAfter": 0.23018975,
+        "jsonLegacyAfter": 0.06606665,
+        "csvBefore": 4.374242,
+        "csvAfter": 0.30631235,
+        "csvLegacyAfter": 0.07618475
+      },
+      "interpretation": "Separate synthetic encoder runs, two warmup and seven alternating-order measured rounds, byte parity checked. Final run after full suite terminated. These show reduced per-value accounting overhead, not whole-query or cloud speedups; native unaccounted fractional output remains faster."
+    },
+    "remaining": "Traversal directories/recursion, BigInt forecast arithmetic, native formatter/GC workspace, accounting metadata and consumer-retained output remain outside complete heap admission. Reusing live capacity does not establish a physical GC or whole-Worker heap limit."
+  },
+  "exactDecimalOutput": {
+    "change": "JSON-safe conversion, serialized size, owned JSON encoding and CSV preparation now recognize internal DecimalValue. JSON preserves canonical decimal text as a string; CSV emits the exact text. Nested values share the same contract and admitted formatting workspace.",
+    "validation": {
+      "focusedPassed": 98,
+      "defaultPassed": 2873,
+      "defaultSkipped": 621,
+      "workerPassed": 57,
+      "referencePassed": 104,
+      "build": "passed",
+      "lint": "passed",
+      "typecheck": "passed",
+      "cleanPackageInstall": "passed"
+    },
+    "edgeCases": [
+      "Positive and negative documented precision-loss values",
+      "Zero and MAX_SAFE_INTEGER scale",
+      "Top-level CSV cells and nested JSON arrays",
+      "JSON-safe clone, native JSON and owned JSON byte parity",
+      "Exact-cap success and one-byte-short rejection with zero leaked reservations",
+      "1000/10000-value arrays reuse one decimal formatting workspace"
+    ],
+    "scope": "Serialization integration only. Decimal remains internal and is not yet a generic Scalar/vector type or reader output. Existing real HTTP/R2 tests are regression coverage, not proof of exact-decimal reader support. The independent conformance failures remain open.",
+    "skipExplanation": "Default suite skips the separate conformance group; its 16 newly added independent decimal assertions account for the change from 605 to 621 skips. They run and fail in test:conformance, not waived.",
+    "benchmarks": [
+      "../benchmarks/json-output-decimal-2026-11-13.json",
+      "../benchmarks/csv-output-decimal-2026-11-13.json"
+    ],
+    "timing": "Synthetic 1000-decimal arrays: owned JSON median 0.451ms versus unaccounted legacy 0.118ms; nested CSV 0.513ms versus 0.173ms. Formatting admission and two-pass output have a CPU cost. Fractional medians remain 0.202ms JSON and 0.209ms CSV; other cases vary. No whole-query or cloud throughput claim."
+  },
+  "decimalVectorStorage": {
+    "change": "Distinct decimal vector and Scalar type; public DecimalValue/factory/type guard. Batch construction preserves scale and immutable class semantics instead of inferring structs. Owned materialization pins source backing. Generic replayable selection drives detached decimal gather and concat. Shared gather uses one index buffer across columns when detached output cannot fit. Scalar string casts admit decimal formatting. Arrow exports exact decimal text.",
+    "validation": {
+      "defaultPassed": 2890,
+      "defaultSkipped": 621,
+      "defaultScope": "Full suite before the two additional gather-fallback/union-concat cases; final focused suite includes both.",
+      "finalCoreAndArrowFocusedPassed": 22,
+      "workerPassed": 57,
+      "referencePassed": 104,
+      "build": "passed",
+      "typecheck": "passed",
+      "lint": "passed",
+      "cleanPackageInstall": "passed",
+      "conformancePassed": 479,
+      "conformanceFailed": 30,
+      "conformanceSkipped": 1
+    },
+    "edgeCases": [
+      "Nullable and nested decimals",
+      "Mixed-domain union vectors preserve existing domain tag ordering",
+      "Missing decimal values and invalid indices reject",
+      "Producer closure preserves materialized class values",
+      "Detached gather reduces retained backing",
+      "Tight-budget shared gather charges one indices buffer across columns and preserves nulls",
+      "Concat handles null-only inputs and decimal unions",
+      "Exact construction capacity and one-byte-short rejection",
+      "Normal in-memory query projection preserves values",
+      "Arrow batch/row conversion emits exact text",
+      "Installed package public exports and owned vector materialization preserve exact values and release pool reservations"
+    ],
+    "benchmark": "../benchmarks/decimal-vector-compaction-2026-11-13.json",
+    "measurement": "100-row input reserves 25260 bytes; 10000-row input reserves 2543160 bytes. Three selected rows retain 827 bytes in both cases after source release. These are reservation units, not VM heap measurements.",
+    "capabilities": "Decimal scalar arithmetic kernels, comparison and output exist, but generic expression/order/group/aggregate execution and Parquet decoder hooks remain unintegrated. CPU vector capability declarations do not yet advertise decimal execution; aggregate scalar adapters reject the unsupported shape instead of coercing it. Existing 30 conformance failures remain.",
+    "discoveredBoundary": "The in-memory row scanner has no owned-vector scan capability: toOwnedArray rejects for ordinary numeric rows as well as decimals. Verified explicitly. Normal query projection and the owned vector/materialization APIs are validated separately; no claim of owned in-memory query support.",
+    "remaining": "Integrate exact decimal reader conversion and generic operator capabilities with independent fixture, cloud/R2, checkpoint and allocation tests. Array/descriptor and native BigInt/GC accounting still do not constitute a portable whole-heap cap."
+  },
+  "binaryVariantDecimalCheckpoint": {
+    "evidence": "conformance-value-parity-2026-11-13.json#binaryVariantDecimalIntegration",
+    "defaultPassed": 2907,
+    "defaultSkipped": 621,
+    "workerPassed": 59,
+    "referencePassed": 104,
+    "buildLintTypecheckCleanInstall": "passed",
+    "detail": "Exact binary-variant decimal scalars now survive public and owned readers, HTTP/native-R2 paths and JSON output. Parser and scalar construction participate in owned read scopes. Independent conformance is 495 passed, 14 failed, 1 skipped; the release gate remains open."
+  }
+}

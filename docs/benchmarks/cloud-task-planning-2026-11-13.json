@@ -1,0 +1,460 @@
+{
+  "source": "https://pub-9d5bcb33a5384d79875a943eef183b6d.r2.dev/bench/window-events.parquet",
+  "scope": "Public task planning over actual R2 HTTP 206; shared max-two read control, cold/warm rounds and plan parity. Single round per case, not stable latency estimates. Tracked allocations exclude decoded JS and runtime transport heap; 64/128 MiB are configured pools, not observed whole-Worker heap caps.",
+  "reports": [
+    {
+      "memoryMiB": 64,
+      "jobs": 1,
+      "mode": "auto",
+      "rounds": [
+        {
+          "temperature": "cold",
+          "milliseconds": 451.618626,
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "footer",
+              "range": "bytes=0-4853",
+              "bytes": 4854
+            }
+          ],
+          "trackedPeakBytes": 9732,
+          "retainedTrackedBytes": 4854
+        },
+        {
+          "temperature": "warm",
+          "milliseconds": 149.828976,
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            }
+          ],
+          "trackedPeakBytes": 9732,
+          "retainedTrackedBytes": 4854
+        }
+      ]
+    },
+    {
+      "memoryMiB": 64,
+      "jobs": 1,
+      "mode": "cached",
+      "rounds": [
+        {
+          "temperature": "cold",
+          "milliseconds": 316.56692999999996,
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "footer",
+              "range": "bytes=0-4853",
+              "bytes": 4854
+            }
+          ],
+          "trackedPeakBytes": 17495,
+          "retainedTrackedBytes": 17495
+        },
+        {
+          "temperature": "warm",
+          "milliseconds": 143.4431800000001,
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            }
+          ],
+          "trackedPeakBytes": 17495,
+          "retainedTrackedBytes": 17495
+        }
+      ]
+    },
+    {
+      "memoryMiB": 64,
+      "jobs": 4,
+      "mode": "auto",
+      "rounds": [
+        {
+          "temperature": "cold",
+          "milliseconds": 313.891038,
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "footer",
+              "range": "bytes=0-4853",
+              "bytes": 4854
+            }
+          ],
+          "trackedPeakBytes": 24366,
+          "retainedTrackedBytes": 4854
+        },
+        {
+          "temperature": "warm",
+          "milliseconds": 180.2502320000001,
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            }
+          ],
+          "trackedPeakBytes": 24366,
+          "retainedTrackedBytes": 4854
+        }
+      ]
+    },
+    {
+      "memoryMiB": 64,
+      "jobs": 4,
+      "mode": "cached",
+      "rounds": [
+        {
+          "temperature": "cold",
+          "milliseconds": 392.75398199999995,
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "footer",
+              "range": "bytes=0-4853",
+              "bytes": 4854
+            },
+            {
+              "kind": "footer",
+              "range": "bytes=0-4853",
+              "bytes": 4854
+            },
+            {
+              "kind": "footer",
+              "range": "bytes=0-4853",
+              "bytes": 4854
+            },
+            {
+              "kind": "footer",
+              "range": "bytes=0-4853",
+              "bytes": 4854
+            }
+          ],
+          "trackedPeakBytes": 17495,
+          "retainedTrackedBytes": 17495
+        },
+        {
+          "temperature": "warm",
+          "milliseconds": 807.9846570000002,
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            }
+          ],
+          "trackedPeakBytes": 17495,
+          "retainedTrackedBytes": 17495
+        }
+      ]
+    },
+    {
+      "memoryMiB": 128,
+      "jobs": 1,
+      "mode": "auto",
+      "rounds": [
+        {
+          "temperature": "cold",
+          "milliseconds": 250.37016799999992,
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "footer",
+              "range": "bytes=0-4853",
+              "bytes": 4854
+            }
+          ],
+          "trackedPeakBytes": 9732,
+          "retainedTrackedBytes": 4854
+        },
+        {
+          "temperature": "warm",
+          "milliseconds": 137.15695300000016,
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            }
+          ],
+          "trackedPeakBytes": 9732,
+          "retainedTrackedBytes": 4854
+        }
+      ]
+    },
+    {
+      "memoryMiB": 128,
+      "jobs": 1,
+      "mode": "cached",
+      "rounds": [
+        {
+          "temperature": "cold",
+          "milliseconds": 313.287691,
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "footer",
+              "range": "bytes=0-4853",
+              "bytes": 4854
+            }
+          ],
+          "trackedPeakBytes": 17495,
+          "retainedTrackedBytes": 17495
+        },
+        {
+          "temperature": "warm",
+          "milliseconds": 144.97399600000017,
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            }
+          ],
+          "trackedPeakBytes": 17495,
+          "retainedTrackedBytes": 17495
+        }
+      ]
+    },
+    {
+      "memoryMiB": 128,
+      "jobs": 4,
+      "mode": "auto",
+      "rounds": [
+        {
+          "temperature": "cold",
+          "milliseconds": 262.281618,
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "footer",
+              "range": "bytes=0-4853",
+              "bytes": 4854
+            }
+          ],
+          "trackedPeakBytes": 24366,
+          "retainedTrackedBytes": 4854
+        },
+        {
+          "temperature": "warm",
+          "milliseconds": 174.3328690000003,
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            }
+          ],
+          "trackedPeakBytes": 24366,
+          "retainedTrackedBytes": 4854
+        }
+      ]
+    },
+    {
+      "memoryMiB": 128,
+      "jobs": 4,
+      "mode": "cached",
+      "rounds": [
+        {
+          "temperature": "cold",
+          "milliseconds": 404.114834,
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "footer",
+              "range": "bytes=0-4853",
+              "bytes": 4854
+            },
+            {
+              "kind": "footer",
+              "range": "bytes=0-4853",
+              "bytes": 4854
+            },
+            {
+              "kind": "footer",
+              "range": "bytes=0-4853",
+              "bytes": 4854
+            },
+            {
+              "kind": "footer",
+              "range": "bytes=0-4853",
+              "bytes": 4854
+            }
+          ],
+          "trackedPeakBytes": 17495,
+          "retainedTrackedBytes": 17495
+        },
+        {
+          "temperature": "warm",
+          "milliseconds": 170.5442090000006,
+          "requests": [
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            },
+            {
+              "kind": "discovery-probe",
+              "range": "bytes=0-1",
+              "bytes": 2
+            }
+          ],
+          "trackedPeakBytes": 17495,
+          "retainedTrackedBytes": 17495
+        }
+      ]
+    }
+  ]
+}

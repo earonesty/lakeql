@@ -1,0 +1,22 @@
+{
+  "change": "PhysicalReductionContinuation exposes optional mergeCheckpoint capability, preserving compatibility for other backend implementations. CPU continuations implement it with shared restore/merge dispatch for grouped and ungrouped owned accumulators. Failure closes the continuation because a prefix may have committed; source remains borrowed and unchanged.",
+  "validation": {
+    "ownedAggregateGroupAndQueryTests": 145,
+    "followupCancellationTests": 27,
+    "typescriptBuild": "passed",
+    "edgeCases": [
+      "append before and after merging grouped/ungrouped checkpoints",
+      "source checkpoint remains unchanged and may be released after merge",
+      "retained output survives source disposal",
+      "oversized checkpoint admission fails and releases target state",
+      "wrong checkpoint kind fails and closes target",
+      "abort/elapsed checks guard merge"
+    ],
+    "typecheck": "passed"
+  },
+  "remaining": [
+    "Parquet aggregate tasks still use legacy unowned accumulator functions; this generic capability is the integration prerequisite.",
+    "Shared pool ownership for aggregate task partials and asynchronous transport remains required.",
+    "No complete F1/M1 acceptance claim."
+  ]
+}

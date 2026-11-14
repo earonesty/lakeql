@@ -1,0 +1,40 @@
+{
+  "status": "Implemented; focused, real HTTP fixture, and Worker runtime tests passed",
+  "scope": "Window median/quantile numeric buffer admission through the query memory budget. Mode and distinct key storage remain open.",
+  "behavior": [
+    "Reserve array overhead and each slot before creating or growing numeric state.",
+    "Drop backing array before releasing its merged reservation on reset or failure.",
+    "Sort admitted numeric state in place with constant-scratch heapsort instead of allocating a second full array.",
+    "Preserve append semantics after value evaluation because quantile state has no insertion-order semantics."
+  ],
+  "validation": {
+    "focusedTestsPassed": 22,
+    "build": "pnpm exec tsc -b passed",
+    "cases": [
+      "exact cap",
+      "one byte below cap",
+      "shared-pool sibling reservation",
+      "repeated failure and reuse",
+      "empty input",
+      "percentile endpoints and interpolation",
+      "append after sorting",
+      "iterator failure cleanup"
+    ],
+    "httpTestsPassed": 2,
+    "workerTestsPassed": 61,
+    "remoteCoverage": [
+      "Real wide-timestamp Parquet over local HTTP 206 and ignored-range 200 responses: growing-frame median of a constant alongside decoded timestamp windows, four concurrent queries.",
+      "Native-emulated R2 Parquet in workerd: running 25th percentile of decoded ids 0..99, four concurrent queries at 64/128 MiB shared-pool caps."
+    ],
+    "defaultTestsPassed": 2999,
+    "defaultTestsSkipped": 629,
+    "fileSizeGate": "passed"
+  },
+  "limitations": [
+    "Reservation units are not a portable VM heap ceiling.",
+    "Expression payload ownership and output arrays are not covered by this buffer reservation.",
+    "No production Cloudflare total-memory claim. Local admission-overhead benchmark is recorded separately."
+  ],
+  "benchmark": "docs/benchmarks/window-buffered-aggregate-2026-11-13.json",
+  "performanceFinding": "At 16384 unique numeric values, same-implementation admission diagnostic measured ~8.01ms admitted versus ~1.03ms unadmitted; explicit retained/peak buffer charge was 262208 bytes. Per-value reservation overhead needs amortization; no before/after or cloud-latency conclusion."
+}

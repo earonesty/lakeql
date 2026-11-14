@@ -1,12 +1,17 @@
 import {
   type CacheAdapter,
   type CacheEntry,
+  MATERIALIZATION_CHARGES as c,
   LakeqlError,
   type ListOptions,
+  MemoryScope,
   type ObjectHead,
   type ObjectInfo,
   type ObjectStore,
+  type OwnedMemory,
   type PutOptions,
+  readOwnedStreamWindow,
+  throwIfAborted,
 } from "lakeql-core";
 
 export const PACKAGE = "lakeql-r2" as const;
@@ -36,6 +41,8 @@ export interface R2ObjectBody {
   etag?: string;
   uploaded?: Date;
   httpMetadata?: { contentType?: string };
+  /** Streaming body required by allocation-aware range reads. */
+  body?: ReadableStream<Uint8Array>;
   arrayBuffer(): Promise<ArrayBuffer>;
 }
 
@@ -169,18 +176,90 @@ export class R2ObjectStore implements ObjectStore {
     return new Uint8Array(await object.arrayBuffer());
   }
 
+  getRangeOwnedAllocation(_path: string, range: { offset: number; length: number }) {
+    return { bytes: range.length, output: "exact-buffer" as const };
+  }
+
+  async getRangeOwned(
+    path: string,
+    range: { offset: number; length: number },
+    scope: MemoryScope,
+  ): Promise<OwnedMemory<Uint8Array>> {
+    if (
+      !Number.isSafeInteger(range.offset) ||
+      range.offset < 0 ||
+      !Number.isSafeInteger(range.length) ||
+      range.length < 0 ||
+      !Number.isSafeInteger(range.offset + range.length)
+    ) {
+      throw new LakeqlError(
+        "LAKEQL_VALIDATION_ERROR",
+        "R2 range must use nonnegative safe integers",
+      );
+    }
+    throwIfAborted(scope.signal);
+    if (range.length === 0) return scope.allocate(0, "empty R2 range", () => new Uint8Array());
+    let reservation = scope.reserve(range.length, "R2 range response");
+    try {
+      const object = await this.bucket.get(path, { range });
+      if (scope.disposed) {
+        await object?.body?.cancel().catch(() => undefined);
+        throwIfAborted(scope.signal);
+      }
+      if (!object)
+        throw new LakeqlError("LAKEQL_OBJECT_NOT_FOUND", `No object at ${path}`, { path });
+      if (object.body === undefined) {
+        throw new LakeqlError(
+          "LAKEQL_VALIDATION_ERROR",
+          "Allocation-aware R2 reads require a streaming body",
+        );
+      }
+      // R2 size describes the whole object, not the returned range.
+      if (!Number.isSafeInteger(object.size) || object.size < 0) {
+        await object.body.cancel().catch(() => undefined);
+        throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Invalid R2 object size");
+      }
+      const length = Math.min(range.length, Math.max(0, object.size - range.offset));
+      if (length < reservation.bytes) {
+        const [body, unused] = reservation.partition([length, reservation.bytes - length]);
+        unused?.release();
+        if (body === undefined)
+          throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Missing R2 body reservation");
+        reservation = body;
+      }
+      return await readOwnedStreamWindow(object.body, scope, {
+        offset: 0,
+        metric: "R2 range bytes",
+        length,
+        maxBytes: length,
+        initialReservation: reservation,
+      });
+    } finally {
+      reservation.release();
+    }
+  }
+
   async put(
     path: string,
     body: Uint8Array | ReadableStream<Uint8Array>,
     options?: PutOptions,
   ): Promise<void> {
-    const putOptions: {
-      httpMetadata?: { contentType?: string };
-      customMetadata?: Record<string, string>;
-    } = {};
-    if (options?.contentType) putOptions.httpMetadata = { contentType: options.contentType };
-    if (options?.metadata) putOptions.customMetadata = options.metadata;
-    await this.bucket.put(path, body, putOptions);
+    await this.bucket.put(path, body, r2PutOptions(options));
+  }
+
+  async putOwned(path: string, body: OwnedMemory<Uint8Array>, options?: PutOptions): Promise<void> {
+    const scope = new MemoryScope(body.budget);
+    try {
+      const input = scope.adopt(body.retain()).value;
+      const putOptions = scope.allocate(2 * c.object + 3 * c.property, "R2 write options", () =>
+        r2PutOptions(options),
+      ).value;
+      // R2 accepts the view directly. Its internal upload buffering is external;
+      // retain the supplied backing until the binding settles without copying it.
+      await this.bucket.put(path, input, putOptions);
+    } finally {
+      scope.dispose();
+    }
   }
 
   async delete(path: string): Promise<void> {
@@ -202,6 +281,31 @@ export class R2ObjectStore implements ObjectStore {
       }
       cursor = result.truncated === true ? result.cursor : undefined;
     } while (cursor !== undefined && (options?.limit === undefined || emitted < options.limit));
+  }
+
+  async headOwned(path: string, scope: MemoryScope): Promise<OwnedMemory<ObjectHead> | null> {
+    throwIfAborted(scope.signal);
+    const object = await this.bucket.head(path);
+    throwIfAborted(scope.signal);
+    if (object === null) return null;
+    const contentType = object.httpMetadata?.contentType;
+    const charge =
+      c.object +
+      5 * c.property +
+      (object.etag === undefined ? 0 : c.string + object.etag.length * c.stringCodeUnit) +
+      (object.uploaded === undefined ? 0 : c.timestamp) +
+      (contentType === undefined ? 0 : c.string + contentType.length * c.stringCodeUnit);
+    return scope
+      .allocate<ObjectHead>(charge, "R2 object metadata", () => ({
+        size: object.size,
+        rangeReadMode: "native",
+        ...(object.etag === undefined ? {} : { etag: object.etag }),
+        ...(object.uploaded === undefined
+          ? {}
+          : { lastModified: new Date(object.uploaded.getTime()) }),
+        ...(contentType === undefined ? {} : { contentType }),
+      }))
+      .retain();
   }
 
   async head(path: string): Promise<ObjectHead | null> {
@@ -254,4 +358,17 @@ function jsonCacheValue(value: unknown, key: string): string {
       cause,
     });
   }
+}
+
+function r2PutOptions(options?: PutOptions): {
+  httpMetadata?: { contentType?: string };
+  customMetadata?: Record<string, string>;
+} {
+  const result: {
+    httpMetadata?: { contentType?: string };
+    customMetadata?: Record<string, string>;
+  } = {};
+  if (options?.contentType) result.httpMetadata = { contentType: options.contentType };
+  if (options?.metadata) result.customMetadata = options.metadata;
+  return result;
 }

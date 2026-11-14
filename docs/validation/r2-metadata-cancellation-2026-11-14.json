@@ -1,0 +1,21 @@
+{
+  "runtimeSourceCommit": "9224149",
+  "requirements": ["M2", "V2"],
+  "fixture": "packages/r2/src/index.workerd.ts",
+  "checks": {
+    "typecheck": "passed",
+    "workerTestsPassed": 82,
+    "workerFiles": 23
+  },
+  "contract": "Cancellation does not release the read slot before a non-abortable R2 binding call settles; late metadata is rejected and the queued reader proceeds.",
+  "observations": [
+    "Actual R2 metadata result is held behind a deterministic delivery gate.",
+    "Only one binding call occurs before the cancelled first call settles.",
+    "Next metadata result has the correct size and remains charged until release.",
+    "Final tracked usage is zero."
+  ],
+  "limitations": [
+    "Gate delays result delivery after real local binding I/O; it does not emulate native network cancellation.",
+    "No production R2 latency or whole-runtime memory proof."
+  ]
+}

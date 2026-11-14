@@ -1,0 +1,20 @@
+{
+  "status": "Decoder primitive implemented and tested; page reader/planner integration remains required",
+  "specification": "https://github.com/apache/parquet-format/blob/master/AlpEncoding.md",
+  "change": "readAlpValues preflights the complete ALP section before output allocation, then decodes directly into one Float32Array/Float64Array backing. No vector-sized integer or exception arrays. Output and its bit view are admitted together. Decimal constants use literals and two separate multiplications; FLOAT stages round to binary32. Exception payloads are copied through integer bit views to preserve NaN payloads. Reader offset advances only after successful decoding.",
+  "validation": {
+    "build": "passed",
+    "focusedTestsPassed": 13,
+    "fixture": "fixtures/external/parquet-testing/data/alp_extended.zstd.parquet",
+    "fixtureChecks": "30 ALP column chunks across all five row groups compared bit-for-bit with independent in-file PLAIN values. Includes vector sizes 32/1024/4096, nulls, partial vectors, zero-bit vectors, 64-bit deltas, infinities, negative zero, subnormals and three distinct NaN payloads.",
+    "memory": "Every fixture chunk succeeds at output bytes + 256 view charge and rejects one byte below with zero retained usage.",
+    "malformed": "Invalid modes, vector logs, counts, offsets, exponents, factors, exception counts/positions, bit widths, packed extents, every truncated prefix and trailing bytes reject before output allocation."
+  },
+  "remaining": [
+    "Integrate ALP enum/page dispatch into public and owned readers, including V1/V2 and planner allocation forecasts.",
+    "Validate full reader conformance and remote range fixtures after integration; all six recorded conformance failures are still open.",
+    "Decoder performs BigInt scalar arithmetic; VM scratch is not an explicit heap cap. Optimize only with fixture bit-parity and measured evidence.",
+    "Offset preflight has O(number of vectors + exceptions) work; decoding is linear in values and packed bytes."
+  ],
+  "followupEvidence": "alp-reader-integration-2026-11-13.json"
+}

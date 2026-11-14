@@ -1,0 +1,24 @@
+{
+  "baseCommit": "9b61525",
+  "requirements": ["M2", "F6", "V2"],
+  "change": "Bind controlled owned metadata to caller/query cancellation, transfer successful ownership, and release the original independent metadata owner.",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 30,
+    "regularPassed": 3725,
+    "regularSkipped": 629,
+    "workerPassed": 81
+  },
+  "evidence": [
+    "Queued metadata scope disposal rejects before an unrelated active read completes; no queued transport or admission occurs.",
+    "Active metadata survives child-scope disposal and remains charged until release.",
+    "Query cancellation aborts pending HTTP metadata transport while leaving caller scope usable.",
+    "Real HTTP JSON cache and Parquet fixtures verify metadata ownership cleanup."
+  ],
+  "limitations": [
+    "No general job fairness guarantee.",
+    "Native transports may only observe cancellation after binding settlement.",
+    "Whole-pipeline allocation and scheduling acceptance remains open."
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "status": "Implemented; build, default, Worker and benchmark validation passed",
+  "change": "AggregateGroup caches the immutable serialized key/alias header instead of snapshotting keys and remeasuring alias names per row. State iteration no longer creates Object.entries arrays. AggregateMemory admits its accounting directory and first per-group record, then mutates that record on subsequent updates instead of allocating replacement records. Exact serialized-size boundaries are unchanged.",
+  "validation": {
+    "build": "passed",
+    "focusedTestsPassed": 108,
+    "benchmark": "../benchmarks/row-aggregate-serialized-accounting-2026-11-13.json",
+    "cases": [
+      "Existing exact serialized-size and one-byte-short tests across Unicode, duplicate values and restored state",
+      "Independent seven-aggregate oracle at 1024,4096,16384 rows with serialized-size accounting enabled",
+      "Four concurrent 16384-row jobs at 64/128 MiB pool caps; final usage zero"
+    ],
+    "defaultTestsPassed": 3077,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61
+  },
+  "benchmarkLimits": "Current baseline only; timings ran alongside regression suites and are not an isolated pre/post comparison. Local scanner and reservation counters do not certify total heap or remote behavior.",
+  "remaining": [
+    "Count/sum/avg/variance/min/max now measure directly (linked evidence). Initial header and first/last/any snapshot estimation remain outstanding.",
+    "Growing-state bookkeeping returns temporary size records and formats changed values.",
+    "AggregateMemory metadata is admitted, but arbitrary expression and request-compatibility temporaries remain outside this change."
+  ],
+  "fixedSizeEvidence": "fixed-aggregate-direct-size-2026-11-13.json"
+}

@@ -1,0 +1,140 @@
+{
+  "description": "Owned top-3 selection over real typed/packed buffers, including admitted scalar reads. Input creation excluded from timing; reported workspace is peak minus retained input backing. Two warmups, seven samples. No local/cloud equivalence, before/after speedup, native-GC or total-heap claim.",
+  "node": "v24.18.1",
+  "sources": {
+    "packages/core/src/vector-sort.ts": "9aa669c307c489c2a7af01051ae5c7460b5534faec806cc9dc14286b5f51888d",
+    "packages/core/src/batch.ts": "033ce1a004e773c70a35f499ec234e800af405b184c5a50087ed05b071fae9e5",
+    "packages/core/src/scalar-order.ts": "d2ce42b29f2a030cf8ef884dce0a13ff1bf488a555d1687b88834e90bfe88387",
+    "packages/core/src/scalar-read-workspace.ts": "38a739453cea0a7a0d217cf58ace46162a848c5ac10ca36af58ec0979e11ac6c",
+    "packages/core/src/vector-buffer.ts": "5b8f353e2527773bf3dc684f65347654f593a9b980ffb8d0e3e6c0ceefafbdf4",
+    "packages/core/src/memory-budget.ts": "859ff6420d6a7048b3d30947f26b67fd9409f16507e775293ea3c83df54a5175"
+  },
+  "results": [
+    {
+      "kind": "bigint",
+      "rows": 100,
+      "limit": 3,
+      "inputBytes": 800,
+      "workspaceBytes": 268,
+      "medianMilliseconds": 0.2043950000000052,
+      "samples": [
+        0.23301899999999875, 0.2043950000000052, 0.2355540000000076, 0.1604420000000033,
+        0.6374299999999948, 0.06707600000000014, 0.0745499999999879
+      ]
+    },
+    {
+      "kind": "bigint",
+      "rows": 10000,
+      "limit": 3,
+      "inputBytes": 80000,
+      "workspaceBytes": 268,
+      "medianMilliseconds": 0.8256850000000071,
+      "samples": [
+        1.2349449999999962, 0.8488980000000055, 0.8256850000000071, 0.5884279999999933,
+        0.7574759999999969, 0.7423569999999984, 1.0900219999999905
+      ]
+    },
+    {
+      "kind": "timestamp96",
+      "rows": 100,
+      "limit": 3,
+      "inputBytes": 1200,
+      "workspaceBytes": 652,
+      "medianMilliseconds": 0.09601100000000429,
+      "samples": [
+        0.27356500000000494, 0.13356100000000026, 0.13959299999999075, 0.09601100000000429,
+        0.07439999999999714, 0.08232499999999732, 0.06282799999999611
+      ]
+    },
+    {
+      "kind": "timestamp96",
+      "rows": 10000,
+      "limit": 3,
+      "inputBytes": 120000,
+      "workspaceBytes": 652,
+      "medianMilliseconds": 1.795720000000017,
+      "samples": [
+        4.856831999999997, 4.018914999999993, 1.8190339999999878, 1.6751040000000046,
+        1.795720000000017, 1.6865439999999978, 1.6383240000000114
+      ]
+    },
+    {
+      "kind": "packed text",
+      "width": 16,
+      "rows": 100,
+      "limit": 3,
+      "inputBytes": 1600,
+      "workspaceBytes": 588,
+      "medianMilliseconds": 0.14011399999998275,
+      "samples": [
+        0.24767599999998424, 0.2292410000000018, 0.19165100000000734, 0.12937399999998433,
+        0.14011399999998275, 0.13493400000001543, 0.11609799999999382
+      ]
+    },
+    {
+      "kind": "packed text",
+      "width": 16,
+      "rows": 10000,
+      "limit": 3,
+      "inputBytes": 160000,
+      "workspaceBytes": 588,
+      "medianMilliseconds": 3.0517440000000136,
+      "samples": [
+        2.982203999999996, 3.0517440000000136, 2.856556999999981, 3.046644999999984,
+        3.1545380000000023, 3.1177279999999996, 3.0825729999999965
+      ]
+    },
+    {
+      "kind": "packed text",
+      "width": 128,
+      "rows": 100,
+      "limit": 3,
+      "inputBytes": 12800,
+      "workspaceBytes": 1036,
+      "medianMilliseconds": 0.06576400000000149,
+      "samples": [
+        0.07191600000001586, 0.06543300000001295, 0.06576400000000149, 0.06536299999999073,
+        0.06370999999998617, 0.07803700000002323, 0.06592399999999543
+      ]
+    },
+    {
+      "kind": "packed text",
+      "width": 128,
+      "rows": 10000,
+      "limit": 3,
+      "inputBytes": 1280000,
+      "workspaceBytes": 1036,
+      "medianMilliseconds": 2.7794420000000173,
+      "samples": [
+        3.9736289999999883, 3.548950000000019, 2.847750000000019, 2.7794420000000173, 2.742953,
+        2.7777490000000284, 2.7520000000000095
+      ]
+    },
+    {
+      "kind": "packed text",
+      "width": 1024,
+      "rows": 100,
+      "limit": 3,
+      "inputBytes": 102400,
+      "workspaceBytes": 4620,
+      "medianMilliseconds": 0.07685399999996889,
+      "samples": [
+        0.07595299999996996, 0.07685399999996889, 0.3594360000000165, 0.0791590000000042,
+        0.07023199999997587, 0.07825699999995095, 0.07307800000000952
+      ]
+    },
+    {
+      "kind": "packed text",
+      "width": 1024,
+      "rows": 10000,
+      "limit": 3,
+      "inputBytes": 10240000,
+      "workspaceBytes": 4620,
+      "medianMilliseconds": 4.841883999999993,
+      "samples": [
+        4.6270489999999995, 5.409813000000042, 4.841883999999993, 10.65662900000001, 4.660933,
+        5.38748099999998, 4.654139999999984
+      ]
+    }
+  ]
+}

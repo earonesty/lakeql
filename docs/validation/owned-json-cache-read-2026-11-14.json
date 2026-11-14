@@ -1,0 +1,27 @@
+{
+  "sourceBase": "2f09421",
+  "scope": "Owned object-store JSON-cache read and parse overlap",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 20,
+    "fullSuite": {
+      "passed": 3643,
+      "skipped": 629,
+      "log": "/tmp/owned-json-cache-full.log"
+    }
+  },
+  "evidence": [
+    "Owned and legacy range payload admission with exact-capacity and one-byte-below tests",
+    "Parsed tree remains owned after internal read scope disposal",
+    "Malformed, invalid, missing, expired and changed-extent cleanup",
+    "Actual localhost HTTP 206 and ignored-range 200 response fixtures"
+  ],
+  "remaining": [
+    "Preliminary HEAD/probe allocation ownership, including HTTP full-response fallback",
+    "Legacy transport internals",
+    "Same-size object version changes between metadata and read",
+    "Owned remote serialization/write path",
+    "Full audit and final runtime acceptance"
+  ]
+}

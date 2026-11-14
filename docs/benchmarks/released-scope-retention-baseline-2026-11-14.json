@@ -1,0 +1,19 @@
+{
+  "node": "v24.18.1",
+  "sourceSha256": "8812c9af1fcc2659589ed886f6cd3d954fc52bc41c2847000466c1e6ba8f9ea5",
+  "conditions": "Released handles and disposed child remain strongly held across event-loop turns and diagnostic Node GC. The external payload is deliberately larger than its illustrative charge; this tests reachability, not admission coverage or GC timing in production.",
+  "results": [
+    {
+      "kind": "released-scoped-handle",
+      "collected": false
+    },
+    {
+      "kind": "disposed-child",
+      "collected": false
+    },
+    {
+      "kind": "released-adopted-payload",
+      "collected": false
+    }
+  ]
+}

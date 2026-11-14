@@ -1,0 +1,23 @@
+{
+  "baseCommit": "0320a02",
+  "requirements": ["F5", "M1", "V2"],
+  "change": "Shared per-column bit-mask deduplication replaces serialized keys; owned top-k admits normalized records and temporary Map storage.",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 14,
+    "regularPassed": 3734,
+    "regularSkipped": 645,
+    "workerPassed": 82
+  },
+  "boundaries": [
+    "All four direction/null-order combinations, Unicode/quoted column name, 100 repetitions without increased tracked peak.",
+    "Exact capacity and one byte below; input ownership and scratch unwind on failure.",
+    "Fused projection fixture includes normalization peak and still asserts final retained storage."
+  ],
+  "limitations": [
+    "Caller-owned ordering terms/strings are borrowed inputs.",
+    "No measured speedup claim.",
+    "Broader gather/operator bookkeeping and key-cache tradeoff evidence remain open."
+  ]
+}

@@ -1,0 +1,103 @@
+{
+  "description": "Public grouped and buffering scalar queries using an owned two-row scanner. Checks that 16-byte pools reject aggregate-state admission and sufficient pools return every expected value with complete cleanup. Applies to the columnar continuation route; legacy and late-materialized routes require separate evidence.",
+  "results": [
+    {
+      "operation": "grouped-count",
+      "rejected": true,
+      "inputRows": 128,
+      "configuredPoolBytes": 16,
+      "trackedPeakBytes": 16,
+      "remainingTrackedBytes": 0
+    },
+    {
+      "operation": "grouped-count",
+      "rejected": false,
+      "inputRows": 128,
+      "outputGroups": 128,
+      "configuredPoolBytes": 67108864,
+      "trackedPeakBytes": 295536,
+      "remainingTrackedBytes": 0
+    },
+    {
+      "operation": "median",
+      "rejected": true,
+      "inputRows": 128,
+      "configuredPoolBytes": 16,
+      "trackedPeakBytes": 16,
+      "remainingTrackedBytes": 0
+    },
+    {
+      "operation": "median",
+      "rejected": false,
+      "inputRows": 128,
+      "configuredPoolBytes": 67108864,
+      "trackedPeakBytes": 22506,
+      "remainingTrackedBytes": 0
+    },
+    {
+      "operation": "count_distinct",
+      "rejected": true,
+      "inputRows": 128,
+      "configuredPoolBytes": 16,
+      "trackedPeakBytes": 16,
+      "remainingTrackedBytes": 0
+    },
+    {
+      "operation": "count_distinct",
+      "rejected": false,
+      "inputRows": 128,
+      "configuredPoolBytes": 67108864,
+      "trackedPeakBytes": 47184,
+      "remainingTrackedBytes": 0
+    },
+    {
+      "operation": "grouped-count",
+      "rejected": true,
+      "inputRows": 1024,
+      "configuredPoolBytes": 16,
+      "trackedPeakBytes": 16,
+      "remainingTrackedBytes": 0
+    },
+    {
+      "operation": "grouped-count",
+      "rejected": false,
+      "inputRows": 1024,
+      "outputGroups": 1024,
+      "configuredPoolBytes": 67108864,
+      "trackedPeakBytes": 1692624,
+      "remainingTrackedBytes": 0
+    },
+    {
+      "operation": "median",
+      "rejected": true,
+      "inputRows": 1024,
+      "configuredPoolBytes": 16,
+      "trackedPeakBytes": 16,
+      "remainingTrackedBytes": 0
+    },
+    {
+      "operation": "median",
+      "rejected": false,
+      "inputRows": 1024,
+      "configuredPoolBytes": 67108864,
+      "trackedPeakBytes": 114906,
+      "remainingTrackedBytes": 0
+    },
+    {
+      "operation": "count_distinct",
+      "rejected": true,
+      "inputRows": 1024,
+      "configuredPoolBytes": 16,
+      "trackedPeakBytes": 16,
+      "remainingTrackedBytes": 0
+    },
+    {
+      "operation": "count_distinct",
+      "rejected": false,
+      "inputRows": 1024,
+      "configuredPoolBytes": 67108864,
+      "trackedPeakBytes": 285072,
+      "remainingTrackedBytes": 0
+    }
+  ]
+}

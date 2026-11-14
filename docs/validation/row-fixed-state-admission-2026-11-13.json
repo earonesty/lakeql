@@ -1,0 +1,27 @@
+{
+  "status": "Implemented; build, default and Worker validation passed",
+  "change": "OwnedReplacementValue admits a detached candidate while the previous retained value remains live, then replaces ownership and releases the previous handle. Failed detachment leaves prior ownership intact. Scope cancellation releases the current handle. Min/max, first/last and any use this shared primitive for fresh and restored retained values.",
+  "validation": {
+    "build": "passed",
+    "focusedTestsPassed": 108,
+    "lifecycleTestsPassed": 12,
+    "cases": [
+      "Exact replacement overlap and one-byte-short denial preserve prior ownership",
+      "100 replacements maintain constant live usage",
+      "Detached bytes resist caller mutation",
+      "Replacement after scope disposal rejects",
+      "First/last/any retain 1/3/1 when scanner reuses one byte buffer then overwrites it with 99",
+      "Existing scalar aggregate and checkpoint restore tests"
+    ],
+    "defaultTestsPassed": 3075,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61
+  },
+  "remaining": [
+    "Final first/last/any scalar conversion and snapshot records are now admitted (linked evidence); legacy estimation remains separate.",
+    "Final outer aggregate snapshots are now admitted; result projection and bookkeeping remain outstanding.",
+    "The borrowed-data detachment contract excludes accessors/custom unsupported prototypes; no arbitrary executable input contract is implied.",
+    "Memory accounting is conservative ownership, not a portable total-heap cap."
+  ],
+  "snapshotEvidence": "row-aggregate-snapshot-admission-2026-11-13.json"
+}

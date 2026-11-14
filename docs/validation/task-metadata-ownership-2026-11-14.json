@@ -1,0 +1,23 @@
+{
+  "change": "Task source helper now acquires owned parsed metadata for stores with owned range reads. Row and column task iterators retain metadata until completion/early close; aggregate task metadata lives in a child scope excluded from checkpoint ownership. Borrowed-only stores preserve compatibility through an independently admitted detached metadata copy after legacy cache/read parsing.",
+  "validation": {
+    "taskAndWorkUnitTests": 30,
+    "httpAndOwnedMetadataTests": 11,
+    "typescriptBuild": "passed",
+    "typecheck": "passed",
+    "formatting": "passed",
+    "fixtures": [
+      "row and column task iterators hold charges at first yield and release on early return",
+      "one-byte pool rejects without residual reservations",
+      "portable borrowed-store cache fixture preserves runtime-local metadata reuse",
+      "HTTP 206 and ignored-200 cold/warm concurrent window fixtures remain correct",
+      "owned metadata parser regressions pass"
+    ]
+  },
+  "limits": [
+    "Legacy borrowed read/parser allocation happens before retained-copy admission; it is not a fully owned allocation path.",
+    "Planning-only metadata helpers still use their existing borrowed API.",
+    "Task projection/partition row transforms and task topology still need admission review.",
+    "No complete allocation matrix or whole-Worker heap guarantee is claimed."
+  ]
+}

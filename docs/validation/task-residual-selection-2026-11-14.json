@@ -1,0 +1,27 @@
+{
+  "date": "2026-11-14",
+  "changes": [
+    "Unify column task augmentation, residual evaluation, projection and selection under one per-yield scope.",
+    "Evaluate vector predicates against partition-augmented batches and admit masks and gathered storage.",
+    "Use admitted materialization plans and scoped scalar evaluation when vector predicates cannot execute; release row workspace before yielding selected vectors.",
+    "Remove raw selection-index arrays and row-to-column fallback reconstruction."
+  ],
+  "validation": {
+    "targeted_tests": 37,
+    "build": "passed",
+    "typecheck": "passed",
+    "format": "passed",
+    "real_fixtures": "Parquet partition predicates using vector equality and scalar LIKE; empty result and early close cleanup; existing task and work-unit fixtures.",
+    "full_default_suite": {
+      "passed": 3396,
+      "skipped": 629
+    },
+    "real_http_tests": 4
+  },
+  "limitations": [
+    "Scalar fallback currently admits a full batch of materialized rows; configured budgets can reject this workspace. A streaming per-row fallback may reduce peak memory.",
+    "Materialization-plan traversal bookkeeping and other generic helper internals still require allocation coverage audit.",
+    "Planning topology, full release gates and the complete mixed-job 64/128 MiB matrix remain open.",
+    "No whole-process or production Cloudflare heap-cap claim."
+  ]
+}

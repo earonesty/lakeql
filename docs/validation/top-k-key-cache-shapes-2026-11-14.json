@@ -1,0 +1,65 @@
+{
+  "runtimeSourceCommit": "1edbbe518411fa3f295d8e7d6a4464d96ecdff56",
+  "requirements": ["F5", "V2"],
+  "harness": "bench/top-k-key-cache-shapes.mjs",
+  "artifact": "docs/benchmarks/top-k-key-cache-shapes-2026-11-14.json",
+  "matrix": {
+    "scenarios": 64,
+    "variants": 2,
+    "warmups": 2,
+    "measuredSamples": 6,
+    "order": "alternating each round",
+    "rows": 10000,
+    "shapes": ["packed UTF8", "dictionary over packed UTF8 (64 unique values)"],
+    "keyColumns": [1, 2],
+    "widthBytes": [32, 256],
+    "limits": [3, 100],
+    "selectionsSharingPreparation": [1, 4],
+    "firstKeyNullOrdering": ["first", "last"],
+    "unicodePrefixes": ["é", "界", "🙂", "A", "𐀀", ""]
+  },
+  "checks": [
+    "All 1024 benchmark iterations (2560 selections) match an independent stable row-sort oracle, including nullable keys, mixed ascending/descending terms, ties and Unicode UTF16 ordering.",
+    "All iterations finish with zero charged reservations.",
+    "Dictionary caches decode unique values only (64 or 128 total), retaining source indices and validity.",
+    "Four-selection cases retain every result until verification and cleanup; cache preparation cost is inside the measured interval."
+  ],
+  "findings": {
+    "packed": {
+      "cachedFaster": 29,
+      "scenarios": 32,
+      "medianSpeedupRatio": 2.215334093484815,
+      "minSpeedupRatio": 0.7825863083561969,
+      "maxSpeedupRatio": 4.41778765811211,
+      "minCacheIncrementalPeak": 1441488,
+      "maxCacheIncrementalPeak": 11845616
+    },
+    "dictionary": {
+      "cachedFaster": 32,
+      "scenarios": 32,
+      "medianSpeedupRatio": 2.928409989534896,
+      "minSpeedupRatio": 2.4896836235998476,
+      "maxSpeedupRatio": 3.5441418896247803,
+      "minCacheIncrementalPeak": 10960,
+      "maxCacheIncrementalPeak": 83904
+    }
+  },
+  "decision": [
+    "Keep the current direct-access default while testing an adaptive policy; whole-column caching is not a universal improvement.",
+    "Low-cardinality dictionary preparation is the next policy candidate: all 32 dictionary cases win, with incremental cache peaks of 10960–83904 bytes.",
+    "Packed preparation uses 1441488–11845616 incremental bytes and loses three small-k/two-key cases; avoid a blanket row/width cache threshold."
+  ],
+  "remaining": [
+    "Vary dictionary cardinality relative to selected rows and selection density; the current 64-entry case does not justify caching arbitrary dictionaries.",
+    "Exercise per-query/shared pressure, pinned results, failure recovery and cancellation for any proposed production preparation path.",
+    "Confirm the selected policy with a second alternating-order measurement before implementation acceptance."
+  ],
+  "limitations": [
+    "Sequential synchronous Node selections with retained outputs model reuse/overlap, not asynchronous cloud jobs.",
+    "Unicode allocation uses a conservative UTF16 upper bound derived from UTF8 bytes; runtime/native/GC overhead and oracle memory are outside reservation accounting.",
+    "Experimental cache only; no production policy or timing threshold inferred from one run.",
+    "This measures the complete owned top-k operator, including gathering and retained output representation, not just comparator time.",
+    "Timing and modeled allocation exclude fixture construction and independent oracle materialization; this is not a whole-process heap or cloud throughput measurement.",
+    "No production runtime changed; previous regular/Worker validation remains applicable."
+  ]
+}

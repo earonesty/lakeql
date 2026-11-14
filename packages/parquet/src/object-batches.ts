@@ -1,13 +1,15 @@
 import { parquetReadObjects, parquetSchema } from "hyparquet";
-import { normalizeIntegerDecimalRows, rawIntegerDecimalMetadata } from "./decimal.js";
+import { scopedParquetCompressors } from "./compressors.js";
+import { normalizeDecimalRows, rawDecimalMetadata } from "./decimal.js";
 import { normalizeDecodedRows } from "./decoded-rows.js";
-import { lakeqlParquetParsers } from "./parsers.js";
+import { parquetParsersForMetadata } from "./parsers.js";
 import {
   recordReadColumns,
   recordRowGroupRead,
   recordRowGroupSkipped,
   recordRowsDecoded,
 } from "./read-metrics.js";
+import { recoverColumnExtents } from "./recover-column-extents.js";
 import { rowGroupMayMatch } from "./row-group-pruning.js";
 import type {
   ParquetMetadata,
@@ -15,6 +17,7 @@ import type {
   ReadParquetBatchOptions,
   StoreAsyncBuffer,
 } from "./types.js";
+import { parquetValueDecoders } from "./value-decoders.js";
 
 export async function* readParquetObjectBatchesFromFile(
   file: StoreAsyncBuffer,
@@ -28,7 +31,9 @@ export async function* readParquetObjectBatchesFromFile(
     options.columns ?? parquetSchema(metadata).children.map((child) => child.element.name);
   if (options.columns !== undefined) recordReadColumns(options.stats, options.columns);
   let rowGroupStart = 0;
-  for (const rowGroup of metadata.row_groups) {
+  for (let groupIndex = 0; groupIndex < metadata.row_groups.length; groupIndex++) {
+    const rowGroup = metadata.row_groups[groupIndex];
+    if (rowGroup === undefined) continue;
     const rowGroupEnd = rowGroupStart + Number(rowGroup.num_rows);
     if (
       rowGroupEnd <= requestedStart ||
@@ -42,19 +47,35 @@ export async function* readParquetObjectBatchesFromFile(
     recordRowGroupRead(options.stats);
     const start = Math.max(rowGroupStart, requestedStart);
     const end = Math.min(rowGroupEnd, requestedEnd);
+    const recovered = await recoverColumnExtents(
+      file,
+      metadata,
+      { columns },
+      options.allocationScope ?? options.decompressionScope,
+      () => metadata.row_groups,
+      groupIndex,
+    );
     for (let rowStart = start; rowStart < end; rowStart += batchSize) {
       const rowEnd = Math.min(rowStart + batchSize, end);
       const readOptions: Parameters<typeof parquetReadObjects>[0] = {
         file,
-        metadata: rawIntegerDecimalMetadata(metadata, columns),
+        compressors: scopedParquetCompressors(
+          options.allocationScope ?? options.decompressionScope,
+        ),
+        metadata: rawDecimalMetadata(recovered, columns),
         rowFormat: "object",
         rowStart,
         rowEnd,
-        parsers: lakeqlParquetParsers,
+        parsers: parquetParsersForMetadata(
+          metadata,
+          options.allocationScope ?? options.decompressionScope,
+        ),
+        valueDecoders: parquetValueDecoders(options.allocationScope ?? options.decompressionScope),
+        utf8: false,
       };
       if (options.columns) readOptions.columns = options.columns;
       const rows = normalizeDecodedRows(
-        normalizeIntegerDecimalRows(metadata, columns, await parquetReadObjects(readOptions)),
+        normalizeDecimalRows(metadata, columns, await parquetReadObjects(readOptions)),
       );
       recordRowsDecoded(options.stats, rows.length);
       yield {

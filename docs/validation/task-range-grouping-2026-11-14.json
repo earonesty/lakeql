@@ -1,0 +1,27 @@
+{
+  "date": "2026-11-14",
+  "changes": [
+    "Accumulate independent task range copies and sort/compact once per combined group rather than repeatedly merging the growing result.",
+    "Compact the owned range array in place; preserve input task order and existing single-task range semantics."
+  ],
+  "validation": {
+    "build": "passed",
+    "targeted_tests": 48,
+    "edge_cases": [
+      "1000 reverse-ordered disjoint ranges",
+      "frozen input ranges unchanged",
+      "overlapping covering range",
+      "existing grouping/version separation and aggregate fixtures"
+    ],
+    "benchmark": "docs/benchmarks/task-range-grouping-2026-11-14.json",
+    "typecheck": "passed"
+  },
+  "tradeoffs": [
+    "Collected range storage is proportional to total input ranges until compaction. Heavily overlapping inputs may retain more intermediate ranges than incremental compaction.",
+    "Grouping key/directory/range allocation admission remains open; this change addresses repeated whole-state work, not the complete grouping memory contract."
+  ],
+  "remaining": [
+    "Admit grouping topology and key construction under the task execution budget.",
+    "Validate mixed-job 64/128 MiB operation and refresh complete release gates."
+  ]
+}

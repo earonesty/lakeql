@@ -1,0 +1,189 @@
+{
+  "scope": "Local output construction; source storage, caller selection, descriptors, planner scratch and VM headroom excluded. No cloud or whole-process cap claim.",
+  "node": "v24.18.1",
+  "warmups": 2,
+  "samples": 6,
+  "sourceSha256": "e95c48cc654bd06e7f3887ba223b7a7b751c89e0cf2cf5019185134d18b8b538",
+  "cases": [
+    {
+      "shape": "shared-text",
+      "columns": 1,
+      "selectedRows": 0,
+      "peakBytes": 128,
+      "retainedBytes": 128,
+      "afterReleaseBytes": 0,
+      "capMinusOnePeakBytes": 0,
+      "medianMs": 0.11794249999999806
+    },
+    {
+      "shape": "shared-text",
+      "columns": 1,
+      "selectedRows": 1,
+      "peakBytes": 132,
+      "retainedBytes": 132,
+      "afterReleaseBytes": 0,
+      "capMinusOnePeakBytes": 0,
+      "medianMs": 0.05065049999999971
+    },
+    {
+      "shape": "shared-text",
+      "columns": 1,
+      "selectedRows": 1000,
+      "peakBytes": 4128,
+      "retainedBytes": 4128,
+      "afterReleaseBytes": 0,
+      "capMinusOnePeakBytes": 0,
+      "medianMs": 0.09610600000000247
+    },
+    {
+      "shape": "shared-text",
+      "columns": 8,
+      "selectedRows": 0,
+      "peakBytes": 128,
+      "retainedBytes": 128,
+      "afterReleaseBytes": 0,
+      "capMinusOnePeakBytes": 0,
+      "medianMs": 0.022827500000001777
+    },
+    {
+      "shape": "shared-text",
+      "columns": 8,
+      "selectedRows": 1,
+      "peakBytes": 132,
+      "retainedBytes": 132,
+      "afterReleaseBytes": 0,
+      "capMinusOnePeakBytes": 0,
+      "medianMs": 0.035101499999999675
+    },
+    {
+      "shape": "shared-text",
+      "columns": 8,
+      "selectedRows": 1000,
+      "peakBytes": 4128,
+      "retainedBytes": 4128,
+      "afterReleaseBytes": 0,
+      "capMinusOnePeakBytes": 0,
+      "medianMs": 0.08021650000000236
+    },
+    {
+      "shape": "shared-text",
+      "columns": 32,
+      "selectedRows": 0,
+      "peakBytes": 128,
+      "retainedBytes": 128,
+      "afterReleaseBytes": 0,
+      "capMinusOnePeakBytes": 0,
+      "medianMs": 0.02811250000000598
+    },
+    {
+      "shape": "shared-text",
+      "columns": 32,
+      "selectedRows": 1,
+      "peakBytes": 132,
+      "retainedBytes": 132,
+      "afterReleaseBytes": 0,
+      "capMinusOnePeakBytes": 0,
+      "medianMs": 0.06147049999999865
+    },
+    {
+      "shape": "shared-text",
+      "columns": 32,
+      "selectedRows": 1000,
+      "peakBytes": 4128,
+      "retainedBytes": 4128,
+      "afterReleaseBytes": 0,
+      "capMinusOnePeakBytes": 0,
+      "medianMs": 0.11937000000000353
+    },
+    {
+      "shape": "numeric",
+      "columns": 1,
+      "selectedRows": 0,
+      "peakBytes": 128,
+      "retainedBytes": 128,
+      "afterReleaseBytes": 0,
+      "capMinusOnePeakBytes": 0,
+      "medianMs": 0.022612999999999772
+    },
+    {
+      "shape": "numeric",
+      "columns": 1,
+      "selectedRows": 1,
+      "peakBytes": 136,
+      "retainedBytes": 136,
+      "afterReleaseBytes": 0,
+      "capMinusOnePeakBytes": 0,
+      "medianMs": 0.024976999999999805
+    },
+    {
+      "shape": "numeric",
+      "columns": 1,
+      "selectedRows": 1000,
+      "peakBytes": 8128,
+      "retainedBytes": 8128,
+      "afterReleaseBytes": 0,
+      "capMinusOnePeakBytes": 0,
+      "medianMs": 0.09397750000000116
+    },
+    {
+      "shape": "numeric",
+      "columns": 8,
+      "selectedRows": 0,
+      "peakBytes": 1024,
+      "retainedBytes": 1024,
+      "afterReleaseBytes": 0,
+      "capMinusOnePeakBytes": 0,
+      "medianMs": 0.20579249999999405
+    },
+    {
+      "shape": "numeric",
+      "columns": 8,
+      "selectedRows": 1,
+      "peakBytes": 1088,
+      "retainedBytes": 1088,
+      "afterReleaseBytes": 0,
+      "capMinusOnePeakBytes": 0,
+      "medianMs": 0.1601620000000068
+    },
+    {
+      "shape": "numeric",
+      "columns": 8,
+      "selectedRows": 1000,
+      "peakBytes": 65024,
+      "retainedBytes": 65024,
+      "afterReleaseBytes": 0,
+      "capMinusOnePeakBytes": 0,
+      "medianMs": 0.5847070000000087
+    },
+    {
+      "shape": "numeric",
+      "columns": 32,
+      "selectedRows": 0,
+      "peakBytes": 4096,
+      "retainedBytes": 4096,
+      "afterReleaseBytes": 0,
+      "capMinusOnePeakBytes": 0,
+      "medianMs": 0.42754599999999954
+    },
+    {
+      "shape": "numeric",
+      "columns": 32,
+      "selectedRows": 1,
+      "peakBytes": 4352,
+      "retainedBytes": 4352,
+      "afterReleaseBytes": 0,
+      "capMinusOnePeakBytes": 0,
+      "medianMs": 0.34837699999999217
+    },
+    {
+      "shape": "numeric",
+      "columns": 32,
+      "selectedRows": 1000,
+      "peakBytes": 260096,
+      "retainedBytes": 260096,
+      "afterReleaseBytes": 0,
+      "capMinusOnePeakBytes": 0,
+      "medianMs": 2.5607035000000167
+    }
+  ]
+}

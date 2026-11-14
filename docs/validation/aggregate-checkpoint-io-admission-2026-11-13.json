@@ -1,0 +1,26 @@
+{
+  "status": "Implemented; build, default and Worker validation passed",
+  "change": "aggregateWithState owns a checkpoint scope across restore and final encoding. Encoded restore uses admitted JSON parsing; object restore uses admitted data detachment; spill restore selects readOwned when supplied. Final checkpoint uses admitted stable encoding and asynchronous write pinning. Every exit disposes checkpoint ownership.",
+  "validation": {
+    "build": "passed",
+    "focusedTestsPassed": 104,
+    "cases": [
+      "Restore through memory spill readOwned with legacy read deliberately disabled",
+      "Sum checkpoint resume result parity",
+      "Exact checkpoint allocation peak and one-byte-short cleanup",
+      "Canceled asynchronous aggregate spill write retains bytes until settlement",
+      "Existing serialized-size boundary tests retain exact limits with an independent explicit allocation allowance"
+    ],
+    "defaultTestsPassed": 3063,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61
+  },
+  "remaining": [
+    "Median/quantile retained growth, restore copies, sort scratch and snapshots are now admitted (linked evidence). Other states, group/key storage, outer snapshots and result projection remain outstanding.",
+    "Restored aggregate states can retain snapshot arrays; source ownership intentionally remains until query completion.",
+    "Legacy custom spill adapters without readOwned remain outside pre-read admission.",
+    "Request fingerprint serialization and runtime bookkeeping remain outside these charges."
+  ],
+  "releaseBaseline": "checkpoint-release-baseline-2026-11-13.json",
+  "growingStateEvidence": "row-quantile-state-admission-2026-11-13.json"
+}

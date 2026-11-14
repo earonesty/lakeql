@@ -1,0 +1,39 @@
+{
+  "source": "https://pub-9d5bcb33a5384d79875a943eef183b6d.r2.dev/bench/window-events.parquet",
+  "scope": "Actual public R2 HTTP 206 responses; encoded allocation bounds only, excluding parsed JS objects and whole-worker heap",
+  "reports": [
+    {
+      "cap": 1534,
+      "footerBytes": 1535,
+      "peakBytes": 1534,
+      "requests": [
+        {
+          "range": "bytes=3320-4853",
+          "bytes": 1534
+        }
+      ]
+    },
+    {
+      "cap": 1535,
+      "footerBytes": 1535,
+      "peakBytes": 1535,
+      "requests": [
+        {
+          "range": "bytes=3319-4853",
+          "bytes": 1535
+        }
+      ]
+    },
+    {
+      "cap": 3070,
+      "footerBytes": 1535,
+      "peakBytes": 3070,
+      "requests": [
+        {
+          "range": "bytes=1784-4853",
+          "bytes": 3070
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "change": "Added a bounded immutable scalar backing index using one shared ownership-provenance traversal. The generic selected-allocation helper reuses that traversal. Window task partition/evaluation can reuse trusted indexed string/bigint charges while still detaching mutable containers. Parquet builds the index only when two source-sized extents no longer fit in available headroom; failed optional index admission cleans up and falls back to admitted copying.",
+  "validation": {
+    "focusedOwnershipAndTaskTests": 42,
+    "typescriptBuild": "passed",
+    "formatting": "passed",
+    "edgeCases": [
+      "partition/evaluation save more than 38000 reservation bytes for a 20000-character payload",
+      "source and index disposal do not invalidate retained output text",
+      "mutable byte mutation does not affect detached output",
+      "failed index admission keeps source charge intact",
+      "opaque external owners are not treated as proven atomic backing",
+      "real Parquet 64-row large-string task succeeds under 4 MiB with over 2 MiB retained output payload"
+    ],
+    "defaultSuite": {
+      "filesPassed": 365,
+      "filesSkipped": 8,
+      "testsPassed": 3360,
+      "testsSkipped": 629
+    },
+    "typecheck": "passed"
+  },
+  "benchmark": "docs/benchmarks/window-task-ownership-2026-11-14.json",
+  "measuredTradeoff": {
+    "512Rows4096Characters": {
+      "partitionPeakWithoutIndex": 9007320,
+      "partitionPeakWithIndex": 4809204,
+      "evaluationPeakWithoutIndex": 9311352,
+      "evaluationPeakWithIndex": 5113236
+    },
+    "latency": "Index construction adds CPU overhead in several local cases; copying remains the default when available headroom fits two source-sized extents."
+  },
+  "limits": [
+    "The headroom heuristic is a planning estimate; admission still rejects allocations that do not fit.",
+    "Index metadata is charged but reservation units are not portable VM heap measurements.",
+    "No broad end-to-end speedup is claimed.",
+    "Aggregate accumulator ownership, complete allocation matrix and production Worker memory acceptance remain open."
+  ]
+}

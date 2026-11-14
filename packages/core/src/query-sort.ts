@@ -1,12 +1,19 @@
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
+import type { MemoryScope } from "./memory-scope.js";
 import type { OrderByTerm } from "./query.js";
 import { compareOrderedScalars, isSortableScalar } from "./scalar-order.js";
 import type { Row } from "./types.js";
 
-export function normalizeOrderBy(terms: OrderByTerm[]): OrderByTerm[] {
+export function normalizeOrderBy(terms: OrderByTerm[], scope?: MemoryScope): OrderByTerm[] {
   if (!Array.isArray(terms) || terms.length === 0) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy must contain at least one term");
   }
+  scope?.allocate(
+    c.array + terms.length * c.arraySlot,
+    "normalized order directory",
+    () => undefined,
+  );
   return terms.map((term) => {
     if (typeof term.column !== "string" || term.column.length === 0) {
       throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy columns must be non-empty strings");
@@ -19,11 +26,19 @@ export function normalizeOrderBy(terms: OrderByTerm[]): OrderByTerm[] {
     if (nulls !== "first" && nulls !== "last") {
       throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy nulls must be first or last", { term });
     }
+    scope?.allocate(
+      c.object +
+        3 * c.property +
+        3 * c.string +
+        c.stringCodeUnit * (term.column.length + direction.length + nulls.length),
+      "normalized order term",
+      () => undefined,
+    );
     return { column: term.column, direction, nulls };
   });
 }
 
-export function compareRows(left: Row, right: Row, orderBy: OrderByTerm[]): number {
+export function compareRows(left: Row, right: Row, orderBy: readonly OrderByTerm[]): number {
   for (const term of orderBy) {
     const comparison = compareSortValues(
       valueForColumn(left, term.column),
@@ -35,46 +50,71 @@ export function compareRows(left: Row, right: Row, orderBy: OrderByTerm[]): numb
   return 0;
 }
 
-export function addOrderedMatch(
-  matched: Row[],
-  row: Row,
+export function flushSortRun(
+  runs: Row[][],
+  currentRun: Row[],
   orderBy: OrderByTerm[],
-  topK: number | undefined,
+  scope?: MemoryScope,
 ): void {
-  if (topK === undefined) {
-    matched.push(row);
-    return;
-  }
-  if (topK === 0) return;
-  if (matched.length < topK) {
-    matched.push(row);
-    return;
-  }
-  let worstIndex = 0;
-  for (let index = 1; index < matched.length; index += 1) {
-    const candidate = matched[index];
-    const worst = matched[worstIndex];
-    if (
-      candidate !== undefined &&
-      worst !== undefined &&
-      compareRows(candidate, worst, orderBy) > 0
-    ) {
-      worstIndex = index;
-    }
-  }
-  const worst = matched[worstIndex];
-  if (worst !== undefined && compareRows(row, worst, orderBy) < 0) matched[worstIndex] = row;
-}
-
-export function flushSortRun(runs: Row[][], currentRun: Row[], orderBy: OrderByTerm[]): void {
   if (currentRun.length === 0) return;
-  currentRun.sort((left, right) => compareRows(left, right, orderBy));
-  runs.push(currentRun.splice(0, currentRun.length));
+  const scratch = scope?.reserve(
+    c.array + currentRun.length * (c.arraySlot + c.object),
+    "sort run ordering workspace",
+  );
+  try {
+    const flush = () => {
+      currentRun.sort((left, right) => compareRows(left, right, orderBy));
+      runs.push(currentRun.splice(0, currentRun.length));
+    };
+    if (scope)
+      scope.allocate(
+        c.array + (currentRun.length + 1) * c.arraySlot,
+        "sorted run directory",
+        flush,
+      );
+    else flush();
+  } finally {
+    scratch?.release();
+  }
 }
 
-export function mergeSortRuns(runs: Row[][], orderBy: OrderByTerm[]): Row[] {
+interface SortRunEntry {
+  runIndex: number;
+  row: Row;
+}
+
+function compareRunEntries(
+  left: SortRunEntry,
+  right: SortRunEntry,
+  orderBy: OrderByTerm[],
+): number {
+  return compareRows(left.row, right.row, orderBy) || left.runIndex - right.runIndex;
+}
+
+export function mergeSortRuns(runs: Row[][], orderBy: OrderByTerm[], scope?: MemoryScope): Row[] {
+  if (scope === undefined) return mergeRuns(runs, orderBy);
+  let rows = 0;
+  let nonempty = 0;
+  for (const run of runs) {
+    rows += run.length;
+    if (run.length > 0) nonempty++;
+  }
+  const scratch = scope.reserve(
+    2 * c.array + runs.length * c.arraySlot + nonempty * (c.arraySlot + c.object + 2 * c.property),
+    "sort run merge workspace",
+  );
+  try {
+    return scope.allocate(c.array + rows * c.arraySlot, "merged sort directory", () =>
+      mergeRuns(runs, orderBy),
+    ).value;
+  } finally {
+    scratch.release();
+  }
+}
+
+function mergeRuns(runs: Row[][], orderBy: OrderByTerm[]): Row[] {
   const cursors = runs.map(() => 0);
-  const heap: { runIndex: number; row: Row }[] = [];
+  const heap: SortRunEntry[] = [];
   const out: Row[] = [];
   for (let runIndex = 0; runIndex < runs.length; runIndex += 1) {
     const row = runs[runIndex]?.[0];
@@ -86,32 +126,28 @@ export function mergeSortRuns(runs: Row[][], orderBy: OrderByTerm[]): Row[] {
     out.push(next.row);
     cursors[next.runIndex] = (cursors[next.runIndex] ?? 0) + 1;
     const row = runs[next.runIndex]?.[cursors[next.runIndex] ?? 0];
-    if (row !== undefined) heapPush(heap, { runIndex: next.runIndex, row }, orderBy);
+    if (row !== undefined) {
+      next.row = row;
+      heapPush(heap, next, orderBy);
+    }
   }
   return out;
 }
 
-function heapPush(
-  heap: { runIndex: number; row: Row }[],
-  item: { runIndex: number; row: Row },
-  orderBy: OrderByTerm[],
-): void {
+function heapPush(heap: SortRunEntry[], item: SortRunEntry, orderBy: OrderByTerm[]): void {
   heap.push(item);
   for (let index = heap.length - 1; index > 0; ) {
     const parent = Math.floor((index - 1) / 2);
-    if (compareRows(heap[index]?.row ?? {}, heap[parent]?.row ?? {}, orderBy) >= 0) break;
-    [heap[index], heap[parent]] = [
-      heap[parent] as { runIndex: number; row: Row },
-      heap[index] as { runIndex: number; row: Row },
-    ];
+    if (compareRunEntries(heap[index] as SortRunEntry, heap[parent] as SortRunEntry, orderBy) >= 0)
+      break;
+    const swapped = heap[index] as SortRunEntry;
+    heap[index] = heap[parent] as SortRunEntry;
+    heap[parent] = swapped;
     index = parent;
   }
 }
 
-function heapPop(
-  heap: { runIndex: number; row: Row }[],
-  orderBy: OrderByTerm[],
-): { runIndex: number; row: Row } | undefined {
+function heapPop(heap: SortRunEntry[], orderBy: OrderByTerm[]): SortRunEntry | undefined {
   const root = heap[0];
   const last = heap.pop();
   if (root === undefined || last === undefined) return root;
@@ -122,32 +158,27 @@ function heapPop(
   return root;
 }
 
-function heapifyDown(
-  heap: { runIndex: number; row: Row }[],
-  start: number,
-  orderBy: OrderByTerm[],
-): void {
+function heapifyDown(heap: SortRunEntry[], start: number, orderBy: OrderByTerm[]): void {
   for (let index = start; ; ) {
     const left = index * 2 + 1;
     const right = left + 1;
     let smallest = index;
     if (
       heap[left] !== undefined &&
-      compareRows(heap[left].row, heap[smallest]?.row ?? {}, orderBy) < 0
+      compareRunEntries(heap[left], heap[smallest] as SortRunEntry, orderBy) < 0
     ) {
       smallest = left;
     }
     if (
       heap[right] !== undefined &&
-      compareRows(heap[right].row, heap[smallest]?.row ?? {}, orderBy) < 0
+      compareRunEntries(heap[right], heap[smallest] as SortRunEntry, orderBy) < 0
     ) {
       smallest = right;
     }
     if (smallest === index) return;
-    [heap[index], heap[smallest]] = [
-      heap[smallest] as { runIndex: number; row: Row },
-      heap[index] as { runIndex: number; row: Row },
-    ];
+    const swapped = heap[index] as SortRunEntry;
+    heap[index] = heap[smallest] as SortRunEntry;
+    heap[smallest] = swapped;
     index = smallest;
   }
 }

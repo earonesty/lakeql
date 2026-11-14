@@ -1,0 +1,33 @@
+{
+  "date": "2026-11-14",
+  "changes": [
+    "Replace MemorySpillAdapter full-map byte summation with an incremental byte ledger.",
+    "Update the ledger only after a successful buffer copy and map update; subtract removed entry size only when deletion succeeds."
+  ],
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "targeted_tests": 27,
+    "edge_cases": [
+      "grow/shrink replacement",
+      "exact-cap write",
+      "rejected replacement preserves old bytes and usage",
+      "zero-byte replacement",
+      "repeated/missing deletion"
+    ],
+    "benchmark": "docs/benchmarks/spill-accounting-2026-11-14.json"
+  },
+  "spill_lifecycle_finding": {
+    "evidence": "SpillAdapter.write accepts caller-selected ids; MemorySpillAdapter replaces an existing entry at the same id. Query/window spill call sites check cancellation after writes settle.",
+    "implication": "Unconditional deletion after a cancelled write cannot safely restore an overwritten checkpoint or distinguish another writer. Transactional/staged or conditional adapter semantics are required before adding rollback cleanup.",
+    "status": "Transactional cancellation cleanup remains open; this commit does not alter write/delete semantics."
+  },
+  "limits": [
+    "Spill bytes accounting describes stored payload bytes, not query allocation pools or total heap.",
+    "The benchmark models previous map-scanning accounting with local 8-byte writes; no disk/cloud latency claim."
+  ],
+  "remaining": [
+    "Transactional spill lifecycle and complete spill/resume allocation integration",
+    "Mixed-job runtime headroom and final release acceptance"
+  ]
+}

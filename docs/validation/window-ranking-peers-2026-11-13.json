@@ -1,0 +1,69 @@
+{
+  "change": "Rank, dense_rank, percent_rank and cume_dist consume the existing WindowPeers cursor over immutable precomputed keys. They no longer rebuild partition/order expressions; cume_dist no longer rescans every suffix of a tied peer group.",
+  "contract": "Sequential ranking has linear peer-boundary work and constant peer-cursor state. It retains existing output arrays. Peer indices remain governed by the existing measured-work threshold and budget admission; these single-pass tests allocate no index, including with a zero-byte peer budget.",
+  "correctnessFix": "Real wide-timestamp HTTP ranking exposed windowReadColumns pruning unrelated source columns for an implicit all-column projection. Undefined, empty and wildcard select now retain all source columns. Explicit selections still prune to projected and operator-dependent columns.",
+  "admissionFoundation": "MemoryReservationSource exposes only synchronous reserve/release needs. Decimal comparison and prepared comparison accept either an existing scope or a query budget, avoiding an owning scope per comparison. Operator ordering integration is still pending; no new decimal operator capability is advertised.",
+  "benchmarks": {
+    "before": "../benchmarks/window-ranking-peers-before-2026-11-13.json",
+    "after": "../benchmarks/window-ranking-peers-after-2026-11-13.json",
+    "method": "Presorted cume_dist kernel; row construction and independent output validation excluded; two warmups and three timed rounds. Local timings, not cloud throughput.",
+    "allTied2048Milliseconds": {
+      "before": 414.54515,
+      "after": 0.458724
+    },
+    "eightGroups2048Milliseconds": {
+      "before": 52.420139,
+      "after": 0.771252
+    },
+    "trackedPeerIndexBytes": 0
+  },
+  "edgeCases": [
+    "Empty and singleton inputs; all unique keys; seven-row peer groups; all tied input; 64 and 4096 rows.",
+    "Independent rank, dense-rank, percent-rank and cumulative-distribution formulas; at most four key reads per row; source expression getters throw if reevaluated.",
+    "Descending keys, null peers, multiple partitions and compatible sort prefixes; row execution matches partition merging across uneven and empty runs.",
+    "Repeated direct-budget decimal comparisons retain a concurrent sibling reservation, obey exact and one-byte-short limits, and return charges to baseline after success/failure.",
+    "Prepared decimal comparisons retain digit storage through callbacks and release after callback exceptions and admission failures."
+  ],
+  "realFixture": "External parquet-testing flba12_timestamp.parquet, including signed wide epochs, over actual local HTTP 206 and ignored-range 200 responses. Four concurrent queries verify all four ranking functions plus all-tied cume_dist, preserve unrelated timestamp columns and keep read concurrency at two. Cache eviction leaves zero tracked bytes.",
+  "worker": "Four concurrent native R2 ranking queries over generated Parquet with 1024-byte text rows, 64/128 MiB shared pools and reusable cache. Verifies unchanged full-row payload, rank and tied cume_dist.",
+  "validation": {
+    "focusedRankingProjectionHttpPassed": 10,
+    "focusedDecimalPassed": 38,
+    "full": {
+      "passed": 2966,
+      "skipped": 629
+    },
+    "worker": {
+      "passed": 61
+    },
+    "build": "passed",
+    "typecheck": "passed",
+    "lint": "passed",
+    "reference": {
+      "passed": 104
+    },
+    "cleanPackageInstall": "passed",
+    "compatibility": "passed",
+    "fileSizeGate": "passed"
+  },
+  "limits": "Peer-index admission is not output-array admission or total JavaScript heap. Existing row/window materialization allocation coverage remains incomplete. This is not a production Cloudflare memory certification. Exact decimal ordering, general decimal operators and final coverage/reproducibility remain open.",
+  "peerEquality": {
+    "change": "Peer keys now compare borrowed scalars using the same semantics as ORDER BY, instead of JSON serialization. Merged-run partition detection and prefix-peer stabilization use the same shared equality helpers. A shared immutable order descriptor avoids an object per scalar comparison.",
+    "correctness": "Equal TimestampValue epochs with different millis/micros/nanos representations share partitions and peers. Null and undefined match ordering equivalence. Invalid scalar mixtures retain explicit comparator errors rather than serialized-text collisions.",
+    "regression": "Mixed-unit timestamp partitions and keys, rank/dense_rank/percent_rank/cume_dist and a longer compatible sort prefix, tested both as rows and merged uneven runs. A throwing TimestampValue.toJSON spy proves no serialization during peer detection.",
+    "evidence": "../benchmarks/window-ranking-peer-equality-2026-11-13.json",
+    "measurement": "At 2048 rows, all-tied cume_dist is 0.129 ms and eight-group cume_dist is 0.102 ms, versus 0.459/0.771 ms with cursor reuse plus serialized peer equality. Three local timed samples; not a cloud latency claim. Peer-index admission remains zero; output-array and total-heap coverage limitations remain.",
+    "validation": {
+      "defaultPassed": 2967,
+      "defaultSkipped": 629,
+      "workerPassed": 61,
+      "referencePassed": 104,
+      "build": "passed",
+      "typecheck": "passed",
+      "lint": "passed",
+      "cleanPackageInstall": "passed",
+      "compatibility": "passed",
+      "fileSizeGate": "passed"
+    }
+  }
+}

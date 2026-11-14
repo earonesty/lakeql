@@ -1,0 +1,37 @@
+{
+  "scope": "Local Node synthetic nested schema: index construction, full-depth lookup and one name-path materialization. Two warmups/five samples; slot counts are structural, not heap bytes.",
+  "node": "v24.18.1",
+  "reports": [
+    {
+      "depth": 100,
+      "nodes": 101,
+      "priorEagerPathSlots": 5050,
+      "requestedPathSlots": 100,
+      "samplesMs": [
+        0.14549399999999935, 0.4640549999999948, 0.08472899999999584, 0.09793399999999508,
+        0.09573099999999357
+      ],
+      "medianMs": 0.09793399999999508
+    },
+    {
+      "depth": 1000,
+      "nodes": 1001,
+      "priorEagerPathSlots": 500500,
+      "requestedPathSlots": 1000,
+      "samplesMs": [
+        1.6884610000000038, 1.240437, 1.5997139999999987, 0.4948230000000038, 0.9013479999999987
+      ],
+      "medianMs": 1.240437
+    },
+    {
+      "depth": 10000,
+      "nodes": 10001,
+      "priorEagerPathSlots": 50005000,
+      "requestedPathSlots": 10000,
+      "samplesMs": [
+        18.664083000000005, 15.755713, 14.201735000000014, 15.114805000000018, 5.744673000000006
+      ],
+      "medianMs": 15.114805000000018
+    }
+  ]
+}

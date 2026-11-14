@@ -1,0 +1,377 @@
+{
+  "source": "https://pub-9d5bcb33a5384d79875a943eef183b6d.r2.dev/plotly/2015_flights.parquet",
+  "fixtureRows": 5819079,
+  "fixtureBytes": 25238218,
+  "operation": "first 2048 rows, three numeric columns; local DuckDB reference versus remote HTTP ranges",
+  "scope": "large-object bounded projection, not full scan or total Worker heap proof; active count measures requests until response headers",
+  "reports": [
+    {
+      "memoryMiB": 64,
+      "concurrency": 1,
+      "rowsVerified": 2048,
+      "requests": 15,
+      "wireBytes": 5380784,
+      "ranges": [
+        {
+          "requested": "bytes=0-1",
+          "returned": "bytes 0-1/25238218",
+          "bytes": 2
+        },
+        {
+          "requested": "bytes=0-1",
+          "returned": "bytes 0-1/25238218",
+          "bytes": 2
+        },
+        {
+          "requested": "bytes=25165824-25238217",
+          "returned": "bytes 25165824-25238217/25238218",
+          "bytes": 72394
+        },
+        {
+          "requested": "bytes=7602176-7864319",
+          "returned": "bytes 7602176-7864319/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=7602176-7864319",
+          "returned": "bytes 7602176-7864319/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=7602176-7864319",
+          "returned": "bytes 7602176-7864319/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=7745148-8740307",
+          "returned": "bytes 7745148-8740307/25238218",
+          "bytes": 995160
+        },
+        {
+          "requested": "bytes=0-262143",
+          "returned": "bytes 0-262143/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=0-262143",
+          "returned": "bytes 0-262143/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=0-262143",
+          "returned": "bytes 0-262143/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=5002-995822",
+          "returned": "bytes 5002-995822/25238218",
+          "bytes": 990821
+        },
+        {
+          "requested": "bytes=15466496-15728639",
+          "returned": "bytes 15466496-15728639/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=15466496-15728639",
+          "returned": "bytes 15466496-15728639/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=15466496-15728639",
+          "returned": "bytes 15466496-15728639/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=15615725-16578833",
+          "returned": "bytes 15615725-16578833/25238218",
+          "bytes": 963109
+        }
+      ],
+      "peakRequestsAwaitingHeaders": 1,
+      "peakTrackedBytes": 16724760,
+      "elapsedMs": 4812.417119
+    },
+    {
+      "memoryMiB": 64,
+      "concurrency": 2,
+      "rowsVerified": 4096,
+      "requests": 17,
+      "wireBytes": 5380788,
+      "ranges": [
+        {
+          "requested": "bytes=0-1",
+          "returned": "bytes 0-1/25238218",
+          "bytes": 2
+        },
+        {
+          "requested": "bytes=0-1",
+          "returned": "bytes 0-1/25238218",
+          "bytes": 2
+        },
+        {
+          "requested": "bytes=0-1",
+          "returned": "bytes 0-1/25238218",
+          "bytes": 2
+        },
+        {
+          "requested": "bytes=0-1",
+          "returned": "bytes 0-1/25238218",
+          "bytes": 2
+        },
+        {
+          "requested": "bytes=25165824-25238217",
+          "returned": "bytes 25165824-25238217/25238218",
+          "bytes": 72394
+        },
+        {
+          "requested": "bytes=7602176-7864319",
+          "returned": "bytes 7602176-7864319/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=7602176-7864319",
+          "returned": "bytes 7602176-7864319/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=7602176-7864319",
+          "returned": "bytes 7602176-7864319/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=7745148-8740307",
+          "returned": "bytes 7745148-8740307/25238218",
+          "bytes": 995160
+        },
+        {
+          "requested": "bytes=0-262143",
+          "returned": "bytes 0-262143/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=0-262143",
+          "returned": "bytes 0-262143/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=0-262143",
+          "returned": "bytes 0-262143/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=5002-995822",
+          "returned": "bytes 5002-995822/25238218",
+          "bytes": 990821
+        },
+        {
+          "requested": "bytes=15466496-15728639",
+          "returned": "bytes 15466496-15728639/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=15466496-15728639",
+          "returned": "bytes 15466496-15728639/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=15466496-15728639",
+          "returned": "bytes 15466496-15728639/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=15615725-16578833",
+          "returned": "bytes 15615725-16578833/25238218",
+          "bytes": 963109
+        }
+      ],
+      "peakRequestsAwaitingHeaders": 2,
+      "peakTrackedBytes": 33449520,
+      "elapsedMs": 4578.6849440000005
+    },
+    {
+      "memoryMiB": 128,
+      "concurrency": 1,
+      "rowsVerified": 2048,
+      "requests": 15,
+      "wireBytes": 5380784,
+      "ranges": [
+        {
+          "requested": "bytes=0-1",
+          "returned": "bytes 0-1/25238218",
+          "bytes": 2
+        },
+        {
+          "requested": "bytes=0-1",
+          "returned": "bytes 0-1/25238218",
+          "bytes": 2
+        },
+        {
+          "requested": "bytes=25165824-25238217",
+          "returned": "bytes 25165824-25238217/25238218",
+          "bytes": 72394
+        },
+        {
+          "requested": "bytes=7602176-7864319",
+          "returned": "bytes 7602176-7864319/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=7602176-7864319",
+          "returned": "bytes 7602176-7864319/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=7602176-7864319",
+          "returned": "bytes 7602176-7864319/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=7745148-8740307",
+          "returned": "bytes 7745148-8740307/25238218",
+          "bytes": 995160
+        },
+        {
+          "requested": "bytes=0-262143",
+          "returned": "bytes 0-262143/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=0-262143",
+          "returned": "bytes 0-262143/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=0-262143",
+          "returned": "bytes 0-262143/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=5002-995822",
+          "returned": "bytes 5002-995822/25238218",
+          "bytes": 990821
+        },
+        {
+          "requested": "bytes=15466496-15728639",
+          "returned": "bytes 15466496-15728639/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=15466496-15728639",
+          "returned": "bytes 15466496-15728639/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=15466496-15728639",
+          "returned": "bytes 15466496-15728639/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=15615725-16578833",
+          "returned": "bytes 15615725-16578833/25238218",
+          "bytes": 963109
+        }
+      ],
+      "peakRequestsAwaitingHeaders": 1,
+      "peakTrackedBytes": 16724760,
+      "elapsedMs": 4432.815568
+    },
+    {
+      "memoryMiB": 128,
+      "concurrency": 2,
+      "rowsVerified": 4096,
+      "requests": 17,
+      "wireBytes": 5380788,
+      "ranges": [
+        {
+          "requested": "bytes=0-1",
+          "returned": "bytes 0-1/25238218",
+          "bytes": 2
+        },
+        {
+          "requested": "bytes=0-1",
+          "returned": "bytes 0-1/25238218",
+          "bytes": 2
+        },
+        {
+          "requested": "bytes=0-1",
+          "returned": "bytes 0-1/25238218",
+          "bytes": 2
+        },
+        {
+          "requested": "bytes=0-1",
+          "returned": "bytes 0-1/25238218",
+          "bytes": 2
+        },
+        {
+          "requested": "bytes=25165824-25238217",
+          "returned": "bytes 25165824-25238217/25238218",
+          "bytes": 72394
+        },
+        {
+          "requested": "bytes=7602176-7864319",
+          "returned": "bytes 7602176-7864319/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=7602176-7864319",
+          "returned": "bytes 7602176-7864319/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=7602176-7864319",
+          "returned": "bytes 7602176-7864319/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=7745148-8740307",
+          "returned": "bytes 7745148-8740307/25238218",
+          "bytes": 995160
+        },
+        {
+          "requested": "bytes=0-262143",
+          "returned": "bytes 0-262143/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=0-262143",
+          "returned": "bytes 0-262143/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=0-262143",
+          "returned": "bytes 0-262143/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=5002-995822",
+          "returned": "bytes 5002-995822/25238218",
+          "bytes": 990821
+        },
+        {
+          "requested": "bytes=15466496-15728639",
+          "returned": "bytes 15466496-15728639/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=15466496-15728639",
+          "returned": "bytes 15466496-15728639/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=15466496-15728639",
+          "returned": "bytes 15466496-15728639/25238218",
+          "bytes": 262144
+        },
+        {
+          "requested": "bytes=15615725-16578833",
+          "returned": "bytes 15615725-16578833/25238218",
+          "bytes": 963109
+        }
+      ],
+      "peakRequestsAwaitingHeaders": 2,
+      "peakTrackedBytes": 33449520,
+      "elapsedMs": 4787.053206999999
+    }
+  ]
+}

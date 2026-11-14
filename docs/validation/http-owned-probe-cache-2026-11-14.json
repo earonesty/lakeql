@@ -1,0 +1,29 @@
+{
+  "sourceBase": "fad0606",
+  "scope": "Explicit shared-pool HTTP probe retention and owned range reuse",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "initialFocusedTests": 19,
+    "finalOwnedHeadTests": 9,
+    "fullSuite": {
+      "passed": 3655,
+      "skipped": 629,
+      "log": "/tmp/http-owned-probe-cache-final.log"
+    }
+  },
+  "evidence": [
+    "Real HTTP ignored-range JSON cache probe and payload read use one request",
+    "Owned range output cannot mutate retained cached bytes",
+    "Clear and successful writes invalidate retention without invalidating returned copies",
+    "Shared-pool siblings reclaim cache backing",
+    "Zero or insufficient cache capacity declines retention",
+    "512-byte child falls back to bounded transport instead of pinning a 4 KiB cache object"
+  ],
+  "remaining": [
+    "Automatic shared-pool propagation through factories",
+    "Broader mixed workload cache evidence",
+    "Runtime network chunks and request workspace",
+    "Full audit and release refresh"
+  ]
+}

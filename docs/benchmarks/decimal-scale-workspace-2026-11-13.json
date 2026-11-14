@@ -1,0 +1,41 @@
+{
+  "node": "v24.18.1",
+  "description": "Exact-decimal kernel only, not integrated query or cloud throughput. Fixed coefficients and scales 4, 1000, MAX_SAFE_INTEGER; 2 warmup and 7 measured rounds of 10000 comparisons including assertions. Equal reservation sizes prove scale gaps do not expand modeled workspace. Native BigInt/GC/runtime metadata are not a total-heap guarantee.",
+  "sourceSha256": "9b1a74934ddb2cbc20eda7dc642c226192cd1a37a887062d539848a940da5de3",
+  "results": [
+    {
+      "scale": 4,
+      "text": "0.0001",
+      "comparisonPeakBytes": 136,
+      "formattingRetainedBytes": 1036,
+      "medianMilliseconds": 0.00017469409999999996,
+      "samples": [
+        0.0002489209000000002, 0.00017469409999999996, 0.0001867688000000001, 0.0002702530000000003,
+        0.00017335459999999968, 0.0001614010999999998, 0.00016095420000000047
+      ]
+    },
+    {
+      "scale": 1000,
+      "text": "1e-1000",
+      "comparisonPeakBytes": 136,
+      "formattingRetainedBytes": 1036,
+      "medianMilliseconds": 0.00016378860000000018,
+      "samples": [
+        0.00020318770000000015, 0.0001692419000000001, 0.00016858349999999972,
+        0.00016378860000000018, 0.00016116760000000027, 0.0001587249, 0.00016010559999999997
+      ]
+    },
+    {
+      "scale": 9007199254740991,
+      "text": "1e-9007199254740991",
+      "comparisonPeakBytes": 136,
+      "formattingRetainedBytes": 1036,
+      "medianMilliseconds": 0.00016077179999999914,
+      "samples": [
+        0.00015436169999999975, 0.0001664835999999994, 0.0001676237999999998,
+        0.00016186380000000043, 0.00015882719999999893, 0.00016077179999999914,
+        0.00015563109999999937
+      ]
+    }
+  ]
+}

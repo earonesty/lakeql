@@ -1,0 +1,151 @@
+{
+  "sourceCommit": "30f7ae8f27c31123690b18a1d6a88983ac3b4bf4",
+  "requirements": ["M2", "V1", "V2"],
+  "artifacts": [
+    "docs/benchmarks/mixed-query-memory-planning-2026-11-14.json",
+    "docs/benchmarks/workerd-owned-planning-2026-11-14.json",
+    "docs/benchmarks/workerd-owned-planning-heap64-2026-11-14.json",
+    "docs/benchmarks/workerd-owned-planning-heap128-2026-11-14.json"
+  ],
+  "mixedQuery": {
+    "scenarios": 8,
+    "roundsPerScenario": 2,
+    "jobsPerRound": 4,
+    "allCompleted": true,
+    "maxAdmittedBytes": 53956046,
+    "priorMaxAdmittedBytes": 53954370,
+    "maxHttpConcurrency": 2,
+    "fittingWarmCacheRequests": 4,
+    "nonfittingCacheRequests": 37,
+    "finalReservedBytes": 0
+  },
+  "workerScenarios": [
+    {
+      "transport": "native emulated R2",
+      "managedHeapMiB": null,
+      "poolMiB": 64,
+      "jobs": 1,
+      "outcomes": [["ok"], ["ok"]],
+      "peakAdmittedBytes": 28371867,
+      "maxSampledHeapBytes": 22786652,
+      "finalReservedBytes": 0
+    },
+    {
+      "transport": "native emulated R2",
+      "managedHeapMiB": null,
+      "poolMiB": 64,
+      "jobs": 4,
+      "outcomes": [["ok", "ok", "budget", "budget"], ["ok", "ok", "budget", "budget"]],
+      "peakAdmittedBytes": 67106625,
+      "maxSampledHeapBytes": 68979116,
+      "finalReservedBytes": 0
+    },
+    {
+      "transport": "native emulated R2",
+      "managedHeapMiB": null,
+      "poolMiB": 128,
+      "jobs": 1,
+      "outcomes": [["ok"], ["ok"]],
+      "peakAdmittedBytes": 28371867,
+      "maxSampledHeapBytes": 43515860,
+      "finalReservedBytes": 0
+    },
+    {
+      "transport": "native emulated R2",
+      "managedHeapMiB": null,
+      "poolMiB": 128,
+      "jobs": 4,
+      "outcomes": [["ok", "ok", "ok", "ok"], ["ok", "ok", "ok", "ok"]],
+      "peakAdmittedBytes": 110917530,
+      "maxSampledHeapBytes": 62876928,
+      "finalReservedBytes": 0
+    },
+    {
+      "transport": "localhost HTTP ranges",
+      "managedHeapMiB": 64,
+      "poolMiB": 64,
+      "jobs": 1,
+      "outcomes": [["ok"], ["ok"]],
+      "peakAdmittedBytes": 28371703,
+      "maxSampledHeapBytes": 16372876,
+      "finalReservedBytes": 0
+    },
+    {
+      "transport": "localhost HTTP ranges",
+      "managedHeapMiB": 64,
+      "poolMiB": 64,
+      "jobs": 4,
+      "outcomes": [["ok", "ok", "budget", "budget"], ["ok", "ok", "budget", "budget"]],
+      "peakAdmittedBytes": 67106133,
+      "maxSampledHeapBytes": 42576988,
+      "finalReservedBytes": 0
+    },
+    {
+      "transport": "localhost HTTP ranges",
+      "managedHeapMiB": 64,
+      "poolMiB": 128,
+      "jobs": 1,
+      "outcomes": [["ok"], ["ok"]],
+      "peakAdmittedBytes": 28371703,
+      "maxSampledHeapBytes": 27080664,
+      "finalReservedBytes": 0
+    },
+    {
+      "transport": "localhost HTTP ranges",
+      "managedHeapMiB": 64,
+      "poolMiB": 128,
+      "jobs": 4,
+      "outcomes": [["ok", "ok", "ok", "ok"], ["ok", "ok", "ok", "ok"]],
+      "peakAdmittedBytes": 110916874,
+      "maxSampledHeapBytes": 50363332,
+      "finalReservedBytes": 0
+    },
+    {
+      "transport": "localhost HTTP ranges",
+      "managedHeapMiB": 128,
+      "poolMiB": 64,
+      "jobs": 1,
+      "outcomes": [["ok"], ["ok"]],
+      "peakAdmittedBytes": 28371703,
+      "maxSampledHeapBytes": 18208764,
+      "finalReservedBytes": 0
+    },
+    {
+      "transport": "localhost HTTP ranges",
+      "managedHeapMiB": 128,
+      "poolMiB": 64,
+      "jobs": 4,
+      "outcomes": [["ok", "ok", "budget", "budget"], ["ok", "ok", "budget", "budget"]],
+      "peakAdmittedBytes": 67106133,
+      "maxSampledHeapBytes": 44233328,
+      "finalReservedBytes": 0
+    },
+    {
+      "transport": "localhost HTTP ranges",
+      "managedHeapMiB": 128,
+      "poolMiB": 128,
+      "jobs": 1,
+      "outcomes": [["ok"], ["ok"]],
+      "peakAdmittedBytes": 28371703,
+      "maxSampledHeapBytes": 15933724,
+      "finalReservedBytes": 0
+    },
+    {
+      "transport": "localhost HTTP ranges",
+      "managedHeapMiB": 128,
+      "poolMiB": 128,
+      "jobs": 4,
+      "outcomes": [["ok", "ok", "ok", "ok"], ["ok", "ok", "ok", "ok"]],
+      "peakAdmittedBytes": 110916874,
+      "maxSampledHeapBytes": 57963036,
+      "finalReservedBytes": 0
+    }
+  ],
+  "limitations": [
+    "Single run per scenario; no reliable latency or fairness inference.",
+    "Managed heap caps do not bound external buffers, embedder memory or total Worker memory.",
+    "Local workerd native emulated R2 and constrained localhost HTTP are different transports.",
+    "Sparse inspector samples are lower bounds; Node samples include fixture and HTTP server.",
+    "Allocation gaps and full audit acceptance remain open."
+  ]
+}

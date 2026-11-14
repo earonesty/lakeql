@@ -1,0 +1,133 @@
+{
+  "scope": "Local core kernel; includes stage index construction, excludes fixture construction, correctness checks and disposal. One warmup and four samples. Reservations are not VM heap measurements.",
+  "results": [
+    {
+      "phase": "partition",
+      "characters": 32,
+      "count": 128,
+      "indexed": false,
+      "medianMs": 8.226552499999997,
+      "peakBytes": 171224
+    },
+    {
+      "phase": "partition",
+      "characters": 32,
+      "count": 128,
+      "indexed": true,
+      "medianMs": 7.887399500000015,
+      "peakBytes": 162292
+    },
+    {
+      "phase": "partition",
+      "characters": 32,
+      "count": 512,
+      "indexed": false,
+      "medianMs": 19.484248500000007,
+      "peakBytes": 684248
+    },
+    {
+      "phase": "partition",
+      "characters": 32,
+      "count": 512,
+      "indexed": true,
+      "medianMs": 28.573383499999977,
+      "peakBytes": 647668
+    },
+    {
+      "phase": "partition",
+      "characters": 4096,
+      "count": 128,
+      "indexed": false,
+      "medianMs": 3.081692999999916,
+      "peakBytes": 2251992
+    },
+    {
+      "phase": "partition",
+      "characters": 4096,
+      "count": 128,
+      "indexed": true,
+      "medianMs": 3.9384749999999826,
+      "peakBytes": 1202676
+    },
+    {
+      "phase": "partition",
+      "characters": 4096,
+      "count": 512,
+      "indexed": false,
+      "medianMs": 25.060183999999992,
+      "peakBytes": 9007320
+    },
+    {
+      "phase": "partition",
+      "characters": 4096,
+      "count": 512,
+      "indexed": true,
+      "medianMs": 27.388083999999992,
+      "peakBytes": 4809204
+    },
+    {
+      "phase": "evaluate",
+      "characters": 32,
+      "count": 128,
+      "indexed": false,
+      "medianMs": 3.951094000000012,
+      "peakBytes": 247928
+    },
+    {
+      "phase": "evaluate",
+      "characters": 32,
+      "count": 128,
+      "indexed": true,
+      "medianMs": 5.380672999999888,
+      "peakBytes": 238996
+    },
+    {
+      "phase": "evaluate",
+      "characters": 32,
+      "count": 512,
+      "indexed": false,
+      "medianMs": 22.182624500000088,
+      "peakBytes": 988280
+    },
+    {
+      "phase": "evaluate",
+      "characters": 32,
+      "count": 512,
+      "indexed": true,
+      "medianMs": 22.419179499999927,
+      "peakBytes": 951700
+    },
+    {
+      "phase": "evaluate",
+      "characters": 4096,
+      "count": 128,
+      "indexed": false,
+      "medianMs": 3.981525999999917,
+      "peakBytes": 2328696
+    },
+    {
+      "phase": "evaluate",
+      "characters": 4096,
+      "count": 128,
+      "indexed": true,
+      "medianMs": 4.288423500000022,
+      "peakBytes": 1279380
+    },
+    {
+      "phase": "evaluate",
+      "characters": 4096,
+      "count": 512,
+      "indexed": false,
+      "medianMs": 24.609390499999904,
+      "peakBytes": 9311352
+    },
+    {
+      "phase": "evaluate",
+      "characters": 4096,
+      "count": 512,
+      "indexed": true,
+      "medianMs": 35.1394325,
+      "peakBytes": 5113236
+    }
+  ]
+}

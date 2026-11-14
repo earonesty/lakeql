@@ -1,0 +1,74 @@
+{
+  "scope": "Local fixture physical page inspection; not a remote execution measurement",
+  "report": [
+    {
+      "column": "DEPARTURE_DELAY",
+      "codec": "SNAPPY",
+      "chunkCompressed": 7739950,
+      "pages": [
+        {
+          "offset": 4,
+          "headerBytes": 18,
+          "type": "DICTIONARY_PAGE",
+          "compressed": 4911,
+          "uncompressed": 9736,
+          "values": 1217
+        },
+        {
+          "offset": 4933,
+          "headerBytes": 69,
+          "type": "DATA_PAGE",
+          "compressed": 990821,
+          "uncompressed": 1003343,
+          "values": 787456
+        }
+      ]
+    },
+    {
+      "column": "ARRIVAL_DELAY",
+      "codec": "SNAPPY",
+      "chunkCompressed": 7869986,
+      "pages": [
+        {
+          "offset": 7740055,
+          "headerBytes": 18,
+          "type": "DICTIONARY_PAGE",
+          "compressed": 5006,
+          "uncompressed": 9920,
+          "values": 1240
+        },
+        {
+          "offset": 7745079,
+          "headerBytes": 69,
+          "type": "DATA_PAGE",
+          "compressed": 995160,
+          "uncompressed": 1008734,
+          "values": 790528
+        }
+      ]
+    },
+    {
+      "column": "DISTANCE",
+      "codec": "SNAPPY",
+      "chunkCompressed": 8019349,
+      "pages": [
+        {
+          "offset": 15610145,
+          "headerBytes": 18,
+          "type": "DICTIONARY_PAGE",
+          "compressed": 5495,
+          "uncompressed": 10904,
+          "values": 1363
+        },
+        {
+          "offset": 15615658,
+          "headerBytes": 67,
+          "type": "DATA_PAGE",
+          "compressed": 963109,
+          "uncompressed": 963061,
+          "values": 699392
+        }
+      ]
+    }
+  ]
+}

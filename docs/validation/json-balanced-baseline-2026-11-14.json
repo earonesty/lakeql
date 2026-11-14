@@ -1,0 +1,122 @@
+{
+  "reference": "5e4d280",
+  "current": "b1681db636fac1b0ef431dd1074dd85ef7c230c9",
+  "node": "v24.18.1",
+  "builtModuleHashes": {
+    "json-output-size": "7ca48d3b05484a856f3e4a68354d07026cf2efa53ff4f03dde2ce09c0e58e2da",
+    "json-output-encoding": "1ee8755d82849be50e678a2b1cfa96e61aa4a9a9f7cf1aaade456c1a311a48b1",
+    "json-traversal-budget": "55f9ccd5f1d4d8a47c1c012211a86423191b319f11b2722ce76b3c8bf100b9a3",
+    "json-container-entries": "c7fb72ee7d2bc3a0ad66bf220ad7d85b0cf50eef4f46968c0a01fe3d67fb824e",
+    "json-standard-scalars": "971c66727c5b3c02d9878cd714820477d0fe03c86e61025a8a2cdcce7cd3801f"
+  },
+  "results": [
+    {
+      "name": "small-row",
+      "iterations": 1000,
+      "outputBytes": 39,
+      "variants": {
+        "reference": {
+          "samplesMs": [
+            0.005584998999999982, 0.005849910000000022, 0.008299157000000036, 0.005592513000000053,
+            0.0055305460000000155, 0.00915852000000001, 0.008151969000000009, 0.0040190420000000135
+          ],
+          "peakTrackedBytes": 295
+        },
+        "current": {
+          "samplesMs": [
+            0.012657328999999948, 0.006094502000000034, 0.012602535999999987, 0.01796290099999999,
+            0.0056930639999999925, 0.005712170000000015, 0.012341481999999985, 0.015415107999999976
+          ],
+          "peakTrackedBytes": 1504
+        }
+      }
+    },
+    {
+      "name": "wide-numbers",
+      "iterations": 20,
+      "outputBytes": 78891,
+      "variants": {
+        "reference": {
+          "samplesMs": [
+            1.9727563999999973, 2.177092400000004, 1.8500681499999985, 1.7647595000000025,
+            1.8101241500000014, 1.815860049999992, 1.7424543500000027, 1.928313449999996
+          ],
+          "peakTrackedBytes": 79147
+        },
+        "current": {
+          "samplesMs": [
+            1.9890777500000012, 2.2231479000000034, 1.8823050500000023, 1.7794316999999977,
+            1.8509538500000076, 1.8262596499999972, 1.7653987000000029, 1.887932150000006
+          ],
+          "peakTrackedBytes": 80267
+        }
+      }
+    },
+    {
+      "name": "row-array",
+      "iterations": 20,
+      "outputBytes": 39891,
+      "variants": {
+        "reference": {
+          "samplesMs": [
+            0.33515710000000354, 0.3568625500000053, 0.40836585000000697, 0.32850505000000113,
+            0.33561750000000073, 0.33789174999999433, 0.33453845000000226, 0.4106251499999985
+          ],
+          "peakTrackedBytes": 40019
+        },
+        "current": {
+          "samplesMs": [
+            0.5255637500000034, 0.629246599999999, 0.5748753500000021, 0.5344716000000063,
+            0.550000399999999, 0.626841550000006, 0.531320100000005, 0.5297015999999986
+          ],
+          "peakTrackedBytes": 42067
+        }
+      }
+    },
+    {
+      "name": "mixed-siblings",
+      "iterations": 20,
+      "outputBytes": 15266,
+      "variants": {
+        "reference": {
+          "samplesMs": [
+            0.22107560000000603, 0.22092979999999898, 0.2509751000000051, 0.22299174999999422,
+            0.2194635500000004, 0.21877930000000562, 0.21661664999999175, 0.2896165499999938
+          ],
+          "peakTrackedBytes": 15394
+        },
+        "current": {
+          "samplesMs": [
+            0.3698135499999921, 0.36931809999999815, 0.36747965000000704, 0.4520644500000003,
+            0.3638763499999982, 0.36204585000000405, 0.39078969999999347, 0.35759494999999786
+          ],
+          "peakTrackedBytes": 18370
+        }
+      }
+    },
+    {
+      "name": "deep-20000",
+      "iterations": 2,
+      "outputBytes": 40009,
+      "variants": {
+        "reference": {
+          "samplesMs": [],
+          "peakTrackedBytes": 0,
+          "failure": "RangeError: Maximum call stack size exceeded"
+        },
+        "current": {
+          "samplesMs": [
+            22.82287599999995, 22.824273500000118, 22.966582000000017, 22.742744499999844,
+            23.18176900000003, 22.381792500000074, 22.820822000000135, 22.601302499999974
+          ],
+          "peakTrackedBytes": 22400256
+        }
+      }
+    }
+  ],
+  "limitations": [
+    "Kernel benchmark; not query or cloud throughput",
+    "Tracked reservation units are not heap measurements",
+    "Alternating variant order; eight measured rounds after four warmup rounds"
+  ]
+}

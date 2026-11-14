@@ -1,0 +1,32 @@
+{
+  "date": "2026-11-14",
+  "requirements": ["F3", "M1"],
+  "finding": "Deferred top-k used an unadmitted selector and output branch for borrowed vector scanners. Mutable binary winner payloads could also alias scanner buffers after iteration.",
+  "changes": [
+    "Use OwnedBoundedTopK for both owned and borrowed vector scanners; remove duplicate addRankedRefs path.",
+    "Admit predicate workspace, selected-reference ordering, deferred row directories and final projection for borrowed scanners.",
+    "Materialize borrowed selected rows through a scoped shape plan and detach mutable data before the scanner advances.",
+    "Enable explicit owned deferred output for borrowed vector scanners; unsupported owned routes still fall back safely."
+  ],
+  "validation": {
+    "targeted_boundary_tests": 2,
+    "cases": [
+      "Plain and explicitly owned deferred output preserve binary values when scanner overwrites its source after yield.",
+      "Both APIs succeed at observed allocation peak and reject one byte below it.",
+      "Rank-only first read and payload-only winner read are asserted.",
+      "Query reservations return to zero."
+    ],
+    "build": "passed",
+    "typecheck": "passed",
+    "full_default_suite": {
+      "passed": 3448,
+      "skipped": 629
+    }
+  },
+  "limits": [
+    "Controlled borrowed scanner fixture, not cloud latency evidence.",
+    "Borrowed scanner source allocations occur outside query admission; copied library-retained data is admitted.",
+    "Rank-column planning and other allocation categories still require audit; this does not close all F3/M1 requirements.",
+    "Detaching borrowed values adds copy work; no performance-speedup claim is made."
+  ]
+}

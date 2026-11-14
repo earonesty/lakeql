@@ -1,0 +1,29 @@
+{
+  "date": "2026-11-14",
+  "requirements": ["F1", "M1"],
+  "finding": "Scoped physical reduction placement looked up reducer columns only in the original input, rejecting valid preceding projections and potentially overlooking an overwritten column shape.",
+  "changes": [
+    "Resolve reducer column requirements backward through preceding project operators, following their expressions against the prior input.",
+    "Honor dropped columns, empty/select-all projections and own-property lookup semantics.",
+    "Use the existing admitted aggregate expression contract to validate derived columns without allocating an inferred-schema cache.",
+    "Reject non-scalar literal backing in that contract while preserving primitive, decimal and timestamp literals."
+  ],
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "targeted_tests": 104,
+    "scenarios": [
+      "Two chained projections, including an overwritten input column, feed correct scalar sum and grouped count snapshots under an allocation scope.",
+      "Dropped columns, binary column aliases and binary literals are rejected during placement.",
+      "All scoped execution reservations release after result consumption."
+    ],
+    "full_default_suite": {
+      "passed": 3476,
+      "skipped": 629
+    }
+  },
+  "remaining": [
+    "Planner/runtime scratch and other unsupported shape contracts remain under audit.",
+    "This is physical operator correctness and capability evidence, not production cloud or whole-heap validation."
+  ]
+}

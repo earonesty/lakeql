@@ -1,0 +1,58 @@
+{
+  "source": "https://pub-9d5bcb33a5384d79875a943eef183b6d.r2.dev/bench/window-events.parquet",
+  "scope": "Actual public R2 HTTP 206 responses; tracked metadata allocation bounds, including admitted conversion containers; runtime overhead and whole-worker heap are not bounded",
+  "reports": [
+    {
+      "cap": 1534,
+      "rejected": true,
+      "footerBytes": 1535,
+      "peakBytes": 1534,
+      "requests": [
+        {
+          "range": "bytes=3320-4853",
+          "bytes": 1534
+        }
+      ]
+    },
+    {
+      "cap": 1535,
+      "rejected": true,
+      "footerBytes": 1535,
+      "peakBytes": 1535,
+      "requests": [
+        {
+          "range": "bytes=3319-4853",
+          "bytes": 1535
+        }
+      ]
+    },
+    {
+      "cap": 3070,
+      "rejected": true,
+      "footerBytes": 1535,
+      "peakBytes": 3070,
+      "requests": [
+        {
+          "range": "bytes=1784-4853",
+          "bytes": 3070
+        },
+        {
+          "range": "bytes=3319-4853",
+          "bytes": 1535
+        }
+      ]
+    },
+    {
+      "cap": 67108864,
+      "rejected": false,
+      "footerBytes": 1535,
+      "peakBytes": 163758,
+      "requests": [
+        {
+          "range": "bytes=0-4853",
+          "bytes": 4854
+        }
+      ]
+    }
+  ]
+}

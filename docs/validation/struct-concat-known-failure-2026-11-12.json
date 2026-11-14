@@ -1,0 +1,18 @@
+{
+  "fixture": "fixtures/external/parquet-testing/data/nonnullable.impala.parquet",
+  "operation": "decode in three-row batches, duplicate batch sequence, concatenate internally, compare with duplicated local DuckDB rows",
+  "decodedInputsMatchReference": true,
+  "concatMatchesReference": false,
+  "firstDifference": {
+    "path": "rows.0.int_map_array.0",
+    "actual": "{\"k1\":null}",
+    "expected": "{\"entries\":[]}"
+  },
+  "scope": "Internal decoder/operator probe; public struct schema gate bypassed; local files, not cloud",
+  "remaining": "Replace list/map row materialization with schema-preserving typed concat; do not count this probe as passing",
+  "resolution": {
+    "status": "Resolved for the recorded fixture by typed list/map concat and null-shape normalization",
+    "evidence": "docs/validation/collection-concat-fixtures-2026-11-12.jsonl",
+    "note": "Original failure fields above are preserved as historical evidence."
+  }
+}

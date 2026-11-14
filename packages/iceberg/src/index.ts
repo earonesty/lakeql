@@ -3,6 +3,7 @@ import {
   type Expr,
   jsonSafeValue,
   LakeqlError,
+  mapConcurrent,
   matches,
   type ObjectStore,
   type ObjectStoreReadControls,
@@ -1222,15 +1223,13 @@ async function hydrateMetadataManifests(
     tableCacheKey: icebergTableCacheKey(hydrated),
   };
   if (persistentCache !== undefined) cache.persistent = persistentCache;
-  await Promise.all(
-    hydrated.snapshots.map(async (snapshot) => {
-      throwIfAborted(controls.signal);
-      snapshot.manifests = mergeDeleteManifests(
-        await hydrateSnapshotManifests(store, snapshot, tableLocation, cache, controls),
-      );
-      throwIfAborted(controls.signal);
-    }),
-  );
+  await mapConcurrent(hydrated.snapshots, controls.maxConcurrentReads ?? 4, async (snapshot) => {
+    throwIfAborted(controls.signal);
+    snapshot.manifests = mergeDeleteManifests(
+      await hydrateSnapshotManifests(store, snapshot, tableLocation, cache, controls),
+    );
+    throwIfAborted(controls.signal);
+  });
   return hydrated;
 }
 
@@ -1257,14 +1256,16 @@ async function hydrateSnapshotManifests(
           cache,
         )
       : []);
-  return await Promise.all(
-    manifestReferences.map(async (manifest) => {
+  return await mapConcurrent(
+    manifestReferences,
+    controls.maxConcurrentReads ?? 4,
+    async (manifest) => {
       throwIfAborted(controls.signal);
       const manifestPath = validateManifestSourcedPath(manifest.path, tableLocation);
       if (Array.isArray(manifest.files))
         return validateManifestPaths(manifest, manifestPath, tableLocation);
       return await cachedManifest(store, manifestPath, tableLocation, cache);
-    }),
+    },
   );
 }
 

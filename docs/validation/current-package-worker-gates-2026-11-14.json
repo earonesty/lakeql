@@ -1,0 +1,23 @@
+{
+  "date": "2026-11-14",
+  "source_revision": "c8872b4848cccd5513e1492cc3e77038307e4e9c",
+  "checks": {
+    "full_build": "passed, including public bundles and declarations",
+    "clean_package_consumer": "passed; installed 66 packages in a temporary consumer and ran fixture smoke operations",
+    "fixture_regeneration": "passed; before/after SHA-256 hashes identical, Git worktree clean",
+    "worker": {
+      "passed": 75,
+      "files": 21
+    },
+    "default_suite": {
+      "passed": 3471,
+      "skipped": 629,
+      "evidence": "query-fallback-checkpoints-2026-11-14.json"
+    },
+    "typecheck": "passed in query-fallback-checkpoints evidence"
+  },
+  "not_refreshed": [
+    "Coverage and external/reference conformance at this revision; latest dedicated evidence remains deferred-spill-gates-2026-11-14.json"
+  ],
+  "scope": "Package/runtime regression checks for accumulated top-k, column planning and aggregate ownership changes. Not a claim of full F1-F6/M1-M2/V1-V3 or whole-Worker heap acceptance."
+}

@@ -19,6 +19,25 @@ export default {
 
 For queue-sized work, use `query.run({ slice })` and pass the returned bookmark through your queue or durable state. New bookmarks include the query shape, so a later invocation can call `lake.resume(bookmark).run({ slice: { maxRows } })`.
 
+When a job keeps a slice alive while other jobs run, use `run().ownedSlice()` to
+keep its rows and continuation bookmark charged to the shared memory pool:
+
+```ts
+const output = await lake.path("sales.parquet").run().ownedSlice({ maxRows: 100 });
+try {
+  await processRows(output.value.rows);
+  if (output.value.bookmark) await saveBookmark(output.value.bookmark);
+} finally {
+  output.release();
+}
+```
+
+The returned owner supports `retain()` for an independent lifetime. Release every
+handle after use. `slice()` and `run({ slice })` retain the same bounded collection
+behavior but transfer completed plain results to caller management; their memory
+is no longer charged after return. The pool tracks admitted engine allocations,
+not the Worker's entire heap or application-owned copies.
+
 Keep Worker reads bounded with query budgets:
 
 ```ts

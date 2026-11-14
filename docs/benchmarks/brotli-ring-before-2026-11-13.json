@@ -1,0 +1,76 @@
+{
+  "runtime": "v24.18.1",
+  "samples": 15,
+  "warmups": 3,
+  "compressionQuality": 4,
+  "capBytes": 67108864,
+  "scope": "Local codec cost and reservation accounting; not cloud throughput, total RSS or hosted Worker certification. Native decoder internal memory is untracked.",
+  "results": [
+    {
+      "bytes": 65536,
+      "pattern": "text",
+      "compressedBytes": 51,
+      "medianMs": 0.36334599999999284,
+      "p95Ms": 0.8600339999999989,
+      "nativeMedianMs": 0.10760299999999745,
+      "peakReservedBytes": 261295,
+      "scratchAndMetadataPeakBytes": 195759,
+      "retainedAfterReleaseBytes": 0
+    },
+    {
+      "bytes": 65536,
+      "pattern": "binary",
+      "compressedBytes": 65540,
+      "medianMs": 0.15894999999999015,
+      "p95Ms": 1.0290930000000031,
+      "nativeMedianMs": 0.07089399999999557,
+      "peakReservedBytes": 237562,
+      "scratchAndMetadataPeakBytes": 172026,
+      "retainedAfterReleaseBytes": 0
+    },
+    {
+      "bytes": 262144,
+      "pattern": "text",
+      "compressedBytes": 51,
+      "medianMs": 0.5686940000000078,
+      "p95Ms": 1.0525769999999994,
+      "nativeMedianMs": 0.2514149999999944,
+      "peakReservedBytes": 851119,
+      "scratchAndMetadataPeakBytes": 588975,
+      "retainedAfterReleaseBytes": 0
+    },
+    {
+      "bytes": 262144,
+      "pattern": "binary",
+      "compressedBytes": 262149,
+      "medianMs": 0.09655200000000264,
+      "p95Ms": 1.3804559999999952,
+      "nativeMedianMs": 0.05633699999999919,
+      "peakReservedBytes": 827386,
+      "scratchAndMetadataPeakBytes": 565242,
+      "retainedAfterReleaseBytes": 0
+    },
+    {
+      "bytes": 1048576,
+      "pattern": "text",
+      "compressedBytes": 55,
+      "medianMs": 1.3655990000000031,
+      "p95Ms": 2.3440650000000005,
+      "nativeMedianMs": 0.6843020000000024,
+      "peakReservedBytes": 3210415,
+      "scratchAndMetadataPeakBytes": 2161839,
+      "retainedAfterReleaseBytes": 0
+    },
+    {
+      "bytes": 1048576,
+      "pattern": "binary",
+      "compressedBytes": 1048581,
+      "medianMs": 0.23290999999997553,
+      "p95Ms": 1.2808880000000045,
+      "nativeMedianMs": 0.23943199999999365,
+      "peakReservedBytes": 3186682,
+      "scratchAndMetadataPeakBytes": 2138106,
+      "retainedAfterReleaseBytes": 0
+    }
+  ]
+}

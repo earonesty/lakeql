@@ -1,0 +1,11 @@
+{
+  "scope": "Comparison of named failed tests, not passing-output digests",
+  "previousLog": "/tmp/lakeql-empty-snappy-conformance.log",
+  "currentLog": "/tmp/lakeql-fixed-binary-conformance.log",
+  "failed": 167,
+  "passed": 83,
+  "skipped": 1,
+  "addedFailures": [],
+  "removedFailures": [],
+  "referenceTestsPassed": 90
+}

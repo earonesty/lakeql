@@ -1,0 +1,58 @@
+{
+  "description": "Running sum over presorted numeric input, two warmups and three timed rounds. Construction and independent triangular-number validation excluded. Tree workspace admission only; row storage, expression results, output arrays and total VM heap are not measured. Local execution, not cloud latency.",
+  "sourceHashes": {
+    "window-segment-tree": "55d93b2450964f17397b52af512b0cf3f42fce9a69a75362cc687902631eb90d",
+    "window-aggregate": "0d190e0f28256e29dd22bfe07ca7c55ef2a00bfca6ec7b1b64edb20fb700e040",
+    "window-backend": "08049c6bd3cff75f0a9040fe0d3fb7de4be1554cdbfd0e2d75081431f69ff5f0"
+  },
+  "results": [
+    {
+      "rows": 256,
+      "budgetBytes": 238719,
+      "mode": "span",
+      "peakBytes": 0,
+      "medianMilliseconds": 1.1217730000000046,
+      "samples": [1.1625000000000014, 1.1217730000000046, 0.9805770000000038]
+    },
+    {
+      "rows": 256,
+      "budgetBytes": 238720,
+      "mode": "tree",
+      "peakBytes": 238720,
+      "medianMilliseconds": 0.13119700000000023,
+      "samples": [0.16071300000000122, 0.12390299999999854, 0.13119700000000023]
+    },
+    {
+      "rows": 1024,
+      "budgetBytes": 951423,
+      "mode": "span",
+      "peakBytes": 0,
+      "medianMilliseconds": 15.01439599999999,
+      "samples": [17.39421999999999, 15.01439599999999, 14.479288000000011]
+    },
+    {
+      "rows": 1024,
+      "budgetBytes": 951424,
+      "mode": "tree",
+      "peakBytes": 951424,
+      "medianMilliseconds": 0.25482999999999834,
+      "samples": [0.4346390000000042, 0.25241599999999664, 0.25482999999999834]
+    },
+    {
+      "rows": 2048,
+      "budgetBytes": 1901695,
+      "mode": "span",
+      "peakBytes": 0,
+      "medianMilliseconds": 59.405687,
+      "samples": [59.23641900000001, 61.55598800000001, 59.405687]
+    },
+    {
+      "rows": 2048,
+      "budgetBytes": 1901696,
+      "mode": "tree",
+      "peakBytes": 1901696,
+      "medianMilliseconds": 0.6463079999999763,
+      "samples": [0.5708750000000009, 0.6463079999999763, 0.711830999999961]
+    }
+  ]
+}

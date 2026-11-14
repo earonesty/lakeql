@@ -1,0 +1,45 @@
+{
+  "requirements": ["F2", "M1", "M2", "V1", "V2"],
+  "status": "Ordinary row streaming projection and fallback owned collection integrated; ordered/DISTINCT/hive/window ownership remains separate",
+  "contract": [
+    "A shared rowProjectedOutputs producer owns the active output directory and projection values in a batch scope, with per-row temporary scopes. It chunks oversized scanner batches to the requested output batch size without copying a slice. Skipped/duplicate projections release immediately.",
+    "Owned fallback output detaches selected mutable data before scanner advance. Scope-known immutable string/bigint results retain their existing reservation through MemoryScope.tryRetainAllocation, avoiding duplicate payload charges. Unknown immutable payloads acquire independent charges; mutable byte views/containers still copy.",
+    "toOwnedArray uses the existing OwnedRowCollector for ordinary fallback operators. toArray uses that collection path, holding all accumulated results through completion and transferring to caller management only at return. Failure disposes accumulated output before asynchronous producer cleanup.",
+    "Plain streaming remains the borrowed-row API: projection allocations stay live through the yielded batch and release on advance/return. It does not imply ownership of arbitrary scanner backing or caller-retained rows."
+  ],
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "default": {
+      "passed": 3174,
+      "skipped": 629
+    },
+    "worker": {
+      "passed": 71
+    },
+    "focusedTests": "118 initial focused tests passed. The final default run includes the exact-peak/cap-minus-one collection case and corrected directory-charge assertions.",
+    "cases": [
+      "1,000 rows from a single oversized scanner batch stream at requested batch size one under 16 KiB. Collecting all results under that cap rejects rather than dropping prior ownership.",
+      "Selected owned results survive scanner object/byte-buffer reuse and exclude a 100,000-character unselected field.",
+      "An immutable payload reserved at 10,000 bytes transfers to detached output without an extra 8,000-byte payload charge; source scope disposal and mutable-byte modification preserve output.",
+      "Deferred scanner cleanup observes failed accumulated output already released, while an unrelated sibling reservation remains untouched.",
+      "Exact collected-output peak succeeds; one byte below rejects and releases to zero.",
+      "HTTP 206 and ignored-Range 200 plus native local Worker R2 fixture tests include ordinary projected collection alongside aggregate and checkpoint projections; 64/128 MiB shared pools and 2 MiB query caps."
+    ],
+    "testContractUpdates": "The DISTINCT serialized-boundary test now supplies a separate allocation cap, preserving its exact serialized success/failure assertions. Headroom tests include the live output directory and slot charges, and still prove concurrent child isolation, pressure rejection and early-return cleanup.",
+    "conformance": {
+      "passed": 517,
+      "skipped": 1
+    },
+    "cleanNpmInstall": "passed",
+    "lintSizeChangeset": "passed"
+  },
+  "limits": [
+    "Owned row fallback uses the existing detachable-data contract: plain data properties, supported scalar values, arrays and byte views. Cycles, accessors and custom prototypes cannot silently receive an untracked ownership claim. This applies when ordinary fallback toArray now collects through ownership.",
+    "Owned operator routes with DISTINCT, hive augmentation, ordering or windows still require their own complete retained-state contracts. Their ordinary streaming projection receives batch admission where it shares the producer, but this is not full operator ownership.",
+    "Ordered streaming projection, borrowed reference selection, DISTINCT keys, partition merging and remaining scalar internals remain open.",
+    "Source adapter input allocations, scope/runtime metadata and VM/GC behavior remain separate from admitted output; this is not whole-runtime heap certification.",
+    "No throughput speedup is claimed; mutable output detachment and reservation tracking add work in exchange for safe retained lifetime."
+  ],
+  "followupEvidence": "docs/validation/ordered-row-projection-2026-11-13.json"
+}

@@ -30,6 +30,9 @@ jobs:
       - name: Install the software WebGPU adapter
         run: sudo apt-get update && sudo apt-get install --yes mesa-vulkan-drivers
 
+      - name: Fetch external fixtures used by regression tests
+        run: pnpm fixtures:external
+
       - name: Full local gate
         run: pnpm check
 
@@ -50,6 +53,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm build
+
+      - name: Fetch external conformance corpus
+        run: pnpm fixtures:external
 
       - name: Verify vendored external fixture checksums
         run: pnpm fixtures:external -- --verify-only

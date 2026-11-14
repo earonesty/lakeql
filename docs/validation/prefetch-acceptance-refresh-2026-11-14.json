@@ -1,0 +1,99 @@
+{
+  "runtimeSource": "8db393581c8e987dc39ff47f3513d9084003727b",
+  "requirements": ["F6", "M2", "V1", "V2"],
+  "f6Mechanism": "Verified: cache-only ensureRange prefetch avoids discarded output copies; demand reads retain independent ownership. Broader scheduling and runtime headroom obligations remain open under M2/V1.",
+  "mechanismTests": {
+    "passed": 107,
+    "files": [
+      "range-cache.test.ts",
+      "range-cache-owned.test.ts",
+      "range-cache-http.test.ts",
+      "owned-vector-batches.test.ts",
+      "range-cache-wrapper.test.ts"
+    ],
+    "contracts": [
+      "No discarded prefetch copies for private/shared caches; independent mutable demand outputs.",
+      "Coalesced pending prefetch/demand deduplication, including cross-wrapper and cross-job reads.",
+      "File identity/version separation and failed pending-entry retry.",
+      "Admission before transport/output overlap, cache eviction with live pins and optional prefetch decline.",
+      "One waiter cancellation preserves others; last waiter aborts; in-flight reads settle before failure.",
+      "Bounded read concurrency and exact-demand fallback when coalesced windows cannot fit."
+    ]
+  },
+  "copyBenchmark": {
+    "rawReport": "docs/benchmarks/range-prefetch-copies-2026-11-14.json",
+    "cases": [
+      {
+        "windowBytes": 262144,
+        "shared": false,
+        "requests": 4,
+        "peakReads": 2,
+        "fetchedBytes": 1048576,
+        "ensureCopiedBytes": 0,
+        "controlCopiedBytes": 1048576,
+        "medianMs": {
+          "ensure-cache": 2.670029499999991,
+          "discarded-demand-control": 3.0495540000000005
+        }
+      },
+      {
+        "windowBytes": 262144,
+        "shared": true,
+        "requests": 4,
+        "peakReads": 2,
+        "fetchedBytes": 1048576,
+        "ensureCopiedBytes": 0,
+        "controlCopiedBytes": 1048576,
+        "medianMs": {
+          "ensure-cache": 2.719041499999989,
+          "discarded-demand-control": 3.1012805000000014
+        }
+      },
+      {
+        "windowBytes": 1048576,
+        "shared": false,
+        "requests": 4,
+        "peakReads": 2,
+        "fetchedBytes": 4194304,
+        "ensureCopiedBytes": 0,
+        "controlCopiedBytes": 4194304,
+        "medianMs": {
+          "ensure-cache": 2.3539300000000196,
+          "discarded-demand-control": 2.590940500000002
+        }
+      },
+      {
+        "windowBytes": 1048576,
+        "shared": true,
+        "requests": 4,
+        "peakReads": 2,
+        "fetchedBytes": 4194304,
+        "ensureCopiedBytes": 0,
+        "controlCopiedBytes": 4194304,
+        "medianMs": {
+          "ensure-cache": 2.3895569999999964,
+          "discarded-demand-control": 2.995777999999973
+        }
+      }
+    ]
+  },
+  "liveR2": {
+    "rawReport": "docs/benchmarks/cloud-range-prefetch-refresh-2026-11-14.json",
+    "scenarios": 52,
+    "ordinaryCases": 40,
+    "poolMiB": [64, 128],
+    "concurrency": [1, 4],
+    "queryHeadroomBytes": 524288,
+    "maximumIncrementalChargedBytes": 398024,
+    "ordinaryWarmDataReads": 0,
+    "maximumReadConcurrency": 4,
+    "coalescedReadCase": "Four data requests / 4096 bytes, plus one 2-byte metadata probe; concurrency 1/2/4 honored."
+  },
+  "limitations": [
+    "Copy benchmark uses a discarded-demand control after identical coalescing, not a full historical revision. Timings use simulated local transport delay.",
+    "Copied-byte volume is not heap/GC residency.",
+    "Live endpoint run uses HTTP from Node, not native deployed Worker bindings; single-run latency is not a statistical throughput claim.",
+    "128 KiB headroom was not rerun; its earlier typed failure remains historical evidence.",
+    "All F1-F6/M1-M2/V1-V3 requirements must still be audited before overall completion."
+  ]
+}

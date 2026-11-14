@@ -1,6 +1,8 @@
 import {
   type CacheAdapter,
   LakeqlError,
+  type MemoryBudget,
+  mapConcurrent,
   type ObjectHead,
   type ObjectStore,
   type QueryBudget,
@@ -56,6 +58,8 @@ export interface OpenLanceDatasetOptions {
   store: ObjectStore;
   path: string;
   budget?: QueryBudget;
+  /** Shared admission pool for concurrent operations; excludes uninstrumented JS state. */
+  memoryBudget?: MemoryBudget;
   /** Pin a manifest version. Omit to resolve the latest-version hint. */
   version?: LanceRowIdInput;
   metadataCache?: CacheAdapter<Uint8Array>;
@@ -190,6 +194,7 @@ export class LanceDataset {
       manifestFileSize: number;
       snapshotId: string;
       budget: QueryBudget;
+      memoryBudget: MemoryBudget | undefined;
       now: () => number;
       planning: LanceRangePlanningOptions;
       openStats: MutableLanceReadStats;
@@ -463,15 +468,18 @@ export class LanceDataset {
       candidateOffsets.set(address.fragmentIndex, offsets);
     }
     const deletedOffsetsByFragment = new Map<number, Set<number>>(
-      await Promise.all(
-        [...candidateOffsets].map(async ([fragmentIndex, offsets]) => {
+      await mapConcurrent(
+        [...candidateOffsets],
+        context.budget.maxConcurrentReads ?? 4,
+        async ([fragmentIndex, offsets]) => {
+          context.check();
           const fragment = this.options.manifest.fragments[fragmentIndex];
           if (fragment === undefined) corrupt("Resolved Lance row references a missing fragment");
           return [
             fragmentIndex,
             await readDeletedRowOffsets(context, this.options.root, fragment, offsets),
           ] as const;
-        }),
+        },
       ),
     );
     const deleted = new Set<string>();
@@ -503,8 +511,11 @@ export class LanceDataset {
       fragmentOffsets.set(address.fragmentIndex, offsets);
     }
     const materialized = new Map<string, Row>();
-    await Promise.all(
-      [...fragmentOffsets].map(async ([fragmentIndex, offsets]) => {
+    await mapConcurrent(
+      [...fragmentOffsets],
+      context.budget.maxConcurrentReads ?? 4,
+      async ([fragmentIndex, offsets]) => {
+        context.check();
         const fragment = this.options.manifest.fragments[fragmentIndex];
         if (fragment === undefined) corrupt("Resolved Lance row references a missing fragment");
         const rows = await materializeFragmentRows({
@@ -528,7 +539,7 @@ export class LanceDataset {
           }
           materialized.set(rowIdText, row);
         }
-      }),
+      },
     );
     const rows = rowIds.map((rowId) => materialized.get(rowId.toString()) ?? null);
     context.check();
@@ -557,6 +568,7 @@ export class LanceDataset {
       startedAt,
       this.options.now,
       this.options.planning,
+      this.options.memoryBudget,
     );
   }
 }
@@ -570,58 +582,79 @@ export async function openLanceDataset(options: OpenLanceDatasetOptions): Promis
   const planning = validatedPlanning(options);
   const vectorLimits = validatedVectorLimits(options.vectorLimits);
   const indexCache = validatedIndexCache(options);
-  const context = new LanceReadContext(options.store, budget, stats, startedAt, now, planning);
-  const version =
-    options.version === undefined
-      ? await readLatestVersion(context, root)
-      : normalizeRowId(options.version);
-  if (version === 0n) {
-    throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Lance dataset version must be positive");
-  }
-  const manifestPath = manifestPathForVersion(root, version);
-  const manifestHead = await requiredHead(context, manifestPath);
-  const cacheKey = manifestCacheKey(manifestPath, manifestHead);
-  let manifestBytes: Uint8Array;
-  let indexSource: { bytes: Uint8Array; offset: number } | undefined;
-  const cached = await options.metadataCache?.get(cacheKey);
-  if (cached === undefined) {
-    stats.cacheMisses += options.metadataCache === undefined ? 0 : 1;
-    const read = await readManifestBytes(context, manifestPath, manifestHead.size);
-    manifestBytes = read.manifestBytes;
-    indexSource = read.indexSource;
-    await options.metadataCache?.set(cacheKey, { value: copyBytes(manifestBytes) });
-  } else {
-    stats.cacheHits += 1;
-    manifestBytes = cached.value;
-  }
-  context.accountDecodedMemory(manifestBytes.byteLength + (indexSource?.bytes.byteLength ?? 0));
-  const manifest = parseManifest(manifestBytes);
-  validateManifest(manifest, version);
-  const indexMetadata =
-    indexSource === undefined
-      ? undefined
-      : embeddedIndexMetadata(manifest, indexSource.bytes, indexSource.offset);
-  const digest = await sha256(manifestBytes);
-  const snapshotId = `lance:${manifest.version}:sha256:${digest}`;
-  context.check();
-  const dataset = new LanceDataset({
-    store: options.store,
-    root,
-    manifest,
-    ...(indexMetadata === undefined ? {} : { indexMetadata }),
-    manifestPath,
-    manifestFileSize: manifestHead.size,
-    snapshotId,
+  const context = new LanceReadContext(
+    options.store,
     budget,
+    stats,
+    startedAt,
     now,
     planning,
-    openStats: stats,
-    metadataMs: now() - startedAt,
-    vectorLimits,
-    indexCache,
-  });
-  context.releaseDecodedMemory();
-  return dataset;
+    options.memoryBudget,
+  );
+  try {
+    const version =
+      options.version === undefined
+        ? await readLatestVersion(context, root)
+        : normalizeRowId(options.version);
+    if (version === 0n) {
+      throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Lance dataset version must be positive");
+    }
+    const manifestPath = manifestPathForVersion(root, version);
+    const manifestHead = await requiredHead(context, manifestPath);
+    const cacheKey = manifestCacheKey(manifestPath, manifestHead);
+    let manifestBytes: Uint8Array;
+    let indexSource: { bytes: Uint8Array; offset: number } | undefined;
+    const cached = await options.metadataCache?.get(cacheKey);
+    if (cached === undefined) {
+      stats.cacheMisses += options.metadataCache === undefined ? 0 : 1;
+      const read = await readManifestBytes(context, manifestPath, manifestHead.size);
+      manifestBytes = read.manifestBytes;
+      indexSource = read.indexSource;
+      if (options.metadataCache !== undefined) {
+        // The legacy cache owns its copy after set; admit the copy while this
+        // opening operation constructs and transfers it.
+        const cacheCopy = context.leaseDecodedMemory(manifestBytes.byteLength);
+        try {
+          await options.metadataCache.set(cacheKey, { value: copyBytes(manifestBytes) });
+        } finally {
+          cacheCopy.release();
+        }
+      }
+    } else {
+      stats.cacheHits += 1;
+      manifestBytes = cached.value;
+      context.accountDecodedMemory(manifestBytes.byteLength);
+    }
+    const manifest = parseManifest(manifestBytes);
+    validateManifest(manifest, version);
+    const indexMetadata =
+      indexSource === undefined
+        ? undefined
+        : embeddedIndexMetadata(manifest, indexSource.bytes, indexSource.offset);
+    const digest = await sha256(manifestBytes);
+    const snapshotId = `lance:${manifest.version}:sha256:${digest}`;
+    context.check();
+    const dataset = new LanceDataset({
+      store: options.store,
+      root,
+      manifest,
+      ...(indexMetadata === undefined ? {} : { indexMetadata }),
+      manifestPath,
+      manifestFileSize: manifestHead.size,
+      snapshotId,
+      budget,
+      memoryBudget: options.memoryBudget,
+      now,
+      planning,
+      openStats: stats,
+      metadataMs: now() - startedAt,
+      vectorLimits,
+      indexCache,
+    });
+    return dataset;
+  } finally {
+    context.releaseDecodedMemory();
+  }
 }
 
 function validatedIndexCache(options: OpenLanceDatasetOptions): SharedMemoryCache | undefined {
@@ -732,6 +765,7 @@ async function readManifestBytes(
   let tailCopy: Uint8Array;
   try {
     const tail = tailLease.slice(tailRange);
+    context.accountDecodedMemory(tail.byteLength);
     tailCopy = copyBytes(tail);
     const footer = tail.subarray(tail.byteLength - MANIFEST_FOOTER_BYTES);
     if (decodeAscii(footer.subarray(12, 16)) !== "LANC") {
@@ -742,12 +776,13 @@ async function readManifestBytes(
       corrupt("Lance manifest offset is out of bounds", { path, manifestOffset, fileSize });
     }
     if (manifestOffset >= tailOffset) {
-      combined = copyBytes(tail.subarray(manifestOffset - tailOffset));
+      combined = tailCopy.subarray(manifestOffset - tailOffset);
     } else {
       const prefixRange = { offset: manifestOffset, length: tailOffset - manifestOffset };
       const prefixLease = await context.readRange(path, prefixRange, "snapshot");
       try {
         const prefix = prefixLease.slice(prefixRange);
+        context.accountDecodedMemory(prefix.byteLength + tail.byteLength);
         combined = new Uint8Array(prefix.byteLength + tail.byteLength);
         combined.set(prefix);
         combined.set(tail, prefix.byteLength);
@@ -768,7 +803,7 @@ async function readManifestBytes(
     });
   }
   return {
-    manifestBytes: copyBytes(combined.subarray(4, 4 + messageLength)),
+    manifestBytes: combined.subarray(4, 4 + messageLength),
     indexSource: { bytes: tailCopy, offset: tailOffset },
   };
 }

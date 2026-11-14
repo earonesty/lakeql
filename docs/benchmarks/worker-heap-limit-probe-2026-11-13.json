@@ -1,0 +1,22 @@
+{
+  "heapMiB": 32,
+  "flag": "--max-heap-size=32",
+  "responses": [
+    {
+      "arrays": 1,
+      "elements": 1048576
+    },
+    {
+      "arrays": 2,
+      "elements": 2097152
+    },
+    {
+      "arrays": 3,
+      "elements": 3145728
+    }
+  ],
+  "failure": "TypeError: fetch failed",
+  "heapLimitFailure": true,
+  "runtimeStderr": "\n<--- Last few GCs --->\n\n[2458858:0x73357fc74000]       72 ms: Mark-Compact (reduce) 28.5 (29.0) -> 28.5 (29.0) MB, pooled: 0.0 MB, 2.40 / 0.00 ms (average mu = 0.013, current mu = 0.002) last resort; GC in old space requested\n[2458858:0x73357fc74000]       74 ms: Mark-Compact (reduce) 28.5 (29.0) -> 28.5 (29.0) MB, pooled: 0.0 MB, 2.01 / 0.00 ms (average mu = 0.009, current mu = 0.004) last resort; GC in old space requested\n\nworkerd/jsg/setup.c++:38: fatal: V8 fatal error; location = Reached heap limit; message = : allocation failed: JavaScript heap out of memory\n*** Received signal #6: Aborted\nstack: /lib/x86_64-linux-gnu/libc.so.6@9ec0b /lib/x86_64-linux-gnu/libc.so.6@4527d /lib/x86_64-linux-gnu/libc.so.6@288fe /home/erik/work/projects/lakeql/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260611.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@3595821 /home/erik/work/projects/lakeql/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260611.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@3a6e226 /home/erik/work/projects/lakeql/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260611.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@3a6e1df /home/erik/work/projects/lakeql/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260611.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@3c6a536 /home/erik/work/projects/lakeql/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260611.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@3c69747 /home/erik/work/projects/lakeql/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260611.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@3c7d71a /home/erik/work/projects/lakeql/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260611.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@3c7d1b6 /home/erik/work/projects/lakeql/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260611.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@3c33343 /home/erik/work/projects/lakeql/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260611.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@3c4c918 /home/erik/work/projects/lakeql/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260611.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@3ac7c56 /home/erik/work/projects/lakeql/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260611.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd@3920c35\n",
+  "interpretation": "Inspect failure and stderr: process failure alone does not prove the requested heap constraint was applied."
+}

@@ -1,0 +1,39 @@
+{
+  "requirements": ["F4", "M1", "M2", "V2"],
+  "baseCommit": "3e30612",
+  "fixedPeerMetadataBytes": 1536,
+  "accounting": "Four objects and twenty properties: eleven instance fields plus three three-field cursor records. Borrowed partition/key backing excluded.",
+  "fortyGroupTotalCapacity": {
+    "indexAdmitted": 1828,
+    "indexDeclined": 1827
+  },
+  "ownership": "Budgeted WindowPeers reserves before cursor construction; dispose releases metadata and optional index. Standalone segment-tree default peer helper uses supplied budget and is disposed in finally. Supplied helper remains caller-owned.",
+  "validation": {
+    "build": "passed",
+    "regularTests": 3747,
+    "regularSkipped": 645,
+    "workerTests": 82,
+    "typecheck": "passed"
+  },
+  "checks": [
+    "Exact fixed capacity, one-byte pressure rejection, sibling preservation and double disposal",
+    "Independent RANGE/GROUPS dynamic-bound oracle at total index capacity and one byte below",
+    "Ranking remains linear in peer-key visits with constant fixed metadata",
+    "Adaptive tree success/failure/fallback releases default helper",
+    "Row/run/vector exact-budget output lifecycle and repeated retry remain green"
+  ],
+  "sourceSha256": {
+    "window-peers.ts": "4a385a2bb46543f9c2ecf8a57c278e8b559fc3138752ad15bc641a8d94a1e1b0",
+    "window-segment-tree.ts": "75f29873db05648471440b3acc191c74b4f4bbeeb3222ff1836118754ee3d4ae",
+    "window-peers.test.ts": "37467e0eaa9bc05753bd10d409fbd004b4af682c392ebe22bc617ccbd3505292",
+    "window-ranking.test.ts": "c3661d18fe203ef4e30107cb25d52242ad09c634a4dbec2b3e54d3fdbb33edff",
+    "window-segment-memory.test.ts": "b2587d57fea099b88c7fff1a028537a405639f1a5c8650ee2276e36ede0ad18d",
+    "window-segment-tree.test.ts": "c8426e73e5d6c1b9732d5fd3b7ed7e25fea863c50b4449416a7bcba9de9bb2d6",
+    "window-aggregate-ownership.test.ts": "9ec3a5422a3274d3998267f410ec90007b9504a82e536f7477bffebbb03a3552"
+  },
+  "limits": [
+    "Reservation units are not exact VM heap measurements",
+    "Other window helper objects and wider allocation acceptance remain open",
+    "No new production-cloud measurement; Worker suite is local workerd/R2 fixture evidence"
+  ]
+}

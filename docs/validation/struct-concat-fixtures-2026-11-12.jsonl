@@ -1,0 +1,3 @@
+{"file":"nested_structs.rust.parquet","phase":"decoded-input","difference":null}
+{"file":"nested_structs.rust.parquet","rows":2,"batches":2,"peakTrackedOutputBytes":3456,"scope":"Internal struct concat, public schema gate bypassed; local fixture/DuckDB, borrowed decoder inputs; not remote or complete heap accounting"}
+{"file":"nonnullable.impala.parquet","phase":"decoded-input","difference":null}

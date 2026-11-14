@@ -1,0 +1,28 @@
+{
+  "baseCommit": "5652ccb",
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": {
+      "passed": 14,
+      "files": 2
+    },
+    "workerd": {
+      "passed": 79,
+      "files": 22
+    }
+  },
+  "edgeCases": [
+    "Exact retained metadata capacity",
+    "One byte below capacity",
+    "Independent date clone",
+    "Owner survives caller scope disposal",
+    "Zero-budget missing metadata",
+    "Late result after scope disposal",
+    "Actual R2 cache read rejects legacy metadata route"
+  ],
+  "limitations": [
+    "Binding response allocation remains external",
+    "Retained reservation accounting is not total Worker heap measurement"
+  ]
+}

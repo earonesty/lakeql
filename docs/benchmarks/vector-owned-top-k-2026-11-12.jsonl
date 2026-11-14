@@ -1,0 +1,12 @@
+{"rows":10000,"distribution":"ascending","limit":10,"borrowedMs":0.3303019999999961,"ownedMs":0.23431199999999563,"inputBytes":160000,"peakIncrementalBytes":200}
+{"rows":10000,"distribution":"ascending","limit":1000,"borrowedMs":0.5886589999999998,"ownedMs":0.38871299999999565,"inputBytes":160000,"peakIncrementalBytes":20000}
+{"rows":10000,"distribution":"descending","limit":10,"borrowedMs":1.0558599999999956,"ownedMs":0.23824899999999616,"inputBytes":160000,"peakIncrementalBytes":200}
+{"rows":10000,"distribution":"descending","limit":1000,"borrowedMs":0.627713,"ownedMs":0.3494489999999928,"inputBytes":160000,"peakIncrementalBytes":20000}
+{"rows":10000,"distribution":"mixed","limit":10,"borrowedMs":1.3498349999999988,"ownedMs":0.2548309999999958,"inputBytes":160000,"peakIncrementalBytes":200}
+{"rows":10000,"distribution":"mixed","limit":1000,"borrowedMs":2.755065000000002,"ownedMs":1.5036050000000216,"inputBytes":160000,"peakIncrementalBytes":20000}
+{"rows":100000,"distribution":"ascending","limit":10,"borrowedMs":3.2353800000000206,"ownedMs":1.9692119999999989,"inputBytes":1600000,"peakIncrementalBytes":200}
+{"rows":100000,"distribution":"ascending","limit":1000,"borrowedMs":5.628751999999963,"ownedMs":2.1028139999999667,"inputBytes":1600000,"peakIncrementalBytes":20000}
+{"rows":100000,"distribution":"descending","limit":10,"borrowedMs":8.412961999999993,"ownedMs":2.0551849999999945,"inputBytes":1600000,"peakIncrementalBytes":200}
+{"rows":100000,"distribution":"descending","limit":1000,"borrowedMs":5.725313999999969,"ownedMs":2.1545320000000174,"inputBytes":1600000,"peakIncrementalBytes":20000}
+{"rows":100000,"distribution":"mixed","limit":10,"borrowedMs":13.198583999999983,"ownedMs":1.8845529999999826,"inputBytes":1600000,"peakIncrementalBytes":200}
+{"rows":100000,"distribution":"mixed","limit":1000,"borrowedMs":25.234375999999997,"ownedMs":4.068320999999969,"inputBytes":1600000,"peakIncrementalBytes":20000}

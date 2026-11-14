@@ -1,0 +1,29 @@
+{
+  "date": "2026-11-12",
+  "scope": "Validation checkpoint, not completion of the performance/memory audit or whole Worker heap proof",
+  "defaultCoverage": {
+    "passed": 1513,
+    "skipped": 359,
+    "filesPassed": 148,
+    "statements": 91.02,
+    "branches": 84.77,
+    "functions": 95.08,
+    "lines": 92.99,
+    "note": "Coverage preceded the final additional malformed compressed dictionary test; that test passed in the focused 21-test run."
+  },
+  "workerd": {
+    "passed": 24,
+    "files": 8,
+    "note": "Local workerd R2 binding; real UNCOMPRESSED and SNAPPY PLAIN/dictionary writer fixtures, concurrent jobs, warm cache, eviction and retained output. Not remote network or whole heap stress. Runtime printed pump canceled while suite exited successfully."
+  },
+  "numericPageFocused": 21,
+  "typecheck": "pass",
+  "lint": "pass after formatting two benchmark JSON artifacts",
+  "sha256": {
+    "packages/parquet/src/numeric-page.ts": "7bbe17c4c09bcab642fbe7ea6e8320f174b1520344a56882a280bc9a05c45e9f",
+    "packages/parquet/src/numeric-page.test.ts": "ee6bcca0e923be7a33d8250b22d842ef64ceffd1967e66ce4bf44cf7f2b64289",
+    "packages/parquet/src/index.workerd.ts": "b0035e2d594029da62fadffe2743a192f7cbefeb1c69ee079fa453c89405df4f",
+    "packages/parquet/src/range-cache-owned.ts": "384447e25a372bec5ffc6f951374a676e03e6e9d44dc88c2df1f27469028237e",
+    "packages/core/src/object-store-cache.ts": "fe28ca48e44ab4724ec10dbfcaef998ca57443bde01203009cd83d1f8ae5989d"
+  }
+}

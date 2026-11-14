@@ -1,4 +1,5 @@
 import {
+  type AggregateSpec,
   add,
   and,
   between,
@@ -21,11 +22,10 @@ import {
   aggregateScanOptions,
   aggregateTaskReadColumns,
   appendRowGroupRange,
-  cloneTaskWithRanges,
   enforceAggregateTaskBudget,
   groupAggregateTasks,
+  iterateTaskRowWindows,
   taskReadOptions,
-  taskRowWindows,
   validateTaskWorkUnitOptions,
 } from "./task.js";
 
@@ -55,19 +55,21 @@ describe("Parquet task planning contracts", () => {
 
   it("derives row windows from finite row-group ranges and skips invalid spans", () => {
     expect(
-      taskRowWindows(
-        { row_groups: [{ num_rows: 10 }, { num_rows: 5 }, { num_rows: 7 }] },
-        {
-          path: "data.parquet",
-          rowGroupRanges: [
-            { start: -1, end: 1 },
-            { start: 0, end: 2 },
-            { start: 2, end: 9 },
-            { start: 3, end: 4 },
-            { start: 2, end: 2 },
-          ],
-          partitionValues: {},
-        },
+      Array.from(
+        iterateTaskRowWindows(
+          { row_groups: [{ num_rows: 10 }, { num_rows: 5 }, { num_rows: 7 }] },
+          {
+            path: "data.parquet",
+            rowGroupRanges: [
+              { start: -1, end: 1 },
+              { start: 0, end: 2 },
+              { start: 2, end: 9 },
+              { start: 3, end: 4 },
+              { start: 2, end: 2 },
+            ],
+            partitionValues: {},
+          },
+        ),
       ),
     ).toEqual([
       { rowStart: 0, rowEnd: 15 },
@@ -114,7 +116,9 @@ describe("Parquet task planning contracts", () => {
       residualPredicate: eq("tenant", "a"),
       partitionValues: { tenant: "a" },
     };
-    const clone = cloneTaskWithRanges(task, [{ start: 0, end: 1 }]);
+    const clone = groupAggregateTasks([
+      { ...task, rowGroupRanges: [{ start: 0, end: 1 }] },
+    ])[0] as TaskInput;
     clone.partitionValues.tenant = "b";
     clone.projectedColumns?.push("extra");
     clone.rowGroupRanges[0].end = 2;
@@ -270,3 +274,235 @@ function queryStats(): QueryStats {
     cacheMisses: 0,
   };
 }
+
+it("streams row windows with constant live storage and lazy metadata traversal", async () => {
+  const { iterateTaskRowWindows } = await import("./task.js");
+  const { MemoryBudget, MemoryScope } = await import("lakeql-core");
+  let reads = 0;
+  const metadata = {
+    row_groups: Array.from({ length: 1000 }, () => ({
+      get num_rows() {
+        reads++;
+        return 2;
+      },
+    })),
+  };
+  const task = {
+    path: "data",
+    partitionValues: {},
+    rowGroupRanges: Array.from({ length: 1000 }, (_, start) => ({ start, end: start + 1 })),
+  };
+  const budget = new MemoryBudget(1024);
+  const scope = new MemoryScope(budget);
+  const iterator = iterateTaskRowWindows(metadata, task, scope);
+  expect(reads).toBe(0);
+  expect(iterator.next().value).toEqual({ rowStart: 0, rowEnd: 2 });
+  expect(reads).toBe(1);
+  const held = budget.usedBytes;
+  expect(held).toBeGreaterThan(0);
+  let count = 1;
+  for (const window of iterator) {
+    expect(window).toEqual({ rowStart: count * 2, rowEnd: (count + 1) * 2 });
+    expect(budget.usedBytes).toBe(held);
+    count++;
+  }
+  expect(count).toBe(1000);
+  expect(reads).toBe(1000);
+  expect(budget.usedBytes).toBe(0);
+  const early = iterateTaskRowWindows(metadata, task, scope);
+  early.next();
+  early.return?.();
+  expect(budget.usedBytes).toBe(0);
+  expect([
+    ...iterateTaskRowWindows(
+      metadata,
+      {
+        ...task,
+        rowGroupRanges: [
+          { start: 3, end: 5 },
+          { start: 1, end: 4 },
+          { start: 0, end: 1 },
+        ],
+      },
+      scope,
+    ),
+  ]).toEqual([
+    { rowStart: 6, rowEnd: 10 },
+    { rowStart: 2, rowEnd: 8 },
+    { rowStart: 0, rowEnd: 2 },
+  ]);
+  scope.dispose();
+});
+
+it.each([
+  1024,
+  64 * 1024,
+])("adapts backward row-window traversal within %i bytes", async (capacity) => {
+  const { iterateTaskRowWindows } = await import("./task.js");
+  const { MemoryBudget, MemoryScope } = await import("lakeql-core");
+  let reads = 0;
+  const metadata = {
+    row_groups: Array.from({ length: 1000 }, () => ({
+      get num_rows() {
+        reads++;
+        return 2;
+      },
+    })),
+  };
+  const task = {
+    path: "data",
+    partitionValues: {},
+    rowGroupRanges: Array.from({ length: 20 }, (_, i) => ({ start: 999 - i, end: 1000 - i })),
+  };
+  const pool = new MemoryBudget(capacity);
+  const scope = new MemoryScope(pool);
+  const windows = [...iterateTaskRowWindows(metadata, task, scope)];
+  expect(windows).toEqual(
+    task.rowGroupRanges.map(({ start, end }) => ({ rowStart: start * 2, rowEnd: end * 2 })),
+  );
+  expect(reads).toBe(capacity === 1024 ? 19810 : 2000);
+  expect(pool.peakBytes).toBeLessThanOrEqual(capacity);
+  expect(pool.usedBytes).toBe(0);
+  const iterator = iterateTaskRowWindows(metadata, task, scope);
+  iterator.next();
+  iterator.next();
+  expect(pool.usedBytes).toBeGreaterThan(0);
+  iterator.return?.();
+  expect(pool.usedBytes).toBe(0);
+  scope.dispose();
+});
+
+it("rechecks shared headroom between row windows and releases an admitted index on failure", async () => {
+  const { iterateTaskRowWindows } = await import("./task.js");
+  const { MemoryBudget, MemoryScope } = await import("lakeql-core");
+  const pool = new MemoryBudget(64 * 1024);
+  const scope = new MemoryScope(pool);
+  let reads = 0;
+  let fail = false;
+  const metadata = {
+    row_groups: Array.from({ length: 1000 }, () => ({
+      get num_rows() {
+        if (fail) throw new Error("metadata unavailable");
+        reads++;
+        return 1;
+      },
+    })),
+  };
+  const task = {
+    path: "data",
+    partitionValues: {},
+    rowGroupRanges: [
+      { start: 999, end: 1000 },
+      { start: 998, end: 999 },
+      { start: 997, end: 998 },
+    ],
+  };
+  const iterator = iterateTaskRowWindows(metadata, task, scope);
+  iterator.next();
+  const competing = pool.reserve(pool.availableBytes - 1024, "competing job");
+  expect(iterator.next().value).toEqual({ rowStart: 998, rowEnd: 999 });
+  expect(reads).toBe(1999);
+  competing.release();
+  expect(iterator.next().value).toEqual({ rowStart: 997, rowEnd: 998 });
+  expect(reads).toBe(2999);
+  expect(pool.usedBytes).toBeGreaterThan(8000);
+  iterator.return?.();
+  expect(pool.usedBytes).toBe(0);
+  const failing = iterateTaskRowWindows(metadata, task, scope);
+  failing.next();
+  fail = true;
+  expect(() => failing.next()).toThrow("metadata unavailable");
+  expect(pool.usedBytes).toBe(0);
+  const reuse = pool.reserve(pool.maxBytes, "next job");
+  reuse.release();
+  scope.dispose();
+});
+
+it("combines fragmented task ranges once without mutating input ranges", () => {
+  const tasks: TaskInput[] = Array.from({ length: 1000 }, (_, index) => ({
+    path: "data",
+    partitionValues: {},
+    rowGroupRanges: [Object.freeze({ start: (999 - index) * 2, end: (999 - index) * 2 + 1 })],
+  }));
+  const grouped = groupAggregateTasks(tasks);
+  expect(grouped).toHaveLength(1);
+  expect(grouped[0]?.rowGroupRanges).toEqual(
+    Array.from({ length: 1000 }, (_, index) => ({ start: index * 2, end: index * 2 + 1 })),
+  );
+  expect(tasks[0]?.rowGroupRanges).toEqual([{ start: 1998, end: 1999 }]);
+  expect(grouped[0]?.rowGroupRanges[0]).not.toBe(tasks[999]?.rowGroupRanges[0]);
+  const overlapping = groupAggregateTasks([
+    ...tasks,
+    { path: "data", partitionValues: {}, rowGroupRanges: [{ start: 0, end: 2000 }] },
+  ]);
+  expect(overlapping[0]?.rowGroupRanges).toEqual([{ start: 0, end: 2000 }]);
+});
+
+it("admits grouped task storage and releases all failed grouping allocations", async () => {
+  const { MemoryBudget, MemoryScope } = await import("lakeql-core");
+  const tasks: TaskInput[] = Array.from({ length: 20 }, (_, i) => ({
+    path: "data",
+    partitionValues: { p: "west" },
+    rowGroupRanges: [{ start: i * 2, end: i * 2 + 1 }],
+  }));
+  const pool = new MemoryBudget(128 * 1024);
+  const scope = new MemoryScope(pool);
+  const grouped = groupAggregateTasks(tasks, scope);
+  expect(grouped[0]?.rowGroupRanges).toHaveLength(20);
+  expect(pool.usedBytes).toBeGreaterThan(0);
+  expect(() => pool.reserve(pool.maxBytes, "competing job")).toThrow(/budget/);
+  const peak = pool.peakBytes;
+  scope.dispose();
+  expect(pool.usedBytes).toBe(0);
+  const tight = new MemoryScope(new MemoryBudget(peak - 1));
+  expect(() => groupAggregateTasks(tasks, tight)).toThrow(/budget/);
+  expect(tight.budget.usedBytes).toBe(0);
+  tight.dispose();
+});
+
+it("admits aggregate column planning and distinguishes own partition columns", async () => {
+  const { MemoryBudget, MemoryScope } = await import("lakeql-core");
+  const task: TaskInput = {
+    path: "data",
+    rowGroupRanges: [],
+    partitionValues: { region: "west" },
+    residualPredicate: eq("id", 2),
+  };
+  const spec: AggregateSpec = { total: { op: "sum", column: "amount" } };
+  const pool = new MemoryBudget(4096);
+  const scope = new MemoryScope(pool);
+  expect(aggregateTaskReadColumns(task, spec, ["region", "id", "__proto__"], scope)).toEqual([
+    "__proto__",
+    "amount",
+    "id",
+  ]);
+  expect(pool.usedBytes).toBeGreaterThan(0);
+  const peak = pool.peakBytes;
+  scope.dispose();
+  expect(pool.usedBytes).toBe(0);
+  const tight = new MemoryScope(new MemoryBudget(peak - 1));
+  expect(() => aggregateTaskReadColumns(task, spec, ["region", "id", "__proto__"], tight)).toThrow(
+    /budget/,
+  );
+  tight.dispose();
+  expect(tight.budget.usedBytes).toBe(0);
+});
+
+it("reuses physical projections and admits only filtered projection storage", async () => {
+  const { taskPhysicalReadColumns } = await import("./task.js");
+  const { MemoryBudget, MemoryScope } = await import("lakeql-core");
+  const scope = new MemoryScope(new MemoryBudget(1024));
+  const task: TaskInput = {
+    path: "data",
+    rowGroupRanges: [],
+    projectedColumns: ["constructor", "id"],
+    partitionValues: { region: "west" },
+  };
+  expect(taskPhysicalReadColumns(task, scope)).toBe(task.projectedColumns);
+  expect(scope.budget.usedBytes).toBe(0);
+  task.projectedColumns = ["region", "constructor", "id"];
+  expect(taskPhysicalReadColumns(task, scope)).toEqual(["constructor", "id"]);
+  expect(scope.budget.usedBytes).toBeGreaterThan(0);
+  scope.dispose();
+  expect(scope.budget.usedBytes).toBe(0);
+});

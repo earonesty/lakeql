@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { batchFromColumns, batchFromVectors, materializeBatchRows } from "./batch.js";
 import { col, eq, gt, mul } from "./expr.js";
+import { MemoryBudget } from "./memory-budget.js";
+import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
 import {
   type BackendAssessment,
   type BackendExecutionContext,
@@ -15,6 +17,7 @@ import {
   type PhysicalFragment,
   type PhysicalFragmentInput,
   type PhysicalFragmentResult,
+  type PhysicalOutputValue,
   physicalInputFromBatch,
   planPhysicalFragment,
 } from "./physical.js";
@@ -653,3 +656,298 @@ function clock(): () => number {
     return time;
   };
 }
+
+it("plans scoped snapshots and continuations with separate capabilities", () => {
+  const batch = batchFromColumns({ key: ["a"], value: [1] });
+  const fragment = testFragment(batch, {
+    operators: [
+      { kind: "grouped-reduce", keys: ["key"], aggregates: { n: { op: "sum", column: "value" } } },
+    ],
+    output: { kind: "grouped-aggregate-snapshot" },
+  });
+  const backend = new CpuPhysicalBackend();
+  expect(() =>
+    planPhysicalFragment(fragment, [backend], { requireAllocationScope: true }),
+  ).not.toThrow();
+  expect(() =>
+    planPhysicalFragment(fragment, [backend], {
+      requireAllocationScope: true,
+      requireReductionContinuation: true,
+    }),
+  ).not.toThrow();
+  expect(() =>
+    planPhysicalFragment(fragment, [backend], {
+      policy: "required",
+      requireReductionContinuation: true,
+    }),
+  ).toThrow();
+  const ordinaryOnly: PhysicalExecutionBackend = {
+    id: "ordinary-only",
+    capabilities: () => backend.capabilities(),
+    assess: (f, c) => backend.assess(f, c),
+    compile: (f) => backend.compile(f),
+    execute: (f, i, c) => backend.execute(f, i, c),
+  };
+  expect(() =>
+    planPhysicalFragment(fragment, [ordinaryOnly], { requireReductionContinuation: true }),
+  ).toThrow();
+});
+
+it("rejects unadmitted expression and column shapes during continuation placement", () => {
+  const batch = batchFromColumns({ value: ["a"] });
+  const backend = new CpuPhysicalBackend();
+  const fragment = testFragment(batch, {
+    operators: [
+      {
+        kind: "reduce",
+        aggregates: {
+          n: {
+            op: "count_distinct",
+            expr: {
+              kind: "call",
+              fn: "regexp_replace",
+              args: [
+                { kind: "column", name: "value" },
+                { kind: "literal", value: "a" },
+                { kind: "literal", value: "b" },
+              ],
+            },
+          },
+        },
+      },
+    ],
+    output: { kind: "aggregate-snapshot" },
+  });
+  expect(() =>
+    planPhysicalFragment(fragment, [backend], { requireReductionContinuation: true }),
+  ).toThrow();
+  const direct = testFragment(batch, {
+    operators: [{ kind: "reduce", aggregates: { n: { op: "count", column: "value" } } }],
+    output: { kind: "aggregate-snapshot" },
+  });
+  if (direct.input.kind !== "batch") throw Error("Missing input");
+  direct.input.columns.value = {
+    shape: "dict",
+    nullable: false,
+    dictionaryValueShape: { shape: "binary", nullable: false },
+  };
+  expect(() =>
+    planPhysicalFragment(direct, [backend], { requireReductionContinuation: true }),
+  ).toThrow();
+});
+
+it("plans nested union children explicitly and rejects changed runtime child shapes", async () => {
+  const batch = batchFromVectors({
+    value: {
+      type: "union",
+      tags: Uint8Array.of(0, 1),
+      offsets: Uint32Array.of(0, 0),
+      children: [
+        { type: "f64", values: Float64Array.of(1) },
+        { type: "dict", indices: Uint32Array.of(0), dictionary: { type: "utf8", values: ["a"] } },
+      ],
+    },
+  });
+  const fragment = testFragment(batch, {
+    operators: [{ kind: "reduce", aggregates: { n: { op: "count_distinct", column: "value" } } }],
+    output: { kind: "aggregate-snapshot" },
+  });
+  expect(fragment.input.kind === "batch" && fragment.input.columns.value).toEqual({
+    shape: "union",
+    nullable: false,
+    unionChildShapes: [
+      { shape: "f64", nullable: false },
+      { shape: "dict", nullable: false, dictionaryValueShape: { shape: "utf8", nullable: false } },
+    ],
+  });
+  const backend = new CpuPhysicalBackend();
+  expect(() =>
+    planPhysicalFragment(fragment, [backend], { requireReductionContinuation: true }),
+  ).not.toThrow();
+  const compiled = await backend.compile(fragment);
+  const changed = batchFromVectors({
+    value: {
+      type: "union",
+      tags: Uint8Array.of(0, 1),
+      offsets: Uint32Array.of(0, 0),
+      children: [
+        { type: "f64", values: Float64Array.of(1) },
+        {
+          type: "dict",
+          indices: Uint32Array.of(0),
+          dictionary: { type: "f64", values: Float64Array.of(2) },
+        },
+      ],
+    },
+  });
+  await expect(backend.execute(compiled, { kind: "batch", batch: changed })).rejects.toThrow(
+    /shape changed/,
+  );
+  if (fragment.input.kind !== "batch") throw Error("Missing batch");
+  const shape = fragment.input.columns.value;
+  if (!shape) throw Error("Missing shape");
+  delete shape.unionChildShapes;
+  expect(() =>
+    planPhysicalFragment(fragment, [backend], { requireReductionContinuation: true }),
+  ).toThrow();
+  shape.unionChildShapes = [{ shape: "binary", nullable: false }];
+  expect(() =>
+    planPhysicalFragment(fragment, [backend], { requireReductionContinuation: true }),
+  ).toThrow();
+});
+
+it.each([
+  false,
+  true,
+])("owns one-shot reduction checkpoints through restore (grouped=%s)", async (grouped) => {
+  const aggregates = {
+    n: { op: "count" as const },
+    total: { op: "sum" as const, column: "value" },
+  };
+  const run = async (capacity: number) => {
+    const budget = new MemoryBudget(capacity);
+    const backend = new CpuPhysicalBackend();
+    let prior: OwnedMemory<PhysicalOutputValue> | undefined;
+    try {
+      for (const values of [
+        [0, 1, 2],
+        [3, 4],
+      ]) {
+        const scope = new MemoryScope(budget);
+        try {
+          const batch = batchFromColumns({ key: values.map(() => "a"), value: values });
+          const fragment = testFragment(batch, {
+            operators: [
+              { kind: "select", predicate: gt("value", 0) },
+              grouped
+                ? { kind: "grouped-reduce", keys: ["key"], aggregates }
+                : { kind: "reduce", aggregates },
+            ],
+            output: { kind: grouped ? "grouped-aggregate-snapshot" : "aggregate-snapshot" },
+          });
+          const previous = prior?.value;
+          if (
+            previous &&
+            previous.kind !== "aggregate-snapshot" &&
+            previous.kind !== "grouped-aggregate-snapshot"
+          )
+            throw Error("Invalid checkpoint");
+          const plan = planPhysicalFragment(fragment, [backend], { requireAllocationScope: true });
+          const result = await executePlannedPhysicalFragment(
+            plan,
+            [backend],
+            { kind: "batch", batch },
+            {
+              allocationScope: scope,
+              ...(previous ? { priorOutput: previous } : {}),
+            },
+          );
+          const next = scope.retainAllocations(result.output);
+          prior?.release();
+          prior = next;
+        } finally {
+          scope.dispose();
+        }
+      }
+      expect(budget.usedBytes).toBeGreaterThan(0);
+      const result = prior?.value;
+      if (result?.kind === "grouped-aggregate-snapshot")
+        expect(
+          finalizeVectorGroupByRows(
+            restoreVectorGroupByState(["key"], aggregates, result.snapshot),
+          ),
+        ).toEqual([{ key: "a", n: 4, total: 10 }]);
+      else if (result?.kind === "aggregate-snapshot")
+        expect(
+          finalizeVectorAggregateStates(restoreVectorAggregateStates(result.snapshot)),
+        ).toEqual({ n: 4, total: 10 });
+      else throw Error("Missing checkpoint");
+      return budget.peakBytes;
+    } finally {
+      prior?.release();
+      expect(budget.usedBytes).toBe(0);
+    }
+  };
+  const peak = await run(65536);
+  expect(await run(peak)).toBe(peak);
+  // Aggregate arenas shrink to available capacity rather than requiring the generous-pool peak.
+  expect(await run(peak - 1)).toBeLessThanOrEqual(peak - 1);
+  await expect(run(16)).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+});
+
+it.each([
+  false,
+  true,
+])("plans scoped reduction through chained projections (grouped=%s)", async (grouped) => {
+  const batch = batchFromColumns({ value: [1, 2] });
+  const fragment = testFragment(batch, {
+    operators: [
+      { kind: "project", projections: { value: mul(col("value"), 2) } },
+      { kind: "project", select: ["value"], projections: { alias: col("value") } },
+      grouped
+        ? { kind: "grouped-reduce", keys: ["alias"], aggregates: { n: { op: "count" } } }
+        : { kind: "reduce", aggregates: { total: { op: "sum", column: "alias" } } },
+    ],
+    output: { kind: grouped ? "grouped-aggregate-snapshot" : "aggregate-snapshot" },
+  });
+  const backend = new CpuPhysicalBackend();
+  const pool = new MemoryBudget(65536);
+  const scope = new MemoryScope(pool);
+  try {
+    const plan = planPhysicalFragment(fragment, [backend], { requireAllocationScope: true });
+    const result = await executePlannedPhysicalFragment(
+      plan,
+      [backend],
+      { kind: "batch", batch },
+      { allocationScope: scope },
+    );
+    if (result.output.kind === "aggregate-snapshot")
+      expect(
+        finalizeVectorAggregateStates(restoreVectorAggregateStates(result.output.snapshot)),
+      ).toEqual({ total: 6 });
+    else if (result.output.kind === "grouped-aggregate-snapshot")
+      expect(
+        finalizeVectorGroupByRows(
+          restoreVectorGroupByState(["alias"], { n: { op: "count" } }, result.output.snapshot),
+        ),
+      ).toEqual([
+        { alias: 2, n: 1 },
+        { alias: 4, n: 1 },
+      ]);
+    else throw Error("Missing snapshot");
+  } finally {
+    scope.dispose();
+  }
+  expect(pool.usedBytes).toBe(0);
+});
+
+it.each([
+  "dropped",
+  "binary",
+  "binary-literal",
+])("rejects unsupported projected reduction input: %s", (shape) => {
+  const batch = batchFromColumns({ value: [1], binary: [Uint8Array.of(1)] });
+  const fragment = testFragment(batch, {
+    operators: [
+      {
+        kind: "project",
+        select: ["binary"],
+        ...(shape === "dropped"
+          ? {}
+          : {
+              projections: {
+                value:
+                  shape === "binary"
+                    ? col("binary")
+                    : { kind: "literal" as const, value: Uint8Array.of(1) },
+              },
+            }),
+      },
+      { kind: "reduce", aggregates: { n: { op: "count", column: "value" } } },
+    ],
+    output: { kind: "aggregate-snapshot" },
+  });
+  expect(() =>
+    planPhysicalFragment(fragment, [new CpuPhysicalBackend()], { requireAllocationScope: true }),
+  ).toThrowError(expect.objectContaining({ code: "LAKEQL_PHYSICAL_BACKEND_UNAVAILABLE" }));
+});

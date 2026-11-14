@@ -1,0 +1,696 @@
+{
+  "scope": "Isolated local Node processes; generated real Parquet files, two warmup parses, event-loop boundary and double GC, then one retained parse per process. Full retains every group; indexed visits all groups and retains source plus last decoded group and directory. Three processes per case. Post-parse heap delta is not peak; post-GC delta estimates retained V8 heap, not a portable bound. Input/writer generation excluded. Raw structural allocation profiles are gathered after heap snapshots and exclude converted objects, strings, bigint work and decoder runtime; counts are not bytes. No I/O or whole-query memory bound measured; timing includes visiting every group, but not planning.",
+  "node": "v24.18.1",
+  "reports": [
+    {
+      "mode": "full",
+      "width": 32,
+      "groups": 32,
+      "samples": [
+        {
+          "mode": "full",
+          "width": 32,
+          "groups": 32,
+          "inputBytes": 96268,
+          "rawAllocationCounts": {
+            "envelope": {
+              "structs": 34,
+              "fields": 103,
+              "lists": 0,
+              "listSlots": 0,
+              "binaryViews": 34,
+              "borrowedBytes": 291
+            },
+            "allGroups": {
+              "structs": 4128,
+              "fields": 18528,
+              "lists": 3072,
+              "listSlots": 3072,
+              "binaryViews": 3072,
+              "borrowedBytes": 17088
+            },
+            "lastGroup": {
+              "structs": 129,
+              "fields": 579,
+              "lists": 96,
+              "listSlots": 96,
+              "binaryViews": 96,
+              "borrowedBytes": 534
+            }
+          },
+          "elapsedMs": 5.7366619999999955,
+          "heapAfterParseDelta": 3948600,
+          "retainedHeapDelta": 860744,
+          "arrayBufferDelta": 0
+        },
+        {
+          "mode": "full",
+          "width": 32,
+          "groups": 32,
+          "inputBytes": 96268,
+          "rawAllocationCounts": {
+            "envelope": {
+              "structs": 34,
+              "fields": 103,
+              "lists": 0,
+              "listSlots": 0,
+              "binaryViews": 34,
+              "borrowedBytes": 291
+            },
+            "allGroups": {
+              "structs": 4128,
+              "fields": 18528,
+              "lists": 3072,
+              "listSlots": 3072,
+              "binaryViews": 3072,
+              "borrowedBytes": 17088
+            },
+            "lastGroup": {
+              "structs": 129,
+              "fields": 579,
+              "lists": 96,
+              "listSlots": 96,
+              "binaryViews": 96,
+              "borrowedBytes": 534
+            }
+          },
+          "elapsedMs": 5.138816000000006,
+          "heapAfterParseDelta": 3949512,
+          "retainedHeapDelta": 860608,
+          "arrayBufferDelta": 0
+        },
+        {
+          "mode": "full",
+          "width": 32,
+          "groups": 32,
+          "inputBytes": 96268,
+          "rawAllocationCounts": {
+            "envelope": {
+              "structs": 34,
+              "fields": 103,
+              "lists": 0,
+              "listSlots": 0,
+              "binaryViews": 34,
+              "borrowedBytes": 291
+            },
+            "allGroups": {
+              "structs": 4128,
+              "fields": 18528,
+              "lists": 3072,
+              "listSlots": 3072,
+              "binaryViews": 3072,
+              "borrowedBytes": 17088
+            },
+            "lastGroup": {
+              "structs": 129,
+              "fields": 579,
+              "lists": 96,
+              "listSlots": 96,
+              "binaryViews": 96,
+              "borrowedBytes": 534
+            }
+          },
+          "elapsedMs": 5.40149000000001,
+          "heapAfterParseDelta": 3954992,
+          "retainedHeapDelta": 860608,
+          "arrayBufferDelta": 0
+        }
+      ]
+    },
+    {
+      "mode": "indexed",
+      "width": 32,
+      "groups": 32,
+      "samples": [
+        {
+          "mode": "indexed",
+          "width": 32,
+          "groups": 32,
+          "inputBytes": 96268,
+          "rawAllocationCounts": {
+            "envelope": {
+              "structs": 34,
+              "fields": 103,
+              "lists": 0,
+              "listSlots": 0,
+              "binaryViews": 34,
+              "borrowedBytes": 291
+            },
+            "allGroups": {
+              "structs": 4128,
+              "fields": 18528,
+              "lists": 3072,
+              "listSlots": 3072,
+              "binaryViews": 3072,
+              "borrowedBytes": 17088
+            },
+            "lastGroup": {
+              "structs": 129,
+              "fields": 579,
+              "lists": 96,
+              "listSlots": 96,
+              "binaryViews": 96,
+              "borrowedBytes": 534
+            }
+          },
+          "elapsedMs": 4.065605000000005,
+          "heapAfterParseDelta": 4580616,
+          "retainedHeapDelta": 56256,
+          "arrayBufferDelta": 256
+        },
+        {
+          "mode": "indexed",
+          "width": 32,
+          "groups": 32,
+          "inputBytes": 96268,
+          "rawAllocationCounts": {
+            "envelope": {
+              "structs": 34,
+              "fields": 103,
+              "lists": 0,
+              "listSlots": 0,
+              "binaryViews": 34,
+              "borrowedBytes": 291
+            },
+            "allGroups": {
+              "structs": 4128,
+              "fields": 18528,
+              "lists": 3072,
+              "listSlots": 3072,
+              "binaryViews": 3072,
+              "borrowedBytes": 17088
+            },
+            "lastGroup": {
+              "structs": 129,
+              "fields": 579,
+              "lists": 96,
+              "listSlots": 96,
+              "binaryViews": 96,
+              "borrowedBytes": 534
+            }
+          },
+          "elapsedMs": 3.806487000000004,
+          "heapAfterParseDelta": 4567120,
+          "retainedHeapDelta": 82224,
+          "arrayBufferDelta": 256
+        },
+        {
+          "mode": "indexed",
+          "width": 32,
+          "groups": 32,
+          "inputBytes": 96268,
+          "rawAllocationCounts": {
+            "envelope": {
+              "structs": 34,
+              "fields": 103,
+              "lists": 0,
+              "listSlots": 0,
+              "binaryViews": 34,
+              "borrowedBytes": 291
+            },
+            "allGroups": {
+              "structs": 4128,
+              "fields": 18528,
+              "lists": 3072,
+              "listSlots": 3072,
+              "binaryViews": 3072,
+              "borrowedBytes": 17088
+            },
+            "lastGroup": {
+              "structs": 129,
+              "fields": 579,
+              "lists": 96,
+              "listSlots": 96,
+              "binaryViews": 96,
+              "borrowedBytes": 534
+            }
+          },
+          "elapsedMs": 3.124904000000001,
+          "heapAfterParseDelta": 4580888,
+          "retainedHeapDelta": 56256,
+          "arrayBufferDelta": 256
+        }
+      ]
+    },
+    {
+      "mode": "full",
+      "width": 128,
+      "groups": 64,
+      "samples": [
+        {
+          "mode": "full",
+          "width": 128,
+          "groups": 64,
+          "inputBytes": 773450,
+          "rawAllocationCounts": {
+            "envelope": {
+              "structs": 130,
+              "fields": 391,
+              "lists": 0,
+              "listSlots": 0,
+              "binaryViews": 130,
+              "borrowedBytes": 1183
+            },
+            "allGroups": {
+              "structs": 32832,
+              "fields": 147648,
+              "lists": 24576,
+              "listSlots": 24576,
+              "binaryViews": 24576,
+              "borrowedBytes": 140416
+            },
+            "lastGroup": {
+              "structs": 513,
+              "fields": 2307,
+              "lists": 384,
+              "listSlots": 384,
+              "binaryViews": 384,
+              "borrowedBytes": 2194
+            }
+          },
+          "elapsedMs": 21.592126000000007,
+          "heapAfterParseDelta": 33728752,
+          "retainedHeapDelta": 6110272,
+          "arrayBufferDelta": 0
+        },
+        {
+          "mode": "full",
+          "width": 128,
+          "groups": 64,
+          "inputBytes": 773450,
+          "rawAllocationCounts": {
+            "envelope": {
+              "structs": 130,
+              "fields": 391,
+              "lists": 0,
+              "listSlots": 0,
+              "binaryViews": 130,
+              "borrowedBytes": 1183
+            },
+            "allGroups": {
+              "structs": 32832,
+              "fields": 147648,
+              "lists": 24576,
+              "listSlots": 24576,
+              "binaryViews": 24576,
+              "borrowedBytes": 140416
+            },
+            "lastGroup": {
+              "structs": 513,
+              "fields": 2307,
+              "lists": 384,
+              "listSlots": 384,
+              "binaryViews": 384,
+              "borrowedBytes": 2194
+            }
+          },
+          "elapsedMs": 21.31794000000002,
+          "heapAfterParseDelta": 33601320,
+          "retainedHeapDelta": 6153896,
+          "arrayBufferDelta": 0
+        },
+        {
+          "mode": "full",
+          "width": 128,
+          "groups": 64,
+          "inputBytes": 773450,
+          "rawAllocationCounts": {
+            "envelope": {
+              "structs": 130,
+              "fields": 391,
+              "lists": 0,
+              "listSlots": 0,
+              "binaryViews": 130,
+              "borrowedBytes": 1183
+            },
+            "allGroups": {
+              "structs": 32832,
+              "fields": 147648,
+              "lists": 24576,
+              "listSlots": 24576,
+              "binaryViews": 24576,
+              "borrowedBytes": 140416
+            },
+            "lastGroup": {
+              "structs": 513,
+              "fields": 2307,
+              "lists": 384,
+              "listSlots": 384,
+              "binaryViews": 384,
+              "borrowedBytes": 2194
+            }
+          },
+          "elapsedMs": 27.110837000000004,
+          "heapAfterParseDelta": 33483328,
+          "retainedHeapDelta": 6095344,
+          "arrayBufferDelta": 0
+        }
+      ]
+    },
+    {
+      "mode": "indexed",
+      "width": 128,
+      "groups": 64,
+      "samples": [
+        {
+          "mode": "indexed",
+          "width": 128,
+          "groups": 64,
+          "inputBytes": 773450,
+          "rawAllocationCounts": {
+            "envelope": {
+              "structs": 130,
+              "fields": 391,
+              "lists": 0,
+              "listSlots": 0,
+              "binaryViews": 130,
+              "borrowedBytes": 1183
+            },
+            "allGroups": {
+              "structs": 32832,
+              "fields": 147648,
+              "lists": 24576,
+              "listSlots": 24576,
+              "binaryViews": 24576,
+              "borrowedBytes": 140416
+            },
+            "lastGroup": {
+              "structs": 513,
+              "fields": 2307,
+              "lists": 384,
+              "listSlots": 384,
+              "binaryViews": 384,
+              "borrowedBytes": 2194
+            }
+          },
+          "elapsedMs": 26.907595000000015,
+          "heapAfterParseDelta": 2202560,
+          "retainedHeapDelta": 165056,
+          "arrayBufferDelta": 512
+        },
+        {
+          "mode": "indexed",
+          "width": 128,
+          "groups": 64,
+          "inputBytes": 773450,
+          "rawAllocationCounts": {
+            "envelope": {
+              "structs": 130,
+              "fields": 391,
+              "lists": 0,
+              "listSlots": 0,
+              "binaryViews": 130,
+              "borrowedBytes": 1183
+            },
+            "allGroups": {
+              "structs": 32832,
+              "fields": 147648,
+              "lists": 24576,
+              "listSlots": 24576,
+              "binaryViews": 24576,
+              "borrowedBytes": 140416
+            },
+            "lastGroup": {
+              "structs": 513,
+              "fields": 2307,
+              "lists": 384,
+              "listSlots": 384,
+              "binaryViews": 384,
+              "borrowedBytes": 2194
+            }
+          },
+          "elapsedMs": 25.70399900000001,
+          "heapAfterParseDelta": 2282824,
+          "retainedHeapDelta": 165056,
+          "arrayBufferDelta": 512
+        },
+        {
+          "mode": "indexed",
+          "width": 128,
+          "groups": 64,
+          "inputBytes": 773450,
+          "rawAllocationCounts": {
+            "envelope": {
+              "structs": 130,
+              "fields": 391,
+              "lists": 0,
+              "listSlots": 0,
+              "binaryViews": 130,
+              "borrowedBytes": 1183
+            },
+            "allGroups": {
+              "structs": 32832,
+              "fields": 147648,
+              "lists": 24576,
+              "listSlots": 24576,
+              "binaryViews": 24576,
+              "borrowedBytes": 140416
+            },
+            "lastGroup": {
+              "structs": 513,
+              "fields": 2307,
+              "lists": 384,
+              "listSlots": 384,
+              "binaryViews": 384,
+              "borrowedBytes": 2194
+            }
+          },
+          "elapsedMs": 26.12067300000001,
+          "heapAfterParseDelta": 18880944,
+          "retainedHeapDelta": 164504,
+          "arrayBufferDelta": 512
+        }
+      ]
+    },
+    {
+      "mode": "full",
+      "width": 256,
+      "groups": 128,
+      "samples": [
+        {
+          "mode": "full",
+          "width": 256,
+          "groups": 128,
+          "inputBytes": 3106061,
+          "rawAllocationCounts": {
+            "envelope": {
+              "structs": 258,
+              "fields": 775,
+              "lists": 0,
+              "listSlots": 0,
+              "binaryViews": 258,
+              "borrowedBytes": 2463
+            },
+            "allGroups": {
+              "structs": 131200,
+              "fields": 590208,
+              "lists": 98304,
+              "listSlots": 98304,
+              "binaryViews": 98304,
+              "borrowedBytes": 575744
+            },
+            "lastGroup": {
+              "structs": 1025,
+              "fields": 4611,
+              "lists": 768,
+              "listSlots": 768,
+              "binaryViews": 768,
+              "borrowedBytes": 4498
+            }
+          },
+          "elapsedMs": 85.26762300000019,
+          "heapAfterParseDelta": 26765144,
+          "retainedHeapDelta": 24298104,
+          "arrayBufferDelta": 0
+        },
+        {
+          "mode": "full",
+          "width": 256,
+          "groups": 128,
+          "inputBytes": 3106061,
+          "rawAllocationCounts": {
+            "envelope": {
+              "structs": 258,
+              "fields": 775,
+              "lists": 0,
+              "listSlots": 0,
+              "binaryViews": 258,
+              "borrowedBytes": 2463
+            },
+            "allGroups": {
+              "structs": 131200,
+              "fields": 590208,
+              "lists": 98304,
+              "listSlots": 98304,
+              "binaryViews": 98304,
+              "borrowedBytes": 575744
+            },
+            "lastGroup": {
+              "structs": 1025,
+              "fields": 4611,
+              "lists": 768,
+              "listSlots": 768,
+              "binaryViews": 768,
+              "borrowedBytes": 4498
+            }
+          },
+          "elapsedMs": 87.36290899999995,
+          "heapAfterParseDelta": 26691464,
+          "retainedHeapDelta": 24297440,
+          "arrayBufferDelta": 0
+        },
+        {
+          "mode": "full",
+          "width": 256,
+          "groups": 128,
+          "inputBytes": 3106061,
+          "rawAllocationCounts": {
+            "envelope": {
+              "structs": 258,
+              "fields": 775,
+              "lists": 0,
+              "listSlots": 0,
+              "binaryViews": 258,
+              "borrowedBytes": 2463
+            },
+            "allGroups": {
+              "structs": 131200,
+              "fields": 590208,
+              "lists": 98304,
+              "listSlots": 98304,
+              "binaryViews": 98304,
+              "borrowedBytes": 575744
+            },
+            "lastGroup": {
+              "structs": 1025,
+              "fields": 4611,
+              "lists": 768,
+              "listSlots": 768,
+              "binaryViews": 768,
+              "borrowedBytes": 4498
+            }
+          },
+          "elapsedMs": 86.4727620000001,
+          "heapAfterParseDelta": 26575248,
+          "retainedHeapDelta": 24297320,
+          "arrayBufferDelta": 0
+        }
+      ]
+    },
+    {
+      "mode": "indexed",
+      "width": 256,
+      "groups": 128,
+      "samples": [
+        {
+          "mode": "indexed",
+          "width": 256,
+          "groups": 128,
+          "inputBytes": 3106061,
+          "rawAllocationCounts": {
+            "envelope": {
+              "structs": 258,
+              "fields": 775,
+              "lists": 0,
+              "listSlots": 0,
+              "binaryViews": 258,
+              "borrowedBytes": 2463
+            },
+            "allGroups": {
+              "structs": 131200,
+              "fields": 590208,
+              "lists": 98304,
+              "listSlots": 98304,
+              "binaryViews": 98304,
+              "borrowedBytes": 575744
+            },
+            "lastGroup": {
+              "structs": 1025,
+              "fields": 4611,
+              "lists": 768,
+              "listSlots": 768,
+              "binaryViews": 768,
+              "borrowedBytes": 4498
+            }
+          },
+          "elapsedMs": 87.725592,
+          "heapAfterParseDelta": 5937312,
+          "retainedHeapDelta": 281488,
+          "arrayBufferDelta": 1024
+        },
+        {
+          "mode": "indexed",
+          "width": 256,
+          "groups": 128,
+          "inputBytes": 3106061,
+          "rawAllocationCounts": {
+            "envelope": {
+              "structs": 258,
+              "fields": 775,
+              "lists": 0,
+              "listSlots": 0,
+              "binaryViews": 258,
+              "borrowedBytes": 2463
+            },
+            "allGroups": {
+              "structs": 131200,
+              "fields": 590208,
+              "lists": 98304,
+              "listSlots": 98304,
+              "binaryViews": 98304,
+              "borrowedBytes": 575744
+            },
+            "lastGroup": {
+              "structs": 1025,
+              "fields": 4611,
+              "lists": 768,
+              "listSlots": 768,
+              "binaryViews": 768,
+              "borrowedBytes": 4498
+            }
+          },
+          "elapsedMs": 87.28675599999997,
+          "heapAfterParseDelta": 5958032,
+          "retainedHeapDelta": 281488,
+          "arrayBufferDelta": 1024
+        },
+        {
+          "mode": "indexed",
+          "width": 256,
+          "groups": 128,
+          "inputBytes": 3106061,
+          "rawAllocationCounts": {
+            "envelope": {
+              "structs": 258,
+              "fields": 775,
+              "lists": 0,
+              "listSlots": 0,
+              "binaryViews": 258,
+              "borrowedBytes": 2463
+            },
+            "allGroups": {
+              "structs": 131200,
+              "fields": 590208,
+              "lists": 98304,
+              "listSlots": 98304,
+              "binaryViews": 98304,
+              "borrowedBytes": 575744
+            },
+            "lastGroup": {
+              "structs": 1025,
+              "fields": 4611,
+              "lists": 768,
+              "listSlots": 768,
+              "binaryViews": 768,
+              "borrowedBytes": 4498
+            }
+          },
+          "elapsedMs": 86.26775699999985,
+          "heapAfterParseDelta": 5967976,
+          "retainedHeapDelta": 289312,
+          "arrayBufferDelta": 1024
+        }
+      ]
+    }
+  ]
+}

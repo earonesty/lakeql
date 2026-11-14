@@ -1,0 +1,280 @@
+{
+  "description": "Current causes for the currently listed failing conformance cases; no skips, expected-failure changes or support claims. Public reader is unscoped; owned reader uses a 64 MiB pool and verifies cleanup.",
+  "node": "v24.18.1",
+  "results": [
+    {
+      "file": "data/alp_extended.zstd.parquet",
+      "reader": "public",
+      "rowsBeforeFailure": 0,
+      "failure": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read data/alp_extended.zstd.parquet"
+        },
+        {
+          "name": "Error",
+          "message": "parquet unsupported encoding: undefined"
+        }
+      ]
+    },
+    {
+      "file": "data/alp_extended.zstd.parquet",
+      "reader": "owned",
+      "rowsBeforeFailure": 0,
+      "failure": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read data/alp_extended.zstd.parquet"
+        },
+        {
+          "name": "Error",
+          "message": "parquet unsupported encoding: undefined"
+        }
+      ],
+      "peakAdmittedBytes": 314754,
+      "remainingBytes": 0
+    },
+    {
+      "file": "data/bson.parquet",
+      "reader": "public",
+      "rowsBeforeFailure": 0,
+      "failure": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read data/bson.parquet"
+        },
+        {
+          "name": "Error",
+          "message": "parquet bson not supported"
+        }
+      ]
+    },
+    {
+      "file": "data/bson.parquet",
+      "reader": "owned",
+      "rowsBeforeFailure": 0,
+      "failure": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read data/bson.parquet"
+        },
+        {
+          "name": "Error",
+          "message": "parquet bson not supported"
+        }
+      ],
+      "peakAdmittedBytes": 21180,
+      "remainingBytes": 0
+    },
+    {
+      "file": "data/large_string_map.brotli.parquet",
+      "reader": "public",
+      "rowsBeforeFailure": 0,
+      "failure": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read data/large_string_map.brotli.parquet"
+        },
+        {
+          "name": "Error",
+          "message": "parquet unsupported compression codec: BROTLI"
+        }
+      ]
+    },
+    {
+      "file": "data/large_string_map.brotli.parquet",
+      "reader": "owned",
+      "rowsBeforeFailure": 0,
+      "failure": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read data/large_string_map.brotli.parquet"
+        },
+        {
+          "name": "Error",
+          "message": "parquet unsupported compression codec: BROTLI"
+        }
+      ],
+      "peakAdmittedBytes": 44077,
+      "remainingBytes": 0
+    },
+    {
+      "file": "data/nation.dict-malformed.parquet",
+      "reader": "public",
+      "rowsBeforeFailure": 0,
+      "failure": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read data/nation.dict-malformed.parquet"
+        },
+        {
+          "name": "RangeError",
+          "message": "Invalid typed array length: 28"
+        }
+      ]
+    },
+    {
+      "file": "data/nation.dict-malformed.parquet",
+      "reader": "owned",
+      "rowsBeforeFailure": 0,
+      "failure": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read data/nation.dict-malformed.parquet"
+        },
+        {
+          "name": "RangeError",
+          "message": "Invalid typed array length: 28"
+        }
+      ],
+      "peakAdmittedBytes": 36504,
+      "remainingBytes": 0
+    },
+    {
+      "file": "shredded_variant/case-026.parquet",
+      "reader": "public",
+      "rowsBeforeFailure": 0,
+      "failure": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet decimals above precision 15 are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-026.parquet",
+      "reader": "owned",
+      "rowsBeforeFailure": 0,
+      "failure": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet decimals above precision 15 are not supported"
+        }
+      ],
+      "peakAdmittedBytes": 22873,
+      "remainingBytes": 0
+    },
+    {
+      "file": "shredded_variant/case-027.parquet",
+      "reader": "public",
+      "rowsBeforeFailure": 0,
+      "failure": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet decimals above precision 15 are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-027.parquet",
+      "reader": "owned",
+      "rowsBeforeFailure": 0,
+      "failure": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet decimals above precision 15 are not supported"
+        }
+      ],
+      "peakAdmittedBytes": 22873,
+      "remainingBytes": 0
+    },
+    {
+      "file": "shredded_variant/case-028.parquet",
+      "reader": "public",
+      "rowsBeforeFailure": 0,
+      "failure": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet decimals above precision 15 are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-028.parquet",
+      "reader": "owned",
+      "rowsBeforeFailure": 0,
+      "failure": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet decimals above precision 15 are not supported"
+        }
+      ],
+      "peakAdmittedBytes": 23066,
+      "remainingBytes": 0
+    },
+    {
+      "file": "shredded_variant/case-029.parquet",
+      "reader": "public",
+      "rowsBeforeFailure": 0,
+      "failure": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet decimals above precision 15 are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-029.parquet",
+      "reader": "owned",
+      "rowsBeforeFailure": 0,
+      "failure": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet decimals above precision 15 are not supported"
+        }
+      ],
+      "peakAdmittedBytes": 23066,
+      "remainingBytes": 0
+    },
+    {
+      "file": "shredded_variant/case-030.parquet",
+      "reader": "public",
+      "rowsBeforeFailure": 0,
+      "failure": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read shredded_variant/case-030.parquet"
+        },
+        {
+          "name": "RangeError",
+          "message": "Offset is outside the bounds of the DataView"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-030.parquet",
+      "reader": "owned",
+      "rowsBeforeFailure": 0,
+      "failure": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read shredded_variant/case-030.parquet"
+        },
+        {
+          "name": "RangeError",
+          "message": "Offset is outside the bounds of the DataView"
+        }
+      ],
+      "peakAdmittedBytes": 66401,
+      "remainingBytes": 0
+    }
+  ]
+}

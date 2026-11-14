@@ -1,0 +1,24 @@
+{
+  "sourceCommit": "aeca5ec",
+  "requirements": ["M2", "V2"],
+  "fixture": "packages/core/src/memory-stage-scheduler.test.ts",
+  "checks": {
+    "schedulerTestsPassed": 15,
+    "typecheck": "passed"
+  },
+  "observations": [
+    "Twenty fitting newcomers cannot bypass a blocked larger head.",
+    "Cancelling the head admits fitting newcomers before the unrelated active stage settles.",
+    "Execution order remains FIFO, peak reservations stay within capacity, and final queue/active counts and reservations are zero."
+  ],
+  "integration": [
+    "Shared root-pool numeric schedulers in packages/parquet/src/vector-batches.ts.",
+    "Planned replacement submissions in packages/parquet/src/numeric-page-alignment.ts; enclosing admission bypasses rescheduling.",
+    "Explicit planned concat entry point in packages/core/src/vector-sort.ts."
+  ],
+  "limitations": [
+    "Primitive FIFO guarantee, not fairness across all public queries.",
+    "Head-of-line blocking intentionally leaves fitting capacity idle.",
+    "No throughput or bounded-wait measurement."
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "sourceBase": "494db9e",
+  "scope": "Optional owned cache-entry API and query discovery integration",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 102,
+    "fullSuite": {
+      "passed": 3630,
+      "skipped": 629,
+      "log": "/tmp/owned-planning-cache-full.log"
+    }
+  },
+  "evidence": [
+    "Retained cache allocations survive queries and release at eviction",
+    "Owned reads reject foreign pools and release on abort and file limits",
+    "Owned writes remain live until delayed success, failure or cancellation settles",
+    "Legacy methods are bypassed when owned methods are available"
+  ],
+  "remaining": [
+    "Concrete bounded generic memory cache implementation",
+    "Remote cache owned parsing and serialization",
+    "Broader allocation and runtime acceptance"
+  ]
+}

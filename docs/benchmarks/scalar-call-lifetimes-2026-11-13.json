@@ -1,0 +1,366 @@
+{
+  "node": "v24.18.1",
+  "description": "Eager COALESCE per-row scratch; current readers with retained versus scoped loop",
+  "results": [
+    {
+      "kind": "number",
+      "count": 2,
+      "mode": "retained",
+      "rows": 4096,
+      "medianMilliseconds": 1.5163069999999976,
+      "peakAdmittedBytes": 0,
+      "samples": [
+        {
+          "milliseconds": 6.318376999999998,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 2.906166000000006,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 0.5090190000000021,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 1.5163069999999976,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 0.6319410000000047,
+          "peakAdmittedBytes": 0
+        }
+      ]
+    },
+    {
+      "kind": "number",
+      "count": 2,
+      "mode": "scoped",
+      "rows": 4096,
+      "medianMilliseconds": 1.8065849999999983,
+      "peakAdmittedBytes": 0,
+      "samples": [
+        {
+          "milliseconds": 4.419447999999996,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 1.8065849999999983,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 1.1334360000000032,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 2.397687999999995,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 0.33530199999999866,
+          "peakAdmittedBytes": 0
+        }
+      ]
+    },
+    {
+      "kind": "number",
+      "count": 32,
+      "mode": "retained",
+      "rows": 4096,
+      "medianMilliseconds": 1.5372969999999953,
+      "peakAdmittedBytes": 0,
+      "samples": [
+        {
+          "milliseconds": 1.5072599999999952,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 1.702097000000009,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 1.791285000000002,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 1.5372969999999953,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 1.504365000000007,
+          "peakAdmittedBytes": 0
+        }
+      ]
+    },
+    {
+      "kind": "number",
+      "count": 32,
+      "mode": "scoped",
+      "rows": 4096,
+      "medianMilliseconds": 0.4970069999999964,
+      "peakAdmittedBytes": 0,
+      "samples": [
+        {
+          "milliseconds": 0.4970069999999964,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 0.4934999999999974,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 0.49938099999999963,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 0.4951030000000003,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 0.6369799999999941,
+          "peakAdmittedBytes": 0
+        }
+      ]
+    },
+    {
+      "kind": "column",
+      "count": 2,
+      "mode": "retained",
+      "rows": 4096,
+      "medianMilliseconds": 0.5523409999999984,
+      "peakAdmittedBytes": 0,
+      "samples": [
+        {
+          "milliseconds": 0.6319409999999976,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 0.8775839999999988,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 0.44149199999999666,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 0.5523409999999984,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 0.4162340000000029,
+          "peakAdmittedBytes": 0
+        }
+      ]
+    },
+    {
+      "kind": "column",
+      "count": 2,
+      "mode": "scoped",
+      "rows": 4096,
+      "medianMilliseconds": 0.5338059999999984,
+      "peakAdmittedBytes": 0,
+      "samples": [
+        {
+          "milliseconds": 0.5338059999999984,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 0.6776669999999996,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 0.4436359999999979,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 0.6566169999999971,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 0.4103630000000038,
+          "peakAdmittedBytes": 0
+        }
+      ]
+    },
+    {
+      "kind": "column",
+      "count": 32,
+      "mode": "retained",
+      "rows": 4096,
+      "medianMilliseconds": 2.1261069999999904,
+      "peakAdmittedBytes": 0,
+      "samples": [
+        {
+          "milliseconds": 2.2131100000000004,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 2.1261069999999904,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 2.3611199999999997,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 1.9105699999999928,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 1.8054729999999921,
+          "peakAdmittedBytes": 0
+        }
+      ]
+    },
+    {
+      "kind": "column",
+      "count": 32,
+      "mode": "scoped",
+      "rows": 4096,
+      "medianMilliseconds": 1.8501969999999943,
+      "peakAdmittedBytes": 0,
+      "samples": [
+        {
+          "milliseconds": 1.6690260000000023,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 1.7948030000000017,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 1.8501969999999943,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 1.9846200000000067,
+          "peakAdmittedBytes": 0
+        },
+        {
+          "milliseconds": 1.9581999999999908,
+          "peakAdmittedBytes": 0
+        }
+      ]
+    },
+    {
+      "kind": "string",
+      "count": 2,
+      "mode": "retained",
+      "rows": 4096,
+      "medianMilliseconds": 38.740023000000036,
+      "peakAdmittedBytes": 532,
+      "samples": [
+        {
+          "milliseconds": 38.740023000000036,
+          "peakAdmittedBytes": 532
+        },
+        {
+          "milliseconds": 32.574554999999975,
+          "peakAdmittedBytes": 532
+        },
+        {
+          "milliseconds": 41.32401299999998,
+          "peakAdmittedBytes": 532
+        },
+        {
+          "milliseconds": 22.333135000000027,
+          "peakAdmittedBytes": 532
+        },
+        {
+          "milliseconds": 39.18858799999998,
+          "peakAdmittedBytes": 532
+        }
+      ]
+    },
+    {
+      "kind": "string",
+      "count": 2,
+      "mode": "scoped",
+      "rows": 4096,
+      "medianMilliseconds": 35.22133299999996,
+      "peakAdmittedBytes": 532,
+      "samples": [
+        {
+          "milliseconds": 54.212680000000034,
+          "peakAdmittedBytes": 532
+        },
+        {
+          "milliseconds": 33.944537000000025,
+          "peakAdmittedBytes": 532
+        },
+        {
+          "milliseconds": 31.999781999999982,
+          "peakAdmittedBytes": 532
+        },
+        {
+          "milliseconds": 39.50000499999999,
+          "peakAdmittedBytes": 532
+        },
+        {
+          "milliseconds": 35.22133299999996,
+          "peakAdmittedBytes": 532
+        }
+      ]
+    },
+    {
+      "kind": "string",
+      "count": 32,
+      "mode": "retained",
+      "rows": 4096,
+      "medianMilliseconds": 507.27631500000007,
+      "peakAdmittedBytes": 8512,
+      "samples": [
+        {
+          "milliseconds": 532.6389879999999,
+          "peakAdmittedBytes": 8512
+        },
+        {
+          "milliseconds": 507.27631500000007,
+          "peakAdmittedBytes": 8512
+        },
+        {
+          "milliseconds": 485.3445449999999,
+          "peakAdmittedBytes": 8512
+        },
+        {
+          "milliseconds": 514.9829289999998,
+          "peakAdmittedBytes": 8512
+        },
+        {
+          "milliseconds": 502.17301899999984,
+          "peakAdmittedBytes": 8512
+        }
+      ]
+    },
+    {
+      "kind": "string",
+      "count": 32,
+      "mode": "scoped",
+      "rows": 4096,
+      "medianMilliseconds": 559.5912100000005,
+      "peakAdmittedBytes": 532,
+      "samples": [
+        {
+          "milliseconds": 591.424446,
+          "peakAdmittedBytes": 532
+        },
+        {
+          "milliseconds": 571.5742089999999,
+          "peakAdmittedBytes": 532
+        },
+        {
+          "milliseconds": 548.8992709999993,
+          "peakAdmittedBytes": 532
+        },
+        {
+          "milliseconds": 559.5912100000005,
+          "peakAdmittedBytes": 532
+        },
+        {
+          "milliseconds": 541.7152150000002,
+          "peakAdmittedBytes": 532
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "date": "2026-11-13",
+  "scope": "Real host-generated Parquet over localhost HTTP. Wire bytes counted by server, including discovery and metadata. No wall-time speedup or production Cloudflare heap claim. Revalidated with decoded metadata text and converted column/row-group container admission.",
+  "fixture": {
+    "rows": 512,
+    "rowGroups": 16,
+    "rowsPerGroup": 32,
+    "textCodeUnitsPerRow": 512,
+    "generatorSeed": 12345,
+    "source": "packages/parquet/src/deferred-output-http.test.ts"
+  },
+  "query": {
+    "predicate": "id % 257 = 256",
+    "limit": 1,
+    "batchSize": 16,
+    "expectedId": 256,
+    "eagerProjection": ["*"],
+    "adaptiveProjection": ["id", "text"]
+  },
+  "poolBytes": 67108864,
+  "cacheBytes": 8388608,
+  "readConcurrencyLimit": 2,
+  "validation": [
+    "Identical rows under eager and adaptive paths",
+    "Cold single-query bytes measured separately with shared cache cleared",
+    "Four cold concurrent jobs return identical owned output",
+    "Four warm concurrent jobs issue zero data-range requests (discovery excluded)",
+    "All output owners released and cache evicted; pool usage returns to zero"
+  ],
+  "command": "LAKEQL_DEFERRED_METRICS=1 pnpm exec vitest run packages/parquet/src/deferred-output-http.test.ts",
+  "scenarios": [
+    {
+      "ignoreRange": false,
+      "fixtureBytes": 269691,
+      "eagerBytes": 219157,
+      "deferredBytes": 84933,
+      "peakReads": 2,
+      "peakAllocatedBytes": 928355
+    },
+    {
+      "ignoreRange": true,
+      "fixtureBytes": 269691,
+      "eagerBytes": 5393820,
+      "deferredBytes": 5393820,
+      "peakReads": 2,
+      "peakAllocatedBytes": 709106
+    }
+  ],
+  "limits": [
+    "Tracked peak spans baseline, adaptive, and concurrent rounds; not actual runtime heap.",
+    "Native/emulated mode is observed during discovery; unknown/listed objects without a hint retain the deferred default.",
+    "Under allocation pressure emulated transports still use page windows, prioritizing memory bounds over request count."
+  ]
+}

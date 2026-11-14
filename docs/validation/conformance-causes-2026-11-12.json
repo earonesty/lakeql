@@ -1,0 +1,2117 @@
+{
+  "scope": "Diagnostic rerun of failures only; local public reader, not cloud; rejection is not automatically expected or conformant",
+  "reportSha256": "00eee776be97336a15202ed3a7685d7304cc3ee38cd886d0f27452de355ef479",
+  "execution": "Built packages/core/dist and packages/parquet/dist; run pnpm build first",
+  "reportedFailures": 167,
+  "classifiedFailures": 167,
+  "unclassifiedFailures": [],
+  "counts": {
+    "parquet schema element not found: timestampWus_no_tz": 1,
+    "LAKEQL_UNSUPPORTED_PARQUET_FEATURE: Parquet struct columns are not supported": 144,
+    "Cannot read properties of undefined (reading 'push')": 1,
+    "Invalid typed array length: 4": 1,
+    "parquet unsupported encoding: DELTA_BYTE_ARRAY": 1,
+    "Range out of bounds for bad_data/ARROW-RS-GH-6229-DICTHEADER.parquet": 1,
+    "Offset is outside the bounds of the DataView": 1,
+    "Cannot destructure property 'type' of 'schema' as it is undefined.": 1,
+    "parquet unsupported encoding: undefined": 1,
+    "parquet bson not supported": 1,
+    "parquet unsupported compression codec: GZIP": 5,
+    "LAKEQL_UNSUPPORTED_PARQUET_FEATURE: Parquet decimals above precision 15 are not supported": 1,
+    "Cannot convert 0,0,0,0,0,0,0,0,0,0,0,0 to a BigInt": 1,
+    "parquet unsupported compression codec: LZ4": 3,
+    "parquet unsupported compression codec: BROTLI": 1,
+    "parquet unsupported compression codec: LZ4_RAW": 2,
+    "Invalid typed array length: 28": 1
+  },
+  "results": [
+    {
+      "file": "bad_data/ARROW-GH-41317.parquet",
+      "fixtureSha256": "a9c2b53992b6c017d3cbe44b9d3a0b2ebbb0f68c8eda424f11942d3313bd5696",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read bad_data/ARROW-GH-41317.parquet"
+        },
+        {
+          "name": "Error",
+          "message": "parquet schema element not found: timestampWus_no_tz"
+        }
+      ]
+    },
+    {
+      "file": "bad_data/ARROW-GH-41321.parquet",
+      "fixtureSha256": "9539e0925ddb0b52a467cfe5535455be26869bb9bf3b5e48a255c7e2c1973537",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "bad_data/ARROW-GH-45185.parquet",
+      "fixtureSha256": "62f64f2d7eb04ccb8188a61cad402819905426e867adaff134e850d055997e2e",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read bad_data/ARROW-GH-45185.parquet"
+        },
+        {
+          "name": "TypeError",
+          "message": "Cannot read properties of undefined (reading 'push')"
+        }
+      ]
+    },
+    {
+      "file": "bad_data/ARROW-GH-47662.parquet",
+      "fixtureSha256": "00804313753fa04c3ef662e436da221e9a61d1732db020cdfe351c188f240391",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read bad_data/ARROW-GH-47662.parquet"
+        },
+        {
+          "name": "RangeError",
+          "message": "Invalid typed array length: 4"
+        }
+      ]
+    },
+    {
+      "file": "bad_data/ARROW-RS-GH-11261-FLBA-DICT.parquet",
+      "fixtureSha256": "89ae3906f61fbaab8d4ca08df6ff944188d3c15bc3ac13f37e1839434be58e46",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read bad_data/ARROW-RS-GH-11261-FLBA-DICT.parquet"
+        },
+        {
+          "name": "Error",
+          "message": "parquet unsupported encoding: DELTA_BYTE_ARRAY"
+        }
+      ]
+    },
+    {
+      "file": "bad_data/ARROW-RS-GH-6229-DICTHEADER.parquet",
+      "fixtureSha256": "cbc54d6738ea0bf9c941151b5b59cd71597beb0517d949539db59f99c18e9998",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_OBJECT_NOT_FOUND",
+          "message": "Range out of bounds for bad_data/ARROW-RS-GH-6229-DICTHEADER.parquet"
+        }
+      ]
+    },
+    {
+      "file": "bad_data/ARROW-RS-GH-6229-LEVELS.parquet",
+      "fixtureSha256": "28d689c63418273b3dfe51ea971ff321c090413bfec66da379aa602165ecb5dd",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read bad_data/ARROW-RS-GH-6229-LEVELS.parquet"
+        },
+        {
+          "name": "RangeError",
+          "message": "Offset is outside the bounds of the DataView"
+        }
+      ]
+    },
+    {
+      "file": "bad_data/PARQUET-1481.parquet",
+      "fixtureSha256": "65dfd7e8fa9284a3e4c79bf72bb73e4297f457069df9f47cff5880701da6d71c",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read bad_data/PARQUET-1481.parquet"
+        },
+        {
+          "name": "TypeError",
+          "message": "Cannot destructure property 'type' of 'schema' as it is undefined."
+        }
+      ]
+    },
+    {
+      "file": "data/alp_extended.zstd.parquet",
+      "fixtureSha256": "b14ebd02c6584a451a9d1ca2d09504156254a7fb7316d0abb0efce38590bedb0",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read data/alp_extended.zstd.parquet"
+        },
+        {
+          "name": "Error",
+          "message": "parquet unsupported encoding: undefined"
+        }
+      ]
+    },
+    {
+      "file": "data/bson.parquet",
+      "fixtureSha256": "44b503ac1ecb70627b29fbce2d3109cd161afe5c0f72b556978b454fc64cb129",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read data/bson.parquet"
+        },
+        {
+          "name": "Error",
+          "message": "parquet bson not supported"
+        }
+      ]
+    },
+    {
+      "file": "data/byte_stream_split_extended.gzip.parquet",
+      "fixtureSha256": "86a96259c2c82e50aa2826b91d6de9514e538235343eed9c2a98318424b46cd8",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read data/byte_stream_split_extended.gzip.parquet"
+        },
+        {
+          "name": "Error",
+          "message": "parquet unsupported compression codec: GZIP"
+        }
+      ]
+    },
+    {
+      "file": "data/concatenated_gzip_members.parquet",
+      "fixtureSha256": "92b6af9b766dc3e46413794ed4df009e0584b8fdca106ade1a9a1ed955d32771",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read data/concatenated_gzip_members.parquet"
+        },
+        {
+          "name": "Error",
+          "message": "parquet unsupported compression codec: GZIP"
+        }
+      ]
+    },
+    {
+      "file": "data/data_index_bloom_encoding_stats.parquet",
+      "fixtureSha256": "66d53151197819919343972c997837845503ce82665c9c4481c866ef57dde0eb",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read data/data_index_bloom_encoding_stats.parquet"
+        },
+        {
+          "name": "Error",
+          "message": "parquet unsupported compression codec: GZIP"
+        }
+      ]
+    },
+    {
+      "file": "data/fixed_length_decimal.parquet",
+      "fixtureSha256": "67e61d18ecca6027731faf397c5981b29d863f9eef68e3644501588663e1bfd2",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet decimals above precision 15 are not supported"
+        }
+      ]
+    },
+    {
+      "file": "data/flba12_timestamp.parquet",
+      "fixtureSha256": "0e6b5a9552969394a42b67fb9bf17031b677909a698945fcc9ea77acfb056529",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read data/flba12_timestamp.parquet"
+        },
+        {
+          "name": "SyntaxError",
+          "message": "Cannot convert 0,0,0,0,0,0,0,0,0,0,0,0 to a BigInt"
+        }
+      ]
+    },
+    {
+      "file": "data/hadoop_lz4_compressed.parquet",
+      "fixtureSha256": "b43a31978e5c28c251523ab4610989881175c5ea84c8e533c22286c0f193a77a",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read data/hadoop_lz4_compressed.parquet"
+        },
+        {
+          "name": "Error",
+          "message": "parquet unsupported compression codec: LZ4"
+        }
+      ]
+    },
+    {
+      "file": "data/hadoop_lz4_compressed_larger.parquet",
+      "fixtureSha256": "561120a3094ee4513ba619b518c7a6093fe4e38398219ad172fb75373c3360b8",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read data/hadoop_lz4_compressed_larger.parquet"
+        },
+        {
+          "name": "Error",
+          "message": "parquet unsupported compression codec: LZ4"
+        }
+      ]
+    },
+    {
+      "file": "data/incorrect_map_schema.parquet",
+      "fixtureSha256": "5591dde252b46bc238a88e9c02e35780c5eb086e2677df105aaa91ff1fde8fba",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read data/incorrect_map_schema.parquet"
+        },
+        {
+          "name": "Error",
+          "message": "parquet unsupported compression codec: GZIP"
+        }
+      ]
+    },
+    {
+      "file": "data/large_string_map.brotli.parquet",
+      "fixtureSha256": "1ce6839f093ebc0699b1e2769ed04036bab40405bacbb5dacdd376dd94c13451",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read data/large_string_map.brotli.parquet"
+        },
+        {
+          "name": "Error",
+          "message": "parquet unsupported compression codec: BROTLI"
+        }
+      ]
+    },
+    {
+      "file": "data/lz4_raw_compressed.parquet",
+      "fixtureSha256": "d509774f6ba2f7fa2984308e64509c97a7a69ab94d5ab017211219b9812ef551",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read data/lz4_raw_compressed.parquet"
+        },
+        {
+          "name": "Error",
+          "message": "parquet unsupported compression codec: LZ4_RAW"
+        }
+      ]
+    },
+    {
+      "file": "data/lz4_raw_compressed_larger.parquet",
+      "fixtureSha256": "2c65cd301a9d8b4b4ff408089113ed5a91a99aaeb70ecf587018f3c4f6c1d01e",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read data/lz4_raw_compressed_larger.parquet"
+        },
+        {
+          "name": "Error",
+          "message": "parquet unsupported compression codec: LZ4_RAW"
+        }
+      ]
+    },
+    {
+      "file": "data/nation.dict-malformed.parquet",
+      "fixtureSha256": "245c025fe866c7a55612bf0848034e6cb7b33965668e9244bc007ab0eb61034d",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read data/nation.dict-malformed.parquet"
+        },
+        {
+          "name": "RangeError",
+          "message": "Invalid typed array length: 28"
+        }
+      ]
+    },
+    {
+      "file": "data/nested_structs.rust.parquet",
+      "fixtureSha256": "48427178bfef9e6edd9018f2ef7b084077c00057234a780271a8220ca53b33da",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "data/non_hadoop_lz4_compressed.parquet",
+      "fixtureSha256": "32fd9bbeffcad29dbefa73f46d0a88d0abd220ad6eeb80e5090ad8fa20d2b901",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read data/non_hadoop_lz4_compressed.parquet"
+        },
+        {
+          "name": "Error",
+          "message": "parquet unsupported compression codec: LZ4"
+        }
+      ]
+    },
+    {
+      "file": "data/nonnullable.impala.parquet",
+      "fixtureSha256": "e7927cde24c083e42a3d4b37ac962d34381f71c2d252169b627dd8459a5880e3",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "data/nullable.impala.parquet",
+      "fixtureSha256": "de9102a599d852be3af1d2af5d3498d8e019c329096a6f2d260f55ae2d6ed0ae",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "data/nulls.snappy.parquet",
+      "fixtureSha256": "40192e879fe7905d1341b495d06f8470e2fd02608bf8f9e6a71b2b774acc5252",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "data/repeated_no_annotation.parquet",
+      "fixtureSha256": "97d35acb9721e40fc0f66fba916a442c4a1cf77a35992dc891ad0cdcc5a24cfb",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "data/repeated_primitive_no_list.parquet",
+      "fixtureSha256": "fcd6152058b8b8259a516105da5919b23cb8ccfc42258de0fe20e3107f8ef809",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "data/rle_boolean_encoding.parquet",
+      "fixtureSha256": "585e22b54c482befc54fc6caaea5efce788f1d0737505c2d8b121da8ac0c7d76",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_PARQUET_READ_ERROR",
+          "message": "Failed to read data/rle_boolean_encoding.parquet"
+        },
+        {
+          "name": "Error",
+          "message": "parquet unsupported compression codec: GZIP"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-001.parquet",
+      "fixtureSha256": "7c49b25af9a687f97477c66e7af9182f16a7f25b5bce5ef005bc3e7a929fd4a9",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-002.parquet",
+      "fixtureSha256": "0f3ef1116d91272a0109d18f2afcaac294217517594252265ac55a67eaed5558",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-004.parquet",
+      "fixtureSha256": "9c4440e6d070b47c287550dce9a863c2d8e12295c2828af4a371c2779e7a2c71",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-005.parquet",
+      "fixtureSha256": "8c0833ee8ec5ecdeea5fb0be10186f1ac6ec4b83aae12577978e8379691e4c7e",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-006.parquet",
+      "fixtureSha256": "e7fc4cfcfb08018937f1f905c87524c55f8f53746affaa40b2d278d9e4fa6761",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-007.parquet",
+      "fixtureSha256": "056484ba07ca056e0ab018cf6f902d7dbfd3758d6601d47f3b5497d511084a15",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-008.parquet",
+      "fixtureSha256": "d99f477e32bc4ce5c5f37ffaff98ab0e3bb23f197d7059795c2fbc1544554eef",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-009.parquet",
+      "fixtureSha256": "0cfcd45aa6fff26424e39395f1ca7df16ca46632054ba5f769ef39b3ed556b7e",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-010.parquet",
+      "fixtureSha256": "fd96024202ecf44749f87317fcb3be498194f4946c8460f9429d178f3ef8cbad",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-011.parquet",
+      "fixtureSha256": "b1143ae3efe916afdfb74b12ba0a672a1a8692a0629fc60d2e1f9657180685e8",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-012.parquet",
+      "fixtureSha256": "71e232316a85efaa22062c5be1599eb66fcdc5468f828df21357099dd8305ed5",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-013.parquet",
+      "fixtureSha256": "61432a709d2d0f40d5700694ca34dab3ce8e2b547ff76bfe87d8b1919ac9a9dd",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-014.parquet",
+      "fixtureSha256": "753cc339b8811101e39551e08cc6888d0d75e0310f26b64e05a1da7d1ff917dd",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-015.parquet",
+      "fixtureSha256": "979740b27a93f3e2b9cba58df9b54003d37ec206723fcd8030d9133e05a191d5",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-016.parquet",
+      "fixtureSha256": "2e2381206af22ecc613fadd53fe5e0581d40db3ce1aba310dcb753765efa0cbb",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-017.parquet",
+      "fixtureSha256": "3fe50350f1909e930651d9789922da12a7de1853563134cab13d9b591887d00d",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-018.parquet",
+      "fixtureSha256": "420ee6e1d9175dbe55cc34e104550e09b4946c26341f5aaef150939b96d51a8d",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-019.parquet",
+      "fixtureSha256": "07d17f8f331260d84d9ef30f84da767d413afa4ae3cc842921073196d003f49a",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-020.parquet",
+      "fixtureSha256": "cff411227050f458af0cced1a34aaef215b9ef032b40c52e5f0398c46b7e8d83",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-021.parquet",
+      "fixtureSha256": "7571b7422028855b1a5d73f9e16bcd3627cb9f0773caa449ef2dd5a7f83114c1",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-022.parquet",
+      "fixtureSha256": "93cf63e7bc9e6ed0064aefc543947b70c69616f3f0c1a7f0ac0fa0b1e7cdd9d7",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-023.parquet",
+      "fixtureSha256": "5e033b78b8772505ad443c5a825f475a960e7e2cd3bebeaa1d483c5711a0530b",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-024.parquet",
+      "fixtureSha256": "f5082f23f79ab299e19c2f44e7db2517eb8ecf4a7e3da1f18d17df095c5eb834",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-025.parquet",
+      "fixtureSha256": "676be7059cb59645b6ab4fc980c7c9cd3354f7a051c41e52d18d51f6c3ec2476",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-026.parquet",
+      "fixtureSha256": "f58a56e66d8eb3123879083a82b9734d398a101274b9ad5076b89fc200d99332",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-027.parquet",
+      "fixtureSha256": "0c99e793b6718c735a08b7f20f80abad7cbab1a81d606b0b49267aef97699570",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-028.parquet",
+      "fixtureSha256": "fc9feb0b312c848e88f003969bc12f50d2477fbfb9e79b5468c053653d1cd78e",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-029.parquet",
+      "fixtureSha256": "86235e6e00728d5e96af8afb35e4e4206f9091d7c20a6f6a241e5618f2803ab2",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-030.parquet",
+      "fixtureSha256": "621dc23161852e39b3cb9ef74c31b3ed2538ca90a626aa8725695fd3bc8b75dd",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-031.parquet",
+      "fixtureSha256": "aae6700687804a857051d60716b65d573f276823407c5fe1bcf720cd57c462d5",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-032.parquet",
+      "fixtureSha256": "9f543efd76c47028e0acc58641c91d03c06abdf8859abda1ce615f5eae124a51",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-033.parquet",
+      "fixtureSha256": "1657840bae30e5aa311e9bd96765c579d8eb98f583450b25b48284b636c59484",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-034.parquet",
+      "fixtureSha256": "3e42d85fc6bd67a26414c8ca45c1daf216c970da96ebf300d1dcbd8ae13e5cd6",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-035.parquet",
+      "fixtureSha256": "c9ac133038ff84b60ca7cf14a8ecdbbb843faa19255a321dd45e99026f23d782",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-036.parquet",
+      "fixtureSha256": "84c7176f80df56152dbe14ab0dac0a249cc95b6c3c5760575af98d640aad09e2",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-037.parquet",
+      "fixtureSha256": "796bdf8006813e8f321d5c637f51e3221a9102472ccbeb9a0971b338230de39b",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-038.parquet",
+      "fixtureSha256": "1e34ab52f202577fdf23434581cf36326b8314a66f620ab58845393fc595c2ef",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-039.parquet",
+      "fixtureSha256": "e1c6e41ab2efad51bf9920c2e21c7a196e6d89116638b728bc66a1e62c66f28c",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-040.parquet",
+      "fixtureSha256": "47ec0bc5a2055a9cf3377993c702e29a773b5276fcc35f74bacf582cf8977119",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-041-INVALID.parquet",
+      "fixtureSha256": "919ff7e7390d801c77554b055f98b100d1f9ea4d659b1a26a3da68b272242e6b",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-042.parquet",
+      "fixtureSha256": "84ad8f6d5b3e5076325fb3fa9cb3ace9a812496864e13fd5356ef5799a9be205",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-043-INVALID.parquet",
+      "fixtureSha256": "ae5356e640a704b26fdecc4a7615ba368795d295bcb7d1a3e47d96901573f328",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-044.parquet",
+      "fixtureSha256": "9a1e9e1d4e2842e89f1bd520e7fc67a5796a245afc13681926fd49e91337ba32",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-045.parquet",
+      "fixtureSha256": "a5e6489f5bcc1e370a3fb2d302bdd413ba3c4b1ced27073e9331f972737abee7",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-046.parquet",
+      "fixtureSha256": "a2dd64f9f7b5b44a91328924d4a57697827aa901852344d14bb7bd9c2881515d",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-047.parquet",
+      "fixtureSha256": "ebf8ce5641a64d33b50016189532a31847cbc1f1184c27b23bbf27ce71c0fd76",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-048.parquet",
+      "fixtureSha256": "d92c215b86a74745334c0dd078dc364ebf31d21ad7fe8930839c16c988df2976",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-049.parquet",
+      "fixtureSha256": "bd7e06df5287312638f3da38b25a26b3e1079dad34a5e359b8aea8114b0b27e3",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-050.parquet",
+      "fixtureSha256": "16fef4482a9b85a523d4b5e58b3cccbe26024e22a4a3571686b142cd19766140",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-051.parquet",
+      "fixtureSha256": "11547ba0f4438747bb05915965932f6985cc185fb05c2f33f042014c9bf66cc0",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-052.parquet",
+      "fixtureSha256": "3bb466aa40e283d9bff7457d5cdfc9b37f4b5fe712226e27efd2647b731796e9",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-053.parquet",
+      "fixtureSha256": "483ec455d52e6fdfe9ad46a6e0efc1ad3b8c0727b65fcee25b98f770c1e3e330",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-054.parquet",
+      "fixtureSha256": "62d97f2fdfe8d06f4d63e19db27a4cb7278dafd2e2888e32f42b59b9e275cbe9",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-055.parquet",
+      "fixtureSha256": "d78a4822ddd4de6e2865b1bce6943f5519a024edf49372e9f12031b9b4575e95",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-056.parquet",
+      "fixtureSha256": "1f078ffc90f48f984a299d828efd9f038f5fd8c8ae0a0549f574971149324d82",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-057.parquet",
+      "fixtureSha256": "c94dd4a51ad171801c2da6040bbe9566734fe27204c1948fe0a372fc6cd2db6f",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-058.parquet",
+      "fixtureSha256": "7b83df7066bdbe5f0b977b5d53df8fbc6ce38f761399336fbca0c38ce2309fa1",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-059.parquet",
+      "fixtureSha256": "9c2d6ea72d8e41bf5015765793780c2b7c9bfb019087774e6c7e08914bfa9570",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-060.parquet",
+      "fixtureSha256": "0f5a951ab0df0dc5adf003f2e6b75323f5eda6b50b390301255c51aa8b0218f7",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-061.parquet",
+      "fixtureSha256": "1ad3d104430a002fe937d2f73ff0dd1878cd0ebafe359a0cbf3e20fd2cd17f49",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-062.parquet",
+      "fixtureSha256": "52e895ea3d9c8e3830974e1f0fba5420713bf04b31f196711ab3ecc7ce75b5c0",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-063.parquet",
+      "fixtureSha256": "fc3adb15b73487099de528d9c18945c01522539e64fa6a9551c5239ac307a2dc",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-064.parquet",
+      "fixtureSha256": "bd001d529dc63ae17587e85f0bdd9d686e2f72b921ff22df43c2ba9712673415",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-065.parquet",
+      "fixtureSha256": "05cb0f7fed70350a7f18cbf1b258a44e8b90b07fd30809ce9e7d6b9f192d96ac",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-066.parquet",
+      "fixtureSha256": "74ae50e71a5c904813b6e9c91da4573704d6bb643b606eecf325c407efd9ebf0",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-067.parquet",
+      "fixtureSha256": "ef26e5b2eb020dafbc1ac14ee0694cffa93fe011e194811cfb37dccf7a76ad70",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-068.parquet",
+      "fixtureSha256": "00959db1af36308870d4099de0078d36ddb0bfe1b86adf53c3d0adc5bd2e2495",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-069.parquet",
+      "fixtureSha256": "e95cbf29eba8e16a95cb0f60ac3810f1faf483e49b48030f7d22e1b85461cf2d",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-070.parquet",
+      "fixtureSha256": "d27a1b4dd40fcfb66cb5dff130740c4db5beadc2bf58a1b3d37ca2e58d830a56",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-071.parquet",
+      "fixtureSha256": "7dfbf9bacf124ad54ebd516e81522b2c5a1e60381edbf11a31e9d0177f99a00c",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-072.parquet",
+      "fixtureSha256": "f5b30350e4ea2a2e50d98785aba1e06a648a253297391c95848cc072860425b2",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-073.parquet",
+      "fixtureSha256": "178ee2a8a0f1aabf187a4bcbbf6b676ff066024b53ed5c9e6ce810c25e2331e9",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-074.parquet",
+      "fixtureSha256": "f23f06f7604357fc46540bf220c0a60f91e4a39382a4feeb5692738ab83d5047",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-075.parquet",
+      "fixtureSha256": "6e0f3f14804dfb7fafbf30c1b68324b4770f03d76ce6e61ce5907c8598a7a217",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-076.parquet",
+      "fixtureSha256": "413ce575a4691871a417845598ea560c4e0168b5dde61bf51c162d6d3e041829",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-077.parquet",
+      "fixtureSha256": "05ab163b1195e5b23ed05eaed0c2faff346758723e3bee800828a662675592b5",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-078.parquet",
+      "fixtureSha256": "98811dfafaad092a27502be9bd26977a6de0c153f08834c94f10c016d80065ba",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-079.parquet",
+      "fixtureSha256": "ffe20e153226f08a35203404956b7a41ddb80d41f82048a4b5596d66834bf066",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-080.parquet",
+      "fixtureSha256": "eddad3177caf5565a3ce7597f1870cdd00c6692f6c7281240166fc87c3aed5f9",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-081.parquet",
+      "fixtureSha256": "72af0f5881155416b4fc472d368a7dbe071065a349e5c146d68008d3981d3e60",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-082.parquet",
+      "fixtureSha256": "b8de0e7d88c67ec342e3ac23bdd580bbb3c64b8bc1a3c326fcbef72bfa18e365",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-083.parquet",
+      "fixtureSha256": "c3eb932622a35054253d922c228add9aee63ff60c526c1422f6c85651cc86796",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-084-INVALID.parquet",
+      "fixtureSha256": "8546f998cff21cff4ba4af0606d1593856589ba7cd109ce0993bdfa20db05db6",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-085.parquet",
+      "fixtureSha256": "653e679cd56fe93d660f6f7616630442801fac4da4521c0e533d23258aaa3923",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-086.parquet",
+      "fixtureSha256": "f2d666613f97eaf008801473b02bec686c2c128bca9e6ed46f31735e150a1401",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-087.parquet",
+      "fixtureSha256": "b1e520b3ef03b5e51b74e129704bad21933abe12e7453bdc79db9f34bce184f8",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-088.parquet",
+      "fixtureSha256": "2bb3e8fbc7736d588cbd377831d084e89a9d5de5ff36385393336664b0bbd10b",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-089.parquet",
+      "fixtureSha256": "681c48dcfd154c1ee7b70a6dd3136aa0ce2f2522295b0e26d259cd95d172702e",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-090.parquet",
+      "fixtureSha256": "ab6610026714ae9ceb059c65f3dd6930efd1bbe82db0a12843bc146ee6f9e375",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-091.parquet",
+      "fixtureSha256": "acb064f2a5e21ca276b019ee8f24e3ba00de18a10eec8b3f304c0b8252cd2fce",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-092.parquet",
+      "fixtureSha256": "50231517c05df7be0eddf2a4f9fbf31cc2c1493ea5ee2c78073709b40a184b9f",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-093.parquet",
+      "fixtureSha256": "ca50c4557719b91ba6a71145cd1f2c06c668d7d0e1d8ff7010678b02d7a4e1b1",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-094.parquet",
+      "fixtureSha256": "a2b2e68ac8673a1a7e54067f2b3f033fc537d05af08fcc25d729f50b259dcab6",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-095.parquet",
+      "fixtureSha256": "943153782648e7677004974e5f17e0318543ea0e98b4ce8b3a711a7ebe2d4268",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-096.parquet",
+      "fixtureSha256": "ae9ed8c7361972b91abcb88dace545679c6fb3e62aea3b515f9b0442be1228e2",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-097.parquet",
+      "fixtureSha256": "c67f59ebf3428cd89c42e1a73ec85a264dda78b6667efcffa023b7b93aee9fc9",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-098.parquet",
+      "fixtureSha256": "c436082628a31f17391177621555c801e8264f32c1bcfcab67c7b634f259961b",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-099.parquet",
+      "fixtureSha256": "55d23b5ff02c8560e6c8f52794354c6d68b721fa6c6f0e41f59fbdf1553d3b6e",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-100.parquet",
+      "fixtureSha256": "ed13c968161985546b7ef9bade89fb204fc2ae8524c3ddc4368b82630ebc0960",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-101.parquet",
+      "fixtureSha256": "b20ac365c2a41d4a0b95339ada3f427086c6e999f731ca509f6dac9696010051",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-102.parquet",
+      "fixtureSha256": "1afc7797425f6571c3be47d526c973f0897738716884034571a5f0e92b315647",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-103.parquet",
+      "fixtureSha256": "30134986f3bf8c307a171606f31159befd347b14a7be66c627290c18063a69f3",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-104.parquet",
+      "fixtureSha256": "0331b5736414bfd5869034b7727568ba852f78b5ae018d630c59c68c39bae2cb",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-105.parquet",
+      "fixtureSha256": "98d5ce6bcc7898c6a57a55d4866e7b6b17292b7b0c9ac02487116931dcca91a1",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-106.parquet",
+      "fixtureSha256": "3b44a63b00e943c820a214498746a52865e619cbb5e2d771bd7e0c83924d3b3f",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-107.parquet",
+      "fixtureSha256": "1a1d40c1c9d951e35f068e73549de9466474ded5258ee8091fe0ea9088e730bf",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-108.parquet",
+      "fixtureSha256": "f57bac06f8c8bd93ad5237f9695c8a51a79f2b314094e94e4f1c33d05f09d1c7",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-109.parquet",
+      "fixtureSha256": "e69390e29efab62357fedf61fbbef29ffefec5f694dc582749959aec2b247f29",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-110.parquet",
+      "fixtureSha256": "98e98dc2fdc190d86818c911d888cb85124fb95b400202cd29ddcd3db96b78b5",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-111.parquet",
+      "fixtureSha256": "7daec27679f837f5de671e0fb02b458fbc1a64fb401e6dd140cbd6addf34b509",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-112.parquet",
+      "fixtureSha256": "911744e29242bc6cc6fd1a30b2fbc7a8f342bed1bccf7c5b94bbc5aa18a035f4",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-113.parquet",
+      "fixtureSha256": "8d449d133a05b2babf841c2f43d4ad787ef3a19779a1e59ad331c34976f7daa0",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-114.parquet",
+      "fixtureSha256": "df4d8b24f427ac3fdac50dce7031441ddf2155df4220a47efc36776cee9036d8",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-115.parquet",
+      "fixtureSha256": "fb395a3fbfe356ea3724590c58a1a2da72e2db1ac017dcabc36b7601464e45df",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-116.parquet",
+      "fixtureSha256": "6acfc4b54c307ad80550c1b77813f86c6462b63174731789dca0cf4c2bf92a8d",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-117.parquet",
+      "fixtureSha256": "aaa003e1dec200a38f139292a4fa1151617df3b943bf4aa822b6d5389bdec51a",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-118.parquet",
+      "fixtureSha256": "735f8fdc77b034791ed29cab47d72de9c0c8b8a0c0acab5dd1119af063fea8ed",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-119.parquet",
+      "fixtureSha256": "19859ce21e3d45f56c56e1597c3b41545499cff2a33f3b589519829f3f06bdf4",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-120.parquet",
+      "fixtureSha256": "0caca98ef35deba7d15ee7820b803db948c4ece2d4b05681a8002fa8517885ac",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-121.parquet",
+      "fixtureSha256": "422eadbdf2b671e21b4cbfa086d2eceea37ed703c633225ec776e8f1756d293f",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-122.parquet",
+      "fixtureSha256": "563b9ce7dfa6a72b90038a22e14b8cce3ead6dfa3287242baab3387002d7fa81",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-123.parquet",
+      "fixtureSha256": "b942eda1d5dd11385413e93d5b9aa68e4ee261c3c612d43a648993899337a88b",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-124.parquet",
+      "fixtureSha256": "d5060b9c0602e413093a52635531be04e44e91a7a43361ca152ba9c5af5aa07e",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-125-INVALID.parquet",
+      "fixtureSha256": "0d137fe386fc28b81cddf3ac1a9d2467e9fc14554fa4fb749fb0d5afe898dd5c",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-126.parquet",
+      "fixtureSha256": "b680917d79144abcc596f72614a46e173fa3694bca570ef5817846ee30272015",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-127.parquet",
+      "fixtureSha256": "1c7eb444f1503cc1ab73e9b88e19ad57887883e6858e9fbce545343f7890c22b",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-128.parquet",
+      "fixtureSha256": "e24227334e04f729c78db99dd882cdb21f57b814dbb67c91c9e7a2666631e778",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-129.parquet",
+      "fixtureSha256": "6cec54b5f8fe43795dbabbcf5dc7020bf3ff516ce5ec8d439506effa9b095fe2",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-130.parquet",
+      "fixtureSha256": "7f0ef89aa30499f03db4faba1e4fba4a8bc1af43a0d4febd94fb80c086544518",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-131-INVALID.parquet",
+      "fixtureSha256": "9ac3b003b2efb3c87748037f78cb769e2aa27cb9c8a4a8b6e694997d5893897f",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-132-INVALID.parquet",
+      "fixtureSha256": "6fca1bed0814cb3da0c0bd15af3e1ede37c9bbb1614a856faf49907eef85cca8",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-133.parquet",
+      "fixtureSha256": "aed3956b4d75e647ea68d05683fffe236e7997997dee8741d88c26c19dabd4e8",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-134.parquet",
+      "fixtureSha256": "27f8617ed0968bed1ad47cb123d64262adad518f70198cd135a1ea2eab8b4d48",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-135.parquet",
+      "fixtureSha256": "d702405eb95e9ba5d121bfa852457a63dfbb121e9c9b551089b9feeb89b622c4",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-136.parquet",
+      "fixtureSha256": "7024695e1af0cff1c8d73ce18dca16dfa94e7123b285c7fd99ebb537f0f5a6f7",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-137.parquet",
+      "fixtureSha256": "8c65160a9015483d44aa039fd74a4d8802393c94a5020a83cd877dc5c0593217",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    },
+    {
+      "file": "shredded_variant/case-138-INVALID.parquet",
+      "fixtureSha256": "eb768513afabe6a656d99b6ea87266bca369de4b850928877f182ed57f0a0bdf",
+      "status": "rejected",
+      "causes": [
+        {
+          "name": "LakeqlError",
+          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
+          "message": "Parquet struct columns are not supported"
+        }
+      ]
+    }
+  ]
+}

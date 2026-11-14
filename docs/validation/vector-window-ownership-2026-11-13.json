@@ -1,0 +1,47 @@
+{
+  "requirements": ["F2", "F4", "M1", "M2", "V1", "V2"],
+  "status": "Vector-window capture and resumable vector input now retain owned storage or detach borrowed batches; whole-window backend/output ownership remains open",
+  "contract": [
+    "Window vector scanning prefers scanOwnedVectorBatches, including adapters exposing only that vector capability. Input handles remain retained after producer advancement and release when output closes.",
+    "Borrowed batches use detachOwnedBatch through the shared data detacher. Typed arrays, packed payload, nested vectors, dictionary indices and container data are admitted before copying. Shared dictionary/vector objects are copied once via a temporary admitted memo; the physical vector representation is preserved.",
+    "Existing row detachment keeps its original supported-data contract. Enabling vector typed storage does not make arbitrary typed arrays valid row values.",
+    "Non-resumable vector-window capture owns its batch directory, source storage and selection masks through output. Zero-match batches release temporary selection and source lifetimes promptly.",
+    "Resumable vector runs use scoped selection and owned materialization before transferring rows to the retained run buffer. Input, materialized output and detached run rows overlap under the same budget; cleanup releases all temporary handles.",
+    "Owned-versus-borrowed selection is automatic and requires no new configuration flag."
+  ],
+  "validation": {
+    "build": "passed",
+    "default": {
+      "passed": 3205,
+      "skipped": 629,
+      "note": "Production code unchanged after this run; two additional capability/shape test cases were then added and run in the final focused suite."
+    },
+    "worker": {
+      "passed": 75
+    },
+    "initialFocused": {
+      "passed": 17
+    },
+    "finalFocused": {
+      "passed": 7
+    },
+    "typecheck": "passed",
+    "cases": [
+      "Shared dictionaries and indices are copied once; mutation of borrowed strings, indices and numeric arrays does not alter detached output.",
+      "Exact measured detachment peak succeeds; cap-minus-one rejects and releases all reservations.",
+      "Ordinary and resumable spill windows preserve rows across reuse/mutation of the same borrowed vector batch.",
+      "Owned scan preference and owned-only capability are tested. An 8 KiB source backing allocation remains retained after producer close until output iterator return.",
+      "Nested, map, union, decimal, timestamp and packed physical shapes survive detachment; borrowed packed bytes can mutate without changing retained output.",
+      "Real Brotli Parquet HTTP 206 and ignored-Range 200 tests now exercise owned vector windows and resumable vector runs. Native local Worker R2 repeats them with 64/128 MiB pools, 2 MiB query caps, shared caches, successful expressions and oversized expansion rejection."
+    ],
+    "lintSizeChangeset": "passed"
+  },
+  "limits": [
+    "Delegated executeWindowTasks results still need complete output ownership. The vector fixture adapter intentionally omits task execution to exercise the vector path.",
+    "Window backend copied rows, partition/sort/index structures, computed results, final collection, state parsing/chunking and checkpoint encoding remain partially or wholly unadmitted.",
+    "Resumable vector rows currently materialize into owned batches and then detach into the run buffer, adding bounded overlap. No CPU throughput improvement is claimed.",
+    "Borrowed-source backing created before delivery remains the adapter responsibility. Reservation bounds are not a total runtime heap or production Cloudflare certification.",
+    "Final release gates and the complete audit acceptance matrix remain open."
+  ],
+  "followupEvidence": "docs/validation/window-index-admission-2026-11-13.json"
+}

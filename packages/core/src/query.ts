@@ -1,33 +1,73 @@
+import { isAggregateCount } from "./aggregate-count.js";
 import { continuousQuantile, requiredQuantile } from "./aggregate-quantile.js";
+import { MATERIALIZATION_CHARGES as allocationCharges } from "./allocation-charges.js";
 import {
   type Batch,
-  materializeBatchRows,
   predicateSelection,
-  scalarVectorValue,
   selectedRowCount,
+  selectedRowIndexBuffer,
   selectedRowIndices,
   vectorValue,
 } from "./batch.js";
 import { vectorCallExprSupported } from "./batch-call.js";
+import { boundedVectorBatches } from "./bounded-vector-batches.js";
+import { BufferMemory } from "./buffer-memory.js";
+import { checkedAsyncIterable } from "./checked-async-iterable.js";
+import { readCheckpointSpill } from "./checkpoint-spill-read.js";
+import { withCheckpointSpillBatch } from "./checkpoint-spill-write-batch.js";
+import { admittedColumnNames } from "./column-names.js";
+import { csvOutputStream } from "./csv-output-stream.js";
+import { gatherDeferredColumns } from "./deferred-gather.js";
 import { LakeqlError } from "./errors.js";
-import {
-  encodeJsonLine,
-  ensureGeoBackendForExprs,
-  evaluate,
-  jsonSafeValue,
-  matches,
-} from "./evaluator.js";
+import { ensureGeoBackendForExprs, evaluate, jsonSafeValue, matches } from "./evaluator.js";
 import type { Expr } from "./expr.js";
 import { collectExprColumns } from "./expr-utils.js";
+import { parseHivePartitions } from "./hive-partitions.js";
+import { jsonOutputStream } from "./json-output-stream.js";
+import { jsonStringUtf8Bytes } from "./json-string-size.js";
 import {
   assertBookmarkMatches,
-  createBookmark,
-  createTaskManifest,
+  createOwnedTaskManifest,
   fingerprint,
   stableStringify,
   type TaskManifest,
 } from "./manifest.js";
+import {
+  materializeOwnedBatchRow,
+  materializeOwnedBatchRows,
+  planBatchRowMaterialization,
+} from "./materialization-plan.js";
+import { MemoryBudget } from "./memory-budget.js";
+import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
+import { MutableMemoryLedger } from "./mutable-memory-ledger.js";
+import { cloneObjectInfo, cloneObjectInfos } from "./object-info.js";
+import { readObjectHead } from "./read-object-head.js";
+import { validateRowLimits } from "./row-limits.js";
+
+export { parseHivePartitions } from "./hive-partitions.js";
+
 import { isPrototypeMutationKey } from "./object-key.js";
+import { ownedAggregateExpressionBytesForColumns } from "./owned-aggregate-input.js";
+import { OwnedAggregateState } from "./owned-aggregate-state.js";
+import { createOwnedBookmark } from "./owned-bookmark.js";
+import { OwnedBoundedTopK } from "./owned-bounded-top-k.js";
+import {
+  encodeOwnedCheckpoint,
+  equalStableData,
+  stringifyOwnedStableData,
+} from "./owned-checkpoint-encoding.js";
+import { OwnedGroupDirectory } from "./owned-group-directory.js";
+import { parseOwnedJson } from "./owned-json-parse.js";
+import { OwnedReplacementValue } from "./owned-replacement-value.js";
+import { borrowOwnedRowBatches } from "./owned-row-batches.js";
+import { collectOwnedRows } from "./owned-row-collector.js";
+import { detachOwnedBatch, detachOwnedRow } from "./owned-row-detachment.js";
+import { collectOwnedRowSlice } from "./owned-row-slice.js";
+import {
+  snapshotOwnedRows,
+  snapshotScalarSerializedBytes,
+  snapshotScalarWithAdmission,
+} from "./owned-snapshot-rows.js";
 import {
   type AcceleratorPolicy,
   CpuPhysicalBackend,
@@ -36,17 +76,20 @@ import {
   type PhysicalExecutionBackend,
   type PhysicalExecutionMetrics,
   type PhysicalFragment,
+  type PhysicalGroupedReduce,
   type PhysicalOperator,
   type PhysicalOutput,
   type PhysicalOutputValue,
   type PhysicalPlacementCandidate,
+  type PhysicalReduce,
+  type PhysicalReductionContinuation,
+  type PlannedPhysicalFragment,
   physicalInputFromBatch,
   planPhysicalFragment,
 } from "./physical.js";
 import { classifyPredicate, type PredicatePlan } from "./predicate-plan.js";
 import { parseJsonQuery } from "./query-json.js";
 import {
-  addOrderedMatch,
   compareRows,
   flushSortRun,
   mergeSortRuns,
@@ -54,6 +97,8 @@ import {
   validateSortRow,
   valueForColumn,
 } from "./query-sort.js";
+import { RowDistinctSet } from "./row-distinct-set.js";
+import { appendProjectedOutput } from "./row-output.js";
 import type {
   CacheAdapter,
   MetricsHook,
@@ -61,28 +106,13 @@ import type {
   SpillAdapter,
   SpillRef,
 } from "./runtime.js";
+import { serializedBatchBytes, serializedValueBytes } from "./serialized-size.js";
 import { pruneFilesWithIndex, type SidecarFileIndex } from "./sidecar-index.js";
-import type { ObjectInfo, ObjectStore } from "./store.js";
+import { type ObjectInfo, type ObjectStore, throwIfAborted } from "./store.js";
 import type { Bookmark, BookmarkQuery, QueryStats, Row, SliceResult } from "./types.js";
-import {
-  createVectorAggregateStates,
-  finalizeVectorAggregateStates,
-  restoreVectorAggregateStates,
-  type VectorAggregateStateSnapshots,
-  type VectorAggregateValue,
-} from "./vector-aggregate.js";
-import {
-  createVectorGroupByState,
-  enforceVectorGroupByBudget,
-  finalizeVectorGroupByRows,
-  getOrCreateVectorGroup,
-  restoreVectorGroupByState,
-  updateVectorGroupAggregateValue,
-  type VectorGroup,
-  type VectorGroupByStateSnapshot,
-} from "./vector-group-by.js";
 import { vectorProjectBatch } from "./vector-project.js";
-import { concatBatches, gatherBatch, vectorTopKBatch } from "./vector-sort.js";
+import { sliceBatch } from "./vector-slice.js";
+import { concatOwnedBatches, gatherSelectedBatch, vectorTopKOwnedBatch } from "./vector-sort.js";
 import type { WindowExpr } from "./window.js";
 import {
   collectWindowColumns,
@@ -110,10 +140,11 @@ export {
   type WindowResult,
 } from "./window-state.js";
 
-const textEncoder = new TextEncoder();
 const DEFAULT_COLUMNAR_BATCH_SIZE = 262_144;
 
 export interface QueryBudget {
+  /** Maximum tracked engine allocations held by one query; separate from serialized state limits. */
+  maxAllocatedMemoryBytes?: number;
   maxFiles?: number;
   maxBytes?: number;
   maxRowsDecoded?: number;
@@ -160,6 +191,8 @@ export interface MetadataAccessPolicy {
 }
 
 export interface LakeConfig {
+  /** Shared allocation pool for concurrent queries and allocation-aware caches. */
+  memoryPool?: MemoryBudget;
   store: ObjectStore;
   scanner: ScanAdapter;
   sidecarIndex?: SidecarFileIndex[];
@@ -181,6 +214,8 @@ export interface PhysicalExecutionOptions {
 }
 
 export interface ScanOptions {
+  /** Query child budget; adapters reserve through scopes and release on all exit paths. */
+  memoryBudget?: MemoryBudget;
   columns?: string[];
   where?: Expr;
   object?: ObjectInfo;
@@ -195,12 +230,29 @@ export interface ScanOptions {
 }
 
 export interface ScanAdapter {
+  /** Receiver releases each owner; retained batches may outlive the iterator. */
+  scanOwnedVectorBatches?(
+    path: string,
+    options: ScanOptions & { memoryBudget: MemoryBudget },
+  ): AsyncIterable<OwnedMemory<ScanVectorBatch>>;
   scan(path: string, options: ScanOptions): AsyncIterable<Row[]>;
   scanColumns?(path: string, options: ScanOptions): AsyncIterable<Batch>;
   scanVectorBatches?(path: string, options: ScanOptions): AsyncIterable<ScanVectorBatch>;
   scanColumnBatches?(path: string, options: ScanOptions): AsyncIterable<ScanColumnBatch>;
+  /** Options/column lists are borrowed until this promise settles; retained planner storage needs its own admission. */
   planObjects?(objects: ObjectInfo[], options: ScanObjectPlanOptions): Promise<ObjectInfo[]>;
+  /** Borrow the input handle until settlement; retain any input backing used by the returned plan. */
+  planOwnedObjects?(
+    objects: OwnedMemory<ObjectInfo[]>,
+    options: ScanObjectPlanOptions & { memoryBudget: MemoryBudget },
+  ): Promise<OwnedMemory<ObjectInfo[]>>;
+  /** Arguments are borrowed until settlement; returned ranges are copied into task ownership. */
   planTask?(path: string, options: ScanTaskPlanOptions): Promise<ScanTaskPlan>;
+  executeOwnedWindowTasks?(
+    tasks: TaskInput[],
+    windows: Record<string, WindowExpr>,
+    options: WindowTaskExecutionOptions,
+  ): Promise<OwnedMemory<Row[]>>;
   executeWindowTasks?(
     tasks: TaskInput[],
     windows: Record<string, WindowExpr>,
@@ -209,11 +261,14 @@ export interface ScanAdapter {
 }
 
 export interface ScanObjectPlanOptions {
+  signal?: AbortSignal;
+  memoryBudget?: MemoryBudget;
   columns?: string[];
   where?: Expr;
 }
 
 export interface WindowTaskExecutionOptions {
+  memoryBudget?: MemoryBudget;
   budget: QueryBudget;
   stats: QueryStats;
   now: () => number;
@@ -234,6 +289,7 @@ export interface ScanColumnBatch {
 }
 
 export interface ScanTaskPlanOptions {
+  memoryBudget?: MemoryBudget;
   columns?: string[];
   where?: Expr;
   partitionValues: Record<string, string>;
@@ -498,6 +554,7 @@ export type JsonExpr =
   | { not: JsonExpr };
 
 export class Lake {
+  readonly memoryPool: MemoryBudget;
   readonly store: ObjectStore;
   private readonly scanner: ScanAdapter;
   private readonly budget: QueryBudget;
@@ -511,6 +568,11 @@ export class Lake {
 
   constructor(config: LakeConfig) {
     const substrate = config.substrate;
+    this.memoryPool =
+      config.memoryPool ??
+      new MemoryBudget(
+        config.budget?.maxAllocatedMemoryBytes ?? config.budget?.maxMemoryBytes ?? 64 * 1024 * 1024,
+      );
     this.store = config.store;
     this.scanner = config.scanner;
     this.budget = config.budget ?? {};
@@ -659,6 +721,15 @@ export class QueryBuilder {
     return this.run().planTasks();
   }
 
+  /** Retain queued task storage until the returned owner is released. */
+  planOwnedTasks(): Promise<OwnedMemory<TaskInput[]>> {
+    return this.run().planOwnedTasks();
+  }
+
+  ownedTaskManifest(jobId?: string): Promise<OwnedMemory<TaskManifest>> {
+    return this.run().ownedTaskManifest(jobId);
+  }
+
   taskManifest(jobId?: string): Promise<TaskManifest> {
     return this.run().taskManifest(jobId);
   }
@@ -759,6 +830,7 @@ interface QueryResultConfig extends PathQueryInit {
 }
 
 export class QueryResult {
+  readonly memoryBudget: MemoryBudget;
   readonly stats: QueryStats;
   private readonly config: QueryResultConfig;
   private readonly physicalFragments = new Map<string, PhysicalFragmentExplain>();
@@ -766,6 +838,11 @@ export class QueryResult {
   constructor(config: QueryResultConfig) {
     validateQueryInit(config);
     this.config = config;
+    this.memoryBudget = config.lake.memoryPool.child(
+      config.budget.maxAllocatedMemoryBytes ??
+        config.budget.maxMemoryBytes ??
+        config.lake.memoryPool.maxBytes,
+    );
     this.stats = initialStats(config.queryId);
     config.metrics?.count("lakeql.query.created", 1, { queryId: config.queryId });
   }
@@ -779,45 +856,57 @@ export class QueryResult {
   private async *matchedRows(
     startedAt: number,
     readColumns: string[] | undefined,
+    allocationScope: MemoryScope,
   ): AsyncIterable<Row> {
     const config = this.config;
-    const { stats } = this;
-    const { planned: paths, skipped: skippedFiles } = await this.planObjects();
-    stats.filesSkipped = skippedFiles;
-    for (const object of paths) {
-      stats.filesPlanned += 1;
-      stats.filesRead += 1;
-      stats.bytesRequested += object.size;
-      enforceBudget(config.budget, stats, config.now, startedAt);
-      const scanOptions: ScanOptions = {
-        object,
-        batchSize: limitAwareBatchSize(config.batchSize ?? 4096, config.limit, config.offset),
-        stats,
-        budget: config.budget,
-        now: config.now,
-        startedAt,
-      };
-      if (config.limit !== undefined) scanOptions.canStopEarly = true;
-      const partitionValues = config.hive ? parseHivePartitions(object.path) : {};
-      const physicalColumns = readColumns?.filter((column) => !(column in partitionValues));
-      if (physicalColumns !== undefined && physicalColumns.length > 0) {
-        scanOptions.columns = physicalColumns;
-      }
-      if (config.where !== undefined) scanOptions.where = config.where;
-      for await (const rawBatch of config.scanner.scan(object.path, scanOptions)) {
-        for (const rawRow of rawBatch) {
-          const row = config.hive ? { ...partitionValues, ...rawRow } : rawRow;
-          stats.rowsDecoded += 1;
-          enforceBudget(config.budget, stats, config.now, startedAt);
-          if (!matches(config.where, row)) continue;
-          stats.rowsMatched += 1;
-          yield row;
+    const discovery = new MemoryScope(this.memoryBudget);
+    try {
+      const { stats } = this;
+      const { planned: paths, skipped: skippedFiles } = await this.planObjects(discovery);
+      stats.filesSkipped = skippedFiles;
+      for (const object of paths) {
+        stats.filesPlanned += 1;
+        stats.filesRead += 1;
+        stats.bytesRequested += object.size;
+        enforceBudget(config.budget, stats, config.now, startedAt);
+        const scanOptions: ScanOptions = {
+          memoryBudget: this.memoryBudget,
+          object,
+          batchSize: limitAwareBatchSize(config.batchSize ?? 4096, config.limit, config.offset),
+          stats,
+          budget: config.budget,
+          now: config.now,
+          startedAt,
+        };
+        if (config.limit !== undefined) scanOptions.canStopEarly = true;
+        const partitionValues = config.hive ? parseHivePartitions(object.path) : {};
+        const physicalColumns = readColumns?.filter(
+          (column) => !Object.hasOwn(partitionValues, column),
+        );
+        if (physicalColumns !== undefined && physicalColumns.length > 0) {
+          scanOptions.columns = physicalColumns;
         }
-        stats.elapsedMs = config.now() - startedAt;
+        if (config.where !== undefined) scanOptions.where = config.where;
+        for await (const rawBatch of checkedAsyncIterable(
+          config.scanner.scan(object.path, scanOptions),
+          config.budget.signal,
+        )) {
+          for (const rawRow of rawBatch) {
+            const row = config.hive ? { ...partitionValues, ...rawRow } : rawRow;
+            stats.rowsDecoded += 1;
+            enforceBudget(config.budget, stats, config.now, startedAt);
+            if (!matches(config.where, row, allocationScope)) continue;
+            stats.rowsMatched += 1;
+            yield row;
+          }
+          stats.elapsedMs = config.now() - startedAt;
+        }
       }
+      stats.elapsedMs = config.now() - startedAt;
+      config.metrics?.timing("lakeql.query.elapsed", stats.elapsedMs, { queryId: stats.queryId });
+    } finally {
+      discovery.dispose();
     }
-    stats.elapsedMs = config.now() - startedAt;
-    config.metrics?.timing("lakeql.query.elapsed", stats.elapsedMs, { queryId: stats.queryId });
   }
 
   async *batches(): AsyncIterable<Row[]> {
@@ -837,70 +926,129 @@ export class QueryResult {
       yield* columnarBatches;
       return;
     }
-    this.requirePhysicalPath("query");
-    const config = this.config;
-    const { stats } = this;
-    const startedAt = config.now();
-    let offsetSkipped = 0;
-    let returned = 0;
-    const distinct = config.distinct === true ? new Set<string>() : undefined;
-    const { planned: paths, skipped: skippedFiles } = await this.planObjects();
-    stats.filesSkipped = skippedFiles;
-    const columns = projectedReadColumns(
-      config.select,
-      config.where,
-      undefined,
-      config.projections,
-    );
-    for (const object of paths) {
-      stats.filesPlanned += 1;
-      stats.filesRead += 1;
-      stats.bytesRequested += object.size;
-      enforceBudget(config.budget, stats, config.now, startedAt);
-      const scanOptions: ScanOptions = {
-        object,
-        batchSize: limitAwareBatchSize(config.batchSize ?? 4096, config.limit, config.offset),
-        stats,
-        budget: config.budget,
-        now: config.now,
-        startedAt,
-      };
-      if (config.limit !== undefined) scanOptions.canStopEarly = true;
-      const partitionValues = config.hive ? parseHivePartitions(object.path) : {};
-      const physicalColumns = columns?.filter((column) => !(column in partitionValues));
-      if (physicalColumns !== undefined && physicalColumns.length > 0) {
-        scanOptions.columns = physicalColumns;
+    for await (const output of this.rowProjectedOutputs(false)) {
+      if (!Array.isArray(output)) {
+        output.release();
+        throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Unexpected owned row output");
       }
-      if (config.where !== undefined) scanOptions.where = config.where;
-      for await (const rawBatch of config.scanner.scan(object.path, scanOptions)) {
-        const out: Row[] = [];
-        for (const rawRow of rawBatch) {
-          const row = config.hive ? { ...partitionValues, ...rawRow } : rawRow;
-          stats.rowsDecoded += 1;
-          enforceBudget(config.budget, stats, config.now, startedAt);
-          if (!matches(config.where, row)) continue;
-          stats.rowsMatched += 1;
-          const projected = project(row, config.select, config.projections);
-          if (distinct !== undefined && !addDistinctRow(distinct, projected, config.budget)) {
-            continue;
-          }
-          if (offsetSkipped < (config.offset ?? 0)) {
-            offsetSkipped += 1;
-            continue;
-          }
-          if (config.limit !== undefined && returned >= config.limit) break;
-          out.push(projected);
-          returned += 1;
-          stats.rowsReturned += 1;
-          enforceBudget(config.budget, stats, config.now, startedAt);
-        }
-        stats.elapsedMs = config.now() - startedAt;
-        if (out.length > 0) yield out;
-        if (config.limit !== undefined && returned >= config.limit) return;
-      }
+      yield output;
     }
-    stats.elapsedMs = config.now() - startedAt;
-    config.metrics?.timing("lakeql.query.elapsed", stats.elapsedMs, { queryId: stats.queryId });
+  }
+
+  private async *rowProjectedOutputs(
+    ownedOutput: boolean,
+    fail?: (error: unknown) => never,
+  ): AsyncIterable<Row[] | OwnedMemory<Row[]>> {
+    this.requirePhysicalPath("query");
+    const predicateScope = new MemoryScope(this.memoryBudget);
+    try {
+      const config = this.config;
+      const { stats } = this;
+      const startedAt = config.now();
+      let offsetSkipped = 0;
+      let returned = 0;
+      const distinct =
+        config.distinct === true ? createRowDistinct(predicateScope, config.budget) : undefined;
+      const { planned: paths, skipped: skippedFiles } = await this.planObjects(predicateScope);
+      stats.filesSkipped = skippedFiles;
+      const columns = projectedReadColumns(
+        config.select,
+        config.where,
+        undefined,
+        config.projections,
+        predicateScope.childScope(),
+      );
+      for (const object of paths) {
+        stats.filesPlanned += 1;
+        stats.filesRead += 1;
+        stats.bytesRequested += object.size;
+        enforceBudget(config.budget, stats, config.now, startedAt);
+        const scanOptions: ScanOptions = {
+          memoryBudget: this.memoryBudget,
+          object,
+          batchSize: limitAwareBatchSize(config.batchSize ?? 4096, config.limit, config.offset),
+          stats,
+          budget: config.budget,
+          now: config.now,
+          startedAt,
+        };
+        if (config.limit !== undefined) scanOptions.canStopEarly = true;
+        const partitionValues = config.hive ? parseHivePartitions(object.path) : {};
+        const physicalColumns = columns?.filter(
+          (column) => !Object.hasOwn(partitionValues, column),
+        );
+        if (physicalColumns !== undefined && physicalColumns.length > 0) {
+          scanOptions.columns = physicalColumns;
+        }
+        if (config.where !== undefined) scanOptions.where = config.where;
+        for await (const rawBatch of checkedAsyncIterable(
+          config.scanner.scan(object.path, scanOptions),
+          config.budget.signal,
+        )) {
+          const outputBatchSize = config.batchSize ?? 4096;
+          for (let start = 0; start < rawBatch.length; start += outputBatchSize) {
+            const batchScope = predicateScope.childScope();
+            try {
+              const out = batchScope.allocate(
+                allocationCharges.array,
+                "row output directory",
+                () => [] as Row[],
+              ).value;
+              for (
+                let index = start;
+                index < Math.min(rawBatch.length, start + outputBatchSize);
+                index++
+              ) {
+                const rawRow = rawBatch[index];
+                if (rawRow === undefined) continue;
+                const row = config.hive ? { ...partitionValues, ...rawRow } : rawRow;
+                stats.rowsDecoded += 1;
+                enforceBudget(config.budget, stats, config.now, startedAt);
+                if (!matches(config.where, row, predicateScope)) continue;
+                stats.rowsMatched += 1;
+                const projection = batchScope.childScope();
+                try {
+                  const projected = project(row, config.select, config.projections, projection);
+                  if (distinct !== undefined && !distinct.add(projected)) continue;
+                  if (offsetSkipped < (config.offset ?? 0)) {
+                    offsetSkipped += 1;
+                    continue;
+                  }
+                  if (config.limit !== undefined && returned >= config.limit) break;
+                  appendProjectedOutput(out, projected, projection, batchScope, ownedOutput);
+                  returned += 1;
+                  stats.rowsReturned += 1;
+                  enforceBudget(config.budget, stats, config.now, startedAt);
+                } finally {
+                  projection.dispose();
+                }
+              }
+              stats.elapsedMs = config.now() - startedAt;
+              if (out.length > 0) {
+                if (ownedOutput) {
+                  const owner = batchScope.retainAllocations(out);
+                  try {
+                    yield owner;
+                  } finally {
+                    owner.release();
+                  }
+                } else yield out;
+              }
+              if (config.limit !== undefined && returned >= config.limit) return;
+            } catch (error) {
+              if (fail !== undefined) fail(error);
+              throw error;
+            } finally {
+              batchScope.dispose();
+            }
+          }
+        }
+      }
+      stats.elapsedMs = config.now() - startedAt;
+      config.metrics?.timing("lakeql.query.elapsed", stats.elapsedMs, { queryId: stats.queryId });
+    } finally {
+      predicateScope.dispose();
+    }
   }
 
   private async *windowedBatches(): AsyncIterable<Row[]> {
@@ -910,9 +1058,11 @@ export class QueryResult {
   private windowRunnerOptions(): WindowRunnerOptions {
     return {
       config: this.config,
+      memoryBudget: this.memoryBudget,
       stats: this.stats,
-      planObjects: () => this.planObjects(),
+      planObjects: (scope) => this.planObjects(scope),
       tasksFromObjects: (objects) => this.tasksFromObjects(objects),
+      ownedTasksFromObjects: (objects) => this.ownedTasksFromObjects(objects),
       vectorBatchScanner,
       columnarBatchSize,
       parseHivePartitions,
@@ -921,10 +1071,11 @@ export class QueryResult {
       enforceWindowPartitionRows: enforceWindowPartitionRowsBudget,
       enforceMemoryBytes: enforceOperatorMemoryBudget,
       estimateMemoryBytes: estimateOperatorMemoryBytes,
+      estimateBufferItemBytes: (row) => estimateOperatorMemoryBytes([row]) - 2,
       batchExecution: {
         project,
         compareRows,
-        addDistinctRow,
+        createDistinct: createRowDistinct,
         vectorExprSupported,
       },
     };
@@ -933,7 +1084,8 @@ export class QueryResult {
   private tryColumnarProjectedBatches(): AsyncIterable<Row[]> | undefined {
     const config = this.config;
     if (
-      config.scanner.scanVectorBatches === undefined ||
+      (config.scanner.scanVectorBatches === undefined &&
+        config.scanner.scanOwnedVectorBatches === undefined) ||
       config.distinct === true ||
       config.hive === true ||
       !vectorExprSupported(config.where) ||
@@ -945,123 +1097,370 @@ export class QueryResult {
   }
 
   private async *columnarProjectedBatches(): AsyncIterable<Row[]> {
+    for await (const output of this.columnarProjectedOutputs(false)) {
+      if (!Array.isArray(output)) {
+        output.release();
+        throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Unexpected owned output");
+      }
+      yield output;
+    }
+  }
+
+  private canOwnProjectedOutput(): boolean {
+    const config = this.config;
+    return (
+      config.orderBy === undefined &&
+      (config.windows === undefined || Object.keys(config.windows).length === 0) &&
+      config.qualify === undefined &&
+      this.tryColumnarProjectedBatches() !== undefined
+    );
+  }
+
+  private canOwnRowProjectedOutput(): boolean {
+    const config = this.config;
+    return (
+      config.orderBy === undefined &&
+      config.hive !== true &&
+      (config.windows === undefined || Object.keys(config.windows).length === 0) &&
+      config.qualify === undefined &&
+      this.tryColumnarProjectedBatches() === undefined
+    );
+  }
+
+  private canOwnOrderedRowOutput(): boolean {
+    const config = this.config;
+    return (
+      config.orderBy !== undefined &&
+      config.hive !== true &&
+      (config.windows === undefined || Object.keys(config.windows).length === 0) &&
+      config.qualify === undefined
+    );
+  }
+
+  /** Materialize and collect with explicit lifetime ownership. Unsupported
+   * operators reject before scanning; borrowed rows validate their detachable
+   * data shape during materialization rather than claim untracked output.
+   */
+  async toOwnedArray(): Promise<OwnedMemory<Row[]>> {
+    const config = this.config;
+    if (config.windows !== undefined && Object.keys(config.windows).length > 0) {
+      const options = this.windowRunnerOptions();
+      async function* ownedWindows(
+        fail: (error: unknown) => never,
+      ): AsyncIterable<OwnedMemory<Row[]>> {
+        let queued: OwnedMemory<Row[]> | undefined;
+        options.batchExecution.retainOutput = (output) => {
+          queued = output.retain();
+        };
+        try {
+          for await (const _batch of executeWindowBatches(options)) {
+            const output = queued;
+            queued = undefined;
+            if (output === undefined)
+              throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Missing owned window output");
+            yield output;
+          }
+        } catch (error) {
+          fail(error);
+        } finally {
+          queued?.release();
+        }
+      }
+      return collectOwnedRows(ownedWindows, this.memoryBudget, config.budget.signal);
+    }
+
+    if (
+      config.orderBy !== undefined &&
+      config.limit !== undefined &&
+      (vectorBatchScanner(config.scanner) !== undefined ||
+        config.scanner.scanColumns !== undefined) &&
+      config.distinct !== true &&
+      config.projections === undefined &&
+      config.hive !== true &&
+      (config.windows === undefined || Object.keys(config.windows).length === 0) &&
+      config.qualify === undefined &&
+      vectorExprSupported(config.where)
+    ) {
+      const output = await this.tryColumnarTopKRows(true);
+      if (output !== undefined) return output;
+    }
+    if (this.canOwnRowProjectedOutput() || this.canOwnOrderedRowOutput()) {
+      const query = this;
+      async function* ownedRows(
+        fail: (error: unknown) => never,
+      ): AsyncIterable<OwnedMemory<Row[]>> {
+        for await (const output of query.config.orderBy === undefined
+          ? query.rowProjectedOutputs(true, fail)
+          : query.orderedRowOutputs(true, fail)) {
+          if (Array.isArray(output))
+            throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Expected owned rows");
+          yield output;
+        }
+      }
+      return collectOwnedRows(ownedRows, this.memoryBudget, config.budget.signal);
+    }
+    if (!this.canOwnProjectedOutput())
+      throw new LakeqlError(
+        "LAKEQL_TYPE_ERROR",
+        "Execution path lacks owned row materialization capability",
+      );
+    const query = this;
+    async function* owned(fail: (error: unknown) => never): AsyncIterable<OwnedMemory<Row[]>> {
+      for await (const output of query.columnarProjectedOutputs(true, fail)) {
+        if (Array.isArray(output))
+          throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Expected owned output");
+        yield output;
+      }
+    }
+    return collectOwnedRows(owned, this.memoryBudget, this.config.budget.signal);
+  }
+
+  private async *columnarProjectedOutputs(
+    ownedOutput: boolean,
+    fail?: (error: unknown) => never,
+  ): AsyncIterable<Row[] | OwnedMemory<Row[]>> {
     const config = this.config;
     const { stats } = this;
     const startedAt = config.now();
-    const scanVectorBatches = config.scanner.scanVectorBatches;
-    if (scanVectorBatches === undefined) return;
-    const lateMaterialized =
-      config.physicalExecution.acceleratorPolicy === "required"
-        ? undefined
-        : await this.lateMaterializedLimitRows(startedAt);
-    if (lateMaterialized !== undefined) {
-      yield* rowsAsBatches(lateMaterialized, config.batchSize ?? 4096);
+    if (
+      config.scanner.scanVectorBatches === undefined &&
+      config.scanner.scanOwnedVectorBatches === undefined
+    )
       return;
-    }
-    let offsetSkipped = 0;
-    let returned = 0;
-    const { planned: paths, skipped: skippedFiles } = await this.planObjects();
-    stats.filesSkipped = skippedFiles;
-    const columns = projectedReadColumns(
-      config.select,
-      config.where,
-      undefined,
-      config.projections,
-    );
-    for (const object of paths) {
-      stats.filesPlanned += 1;
-      stats.filesRead += 1;
-      stats.bytesRequested += object.size;
-      enforceBudget(config.budget, stats, config.now, startedAt);
-      const scanOptions: ScanOptions = {
-        object,
-        batchSize: limitAwareBatchSize(config.batchSize ?? 4096, config.limit, config.offset),
-        stats,
-        budget: config.budget,
-        now: config.now,
-        startedAt,
-      };
-      if (config.limit !== undefined) scanOptions.canStopEarly = true;
-      if (columns !== undefined && columns.length > 0) scanOptions.columns = columns;
-      if (config.where !== undefined) scanOptions.where = config.where;
-      if (config.where === undefined && (config.offset ?? 0) === 0 && config.limit !== undefined) {
-        scanOptions.rowEnd = Math.max(0, config.limit - returned);
+    const planning = new MemoryScope(this.memoryBudget);
+    try {
+      const lateColumns =
+        config.physicalExecution.acceleratorPolicy === "required"
+          ? undefined
+          : this.ownedLateColumns(planning);
+      if (lateColumns !== undefined) {
+        try {
+          for await (const output of this.ownedLateLimitOutputs(lateColumns, startedAt, fail)) {
+            if (ownedOutput) yield output;
+            else {
+              try {
+                yield output.value;
+              } finally {
+                output.release();
+              }
+            }
+          }
+        } finally {
+          stats.elapsedMs = config.now() - startedAt;
+        }
+        return;
       }
-      for await (const { rowOffset, batch } of scanVectorBatches.call(
-        config.scanner,
-        object.path,
-        scanOptions,
+      let offsetSkipped = 0;
+      let returned = 0;
+      const { planned: paths, skipped: skippedFiles } = await this.planObjects(planning);
+      stats.filesSkipped = skippedFiles;
+      const columns = projectedReadColumns(
+        config.select,
+        config.where,
+        undefined,
+        config.projections,
+        planning,
+      );
+      for (const object of paths) {
+        stats.filesPlanned += 1;
+        stats.filesRead += 1;
+        stats.bytesRequested += object.size;
+        enforceBudget(config.budget, stats, config.now, startedAt);
+        const scanOptions: ScanOptions = {
+          memoryBudget: this.memoryBudget,
+          object,
+          batchSize: limitAwareBatchSize(config.batchSize ?? 4096, config.limit, config.offset),
+          stats,
+          budget: config.budget,
+          now: config.now,
+          startedAt,
+        };
+        if (config.limit !== undefined) scanOptions.canStopEarly = true;
+        if (columns !== undefined && columns.length > 0) scanOptions.columns = columns;
+        if (config.where !== undefined) scanOptions.where = config.where;
+        if (
+          config.where === undefined &&
+          (config.offset ?? 0) === 0 &&
+          config.limit !== undefined
+        ) {
+          scanOptions.rowEnd = Math.max(0, config.limit - returned);
+        }
+        for await (const { rowOffset, batch, owner } of this.projectedScanInputs(
+          object.path,
+          scanOptions,
+        )) {
+          const stage = new MemoryScope(this.memoryBudget);
+          try {
+            if (owner !== undefined) stage.adopt(owner.retain());
+            const sourceIdentity = physicalSourceIdentity(object, rowOffset);
+            let projectedBatch: Batch;
+            let selectedRows: number;
+            if (config.where !== undefined) {
+              const physical = await this.executePhysicalBatch(
+                batch,
+                [{ kind: "select", predicate: config.where }],
+                { kind: "selection" },
+                sourceIdentity,
+                startedAt,
+                undefined,
+                stage,
+              );
+              if (physical.output.kind !== "selection") {
+                throw new LakeqlError(
+                  "LAKEQL_PHYSICAL_BACKEND_FAILURE",
+                  "Selection physical fragment did not return a selection",
+                  { actual: physical.output.kind },
+                );
+              }
+              const gathered = gatherSelectedBatch(batch, physical.output.selection, stage);
+              selectedRows = gathered.rowCount;
+              projectedBatch = vectorProjectBatch(
+                gathered,
+                config.select,
+                config.projections,
+                stage,
+              );
+            } else {
+              const physical = await this.executePhysicalBatch(
+                batch,
+                [
+                  {
+                    kind: "project",
+                    ...(config.select === undefined ? {} : { select: config.select }),
+                    ...(config.projections === undefined
+                      ? {}
+                      : { projections: config.projections }),
+                  },
+                ],
+                { kind: "batch" },
+                sourceIdentity,
+                startedAt,
+                undefined,
+                stage,
+              );
+              if (physical.output.kind !== "batch") {
+                throw new LakeqlError(
+                  "LAKEQL_PHYSICAL_BACKEND_FAILURE",
+                  "Projected physical fragment did not return a batch",
+                  { actual: physical.output.kind },
+                );
+              }
+              selectedRows = physical.metrics.selectedRows ?? batch.rowCount;
+              projectedBatch = physical.output.batch;
+            }
+            stats.rowsMatched += selectedRows;
+            const skipped = Math.min(
+              selectedRows,
+              Math.max(0, (config.offset ?? 0) - offsetSkipped),
+            );
+            offsetSkipped += skipped;
+            const count = Math.min(
+              selectedRows - skipped,
+              config.limit === undefined ? Infinity : Math.max(0, config.limit - returned),
+            );
+            if (count > 0) {
+              const selected = sliceBatch(projectedBatch, skipped, skipped + count, stage);
+              for (let index = 0; index < count; index++) {
+                returned++;
+                stats.rowsReturned++;
+                enforceBudget(config.budget, stats, config.now, startedAt);
+              }
+              stats.elapsedMs = config.now() - startedAt;
+              // Borrowed scanner storage is valid only until the iterator advances.
+              // Detach the selected output, rather than retaining the entire input batch.
+              const input =
+                owner === undefined
+                  ? detachOwnedBatch(selected, this.memoryBudget)
+                  : stage.retainAllocations(selected);
+              try {
+                const output = materializeCollectedOutput(input, fail);
+                if (ownedOutput) yield output;
+                else {
+                  try {
+                    yield output.value;
+                  } finally {
+                    output.release();
+                  }
+                }
+              } finally {
+                input.release();
+              }
+            }
+            if (config.limit !== undefined && returned >= config.limit) return;
+          } finally {
+            stage.dispose();
+          }
+        }
+      }
+      stats.elapsedMs = config.now() - startedAt;
+      config.metrics?.timing("lakeql.query.elapsed", stats.elapsedMs, { queryId: stats.queryId });
+    } finally {
+      planning.dispose();
+    }
+  }
+
+  private async *projectedScanInputs(
+    path: string,
+    options: ScanOptions,
+  ): AsyncIterable<ScanVectorBatch & { owner?: OwnedMemory<ScanVectorBatch> }> {
+    for await (const input of this.rawProjectedScanInputs(path, options))
+      yield* boundedVectorBatches(
+        input,
+        options.batchSize,
+        this.memoryBudget,
+        options.budget.signal,
+      );
+  }
+
+  private async *rawProjectedScanInputs(
+    path: string,
+    options: ScanOptions,
+  ): AsyncIterable<ScanVectorBatch & { owner?: OwnedMemory<ScanVectorBatch> }> {
+    const scanner = this.config.scanner;
+    if (scanner.scanOwnedVectorBatches !== undefined) {
+      for await (const owner of checkedAsyncIterable(
+        scanner.scanOwnedVectorBatches(path, {
+          ...options,
+          memoryBudget: this.memoryBudget,
+        }),
+        options.budget.signal,
+        (owner) => owner.release(),
       )) {
-        const sourceIdentity = physicalSourceIdentity(object, rowOffset);
-        let projectedBatch: Batch;
-        let selectedRows: number;
-        if (config.where !== undefined) {
-          const physical = await this.executePhysicalBatch(
-            batch,
-            [{ kind: "select", predicate: config.where }],
-            { kind: "selection" },
-            sourceIdentity,
-            startedAt,
-          );
-          if (physical.output.kind !== "selection") {
-            throw new LakeqlError(
-              "LAKEQL_PHYSICAL_BACKEND_FAILURE",
-              "Selection physical fragment did not return a selection",
-              { actual: physical.output.kind },
-            );
-          }
-          const indices = [...selectedRowIndices(batch.rowCount, physical.output.selection)];
-          selectedRows = indices.length;
-          projectedBatch = vectorProjectBatch(
-            gatherBatch(batch, indices),
-            config.select,
-            config.projections,
-          );
-        } else {
-          const physical = await this.executePhysicalBatch(
-            batch,
-            [
-              {
-                kind: "project",
-                ...(config.select === undefined ? {} : { select: config.select }),
-                ...(config.projections === undefined ? {} : { projections: config.projections }),
-              },
-            ],
-            { kind: "batch" },
-            sourceIdentity,
-            startedAt,
-          );
-          if (physical.output.kind !== "batch") {
-            throw new LakeqlError(
-              "LAKEQL_PHYSICAL_BACKEND_FAILURE",
-              "Projected physical fragment did not return a batch",
-              { actual: physical.output.kind },
-            );
-          }
-          selectedRows = physical.metrics.selectedRows ?? batch.rowCount;
-          projectedBatch = physical.output.batch;
+        try {
+          yield { ...owner.value, owner };
+        } finally {
+          owner.release();
         }
-        stats.rowsMatched += selectedRows;
-        const rows = materializeBatchRows(projectedBatch);
-        const out: Row[] = [];
-        for (const row of rows) {
-          if (offsetSkipped < (config.offset ?? 0)) {
-            offsetSkipped += 1;
-            continue;
-          }
-          if (config.limit !== undefined && returned >= config.limit) break;
-          out.push(row);
-          returned += 1;
-          stats.rowsReturned += 1;
-          enforceBudget(config.budget, stats, config.now, startedAt);
-        }
-        stats.elapsedMs = config.now() - startedAt;
-        if (out.length > 0) yield out;
-        if (config.limit !== undefined && returned >= config.limit) return;
+      }
+    } else {
+      const scan = vectorBatchScanner(scanner);
+      if (scan) yield* checkedAsyncIterable(scan(scanner, path, options), options.budget.signal);
+    }
+  }
+
+  /** Transfer an independent positioned input owner to a bounded gather consumer. */
+  private async *ownedProjectedScanInputs(
+    path: string,
+    options: ScanOptions,
+  ): AsyncIterable<OwnedMemory<ScanVectorBatch>> {
+    for await (const input of this.projectedScanInputs(path, options)) {
+      if (input.owner) {
+        yield input.owner.retain();
+        continue;
+      }
+      const scope = new MemoryScope(this.memoryBudget);
+      try {
+        const batch = scope.adopt(detachOwnedBatch(input.batch, this.memoryBudget));
+        const positioned = scope.allocate(
+          allocationCharges.object + 2 * allocationCharges.property,
+          "detached positioned scan batch",
+          () => ({ rowOffset: input.rowOffset, batch: batch.value }),
+        );
+        yield scope.retainAllocations(positioned.value);
+      } finally {
+        scope.dispose();
       }
     }
-    stats.elapsedMs = config.now() - startedAt;
-    config.metrics?.timing("lakeql.query.elapsed", stats.elapsedMs, { queryId: stats.queryId });
   }
 
   private async executePhysicalBatch(
@@ -1074,6 +1473,7 @@ export class QueryResult {
       PhysicalOutputValue,
       { kind: "aggregate-snapshot" | "grouped-aggregate-snapshot" }
     >,
+    allocationScope?: MemoryScope,
   ) {
     const input = physicalInputFromBatch(batch, { sourceIdentity });
     const fragment: PhysicalFragment = {
@@ -1096,6 +1496,7 @@ export class QueryResult {
     const budget = this.remainingPhysicalBudget();
     const plan = planPhysicalFragment(fragment, this.config.physicalExecution.backends, {
       policy: this.config.physicalExecution.acceleratorPolicy,
+      requireAllocationScope: allocationScope !== undefined,
       budget,
     });
     const result = await executePlannedPhysicalFragment(
@@ -1108,6 +1509,7 @@ export class QueryResult {
         queryStartedAt,
         enforceOutputRows: false,
         ...(priorOutput === undefined ? {} : { priorOutput }),
+        ...(allocationScope === undefined ? {} : { allocationScope }),
       },
       { replayOnCpu: this.config.physicalExecution.replayOnCpu },
     );
@@ -1215,91 +1617,199 @@ export class QueryResult {
     );
   }
 
-  private async lateMaterializedLimitRows(startedAt: number): Promise<Row[] | undefined> {
+  private ownedLateColumns(
+    scope: MemoryScope,
+  ): { predicate: string[]; late: string[]; all: string[] } | undefined {
     const config = this.config;
     if (
       config.limit === undefined ||
       config.where === undefined ||
       config.select === undefined ||
-      config.scanner.scanVectorBatches === undefined ||
-      !vectorExprSupported(config.where) ||
-      !Object.values(config.projections ?? {}).every(vectorExprSupported)
-    ) {
+      config.select.includes("*")
+    )
       return undefined;
-    }
-    const predicateColumns = predicateReadColumns(config.where);
-    const outputColumns = outputReadColumns(config.select, config.projections);
-    if (predicateColumns.length === 0 || outputColumns.length === 0) return undefined;
-    const lateColumns = outputColumns.filter((column) => !predicateColumns.includes(column));
-    if (lateColumns.length === 0) return undefined;
-
-    const refs: RankedRowRef[] = [];
-    const maxRefs = (config.offset ?? 0) + config.limit;
-    const scanVectorBatches = config.scanner.scanVectorBatches;
-    const { planned: paths, skipped: skippedFiles } = await this.planObjects();
-    this.stats.filesSkipped = skippedFiles;
-    for (const object of paths) {
-      this.stats.filesPlanned += 1;
-      this.stats.filesRead += 1;
-      this.stats.bytesRequested += object.size;
-      enforceBudget(config.budget, this.stats, config.now, startedAt);
-      const scanOptions: ScanOptions = {
-        object,
-        columns: predicateColumns,
-        where: config.where,
-        canStopEarly: true,
-        batchSize: columnarBatchSize(config.batchSize),
-        stats: this.stats,
-        budget: config.budget,
-        now: config.now,
-        startedAt,
-      };
-      for await (const { rowOffset, batch } of scanVectorBatches.call(
-        config.scanner,
-        object.path,
-        scanOptions,
-      )) {
-        const selection = predicateSelection(batch, config.where);
-        const selected = [...selectedRowIndices(batch.rowCount, selection)];
-        this.stats.rowsMatched += selected.length;
-        for (const index of selected) {
-          refs.push({
-            path: object.path,
-            object,
-            rowIndex: rowOffset + index,
-            keys: rankKeyRow(batch, index, predicateColumns),
-          });
-          enforceBufferedRowsBudget(config.budget, refs.length);
-          enforceOperatorMemoryBudget(config.budget, estimateOperatorMemoryBytes(refs));
-          if (refs.length >= maxRefs) break;
-        }
-        enforceBudget(config.budget, this.stats, config.now, startedAt);
-        if (refs.length >= maxRefs) break;
-      }
-      if (refs.length >= maxRefs) break;
-    }
-
-    const selectedRefs = refs.slice(config.offset ?? 0, maxRefs);
-    const rowsByRef = await this.materializeRowRefs(
-      selectedRefs,
-      outputColumns,
-      predicateColumns,
-      startedAt,
-      config.batchSize ?? 4096,
+    const predicate = admittedColumnNames(
+      scope,
+      (names) => collectExprColumns(config.where, names),
+      true,
     );
-    const rows = selectedRefs
-      .map((ref) => rowsByRef.get(rowRefKey(ref)))
-      .filter((row): row is Row => row !== undefined)
-      .map((row) => project(row, config.select, config.projections));
-    for (const _row of rows) {
-      this.stats.rowsReturned += 1;
-      enforceBudget(config.budget, this.stats, config.now, startedAt);
+    if (predicate.length === 0) return undefined;
+    const late = admittedColumnNames(
+      scope,
+      (names) => {
+        const output = {
+          add(name: string) {
+            if (!predicate.includes(name)) names.add(name);
+          },
+        };
+        for (const name of config.select ?? []) output.add(name);
+        if (config.projections !== undefined)
+          for (const name in config.projections) {
+            if (Object.hasOwn(config.projections, name))
+              collectExprColumns(config.projections[name], output);
+          }
+      },
+      true,
+    );
+    if (late.length === 0) return undefined;
+    const all = scope.allocate(
+      allocationCharges.array + (predicate.length + late.length) * allocationCharges.arraySlot,
+      "combined projection read columns",
+      () => [...predicate, ...late],
+    ).value;
+    return scope.allocate(
+      allocationCharges.object + 3 * allocationCharges.property,
+      "deferred projection read plan",
+      () => ({ predicate, late, all }),
+    ).value;
+  }
+
+  private async *ownedLateLimitOutputs(
+    columns: { predicate: string[]; late: string[]; all: string[] },
+    startedAt: number,
+    fail?: (error: unknown) => never,
+  ): AsyncIterable<OwnedMemory<Row[]>> {
+    const config = this.config;
+    const discovery = new MemoryScope(this.memoryBudget);
+    try {
+      if (config.where === undefined || config.limit === undefined)
+        throw new LakeqlError(
+          "LAKEQL_TYPE_ERROR",
+          "Deferred output requires projected vector scans",
+        );
+      if (config.limit === 0) return;
+      let skip = config.offset ?? 0;
+      let remaining = config.limit;
+      const { planned: paths, skipped } = await this.planObjects(discovery);
+      this.stats.filesSkipped = skipped;
+      for (const object of paths) {
+        const defer = object.rangeReadMode !== "emulated";
+        this.stats.filesPlanned++;
+        this.stats.filesRead++;
+        this.stats.bytesRequested += object.size;
+        enforceBudget(config.budget, this.stats, config.now, startedAt);
+        const options: ScanOptions & { memoryBudget: MemoryBudget } = {
+          memoryBudget: this.memoryBudget,
+          object,
+          batchSize: defer
+            ? columnarBatchSize(config.batchSize)
+            : limitAwareBatchSize(config.batchSize ?? 4096, config.limit, config.offset),
+          stats: this.stats,
+          budget: config.budget,
+          now: config.now,
+          startedAt,
+          canStopEarly: true,
+        };
+        for await (const input of this.ownedProjectedScanInputs(object.path, {
+          ...options,
+          columns: defer ? columns.predicate : columns.all,
+          where: config.where,
+        })) {
+          const stage = new MemoryScope(this.memoryBudget);
+          try {
+            stage.adopt(input.retain());
+            const { rowOffset, batch } = input.value;
+            const physical = await this.executePhysicalBatch(
+              batch,
+              [{ kind: "select", predicate: config.where }],
+              { kind: "selection" },
+              physicalSourceIdentity(object, rowOffset),
+              startedAt,
+              undefined,
+              stage,
+            );
+            if (physical.output.kind !== "selection")
+              throw new LakeqlError(
+                "LAKEQL_PHYSICAL_BACKEND_FAILURE",
+                "Expected deferred selection",
+              );
+            const count = selectedRowCount(batch.rowCount, physical.output.selection);
+            this.stats.rowsMatched += count;
+            if (skip >= count) {
+              skip -= count;
+              continue;
+            }
+            const indices = selectedRowIndexBuffer(
+              batch.rowCount,
+              physical.output.selection,
+              stage,
+            );
+            const selected = indices.subarray(skip, skip + Math.min(count - skip, remaining));
+            skip = 0;
+            const read = (rowStart: number, rowEnd: number) =>
+              this.ownedProjectedScanInputs(object.path, {
+                ...options,
+                columns: columns.late,
+                rowStart,
+                rowEnd,
+              });
+            for await (const gathered of gatherDeferredColumns(
+              input,
+              selected,
+              options.batchSize,
+              defer ? read : undefined,
+            )) {
+              const outputScope = new MemoryScope(this.memoryBudget);
+              try {
+                outputScope.adopt(gathered);
+                enforceBudget(config.budget, this.stats, config.now, startedAt);
+                const projected = vectorProjectBatch(
+                  gathered.value,
+                  config.select,
+                  config.projections,
+                  outputScope,
+                );
+                this.stats.rowsReturned += projected.rowCount;
+                remaining -= projected.rowCount;
+                enforceBudget(config.budget, this.stats, config.now, startedAt);
+                const projectedOwner = outputScope.retainAllocations(projected);
+                try {
+                  yield materializeCollectedOutput(projectedOwner, fail);
+                } finally {
+                  projectedOwner.release();
+                }
+              } finally {
+                outputScope.dispose();
+              }
+            }
+            if (remaining === 0) return;
+          } finally {
+            stage.dispose();
+            input.release();
+          }
+        }
+      }
+    } finally {
+      discovery.dispose();
     }
-    this.stats.elapsedMs = config.now() - startedAt;
-    return rows;
   }
 
   async toArray(): Promise<Row[]> {
+    // A completed vector top-k already has its final result array. Do not
+    // duplicate it through orderedBatches and a second row collector.
+    if (
+      this.config.orderBy !== undefined &&
+      (this.config.windows === undefined || Object.keys(this.config.windows).length === 0) &&
+      this.config.qualify === undefined
+    ) {
+      const rows = await this.tryColumnarTopKRows();
+      if (rows !== undefined) return rows;
+    }
+    if (
+      this.canOwnProjectedOutput() ||
+      this.canOwnRowProjectedOutput() ||
+      this.canOwnOrderedRowOutput() ||
+      (this.config.windows !== undefined && Object.keys(this.config.windows).length > 0)
+    ) {
+      const owner = await this.toOwnedArray();
+      // Plain rows transfer to caller management. Use toOwnedArray to keep their
+      // reservation live across jobs and release deterministically after use.
+      try {
+        return owner.value;
+      } finally {
+        owner.release();
+      }
+    }
     const rows: Row[] = [];
     for await (const row of this.rows()) rows.push(row);
     return rows;
@@ -1316,34 +1826,74 @@ export class QueryResult {
     if (config.distinct === true) {
       throw new LakeqlError("LAKEQL_TYPE_ERROR", "topKWithState does not support distinct queries");
     }
-    const orderBy = normalizeOrderBy(config.orderBy);
     const topK = (config.offset ?? 0) + config.limit;
-    const matched = await topKRowsFromState(orderBy, config.offset ?? 0, config.limit, options);
-    enforceBufferedRowsBudget(config.budget, matched.length);
-    enforceOperatorMemoryBudget(config.budget, estimateOperatorMemoryBytes(matched));
     const startedAt = config.now();
-    await this.collectOrderedMatches(matched, topK, startedAt);
-    matched.sort((left, right) => compareRows(left, right, orderBy));
-    const start = config.offset ?? 0;
-    const end = start + config.limit;
-    const rows = matched
-      .slice(start, end)
-      .map((row) => project(row, config.select, config.projections));
-    for (const _row of rows) {
-      this.stats.rowsReturned += 1;
-      enforceBudget(config.budget, this.stats, config.now, startedAt);
-    }
-    this.stats.elapsedMs = config.now() - startedAt;
-    const state = topKOperatorState(orderBy, config.offset ?? 0, config.limit, matched);
-    const operatorState = serializeTopKOperatorState(state);
-    const result: TopKResult = { rows, operatorState };
-    if (options.spill !== undefined) {
-      result.operatorSpill = await options.spill.write(
-        options.spillId ?? `topk-${this.stats.queryId}`,
-        operatorState,
+    const retainedScope = new MemoryScope(
+      this.memoryBudget,
+      config.budget.signal ? [config.budget.signal] : [],
+    );
+    // Pending spill still holds these rows after cancellation closes retainedScope.
+    const projectionScope = new MemoryScope(this.memoryBudget);
+    try {
+      const orderBy = normalizeOrderBy(config.orderBy, retainedScope);
+      const restoreScope = retainedScope.childScope();
+      let matched: Row[];
+      try {
+        matched = await topKRowsFromState(
+          orderBy,
+          config.offset ?? 0,
+          config.limit,
+          options,
+          restoreScope,
+          retainedScope,
+        );
+        enforceBufferedRowsBudget(config.budget, matched.length);
+        enforceOperatorMemoryBudget(config.budget, estimateOperatorMemoryBytes(matched));
+        await this.collectOrderedMatches(matched, topK, startedAt, retainedScope, restoreScope);
+      } finally {
+        restoreScope.dispose();
+      }
+      const start = config.offset ?? 0;
+      const end = start + config.limit;
+      projectionScope.adopt(retainedScope.retainAllocations(undefined));
+      const rows = projectRowRange(
+        matched,
+        start,
+        end,
+        config.select,
+        config.projections,
+        projectionScope,
       );
+      for (const _row of rows) {
+        this.stats.rowsReturned += 1;
+        enforceBudget(config.budget, this.stats, config.now, startedAt);
+      }
+      this.stats.elapsedMs = config.now() - startedAt;
+      const state = topKOperatorState(
+        orderBy,
+        config.offset ?? 0,
+        config.limit,
+        matched,
+        retainedScope,
+      );
+      const checkpoint = retainedScope.adopt(encodeOwnedCheckpoint(state, retainedScope));
+      const operatorState = checkpoint.value;
+      const result: TopKResult = { rows, operatorState };
+      if (options.spill !== undefined) {
+        result.operatorSpill = await writeOwnedCheckpoint(
+          options.spill,
+          options.spillId ?? `topk-${this.stats.queryId}`,
+          checkpoint,
+          retainedScope,
+        );
+      }
+      if (retainedScope.disposed)
+        throw new LakeqlError("LAKEQL_ABORTED", "Checkpoint scope disposed during spill");
+      return result;
+    } finally {
+      retainedScope.dispose();
+      projectionScope.dispose();
     }
-    return result;
   }
 
   async sortWithState(options: SortOptions = {}): Promise<SortResult> {
@@ -1354,36 +1904,88 @@ export class QueryResult {
     if (config.distinct === true) {
       throw new LakeqlError("LAKEQL_TYPE_ERROR", "sortWithState does not support distinct queries");
     }
-    const orderBy = normalizeOrderBy(config.orderBy);
-    const runs = await sortRunsFromState(orderBy, options);
     const startedAt = config.now();
-    await this.collectSortRuns(runs, orderBy, startedAt);
-    const matched = mergeSortRuns(runs, orderBy);
-    const start = config.offset ?? 0;
-    const end = config.limit === undefined ? matched.length : start + config.limit;
-    const rows = matched
-      .slice(start, end)
-      .map((row) => project(row, config.select, config.projections));
-    for (const _row of rows) {
-      this.stats.rowsReturned += 1;
-      enforceBudget(config.budget, this.stats, config.now, startedAt);
-    }
-    this.stats.elapsedMs = config.now() - startedAt;
-    const state = await sortOperatorState(
-      orderBy,
-      runs,
-      options.spill,
-      options.spillId ?? `sort-${this.stats.queryId}`,
+    const retainedScope = new MemoryScope(
+      this.memoryBudget,
+      config.budget.signal ? [config.budget.signal] : [],
     );
-    const operatorState = serializeSortOperatorState(state);
-    const result: SortResult = { rows, operatorState };
-    if (options.spill !== undefined) {
-      result.operatorSpill = await options.spill.write(
-        options.spillId ?? `sort-${this.stats.queryId}`,
-        operatorState,
+    // Pending spill still holds these rows after cancellation closes retainedScope.
+    const projectionScope = new MemoryScope(this.memoryBudget);
+    try {
+      const orderBy = normalizeOrderBy(config.orderBy, retainedScope);
+      const restoreScope = retainedScope.childScope();
+      let runs: Row[][];
+      try {
+        const sourceRuns = await sortRunsFromState(orderBy, options, restoreScope);
+        runs = retainedScope.allocate(
+          allocationCharges.array + sourceRuns.length * allocationCharges.arraySlot,
+          "restored sort run directory",
+          () =>
+            sourceRuns.map(
+              (run) =>
+                retainedScope.allocate(
+                  allocationCharges.array + run.length * allocationCharges.arraySlot,
+                  "restored sort rows",
+                  () =>
+                    run.map(
+                      (row) => retainedScope.adopt(detachOwnedRow(row, retainedScope.budget)).value,
+                    ),
+                ).value,
+            ),
+        ).value;
+      } finally {
+        restoreScope.dispose();
+      }
+      await this.collectSortRuns(runs, orderBy, startedAt, retainedScope);
+      const matched = mergeSortRuns(runs, orderBy, retainedScope);
+      const start = config.offset ?? 0;
+      const end = config.limit === undefined ? matched.length : start + config.limit;
+      projectionScope.adopt(retainedScope.retainAllocations(undefined));
+      const rows = projectRowRange(
+        matched,
+        start,
+        end,
+        config.select,
+        config.projections,
+        projectionScope,
       );
+      for (const _row of rows) {
+        this.stats.rowsReturned += 1;
+        enforceBudget(config.budget, this.stats, config.now, startedAt);
+      }
+      this.stats.elapsedMs = config.now() - startedAt;
+      return await withCheckpointSpillBatch(
+        options.spill,
+        retainedScope,
+        async (spill) => {
+          const state = await sortOperatorState(
+            orderBy,
+            runs,
+            spill,
+            options.spillId ?? `sort-${this.stats.queryId}`,
+            retainedScope,
+          );
+          const checkpoint = retainedScope.adopt(encodeOwnedCheckpoint(state, retainedScope));
+          const operatorState = checkpoint.value;
+          const result: SortResult = { rows, operatorState };
+          if (spill !== undefined) {
+            result.operatorSpill = await writeOwnedCheckpoint(
+              spill,
+              options.spillId ?? `sort-${this.stats.queryId}`,
+              checkpoint,
+              retainedScope,
+            );
+          }
+          if (retainedScope.disposed)
+            throw new LakeqlError("LAKEQL_ABORTED", "Checkpoint scope disposed during spill");
+          return result;
+        },
+        () => enforceBudget(config.budget, this.stats, config.now, startedAt),
+      );
+    } finally {
+      retainedScope.dispose();
+      projectionScope.dispose();
     }
-    return result;
   }
 
   async windowWithState(options: WindowOptions = {}): Promise<WindowResult> {
@@ -1409,58 +2011,124 @@ export class QueryResult {
     return count;
   }
 
+  async planOwnedTasks(): Promise<OwnedMemory<TaskInput[]>> {
+    const discovery = new MemoryScope(this.memoryBudget);
+    try {
+      const { planned: objects } = await this.planObjects(discovery);
+      return await this.ownedTasksFromObjects(objects);
+    } finally {
+      discovery.dispose();
+    }
+  }
+
   async planTasks(): Promise<TaskInput[]> {
-    const { planned: objects } = await this.planObjects();
-    return this.tasksFromObjects(objects);
+    const owner = await this.planOwnedTasks();
+    try {
+      return owner.value;
+    } finally {
+      owner.release();
+    }
+  }
+
+  async ownedTaskManifest(jobId = this.config.queryId): Promise<OwnedMemory<TaskManifest>> {
+    const tasks = await this.planOwnedTasks();
+    try {
+      return createOwnedTaskManifest({ jobId, tasks });
+    } finally {
+      tasks.release();
+    }
   }
 
   async taskManifest(jobId = this.config.queryId): Promise<TaskManifest> {
-    return createTaskManifest({ jobId, tasks: await this.planTasks() });
+    const manifest = await this.ownedTaskManifest(jobId);
+    try {
+      return manifest.value;
+    } finally {
+      manifest.release();
+    }
   }
 
   async slice(options: SliceOptions): Promise<SliceResult> {
-    if (!Number.isInteger(options.maxRows) || options.maxRows <= 0) {
-      throw new LakeqlError("LAKEQL_TYPE_ERROR", "slice maxRows must be a positive integer");
+    const output = await this.ownedSlice(options);
+    try {
+      return output.value;
+    } finally {
+      // Plain results transfer to caller management, matching toArray().
+      output.release();
     }
-    const manifest = await this.taskManifest();
-    const startOffset = options.bookmark?.position.rowOffset ?? 0;
-    if (options.bookmark) assertBookmarkMatches(options.bookmark, manifest.planFingerprint);
+  }
 
-    const rows: Row[] = [];
-    let skipped = 0;
-    let seen = 0;
-    let hasMore = false;
-    for await (const row of this.rows()) {
-      if (skipped < startOffset) {
-        skipped += 1;
-        seen += 1;
-        continue;
-      }
-      if (rows.length >= options.maxRows) {
-        hasMore = true;
-        break;
-      }
-      rows.push(row);
-      seen += 1;
+  /** Keep slice rows and continuation metadata charged until the owner is released. */
+  async ownedSlice(options: SliceOptions): Promise<OwnedMemory<SliceResult>> {
+    if (!Number.isSafeInteger(options.maxRows) || options.maxRows <= 0) {
+      throw new LakeqlError("LAKEQL_TYPE_ERROR", "slice maxRows must be a positive safe integer");
     }
+    const manifestOwner = await this.ownedTaskManifest();
+    const outputScope = new MemoryScope(
+      this.memoryBudget,
+      this.config.budget.signal ? [this.config.budget.signal] : [],
+    );
+    try {
+      const manifest = manifestOwner.value;
+      const startOffset = options.bookmark?.position.rowOffset ?? 0;
+      if (options.bookmark) assertBookmarkMatches(options.bookmark, manifest.planFingerprint);
 
-    if (!hasMore) return { rows };
-    const position: { fileIndex: number; rowGroup: number; rowOffset: number; taskId?: string } = {
-      fileIndex: 0,
-      rowGroup: 0,
-      rowOffset: seen,
-    };
-    const taskId = manifest.tasks[0]?.id;
-    if (taskId !== undefined) position.taskId = taskId;
-    return {
-      rows,
-      bookmark: createBookmark({
-        planFingerprint: manifest.planFingerprint,
-        snapshot: manifest.snapshot,
-        query: this.config.bookmarkQuery,
-        position,
-      }),
-    };
+      const output = await collectOwnedRowSlice(
+        this.batches(),
+        this.memoryBudget,
+        startOffset,
+        options.maxRows,
+        this.config.budget.signal,
+      );
+      let rows: Row[];
+      try {
+        rows = outputScope.adopt(output.rows).value;
+      } catch (error) {
+        output.rows.release();
+        throw error;
+      }
+      const { hasMore, seen } = output;
+
+      const result = outputScope.allocate(
+        allocationCharges.object + 2 * allocationCharges.property,
+        "slice result",
+        () => ({ rows }) as SliceResult,
+      ).value;
+      if (!hasMore) return outputScope.retainAllocations(result);
+      const argumentsScope = outputScope.childScope();
+      try {
+        const position = argumentsScope.allocate(
+          allocationCharges.object + 4 * allocationCharges.property,
+          "slice bookmark position",
+          () => ({ fileIndex: 0, rowGroup: 0, rowOffset: seen }) as Bookmark["position"],
+        ).value;
+        const taskId = manifest.tasks[0]?.id;
+        if (taskId !== undefined) position.taskId = taskId;
+        const init = argumentsScope.allocate(
+          allocationCharges.object + 4 * allocationCharges.property,
+          "slice bookmark arguments",
+          () => ({
+            planFingerprint: manifest.planFingerprint,
+            snapshot: manifest.snapshot,
+            query: this.config.bookmarkQuery,
+            position,
+          }),
+        ).value;
+        const bookmark = createOwnedBookmark(init, outputScope);
+        try {
+          result.bookmark = outputScope.adopt(bookmark).value;
+        } catch (error) {
+          bookmark.release();
+          throw error;
+        }
+      } finally {
+        argumentsScope.dispose();
+      }
+      return outputScope.retainAllocations(result);
+    } finally {
+      outputScope.dispose();
+      manifestOwner.release();
+    }
   }
 
   async *resumableBatches(options: ResumableBatchOptions): AsyncIterable<SliceResult> {
@@ -1483,7 +2151,9 @@ export class QueryResult {
     const columnarRows = await this.tryColumnarAggregateRows(groupColumns, spec, options);
     if (columnarRows !== undefined) return columnarRows;
     this.requirePhysicalPath("aggregate");
-    return (await this.aggregateWithState(groupColumns, spec, options)).rows;
+    if (options.spill !== undefined)
+      return (await this.aggregateWithState(groupColumns, spec, options)).rows;
+    return this.runRowAggregate(groupColumns, spec, options, (_groups, rows) => rows);
   }
 
   private async tryColumnarAggregateRows(
@@ -1494,6 +2164,7 @@ export class QueryResult {
     const config = this.config;
     if (
       (config.scanner.scanColumns === undefined &&
+        config.scanner.scanOwnedVectorBatches === undefined &&
         vectorBatchScanner(config.scanner) === undefined) ||
       config.projections !== undefined ||
       config.hive === true ||
@@ -1513,111 +2184,238 @@ export class QueryResult {
         ? undefined
         : await this.tryLateMaterializedAggregateRows(groupColumns, spec, options, startedAt);
     if (adaptiveRows !== undefined) return adaptiveRows;
-    if (config.scanner.scanColumns === undefined) return undefined;
-    if (groupColumns.length === 0) {
-      return this.columnarUngroupedAggregateRows(spec, options, startedAt);
-    }
-    let aggregateSnapshot: VectorGroupByStateSnapshot | undefined;
-    for await (const { batch, sourceIdentity } of this.columnBatches(
-      aggregateReadColumns(groupColumns, spec, config.where, config.projections),
-      startedAt,
-      columnarBatchSize(config.batchSize),
-    )) {
-      const operators: PhysicalOperator[] = [];
-      if (config.where !== undefined) {
-        operators.push({ kind: "select", predicate: config.where });
+    if (
+      config.scanner.scanColumns === undefined &&
+      config.scanner.scanOwnedVectorBatches === undefined
+    )
+      return undefined;
+    const statsBefore = { ...this.stats };
+    try {
+      return await this.columnarAggregateRows(groupColumns, spec, options, startedAt);
+    } catch (error) {
+      if (
+        config.physicalExecution.acceleratorPolicy !== "required" &&
+        error instanceof LakeqlError &&
+        error.code === "LAKEQL_PHYSICAL_BACKEND_UNAVAILABLE"
+      ) {
+        Object.assign(this.stats, statsBefore);
+        return undefined;
       }
-      operators.push({
-        kind: "grouped-reduce",
-        keys: groupColumns,
-        aggregates: spec,
-        ...(options.maxGroups === undefined ? {} : { maxGroups: options.maxGroups }),
-      });
-      const physical = await this.executePhysicalBatch(
-        batch,
-        operators,
-        { kind: "grouped-aggregate-snapshot" },
-        sourceIdentity,
-        startedAt,
-        aggregateSnapshot === undefined
-          ? undefined
-          : { kind: "grouped-aggregate-snapshot", snapshot: aggregateSnapshot },
-      );
-      if (physical.output.kind !== "grouped-aggregate-snapshot") {
-        throw new LakeqlError(
-          "LAKEQL_PHYSICAL_BACKEND_FAILURE",
-          "Grouped physical fragment did not return an aggregate snapshot",
-          { actual: physical.output.kind },
-        );
-      }
-      this.stats.rowsMatched += physical.metrics.selectedRows ?? batch.rowCount;
-      aggregateSnapshot = physical.output.snapshot;
-      enforceBufferedRowsBudget(config.budget, aggregateSnapshot.groups.length);
+      throw error;
     }
-    const state =
-      aggregateSnapshot === undefined
-        ? createVectorGroupByState(groupColumns, spec)
-        : restoreVectorGroupByState(groupColumns, spec, aggregateSnapshot, {
-            budget: config.budget,
-            ...(options.maxGroups === undefined ? {} : { maxGroups: options.maxGroups }),
-          });
-    const rows = applyAggregateResultOptions(finalizeVectorGroupByRows(state), options);
-    for (const _row of rows) {
-      this.stats.rowsReturned += 1;
-      enforceBudget(config.budget, this.stats, config.now, startedAt);
-    }
-    this.stats.elapsedMs = config.now() - startedAt;
-    return rows;
   }
 
-  private async columnarUngroupedAggregateRows(
+  private async columnarAggregateRows(
+    groupColumns: string[],
     spec: AggregateSpec,
     options: AggregateOptions,
     startedAt: number,
   ): Promise<Row[]> {
     const config = this.config;
-    let aggregateSnapshot: VectorAggregateStateSnapshots | undefined;
-    for await (const { batch, sourceIdentity } of this.columnBatches(
-      aggregateReadColumns([], spec, config.where, config.projections),
-      startedAt,
-      columnarBatchSize(config.batchSize),
-    )) {
-      const operators: PhysicalOperator[] = [];
-      if (config.where !== undefined) {
-        operators.push({ kind: "select", predicate: config.where });
-      }
-      operators.push({ kind: "reduce", aggregates: spec });
-      const physical = await this.executePhysicalBatch(
-        batch,
-        operators,
-        { kind: "aggregate-snapshot" },
-        sourceIdentity,
+    const scope = new MemoryScope(
+      this.memoryBudget,
+      config.budget.signal ? [config.budget.signal] : [],
+    );
+    const operator: PhysicalReduce | PhysicalGroupedReduce =
+      groupColumns.length === 0
+        ? { kind: "reduce", aggregates: spec }
+        : {
+            kind: "grouped-reduce",
+            keys: groupColumns,
+            aggregates: spec,
+            ...(options.maxGroups === undefined ? {} : { maxGroups: options.maxGroups }),
+          };
+    const output: PhysicalOutput = {
+      kind: operator.kind === "reduce" ? "aggregate-snapshot" : "grouped-aggregate-snapshot",
+    };
+    type Snapshot = Extract<
+      PhysicalOutputValue,
+      { kind: "aggregate-snapshot" | "grouped-aggregate-snapshot" }
+    >;
+    let snapshot: Snapshot | undefined;
+    let checkpoint: OwnedMemory<PhysicalOutputValue> | undefined;
+    let continuation: PhysicalReductionContinuation | undefined;
+    const closeContinuation = async (): Promise<void> => {
+      if (!continuation) return;
+      checkpoint = await continuation.checkpoint();
+      const value = checkpoint.value;
+      if (value.kind !== "aggregate-snapshot" && value.kind !== "grouped-aggregate-snapshot")
+        throw new LakeqlError("LAKEQL_PHYSICAL_BACKEND_FAILURE", "Invalid reduction checkpoint");
+      snapshot = value;
+      continuation.dispose();
+      continuation = undefined;
+    };
+    try {
+      for await (const { batch, sourceIdentity } of this.columnBatches(
+        aggregateReadColumns(groupColumns, spec, config.where, config.projections, scope),
         startedAt,
-        aggregateSnapshot === undefined
-          ? undefined
-          : { kind: "aggregate-snapshot", snapshot: aggregateSnapshot },
-      );
-      if (physical.output.kind !== "aggregate-snapshot") {
-        throw new LakeqlError(
-          "LAKEQL_PHYSICAL_BACKEND_FAILURE",
-          "Ungrouped physical fragment did not return an aggregate snapshot",
-          { actual: physical.output.kind },
+        columnarBatchSize(config.batchSize),
+        "iteration",
+      )) {
+        const input = physicalInputFromBatch(batch, { sourceIdentity });
+        const fragment: PhysicalFragment = {
+          id: fingerprint({
+            version: 1,
+            inputColumns: input.columns,
+            operators: [operator],
+            output,
+          }),
+          input,
+          operators: [operator],
+          output,
+          estimates: {
+            rowCount: batch.rowCount,
+            inputBytes: estimateBatchBytes(batch),
+            outputBytes: estimatePhysicalOutputBytes(batch, [operator], output),
+            dispatchCount: 1,
+          },
+        };
+        let plan: PlannedPhysicalFragment | undefined;
+        try {
+          plan = planPhysicalFragment(fragment, config.physicalExecution.backends, {
+            policy: config.physicalExecution.acceleratorPolicy,
+            requireReductionContinuation: true,
+            requireAllocationScope: true,
+            budget: this.remainingPhysicalBudget(),
+          });
+        } catch (error) {
+          if (
+            !(error instanceof LakeqlError) ||
+            error.code !== "LAKEQL_PHYSICAL_BACKEND_UNAVAILABLE"
+          )
+            throw error;
+        }
+        if (plan !== undefined) {
+          if (continuation && continuation.backendId !== plan.backendId) await closeContinuation();
+          if (!continuation) {
+            const backend = config.physicalExecution.backends.find(
+              (candidate) => candidate.id === plan.backendId,
+            );
+            if (!backend?.openReduction)
+              throw new LakeqlError(
+                "LAKEQL_PHYSICAL_BACKEND_UNAVAILABLE",
+                "Missing planned reduction continuation",
+              );
+            continuation = backend.openReduction(operator, {
+              allocationScope: scope,
+              budget: this.remainingPhysicalBudget(),
+              now: config.now,
+              queryStartedAt: startedAt,
+              enforceOutputRows: false,
+              ...(snapshot === undefined ? {} : { priorOutput: snapshot }),
+            });
+            checkpoint?.release();
+            checkpoint = undefined;
+            snapshot = undefined;
+          }
+          const stage = scope.childScope();
+          try {
+            let selection: import("./batch.js").Selection | undefined;
+            if (config.where !== undefined) {
+              const selected = await this.executePhysicalBatch(
+                batch,
+                [{ kind: "select", predicate: config.where }],
+                { kind: "selection" },
+                sourceIdentity,
+                startedAt,
+                undefined,
+                stage,
+              );
+              if (selected.output.kind !== "selection")
+                throw new LakeqlError(
+                  "LAKEQL_PHYSICAL_BACKEND_FAILURE",
+                  "Selection did not return a mask",
+                );
+              selection = selected.output.selection;
+            }
+            const metrics = await continuation.append(batch, selection);
+            this.stats.rowsMatched += metrics.selectedRows;
+            this.recordPhysicalExecution(plan.candidates, fragment, {
+              backendId: continuation.backendId,
+              ...metrics,
+              inputBytes: estimateBatchBytes(batch),
+              uploadBytes: 0,
+              readbackBytes: 0,
+              dispatches: 0,
+              replayed: false,
+            });
+          } finally {
+            stage.dispose();
+          }
+        } else {
+          await closeContinuation();
+          const operators: PhysicalOperator[] =
+            config.where === undefined
+              ? [operator]
+              : [{ kind: "select", predicate: config.where }, operator];
+          const stage = scope.childScope();
+          try {
+            const result = await this.executePhysicalBatch(
+              batch,
+              operators,
+              output,
+              sourceIdentity,
+              startedAt,
+              snapshot,
+              stage,
+            );
+            if (
+              result.output.kind !== "aggregate-snapshot" &&
+              result.output.kind !== "grouped-aggregate-snapshot"
+            )
+              throw new LakeqlError(
+                "LAKEQL_PHYSICAL_BACKEND_FAILURE",
+                "Reduction did not return a checkpoint",
+              );
+            const next = stage.retainAllocations(result.output);
+            checkpoint?.release();
+            checkpoint = next;
+            snapshot = result.output;
+            this.stats.rowsMatched += result.metrics.selectedRows ?? batch.rowCount;
+            if (snapshot.kind === "grouped-aggregate-snapshot")
+              enforceBufferedRowsBudget(config.budget, snapshot.snapshot.groups.length);
+          } finally {
+            stage.dispose();
+          }
+        }
+      }
+      let result: OwnedMemory<Row[]>;
+      if (continuation) result = await continuation.finish();
+      else if (operator.kind === "grouped-reduce") {
+        const owner = OwnedGroupDirectory.allocate(scope, groupColumns, spec, {
+          budget: config.budget,
+          ...(options.maxGroups === undefined ? {} : { maxGroups: options.maxGroups }),
+        });
+        if (snapshot?.kind === "grouped-aggregate-snapshot") owner.merge(snapshot.snapshot);
+        result = owner.finish(false);
+      } else {
+        const owner = new OwnedAggregateState(scope, spec, { budget: config.budget });
+        if (snapshot?.kind === "aggregate-snapshot") owner.merge(snapshot.snapshot);
+        const row = scope.adopt(owner.finish());
+        result = scope.retainAllocations(
+          scope.allocate(
+            allocationCharges.array + allocationCharges.arraySlot,
+            "aggregate result rows",
+            () => [row.value],
+          ).value,
         );
       }
-      this.stats.rowsMatched += physical.metrics.selectedRows ?? batch.rowCount;
-      aggregateSnapshot = physical.output.snapshot;
+      try {
+        const rows = applyAggregateResultOptions(result.value, options, scope);
+        for (const _row of rows) {
+          this.stats.rowsReturned++;
+          enforceBudget(config.budget, this.stats, config.now, startedAt);
+        }
+        this.stats.elapsedMs = config.now() - startedAt;
+        return rows;
+      } finally {
+        result.release();
+      }
+    } finally {
+      continuation?.dispose();
+      checkpoint?.release();
+      scope.dispose();
     }
-    const state =
-      aggregateSnapshot === undefined
-        ? createVectorAggregateStates(spec, { budget: config.budget })
-        : restoreVectorAggregateStates(aggregateSnapshot, { budget: config.budget });
-    const rows = applyAggregateResultOptions([finalizeVectorAggregateStates(state)], options);
-    for (const _row of rows) {
-      this.stats.rowsReturned += 1;
-      enforceBudget(config.budget, this.stats, config.now, startedAt);
-    }
-    this.stats.elapsedMs = config.now() - startedAt;
-    return rows;
   }
 
   private async tryLateMaterializedAggregateRows(
@@ -1628,152 +2426,195 @@ export class QueryResult {
   ): Promise<Row[] | undefined> {
     const config = this.config;
     const scanVectorBatches = vectorBatchScanner(config.scanner);
-    if (scanVectorBatches === undefined) return undefined;
-    const earlyColumns = aggregateEarlyReadColumns(groupColumns, config.where);
-    if (earlyColumns.length === 0) return undefined;
-    const aggregateColumns = aggregateInputColumns(spec);
-    const lateColumns = aggregateColumns.filter((column) => !earlyColumns.includes(column));
-    if (lateColumns.length === 0) return undefined;
+    if (config.where === undefined) return undefined;
+    if (scanVectorBatches === undefined && config.scanner.scanOwnedVectorBatches === undefined)
+      return undefined;
+    const planning = new MemoryScope(this.memoryBudget);
+    try {
+      const earlyColumns = admittedColumnNames(
+        planning,
+        (columns) => {
+          for (const column of groupColumns) columns.add(column);
+          collectExprColumns(config.where, columns);
+        },
+        true,
+      );
+      if (earlyColumns.length === 0) return undefined;
+      const lateColumns = admittedColumnNames(
+        planning,
+        (columns) => {
+          collectAggregateColumns(spec, {
+            add(column) {
+              if (!earlyColumns.includes(column)) columns.add(column);
+            },
+          });
+        },
+        true,
+      );
+      if (lateColumns.length === 0) return undefined;
+      return await this.tryOwnedLateAggregateRows(
+        groupColumns,
+        spec,
+        options,
+        earlyColumns,
+        lateColumns,
+        startedAt,
+      );
+    } finally {
+      planning.dispose();
+    }
+  }
 
+  /** Owned deferred aggregation joins selected positions in bounded windows;
+   * no query-wide row-reference directory or early-row copies are retained. */
+  private async tryOwnedLateAggregateRows(
+    groupColumns: string[],
+    spec: AggregateSpec,
+    options: AggregateOptions,
+    earlyColumns: string[],
+    lateColumns: string[],
+    startedAt: number,
+  ): Promise<Row[] | undefined> {
+    const config = this.config;
+    // Assess expression contracts before speculative I/O. Column shapes are
+    // checked against the joined vectors by the shared reduction implementation.
+    try {
+      for (const alias in spec) {
+        if (!Object.hasOwn(spec, alias)) continue;
+        const expr = spec[alias]?.expr;
+        if (expr) ownedAggregateExpressionBytesForColumns(expr, () => {});
+      }
+    } catch (error) {
+      if (error instanceof LakeqlError && error.code === "LAKEQL_UNSUPPORTED_PUSHDOWN")
+        return undefined;
+      throw error;
+    }
     const statsBefore = { ...this.stats };
-    const state = createVectorGroupByState(groupColumns, spec);
-    const refs: AggregateRowRef[] = [];
+    const scope = new MemoryScope(
+      this.memoryBudget,
+      config.budget.signal ? [config.budget.signal] : [],
+    );
+    const discovery = new MemoryScope(this.memoryBudget);
+    let reducer: PhysicalReductionContinuation | undefined;
     let scannedRows = 0;
     let matchedRows = 0;
-    const maxLateDensity = 0.35;
-    const maxLateRows = Math.min(config.budget?.maxBufferedRows ?? 4096, 4096);
-    const aggregateEntries = Object.entries(spec);
-    const countStarAliases = aggregateEntries
-      .filter(
-        ([, aggregate]) =>
-          aggregate.op === "count" &&
-          aggregate.column === undefined &&
-          aggregate.expr === undefined,
-      )
-      .map(([alias]) => alias);
-    const { planned: paths, skipped: skippedFiles } = await this.planObjects();
-    this.stats.filesSkipped = skippedFiles;
-    for (const object of paths) {
-      this.stats.filesPlanned += 1;
-      this.stats.filesRead += 1;
-      this.stats.bytesRequested += object.size;
-      enforceBudget(config.budget, this.stats, config.now, startedAt);
-      const scanOptions: ScanOptions = {
-        object,
-        columns: earlyColumns,
-        ...(config.where === undefined ? {} : { where: config.where }),
-        batchSize: columnarBatchSize(config.batchSize),
-        stats: this.stats,
-        budget: config.budget,
-        now: config.now,
-        startedAt,
-      };
-      for await (const { rowOffset, batch } of scanVectorBatches(
-        config.scanner,
-        object.path,
-        scanOptions,
-      )) {
-        scannedRows += batch.rowCount;
-        const selection = predicateSelection(batch, config.where);
-        const selected = [...selectedRowIndices(batch.rowCount, selection)];
-        for (const index of selected) {
-          matchedRows += 1;
-          if (matchedRows > maxLateRows) {
-            Object.assign(this.stats, statsBefore);
-            return undefined;
-          }
-          const group = getOrCreateVectorGroup(state, batch, index, {
-            budget: config.budget,
-            ...(options.maxGroups === undefined ? {} : { maxGroups: options.maxGroups }),
-          });
-          for (const alias of countStarAliases) {
-            updateVectorGroupAggregateValue(group, alias, true, { budget: config.budget });
-          }
-          refs.push({
-            path: object.path,
-            object,
-            rowIndex: rowOffset + index,
-            group,
-            early: aggregateEarlyRow(batch, index, earlyColumns),
-          });
-        }
-        if (matchedRows / Math.max(1, scannedRows) > maxLateDensity) {
+    try {
+      reducer = new CpuPhysicalBackend().openReduction(
+        groupColumns.length === 0
+          ? { kind: "reduce", aggregates: spec }
+          : {
+              kind: "grouped-reduce",
+              keys: groupColumns,
+              aggregates: spec,
+              ...(options.maxGroups === undefined ? {} : { maxGroups: options.maxGroups }),
+            },
+        {
+          allocationScope: scope,
+          budget: config.budget,
+          now: config.now,
+          queryStartedAt: startedAt,
+          enforceOutputRows: false,
+        },
+      );
+      const { planned: paths, skipped: skippedFiles } = await this.planObjects(discovery);
+      this.stats.filesSkipped = skippedFiles;
+      for (const object of paths) {
+        if (object.rangeReadMode === "emulated") {
           Object.assign(this.stats, statsBefore);
           return undefined;
         }
-        enforceBufferedRowsBudget(config.budget, refs.length);
-        enforceVectorGroupByBudget(state, config.budget);
+        this.stats.filesPlanned++;
+        this.stats.filesRead++;
+        this.stats.bytesRequested += object.size;
         enforceBudget(config.budget, this.stats, config.now, startedAt);
-      }
-    }
-    this.stats.rowsMatched += matchedRows;
-    for await (const materialized of this.aggregateMaterializedRows(refs, lateColumns, startedAt)) {
-      for (const [alias, aggregate] of aggregateEntries) {
-        if (
-          aggregate.op === "count" &&
-          aggregate.column === undefined &&
-          aggregate.expr === undefined
-        ) {
-          continue;
-        }
-        updateVectorGroupAggregateValue(
-          materialized.ref.group,
-          alias,
-          aggregateValueForRow(aggregate, materialized.row),
-          { budget: config.budget },
-        );
-      }
-      enforceVectorGroupByBudget(state, config.budget);
-      enforceBudget(config.budget, this.stats, config.now, startedAt);
-    }
-    const rows = applyAggregateResultOptions(finalizeVectorGroupByRows(state), options);
-    for (const _row of rows) {
-      this.stats.rowsReturned += 1;
-      enforceBudget(config.budget, this.stats, config.now, startedAt);
-    }
-    this.stats.elapsedMs = config.now() - startedAt;
-    return rows;
-  }
-
-  private async *aggregateMaterializedRows(
-    refs: readonly AggregateRowRef[],
-    lateColumns: readonly string[],
-    startedAt: number,
-  ): AsyncIterable<{ ref: AggregateRowRef; row: Row }> {
-    const scanVectorBatches = vectorBatchScanner(this.config.scanner);
-    if (scanVectorBatches === undefined) return;
-    const refsByKey = new Map<string, AggregateRowRef>();
-    for (const ref of refs) refsByKey.set(rowRefKey(ref), ref);
-    for (const window of aggregateMaterializationWindows(
-      refs,
-      columnarBatchSize(this.config.batchSize),
-    )) {
-      const scanOptions: ScanOptions = {
-        ...(window.object === undefined ? {} : { object: window.object }),
-        columns: [...lateColumns],
-        rowStart: window.rowStart,
-        rowEnd: window.rowEnd,
-        batchSize: columnarBatchSize(this.config.batchSize),
-        stats: this.stats,
-        budget: this.config.budget,
-        now: this.config.now,
-        startedAt,
-      };
-      for await (const { rowOffset, batch } of scanVectorBatches(
-        this.config.scanner,
-        window.path,
-        scanOptions,
-      )) {
-        for (let index = 0; index < batch.rowCount; index += 1) {
-          const key = rowRefKey({ path: window.path, rowIndex: rowOffset + index });
-          const ref = refsByKey.get(key);
-          if (ref === undefined) continue;
-          yield {
-            ref,
-            row: { ...ref.early, ...aggregateLateRow(batch, index, lateColumns) },
-          };
+        const scanOptions: ScanOptions & { memoryBudget: MemoryBudget } = {
+          memoryBudget: this.memoryBudget,
+          object,
+          columns: earlyColumns,
+          ...(config.where === undefined ? {} : { where: config.where }),
+          batchSize: columnarBatchSize(config.batchSize),
+          stats: this.stats,
+          budget: config.budget,
+          now: config.now,
+          startedAt,
+        };
+        for await (const owner of this.ownedProjectedScanInputs(object.path, scanOptions)) {
+          let stage: MemoryScope | undefined;
+          try {
+            stage = scope.childScope();
+            stage.adopt(owner.retain());
+            const { batch } = owner.value;
+            const selection = predicateSelection(batch, config.where, stage);
+            scannedRows += batch.rowCount;
+            matchedRows += selectedRowCount(batch.rowCount, selection);
+            if (matchedRows / Math.max(1, scannedRows) > 0.35) {
+              Object.assign(this.stats, statsBefore);
+              return undefined;
+            }
+            const indices = selectedRowIndexBuffer(batch.rowCount, selection, stage);
+            const read = (rowStart: number, rowEnd: number) =>
+              this.ownedProjectedScanInputs(object.path, {
+                memoryBudget: this.memoryBudget,
+                object,
+                columns: lateColumns,
+                rowStart,
+                rowEnd,
+                batchSize: columnarBatchSize(config.batchSize),
+                stats: this.stats,
+                budget: config.budget,
+                now: config.now,
+                startedAt,
+              });
+            for await (const gathered of gatherDeferredColumns(
+              owner,
+              indices,
+              columnarBatchSize(config.batchSize),
+              read,
+            )) {
+              try {
+                enforceBudget(config.budget, this.stats, config.now, startedAt);
+                await reducer.append(gathered.value);
+              } finally {
+                gathered.release();
+              }
+            }
+            enforceBudget(config.budget, this.stats, config.now, startedAt);
+          } finally {
+            owner.release();
+            stage?.dispose();
+          }
         }
       }
+      this.stats.rowsMatched += matchedRows;
+      const result = await reducer.finish();
+      try {
+        const rows = applyAggregateResultOptions(result.value, options, scope);
+        for (const _row of rows) {
+          this.stats.rowsReturned++;
+          enforceBudget(config.budget, this.stats, config.now, startedAt);
+        }
+        this.stats.elapsedMs = config.now() - startedAt;
+        return rows;
+      } finally {
+        result.release();
+      }
+    } catch (error) {
+      // Speculative selective reading may decline admission. The eager route
+      // starts afresh under the same pool; mandatory query limits are not relaxed.
+      if (
+        error instanceof LakeqlError &&
+        (error.code === "LAKEQL_UNSUPPORTED_PUSHDOWN" ||
+          (error.code === "LAKEQL_BUDGET_EXCEEDED" &&
+            error.details?.metric === "allocated memory bytes"))
+      ) {
+        Object.assign(this.stats, statsBefore);
+        return undefined;
+      }
+      throw error;
+    } finally {
+      reducer?.dispose();
+      scope.dispose();
+      discovery.dispose();
     }
   }
 
@@ -1782,6 +2623,34 @@ export class QueryResult {
     spec: AggregateSpec,
     options: AggregateOptions = {},
   ): Promise<AggregateResult> {
+    return this.runRowAggregate(groupColumns, spec, options, async (groups, rows, scope) => {
+      const state = aggregateOperatorState(groupColumns, spec, groups, scope);
+      const checkpoint = scope.adopt(encodeOwnedCheckpoint(state, scope));
+      const result: AggregateResult = { rows, operatorState: checkpoint.value };
+      if (options.spill !== undefined) {
+        result.operatorSpill = await writeOwnedCheckpoint(
+          options.spill,
+          options.spillId ?? `aggregate-${this.stats.queryId}`,
+          checkpoint,
+          scope,
+        );
+      }
+      if (scope.disposed)
+        throw new LakeqlError("LAKEQL_ABORTED", "Aggregate checkpoint scope disposed during spill");
+      return result;
+    });
+  }
+
+  private async runRowAggregate<T>(
+    groupColumns: string[],
+    spec: AggregateSpec,
+    options: AggregateOptions,
+    finish: (
+      groups: Map<string, AggregateGroup>,
+      rows: Row[],
+      scope: MemoryScope,
+    ) => T | Promise<T>,
+  ): Promise<T> {
     validateAggregateRequest(groupColumns, spec, options);
     // Aggregate spec expressions and HAVING live outside config; planObjects()
     // only sees where/projections, so cover the aggregate exprs here too.
@@ -1789,74 +2658,112 @@ export class QueryResult {
       ...Object.values(spec).map((aggregate) => aggregate.expr),
       options.having,
     ]);
-    const groups = await aggregateGroupsFromState(groupColumns, spec, options);
-    const startedAt = this.config.now();
-    const readColumns = aggregateReadColumns(
-      groupColumns,
-      spec,
-      this.config.where,
-      this.config.projections,
+    const checkpointScope = new MemoryScope(
+      this.memoryBudget,
+      this.config.budget.signal ? [this.config.budget.signal] : [],
     );
-    for await (const row of this.matchedRows(startedAt, readColumns)) {
-      const aggregateRow =
-        this.config.projections === undefined ? row : project(row, ["*"], this.config.projections);
-      const keyValues = groupColumns.map((column) => valueForColumn(aggregateRow, column));
-      const key = stableStringify(keyValues);
-      let group = groups.get(key);
-      if (!group) {
-        if (options.maxGroups !== undefined && groups.size >= options.maxGroups) {
-          throw new LakeqlError(
-            "LAKEQL_GROUP_LIMIT_EXCEEDED",
-            `Query exceeded group budget (${groups.size + 1} > ${options.maxGroups})`,
-            { limit: options.maxGroups, actual: groups.size + 1 },
-          );
+    try {
+      const groups = await aggregateGroupsFromState(groupColumns, spec, options, checkpointScope);
+      const aggregateMemory =
+        this.config.budget.maxMemoryBytes === undefined &&
+        this.config.budget.maxBufferedRows === undefined
+          ? undefined
+          : new AggregateMemory(groupColumns, spec, groups, this.config.budget, checkpointScope);
+      aggregateMemory?.enforceBudget();
+      const startedAt = this.config.now();
+      const readColumns = aggregateReadColumns(
+        groupColumns,
+        spec,
+        this.config.where,
+        this.config.projections,
+        checkpointScope.childScope(),
+      );
+      for await (const row of this.matchedRows(startedAt, readColumns, checkpointScope)) {
+        const keyScope = checkpointScope.childScope();
+        try {
+          const aggregateRow =
+            this.config.projections === undefined
+              ? row
+              : project(row, ["*"], this.config.projections, keyScope);
+          const keyValues = keyScope.allocate(
+            allocationCharges.array + groupColumns.length * allocationCharges.arraySlot,
+            "aggregate key values",
+            () => groupColumns.map((column) => valueForColumn(aggregateRow, column)),
+          ).value;
+          const key = keyScope.adopt(stringifyOwnedStableData(keyValues, keyScope)).value;
+          let group = groups.get(key);
+          if (!group) {
+            if (options.maxGroups !== undefined && groups.size >= options.maxGroups) {
+              throw new LakeqlError(
+                "LAKEQL_GROUP_LIMIT_EXCEEDED",
+                `Query exceeded group budget (${groups.size + 1} > ${options.maxGroups})`,
+                { limit: options.maxGroups, actual: groups.size + 1 },
+              );
+            }
+            group = checkpointScope.allocate(
+              aggregateGroupEntryBytes(key),
+              "aggregate group entry",
+              () => {
+                const created = createAggregateGroup(
+                  groupColumns,
+                  keyValues,
+                  spec,
+                  checkpointScope,
+                );
+                groups.set(key, created);
+                return created;
+              },
+            ).value;
+          }
+          group.add(aggregateRow);
+          aggregateMemory?.update(key, group);
+          aggregateMemory?.enforceBudget();
+        } finally {
+          keyScope.dispose();
         }
-        group = createAggregateGroup(groupColumns, keyValues, spec);
-        groups.set(key, group);
       }
-      group.add(aggregateRow);
-      enforceBufferedRowsBudget(this.config.budget, estimateAggregateBufferedRows(groups));
-      enforceOperatorMemoryBudget(
-        this.config.budget,
-        estimateAggregateOperatorMemoryBytes(groupColumns, spec, groups),
-      );
+      const finished = checkpointScope.allocate(
+        allocationCharges.array + groups.size * allocationCharges.arraySlot,
+        "aggregate result directory",
+        () => {
+          const output: Row[] = [];
+          for (const group of groups.values()) output.push(group.finish(checkpointScope));
+          return output;
+        },
+      ).value;
+      const rows = applyAggregateResultOptions(finished, options, checkpointScope);
+      for (const _row of rows) {
+        this.stats.rowsReturned += 1;
+        enforceBudget(this.config.budget, this.stats, this.config.now, startedAt);
+      }
+      return await finish(groups, rows, checkpointScope);
+    } finally {
+      checkpointScope.dispose();
     }
-    const rows = applyAggregateResultOptions(
-      [...groups.values()].map((group) => group.finish()),
-      options,
-    );
-    for (const _row of rows) {
-      this.stats.rowsReturned += 1;
-      enforceBudget(this.config.budget, this.stats, this.config.now, startedAt);
-    }
-    const state = aggregateOperatorState(groupColumns, spec, groups);
-    const operatorState = serializeAggregateOperatorState(state);
-    const result: AggregateResult = {
-      rows,
-      operatorState,
-    };
-    if (options.spill !== undefined) {
-      result.operatorSpill = await options.spill.write(
-        options.spillId ?? `aggregate-${this.stats.queryId}`,
-        operatorState,
-      );
-    }
-    return {
-      ...result,
-    };
   }
 
   private async *orderedBatches(): AsyncIterable<Row[]> {
     const config = this.config;
-    const { stats } = this;
-    const columnarRows = await this.tryColumnarTopKRows();
+    const columnarRows = await this.tryColumnarTopKRows(true);
     if (columnarRows !== undefined) {
-      const batchSize = config.batchSize ?? 4096;
-      for (let index = 0; index < columnarRows.length; index += batchSize) {
-        yield columnarRows.slice(index, index + batchSize);
-      }
+      yield* borrowOwnedRowBatches(columnarRows, config.batchSize ?? 4096, config.budget.signal);
       return;
     }
+    for await (const output of this.orderedRowOutputs(false)) {
+      if (!Array.isArray(output)) {
+        output.release();
+        throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Unexpected owned ordered output");
+      }
+      yield output;
+    }
+  }
+
+  private async *orderedRowOutputs(
+    ownedOutput: boolean,
+    fail?: (error: unknown) => never,
+  ): AsyncIterable<Row[] | OwnedMemory<Row[]>> {
+    const config = this.config;
+    const { stats } = this;
     this.requirePhysicalPath("ordered query");
     const matched: Row[] = [];
     const topK =
@@ -1864,36 +2771,97 @@ export class QueryResult {
         ? undefined
         : (config.offset ?? 0) + config.limit;
     const startedAt = config.now();
-    await this.collectOrderedMatches(matched, topK, startedAt);
-    matched.sort((left, right) => compareRows(left, right, config.orderBy ?? []));
-    const batchSize = config.batchSize ?? 4096;
-    let batch: Row[] = [];
-    let offsetSkipped = 0;
-    let returned = 0;
-    const distinct = config.distinct === true ? new Set<string>() : undefined;
-    for (const row of matched) {
-      const projected = project(row, config.select, config.projections);
-      if (distinct !== undefined && !addDistinctRow(distinct, projected, config.budget)) continue;
-      if (offsetSkipped < (config.offset ?? 0)) {
-        offsetSkipped += 1;
-        continue;
+    const retainedScope = new MemoryScope(
+      this.memoryBudget,
+      config.budget.signal ? [config.budget.signal] : [],
+    );
+    try {
+      await this.collectOrderedMatches(matched, topK, startedAt, retainedScope);
+      if (topK === undefined) {
+        const scratch = retainedScope.reserve(
+          allocationCharges.array +
+            matched.length * (allocationCharges.arraySlot + allocationCharges.object),
+          "ordered row sort workspace",
+        );
+        try {
+          matched.sort((left, right) => compareRows(left, right, config.orderBy ?? []));
+        } finally {
+          scratch.release();
+        }
       }
-      if (config.limit !== undefined && returned >= config.limit) break;
-      batch.push(projected);
-      returned += 1;
-      stats.rowsReturned += 1;
-      enforceBudget(config.budget, stats, config.now, startedAt);
-      if (batch.length >= batchSize) {
-        stats.elapsedMs = config.now() - startedAt;
-        yield batch;
-        batch = [];
+      const batchSize = config.batchSize ?? 4096;
+      let batchScope = retainedScope.childScope();
+      const newBatch = () =>
+        batchScope.allocate(allocationCharges.array, "ordered output directory", () => [] as Row[])
+          .value;
+      let batch = newBatch();
+      let offsetSkipped = 0;
+      let returned = 0;
+      const distinct =
+        config.distinct === true ? createRowDistinct(retainedScope, config.budget) : undefined;
+      for (const row of matched) {
+        const projection = batchScope.childScope();
+        try {
+          const projected = project(row, config.select, config.projections, projection);
+          if (distinct !== undefined && !distinct.add(projected)) continue;
+          if (offsetSkipped < (config.offset ?? 0)) {
+            offsetSkipped += 1;
+            continue;
+          }
+          if (config.limit !== undefined && returned >= config.limit) break;
+          appendProjectedOutput(
+            batch,
+            projected,
+            projection,
+            batchScope,
+            ownedOutput,
+            retainedScope,
+          );
+          returned += 1;
+          stats.rowsReturned += 1;
+          enforceBudget(config.budget, stats, config.now, startedAt);
+        } finally {
+          projection.dispose();
+        }
+        if (batch.length >= batchSize) {
+          stats.elapsedMs = config.now() - startedAt;
+          if (ownedOutput) {
+            const owner = batchScope.retainAllocations(batch);
+            try {
+              yield owner;
+            } finally {
+              owner.release();
+            }
+          } else yield batch;
+          batchScope.dispose();
+          batchScope = retainedScope.childScope();
+          batch = newBatch();
+        }
       }
+      stats.elapsedMs = config.now() - startedAt;
+      if (batch.length > 0) {
+        if (ownedOutput) {
+          const owner = batchScope.retainAllocations(batch);
+          try {
+            yield owner;
+          } finally {
+            owner.release();
+          }
+        } else yield batch;
+      }
+    } catch (error) {
+      if (fail !== undefined) fail(error);
+      throw error;
+    } finally {
+      retainedScope.dispose();
     }
-    stats.elapsedMs = config.now() - startedAt;
-    if (batch.length > 0) yield batch;
   }
 
-  private async tryColumnarTopKRows(): Promise<Row[] | undefined> {
+  private tryColumnarTopKRows(): Promise<Row[] | undefined>;
+  private tryColumnarTopKRows(ownedOutput: true): Promise<OwnedMemory<Row[]> | undefined>;
+  private async tryColumnarTopKRows(
+    ownedOutput = false,
+  ): Promise<Row[] | OwnedMemory<Row[]> | undefined> {
     const config = this.config;
     if (
       config.orderBy === undefined ||
@@ -1905,146 +2873,328 @@ export class QueryResult {
     ) {
       return undefined;
     }
-    const orderBy = normalizeOrderBy(config.orderBy);
-    const topK = (config.offset ?? 0) + config.limit;
-    const startedAt = config.now();
-    const lateMaterialized =
-      config.physicalExecution.acceleratorPolicy === "required"
-        ? undefined
-        : await this.tryLateMaterializedTopKRows(orderBy, topK, startedAt);
-    if (lateMaterialized !== undefined) return lateMaterialized;
-    if (config.scanner.scanColumns === undefined) return undefined;
-    let retained: Batch | undefined;
-    for await (const { batch, sourceIdentity } of this.columnBatches(
-      projectedReadColumns(config.select, config.where, orderBy, config.projections),
-      startedAt,
-      columnarBatchSize(config.batchSize),
-    )) {
-      const operators: PhysicalOperator[] = [];
-      if (config.where !== undefined) {
-        operators.push({ kind: "select", predicate: config.where });
+    if (
+      config.scanner.scanColumns === undefined &&
+      config.scanner.scanOwnedVectorBatches === undefined &&
+      vectorBatchScanner(config.scanner) === undefined
+    )
+      return undefined;
+    const planning = new MemoryScope(this.memoryBudget);
+    try {
+      const orderBy = normalizeOrderBy(config.orderBy, planning);
+      const topK = (config.offset ?? 0) + config.limit;
+      const startedAt = config.now();
+      const plannedObjects = await this.planObjects(planning);
+      const lateMaterialized =
+        config.physicalExecution.acceleratorPolicy === "required"
+          ? undefined
+          : await this.tryLateMaterializedTopKRows(
+              orderBy,
+              topK,
+              startedAt,
+              ownedOutput,
+              plannedObjects,
+            );
+      if (lateMaterialized !== undefined) return lateMaterialized;
+      if (
+        config.scanner.scanColumns === undefined &&
+        config.scanner.scanOwnedVectorBatches === undefined
+      )
+        return undefined;
+      let retained: Batch | undefined;
+      let retainedOwner: OwnedMemory<Batch> | undefined;
+      try {
+        for await (const { batch, sourceIdentity, owner } of this.columnBatches(
+          projectedReadColumns(config.select, config.where, orderBy, config.projections, planning),
+          startedAt,
+          columnarBatchSize(config.batchSize),
+          "iteration",
+          plannedObjects,
+        )) {
+          const stage = new MemoryScope(this.memoryBudget);
+          try {
+            const input = owner !== undefined ? stage.adopt(owner.retain()).value.batch : batch;
+            const operators: PhysicalOperator[] = [];
+            if (config.where !== undefined) {
+              operators.push({ kind: "select", predicate: config.where });
+            }
+            operators.push({ kind: "top-k", orderBy, limit: topK });
+            const physical = await this.executePhysicalBatch(
+              input,
+              operators,
+              { kind: "batch" },
+              sourceIdentity,
+              startedAt,
+              undefined,
+              stage,
+            );
+            if (physical.output.kind !== "batch") {
+              throw new LakeqlError(
+                "LAKEQL_PHYSICAL_BACKEND_FAILURE",
+                "Top-k physical fragment did not return a batch",
+                { actual: physical.output.kind },
+              );
+            }
+            this.stats.rowsMatched += physical.metrics.selectedRows ?? batch.rowCount;
+            const candidates = physical.output.batch;
+            {
+              // Borrowed input stays valid until the next iterator advance.
+              // Detach the selected physical batch, not the entire scan input.
+              const candidateOwner =
+                owner === undefined
+                  ? detachOwnedBatch(candidates, this.memoryBudget)
+                  : stage.retainAllocations(candidates);
+              if (retainedOwner === undefined) {
+                retainedOwner = candidateOwner;
+              } else {
+                try {
+                  const joined = concatOwnedBatches([retainedOwner, candidateOwner]);
+                  try {
+                    const next = vectorTopKOwnedBatch(joined, orderBy, { limit: topK });
+                    retainedOwner.release();
+                    retainedOwner = next;
+                  } finally {
+                    joined.release();
+                  }
+                } finally {
+                  candidateOwner.release();
+                }
+              }
+              retained = retainedOwner.value;
+            }
+            enforceBufferedRowsBudget(config.budget, retained.rowCount);
+            const sizing = new MemoryScope(this.memoryBudget);
+            try {
+              enforceOperatorMemoryBudget(config.budget, serializedBatchBytes(retained, sizing));
+            } finally {
+              sizing.dispose();
+            }
+          } finally {
+            stage.dispose();
+          }
+        }
+        if (retainedOwner === undefined) {
+          if (!ownedOutput) return [];
+          const empty = new MemoryScope(this.memoryBudget);
+          try {
+            const rows = empty.allocate(
+              allocationCharges.array,
+              "empty top-k output",
+              () => [] as Row[],
+            );
+            return rows.retain();
+          } finally {
+            empty.dispose();
+          }
+        }
+        const resultOptions = { offset: config.offset ?? 0, limit: config.limit };
+        const resultOwner = vectorTopKOwnedBatch(retainedOwner, orderBy, resultOptions);
+        try {
+          const result = resultOwner.value;
+          const outputScope = new MemoryScope(this.memoryBudget);
+          try {
+            const projected = vectorProjectBatch(result, config.select, undefined, outputScope);
+            this.stats.rowsReturned += projected.rowCount;
+            enforceBudget(config.budget, this.stats, config.now, startedAt);
+            this.stats.elapsedMs = config.now() - startedAt;
+            outputScope.adopt(resultOwner.retain());
+            const projectedOwner = outputScope.retainAllocations(projected);
+            try {
+              const rows = materializeOwnedBatchRows(projectedOwner);
+              if (ownedOutput) return rows;
+              try {
+                return rows.value;
+              } finally {
+                rows.release();
+              }
+            } finally {
+              projectedOwner.release();
+            }
+          } finally {
+            outputScope.dispose();
+          }
+        } finally {
+          resultOwner.release();
+        }
+      } finally {
+        retainedOwner?.release();
       }
-      operators.push({ kind: "top-k", orderBy, limit: topK });
-      const physical = await this.executePhysicalBatch(
-        batch,
-        operators,
-        { kind: "batch" },
-        sourceIdentity,
-        startedAt,
-      );
-      if (physical.output.kind !== "batch") {
-        throw new LakeqlError(
-          "LAKEQL_PHYSICAL_BACKEND_FAILURE",
-          "Top-k physical fragment did not return a batch",
-          { actual: physical.output.kind },
-        );
-      }
-      this.stats.rowsMatched += physical.metrics.selectedRows ?? batch.rowCount;
-      const candidates = physical.output.batch;
-      retained =
-        retained === undefined
-          ? candidates
-          : vectorTopKBatch(concatBatches([retained, candidates]), orderBy, { limit: topK });
-      enforceBufferedRowsBudget(config.budget, retained.rowCount);
-      enforceOperatorMemoryBudget(
-        config.budget,
-        estimateOperatorMemoryBytes(materializeBatchRows(retained)),
-      );
+    } finally {
+      planning.dispose();
     }
-    if (retained === undefined) return [];
-    const result = vectorTopKBatch(retained, orderBy, {
-      offset: config.offset ?? 0,
-      limit: config.limit,
-    });
-    const rows = materializeBatchRows(vectorProjectBatch(result, config.select));
-    for (const _row of rows) {
-      this.stats.rowsReturned += 1;
-      enforceBudget(config.budget, this.stats, config.now, startedAt);
-    }
-    this.stats.elapsedMs = config.now() - startedAt;
-    return rows;
   }
 
   private async tryLateMaterializedTopKRows(
     orderBy: OrderByTerm[],
     topK: number,
     startedAt: number,
-  ): Promise<Row[] | undefined> {
+    ownedOutput: boolean,
+    plannedObjects: { planned: ObjectInfo[]; skipped: number },
+  ): Promise<Row[] | OwnedMemory<Row[]> | undefined> {
     const config = this.config;
     if (
       vectorBatchScanner(config.scanner) === undefined ||
       config.select === undefined ||
-      config.select.length === 0
+      config.select.length === 0 ||
+      config.select.includes("*")
     ) {
       return undefined;
     }
-    const rankColumns = rankReadColumns(config.where, orderBy);
-    if (rankColumns.length === 0) return undefined;
-    const outputColumns = [...new Set([...config.select, ...orderBy.map((term) => term.column)])];
-    if (outputColumns.every((column) => rankColumns.includes(column))) return undefined;
-
-    const retained: RankedRowRef[] = [];
-    const scanVectorBatches = vectorBatchScanner(config.scanner);
-    if (scanVectorBatches === undefined) return undefined;
-    const { planned: paths, skipped: skippedFiles } = await this.planObjects();
-    this.stats.filesSkipped = skippedFiles;
-    for (const object of paths) {
-      this.stats.filesPlanned += 1;
-      this.stats.filesRead += 1;
-      this.stats.bytesRequested += object.size;
-      enforceBudget(config.budget, this.stats, config.now, startedAt);
-      const scanOptions: ScanOptions = {
-        object,
-        columns: rankColumns,
-        ...(config.where === undefined ? {} : { where: config.where }),
-        batchSize: columnarBatchSize(config.batchSize),
-        stats: this.stats,
-        budget: config.budget,
-        now: config.now,
-        startedAt,
-      };
-      for await (const { rowOffset, batch } of scanVectorBatches(
-        config.scanner,
-        object.path,
-        scanOptions,
-      )) {
-        const selection = predicateSelection(batch, config.where);
-        this.stats.rowsMatched += selectedRowCount(batch.rowCount, selection);
-        addRankedRefs(
-          retained,
-          object.path,
-          object,
-          rowOffset,
-          batch,
-          selection,
-          rankColumns,
-          orderBy,
-          topK,
-        );
-        enforceBufferedRowsBudget(config.budget, retained.length);
-        enforceOperatorMemoryBudget(config.budget, estimateOperatorMemoryBytes(retained));
-        enforceBudget(config.budget, this.stats, config.now, startedAt);
-      }
-    }
-    retained.sort((left, right) => compareRankedRefs(left, right, orderBy));
-    const limit = config.limit;
-    if (limit === undefined) return undefined;
-    const selected = retained.slice(config.offset ?? 0, (config.offset ?? 0) + limit);
-    const rowsByRef = await this.materializeRowRefs(
-      selected,
-      outputColumns,
-      rankColumns,
-      startedAt,
+    const refMemory =
+      config.budget.maxMemoryBytes === undefined
+        ? undefined
+        : new BufferMemory<RankedRowRef>((ref) => estimateOperatorMemoryBytes([ref]) - 2);
+    const scope = new MemoryScope(
+      this.memoryBudget,
+      config.budget.signal ? [config.budget.signal] : [],
     );
-    const rows = selected
-      .map((ref) => rowsByRef.get(rowRefKey(ref)))
-      .filter((row): row is Row => row !== undefined);
-    for (const _row of rows) {
-      this.stats.rowsReturned += 1;
-      enforceBudget(config.budget, this.stats, config.now, startedAt);
+    let ownedRetained: OwnedBoundedTopK<RankedRowRef> | undefined;
+    try {
+      const planning = scope.childScope();
+      const rankColumns = admittedColumnNames(
+        planning,
+        (columns) => {
+          for (const term of orderBy) columns.add(term.column);
+          collectExprColumns(config.where, columns);
+        },
+        true,
+      );
+      if (rankColumns.length === 0) return undefined;
+      const outputColumns = admittedColumnNames(planning, (columns) => {
+        for (const column of config.select ?? []) columns.add(column);
+        for (const term of orderBy) columns.add(term.column);
+      });
+      if (outputColumns.every((column) => rankColumns.includes(column))) return undefined;
+      ownedRetained = new OwnedBoundedTopK<RankedRowRef>(
+        scope,
+        topK,
+        (left, right) => compareRankedRefs(left, right, orderBy),
+        refMemory,
+      );
+      const scanVectorBatches = vectorBatchScanner(config.scanner);
+      if (scanVectorBatches === undefined) return undefined;
+      const { planned: paths, skipped: skippedFiles } = plannedObjects;
+      if (paths.some((object) => object.rangeReadMode === "emulated")) return undefined;
+      this.stats.filesSkipped = skippedFiles;
+      for (const object of paths) {
+        this.stats.filesPlanned += 1;
+        this.stats.filesRead += 1;
+        this.stats.bytesRequested += object.size;
+        enforceBudget(config.budget, this.stats, config.now, startedAt);
+        const scanOptions: ScanOptions = {
+          memoryBudget: this.memoryBudget,
+          object,
+          columns: rankColumns,
+          ...(config.where === undefined ? {} : { where: config.where }),
+          batchSize: columnarBatchSize(config.batchSize),
+          stats: this.stats,
+          budget: config.budget,
+          now: config.now,
+          startedAt,
+        };
+        for await (const { rowOffset, batch, owner } of this.projectedScanInputs(
+          object.path,
+          scanOptions,
+        )) {
+          const stage = scope.childScope();
+          try {
+            if (owner) stage.adopt(owner.retain());
+            const batchOwner = owner ? stage.retainAllocations(batch) : undefined;
+            try {
+              const selection = predicateSelection(batch, config.where, stage);
+              this.stats.rowsMatched += selectedRowCount(batch.rowCount, selection);
+              for (const index of selectedRowIndices(batch.rowCount, selection)) {
+                if (topK === 0) break;
+                const candidate = stage.childScope();
+                try {
+                  const keys = candidate.adopt(
+                    batchOwner
+                      ? materializeOwnedBatchRow(batchOwner, index)
+                      : materializeDetachedBatchRow(batch, index, candidate),
+                  );
+                  const ref = candidate.allocate(
+                    allocationCharges.object + 4 * allocationCharges.property,
+                    "ranked row reference",
+                    () => ({
+                      path: object.path,
+                      object,
+                      rowIndex: rowOffset + index,
+                      keys: keys.value,
+                    }),
+                  );
+                  const ownedRef = candidate.retainAllocations(ref.value);
+                  try {
+                    ownedRetained.offer(ownedRef);
+                  } finally {
+                    ownedRef.release();
+                  }
+                } finally {
+                  candidate.dispose();
+                }
+              }
+              enforceBufferedRowsBudget(config.budget, ownedRetained.size);
+              if (refMemory !== undefined)
+                enforceOperatorMemoryBudget(config.budget, refMemory.bytes);
+              enforceBudget(config.budget, this.stats, config.now, startedAt);
+            } finally {
+              batchOwner?.release();
+            }
+          } finally {
+            stage.dispose();
+          }
+        }
+      }
+      const limit = config.limit;
+      if (limit === undefined) return undefined;
+      const offset = config.offset ?? 0;
+      const selected = scope.adopt(ownedRetained.finish(offset, limit)).value;
+      const rowsByRef = await this.materializeRowRefs(
+        selected,
+        outputColumns,
+        rankColumns,
+        startedAt,
+        columnarBatchSize(config.batchSize),
+        scope,
+      );
+      const buildOutput = () => {
+        const rows: Row[] = [];
+        for (const ref of selected) {
+          const row = rowsByRef.get(rowRefKey(ref));
+          if (!row)
+            throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Deferred output omitted a winner");
+          rows.push(project(row, config.select, undefined));
+          this.stats.rowsReturned++;
+          enforceBudget(config.budget, this.stats, config.now, startedAt);
+        }
+        return rows;
+      };
+      let keyBytes: number = allocationCharges.string;
+      for (const ref of selected)
+        keyBytes = Math.max(
+          keyBytes,
+          allocationCharges.string + (ref.path.length + 17) * allocationCharges.stringCodeUnit,
+        );
+      const scratch = scope.reserve(keyBytes, "ordered winner lookup");
+      try {
+        const output = scope.allocate(
+          allocationCharges.array +
+            selected.length *
+              (allocationCharges.arraySlot +
+                allocationCharges.object +
+                config.select.length * allocationCharges.property),
+          "deferred projected output",
+          buildOutput,
+        );
+        this.stats.elapsedMs = config.now() - startedAt;
+        scratch.release();
+        return ownedOutput ? scope.retainAllocations(output.value) : output.value;
+      } finally {
+        scratch.release();
+      }
+    } finally {
+      ownedRetained?.dispose();
+      scope.dispose();
     }
-    this.stats.elapsedMs = config.now() - startedAt;
-    return rows.map((row) => project(row, config.select, undefined));
   }
 
   private async materializeRowRefs(
@@ -2053,15 +3203,37 @@ export class QueryResult {
     rankColumns: readonly string[],
     startedAt: number,
     maxWindowRows = columnarBatchSize(this.config.batchSize),
+    scope?: MemoryScope,
   ): Promise<Map<string, Row>> {
     const scanVectorBatches = vectorBatchScanner(this.config.scanner);
     if (scanVectorBatches === undefined) return new Map();
+    if (scope) {
+      let bytes =
+        allocationCharges.object +
+        allocationCharges.array +
+        columns.length * allocationCharges.arraySlot;
+      for (const ref of refs)
+        bytes +=
+          allocationCharges.property +
+          allocationCharges.object +
+          (columns.length + rankColumns.length) * allocationCharges.property +
+          allocationCharges.string +
+          (ref.path.length + 17) * allocationCharges.stringCodeUnit;
+      scope.allocate(bytes, "deferred row directory and joined row descriptors", () => undefined);
+    }
     const rows = new Map<string, Row>();
     for (const ref of refs) rows.set(rowRefKey(ref), { ...ref.keys });
     const lateColumns = columns.filter((column) => !rankColumns.includes(column));
     if (lateColumns.length === 0) return rows;
-    for (const window of materializationWindows(refs, maxWindowRows)) {
+    scope?.allocate(
+      allocationCharges.object + refs.length * allocationCharges.property,
+      "deferred completed winners",
+      () => undefined,
+    );
+    const completed = new Set<Row>();
+    for (const window of materializationWindows(refs, maxWindowRows, scope)) {
       const scanOptions: ScanOptions = {
+        memoryBudget: this.memoryBudget,
         ...(window.object === undefined ? {} : { object: window.object }),
         columns: lateColumns,
         rowStart: window.rowStart,
@@ -2072,25 +3244,84 @@ export class QueryResult {
         now: this.config.now,
         startedAt,
       };
-      for await (const { rowOffset, batch } of scanVectorBatches(
-        this.config.scanner,
+      let fetchedEnd = window.rowStart;
+      for await (const { rowOffset, batch, owner } of this.projectedScanInputs(
         window.path,
         scanOptions,
       )) {
-        for (let index = 0; index < batch.rowCount; index += 1) {
-          const rowIndex = rowOffset + index;
-          const key = rowRefKey({ path: window.path, rowIndex });
-          const existing = rows.get(key);
-          if (existing === undefined) continue;
-          const row: Row = {};
-          for (const column of lateColumns) {
-            const vector = batch.columns[column];
-            if (vector !== undefined) row[column] = vectorValue(vector, index);
+        if (
+          !Number.isSafeInteger(rowOffset) ||
+          !Number.isSafeInteger(batch.rowCount) ||
+          batch.rowCount < 0 ||
+          !Number.isSafeInteger(rowOffset + batch.rowCount) ||
+          rowOffset < fetchedEnd ||
+          rowOffset + batch.rowCount > window.rowEnd
+        )
+          throw new LakeqlError(
+            "LAKEQL_VALIDATION_ERROR",
+            "Deferred scan returned invalid row positions",
+          );
+        fetchedEnd = rowOffset + batch.rowCount;
+        for (const column of lateColumns)
+          if (!Object.hasOwn(batch.columns, column))
+            throw new LakeqlError(
+              "LAKEQL_VALIDATION_ERROR",
+              "Deferred scan omitted requested column",
+              { column },
+            );
+        const stage = scope?.childScope();
+        try {
+          if (stage && owner) stage.adopt(owner.retain());
+          const batchOwner = stage && owner ? stage.retainAllocations(batch) : undefined;
+          try {
+            for (let index = 0; index < batch.rowCount; index += 1) {
+              const scratch = stage?.reserve(
+                allocationCharges.object +
+                  2 * allocationCharges.property +
+                  allocationCharges.string +
+                  (window.path.length + 17) * allocationCharges.stringCodeUnit,
+                "deferred row lookup",
+              );
+              try {
+                const rowIndex = rowOffset + index;
+                const key = rowRefKey({ path: window.path, rowIndex });
+                const existing = rows.get(key);
+                if (existing === undefined) continue;
+                if (completed.has(existing))
+                  throw new LakeqlError(
+                    "LAKEQL_VALIDATION_ERROR",
+                    "Deferred scan repeated a selected row",
+                  );
+                completed.add(existing);
+                if (scope) {
+                  const row = scope.adopt(
+                    batchOwner
+                      ? materializeOwnedBatchRow(batchOwner, index)
+                      : materializeDetachedBatchRow(batch, index, scope),
+                  );
+                  Object.assign(existing, row.value);
+                  continue;
+                }
+                const row: Row = {};
+                for (const column of lateColumns) {
+                  const vector = batch.columns[column];
+                  if (vector !== undefined) row[column] = vectorValue(vector, index);
+                }
+                Object.assign(existing, row);
+              } finally {
+                scratch?.release();
+              }
+            }
+          } finally {
+            batchOwner?.release();
           }
-          rows.set(key, { ...existing, ...row });
+        } finally {
+          stage?.dispose();
         }
       }
     }
+    if (completed.size !== rows.size)
+      throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Deferred scan omitted selected rows");
     return rows;
   }
 
@@ -2098,198 +3329,359 @@ export class QueryResult {
     readColumns: string[] | undefined,
     startedAt: number,
     batchSize = this.config.batchSize ?? 4096,
-  ): AsyncIterable<{ batch: Batch; sourceIdentity: string }> {
+    inputLifetime: "iteration" | "retained" = "retained",
+    plannedObjects?: { planned: ObjectInfo[]; skipped: number },
+  ): AsyncIterable<{ batch: Batch; sourceIdentity: string; owner?: OwnedMemory<ScanVectorBatch> }> {
     const config = this.config;
-    const scanColumns = config.scanner.scanColumns;
-    if (scanColumns === undefined) return;
-    const { planned: paths, skipped: skippedFiles } = await this.planObjects();
-    this.stats.filesSkipped = skippedFiles;
-    for (const object of paths) {
-      this.stats.filesPlanned += 1;
-      this.stats.filesRead += 1;
-      this.stats.bytesRequested += object.size;
-      enforceBudget(config.budget, this.stats, config.now, startedAt);
-      const scanOptions: ScanOptions = {
-        object,
-        batchSize,
-        stats: this.stats,
-        budget: config.budget,
-        now: config.now,
-        startedAt,
-      };
-      if (readColumns !== undefined && readColumns.length > 0) scanOptions.columns = readColumns;
-      if (config.where !== undefined) scanOptions.where = config.where;
-      let rowOffset = 0;
-      for await (const batch of scanColumns.call(config.scanner, object.path, scanOptions)) {
+    const discovery = new MemoryScope(this.memoryBudget);
+    try {
+      const scanColumns = config.scanner.scanColumns;
+      const scanOwned =
+        inputLifetime === "iteration" ? config.scanner.scanOwnedVectorBatches : undefined;
+      if (scanColumns === undefined && scanOwned === undefined) return;
+      const { planned: paths, skipped: skippedFiles } =
+        plannedObjects ?? (await this.planObjects(discovery));
+      this.stats.filesSkipped = skippedFiles;
+      for (const object of paths) {
+        this.stats.filesPlanned += 1;
+        this.stats.filesRead += 1;
+        this.stats.bytesRequested += object.size;
         enforceBudget(config.budget, this.stats, config.now, startedAt);
-        yield { batch, sourceIdentity: physicalSourceIdentity(object, rowOffset) };
-        rowOffset += batch.rowCount;
-        this.stats.elapsedMs = config.now() - startedAt;
+        const scanOptions: ScanOptions = {
+          memoryBudget: this.memoryBudget,
+          object,
+          batchSize,
+          stats: this.stats,
+          budget: config.budget,
+          now: config.now,
+          startedAt,
+        };
+        if (readColumns !== undefined && readColumns.length > 0) scanOptions.columns = readColumns;
+        if (config.where !== undefined) scanOptions.where = config.where;
+        // Iteration consumers must detach their state before requesting the next input.
+        // Retained-vector consumers need explicit ownership transfer before opting in.
+        if (scanOwned !== undefined) {
+          for await (const owner of checkedAsyncIterable(
+            scanOwned.call(config.scanner, object.path, {
+              ...scanOptions,
+              memoryBudget: this.memoryBudget,
+            }),
+            config.budget.signal,
+            (owner) => owner.release(),
+          )) {
+            try {
+              enforceBudget(config.budget, this.stats, config.now, startedAt);
+              yield {
+                batch: owner.value.batch,
+                owner,
+                sourceIdentity: physicalSourceIdentity(object, owner.value.rowOffset),
+              };
+            } finally {
+              owner.release();
+            }
+            this.stats.elapsedMs = config.now() - startedAt;
+          }
+          continue;
+        }
+        if (scanColumns === undefined) continue;
+        let rowOffset = 0;
+        for await (const batch of checkedAsyncIterable(
+          scanColumns.call(config.scanner, object.path, scanOptions),
+          config.budget.signal,
+        )) {
+          enforceBudget(config.budget, this.stats, config.now, startedAt);
+          yield { batch, sourceIdentity: physicalSourceIdentity(object, rowOffset) };
+          rowOffset += batch.rowCount;
+          this.stats.elapsedMs = config.now() - startedAt;
+        }
       }
+      this.stats.elapsedMs = config.now() - startedAt;
+    } finally {
+      discovery.dispose();
     }
-    this.stats.elapsedMs = config.now() - startedAt;
   }
 
   private async collectOrderedMatches(
     matched: Row[],
     topK: number | undefined,
     startedAt: number,
+    allocationScope: MemoryScope,
+    initialRowsScope?: MemoryScope,
   ): Promise<void> {
     const config = this.config;
-    const { stats } = this;
-    const { planned: paths, skipped: skippedFiles } = await this.planObjects();
-    stats.filesSkipped = skippedFiles;
-    const orderBy = config.orderBy ?? [];
-    const columns = projectedReadColumns(config.select, config.where, orderBy, config.projections);
-    for (const object of paths) {
-      stats.filesPlanned += 1;
-      stats.filesRead += 1;
-      stats.bytesRequested += object.size;
-      enforceBudget(config.budget, stats, config.now, startedAt);
-      const scanOptions: ScanOptions = {
-        object,
-        batchSize: config.batchSize ?? 4096,
-        stats,
-        budget: config.budget,
-        now: config.now,
-        startedAt,
+    const discovery = new MemoryScope(this.memoryBudget);
+    try {
+      const { stats } = this;
+      const orderBy = config.orderBy ?? [];
+      const memory =
+        config.budget.maxMemoryBytes === undefined
+          ? undefined
+          : new BufferMemory<Row>(
+              (row) => estimateOperatorMemoryBytes([row]) - 2,
+              topK === undefined ? matched : [],
+            );
+      const selection =
+        topK === undefined
+          ? undefined
+          : new OwnedBoundedTopK<Row>(
+              allocationScope,
+              topK,
+              (a, b) => compareRows(a, b, orderBy),
+              memory,
+            );
+      const offer = (row: Row) => {
+        if (selection === undefined || !selection.wouldAccept(row)) return;
+        const owner = detachOwnedRow(row, allocationScope.budget);
+        try {
+          selection.offer(owner);
+        } finally {
+          owner.release();
+        }
       };
-      const partitionValues = config.hive ? parseHivePartitions(object.path) : {};
-      const physicalColumns = columns?.filter((column) => !(column in partitionValues));
-      if (physicalColumns !== undefined && physicalColumns.length > 0) {
-        scanOptions.columns = physicalColumns;
+      if (selection !== undefined) {
+        for (const row of matched) offer(row);
+        matched.length = 0;
+        initialRowsScope?.dispose();
       }
-      if (config.where !== undefined) scanOptions.where = config.where;
-      for await (const rawBatch of config.scanner.scan(object.path, scanOptions)) {
-        for (const rawRow of rawBatch) {
-          const row = config.hive ? { ...partitionValues, ...rawRow } : rawRow;
-          stats.rowsDecoded += 1;
-          enforceBudget(config.budget, stats, config.now, startedAt);
-          if (!matches(config.where, row)) continue;
-          stats.rowsMatched += 1;
-          validateSortRow(row, orderBy);
-          addOrderedMatch(matched, row, orderBy, topK);
-          enforceBufferedRowsBudget(config.budget, matched.length);
-          enforceOperatorMemoryBudget(config.budget, estimateOperatorMemoryBytes(matched));
+      const { planned: paths, skipped: skippedFiles } = await this.planObjects(discovery);
+      stats.filesSkipped = skippedFiles;
+      const columns = projectedReadColumns(
+        config.select,
+        config.where,
+        orderBy,
+        config.projections,
+        allocationScope.childScope(),
+      );
+      for (const object of paths) {
+        stats.filesPlanned += 1;
+        stats.filesRead += 1;
+        stats.bytesRequested += object.size;
+        enforceBudget(config.budget, stats, config.now, startedAt);
+        const scanOptions: ScanOptions = {
+          memoryBudget: this.memoryBudget,
+          object,
+          batchSize: config.batchSize ?? 4096,
+          stats,
+          budget: config.budget,
+          now: config.now,
+          startedAt,
+        };
+        const partitionValues = config.hive ? parseHivePartitions(object.path) : {};
+        const physicalColumns = columns?.filter(
+          (column) => !Object.hasOwn(partitionValues, column),
+        );
+        if (physicalColumns !== undefined && physicalColumns.length > 0) {
+          scanOptions.columns = physicalColumns;
+        }
+        if (config.where !== undefined) scanOptions.where = config.where;
+        for await (const rawBatch of checkedAsyncIterable(
+          config.scanner.scan(object.path, scanOptions),
+          config.budget.signal,
+        )) {
+          for (const rawRow of rawBatch) {
+            const row = config.hive ? { ...partitionValues, ...rawRow } : rawRow;
+            stats.rowsDecoded += 1;
+            enforceBudget(config.budget, stats, config.now, startedAt);
+            if (!matches(config.where, row, allocationScope)) continue;
+            stats.rowsMatched += 1;
+            validateSortRow(row, orderBy);
+            if (selection === undefined) {
+              const owner = allocationScope.adopt(detachOwnedRow(row, allocationScope.budget));
+              allocationScope.allocate(
+                (matched.length === 0 ? allocationCharges.array : 0) + allocationCharges.arraySlot,
+                "ordered row directory growth",
+                () => {
+                  matched.push(owner.value);
+                },
+              );
+              memory?.add(owner.value);
+            } else {
+              offer(row);
+            }
+            enforceBufferedRowsBudget(config.budget, selection?.size ?? matched.length);
+            if (memory !== undefined) enforceOperatorMemoryBudget(config.budget, memory.bytes);
+          }
         }
       }
+      if (selection !== undefined) {
+        const output = allocationScope.adopt(selection.finish());
+        allocationScope.allocate(
+          allocationCharges.array + output.value.length * allocationCharges.arraySlot,
+          "ordered row result directory",
+          () => {
+            for (const row of output.value) matched.push(row);
+            return matched;
+          },
+        );
+      }
+      stats.elapsedMs = config.now() - startedAt;
+    } finally {
+      discovery.dispose();
     }
-    stats.elapsedMs = config.now() - startedAt;
   }
 
   private async collectSortRuns(
     runs: Row[][],
     orderBy: OrderByTerm[],
     startedAt: number,
+    allocationScope: MemoryScope,
   ): Promise<void> {
     const config = this.config;
-    const { stats } = this;
-    const { planned: paths, skipped: skippedFiles } = await this.planObjects();
-    stats.filesSkipped = skippedFiles;
-    const columns = projectedReadColumns(config.select, config.where, orderBy, config.projections);
-    const runCapacity = config.budget.maxBufferedRows ?? Number.POSITIVE_INFINITY;
-    const currentRun: Row[] = [];
-    for (const object of paths) {
-      stats.filesPlanned += 1;
-      stats.filesRead += 1;
-      stats.bytesRequested += object.size;
-      enforceBudget(config.budget, stats, config.now, startedAt);
-      const scanOptions: ScanOptions = {
-        object,
-        batchSize: config.batchSize ?? 4096,
-        stats,
-        budget: config.budget,
-        now: config.now,
-        startedAt,
+    const discovery = new MemoryScope(this.memoryBudget);
+    try {
+      const { stats } = this;
+      const { planned: paths, skipped: skippedFiles } = await this.planObjects(discovery);
+      stats.filesSkipped = skippedFiles;
+      const columns = projectedReadColumns(
+        config.select,
+        config.where,
+        orderBy,
+        config.projections,
+        allocationScope.childScope(),
+      );
+      const runCapacity = config.budget.maxBufferedRows ?? Number.POSITIVE_INFINITY;
+      let currentRun: Row[] = [];
+      let directory = allocationScope.childScope();
+      const flush = () => {
+        flushSortRun(runs, currentRun, orderBy, allocationScope);
+        currentRun = [];
+        directory.dispose();
+        directory = allocationScope.childScope();
       };
-      const partitionValues = config.hive ? parseHivePartitions(object.path) : {};
-      const physicalColumns = columns?.filter((column) => !(column in partitionValues));
-      if (physicalColumns !== undefined && physicalColumns.length > 0) {
-        scanOptions.columns = physicalColumns;
-      }
-      if (config.where !== undefined) scanOptions.where = config.where;
-      for await (const rawBatch of config.scanner.scan(object.path, scanOptions)) {
-        for (const rawRow of rawBatch) {
-          const row = config.hive ? { ...partitionValues, ...rawRow } : rawRow;
-          stats.rowsDecoded += 1;
-          enforceBudget(config.budget, stats, config.now, startedAt);
-          if (!matches(config.where, row)) continue;
-          stats.rowsMatched += 1;
-          validateSortRow(row, orderBy);
-          currentRun.push(row);
-          enforceBufferedRowsBudget(config.budget, currentRun.length);
-          enforceOperatorMemoryBudget(config.budget, estimateOperatorMemoryBytes(currentRun));
-          if (currentRun.length >= runCapacity) flushSortRun(runs, currentRun, orderBy);
+      const memory =
+        config.budget.maxMemoryBytes === undefined
+          ? undefined
+          : new BufferMemory<Row>((row) => estimateOperatorMemoryBytes([row]) - 2);
+      for (const object of paths) {
+        stats.filesPlanned += 1;
+        stats.filesRead += 1;
+        stats.bytesRequested += object.size;
+        enforceBudget(config.budget, stats, config.now, startedAt);
+        const scanOptions: ScanOptions = {
+          memoryBudget: this.memoryBudget,
+          object,
+          batchSize: config.batchSize ?? 4096,
+          stats,
+          budget: config.budget,
+          now: config.now,
+          startedAt,
+        };
+        const partitionValues = config.hive ? parseHivePartitions(object.path) : {};
+        const physicalColumns = columns?.filter(
+          (column) => !Object.hasOwn(partitionValues, column),
+        );
+        if (physicalColumns !== undefined && physicalColumns.length > 0) {
+          scanOptions.columns = physicalColumns;
+        }
+        if (config.where !== undefined) scanOptions.where = config.where;
+        for await (const rawBatch of checkedAsyncIterable(
+          config.scanner.scan(object.path, scanOptions),
+          config.budget.signal,
+        )) {
+          for (const rawRow of rawBatch) {
+            const row = config.hive ? { ...partitionValues, ...rawRow } : rawRow;
+            stats.rowsDecoded += 1;
+            enforceBudget(config.budget, stats, config.now, startedAt);
+            if (!matches(config.where, row, allocationScope)) continue;
+            stats.rowsMatched += 1;
+            validateSortRow(row, orderBy);
+            const owner = allocationScope.adopt(detachOwnedRow(row, allocationScope.budget));
+            directory.allocate(
+              (currentRun.length === 0 ? allocationCharges.array : 0) + allocationCharges.arraySlot,
+              "current sort run directory",
+              () => {
+                currentRun.push(owner.value);
+              },
+            );
+            memory?.add(owner.value);
+            enforceBufferedRowsBudget(config.budget, currentRun.length);
+            if (memory !== undefined) enforceOperatorMemoryBudget(config.budget, memory.bytes);
+            if (currentRun.length >= runCapacity) {
+              flush();
+              memory?.clear();
+            }
+          }
         }
       }
+      flush();
+      directory.dispose();
+      stats.elapsedMs = config.now() - startedAt;
+    } finally {
+      discovery.dispose();
     }
-    flushSortRun(runs, currentRun, orderBy);
-    stats.elapsedMs = config.now() - startedAt;
   }
 
   async explain(): Promise<ExplainResult> {
-    const { planned, skipped } = await this.planObjects();
-    const tasks = await this.tasksFromObjects(planned);
-    const projectedColumns =
-      (this.config.windows === undefined
-        ? projectedReadColumns(
-            this.config.select,
-            this.config.where,
-            undefined,
-            this.config.projections,
-          )
-        : windowReadColumns(this.config)) ?? [];
-    const json: ExplainJson = {
-      queryId: this.stats.queryId,
-      filesPlanned: tasks.length,
-      filesSkipped: skipped,
-      projectedColumns,
-      predicatePlan: classifyPredicate(this.config.where, {
-        partitionColumns: partitionColumnsFromTasks(tasks),
-        rowGroupStatsColumns: projectedColumns,
-      }),
-      metrics: { ...this.stats, columnsRead: [...this.stats.columnsRead] },
-      ...(this.config.windows === undefined
-        ? {}
-        : {
-            windowPlan: explainWindowPlan(this.config, Math.max(1, tasks.length * 2)),
-          }),
-      physicalFragments: [...this.physicalFragments.values()].map((fragment) => ({
-        ...fragment,
-        operators: [...fragment.operators],
-        candidates: fragment.candidates.map(clonePhysicalCandidate),
-      })),
-      tasks,
-    };
-    return {
-      json,
-      text: [
-        `files planned: ${json.filesPlanned}`,
-        `files skipped: ${json.filesSkipped}`,
-        `projected columns: ${json.projectedColumns.join(", ") || "*"}`,
-        `physical fragments: ${
-          json.physicalFragments?.reduce((sum, fragment) => sum + fragment.executions, 0) ?? 0
-        }`,
-        ...(json.physicalFragments?.map(
-          (fragment) =>
-            `physical ${fragment.fragmentId}: ${fragment.operators.join(" -> ") || "pass"} on ${
-              fragment.backendId
-            }${
-              fragment.replaySourceBackendId === undefined
-                ? ""
-                : ` after replay from ${fragment.replaySourceBackendId}`
-            } (${fragment.executions} execution${fragment.executions === 1 ? "" : "s"})`,
-        ) ?? []),
-        ...(json.windowPlan === undefined
-          ? []
-          : [
-              `window expressions: ${json.windowPlan.expressions}`,
-              `window sort groups: ${json.windowPlan.sortGroups}`,
-              `window qualify: ${json.windowPlan.qualify ? "yes" : "no"}`,
-              `window execution: ${json.windowPlan.execution}`,
-            ]),
-      ].join("\n"),
-    };
+    const discovery = new MemoryScope(this.memoryBudget);
+    let taskOwner: OwnedMemory<TaskInput[]> | undefined;
+    try {
+      const { planned, skipped } = await this.planObjects(discovery);
+      taskOwner = await this.ownedTasksFromObjects(planned);
+      const tasks = taskOwner.value;
+      const projectedColumns =
+        (this.config.windows === undefined
+          ? projectedReadColumns(
+              this.config.select,
+              this.config.where,
+              undefined,
+              this.config.projections,
+            )
+          : windowReadColumns(this.config)) ?? [];
+      const json: ExplainJson = {
+        queryId: this.stats.queryId,
+        filesPlanned: tasks.length,
+        filesSkipped: skipped,
+        projectedColumns,
+        predicatePlan: classifyPredicate(this.config.where, {
+          partitionColumns: partitionColumnsFromTasks(tasks),
+          rowGroupStatsColumns: projectedColumns,
+        }),
+        metrics: { ...this.stats, columnsRead: [...this.stats.columnsRead] },
+        ...(this.config.windows === undefined
+          ? {}
+          : {
+              windowPlan: explainWindowPlan(this.config, Math.max(1, tasks.length * 2)),
+            }),
+        physicalFragments: [...this.physicalFragments.values()].map((fragment) => ({
+          ...fragment,
+          operators: [...fragment.operators],
+          candidates: fragment.candidates.map(clonePhysicalCandidate),
+        })),
+        tasks,
+      };
+      return {
+        json,
+        text: [
+          `files planned: ${json.filesPlanned}`,
+          `files skipped: ${json.filesSkipped}`,
+          `projected columns: ${json.projectedColumns.join(", ") || "*"}`,
+          `physical fragments: ${
+            json.physicalFragments?.reduce((sum, fragment) => sum + fragment.executions, 0) ?? 0
+          }`,
+          ...(json.physicalFragments?.map(
+            (fragment) =>
+              `physical ${fragment.fragmentId}: ${fragment.operators.join(" -> ") || "pass"} on ${
+                fragment.backendId
+              }${
+                fragment.replaySourceBackendId === undefined
+                  ? ""
+                  : ` after replay from ${fragment.replaySourceBackendId}`
+              } (${fragment.executions} execution${fragment.executions === 1 ? "" : "s"})`,
+          ) ?? []),
+          ...(json.windowPlan === undefined
+            ? []
+            : [
+                `window expressions: ${json.windowPlan.expressions}`,
+                `window sort groups: ${json.windowPlan.sortGroups}`,
+                `window qualify: ${json.windowPlan.qualify ? "yes" : "no"}`,
+                `window execution: ${json.windowPlan.execution}`,
+              ]),
+        ].join("\n"),
+      };
+    } finally {
+      taskOwner?.release();
+      discovery.dispose();
+    }
   }
 
   async analyze(): Promise<ExplainResult> {
@@ -2300,258 +3692,527 @@ export class QueryResult {
   }
 
   private async tasksFromObjects(objects: ObjectInfo[]): Promise<TaskInput[]> {
-    const config = this.config;
-    const startedAt = config.now();
-    this.stats.rowGroupsPlanned = 0;
-    this.stats.rowGroupsTotal = 0;
-    const projectedColumns =
-      config.windows === undefined
-        ? projectedReadColumns(config.select, config.where, config.orderBy, config.projections)
-        : windowReadColumns(config);
-    const tasks: TaskInput[] = [];
-    const windowTaskPlan =
-      config.windows === undefined
-        ? undefined
-        : windowTaskPlanForWindows(config.windows, Math.max(1, objects.length * 2));
-    for (const object of objects) {
-      const partitionValues = config.hive ? parseHivePartitions(object.path) : {};
-      const physicalColumns = projectedColumns?.filter((column) => !(column in partitionValues));
-      const scanPlan = await config.scanner.planTask?.(object.path, {
-        object,
-        partitionValues,
-        stats: this.stats,
-        budget: config.budget,
-        now: config.now,
-        ...(physicalColumns !== undefined && physicalColumns.length > 0
-          ? { columns: physicalColumns }
-          : {}),
-        ...(config.where !== undefined ? { where: config.where } : {}),
-      });
-      const task: TaskInput = {
-        path: object.path,
-        size: object.size,
-        ...(scanPlan?.rowGroupCount === undefined ? {} : { rowGroupCount: scanPlan.rowGroupCount }),
-        rowGroupRanges: scanPlan?.rowGroupRanges ?? [{ start: 0, end: Number.POSITIVE_INFINITY }],
-        partitionValues,
-      };
-      if (object.etag !== undefined) task.etag = object.etag;
-      if (projectedColumns !== undefined) task.projectedColumns = projectedColumns;
-      if (config.where !== undefined) task.residualPredicate = config.where;
-      if (windowTaskPlan !== undefined) task.window = windowTaskPlan;
-      tasks.push(task);
+    const owner = await this.ownedTasksFromObjects(objects);
+    try {
+      return owner.value;
+    } finally {
+      // The plain API transfers storage out of the query's accounting lifetime.
+      owner.release();
     }
-    this.stats.planningMs = (this.stats.planningMs ?? 0) + (config.now() - startedAt);
-    return tasks;
   }
 
-  private async planObjects(): Promise<{ planned: ObjectInfo[]; skipped: number }> {
+  private async ownedTasksFromObjects(objects: ObjectInfo[]): Promise<OwnedMemory<TaskInput[]>> {
     const config = this.config;
     const startedAt = config.now();
-    // Lazily load the geospatial backend before any row is evaluated, but only
-    // if this query's filter/projection expressions actually use a spatial
-    // function that needs it. Every read path funnels through planObjects().
-    await ensureGeoBackendForExprs([
-      config.where,
-      config.qualify,
-      ...Object.values(config.projections ?? {}),
-      ...windowExpressions(config.windows),
-    ]);
-    const objects = await expandPaths(
-      config.lake.store,
-      config.source,
-      config.planningCache,
-      config.budget,
-    );
-    let planned = objects;
-    let skipped = 0;
-    if (config.hive && config.where) {
-      const hivePlanned: ObjectInfo[] = [];
-      for (const object of planned) {
-        const partitions = parseHivePartitions(object.path);
-        if (partitionMayMatch(config.where, partitions)) hivePlanned.push(object);
-        else skipped += 1;
-      }
-      planned = hivePlanned;
-    }
-    if (config.sidecarIndex && config.where) {
-      const indexedByPath = new Map(config.sidecarIndex.map((index) => [index.path, index]));
-      const indexedObjects = planned.map((object) => ({
-        ...object,
-        ...indexedByPath.get(object.path),
-        path: object.path,
-      }));
-      const pruned = pruneFilesWithIndex(indexedObjects, config.where);
-      planned = pruned.planned;
-      skipped += pruned.skipped.length;
-    }
-    if (config.scanner.planObjects !== undefined) {
-      const columns =
+    // Independent of cancellation: adapter arguments stay live until its promise settles.
+    const output = new MemoryScope(this.memoryBudget);
+    const c = allocationCharges;
+    try {
+      this.stats.rowGroupsPlanned = 0;
+      this.stats.rowGroupsTotal = 0;
+      const projectedColumns =
         config.windows === undefined
-          ? projectedReadColumns(config.select, config.where, config.orderBy, config.projections)
-          : windowReadColumns(config);
-      planned = await config.scanner.planObjects(planned, {
-        ...(columns !== undefined ? { columns } : {}),
-        ...(config.where !== undefined ? { where: config.where } : {}),
-      });
+          ? projectedReadColumns(
+              config.select,
+              config.where,
+              config.orderBy,
+              config.projections,
+              output,
+            )
+          : windowReadColumns(config, output);
+      let residualPredicate: Expr | undefined;
+      if (config.where !== undefined) {
+        const scratch = output.childScope();
+        try {
+          const wrapper = scratch.allocate(c.object + c.property, "task predicate wrapper", () => ({
+            predicate: config.where,
+          }));
+          residualPredicate = output.adopt(detachOwnedRow(wrapper.value, this.memoryBudget)).value
+            .predicate as Expr;
+        } finally {
+          scratch.dispose();
+        }
+      }
+      const tasks = output.allocate(c.array, "task list", () => [] as TaskInput[]).value;
+      const windowTaskPlan =
+        config.windows === undefined
+          ? undefined
+          : windowTaskPlanForWindows(config.windows, Math.max(1, objects.length * 2), output);
+      for (const object of objects) {
+        throwIfAborted(config.budget.signal);
+        enforceBudget(config.budget, this.stats, config.now, startedAt);
+        const partitionValues = config.hive
+          ? parseHivePartitions(object.path, output)
+          : output.allocate(c.object, "task partitions", () => ({})).value;
+        const scratch = output.childScope();
+        try {
+          const physicalColumns =
+            projectedColumns === undefined
+              ? undefined
+              : admittedColumnNames(
+                  scratch,
+                  (names) => {
+                    for (const column of projectedColumns)
+                      if (!Object.hasOwn(partitionValues, column)) names.add(column);
+                  },
+                  false,
+                );
+          const options = scratch.allocate(
+            c.object + 8 * c.property,
+            "task planning arguments",
+            () => ({
+              memoryBudget: this.memoryBudget,
+              object,
+              partitionValues,
+              stats: this.stats,
+              budget: config.budget,
+              now: config.now,
+              ...(physicalColumns !== undefined && physicalColumns.length > 0
+                ? { columns: physicalColumns }
+                : {}),
+              ...(residualPredicate !== undefined ? { where: residualPredicate } : {}),
+            }),
+          ).value;
+          const scanPlan = await config.scanner.planTask?.(object.path, options);
+          throwIfAborted(config.budget.signal);
+          enforceBudget(config.budget, this.stats, config.now, startedAt);
+          const ranges = scanPlan?.rowGroupRanges;
+          const rowGroupRanges = output.allocate(
+            c.array + (ranges?.length ?? 1) * c.arraySlot,
+            "task range list",
+            () => [] as { start: number; end: number }[],
+          ).value;
+          if (ranges === undefined) {
+            rowGroupRanges.push(
+              output.allocate(c.object + 2 * c.property, "task range", () => ({
+                start: 0,
+                end: Number.POSITIVE_INFINITY,
+              })).value,
+            );
+          } else {
+            for (const range of ranges)
+              rowGroupRanges.push(
+                output.allocate(c.object + 2 * c.property, "task range", () => ({
+                  start: range.start,
+                  end: range.end,
+                })).value,
+              );
+          }
+          output.allocate(
+            c.string + object.path.length * c.stringCodeUnit,
+            "task path",
+            () => undefined,
+          );
+          if (object.etag !== undefined)
+            output.allocate(
+              c.string + object.etag.length * c.stringCodeUnit,
+              "task etag",
+              () => undefined,
+            );
+          const task = output.allocate(
+            c.object + 9 * c.property + c.arraySlot,
+            "task record",
+            (): TaskInput => ({
+              path: object.path,
+              size: object.size,
+              rowGroupRanges,
+              partitionValues,
+              ...(scanPlan?.rowGroupCount === undefined
+                ? {}
+                : { rowGroupCount: scanPlan.rowGroupCount }),
+              ...(object.etag === undefined ? {} : { etag: object.etag }),
+              ...(projectedColumns === undefined ? {} : { projectedColumns }),
+              ...(residualPredicate === undefined ? {} : { residualPredicate }),
+              ...(windowTaskPlan === undefined ? {} : { window: windowTaskPlan }),
+            }),
+          ).value;
+          tasks.push(task);
+        } finally {
+          scratch.dispose();
+        }
+      }
+      this.stats.planningMs = (this.stats.planningMs ?? 0) + (config.now() - startedAt);
+      return output.retainAllocations(tasks);
+    } finally {
+      output.dispose();
     }
-    this.stats.planningMs = (this.stats.planningMs ?? 0) + (config.now() - startedAt);
-    return { planned, skipped };
+  }
+
+  private async planObjects(
+    parent: MemoryScope,
+  ): Promise<{ planned: ObjectInfo[]; skipped: number }> {
+    const discovery = new MemoryScope(this.memoryBudget);
+    try {
+      const config = this.config;
+      const startedAt = config.now();
+      // Lazily load the geospatial backend before any row is evaluated, but only
+      // if this query's filter/projection expressions actually use a spatial
+      // function that needs it. Every read path funnels through planObjects().
+      await ensureGeoBackendForExprs([
+        config.where,
+        config.qualify,
+        ...Object.values(config.projections ?? {}),
+        ...windowExpressions(config.windows),
+      ]);
+      const objects = await expandPaths(
+        config.lake.store,
+        config.source,
+        config.planningCache,
+        config.budget,
+        discovery,
+      );
+      let planned = objects;
+      let skipped = 0;
+      if (config.hive && config.where) {
+        const hivePlanned = discovery.allocate(
+          allocationCharges.array,
+          "hive object plan",
+          () => [] as ObjectInfo[],
+        ).value;
+        for (const object of planned) {
+          const pruning = discovery.childScope();
+          try {
+            const partitions = parseHivePartitions(object.path, pruning);
+            if (partitionMayMatch(config.where, partitions)) {
+              discovery.allocate(
+                allocationCharges.arraySlot,
+                "hive object plan slot",
+                () => undefined,
+              );
+              hivePlanned.push(object);
+            } else skipped += 1;
+          } finally {
+            pruning.dispose();
+          }
+        }
+        planned = hivePlanned;
+      }
+      if (config.sidecarIndex && config.where) {
+        const indexing = discovery.childScope();
+        try {
+          const indexedByPath = indexing.allocate(
+            allocationCharges.object,
+            "sidecar index directory",
+            () => new Map<string, SidecarFileIndex | undefined>(),
+          ).value;
+          for (const object of planned) {
+            if (indexedByPath.has(object.path)) continue;
+            indexing.allocate(allocationCharges.property, "sidecar index entry", () => undefined);
+            indexedByPath.set(object.path, undefined);
+          }
+          for (const index of config.sidecarIndex) {
+            if (indexedByPath.has(index.path)) indexedByPath.set(index.path, index);
+          }
+          const pruningOptions = indexing.allocate(
+            allocationCharges.object + 2 * allocationCharges.property,
+            "sidecar pruning arguments",
+            () => ({
+              scope: discovery,
+              indexForFile: (object: ObjectInfo) => indexedByPath.get(object.path),
+            }),
+          ).value;
+          const pruned = pruneFilesWithIndex(planned, config.where, pruningOptions);
+          planned = pruned.planned;
+          skipped += pruned.skipped.length;
+        } finally {
+          indexing.dispose();
+        }
+      }
+      if (
+        config.scanner.planObjects !== undefined ||
+        config.scanner.planOwnedObjects !== undefined
+      ) {
+        // Planning callbacks borrow these arguments until their promise settles.
+        // Do not tie this scope to cancellation while the callback may still use them.
+        const planning = new MemoryScope(this.memoryBudget);
+        try {
+          const columns =
+            config.windows === undefined
+              ? projectedReadColumns(
+                  config.select,
+                  config.where,
+                  config.orderBy,
+                  config.projections,
+                  planning,
+                )
+              : windowReadColumns(config, planning);
+          const options = planning.allocate(
+            allocationCharges.object +
+              (1 +
+                Number(columns !== undefined) +
+                Number(config.where !== undefined) +
+                Number(config.budget.signal !== undefined)) *
+                allocationCharges.property,
+            "object planning options",
+            () => ({
+              memoryBudget: this.memoryBudget,
+              ...(config.budget.signal === undefined ? {} : { signal: config.budget.signal }),
+              ...(columns !== undefined ? { columns } : {}),
+              ...(config.where !== undefined ? { where: config.where } : {}),
+            }),
+          ).value;
+          throwIfAborted(config.budget.signal);
+          enforceBudget(config.budget, this.stats, config.now, startedAt);
+          if (config.scanner.planOwnedObjects !== undefined) {
+            const input = discovery.retainAllocations(planned);
+            try {
+              const output = await config.scanner.planOwnedObjects(input, options);
+              try {
+                throwIfAborted(config.budget.signal);
+                enforceBudget(config.budget, this.stats, config.now, startedAt);
+                planned = discovery.adopt(output).value;
+              } catch (error) {
+                output.release();
+                throw error;
+              }
+            } finally {
+              input.release();
+            }
+          } else if (config.scanner.planObjects !== undefined) {
+            planned = await config.scanner.planObjects(planned, options);
+            throwIfAborted(config.budget.signal);
+            enforceBudget(config.budget, this.stats, config.now, startedAt);
+          }
+        } finally {
+          planning.dispose();
+        }
+      }
+      this.stats.planningMs = (this.stats.planningMs ?? 0) + (config.now() - startedAt);
+      const result = discovery.allocate(
+        allocationCharges.object + 2 * allocationCharges.property,
+        "object plan result",
+        () => ({ planned, skipped }),
+      ).value;
+      if (parent !== undefined) {
+        const owner = discovery.retainAllocations(result);
+        try {
+          parent.adopt(owner);
+        } catch (error) {
+          owner.release();
+          throw error;
+        }
+      }
+      return result;
+    } finally {
+      discovery.dispose();
+    }
   }
 
   streamNdjson(): ReadableStream<Uint8Array> {
-    const iterator = this.rows()[Symbol.asyncIterator]();
-    return new ReadableStream<Uint8Array>({
-      async pull(controller) {
-        const next = await iterator.next();
-        if (next.done) {
-          controller.close();
-          return;
-        }
-        controller.enqueue(encodeJsonLine(next.value));
-      },
-      async cancel() {
-        await iterator.return?.();
-      },
-    });
+    return jsonOutputStream(this.rows(), this.memoryBudget, "ndjson");
   }
 
   streamJson(): ReadableStream<Uint8Array> {
-    const iterator = this.rows()[Symbol.asyncIterator]();
-    let first = true;
-    return new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode("["));
-      },
-      async pull(controller) {
-        const next = await iterator.next();
-        if (next.done) {
-          controller.enqueue(new TextEncoder().encode("]"));
-          controller.close();
-          return;
-        }
-        const prefix = first ? "" : ",";
-        first = false;
-        controller.enqueue(
-          new TextEncoder().encode(`${prefix}${JSON.stringify(jsonSafeValue(next.value))}`),
-        );
-      },
-      async cancel() {
-        await iterator.return?.();
-      },
-    });
+    return jsonOutputStream(this.rows(), this.memoryBudget, "json");
   }
 
   streamCsv(options: CsvStreamOptions = {}): ReadableStream<Uint8Array> {
-    const iterator = this.rows()[Symbol.asyncIterator]();
-    const header = options.header ?? true;
-    let columns = options.columns ?? this.config.select;
-    let initialized = false;
-    return new ReadableStream<Uint8Array>({
-      async pull(controller) {
-        if (initialized) {
-          const next = await iterator.next();
-          if (next.done) {
-            controller.close();
-            return;
-          }
-          controller.enqueue(textEncoder.encode(csvRow(next.value, columns ?? [])));
-          return;
-        }
-
-        initialized = true;
-        const next = await iterator.next();
-        if (next.done) {
-          if (header && columns !== undefined) {
-            controller.enqueue(textEncoder.encode(csvHeader(columns)));
-          }
-          controller.close();
-          return;
-        }
-        columns = columns ?? Object.keys(next.value);
-        const out = `${header ? csvHeader(columns) : ""}${csvRow(next.value, columns)}`;
-        controller.enqueue(textEncoder.encode(out));
-      },
-      async cancel() {
-        await iterator.return?.();
-      },
+    const columns = options.columns ?? this.config.select;
+    return csvOutputStream(this.rows(), this.memoryBudget, {
+      ...options,
+      ...(columns === undefined ? {} : { columns }),
     });
   }
-}
-
-function csvHeader(columns: string[]): string {
-  return `${columns.map(csvCell).join(",")}\n`;
-}
-
-function csvRow(row: Row, columns: string[]): string {
-  return `${columns.map((column) => csvCell(row[column])).join(",")}\n`;
-}
-
-function csvCell(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  const safe = jsonSafeValue(value);
-  const text =
-    typeof safe === "string" || typeof safe === "number" || typeof safe === "boolean"
-      ? String(safe)
-      : JSON.stringify(safe);
-  return /[",\n\r]/u.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
 interface AggregateState {
   add(value: unknown): void;
   finish(): unknown;
-  snapshot(): AggregateStateSnapshot;
+  snapshot(scope?: MemoryScope): AggregateStateSnapshot;
+  serializedBytes(): number;
+  bufferedRows?(): number;
 }
 
 class AggregateGroup {
+  private serializedHeaderBytes: number | undefined;
   private readonly keys: Record<string, unknown>;
   private readonly states: Record<string, AggregateState>;
 
-  constructor(keys: Record<string, unknown>, states: Record<string, AggregateState>) {
+  constructor(
+    keys: Record<string, unknown>,
+    states: Record<string, AggregateState>,
+    private readonly scope: MemoryScope,
+  ) {
     this.keys = keys;
     this.states = states;
   }
 
   add(row: Row): void {
-    for (const [alias, state] of Object.entries(this.states)) {
-      state.add(aggregateValue(row, alias, stateSpecs.get(state)));
+    for (const alias in this.states) {
+      if (!Object.hasOwn(this.states, alias)) continue;
+      const state = this.states[alias];
+      if (state === undefined) continue;
+      const spec = stateSpecs.get(state);
+      if (spec?.expr === undefined) {
+        state.add(aggregateValue(row, alias, spec, this.scope));
+        continue;
+      }
+      const expressionScope = this.scope.childScope();
+      try {
+        state.add(aggregateValue(row, alias, spec, expressionScope));
+      } finally {
+        expressionScope.dispose();
+      }
     }
   }
 
-  finish(): Row {
-    const out: Row = { ...this.keys };
-    for (const [alias, state] of Object.entries(this.states)) out[alias] = state.finish();
-    return out;
+  finish(scope: MemoryScope): Row {
+    let bytes = allocationCharges.object;
+    for (const key in this.keys) {
+      if (Object.hasOwn(this.keys, key))
+        bytes +=
+          allocationCharges.property +
+          allocationCharges.string +
+          key.length * allocationCharges.stringCodeUnit;
+    }
+    for (const alias in this.states) {
+      if (Object.hasOwn(this.states, alias))
+        bytes +=
+          allocationCharges.property +
+          allocationCharges.string +
+          alias.length * allocationCharges.stringCodeUnit;
+    }
+    return scope.allocate(bytes, "aggregate result row", () => {
+      const out: Row = { ...this.keys };
+      for (const alias in this.states) {
+        if (Object.hasOwn(this.states, alias)) out[alias] = this.states[alias]?.finish();
+      }
+      return out;
+    }).value;
   }
 
-  snapshot(key: string): AggregateGroupSnapshot {
-    const states: Record<string, AggregateStateSnapshot> = {};
-    for (const [alias, state] of Object.entries(this.states)) states[alias] = state.snapshot();
-    return { key, keys: snapshotRecord(this.keys), states };
+  memory(key: string, budget: QueryBudget, target: { bytes: number; rows: number }): void {
+    const measureBytes = budget.maxMemoryBytes !== undefined;
+    if (measureBytes && this.serializedHeaderBytes === undefined) {
+      let keyBytes = 2;
+      let fields = 0;
+      for (const column in this.keys) {
+        if (!Object.hasOwn(this.keys, column)) continue;
+        const valueBytes = snapshotScalarSerializedBytes(this.keys[column], this.scope);
+        if (column === "__proto__") continue;
+        keyBytes += (fields++ > 0 ? 1 : 0) + serializedValueBytes(column) + 1 + valueBytes;
+      }
+      let header = '{"key":,"keys":,"states":{}}'.length + serializedValueBytes(key) + keyBytes;
+      let count = 0;
+      for (const alias in this.states) {
+        if (!Object.hasOwn(this.states, alias)) continue;
+        header += estimateOperatorMemoryBytes(alias) + 1 + (count++ > 0 ? 1 : 0);
+      }
+      this.serializedHeaderBytes = header;
+    }
+    let bytes = measureBytes ? (this.serializedHeaderBytes ?? 0) : 0;
+    let rows = 0;
+    for (const alias in this.states) {
+      if (!Object.hasOwn(this.states, alias)) continue;
+      const state = this.states[alias] as AggregateState;
+      if (budget.maxBufferedRows !== undefined) rows += state.bufferedRows?.() ?? 0;
+      if (measureBytes) bytes += state.serializedBytes();
+    }
+    target.bytes = bytes;
+    target.rows = rows;
+  }
+
+  snapshot(key: string, scope?: MemoryScope): AggregateGroupSnapshot {
+    const construct = () => {
+      const states: Record<string, AggregateStateSnapshot> = {};
+      for (const alias in this.states) {
+        if (!Object.hasOwn(this.states, alias)) continue;
+        const state = this.states[alias] as AggregateState;
+        const copy = () => {
+          states[alias] = state.snapshot(scope);
+        };
+        if (scope)
+          scope.allocate(
+            allocationCharges.property +
+              allocationCharges.string +
+              alias.length * allocationCharges.stringCodeUnit +
+              allocationCharges.object +
+              4 * allocationCharges.property,
+            "aggregate snapshot state",
+            copy,
+          );
+        else copy();
+      }
+      return { key, keys: snapshotRecord(this.keys, scope), states };
+    };
+    return scope
+      ? scope.allocate(
+          2 * allocationCharges.object + 3 * allocationCharges.property,
+          "aggregate snapshot group",
+          construct,
+        ).value
+      : construct();
   }
 }
 
 const stateSpecs = new WeakMap<AggregateState, AggregateExpr>();
 
+function aggregateGroupEntryBytes(key: string): number {
+  return (
+    allocationCharges.object +
+    3 * allocationCharges.property +
+    allocationCharges.string +
+    key.length * allocationCharges.stringCodeUnit
+  );
+}
+
+function aggregateStateEntryBytes(alias: string): number {
+  return (
+    8 * allocationCharges.object +
+    16 * allocationCharges.property +
+    allocationCharges.string +
+    alias.length * allocationCharges.stringCodeUnit
+  );
+}
+
 function createAggregateGroup(
   groupColumns: string[],
   keyValues: unknown[],
   spec: AggregateSpec,
+  scope: MemoryScope,
 ): AggregateGroup {
-  const keys: Record<string, unknown> = {};
-  for (let index = 0; index < groupColumns.length; index += 1) {
-    const column = groupColumns[index];
-    if (column !== undefined) keys[column] = keyValues[index];
+  const input = scope.childScope();
+  try {
+    const borrowed = input.allocate(
+      allocationCharges.object,
+      "aggregate key record",
+      () => Object.create(null) as Record<string, unknown>,
+    ).value;
+    for (let index = 0; index < groupColumns.length; index++) {
+      const column = groupColumns[index];
+      if (column !== undefined)
+        input.allocate(
+          allocationCharges.property +
+            allocationCharges.string +
+            column.length * allocationCharges.stringCodeUnit,
+          "aggregate key property",
+          () => {
+            borrowed[column] = keyValues[index];
+          },
+        );
+    }
+    const keys = scope.adopt(detachOwnedRow(borrowed, scope.budget)).value;
+    const states = scope.allocate(
+      allocationCharges.object,
+      "aggregate states",
+      () => Object.create(null) as Record<string, AggregateState>,
+    ).value;
+    for (const alias in spec) {
+      if (!Object.hasOwn(spec, alias)) continue;
+      const aggregate = spec[alias] as AggregateExpr;
+      scope.allocate(aggregateStateEntryBytes(alias), "aggregate state entry", () => {
+        const state = createAggregateState(aggregate, scope);
+        stateSpecs.set(state, aggregate);
+        states[alias] = state;
+      });
+    }
+    return new AggregateGroup(keys, states, scope);
+  } finally {
+    input.dispose();
   }
-  const states: Record<string, AggregateState> = {};
-  for (const [alias, aggregate] of Object.entries(spec)) {
-    const state = createAggregateState(aggregate);
-    stateSpecs.set(state, aggregate);
-    states[alias] = state;
-  }
-  return new AggregateGroup(keys, states);
 }
 
-function createAggregateState(aggregate: AggregateExpr): AggregateState {
+function createAggregateState(aggregate: AggregateExpr, scope: MemoryScope): AggregateState {
   switch (aggregate.op) {
     case "count":
       return new CountState();
@@ -2565,25 +4226,25 @@ function createAggregateState(aggregate: AggregateExpr): AggregateState {
     case "stddev_pop":
       return new VarianceState(aggregate.op);
     case "median":
-      return new MedianState();
+      return new MedianState([], scope);
     case "quantile":
-      return new QuantileState(requiredQuantile(aggregate));
+      return new QuantileState(requiredQuantile(aggregate), [], scope);
     case "min":
-      return new MinMaxState("min");
+      return new MinMaxState("min", null, scope);
     case "max":
-      return new MinMaxState("max");
+      return new MinMaxState("max", null, scope);
     case "count_distinct":
-      return new CountDistinctState("count_distinct");
+      return new CountDistinctState("count_distinct", [], scope);
     case "approx_count_distinct":
-      return new CountDistinctState("approx_count_distinct");
+      return new CountDistinctState("approx_count_distinct", [], scope);
     case "mode":
-      return new ModeState();
+      return new ModeState([], scope);
     case "first":
-      return new FirstState();
+      return new FirstState(undefined, false, scope);
     case "last":
-      return new LastState();
+      return new LastState(undefined, false, scope);
     case "any":
-      return new AnyState();
+      return new AnyState(undefined, false, scope);
   }
 }
 
@@ -2597,6 +4258,10 @@ class CountState implements AggregateState {
 
   finish(): number {
     return this.count;
+  }
+
+  serializedBytes(): number {
+    return '{"op":"count","count":}'.length + serializedValueBytes(this.count);
   }
 
   snapshot(): AggregateStateSnapshot {
@@ -2615,6 +4280,10 @@ class SumState implements AggregateState {
 
   finish(): number {
     return this.sum;
+  }
+
+  serializedBytes(): number {
+    return '{"op":"sum","sum":}'.length + serializedValueBytes(this.sum);
   }
 
   snapshot(): AggregateStateSnapshot {
@@ -2637,6 +4306,14 @@ class AvgState implements AggregateState {
 
   finish(): number | null {
     return this.count === 0 ? null : this.sum / this.count;
+  }
+
+  serializedBytes(): number {
+    return (
+      '{"op":"avg","sum":,"count":}'.length +
+      serializedValueBytes(this.sum) +
+      serializedValueBytes(this.count)
+    );
   }
 
   snapshot(): AggregateStateSnapshot {
@@ -2674,55 +4351,174 @@ class VarianceState implements AggregateState {
     }
   }
 
+  serializedBytes(): number {
+    return (
+      '{"op":,"count":,"mean":,"m2":}'.length +
+      serializedValueBytes(this.op) +
+      serializedValueBytes(this.count) +
+      serializedValueBytes(this.mean) +
+      serializedValueBytes(this.m2)
+    );
+  }
+
   snapshot(): AggregateStateSnapshot {
     return { op: this.op, count: this.count, mean: this.mean, m2: this.m2 };
   }
 }
 
+/** Lazily measures restored values once; subsequent mutations adjust only changed items. */
+class AggregateValuesMemory<T> {
+  constructor(private readonly values: () => Iterable<T>) {}
+  private memory: BufferMemory<T> | undefined;
+
+  add(value: T): void {
+    this.memory?.add(value);
+  }
+
+  bytes(headerBytes: number): number {
+    this.memory ??= new BufferMemory<T>(estimateOperatorMemoryBytes, this.values());
+    return headerBytes - 2 + this.memory.bytes;
+  }
+}
+
+function aggregateRetainedValueBytes(value: number | string): number {
+  return typeof value === "string"
+    ? allocationCharges.string + value.length * allocationCharges.stringCodeUnit
+    : allocationCharges.number;
+}
+
 class MedianState implements AggregateState {
-  constructor(private readonly values: (number | string)[] = []) {}
+  private readonly memory = new AggregateValuesMemory<number | string>(() => this.values);
+  private readonly values: (number | string)[];
+  private readonly ledger: MutableMemoryLedger;
+  constructor(
+    values: (number | string)[],
+    private readonly scope: MemoryScope,
+  ) {
+    this.values = scope.allocate(
+      allocationCharges.array,
+      "median values",
+      () => [] as (number | string)[],
+    ).value;
+    this.ledger = new MutableMemoryLedger(scope);
+    for (const value of values) this.add(value);
+  }
 
   add(value: unknown): void {
     if (value === null || value === undefined) return;
     if (typeof value !== "number" && typeof value !== "string") throwAggregateType("median");
-    this.values.push(value);
+    this.ledger.append(
+      allocationCharges.arraySlot + aggregateRetainedValueBytes(value),
+      "aggregate retained value",
+      () => {
+        this.memory.add(value);
+        this.values.push(value);
+      },
+    );
   }
 
   finish(): number | string | null {
     if (this.values.length === 0) return null;
-    const values = [...this.values].sort(compareMedianValues);
-    const middle = Math.floor((values.length - 1) / 2);
-    const left = values[middle];
-    if (left === undefined) return null;
-    if (values.length % 2 === 1) return left;
-    const right = values[middle + 1];
-    if (typeof left === "number" && typeof right === "number") return (left + right) / 2;
-    return left;
+    const scratch = this.scope.reserve(
+      allocationCharges.array +
+        this.values.length * (2 * allocationCharges.arraySlot + allocationCharges.object),
+      "median sort workspace",
+    );
+    try {
+      const values = [...this.values].sort(compareMedianValues);
+      const middle = Math.floor((values.length - 1) / 2);
+      const left = values[middle];
+      if (left === undefined) return null;
+      if (values.length % 2 === 1) return left;
+      const right = values[middle + 1];
+      if (typeof left === "number" && typeof right === "number") return (left + right) / 2;
+      return left;
+    } finally {
+      scratch.release();
+    }
+  }
+
+  serializedBytes(): number {
+    return this.memory.bytes('{"op":"median","values":[]}'.length);
+  }
+  bufferedRows(): number {
+    return this.values.length;
   }
 
   snapshot(): AggregateStateSnapshot {
-    return { op: "median", values: [...this.values] };
+    return this.scope.allocate(
+      allocationCharges.object +
+        2 * allocationCharges.property +
+        allocationCharges.array +
+        this.values.length * allocationCharges.arraySlot,
+      "median snapshot",
+      () => ({ op: "median" as const, values: [...this.values] }),
+    ).value;
   }
 }
 
 class QuantileState implements AggregateState {
+  private readonly memory = new AggregateValuesMemory<number>(() => this.values);
   constructor(
     private readonly quantile: number,
-    private readonly values: number[] = [],
-  ) {}
+    values: number[],
+    private readonly scope: MemoryScope,
+  ) {
+    this.values = scope.allocate(
+      allocationCharges.array,
+      "quantile values",
+      () => [] as number[],
+    ).value;
+    this.ledger = new MutableMemoryLedger(scope);
+    for (const value of values) this.add(value);
+  }
+  private readonly values: number[];
+  private readonly ledger: MutableMemoryLedger;
 
   add(value: unknown): void {
     if (value === null || value === undefined) return;
     if (typeof value !== "number") throwAggregateType("quantile");
-    this.values.push(value);
+    this.ledger.append(
+      allocationCharges.arraySlot + aggregateRetainedValueBytes(value),
+      "aggregate retained value",
+      () => {
+        this.memory.add(value);
+        this.values.push(value);
+      },
+    );
   }
 
   finish(): number | null {
-    return continuousQuantile(this.values, this.quantile);
+    const scratch = this.scope.reserve(
+      allocationCharges.array +
+        this.values.length * (2 * allocationCharges.arraySlot + allocationCharges.object),
+      "quantile sort workspace",
+    );
+    try {
+      return continuousQuantile(this.values, this.quantile);
+    } finally {
+      scratch.release();
+    }
+  }
+
+  serializedBytes(): number {
+    return this.memory.bytes(
+      '{"op":"quantile","quantile":,"values":[]}'.length + serializedValueBytes(this.quantile),
+    );
+  }
+  bufferedRows(): number {
+    return this.values.length;
   }
 
   snapshot(): AggregateStateSnapshot {
-    return { op: "quantile", quantile: this.quantile, values: [...this.values] };
+    return this.scope.allocate(
+      allocationCharges.object +
+        3 * allocationCharges.property +
+        allocationCharges.array +
+        this.values.length * allocationCharges.arraySlot,
+      "quantile snapshot",
+      () => ({ op: "quantile" as const, quantile: this.quantile, values: [...this.values] }),
+    ).value;
   }
 }
 
@@ -2734,8 +4530,13 @@ function compareMedianValues(left: number | string, right: number | string): num
 class MinMaxState implements AggregateState {
   constructor(
     private readonly op: "min" | "max",
-    private value: string | number | boolean | null = null,
-  ) {}
+    private value: string | number | boolean | null,
+    scope: MemoryScope,
+  ) {
+    this.retained = new OwnedReplacementValue(scope);
+    this.value = this.retained.replace(value);
+  }
+  private readonly retained: OwnedReplacementValue;
 
   add(value: unknown): void {
     if (value === null || value === undefined) return;
@@ -2743,15 +4544,22 @@ class MinMaxState implements AggregateState {
       throwAggregateType(this.op);
     }
     if (this.value === null) {
-      this.value = value;
+      this.value = this.retained.replace(value);
       return;
     }
     if (typeof this.value !== typeof value) throwAggregateType(this.op);
-    if (this.op === "min" ? value < this.value : value > this.value) this.value = value;
+    if (this.op === "min" ? value < this.value : value > this.value)
+      this.value = this.retained.replace(value);
   }
 
   finish(): string | number | boolean | null {
     return this.value;
+  }
+
+  serializedBytes(): number {
+    return (
+      '{"op":,"value":}'.length + serializedValueBytes(this.op) + serializedValueBytes(this.value)
+    );
   }
 
   snapshot(): AggregateStateSnapshot {
@@ -2760,34 +4568,111 @@ class MinMaxState implements AggregateState {
 }
 
 class CountDistinctState implements AggregateState {
+  private readonly memory = new AggregateValuesMemory<string>(() => this.values);
   private readonly values: Set<string>;
 
   constructor(
     private readonly op: "count_distinct" | "approx_count_distinct",
-    values: string[] = [],
+    values: string[],
+    private readonly scope: MemoryScope,
   ) {
-    this.values = new Set(values);
+    this.values = scope.allocate(
+      allocationCharges.object,
+      "distinct directory",
+      () => new Set<string>(),
+    ).value;
+    this.ledger = new MutableMemoryLedger(scope);
+    for (const key of values) this.retainKey(key);
+  }
+  private readonly ledger: MutableMemoryLedger;
+
+  private retainKey(key: string): void {
+    if (this.values.has(key)) return;
+    this.ledger.append(
+      allocationCharges.property +
+        allocationCharges.string +
+        key.length * allocationCharges.stringCodeUnit,
+      "distinct retained key",
+      () => {
+        this.memory.add(key);
+        this.values.add(key);
+      },
+    );
   }
 
   add(value: unknown): void {
     if (value === null || value === undefined) return;
-    this.values.add(stableStringify(value));
+    const formatting = this.scope.childScope();
+    try {
+      const key = formatting.adopt(stringifyOwnedStableData(value, formatting));
+      this.retainKey(key.value);
+    } finally {
+      formatting.dispose();
+    }
   }
 
   finish(): number {
     return this.values.size;
   }
 
+  serializedBytes(): number {
+    return this.memory.bytes('{"op":,"values":[]}'.length + serializedValueBytes(this.op));
+  }
+  bufferedRows(): number {
+    return this.values.size;
+  }
+
   snapshot(): AggregateStateSnapshot {
-    return { op: this.op, values: [...this.values].sort() };
+    const scratch = this.scope.reserve(
+      allocationCharges.array +
+        this.values.size * (allocationCharges.arraySlot + allocationCharges.object),
+      "distinct snapshot sort",
+    );
+    try {
+      return this.scope.allocate(
+        allocationCharges.object +
+          2 * allocationCharges.property +
+          allocationCharges.array +
+          this.values.size * allocationCharges.arraySlot,
+        "distinct snapshot",
+        () => ({ op: this.op, values: [...this.values].sort() }),
+      ).value;
+    } finally {
+      scratch.release();
+    }
   }
 }
 
 class ModeState implements AggregateState {
+  private serializedEntriesBytes: number | undefined;
   private readonly values: Map<string, { value: string | number | boolean | null; count: number }>;
 
-  constructor(values: { key: string; value: AggregateSnapshotValue; count: number }[] = []) {
-    this.values = new Map(values.map((entry) => [entry.key, { ...entry }]));
+  private readonly ledger: MutableMemoryLedger;
+  constructor(
+    values: { key: string; value: AggregateSnapshotValue; count: number }[],
+    private readonly scope: MemoryScope,
+  ) {
+    this.values = scope.allocate(
+      allocationCharges.object,
+      "mode directory",
+      () => new Map<string, { value: AggregateSnapshotValue; count: number }>(),
+    ).value;
+    this.ledger = new MutableMemoryLedger(scope);
+    for (const entry of values) {
+      this.ledger.append(this.entryBytes(entry.key, entry.value), "restored mode entry", () => {
+        this.values.set(entry.key, { value: entry.value, count: entry.count });
+      });
+    }
+  }
+
+  private entryBytes(key: string, value: AggregateSnapshotValue): number {
+    return (
+      2 * allocationCharges.object +
+      4 * allocationCharges.property +
+      allocationCharges.string +
+      key.length * allocationCharges.stringCodeUnit +
+      (typeof value === "string" ? aggregateRetainedValueBytes(value) : allocationCharges.number)
+    );
   }
 
   add(value: unknown): void {
@@ -2795,10 +4680,33 @@ class ModeState implements AggregateState {
     if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") {
       throwAggregateType("mode");
     }
-    const key = stableStringify(value);
-    const existing = this.values.get(key);
-    if (existing === undefined) this.values.set(key, { value, count: 1 });
-    else existing.count += 1;
+    const scratch = this.scope.reserve(
+      allocationCharges.string +
+        allocationCharges.stringCodeUnit *
+          (typeof value === "string" ? jsonStringUtf8Bytes(value) : 32),
+      "mode key formatting",
+    );
+    try {
+      const key = stableStringify(value);
+      const existing = this.values.get(key);
+      if (existing === undefined) {
+        this.ledger.append(this.entryBytes(key, value), "mode entry", () => {
+          const entry = { value, count: 1 };
+          if (this.serializedEntriesBytes !== undefined)
+            this.serializedEntriesBytes +=
+              (this.values.size > 0 ? 1 : 0) + modeEntrySerializedBytes(key, value, 1);
+          this.values.set(key, entry);
+        });
+      } else {
+        const nextCount = existing.count + 1;
+        if (this.serializedEntriesBytes !== undefined)
+          this.serializedEntriesBytes +=
+            serializedValueBytes(nextCount) - serializedValueBytes(existing.count);
+        existing.count = nextCount;
+      }
+    } finally {
+      scratch.release();
+    }
   }
 
   finish(): string | number | boolean | null {
@@ -2809,27 +4717,69 @@ class ModeState implements AggregateState {
     return best?.value ?? null;
   }
 
-  snapshot(): AggregateStateSnapshot {
-    return {
-      op: "mode",
-      values: [...this.values.entries()].map(([key, entry]) => ({
-        key,
-        value: entry.value,
-        count: entry.count,
-      })),
-    };
+  serializedBytes(): number {
+    if (this.serializedEntriesBytes === undefined) {
+      let bytes = Math.max(0, this.values.size - 1);
+      for (const [key, entry] of this.values)
+        bytes += modeEntrySerializedBytes(key, entry.value, entry.count);
+      this.serializedEntriesBytes = bytes;
+    }
+    return '{"op":"mode","values":[]}'.length + this.serializedEntriesBytes;
   }
+  bufferedRows(): number {
+    return this.values.size;
+  }
+
+  snapshot(): AggregateStateSnapshot {
+    return this.scope.allocate(
+      allocationCharges.object +
+        2 * allocationCharges.property +
+        allocationCharges.array +
+        this.values.size *
+          (3 * allocationCharges.arraySlot +
+            allocationCharges.array +
+            allocationCharges.object +
+            3 * allocationCharges.property),
+      "mode snapshot",
+      () => ({
+        op: "mode" as const,
+        values: [...this.values.entries()].map(([key, entry]) => ({
+          key,
+          value: entry.value,
+          count: entry.count,
+        })),
+      }),
+    ).value;
+  }
+}
+
+function modeEntrySerializedBytes(
+  key: string,
+  value: AggregateSnapshotValue,
+  count: number,
+): number {
+  return (
+    '{"key":,"value":,"count":}'.length +
+    serializedValueBytes(key) +
+    serializedValueBytes(value) +
+    serializedValueBytes(count)
+  );
 }
 
 class FirstState implements AggregateState {
   constructor(
-    protected value: unknown = undefined,
-    protected seen = false,
-  ) {}
+    protected value: unknown,
+    protected seen: boolean,
+    protected readonly scope: MemoryScope,
+  ) {
+    this.retained = new OwnedReplacementValue(scope);
+    this.value = seen ? this.retained.replace(value) : null;
+  }
+  private readonly retained: OwnedReplacementValue;
 
   add(value: unknown): void {
     if (this.seen) return;
-    this.value = value;
+    this.value = this.retained.replace(value);
     this.seen = true;
   }
 
@@ -2837,19 +4787,36 @@ class FirstState implements AggregateState {
     return this.seen ? this.value : null;
   }
 
-  snapshot(): AggregateStateSnapshot {
-    return { op: "first", seen: this.seen, value: snapshotValue(this.seen ? this.value : null) };
+  serializedBytes(): number {
+    return (
+      '{"op":"first","seen":,"value":}'.length +
+      (this.seen ? 4 : 5) +
+      snapshotScalarSerializedBytes(this.seen ? this.value : null, this.scope)
+    );
+  }
+
+  snapshot(scope?: MemoryScope): AggregateStateSnapshot {
+    return {
+      op: "first",
+      seen: this.seen,
+      value: snapshotValue(this.seen ? this.value : null, scope),
+    };
   }
 }
 
 class LastState implements AggregateState {
   constructor(
-    private value: unknown = undefined,
-    private seen = false,
-  ) {}
+    private value: unknown,
+    private seen: boolean,
+    private readonly scope: MemoryScope,
+  ) {
+    this.retained = new OwnedReplacementValue(scope);
+    this.value = seen ? this.retained.replace(value) : null;
+  }
+  private readonly retained: OwnedReplacementValue;
 
   add(value: unknown): void {
-    this.value = value;
+    this.value = this.retained.replace(value);
     this.seen = true;
   }
 
@@ -2857,14 +4824,34 @@ class LastState implements AggregateState {
     return this.seen ? this.value : null;
   }
 
-  snapshot(): AggregateStateSnapshot {
-    return { op: "last", seen: this.seen, value: snapshotValue(this.seen ? this.value : null) };
+  serializedBytes(): number {
+    return (
+      '{"op":"last","seen":,"value":}'.length +
+      (this.seen ? 4 : 5) +
+      snapshotScalarSerializedBytes(this.seen ? this.value : null, this.scope)
+    );
+  }
+
+  snapshot(scope?: MemoryScope): AggregateStateSnapshot {
+    return {
+      op: "last",
+      seen: this.seen,
+      value: snapshotValue(this.seen ? this.value : null, scope),
+    };
   }
 }
 
 class AnyState extends FirstState {
-  override snapshot(): AggregateStateSnapshot {
-    return { op: "any", seen: this.seen, value: snapshotValue(this.seen ? this.value : null) };
+  override serializedBytes(): number {
+    return super.serializedBytes() - 2;
+  }
+
+  override snapshot(scope?: MemoryScope): AggregateStateSnapshot {
+    return {
+      op: "any",
+      seen: this.seen,
+      value: snapshotValue(this.seen ? this.value : null, scope),
+    };
   }
 }
 
@@ -2901,16 +4888,50 @@ export function deserializeSortOperatorState(
   return validateSortOperatorState(JSON.parse(new TextDecoder().decode(bytes)));
 }
 
-function serializeSortRunRows(rows: Record<string, OperatorSnapshotValue>[]): Uint8Array {
-  return new TextEncoder().encode(stableStringify(rows));
+async function writeOwnedCheckpoint(
+  spill: SpillAdapter,
+  id: string,
+  output: OwnedMemory<Uint8Array>,
+  scope: MemoryScope,
+) {
+  const pin = output.retain();
+  let staged: Awaited<ReturnType<NonNullable<SpillAdapter["stageWrite"]>>> | undefined;
+  const check = () => {
+    if (scope.disposed)
+      throw new LakeqlError("LAKEQL_ABORTED", "Checkpoint scope disposed during spill");
+  };
+  try {
+    check();
+    if (spill.stageWrite === undefined) {
+      const ref = await spill.write(id, pin.value);
+      check();
+      return ref;
+    }
+    staged = await spill.stageWrite(id, pin.value);
+    check();
+    const ref = await staged.commit();
+    check();
+    return ref;
+  } catch (error) {
+    if (staged !== undefined) {
+      try {
+        await staged.rollback();
+      } catch (cleanup) {
+        throw new AggregateError([error, cleanup], "Checkpoint write and rollback failed");
+      }
+    }
+    throw error;
+  } finally {
+    pin.release();
+  }
 }
 
-function deserializeSortRunRows(bytes: Uint8Array): Row[] {
-  const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
+function deserializeSortRunRows(bytes: Uint8Array, scope: MemoryScope): Row[] {
+  const parsed = scope.adopt(parseOwnedJson(bytes, scope)).value;
   if (!Array.isArray(parsed) || !parsed.every(isTopKSnapshotRow)) {
     throw new LakeqlError("LAKEQL_BOOKMARK_INVALID", "Sort run state is invalid");
   }
-  return parsed.map((row) => ({ ...row }));
+  return parsed;
 }
 
 async function topKRowsFromState(
@@ -2918,10 +4939,12 @@ async function topKRowsFromState(
   offset: number,
   limit: number,
   options: TopKOptions,
+  scope: MemoryScope,
+  directoryScope: MemoryScope,
 ): Promise<Row[]> {
   const state =
     isSpilledOperatorState(options.operatorState) && options.spill !== undefined
-      ? await options.spill.read(options.operatorState.spillRef)
+      ? await readCheckpointSpill(options.spill, options.operatorState.spillRef, scope)
       : options.operatorState;
   if (isSpilledOperatorState(state)) {
     throw new LakeqlError("LAKEQL_BOOKMARK_INVALID", "Top-k spill state requires a spill adapter", {
@@ -2929,9 +4952,15 @@ async function topKRowsFromState(
     });
   }
   if (state === undefined) return [];
-  const snapshot = deserializeTopKOperatorState(state);
+  const snapshot =
+    state instanceof Uint8Array
+      ? validateTopKOperatorState(scope.adopt(parseOwnedJson(state, scope)).value, false)
+      : validateTopKOperatorState(
+          scope.adopt(detachOwnedRow(state as unknown as Row, scope.budget)).value,
+          false,
+        );
   if (
-    stableStringify(snapshot.orderBy) !== stableStringify(orderBy) ||
+    !sameOrderBy(snapshot.orderBy, orderBy) ||
     snapshot.offset !== offset ||
     snapshot.limit !== limit
   ) {
@@ -2944,13 +4973,21 @@ async function topKRowsFromState(
       limit,
     });
   }
-  return snapshot.rows.map((row) => ({ ...row }));
+  return directoryScope.allocate(
+    allocationCharges.array + snapshot.rows.length * allocationCharges.arraySlot,
+    "restored top-k directory",
+    () => snapshot.rows.slice(),
+  ).value;
 }
 
-async function sortRunsFromState(orderBy: OrderByTerm[], options: SortOptions): Promise<Row[][]> {
+async function sortRunsFromState(
+  orderBy: OrderByTerm[],
+  options: SortOptions,
+  scope: MemoryScope,
+): Promise<Row[][]> {
   const state =
     isSpilledOperatorState(options.operatorState) && options.spill !== undefined
-      ? await options.spill.read(options.operatorState.spillRef)
+      ? await readCheckpointSpill(options.spill, options.operatorState.spillRef, scope)
       : options.operatorState;
   if (isSpilledOperatorState(state)) {
     throw new LakeqlError("LAKEQL_BOOKMARK_INVALID", "Sort spill state requires a spill adapter", {
@@ -2958,17 +4995,27 @@ async function sortRunsFromState(orderBy: OrderByTerm[], options: SortOptions): 
     });
   }
   if (state === undefined) return [];
-  const snapshot = deserializeSortOperatorState(state);
-  if (stableStringify(snapshot.orderBy) !== stableStringify(orderBy)) {
+  const snapshot =
+    state instanceof Uint8Array
+      ? validateSortOperatorState(scope.adopt(parseOwnedJson(state, scope)).value, false)
+      : validateSortOperatorState(
+          scope.adopt(detachOwnedRow(state as unknown as Row, scope.budget)).value,
+          false,
+        );
+  if (!sameOrderBy(snapshot.orderBy, orderBy)) {
     throw new LakeqlError("LAKEQL_BOOKMARK_STALE", "Sort operator state does not match request", {
       stateOrderBy: snapshot.orderBy,
       orderBy,
     });
   }
-  const runs: Row[][] = [];
+  const runs = scope.allocate(
+    allocationCharges.array + snapshot.runs.length * allocationCharges.arraySlot,
+    "restore source run directory",
+    () => [] as Row[][],
+  ).value;
   for (const run of snapshot.runs) {
     if ("rows" in run) {
-      runs.push(run.rows.map((row) => ({ ...row })));
+      runs.push(run.rows);
       continue;
     }
     if (options.spill === undefined) {
@@ -2980,7 +5027,21 @@ async function sortRunsFromState(orderBy: OrderByTerm[], options: SortOptions): 
         },
       );
     }
-    runs.push(deserializeSortRunRows(await options.spill.read(run.spillRef)));
+    const bytes = await readCheckpointSpill(options.spill, run.spillRef, scope);
+    if (bytes.byteLength !== run.byteSize)
+      throw new LakeqlError("LAKEQL_BOOKMARK_INVALID", "Sort spill byte size changed", {
+        spillRef: run.spillRef,
+        expected: run.byteSize,
+        actual: bytes.byteLength,
+      });
+    const rows = deserializeSortRunRows(bytes, scope);
+    if (rows.length !== run.rowCount)
+      throw new LakeqlError("LAKEQL_BOOKMARK_INVALID", "Sort spill row count changed", {
+        spillRef: run.spillRef,
+        expected: run.rowCount,
+        actual: rows.length,
+      });
+    runs.push(rows);
   }
   return runs;
 }
@@ -2990,14 +5051,19 @@ function topKOperatorState(
   offset: number,
   limit: number,
   rows: Row[],
+  scope: MemoryScope,
 ): TopKOperatorState {
-  return {
-    version: 1,
-    orderBy: normalizeOrderBy(orderBy),
-    offset,
-    limit,
-    rows: rows.map(snapshotRecord),
-  };
+  return scope.allocate(
+    allocationCharges.object + 5 * allocationCharges.property,
+    "top-k checkpoint envelope",
+    () => ({
+      version: 1 as const,
+      orderBy,
+      offset,
+      limit,
+      rows: scope.adopt(snapshotOwnedRows(rows, scope)).value,
+    }),
+  ).value;
 }
 
 async function sortOperatorState(
@@ -3005,29 +5071,82 @@ async function sortOperatorState(
   runs: Row[][],
   spill: SpillAdapter | undefined,
   spillId: string,
+  scope: MemoryScope,
 ): Promise<SortOperatorState> {
-  const runStates: SortRunState[] = [];
+  scope.allocate(
+    allocationCharges.object + 3 * allocationCharges.property,
+    "sort checkpoint envelope",
+    () => undefined,
+  );
+  const runStates = scope.allocate(
+    allocationCharges.array + runs.length * allocationCharges.arraySlot,
+    "checkpoint run directory",
+    () => [] as SortRunState[],
+  ).value;
   for (const [index, run] of runs.entries()) {
-    const rows = run.map(snapshotRecord);
     if (spill === undefined) {
-      runStates.push({ rows });
+      const rows = scope.adopt(snapshotOwnedRows(run, scope)).value;
+      scope.allocate(
+        allocationCharges.object + allocationCharges.property,
+        "inline checkpoint run",
+        () => runStates.push({ rows }),
+      );
       continue;
     }
-    const bytes = serializeSortRunRows(rows);
-    const ref = await spill.write(`${spillId}-run-${String(index).padStart(6, "0")}`, bytes);
-    runStates.push({ spillRef: ref.id, rowCount: rows.length, byteSize: ref.byteSize });
+    const encoding = scope.childScope();
+    try {
+      const rows = encoding.adopt(snapshotOwnedRows(run, encoding)).value;
+      const output = encoding.adopt(encodeOwnedCheckpoint(rows, encoding));
+      const ref = await writeOwnedCheckpoint(
+        spill,
+        `${spillId}-run-${String(index).padStart(6, "0")}`,
+        output,
+        scope,
+      );
+      if (scope.disposed)
+        throw new LakeqlError("LAKEQL_ABORTED", "Sort checkpoint scope disposed during spill");
+      scope.allocate(
+        allocationCharges.object +
+          3 * allocationCharges.property +
+          allocationCharges.string +
+          ref.id.length * allocationCharges.stringCodeUnit,
+        "spilled checkpoint run",
+        () => runStates.push({ spillRef: ref.id, rowCount: rows.length, byteSize: ref.byteSize }),
+      );
+    } finally {
+      encoding.dispose();
+    }
   }
   return {
     version: 1,
-    orderBy: normalizeOrderBy(orderBy),
+    orderBy,
     runs: runStates,
   };
 }
 
-function validateTopKOperatorState(value: unknown): TopKOperatorState {
+/** Compare normalized ordering semantics without allocating normalized terms or JSON. */
+function sameOrderBy(left: OrderByTerm[], right: OrderByTerm[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((term, index) => {
+      const other = right[index];
+      const direction = term.direction ?? "asc";
+      const otherDirection = other?.direction ?? "asc";
+      return (
+        term.column === other?.column &&
+        direction === otherDirection &&
+        (term.nulls ?? (direction === "asc" ? "last" : "first")) ===
+          (other?.nulls ?? (otherDirection === "asc" ? "last" : "first"))
+      );
+    })
+  );
+}
+
+function validateTopKOperatorState(value: unknown, copy = true): TopKOperatorState {
   if (!isTopKOperatorState(value)) {
     throw new LakeqlError("LAKEQL_BOOKMARK_INVALID", "Top-k operator state is invalid");
   }
+  if (!copy) return value;
   return {
     version: 1,
     orderBy: normalizeOrderBy(value.orderBy),
@@ -3037,10 +5156,11 @@ function validateTopKOperatorState(value: unknown): TopKOperatorState {
   };
 }
 
-function validateSortOperatorState(value: unknown): SortOperatorState {
+function validateSortOperatorState(value: unknown, copy = true): SortOperatorState {
   if (!isSortOperatorState(value)) {
     throw new LakeqlError("LAKEQL_BOOKMARK_INVALID", "Sort operator state is invalid");
   }
+  if (!copy) return value;
   return {
     version: 1,
     orderBy: normalizeOrderBy(value.orderBy),
@@ -3052,39 +5172,73 @@ async function aggregateGroupsFromState(
   groupColumns: string[],
   spec: AggregateSpec,
   options: AggregateOptions,
+  scope: MemoryScope,
 ): Promise<Map<string, AggregateGroup>> {
-  if (options.operatorState === undefined) return new Map();
-  const state =
-    isSpilledOperatorState(options.operatorState) && options.spill !== undefined
-      ? await options.spill.read(options.operatorState.spillRef)
-      : options.operatorState;
-  if (isSpilledOperatorState(state)) {
-    throw new LakeqlError(
-      "LAKEQL_BOOKMARK_INVALID",
-      "Aggregate spill state requires a spill adapter",
-      {
-        spillRef: state.spillRef,
-      },
-    );
+  const groups = scope.allocate(
+    allocationCharges.object,
+    "aggregate group directory",
+    () => new Map<string, AggregateGroup>(),
+  ).value;
+  if (options.operatorState === undefined) return groups;
+  const restoreScope = scope.childScope();
+  try {
+    const state =
+      isSpilledOperatorState(options.operatorState) && options.spill !== undefined
+        ? await readCheckpointSpill(options.spill, options.operatorState.spillRef, restoreScope)
+        : options.operatorState;
+    if (isSpilledOperatorState(state)) {
+      throw new LakeqlError(
+        "LAKEQL_BOOKMARK_INVALID",
+        "Aggregate spill state requires a spill adapter",
+        {
+          spillRef: state.spillRef,
+        },
+      );
+    }
+    const snapshot =
+      state instanceof Uint8Array
+        ? validateAggregateOperatorState(
+            restoreScope.adopt(parseOwnedJson(state, restoreScope)).value,
+          )
+        : validateAggregateOperatorState(
+            restoreScope.adopt(detachOwnedRow(state as unknown as Row, restoreScope.budget)).value,
+          );
+    if (
+      !equalStableData(snapshot.groupColumns, groupColumns, restoreScope) ||
+      !equalStableData(snapshot.spec, spec, restoreScope)
+    ) {
+      throw new LakeqlError(
+        "LAKEQL_BOOKMARK_STALE",
+        "Aggregate operator state does not match request",
+        {
+          stateGroupColumns: snapshot.groupColumns,
+          groupColumns,
+        },
+      );
+    }
+    if (options.maxGroups !== undefined && snapshot.groups.length > options.maxGroups) {
+      throw new LakeqlError(
+        "LAKEQL_GROUP_LIMIT_EXCEEDED",
+        "Restored aggregate state exceeds group budget",
+        {
+          limit: options.maxGroups,
+          actual: snapshot.groups.length,
+        },
+      );
+    }
+    for (const group of snapshot.groups) {
+      if (groups.has(group.key))
+        throw new LakeqlError("LAKEQL_BOOKMARK_INVALID", "Duplicate aggregate checkpoint group", {
+          key: group.key,
+        });
+      scope.allocate(aggregateGroupEntryBytes(group.key), "restored aggregate group entry", () =>
+        groups.set(group.key, aggregateGroupFromSnapshot(spec, group, scope)),
+      );
+    }
+    return groups;
+  } finally {
+    restoreScope.dispose();
   }
-  const snapshot = deserializeAggregateOperatorState(state);
-  if (
-    stableStringify(snapshot.groupColumns) !== stableStringify(groupColumns) ||
-    stableStringify(snapshot.spec) !== stableStringify(spec)
-  ) {
-    throw new LakeqlError(
-      "LAKEQL_BOOKMARK_STALE",
-      "Aggregate operator state does not match request",
-      {
-        stateGroupColumns: snapshot.groupColumns,
-        groupColumns,
-      },
-    );
-  }
-  const groups = new Map<string, AggregateGroup>();
-  for (const group of snapshot.groups)
-    groups.set(group.key, aggregateGroupFromSnapshot(spec, group));
-  return groups;
 }
 
 function isSpilledOperatorState(value: unknown): value is { spillRef: string } {
@@ -3094,22 +5248,31 @@ function isSpilledOperatorState(value: unknown): value is { spillRef: string } {
 function aggregateGroupFromSnapshot(
   spec: AggregateSpec,
   snapshot: AggregateGroupSnapshot,
+  scope: MemoryScope,
 ): AggregateGroup {
-  const states: Record<string, AggregateState> = {};
+  const states = scope.allocate(
+    allocationCharges.object,
+    "restored aggregate states",
+    () => Object.create(null) as Record<string, AggregateState>,
+  ).value;
   for (const [alias, aggregate] of Object.entries(spec)) {
     const state = snapshot.states[alias];
     if (state === undefined) {
       throw new LakeqlError("LAKEQL_BOOKMARK_INVALID", `Missing aggregate state ${alias}`);
     }
-    states[alias] = aggregateStateFromSnapshot(aggregate, state);
-    stateSpecs.set(states[alias], aggregate);
+    scope.allocate(aggregateStateEntryBytes(alias), "restored aggregate state entry", () => {
+      states[alias] = aggregateStateFromSnapshot(aggregate, state, scope);
+      stateSpecs.set(states[alias], aggregate);
+    });
   }
-  return new AggregateGroup(snapshot.keys, states);
+  const keys = scope.adopt(detachOwnedRow(snapshot.keys, scope.budget)).value;
+  return new AggregateGroup(keys, states, scope);
 }
 
 function aggregateStateFromSnapshot(
   aggregate: AggregateExpr,
   snapshot: AggregateStateSnapshot,
+  scope: MemoryScope,
 ): AggregateState {
   if (snapshot.op !== aggregate.op) {
     throw new LakeqlError("LAKEQL_BOOKMARK_INVALID", "Aggregate state operation mismatch", {
@@ -3130,23 +5293,23 @@ function aggregateStateFromSnapshot(
     case "stddev_pop":
       return new VarianceState(snapshot.op, snapshot.count, snapshot.mean, snapshot.m2);
     case "median":
-      return new MedianState(snapshot.values);
+      return new MedianState(snapshot.values, scope);
     case "quantile":
-      return new QuantileState(snapshot.quantile, snapshot.values);
+      return new QuantileState(snapshot.quantile, snapshot.values, scope);
     case "min":
     case "max":
-      return new MinMaxState(snapshot.op, snapshot.value);
+      return new MinMaxState(snapshot.op, snapshot.value, scope);
     case "count_distinct":
     case "approx_count_distinct":
-      return new CountDistinctState(snapshot.op, snapshot.values);
+      return new CountDistinctState(snapshot.op, snapshot.values, scope);
     case "mode":
-      return new ModeState(snapshot.values);
+      return new ModeState(snapshot.values, scope);
     case "first":
-      return new FirstState(snapshot.value, snapshot.seen);
+      return new FirstState(snapshot.value, snapshot.seen, scope);
     case "last":
-      return new LastState(snapshot.value, snapshot.seen);
+      return new LastState(snapshot.value, snapshot.seen, scope);
     case "any":
-      return new AnyState(snapshot.value, snapshot.seen);
+      return new AnyState(snapshot.value, snapshot.seen, scope);
   }
 }
 
@@ -3154,15 +5317,32 @@ function aggregateOperatorState(
   groupColumns: string[],
   spec: AggregateSpec,
   groups: Map<string, AggregateGroup>,
+  scope?: MemoryScope,
 ): AggregateOperatorState {
-  return {
-    version: 1,
-    groupColumns: [...groupColumns],
-    spec,
-    groups: [...groups.entries()]
-      .map(([key, group]) => group.snapshot(key))
-      .sort((left, right) => left.key.localeCompare(right.key)),
+  const construct = () => {
+    const snapshots: AggregateGroupSnapshot[] = [];
+    for (const [key, group] of groups) snapshots.push(group.snapshot(key, scope));
+    snapshots.sort((left, right) => left.key.localeCompare(right.key));
+    return { version: 1 as const, groupColumns: [...groupColumns], spec, groups: snapshots };
   };
+  if (!scope) return construct();
+  const scratch = scope.reserve(
+    allocationCharges.array +
+      groups.size * (allocationCharges.arraySlot + allocationCharges.object),
+    "aggregate snapshot sort",
+  );
+  try {
+    return scope.allocate(
+      allocationCharges.object +
+        4 * allocationCharges.property +
+        2 * allocationCharges.array +
+        (groups.size + groupColumns.length) * allocationCharges.arraySlot,
+      "aggregate snapshot envelope",
+      construct,
+    ).value;
+  } finally {
+    scratch.release();
+  }
 }
 
 function validateAggregateOperatorState(value: unknown): AggregateOperatorState {
@@ -3192,11 +5372,12 @@ function isTopKOperatorState(value: unknown): value is TopKOperatorState {
     Array.isArray(value.orderBy) &&
     value.orderBy.every(isOrderByTerm) &&
     typeof value.offset === "number" &&
-    Number.isInteger(value.offset) &&
+    Number.isSafeInteger(value.offset) &&
     value.offset >= 0 &&
     typeof value.limit === "number" &&
-    Number.isInteger(value.limit) &&
+    Number.isSafeInteger(value.limit) &&
     value.limit >= 0 &&
+    Number.isSafeInteger(value.offset + value.limit) &&
     Array.isArray(value.rows) &&
     value.rows.length <= value.offset + value.limit &&
     value.rows.every(isTopKSnapshotRow)
@@ -3221,10 +5402,10 @@ function isSortRunState(value: unknown): value is SortRunState {
     typeof value.spillRef === "string" &&
     value.spillRef.length > 0 &&
     typeof value.rowCount === "number" &&
-    Number.isInteger(value.rowCount) &&
+    Number.isSafeInteger(value.rowCount) &&
     value.rowCount >= 0 &&
     typeof value.byteSize === "number" &&
-    Number.isInteger(value.byteSize) &&
+    Number.isSafeInteger(value.byteSize) &&
     value.byteSize >= 0
   );
 }
@@ -3245,7 +5426,11 @@ function isOrderByTerm(value: unknown): value is OrderByTerm {
 }
 
 function isTopKSnapshotRow(value: unknown): value is Record<string, OperatorSnapshotValue> {
-  return isRecord(value) && Object.values(value).every(isOperatorSnapshotValue);
+  if (!isRecord(value)) return false;
+  for (const key in value) {
+    if (Object.hasOwn(value, key) && !isOperatorSnapshotValue(value[key])) return false;
+  }
+  return true;
 }
 
 function isAggregateGroupSnapshot(value: unknown): value is AggregateGroupSnapshot {
@@ -3263,17 +5448,17 @@ function isAggregateStateSnapshot(value: unknown): value is AggregateStateSnapsh
   if (!isRecord(value) || typeof value.op !== "string") return false;
   switch (value.op) {
     case "count":
-      return typeof value.count === "number";
+      return isAggregateCount(value.count);
     case "sum":
       return typeof value.sum === "number";
     case "avg":
-      return typeof value.sum === "number" && typeof value.count === "number";
+      return typeof value.sum === "number" && isAggregateCount(value.count);
     case "var_samp":
     case "var_pop":
     case "stddev_samp":
     case "stddev_pop":
       return (
-        typeof value.count === "number" &&
+        isAggregateCount(value.count) &&
         typeof value.mean === "number" &&
         typeof value.m2 === "number"
       );
@@ -3306,9 +5491,7 @@ function isAggregateStateSnapshot(value: unknown): value is AggregateStateSnapsh
             isRecord(inner) &&
             typeof inner.key === "string" &&
             isAggregateSnapshotValue(inner.value) &&
-            typeof inner.count === "number" &&
-            Number.isInteger(inner.count) &&
-            inner.count >= 0,
+            isAggregateCount(inner.count),
         )
       );
     case "first":
@@ -3337,13 +5520,37 @@ function isAggregateExpr(value: unknown): value is AggregateExpr {
   return isRecord(value) && typeof value.op === "string";
 }
 
-function snapshotRecord(record: Record<string, unknown>): Record<string, AggregateSnapshotValue> {
+function snapshotRecord(
+  record: Record<string, unknown>,
+  scope?: MemoryScope,
+): Record<string, AggregateSnapshotValue> {
+  if (scope) {
+    const out = scope.allocate(
+      allocationCharges.object,
+      "aggregate snapshot keys",
+      () => Object.create(null) as Record<string, AggregateSnapshotValue>,
+    ).value;
+    for (const key in record) {
+      if (!Object.hasOwn(record, key)) continue;
+      scope.allocate(
+        allocationCharges.property +
+          allocationCharges.string +
+          key.length * allocationCharges.stringCodeUnit,
+        "aggregate snapshot key",
+        () => {
+          out[key] = snapshotValue(record[key], scope);
+        },
+      );
+    }
+    return out;
+  }
   const out: Record<string, AggregateSnapshotValue> = {};
   for (const [key, value] of Object.entries(record)) out[key] = snapshotValue(value);
   return out;
 }
 
-function snapshotValue(value: unknown): AggregateSnapshotValue {
+function snapshotValue(value: unknown, scope?: MemoryScope): AggregateSnapshotValue {
+  if (scope) return snapshotScalarWithAdmission(value, scope);
   const safe = jsonSafeValue(value);
   if (
     safe === null ||
@@ -3362,12 +5569,17 @@ function snapshotValue(value: unknown): AggregateSnapshotValue {
   );
 }
 
-function aggregateValue(row: Row, alias: string, aggregate: AggregateExpr | undefined): unknown {
+function aggregateValue(
+  row: Row,
+  alias: string,
+  aggregate: AggregateExpr | undefined,
+  scope: MemoryScope,
+): unknown {
   if (!aggregate) throw new LakeqlError("LAKEQL_VALIDATION_ERROR", `Missing aggregate ${alias}`);
   if (aggregate.op === "count" && aggregate.column === undefined && aggregate.expr === undefined) {
     return true;
   }
-  if (aggregate.expr !== undefined) return evaluate(aggregate.expr, row);
+  if (aggregate.expr !== undefined) return evaluate(aggregate.expr, row, scope);
   if (aggregate.column === undefined) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", `${aggregate.op} requires a column`, { aggregate });
   }
@@ -3390,23 +5602,40 @@ function validateAggregateRequest(
   }
   if (
     options.maxGroups !== undefined &&
-    (!Number.isInteger(options.maxGroups) || options.maxGroups < 1)
+    (!Number.isSafeInteger(options.maxGroups) || options.maxGroups < 1)
   ) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "maxGroups must be a positive integer");
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", "maxGroups must be a positive safe integer");
   }
   if (options.orderBy !== undefined) normalizeOrderBy(options.orderBy);
-  if (options.limit !== undefined && (!Number.isInteger(options.limit) || options.limit < 0)) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "aggregate limit must be a non-negative integer");
-  }
-  if (options.offset !== undefined && (!Number.isInteger(options.offset) || options.offset < 0)) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "aggregate offset must be a non-negative integer");
-  }
+  validateRowLimits(options, "aggregate ");
   for (const aggregate of Object.values(spec)) validateAggregateExpr(aggregate);
 }
 
-function applyAggregateResultOptions(rows: Row[], options: AggregateOptions): Row[] {
+function applyAggregateResultOptions(
+  rows: Row[],
+  options: AggregateOptions,
+  scope?: MemoryScope,
+): Row[] {
+  if (scope) {
+    const arrays =
+      (options.having === undefined ? 0 : 1) +
+      (options.orderBy === undefined ? 0 : 2) +
+      (options.limit !== undefined || (options.offset ?? 0) > 0 ? 1 : 0);
+    if (arrays > 0) {
+      const bytes =
+        arrays * (allocationCharges.array + allocationCharges.arraySlot * rows.length) +
+        (options.orderBy === undefined
+          ? 0
+          : allocationCharges.array +
+            options.orderBy.length *
+              (allocationCharges.arraySlot +
+                allocationCharges.object +
+                4 * allocationCharges.property));
+      scope.allocate(bytes, "aggregate result ordering and slicing", () => undefined);
+    }
+  }
   let out = rows;
-  if (options.having !== undefined) out = out.filter((row) => matches(options.having, row));
+  if (options.having !== undefined) out = out.filter((row) => matches(options.having, row, scope));
   if (options.orderBy !== undefined) {
     const orderBy = normalizeOrderBy(options.orderBy);
     out = [...out].sort((left, right) => compareRows(left, right, orderBy));
@@ -3468,14 +5697,12 @@ function throwAggregateType(op: string): never {
 }
 
 function validateQueryInit(init: PathQueryInit): void {
-  if (init.limit !== undefined && (!Number.isInteger(init.limit) || init.limit < 0)) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "limit must be a non-negative integer");
-  }
-  if (init.offset !== undefined && (!Number.isInteger(init.offset) || init.offset < 0)) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "offset must be a non-negative integer");
-  }
-  if (init.batchSize !== undefined && (!Number.isInteger(init.batchSize) || init.batchSize <= 0)) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "batchSize must be a positive integer");
+  validateRowLimits(init);
+  if (
+    init.batchSize !== undefined &&
+    (!Number.isSafeInteger(init.batchSize) || init.batchSize <= 0)
+  ) {
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", "batchSize must be a positive safe integer");
   }
   if (init.orderBy !== undefined) normalizeOrderBy(init.orderBy);
   if (init.distinct !== undefined && typeof init.distinct !== "boolean") {
@@ -3575,8 +5802,11 @@ function combineWhere(queryWhere: Expr | undefined, rowFilter: Expr | undefined)
 
 function policyLimit(limit: number | undefined, maxLimit: number | undefined): number | undefined {
   if (maxLimit === undefined) return limit;
-  if (!Number.isInteger(maxLimit) || maxLimit < 0) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "policy maxLimit must be a non-negative integer");
+  if (!Number.isSafeInteger(maxLimit) || maxLimit < 0) {
+    throw new LakeqlError(
+      "LAKEQL_TYPE_ERROR",
+      "policy maxLimit must be a non-negative safe integer",
+    );
   }
   return limit === undefined ? maxLimit : Math.min(limit, maxLimit);
 }
@@ -3615,18 +5845,65 @@ async function expandPaths(
   pattern: string,
   planningCache?: CacheAdapter<ObjectInfo[]>,
   budget: QueryBudget = {},
+  scope?: MemoryScope,
 ): Promise<ObjectInfo[]> {
+  throwIfAborted(budget.signal);
   const cacheKey = `object-plan:${pattern}`;
-  const cached = await planningCache?.get(cacheKey);
-  if (cached !== undefined) {
-    if (budget.maxFiles !== undefined && cached.value.length > budget.maxFiles) {
-      throwBudget("files", budget.maxFiles, cached.value.length);
+  const usesOwnedRead = scope !== undefined && planningCache?.getOwnedEntry !== undefined;
+  const cachedOwner = usesOwnedRead
+    ? await planningCache.getOwnedEntry?.(cacheKey, scope.budget)
+    : undefined;
+  try {
+    const cached = usesOwnedRead ? cachedOwner?.value : await planningCache?.get(cacheKey);
+    throwIfAborted(budget.signal);
+    if (
+      cachedOwner !== undefined &&
+      scope !== undefined &&
+      !cachedOwner.budget.sharesPoolWith(scope.budget)
+    ) {
+      throw new LakeqlError(
+        "LAKEQL_VALIDATION_ERROR",
+        "Planning cache entry must share the query allocation pool",
+      );
     }
-    return cloneObjectInfos(cached.value);
+    if (cached !== undefined) {
+      if (budget.maxFiles !== undefined && cached.value.length > budget.maxFiles) {
+        throwBudget("files", budget.maxFiles, cached.value.length);
+      }
+      return cloneObjectInfos(cached.value, scope);
+    }
+  } finally {
+    cachedOwner?.release();
   }
 
-  const paths = await expandPathsUncached(store, pattern, budget);
-  await planningCache?.set(cacheKey, { value: cloneObjectInfos(paths) });
+  const paths = await expandPathsUncached(store, pattern, budget, scope);
+  if (planningCache !== undefined) {
+    const transfer = scope?.childScope();
+    try {
+      const value = cloneObjectInfos(paths, transfer);
+      const entry =
+        transfer === undefined
+          ? { value }
+          : transfer.allocate(
+              allocationCharges.object + allocationCharges.property,
+              "planning cache entry",
+              () => ({ value }),
+            ).value;
+      if (transfer !== undefined && planningCache.setOwnedEntry !== undefined) {
+        const owner = transfer.retainAllocations(entry);
+        try {
+          await planningCache.setOwnedEntry(cacheKey, owner);
+        } finally {
+          owner.release();
+        }
+      } else {
+        await planningCache.set(cacheKey, entry);
+      }
+    } finally {
+      transfer?.dispose();
+    }
+  }
+  throwIfAborted(budget.signal);
   return paths;
 }
 
@@ -3634,24 +5911,47 @@ async function expandPathsUncached(
   store: ObjectStore,
   pattern: string,
   budget: QueryBudget,
+  scope?: MemoryScope,
 ): Promise<ObjectInfo[]> {
   if (!hasGlob(pattern)) {
     if (isPrefixSource(pattern)) {
-      return listMatchingObjects(store, pattern, budget, (path) => path.endsWith(".parquet"));
+      return listMatchingObjects(
+        store,
+        pattern,
+        budget,
+        (path) => path.endsWith(".parquet"),
+        scope,
+      );
     }
-    const head = await store.head(pattern);
+    const head = await readObjectHead(store, pattern, scope);
+    throwIfAborted(budget.signal);
     if (!head) {
       throw new LakeqlError("LAKEQL_OBJECT_NOT_FOUND", `No object at ${pattern}`, {
         path: pattern,
       });
     }
-    const object: ObjectInfo = { path: pattern, size: head.size };
-    if (head.etag !== undefined) object.etag = head.etag;
-    if (head.lastModified !== undefined) object.lastModified = head.lastModified;
-    return [object];
+    if (budget.maxFiles !== undefined && budget.maxFiles < 1) {
+      throwBudget("files", budget.maxFiles, 1);
+    }
+    const headRecord = scope?.reserve(
+      allocationCharges.object +
+        5 * allocationCharges.property +
+        allocationCharges.array +
+        allocationCharges.arraySlot,
+      "object head metadata",
+    );
+    try {
+      const object: ObjectInfo = { path: pattern, size: head.size };
+      if (head.etag !== undefined) object.etag = head.etag;
+      if (head.rangeReadMode !== undefined) object.rangeReadMode = head.rangeReadMode;
+      if (head.lastModified !== undefined) object.lastModified = head.lastModified;
+      return cloneObjectInfos([object], scope);
+    } finally {
+      headRecord?.release();
+    }
   }
   const prefix = globPrefix(pattern);
-  return listMatchingObjects(store, prefix, budget, globMatcher(pattern));
+  return listMatchingObjects(store, prefix, budget, globMatcher(pattern), scope);
 }
 
 async function listMatchingObjects(
@@ -3659,32 +5959,34 @@ async function listMatchingObjects(
   prefix: string,
   budget: QueryBudget,
   matchesPath: (path: string) => boolean,
+  scope?: MemoryScope,
 ): Promise<ObjectInfo[]> {
-  const paths: ObjectInfo[] = [];
-  for await (const object of store.list(prefix)) {
+  const paths: ObjectInfo[] =
+    scope === undefined
+      ? []
+      : scope.allocate(allocationCharges.array, "discovered object list", () => [] as ObjectInfo[])
+          .value;
+  for await (const object of checkedAsyncIterable(store.list(prefix), budget.signal)) {
     if (!matchesPath(object.path)) continue;
-    paths.push(object);
-    if (budget.maxFiles !== undefined && paths.length > budget.maxFiles) {
-      throwBudget("files", budget.maxFiles, paths.length);
+    if (budget.maxFiles !== undefined && paths.length >= budget.maxFiles) {
+      throwBudget("files", budget.maxFiles, paths.length + 1);
     }
+    scope?.allocate(allocationCharges.arraySlot, "discovered object slot", () => undefined);
+    paths.push(cloneObjectInfo(object, scope));
   }
   if (paths.length === 0) {
     throw new LakeqlError("LAKEQL_NO_FILES_MATCHED", `No files matched ${prefix}`, { prefix });
   }
-  paths.sort((a, b) => a.path.localeCompare(b.path));
+  const ordering = scope?.reserve(
+    allocationCharges.array + paths.length * 2 * allocationCharges.arraySlot,
+    "object discovery sorting",
+  );
+  try {
+    paths.sort((a, b) => a.path.localeCompare(b.path));
+  } finally {
+    ordering?.release();
+  }
   return paths;
-}
-
-function cloneObjectInfos(objects: ObjectInfo[]): ObjectInfo[] {
-  return objects.map((object) => {
-    const cloned: ObjectInfo = {
-      path: object.path,
-      size: object.size,
-    };
-    if (object.etag !== undefined) cloned.etag = object.etag;
-    if (object.lastModified !== undefined) cloned.lastModified = new Date(object.lastModified);
-    return cloned;
-  });
 }
 
 function partitionColumnsFromTasks(tasks: TaskInput[]): string[] {
@@ -3746,40 +6048,23 @@ function projectedReadColumns(
   where: Expr | undefined,
   orderBy: OrderByTerm[] | undefined = undefined,
   projections: Record<string, Expr> | undefined = undefined,
+  scope?: MemoryScope,
 ): string[] | undefined {
-  if (select?.includes("*")) return undefined;
+  if (select === undefined || select.length === 0 || select.includes("*")) return undefined;
+  const collect = (columns: { add(name: string): unknown }) => {
+    for (const column of select) columns.add(column);
+    for (const term of orderBy ?? []) columns.add(term.column);
+    if (projections !== undefined) {
+      for (const name in projections) {
+        if (Object.hasOwn(projections, name)) collectExprColumns(projections[name], columns);
+      }
+    }
+    collectExprColumns(where, columns);
+  };
+  if (scope) return admittedColumnNames(scope, collect, true);
   const columns = new Set<string>();
-  for (const column of select ?? []) {
-    if (column !== "*") columns.add(column);
-  }
-  for (const term of orderBy ?? []) columns.add(term.column);
-  for (const expr of Object.values(projections ?? {})) collectExprColumns(expr, columns);
-  collectExprColumns(where, columns);
+  collect(columns);
   return columns.size === 0 ? undefined : [...columns].sort();
-}
-
-function predicateReadColumns(where: Expr): string[] {
-  const columns = new Set<string>();
-  collectExprColumns(where, columns);
-  return [...columns].sort();
-}
-
-function outputReadColumns(
-  select: readonly string[],
-  projections: Record<string, Expr> | undefined,
-): string[] {
-  const columns = new Set<string>();
-  for (const column of select) {
-    if (column !== "*") columns.add(column);
-  }
-  for (const expr of Object.values(projections ?? {})) collectExprColumns(expr, columns);
-  return [...columns].sort();
-}
-
-async function* rowsAsBatches(rows: readonly Row[], batchSize: number): AsyncIterable<Row[]> {
-  for (let index = 0; index < rows.length; index += batchSize) {
-    yield rows.slice(index, index + batchSize);
-  }
 }
 
 function aggregateReadColumns(
@@ -3787,19 +6072,35 @@ function aggregateReadColumns(
   spec: AggregateSpec,
   where: Expr | undefined,
   projections: Record<string, Expr> | undefined,
+  scope: MemoryScope,
 ): string[] | undefined {
-  const columns = new Set<string>();
-  for (const column of groupColumns) {
-    const projection = projections?.[column];
-    if (projection === undefined) columns.add(column);
-    else collectExprColumns(projection, columns);
-  }
-  for (const aggregate of Object.values(spec)) {
+  const columns = admittedColumnNames(
+    scope,
+    (columns) => {
+      for (const column of groupColumns) {
+        const projection =
+          projections !== undefined && Object.hasOwn(projections, column)
+            ? projections[column]
+            : undefined;
+        if (projection === undefined) columns.add(column);
+        else collectExprColumns(projection, columns);
+      }
+      collectAggregateColumns(spec, columns);
+      collectExprColumns(where, columns);
+    },
+    true,
+  );
+  return columns.length === 0 ? undefined : columns;
+}
+
+function collectAggregateColumns(spec: AggregateSpec, columns: { add(name: string): void }): void {
+  for (const alias in spec) {
+    if (!Object.hasOwn(spec, alias)) continue;
+    const aggregate = spec[alias];
+    if (!aggregate) continue;
     if (aggregate.column !== undefined) columns.add(aggregate.column);
-    if (aggregate.expr !== undefined) collectExprColumns(aggregate.expr, columns);
+    collectExprColumns(aggregate.expr, columns);
   }
-  collectExprColumns(where, columns);
-  return columns.size === 0 ? undefined : [...columns].sort();
 }
 
 function limitAwareBatchSize(
@@ -3812,7 +6113,7 @@ function limitAwareBatchSize(
 }
 
 function columnarBatchSize(batchSize: number | undefined): number {
-  return Math.max(batchSize ?? 0, DEFAULT_COLUMNAR_BATCH_SIZE);
+  return batchSize ?? DEFAULT_COLUMNAR_BATCH_SIZE;
 }
 
 function vectorBatchScanner(
@@ -3840,14 +6141,6 @@ interface RankedRowRef {
   keys: Row;
 }
 
-interface AggregateRowRef {
-  path: string;
-  object?: ObjectInfo;
-  rowIndex: number;
-  group: VectorGroup;
-  early: Row;
-}
-
 interface MaterializationWindow {
   path: string;
   object?: ObjectInfo;
@@ -3855,185 +6148,70 @@ interface MaterializationWindow {
   rowEnd: number;
 }
 
-function aggregateEarlyReadColumns(
-  groupColumns: readonly string[],
-  where: Expr | undefined,
-): string[] {
-  const columns = new Set<string>();
-  for (const column of groupColumns) columns.add(column);
-  collectExprColumns(where, columns);
-  return [...columns].sort();
-}
-
-function aggregateInputColumns(spec: AggregateSpec): string[] {
-  const columns = new Set<string>();
-  for (const aggregate of Object.values(spec)) {
-    if (aggregate.column !== undefined) columns.add(aggregate.column);
-    collectExprColumns(aggregate.expr, columns);
-  }
-  return [...columns].sort();
-}
-
-function aggregateEarlyRow(batch: Batch, index: number, columns: readonly string[]): Row {
-  const row: Row = {};
-  for (const column of columns) {
-    const vector = batch.columns[column];
-    if (vector !== undefined) row[column] = scalarVectorValue(vector, index);
-  }
-  return row;
-}
-
-function aggregateLateRow(batch: Batch, index: number, columns: readonly string[]): Row {
-  const row: Row = {};
-  for (const column of columns) {
-    const vector = batch.columns[column];
-    if (vector !== undefined) row[column] = scalarVectorValue(vector, index);
-  }
-  return row;
-}
-
-function aggregateValueForRow(aggregate: AggregateExpr, row: Row): VectorAggregateValue {
-  if (aggregate.expr !== undefined) return aggregateValueFromUnknown(evaluate(aggregate.expr, row));
-  if (aggregate.column === undefined) return true;
-  return aggregateValueFromUnknown(row[aggregate.column]);
-}
-
-function aggregateValueFromUnknown(value: unknown): VectorAggregateValue {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean" ||
-    typeof value === "bigint"
-  ) {
-    return value;
-  }
-  return null;
-}
-
-function aggregateMaterializationWindows(
-  refs: readonly AggregateRowRef[],
-  maxWindowRows: number,
-): MaterializationWindow[] {
-  const out: MaterializationWindow[] = [];
-  for (const ref of refs) {
-    const current = out[out.length - 1];
-    if (
-      current !== undefined &&
-      current.path === ref.path &&
-      ref.rowIndex + 1 - current.rowStart <= maxWindowRows
-    ) {
-      current.rowEnd = Math.max(current.rowEnd, ref.rowIndex + 1);
-      continue;
-    }
-    out.push({
-      path: ref.path,
-      ...(ref.object === undefined ? {} : { object: ref.object }),
-      rowStart: ref.rowIndex,
-      rowEnd: ref.rowIndex + 1,
-    });
-  }
-  return out;
-}
-
-function rankReadColumns(where: Expr | undefined, orderBy: readonly OrderByTerm[]): string[] {
-  const columns = new Set<string>();
-  for (const term of orderBy) columns.add(term.column);
-  collectExprColumns(where, columns);
-  return [...columns].sort();
-}
-
-function addRankedRefs(
-  retained: RankedRowRef[],
-  path: string,
-  object: ObjectInfo | undefined,
-  rowOffset: number,
+/** Borrowed vectors may be reused at the next yield; detach only selected rows. */
+function materializeDetachedBatchRow(
   batch: Batch,
-  selection: Uint8Array,
-  rankColumns: readonly string[],
-  orderBy: readonly OrderByTerm[],
-  topK: number,
-): void {
-  if (topK === 0) return;
-  for (const index of selectedRowIndices(batch.rowCount, selection)) {
-    const ref: RankedRowRef = {
-      path,
-      ...(object === undefined ? {} : { object }),
-      rowIndex: rowOffset + index,
-      keys: rankKeyRow(batch, index, rankColumns),
-    };
-    addRankedRef(retained, ref, orderBy, topK);
+  index: number,
+  parent: MemoryScope,
+): OwnedMemory<Row> {
+  const scratch = parent.childScope();
+  try {
+    const plan = planBatchRowMaterialization(batch, index, scratch);
+    const rows = plan.execute(scratch);
+    return detachOwnedRow(rows.value[0] as Row, parent.budget);
+  } finally {
+    scratch.dispose();
   }
 }
 
 function materializationWindows(
   refs: readonly RankedRowRef[],
   maxWindowRows: number,
+  scope?: MemoryScope,
 ): MaterializationWindow[] {
-  const out: MaterializationWindow[] = [];
-  const sorted = [...refs].sort(
-    (left, right) => left.path.localeCompare(right.path) || left.rowIndex - right.rowIndex,
+  const count = refs.length;
+  // At most one window per winner; admit output and ordering overlap before copying.
+  const scratch = scope?.reserve(
+    allocationCharges.array + count * (allocationCharges.arraySlot + allocationCharges.object),
+    "ranked window ordering",
   );
-  for (const ref of sorted) {
-    const current = out[out.length - 1];
-    if (
-      current !== undefined &&
-      current.path === ref.path &&
-      ref.rowIndex + 1 - current.rowStart <= maxWindowRows
-    ) {
-      current.rowEnd = Math.max(current.rowEnd, ref.rowIndex + 1);
-      continue;
-    }
-    out.push({
-      path: ref.path,
-      ...(ref.object === undefined ? {} : { object: ref.object }),
-      rowStart: ref.rowIndex,
-      rowEnd: ref.rowIndex + 1,
-    });
-  }
-  return out;
-}
-
-function addRankedRef(
-  retained: RankedRowRef[],
-  ref: RankedRowRef,
-  orderBy: readonly OrderByTerm[],
-  topK: number,
-): void {
-  if (retained.length < topK) {
-    retained.push(ref);
-    return;
-  }
-  let worstIndex = 0;
-  for (let index = 1; index < retained.length; index += 1) {
-    const candidate = retained[index];
-    const worst = retained[worstIndex];
-    if (
-      candidate !== undefined &&
-      worst !== undefined &&
-      compareRankedRefs(candidate, worst, orderBy) > 0
-    ) {
-      worstIndex = index;
-    }
-  }
-  const worst = retained[worstIndex];
-  if (worst !== undefined && compareRankedRefs(ref, worst, orderBy) < 0) {
-    retained[worstIndex] = ref;
-  }
-}
-
-function rankKeyRow(batch: Batch, rowIndex: number, columns: readonly string[]): Row {
-  const row: Row = {};
-  for (const column of columns) {
-    const vector = batch.columns[column];
-    if (vector === undefined) {
-      throw new LakeqlError("LAKEQL_UNKNOWN_COLUMN", `Unknown column ${column}`, {
-        column,
+  try {
+    const build = (): MaterializationWindow[] => [];
+    const out = scope
+      ? scope.allocate(
+          allocationCharges.array +
+            count *
+              (allocationCharges.arraySlot +
+                allocationCharges.object +
+                4 * allocationCharges.property),
+          "ranked read windows",
+          build,
+        ).value
+      : build();
+    const sorted = [...refs].sort(
+      (left, right) => left.path.localeCompare(right.path) || left.rowIndex - right.rowIndex,
+    );
+    for (const ref of sorted) {
+      const current = out[out.length - 1];
+      if (
+        current !== undefined &&
+        current.path === ref.path &&
+        ref.rowIndex + 1 - current.rowStart <= maxWindowRows
+      ) {
+        current.rowEnd = Math.max(current.rowEnd, ref.rowIndex + 1);
+        continue;
+      }
+      out.push({
+        path: ref.path,
+        ...(ref.object === undefined ? {} : { object: ref.object }),
+        rowStart: ref.rowIndex,
+        rowEnd: ref.rowIndex + 1,
       });
     }
-    row[column] = vectorValue(vector, rowIndex);
+    return out;
+  } finally {
+    scratch?.release();
   }
-  return row;
 }
 
 function compareRankedRefs(
@@ -4042,7 +6220,7 @@ function compareRankedRefs(
   orderBy: readonly OrderByTerm[],
 ): number {
   return (
-    compareRows(left.keys, right.keys, [...orderBy]) ||
+    compareRows(left.keys, right.keys, orderBy) ||
     left.path.localeCompare(right.path) ||
     left.rowIndex - right.rowIndex
   );
@@ -4126,43 +6304,82 @@ function project(
   row: Row,
   select: string[] | undefined,
   projections: Record<string, Expr> | undefined,
+  scope?: MemoryScope,
 ): Row {
   if (!select && !projections) return row;
   if (select?.includes("*") && !projections) return row;
-  const out: Row = {};
+  const out: Row =
+    scope === undefined
+      ? {}
+      : scope.allocate(allocationCharges.object, "projected row", () => ({}) as Row).value;
+  if (select === undefined || select.length === 0) copyProjectedFields(out, row, scope);
   for (const column of select ?? []) {
     if (column === "*") {
-      Object.assign(out, row);
+      copyProjectedFields(out, row, scope);
       continue;
     }
     if (!(column in row)) {
       throw new LakeqlError("LAKEQL_UNKNOWN_COLUMN", `Unknown column ${column}`, { column });
     }
-    out[column] = row[column];
+    assignProjectedField(out, column, row[column], scope);
   }
-  for (const [alias, expr] of Object.entries(projections ?? {})) out[alias] = evaluate(expr, row);
+  for (const alias in projections) {
+    if (Object.hasOwn(projections, alias)) {
+      const expr = projections[alias];
+      if (expr !== undefined) assignProjectedField(out, alias, evaluate(expr, row, scope), scope);
+    }
+  }
   return out;
 }
 
-function addDistinctRow(seen: Set<string>, row: Row, budget: QueryBudget): boolean {
-  const key = stableStringify(jsonSafeValue(row));
-  if (seen.has(key)) return false;
-  seen.add(key);
-  enforceBufferedRowsBudget(budget, seen.size);
-  enforceOperatorMemoryBudget(budget, estimateOperatorMemoryBytes([...seen]));
-  return true;
+function assignProjectedField(out: Row, key: string, value: unknown, scope?: MemoryScope): void {
+  const write = () => {
+    Object.defineProperty(out, key, {
+      value,
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+  };
+  if (scope === undefined) write();
+  else
+    scope.allocate(allocationCharges.property + allocationCharges.object, "projected field", write);
 }
 
-export function parseHivePartitions(path: string): Record<string, string> {
-  const values: Record<string, string> = {};
-  for (const segment of path.split("/")) {
-    const equals = segment.indexOf("=");
-    if (equals <= 0) continue;
-    const key = segment.slice(0, equals);
-    const value = segment.slice(equals + 1);
-    if (key && value) values[key] = decodeURIComponent(value);
-  }
-  return values;
+function copyProjectedFields(out: Row, row: Row, scope?: MemoryScope): void {
+  for (const key in row)
+    if (Object.hasOwn(row, key)) assignProjectedField(out, key, row[key], scope);
+}
+
+function projectRowRange(
+  rows: Row[],
+  start: number,
+  end: number,
+  select: string[] | undefined,
+  projections: Record<string, Expr> | undefined,
+  scope: MemoryScope,
+): Row[] {
+  const stop = Math.min(end, rows.length);
+  const count = Math.max(0, stop - start);
+  return scope.allocate(
+    allocationCharges.array + count * allocationCharges.arraySlot,
+    "projected result directory",
+    () => {
+      const output: Row[] = [];
+      for (let index = start; index < stop; index++) {
+        const row = rows[index];
+        if (row !== undefined) output.push(project(row, select, projections, scope));
+      }
+      return output;
+    },
+  ).value;
+}
+
+function createRowDistinct(scope: MemoryScope, budget: QueryBudget): RowDistinctSet {
+  return new RowDistinctSet(scope, (rows, bytes) => {
+    enforceBufferedRowsBudget(budget, rows);
+    enforceOperatorMemoryBudget(budget, bytes);
+  });
 }
 
 function partitionMayMatch(expr: Expr, partitions: Record<string, string>): boolean {
@@ -4217,6 +6434,7 @@ function enforceBudget(
   now: () => number,
   startedAt: number,
 ): void {
+  throwIfAborted(budget.signal);
   const elapsedMs = now() - startedAt;
   stats.elapsedMs = elapsedMs;
   if (budget.maxFiles !== undefined && stats.filesRead > budget.maxFiles) {
@@ -4258,40 +6476,59 @@ function enforceOperatorMemoryBudget(budget: QueryBudget, memoryBytes: number): 
   }
 }
 
-function estimateAggregateOperatorMemoryBytes(
-  groupColumns: string[],
-  spec: AggregateSpec,
-  groups: Map<string, AggregateGroup>,
-): number {
-  return estimateOperatorMemoryBytes(aggregateOperatorState(groupColumns, spec, groups));
-}
+class AggregateMemory {
+  private readonly charges: Map<AggregateGroup, { bytes: number; rows: number }>;
+  bytes: number;
+  rows = 0;
 
-function estimateAggregateBufferedRows(groups: Map<string, AggregateGroup>): number {
-  let rows = 0;
-  for (const [key, group] of groups) {
-    for (const state of Object.values(group.snapshot(key).states)) {
-      switch (state.op) {
-        case "median":
-          rows += state.values.length;
-          break;
-        case "quantile":
-          rows += state.values.length;
-          break;
-        case "mode":
-          rows += state.values.length;
-          break;
-        case "count_distinct":
-        case "approx_count_distinct":
-          rows += state.values.length;
-          break;
-      }
-    }
+  constructor(
+    groupColumns: string[],
+    spec: AggregateSpec,
+    groups: Map<string, AggregateGroup>,
+    private readonly budget: QueryBudget,
+    private readonly scope: MemoryScope,
+  ) {
+    this.charges = scope.allocate(
+      allocationCharges.object,
+      "aggregate accounting directory",
+      () => new Map<AggregateGroup, { bytes: number; rows: number }>(),
+    ).value;
+    this.bytes =
+      budget.maxMemoryBytes === undefined
+        ? 0
+        : estimateOperatorMemoryBytes(aggregateOperatorState(groupColumns, spec, new Map()));
+    for (const [key, group] of groups) this.update(key, group);
   }
-  return rows;
+
+  enforceBudget(): void {
+    enforceBufferedRowsBudget(this.budget, this.rows);
+    enforceOperatorMemoryBudget(this.budget, this.bytes);
+  }
+
+  update(key: string, group: AggregateGroup): void {
+    let charge = this.charges.get(group);
+    if (charge === undefined) {
+      if (this.budget.maxMemoryBytes !== undefined && this.charges.size > 0) this.bytes += 1;
+      charge = this.scope.allocate(
+        2 * allocationCharges.object + 3 * allocationCharges.property,
+        "aggregate accounting entry",
+        () => {
+          const entry = { bytes: 0, rows: 0 };
+          this.charges.set(group, entry);
+          return entry;
+        },
+      ).value;
+    }
+    const previousBytes = charge.bytes;
+    const previousRows = charge.rows;
+    group.memory(key, this.budget, charge);
+    this.bytes += charge.bytes - previousBytes;
+    this.rows += charge.rows - previousRows;
+  }
 }
 
 function estimateOperatorMemoryBytes(value: unknown): number {
-  return textEncoder.encode(stableStringify(jsonSafeValue(value))).byteLength;
+  return serializedValueBytes(value);
 }
 
 function throwBudget(metric: string, limit: number, actual: number, stats?: QueryStats): never {
@@ -4328,7 +6565,8 @@ function plannedWindowExecutionMode(
   plannedBucketCount: number,
 ): WindowExecutionMode {
   if (
-    config.scanner.executeWindowTasks !== undefined &&
+    (config.scanner.executeOwnedWindowTasks !== undefined ||
+      config.scanner.executeWindowTasks !== undefined) &&
     windowTaskPlanForWindows(config.windows ?? {}, plannedBucketCount).available === true
   ) {
     return "parquet-work-unit-fanout";
@@ -4418,4 +6656,17 @@ function clonePhysicalCandidate(candidate: PhysicalPlacementCandidate): Physical
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Release failed accumulated output before async scan cleanup unwinds. */
+function materializeCollectedOutput(
+  input: OwnedMemory<Batch>,
+  fail?: (error: unknown) => never,
+): OwnedMemory<Row[]> {
+  try {
+    return materializeOwnedBatchRows(input);
+  } catch (error) {
+    if (fail !== undefined) return fail(error);
+    throw error;
+  }
 }

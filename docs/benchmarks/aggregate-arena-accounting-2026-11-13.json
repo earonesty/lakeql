@@ -1,0 +1,60 @@
+{
+  "description": "Diagnostic directory ownership comparison. Node heap after explicit GC; one timing sample. Not grouped-query integration or a Worker heap guarantee.",
+  "node": "v24.18.1",
+  "results": [
+    {
+      "directories": 128,
+      "kind": "separate-owners",
+      "constructionReservations": 256,
+      "admittedBytes": 575488,
+      "heapGrowthBytes": 669712,
+      "constructionMs": 2.093069,
+      "remainingBytes": 0
+    },
+    {
+      "directories": 128,
+      "kind": "shared-arena",
+      "constructionReservations": 9,
+      "admittedBytes": 149440,
+      "heapGrowthBytes": 36344,
+      "constructionMs": 0.1719449999999938,
+      "remainingBytes": 0
+    },
+    {
+      "directories": 1024,
+      "kind": "separate-owners",
+      "constructionReservations": 2048,
+      "admittedBytes": 4603904,
+      "heapGrowthBytes": 5440504,
+      "constructionMs": 8.554901000000001,
+      "remainingBytes": 0
+    },
+    {
+      "directories": 1024,
+      "kind": "shared-arena",
+      "constructionReservations": 16,
+      "admittedBytes": 623088,
+      "heapGrowthBytes": 93960,
+      "constructionMs": 0.28080099999999675,
+      "remainingBytes": 0
+    },
+    {
+      "directories": 8192,
+      "kind": "separate-owners",
+      "constructionReservations": 16384,
+      "admittedBytes": 36831232,
+      "heapGrowthBytes": 42475992,
+      "constructionMs": 65.02608599999999,
+      "remainingBytes": 0
+    },
+    {
+      "directories": 8192,
+      "kind": "shared-arena",
+      "constructionReservations": 72,
+      "admittedBytes": 4412272,
+      "heapGrowthBytes": 972072,
+      "constructionMs": 3.3849720000000048,
+      "remainingBytes": 0
+    }
+  ]
+}

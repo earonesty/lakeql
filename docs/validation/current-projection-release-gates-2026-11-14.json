@@ -1,0 +1,46 @@
+{
+  "date": "2026-11-14",
+  "sourceCommit": "bf6238cc7c6e6d9e23a9be8306b1e07960b0ebb6",
+  "requirements": ["V2", "V3"],
+  "validation": {
+    "build": "passed: public bundles and declarations",
+    "typecheck": "passed",
+    "package_consumer": "passed: clean temporary npm consumer, 66 installed packages and fixture smoke tests",
+    "workerd": {
+      "passed": 75,
+      "files": 21
+    },
+    "reference": {
+      "passed": 104,
+      "files": 4
+    },
+    "required_external_conformance": {
+      "passed": 520,
+      "skipped": 1,
+      "skip_reason": "Inactive missing-external-fixture guard; required external fixtures were present."
+    },
+    "coverage": {
+      "passed": 3531,
+      "skipped": 629,
+      "statements": 91.18,
+      "branches": 85.16,
+      "functions": 95.79,
+      "lines": 93.03,
+      "thresholds_changed": false
+    },
+    "lint": "passed after formatting new validation JSON",
+    "fixtures": "passed deterministic regeneration; no fixture changes",
+    "compatibility": "passed",
+    "large_files": "passed",
+    "changeset": "passed"
+  },
+  "notes": [
+    "Documentation formatting and the ownership-matrix update do not change tested runtime source.",
+    "The complete release-command set was exercised as individual commands; this is not a claim that the full audit objective is complete.",
+    "Recent runtime benchmark evidence remains explicitly tied to source 12527c2 and is not relabeled as a run on bf6238c."
+  ],
+  "remaining": [
+    "F1\u2013F6/M1\u2013M2/V1\u2013V3 acceptance review and known implementation gaps remain open.",
+    "Further runtime changes require appropriate gates to be refreshed before final acceptance."
+  ]
+}

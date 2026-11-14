@@ -1,0 +1,65 @@
+{
+  "description": "Real sales Parquet fixture through owned decoding and persistent internal aggregate state. HTTP is a local range-server simulation; this is not public query integration or a Worker heap measurement.",
+  "expected": {
+    "rows": 100,
+    "sum": 48199.5,
+    "median": 479.305,
+    "regions": 4
+  },
+  "results": [
+    {
+      "transport": "memory",
+      "batchSize": 1,
+      "batches": 100,
+      "requests": 0,
+      "transferredBytes": 0,
+      "peakAdmittedBytes": 10476,
+      "remainingBytes": 0
+    },
+    {
+      "transport": "memory",
+      "batchSize": 7,
+      "batches": 15,
+      "requests": 0,
+      "transferredBytes": 0,
+      "peakAdmittedBytes": 10476,
+      "remainingBytes": 0
+    },
+    {
+      "transport": "memory",
+      "batchSize": 64,
+      "batches": 3,
+      "requests": 0,
+      "transferredBytes": 0,
+      "peakAdmittedBytes": 10476,
+      "remainingBytes": 0
+    },
+    {
+      "transport": "http-206",
+      "batchSize": 1,
+      "batches": 100,
+      "requests": 7,
+      "transferredBytes": 1013,
+      "peakAdmittedBytes": 10476,
+      "remainingBytes": 0
+    },
+    {
+      "transport": "http-206",
+      "batchSize": 7,
+      "batches": 15,
+      "requests": 7,
+      "transferredBytes": 1013,
+      "peakAdmittedBytes": 10476,
+      "remainingBytes": 0
+    },
+    {
+      "transport": "http-206",
+      "batchSize": 64,
+      "batches": 3,
+      "requests": 7,
+      "transferredBytes": 1013,
+      "peakAdmittedBytes": 10476,
+      "remainingBytes": 0
+    }
+  ]
+}

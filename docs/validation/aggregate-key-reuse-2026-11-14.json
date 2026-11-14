@@ -1,0 +1,44 @@
+{
+  "requirements": ["F1", "F2", "V2"],
+  "baseCommit": "e9a27aa",
+  "change": "Owned distinct/approximate-distinct/mode updates share the already normalized key with existing addDistinctValue/addModeEntry helpers. Scratch admission unchanged.",
+  "sources": {
+    "packages/core/src/aggregate-state-memory.ts": "b124b0e64b21f6552015d7801f08c80e3d6868dea1ef2131956922535227ac6b",
+    "packages/core/src/aggregate-state-memory.test.ts": "99b726b9c0e693cebaec11ae1f79b5839b6652c02c0a25f3d95fa049bcf9f18b"
+  },
+  "edgeCases": [
+    "null",
+    "empty and Unicode strings",
+    "number versus string versus bigint",
+    "boolean",
+    "NaN",
+    "signed zero",
+    "repeated timestamps",
+    "throwing timestamp formatter",
+    "new-entry buffered-row limit with rollback"
+  ],
+  "workCount": {
+    "timestampUpdates": 2,
+    "oldFormattingCalls": 4,
+    "currentFormattingCalls": 2
+  },
+  "validation": {
+    "focusedTests": 84,
+    "regularTestsPassed": 3751,
+    "regularTestsSkipped": 645,
+    "workerTestsPassed": 82,
+    "typecheck": "passed",
+    "build": "tsc -b passed"
+  },
+  "lifecycleReview": {
+    "incrementalMap": "vector-group-by.ts GroupMemoryMap updates cached byte totals; general budget check does not traverse all groups",
+    "restoreMergeReset": "vector-group-by-memory.test.ts independent full-map oracle and iterator spies cover restore, repeated merges, deletion/replacement/shared aliases/clear/failure",
+    "ownedArena": "aggregate-state-memory.ts retains incremental MutableMemoryLedger growth and uses shared normalized-key helpers"
+  },
+  "limits": [
+    "Work-count regression does not establish whole-query throughput gain",
+    "No admission allowance reduced",
+    "Broader row fallback, spill/resume and owned lifecycle coverage remains open",
+    "Most recent complete release-command refresh predates this runtime change"
+  ]
+}

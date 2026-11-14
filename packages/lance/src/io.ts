@@ -1,5 +1,8 @@
 import {
   LakeqlError,
+  MemoryBudget,
+  MemoryScope,
+  mapConcurrent,
   type ObjectStore,
   type QueryBudget,
   throwIfAborted,
@@ -35,7 +38,8 @@ export interface LanceRangePlanningOptions {
 export class LanceReadContext {
   readonly store: ObjectStore;
   private memoryBytes = 0;
-  private decodedMemoryBytes = 0;
+  private readonly decodedMemory: MemoryLease[] = [];
+  readonly memoryBudget: MemoryBudget;
 
   constructor(
     store: ObjectStore,
@@ -44,7 +48,10 @@ export class LanceReadContext {
     readonly startedAt: number,
     readonly now: () => number,
     readonly planning: LanceRangePlanningOptions,
+    memoryPool?: MemoryBudget,
   ) {
+    const limit = budget.maxAllocatedMemoryBytes ?? Number.MAX_SAFE_INTEGER;
+    this.memoryBudget = memoryPool?.child(limit) ?? new MemoryBudget(limit);
     this.store = withObjectStoreReadControls(store, {
       ...(budget.maxConcurrentReads === undefined
         ? {}
@@ -93,13 +100,26 @@ export class LanceReadContext {
   ): Promise<RangeLease> {
     this.check();
     const logical = mergeRanges(ranges, 0, Number.MAX_SAFE_INTEGER);
-    const physical = mergeRanges(
-      logical,
-      planning.coalesceGapBytes,
-      planning.maxCoalescedRangeBytes,
-    );
+    let physical = mergeRanges(logical, planning.coalesceGapBytes, planning.maxCoalescedRangeBytes);
     const logicalBytes = totalBytes(logical);
-    const physicalBytes = totalBytes(physical);
+    let physicalBytes = totalBytes(physical);
+    const headroom = Math.min(
+      this.memoryBudget.availableBytes,
+      (this.budget.maxMemoryBytes ?? Infinity) - this.memoryBytes,
+      (this.budget.maxBytes ?? Infinity) - this.stats.physicalBytesRequested,
+    );
+    // Gap reads are optional: preserve exact requested ranges when coalescing
+    // would consume unavailable capacity or turn a partial read into a full file.
+    if (
+      physicalBytes > logicalBytes &&
+      (physicalBytes > headroom ||
+        (category === "data" &&
+          fileSize !== undefined &&
+          physical.some((range) => range.offset === 0 && range.length >= fileSize)))
+    ) {
+      physical = logical;
+      physicalBytes = logicalBytes;
+    }
     if (
       category === "data" &&
       fileSize !== undefined &&
@@ -112,11 +132,33 @@ export class LanceReadContext {
       );
     }
     this.reserveReads(physical.length, physicalBytes, logicalBytes);
-    this.reserveMemory(physicalBytes);
+    const ownedRead = this.store.getRangeOwned?.bind(this.store);
+    // Owned transports admit their actual backing allocations. Keep the legacy
+    // logical-byte limit without reserving those same buffers a second time.
+    const memory = this.reserveMemory(physicalBytes, ownedRead === undefined);
+    const scope =
+      ownedRead === undefined
+        ? undefined
+        : new MemoryScope(
+            this.memoryBudget,
+            this.budget.signal === undefined ? [] : [this.budget.signal],
+          );
+    const release = () => {
+      scope?.dispose();
+      memory.release();
+    };
     try {
-      const values = await Promise.all(
-        physical.map(async (range) => {
-          const bytes = await this.store.getRange(path, range);
+      const values = await mapConcurrent(
+        physical,
+        this.budget.maxConcurrentReads ?? 4,
+        async (range) => {
+          this.check();
+          const owner =
+            ownedRead !== undefined && scope !== undefined
+              ? await ownedRead(path, range, scope)
+              : undefined;
+          if (owner !== undefined) scope?.adopt(owner);
+          const bytes = owner?.value ?? (await this.store.getRange(path, range));
           if (bytes.byteLength !== range.length) {
             throw new LakeqlError(
               "LAKEQL_LANCE_READ_ERROR",
@@ -131,13 +173,13 @@ export class LanceReadContext {
           }
           this.check();
           return { ...range, bytes };
-        }),
+        },
       );
       if (category === "snapshot") this.stats.snapshotMetadataBytes += physicalBytes;
       else if (category === "file_metadata") this.stats.dataMetadataBytes += physicalBytes;
-      return new RangeLease(values, () => this.releaseMemory(physicalBytes));
+      return new RangeLease(values, release);
     } catch (cause) {
-      this.releaseMemory(physicalBytes);
+      release();
       throw cause;
     }
   }
@@ -151,18 +193,16 @@ export class LanceReadContext {
   }
 
   accountDecodedMemory(bytes: number): void {
-    this.reserveMemory(bytes);
-    this.decodedMemoryBytes += bytes;
+    this.decodedMemory.push(this.reserveMemory(bytes));
   }
 
   leaseDecodedMemory(bytes: number): MemoryLease {
-    this.reserveMemory(bytes);
-    return new MemoryLease(() => this.releaseMemory(bytes));
+    return this.reserveMemory(bytes);
   }
 
   releaseDecodedMemory(): void {
-    this.releaseMemory(this.decodedMemoryBytes);
-    this.decodedMemoryBytes = 0;
+    for (const lease of this.decodedMemory) lease.release();
+    this.decodedMemory.length = 0;
   }
 
   private reserveReads(requests: number, physicalBytes: number, logicalBytes: number): void {
@@ -179,7 +219,7 @@ export class LanceReadContext {
     this.stats.logicalBytesRequested += logicalBytes;
   }
 
-  private reserveMemory(bytes: number): void {
+  private reserveMemory(bytes: number, chargeAllocation = true): MemoryLease {
     if (!Number.isSafeInteger(bytes) || bytes < 0) {
       throw new LakeqlError("LAKEQL_LANCE_READ_ERROR", "Invalid Lance memory reservation", {
         bytes,
@@ -189,8 +229,15 @@ export class LanceReadContext {
     if (this.budget.maxMemoryBytes !== undefined && next > this.budget.maxMemoryBytes) {
       budgetExceeded("memory bytes", this.budget.maxMemoryBytes, next, this.stats);
     }
+    const reservation = chargeAllocation
+      ? this.memoryBudget.reserve(bytes, "Lance read allocation")
+      : undefined;
     this.memoryBytes = next;
     this.stats.peakMemoryBytes = Math.max(this.stats.peakMemoryBytes, next);
+    return new MemoryLease(() => {
+      reservation?.release();
+      this.releaseMemory(bytes);
+    });
   }
 
   private releaseMemory(bytes: number): void {

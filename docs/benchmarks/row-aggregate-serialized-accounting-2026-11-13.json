@@ -1,0 +1,41 @@
+{
+  "description": "Local reused row-batch scanner; eight groups and seven aggregate states, including growing median/quantile and distinct/mode. Two warmups and three timed samples per size. Independent arithmetic assertions and final zero pool usage. Input scanner buffers and runtime heap are outside reservation accounting; this is not cloud transport or total Worker heap certification.",
+  "serializedSizeAccounting": true,
+  "querySourceSha256": "1b8f66c51ac69a2ad1361e35b98e0299bfd3dc6e341d3a2e230ce2f4ede565ae",
+  "results": [
+    {
+      "rows": 1024,
+      "samples": [46.780043000000006, 48.821620000000024, 42.27963],
+      "medianMilliseconds": 46.780043000000006,
+      "peakBytes": 791983
+    },
+    {
+      "rows": 4096,
+      "samples": [116.5687059999999, 125.09300199999996, 119.82493899999997],
+      "medianMilliseconds": 119.82493899999997,
+      "peakBytes": 1861551
+    },
+    {
+      "rows": 16384,
+      "samples": [466.1452459999998, 450.6037110000002, 475.2082260000002],
+      "medianMilliseconds": 466.1452459999998,
+      "peakBytes": 5935535
+    }
+  ],
+  "concurrent": [
+    {
+      "capMiB": 64,
+      "jobs": 4,
+      "rowsPerJob": 16384,
+      "elapsedMilliseconds": 2857.845204,
+      "peakBytes": 10327151
+    },
+    {
+      "capMiB": 128,
+      "jobs": 4,
+      "rowsPerJob": 16384,
+      "elapsedMilliseconds": 4269.406819,
+      "peakBytes": 10327151
+    }
+  ]
+}

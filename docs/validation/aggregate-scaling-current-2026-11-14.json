@@ -1,0 +1,30 @@
+{
+  "sourceCommit": "1d43a68",
+  "requirements": ["F1", "F2", "V2"],
+  "harnessHashes": {
+    "bench/public-grouped-continuation.mjs": "4856a3a12f3ab0ce5991f475f61f52e88c3098e060eab1698ebc95c641d4b1af",
+    "bench/owned-aggregate-accounting.mjs": "40dcd7cd99e6aaeb8539ad401c865273f5ec783cdda23c63833d4a0c21fdf69c"
+  },
+  "artifacts": [
+    "docs/benchmarks/public-grouped-current-2026-11-14.json",
+    "docs/benchmarks/owned-aggregate-current-2026-11-14.json"
+  ],
+  "publicGrouped": {
+    "groups": [2000, 4000, 8000],
+    "batchSizes": [128, 512],
+    "opensPerQuery": 1,
+    "interBatchCheckpoints": 0,
+    "peakBytes": [3213686, 6331270, 12634102],
+    "finalBytes": 0
+  },
+  "ownedMedian": {
+    "rows": [1024, 8192, 65536],
+    "growthReservationCalls": [6, 10, 38],
+    "finalBytes": 0
+  },
+  "limitations": [
+    "Synthetic owned scanner for public CPU scaling; not Parquet/network throughput.",
+    "Median diagnostic uses explicit GC and one timing sample, not Worker headroom.",
+    "Counts establish no inter-batch snapshots and amortized reservation growth, not proof of all lifecycle paths."
+  ]
+}

@@ -1,0 +1,132 @@
+{
+  "status": "Historical pre-identity diagnostic; subsequent generic identity-projection follow-up passes full conformance.",
+  "runtimeBase": "c6a848a",
+  "workingTreeChange": "Shared packed-range helper; uncommitted",
+  "conformanceAttempts": [
+    {
+      "passed": 519,
+      "failed": 1,
+      "skipped": 1
+    },
+    {
+      "passed": 519,
+      "failed": 1,
+      "skipped": 1
+    }
+  ],
+  "failure": "overflow_i16_page_cnt.parquet owned query exceeded unchanged 5000 ms timeout",
+  "isolatedVitestPhasesMs": {
+    "queryIncludingPerRowNonNullAssertion": 5260.754608,
+    "oracle": 161.616054,
+    "valueAssertions": 272.526064
+  },
+  "standaloneQuery": {
+    "rows": 40000,
+    "elapsedMs": 3762.129229,
+    "peakAdmittedBytes": 802047,
+    "afterReleaseBytes": 0
+  },
+  "profile": {
+    "command": "node --cpu-prof --cpu-prof-dir=/tmp --cpu-prof-name=lakeql-page-count.cpuprofile bench/page-count-query.mjs",
+    "scope": "Includes module startup and query; sampled self time, not whole-query attribution. Profile stored in /tmp, summary archived here.",
+    "topFrames": [
+      {
+        "function": "(garbage collector)",
+        "file": "",
+        "lineZeroBased": -1,
+        "samplePercent": 14.29
+      },
+      {
+        "function": "trackOwner",
+        "file": "memory-scope.js",
+        "lineZeroBased": 371,
+        "samplePercent": 11.3
+      },
+      {
+        "function": "AtomicMemory",
+        "file": "memory-scope.js",
+        "lineZeroBased": 457,
+        "samplePercent": 7.0
+      },
+      {
+        "function": "unpackDictionaryData",
+        "file": "brotli.js",
+        "lineZeroBased": 1909,
+        "samplePercent": 5.55
+      },
+      {
+        "function": "handle",
+        "file": "memory-budget.js",
+        "lineZeroBased": 97,
+        "samplePercent": 5.34
+      },
+      {
+        "function": "compositeHandle",
+        "file": "memory-scope.js",
+        "lineZeroBased": 529,
+        "samplePercent": 5.0
+      },
+      {
+        "function": "columnarProjectedOutputs",
+        "file": "query.js",
+        "lineZeroBased": 606,
+        "samplePercent": 2.55
+      },
+      {
+        "function": "(program)",
+        "file": "",
+        "lineZeroBased": -1,
+        "samplePercent": 1.9
+      },
+      {
+        "function": "toStableJson",
+        "file": "manifest.js",
+        "lineZeroBased": 498,
+        "samplePercent": 1.77
+      },
+      {
+        "function": "readColumnVectorBatches",
+        "file": "vector-batches.js",
+        "lineZeroBased": 498,
+        "samplePercent": 1.51
+      },
+      {
+        "function": "pin",
+        "file": "memory-budget.js",
+        "lineZeroBased": 67,
+        "samplePercent": 1.48
+      },
+      {
+        "function": "stableStringify",
+        "file": "manifest.js",
+        "lineZeroBased": 253,
+        "samplePercent": 1.46
+      },
+      {
+        "function": "readAlignedColumnVectorBatches",
+        "file": "vector-batches.js",
+        "lineZeroBased": 404,
+        "samplePercent": 1.41
+      },
+      {
+        "function": "readOwnedParquetVectorBatches",
+        "file": "owned-vector-batches.js",
+        "lineZeroBased": 17,
+        "samplePercent": 1.35
+      },
+      {
+        "function": "struct",
+        "file": "compact-header.js",
+        "lineZeroBased": 128,
+        "samplePercent": 1.28
+      },
+      {
+        "function": "validatePhysicalFragment",
+        "file": "physical.js",
+        "lineZeroBased": 539,
+        "samplePercent": 1.09
+      }
+    ]
+  },
+  "nextAction": "See physical-identity-projection-2026-11-14.json for the measured generic operator optimization and current validation. Broader per-page planning/ownership costs remain separate audit work."
+}

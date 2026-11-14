@@ -1,0 +1,26 @@
+{
+  "baseCommit": "40a0241",
+  "runtimeSourceCommit": "558e3a5",
+  "requirements": ["F4", "V2"],
+  "fixture": "packages/cli/src/sql-reference.reference.test.ts",
+  "matrix": {
+    "newCases": 16,
+    "modes": ["range", "groups"],
+    "directions": ["asc", "desc"],
+    "exclusions": ["no others", "current row", "group", "ties"],
+    "bounds": "per-row CASE preceding and following expressions",
+    "aggregates": ["sum", "count"],
+    "data": "real written Parquet with ties, null amount, multiple partitions and singleton partition"
+  },
+  "checks": {
+    "referenceTestsPassed": 120,
+    "referenceFiles": 4,
+    "typecheck": "passed",
+    "formatting": "passed"
+  },
+  "limitations": [
+    "Small local-file fixture; not cloud transport or memory-pressure evidence.",
+    "Adaptive peer-index activation and scaling are tested separately.",
+    "Full window lifecycle and allocation acceptance remain open."
+  ]
+}

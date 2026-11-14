@@ -1,0 +1,39 @@
+{
+  "fixture": "/home/erik/work/projects/lakeql/fixtures/external/parquet-testing/data/rle_boolean_encoding.parquet",
+  "scope": "Diagnostic of local external Apache RLE boolean fixture through owned reader; rejection is an unresolved failure, not an expected pass; independent DuckDB reference; not remote or whole-worker coverage",
+  "reports": [
+    {
+      "batchSize": 1,
+      "status": "rejected",
+      "rejection": {
+        "message": "parquet unsupported compression codec: GZIP"
+      },
+      "referenceRows": 68,
+      "rows": 0,
+      "peakBytes": 114,
+      "releasedBytes": 0
+    },
+    {
+      "batchSize": 7,
+      "status": "rejected",
+      "rejection": {
+        "message": "parquet unsupported compression codec: GZIP"
+      },
+      "referenceRows": 68,
+      "rows": 0,
+      "peakBytes": 114,
+      "releasedBytes": 0
+    },
+    {
+      "batchSize": 1024,
+      "status": "rejected",
+      "rejection": {
+        "message": "parquet unsupported compression codec: GZIP"
+      },
+      "referenceRows": 68,
+      "rows": 0,
+      "peakBytes": 114,
+      "releasedBytes": 0
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "transport": "Loopback real HTTP; 206 ranges and ignored ranges returning full object with 200",
+  "poolBytes": 67108864,
+  "concurrentQueries": 4,
+  "readConcurrencyLimit": 2,
+  "checks": [
+    "Independent fixture values",
+    "Cold and warm concurrency",
+    "Warm traffic discovery only",
+    "Zero reservations after output release and cache eviction"
+  ],
+  "metrics": [
+    {
+      "ignoreRange": false,
+      "ranked": false,
+      "fixtureBytes": 269691,
+      "eagerBytes": 219157,
+      "deferredBytes": 84933,
+      "peakReads": 2,
+      "peakAllocatedBytes": 907243
+    },
+    {
+      "ignoreRange": true,
+      "ranked": false,
+      "fixtureBytes": 269691,
+      "eagerBytes": 5393820,
+      "deferredBytes": 5393820,
+      "peakReads": 2,
+      "peakAllocatedBytes": 697114
+    },
+    {
+      "ignoreRange": false,
+      "ranked": true,
+      "fixtureBytes": 269691,
+      "eagerBytes": 332786,
+      "deferredBytes": 101371,
+      "peakReads": 2,
+      "peakAllocatedBytes": 584107
+    },
+    {
+      "ignoreRange": true,
+      "ranked": true,
+      "fixtureBytes": 269691,
+      "eagerBytes": 9169494,
+      "deferredBytes": 9169494,
+      "peakReads": 2,
+      "peakAllocatedBytes": 852280
+    }
+  ],
+  "fix": "Reuse planned object snapshot within deferred/eager top-k execution to avoid repeated discovery on range-emulation fallback",
+  "limitations": "Local HTTP; tracked allocation peaks, not production Worker heap limits"
+}

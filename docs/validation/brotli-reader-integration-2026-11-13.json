@@ -1,0 +1,44 @@
+{
+  "status": "Brotli decoder and local reader integration verified; cloud validation and remaining audit work are still open",
+  "source": {
+    "url": "https://github.com/google/brotli/blob/6a14c0798233769cef147cf9bafaefe147b8ddc3/js/decode.ts",
+    "sha256": "6760902dcaeb431d21014fe6f4fe942a80f89cb24f6214fa92f995a3ec2e7b1a",
+    "license": "MIT, retained in vendored source"
+  },
+  "contract": [
+    "Caller supplies exact output; declared metablock output is checked before growing ring backing. No chunk accumulation or final output concatenation.",
+    "Per-call workspace slots reuse backing across metablocks. Growth is charged before allocation/copy; old backing releases afterward. All scratch backing releases on success, malformed input or budget rejection.",
+    "Scoped codec charges output, conservative decoder-state metadata, workspace backing and slot/view metadata. Module-level static dictionary and lookup tables are shared storage outside per-call accounting.",
+    "Fixed output validates complete input consumption, including trailing bytes beyond the bit-reader buffer. Overlapping input/output rejects before workspace allocation.",
+    "Brotli does not claim a complete fixed header-only workspace forecast. Existing generic incremental scoped decoding is used."
+  ],
+  "validation": {
+    "build": "passed",
+    "defaultTestsPassed": 3146,
+    "defaultTestsSkipped": 629,
+    "typecheck": "passed",
+    "fullConformance": {
+      "passed": 517,
+      "skipped": 1,
+      "failed": 0
+    },
+    "tests": [
+      "Node Brotli encoder produces independent compressed bytes across qualities 0,1,4,11; empty, dictionary text, raw blocks and ring wrapping decode exactly.",
+      "All truncated prefixes, short/long declared outputs, trailing bytes, overlap and offset-view sentinels checked.",
+      "Measured exact workspace bound succeeds; one byte below fails without retained allocations. Scoped output survives until scope disposal.",
+      "Actual generated Brotli Parquet pages: INT32 and nullable UTF-8, multiple groups/pages, public and owned readers, batch sizes 1/64/256.",
+      "Actual external large_string_map.brotli.parquet rejects under 64 and 128 MiB in scoped public batches and owned queries; pool returns to zero."
+    ],
+    "existingWorkerRegressionTestsPassed": 65,
+    "focusedLint": "passed",
+    "compatibilityChangesetSizeChecks": "passed"
+  },
+  "conformanceContractChange": "Previously both huge-fixture cases expected successful unbounded materialization. Tests now inspect actual page-header extents, independent of codec/file names: pages above the 64 MiB test cap must produce LAKEQL_BUDGET_EXCEEDED and release allocations. Large columns composed of smaller pages still require successful value/row-count parity. Unsupported-codec preflight tests use LZO now that Brotli is supported; rejection assertions remain intact.",
+  "remaining": [
+    "Native Worker R2/cloud HTTP concurrency and cache lifetime proof for Brotli.",
+    "Brotli throughput, scaling and bundle-cost measurements; no speedup is claimed.",
+    "Full release gates and broader F1-F6/M1-M2/V1-V3 audit requirements remain active.",
+    "Accounting is not total heap/RSS or hosted Cloudflare memory-cap certification. Public unscoped reads retain their caller-managed materialization contract."
+  ],
+  "followupEvidence": "brotli-cloud-ring-2026-11-13.json"
+}

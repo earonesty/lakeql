@@ -1,0 +1,71 @@
+{
+  "method": "Isolated sample function per trial prevents previous released handle arrays from contaminating GC baselines; one warmup and five samples; preexisting source backing excluded; prior scope module compared with current shared backing module using the same current budget implementation",
+  "reports": [
+    {
+      "implementation": "per-backing-retain",
+      "buffers": 10,
+      "retains": 100,
+      "sourceSha256": "48c74517499aa57e2a6f41dd54ac0f4cb2e65329fb2be8e9eced8e3a5dbba7ce",
+      "node": "v24.18.1",
+      "retainMedianMs": 0.7983250000000055,
+      "heapDeltaMedianBytes": 708264,
+      "samples": 5,
+      "scope": "same-budget composite retention only; preexisting backing excluded; Node post-GC heap delta; no I/O or Worker heap-cap claim"
+    },
+    {
+      "implementation": "per-backing-retain",
+      "buffers": 100,
+      "retains": 100,
+      "sourceSha256": "48c74517499aa57e2a6f41dd54ac0f4cb2e65329fb2be8e9eced8e3a5dbba7ce",
+      "node": "v24.18.1",
+      "retainMedianMs": 6.225892999999985,
+      "heapDeltaMedianBytes": 6728704,
+      "samples": 5,
+      "scope": "same-budget composite retention only; preexisting backing excluded; Node post-GC heap delta; no I/O or Worker heap-cap claim"
+    },
+    {
+      "implementation": "per-backing-retain",
+      "buffers": 1000,
+      "retains": 100,
+      "sourceSha256": "48c74517499aa57e2a6f41dd54ac0f4cb2e65329fb2be8e9eced8e3a5dbba7ce",
+      "node": "v24.18.1",
+      "retainMedianMs": 37.972541000000035,
+      "heapDeltaMedianBytes": 66664592,
+      "samples": 5,
+      "scope": "same-budget composite retention only; preexisting backing excluded; Node post-GC heap delta; no I/O or Worker heap-cap claim"
+    },
+    {
+      "implementation": "shared-composite-pins",
+      "buffers": 10,
+      "retains": 100,
+      "sourceSha256": "4cf9a7f1f78e44b1f38289a58d8b432f2240c2a866a60ebc495b0bbbb3028311",
+      "node": "v24.18.1",
+      "retainMedianMs": 0.024396000000010076,
+      "heapDeltaMedianBytes": 31432,
+      "samples": 5,
+      "scope": "same-budget composite retention only; preexisting backing excluded; Node post-GC heap delta; no I/O or Worker heap-cap claim"
+    },
+    {
+      "implementation": "shared-composite-pins",
+      "buffers": 100,
+      "retains": 100,
+      "sourceSha256": "4cf9a7f1f78e44b1f38289a58d8b432f2240c2a866a60ebc495b0bbbb3028311",
+      "node": "v24.18.1",
+      "retainMedianMs": 0.023534000000012156,
+      "heapDeltaMedianBytes": 31384,
+      "samples": 5,
+      "scope": "same-budget composite retention only; preexisting backing excluded; Node post-GC heap delta; no I/O or Worker heap-cap claim"
+    },
+    {
+      "implementation": "shared-composite-pins",
+      "buffers": 1000,
+      "retains": 100,
+      "sourceSha256": "4cf9a7f1f78e44b1f38289a58d8b432f2240c2a866a60ebc495b0bbbb3028311",
+      "node": "v24.18.1",
+      "retainMedianMs": 0.02989700000000539,
+      "heapDeltaMedianBytes": 31384,
+      "samples": 5,
+      "scope": "same-budget composite retention only; preexisting backing excluded; Node post-GC heap delta; no I/O or Worker heap-cap claim"
+    }
+  ]
+}

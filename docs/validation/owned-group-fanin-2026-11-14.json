@@ -1,0 +1,33 @@
+{
+  "change": "Grouped and scalar task fan-in now share a generic owned reduction scheduler. Grouped partial owners stay charged through callbacks and merges, and release after consumption or drained failure. New owned row/batch group-task entrypoints admit vector construction, ordering/top-k, offset/limit gathering and materialized rows. Removed legacy grouped state restore/merge/finalization and unowned shaping from this task path.",
+  "validation": {
+    "defaultSuite": {
+      "testsPassed": 3373,
+      "testsSkipped": 629,
+      "filesPassed": 365,
+      "filesSkipped": 8
+    },
+    "targetedTaskTests": 27,
+    "typescriptBuild": "passed",
+    "typecheck": "passed",
+    "formatting": "passed",
+    "realFixtures": [
+      "two concurrent grouped partials with delayed transport",
+      "transport rejection releases accumulated states and partials",
+      "final owned result holds reservations until release",
+      "descending order plus offset/limit returns expected group",
+      "maxOutputRows applies after shaping rather than rejecting intermediate groups",
+      "existing slice, empty result, partition group and residual fixtures continue to pass"
+    ]
+  },
+  "tradeoffs": [
+    "Full grouped ordering uses the admitted top-k kernel with limit equal to row count; comparative latency still needs measurement.",
+    "Rows finalize under ownership then convert via vectorFromSource; avoiding that intermediate representation remains a possible optimization."
+  ],
+  "remaining": [
+    "Task planning and metadata ownership, partition-column construction and predicate scratch remain under review.",
+    "Generic owned aggregate vector/expression shape capabilities remain explicit; unsupported inputs raise capability errors.",
+    "Callback internal allocations are external even though all retained returns are copied under admission.",
+    "General spill/resume and full constrained mixed-job acceptance are not proven by these task fixtures."
+  ]
+}

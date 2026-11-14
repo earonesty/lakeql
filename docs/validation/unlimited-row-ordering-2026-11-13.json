@@ -1,0 +1,26 @@
+{
+  "status": "Implemented; default and Worker validation passed",
+  "change": "Ordinary unlimited row ordering now detaches retained rows under the query allocation scope, admits each directory append before mutation, and admits native stable-sort workspace. Bounded selection consumers no longer redundantly sort the already ordered winners.",
+  "validation": {
+    "queryTestsPassed": 90,
+    "additionalBoundaryRun": "Seven query-row-top-k-memory tests passed after adding exact measured peak and one-byte-short unlimited ordering cases",
+    "build": "passed",
+    "cases": [
+      "borrowed scanner row/nested/binary reuse",
+      "ordered result parity",
+      "exact peak admission",
+      "one-byte-short rejection",
+      "scanner closure and sibling ownership preservation"
+    ],
+    "defaultTestsPassed": 3034,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61,
+    "remoteEvidence": "Explicit borrowed-row adapter over real Parquet HTTP 206 and ignored-range 200 responses, four concurrent full-order queries, repeated after cache reuse. Final cache eviction releases all pool usage. Worker suite passed, but this explicit fallback fixture is HTTP-only."
+  },
+  "limitations": [
+    "Sort workspace charges are explicit conservative units, not a portable measurement of native sort or VM heap.",
+    "Stateful sort runs, checkpoint serialization/deserialization, hive merge and result projection/output admission remain separate gaps.",
+    "Per-row directory reservation overhead requires measurement; no latency improvement is claimed."
+  ],
+  "statefulMergeFollowup": "docs/validation/stable-sort-run-merge-2026-11-13.json"
+}

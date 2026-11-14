@@ -1,0 +1,38 @@
+{
+  "requirements": ["F3", "M1", "V2"],
+  "baseCommit": "7db7b0d",
+  "contract": "Nonnegative safe limit/offset and safe combined offset+limit; positive safe batchSize/maxGroups; vector top-k limit remains mandatory.",
+  "routes": [
+    "QueryRunner initialization",
+    "aggregate-result options",
+    "borrowed vector top-k",
+    "owned vector top-k"
+  ],
+  "evidence": [
+    "12 invalid-bound combinations reject before query I/O and extra vector allocation",
+    "6 invalid batch/group capacity cases reject before I/O",
+    "Safe-maximum limit over three input rows succeeds under 64 KiB pool",
+    "Zero limit with safe-maximum offset produces empty output",
+    "JavaScript missing vector limit remains rejected",
+    "Scope cleanup returns allocation pools to zero"
+  ],
+  "validation": {
+    "focusedTests": 20,
+    "regularPassed": 3777,
+    "regularSkipped": 645,
+    "workerPassed": 82,
+    "build": "tsc -b passed",
+    "typecheck": "passed"
+  },
+  "sourceSha256": {
+    "row-limits.ts": "bb09140eb3c40ccde961a8ff6fd46795c6d05e90f175590f1fd57aecaf22f176",
+    "row-limits.test.ts": "25b02b5ad6f26fd86e81d48cbceeeae47c0ba2f904575736c1def5f1daeaa383",
+    "query.ts": "ce4bcdb6e649feb02f3fbbfceb38398fbcd75da7ce0d25ffb5c2c80fac03bd8a",
+    "vector-sort.ts": "4427f29e2fabb7187a85c0fdb8b8c2887fed76e800909b3dcbb8a58da4d4fbbd"
+  },
+  "compatibility": "Previously accepted unsafe integer bounds now reject with LAKEQL_TYPE_ERROR; changeset updated.",
+  "limits": [
+    "Does not close all top-k/output bookkeeping or whole-runtime memory requirements",
+    "No new cloud benchmark needed or claimed for input validation"
+  ]
+}

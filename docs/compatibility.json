@@ -1,6 +1,82 @@
 [
   {
     "area": "Parquet",
+    "feature": "BSON logical columns",
+    "status": "supported+tested",
+    "notes": "BYTE_ARRAY BSON leaves decode through shared public and owned conversion, including packed leaves and dictionaries. Documents retain member presence; int64 and UTC datetime preserve precision. BSON-specific values use explicit tagged maps; decimal128 is an exact tagged byte payload, not SQL decimal arithmetic. Duplicate keys, malformed framing and invalid UTF-8 reject.",
+    "evidence": [
+      {
+        "file": "packages/parquet/src/bson-reader.test.ts",
+        "pattern": "decodes the actual BSON fixture through public and owned readers"
+      },
+      {
+        "file": "packages/parquet/src/bson-values.test.ts",
+        "pattern": "retains BSON-specific scalar type information"
+      },
+      {
+        "file": "packages/parquet/src/bson-conversion.test.ts",
+        "pattern": "logical dictionary with exact admission"
+      },
+      {
+        "file": "packages/parquet/src/bson.workerd.ts",
+        "pattern": "decodes BSON through concurrent Worker R2 queries"
+      }
+    ]
+  },
+  {
+    "area": "Parquet",
+    "feature": "ALP encoding",
+    "status": "supported+tested",
+    "notes": "FLOAT/DOUBLE V1 and V2 pages use one shared decoder with output admission and numeric planner forecasts. Real fixture bit parity includes NaN payloads, 64-bit deltas and variable vector sizes. Public and owned reader conformance passes; HTTP range and ignored-range concurrent reads are tested.",
+    "evidence": [
+      {
+        "file": "packages/parquet/src/alp-values.test.ts",
+        "pattern": "decodes every ALP fixture vector bit-for-bit"
+      },
+      {
+        "file": "packages/parquet/src/numeric-page.test.ts",
+        "pattern": "plans and executes ALP with nullable"
+      },
+      {
+        "file": "packages/parquet/src/alp-http.test.ts",
+        "pattern": "streams real ALP fixture across concurrent HTTP reads"
+      },
+      {
+        "file": "packages/parquet/src/alp.workerd.ts",
+        "pattern": "decodes ALP through Worker R2 with concurrent"
+      }
+    ]
+  },
+  {
+    "area": "Parquet",
+    "feature": "Brotli compression",
+    "status": "supported+tested",
+    "notes": "Fixed-output decoder admits reusable workspace and decoder metadata through owned scopes. Actual oversized pages reject under requested limits. Worker R2 and HTTP 206/ignored-Range tests cover concurrent queries and cache lifetimes. Static tables and caller-managed public results are outside per-call accounting.",
+    "evidence": [
+      {
+        "file": "packages/parquet/src/brotli-reader.test.ts",
+        "pattern": "reads actual Brotli Parquet pages"
+      },
+      {
+        "file": "packages/parquet/src/brotli-reader.test.ts",
+        "pattern": "rejects the actual multi-gigabyte Brotli fixture"
+      },
+      {
+        "file": "packages/parquet/src/brotli-decoder.test.ts",
+        "pattern": "charges scoped output and workspace"
+      },
+      {
+        "file": "packages/parquet/src/brotli.workerd.ts",
+        "pattern": "decodes BROTLI through concurrent Worker R2 queries"
+      },
+      {
+        "file": "packages/parquet/src/brotli-http.test.ts",
+        "pattern": "streams real Brotli fixture across concurrent HTTP reads"
+      }
+    ]
+  },
+  {
+    "area": "Parquet",
     "feature": "Primitive scalar columns",
     "status": "supported+tested",
     "notes": "Covered by local fixtures and hyparquet decoding.",
@@ -16,7 +92,12 @@
     "feature": "Projection",
     "status": "supported+tested",
     "notes": "Column projection is threaded into Parquet reads.",
-    "evidence": [{ "file": "packages/parquet/src/index.test.ts", "pattern": "projects columns" }]
+    "evidence": [
+      {
+        "file": "packages/parquet/src/index.test.ts",
+        "pattern": "projects columns"
+      }
+    ]
   },
   {
     "area": "Parquet",
@@ -102,7 +183,7 @@
       },
       {
         "file": "packages/parquet/src/decoded-column-cache.test.ts",
-        "pattern": "keeps balanced constrained caches focused on encoded bytes"
+        "pattern": "admits small decoded pages in constrained balanced caches"
       }
     ]
   },
@@ -121,12 +202,16 @@
   {
     "area": "Parquet",
     "feature": "Struct assembly",
-    "status": "detected+rejected",
-    "notes": "Rejected with LAKEQL_UNSUPPORTED_PARQUET_FEATURE to avoid silent flattening.",
+    "status": "supported+tested",
+    "notes": "Generic struct vectors and owned fallback preserve nullable containers/members and nested integer precision. HTTP 206/200 and nested schema conflicts are tested; upstream decoded JS allocations are not fully budgeted.",
     "evidence": [
       {
-        "file": "packages/parquet/src/index.test.ts",
-        "pattern": "rejects unannotated Parquet groups as unsupported structs"
+        "file": "packages/parquet/src/struct-fixtures.test.ts",
+        "pattern": "preserves external nested struct values and integer precision"
+      },
+      {
+        "file": "packages/parquet/src/struct-http.test.ts",
+        "pattern": "shares bounded HTTP struct scans"
       }
     ]
   },
@@ -200,6 +285,26 @@
   },
   {
     "area": "Parquet",
+    "feature": "Signed 96-bit timestamp carrier",
+    "status": "supported+tested",
+    "notes": "FIXED_LEN_BYTE_ARRAY(12) TIMESTAMP decodes signed little-endian epoch counts. Batches dynamically choose signed 64- or 96-bit typed storage, preserving values during selection, ordering and mixed-width concatenation. The Apache UTC-adjusted fixture is verified against its documented epochs through local and real HTTP scans. This does not prove whole-Worker heap bounds.",
+    "evidence": [
+      {
+        "file": "packages/parquet/src/timestamp96-fixture.test.ts",
+        "pattern": "preserves the documented FLBA12 fixture through public scans"
+      },
+      {
+        "file": "packages/parquet/src/timestamp96-http.test.ts",
+        "pattern": "shares bounded HTTP wide timestamp scans"
+      },
+      {
+        "file": "packages/core/src/timestamp96-vector.test.ts",
+        "pattern": "automatically constructs wide batches at exact capacity"
+      }
+    ]
+  },
+  {
+    "area": "Parquet",
     "feature": "Null-heavy scalar and nested rows",
     "status": "supported+tested",
     "notes": "Reference-engine comparison covers null-heavy DuckDB-authored scalar, date/timestamp, list, map, and binary values.",
@@ -239,7 +344,12 @@
     "feature": "Format v3+ reads",
     "status": "detected+rejected",
     "notes": "Rejected with LAKEQL_CATALOG_ERROR.",
-    "evidence": [{ "file": "packages/iceberg/src/index.test.ts", "pattern": "bad.json" }]
+    "evidence": [
+      {
+        "file": "packages/iceberg/src/index.test.ts",
+        "pattern": "bad.json"
+      }
+    ]
   },
   {
     "area": "Iceberg",
@@ -323,7 +433,10 @@
     "status": "detected+rejected",
     "notes": "Rejected with LAKEQL_UNSUPPORTED_ICEBERG_FEATURE.",
     "evidence": [
-      { "file": "packages/iceberg/src/index.test.ts", "pattern": "unsupported-sort-order.json" }
+      {
+        "file": "packages/iceberg/src/index.test.ts",
+        "pattern": "unsupported-sort-order.json"
+      }
     ]
   },
   {
@@ -364,7 +477,10 @@
     "status": "supported+tested",
     "notes": "loadIcebergTableFromObjectStore is the stable path.",
     "evidence": [
-      { "file": "packages/iceberg/src/index.test.ts", "pattern": "loadIcebergTableFromObjectStore" }
+      {
+        "file": "packages/iceberg/src/index.test.ts",
+        "pattern": "loadIcebergTableFromObjectStore"
+      }
     ]
   },
   {
@@ -413,7 +529,10 @@
     "status": "supported+tested",
     "notes": "Adapter maps to R2 ranged get.",
     "evidence": [
-      { "file": "packages/lakeql/src/worker-example.workerd.ts", "pattern": "options?.range" }
+      {
+        "file": "packages/lakeql/src/worker-example.workerd.ts",
+        "pattern": "options?.range"
+      }
     ]
   },
   {
@@ -422,12 +541,18 @@
     "status": "supported+tested",
     "notes": "Signing delegates to aws4fetch; XML parsing uses fast-xml-parser.",
     "evidence": [
-      { "file": "packages/s3/src/index.test.ts", "pattern": "adds SigV4 authorization headers" },
+      {
+        "file": "packages/s3/src/index.test.ts",
+        "pattern": "adds SigV4 authorization headers"
+      },
       {
         "file": "packages/s3/src/index.test.ts",
         "pattern": "matches AWS S3 SigV4 documentation vectors with explicit payload hashes"
       },
-      { "file": "packages/s3/src/index.test.ts", "pattern": "continuation-token=page-2" }
+      {
+        "file": "packages/s3/src/index.test.ts",
+        "pattern": "continuation-token=page-2"
+      }
     ]
   },
   {
@@ -807,6 +932,38 @@
       {
         "file": "packages/webgpu/src/index.workerd.ts",
         "pattern": "plans and compiles without browser globals or native dependencies"
+      }
+    ]
+  },
+  {
+    "area": "Parquet",
+    "feature": "LZ4_RAW decompression",
+    "status": "supported+tested",
+    "notes": "Exact-output admission with no scratch backing; malformed block checks, paired DuckDB fixture digests and Worker budget boundaries.",
+    "evidence": [
+      {
+        "file": "packages/parquet/src/lz4.test.ts",
+        "pattern": "matches independently verified paired-fixture row digest"
+      },
+      {
+        "file": "packages/parquet/src/lz4.workerd.ts",
+        "pattern": "decodes LZ4 raw under exact output admission"
+      }
+    ]
+  },
+  {
+    "area": "Parquet",
+    "feature": "Legacy LZ4 decompression",
+    "status": "supported+tested",
+    "notes": "Validates Hadoop blocks/chunks or historical raw blocks into one admitted output. No extra scratch backing; framing fallback must independently validate the complete raw block.",
+    "evidence": [
+      {
+        "file": "packages/parquet/src/lz4.test.ts",
+        "pattern": "decodes Hadoop blocks and multiple independent chunks"
+      },
+      {
+        "file": "packages/parquet/src/lz4.workerd.ts",
+        "pattern": "admits one output for legacy Hadoop and raw LZ4"
       }
     ]
   }

@@ -1,0 +1,41 @@
+{
+  "date": "2026-11-12",
+  "scope": "Nested selection lifetime checkpoint, not full audit completion",
+  "coverage": {
+    "passed": 1574,
+    "skipped": 361,
+    "filesPassed": 153,
+    "statements": 91.08,
+    "branches": 84.87,
+    "functions": 95.18,
+    "lines": 93.07
+  },
+  "focusedNestedDictionary": 11,
+  "typecheck": "pass",
+  "lint": "pass, 501 files",
+  "conformance": {
+    "failed": 167,
+    "passed": 83,
+    "skipped": 1,
+    "status": "unresolved",
+    "limitation": "The harness expects decoding for every parquet file, including documented malformed bad_data fixtures. Counts are not a classified measure of valid-format support."
+  },
+  "sha256": {
+    "packages/core/src/nested-dictionary.ts": "3aba51a3fc2a96ab3c98411b2bf7d682e204da7f8293338d159ebea0d6bc7724",
+    "packages/core/src/nested-dictionary.test.ts": "76488f39356e5c32b58b315ad341858eb151edcdf51bae408b4deb9955401614",
+    "packages/core/src/vector-sort.ts": "e48292b6be043ca279a8a0e7b0e6904e51e0af4e60a6cd9db70b0711d6472f1e",
+    "packages/core/src/collection-concat.ts": "77ac5b6fff6006c0baf898ab7fcf954a76292ff725258ca3b241715a0b8eafa5",
+    "packages/core/src/concat-plan.ts": "6a69355dda3d2a781379a26fc423fa72d1d2f5240f9cc0cd6364e3e27120e250"
+  },
+  "provenanceClarification": {
+    "kind": "Historical intermediate worktree checkpoint",
+    "currentRevisionAttestation": false,
+    "explanation": "Recorded source hashes identify the intermediate contents used for this dated run. Later implementation changed these files; hashes are intentionally not replaced with current hashes because that would attach old measurements to unmeasured source. Consult subsequent validation checkpoints for current evidence.",
+    "mismatchedPathsAtReview": [
+      "packages/core/src/nested-dictionary.ts",
+      "packages/core/src/nested-dictionary.test.ts",
+      "packages/core/src/vector-sort.ts",
+      "packages/core/src/concat-plan.ts"
+    ]
+  }
+}

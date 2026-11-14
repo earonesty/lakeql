@@ -1,0 +1,81 @@
+{
+  "requirements": ["F2", "M1", "M2", "V1", "V2"],
+  "status": "Shared row DISTINCT key admission implemented for ordinary, ordered and post-window execution; full audit remains open",
+  "contract": [
+    "RowDistinctSet replaces the unscoped Set and WeakMap serialized ledger. Query scopes own retained keys and the directory; a shared MutableMemoryLedger admits key growth before mutation and adapts its chunk reservation to available headroom.",
+    "Per-row scopes admit JSON-safe normalization and stable-key formatting before allocation. Duplicate keys release temporary storage immediately. Serialized-size and buffered-row limits are checked before a new key is retained.",
+    "Normalization preserves existing bigint, byte-to-hex, nested data and own-field semantics. Cycles and enumerable accessor properties reject explicitly before structural scalar guards or normalization read them.",
+    "Ordinary and ordered DISTINCT now support the shared owned result collector. Window DISTINCT uses the same key owner but its broader output/input lifecycle remains open."
+  ],
+  "validation": {
+    "build": "TypeScript project build passed",
+    "typecheck": "passed",
+    "default": {
+      "passed": 3183,
+      "skipped": 629
+    },
+    "worker": {
+      "passed": 71
+    },
+    "finalFocusedDistinct": {
+      "passed": 5
+    },
+    "cases": [
+      "Existing exact serialized-byte boundary with escaped Unicode and duplicates remains unchanged; cap-minus-one rejects.",
+      "Legacy normalization parity includes small/large bigint, bytes, nested undefined/null, Date enumeration, missing properties and repeated inputs.",
+      "Oversized key conversion rejects under 8 KiB; cycles and accessors reject without invoking getters. Scope release preserves an unrelated sibling reservation.",
+      "Owned ordinary/ordered DISTINCT results hold reservations until release; early streaming return releases state.",
+      "1,000 duplicate probes have the same live and peak reservation as a two-input baseline (one insertion plus one duplicate). Unique cardinality 100 to 1,000 stays below 12x peak growth.",
+      "Real Brotli Parquet fixture selects repeated text before DISTINCT and verifies one output value for both ordinary and ordered queries, over HTTP 206, ignored-Range 200 and native local Worker R2. Tests combine 64/128 MiB shared pools with 2 MiB query caps and oversized-expression failures.",
+      "Existing window DISTINCT, qualify, ordering, offset and limit behavior passes the default suite."
+    ],
+    "correctedTestAssumption": "A one-input baseline omits duplicate formatting scratch overlapping the retained first key. The scaling test uses a two-input baseline rather than asserting those distinct lifetimes have identical peaks.",
+    "reservationMeasurements": {
+      "conditions": "Node 24.18.1 compiled modules; 16 MiB pool; rows {value: six-digit index} or repeated same. Measurements are tracked reservations, not heap. Elapsed timings under concurrent test load are intentionally not used as performance evidence.",
+      "samples": [
+        {
+          "rows": 2,
+          "duplicate": true,
+          "live": 3216,
+          "peak": 4244
+        },
+        {
+          "rows": 1000,
+          "duplicate": true,
+          "live": 3216,
+          "peak": 4244
+        },
+        {
+          "rows": 100,
+          "duplicate": false,
+          "live": 45600,
+          "peak": 46030
+        },
+        {
+          "rows": 1000,
+          "duplicate": false,
+          "live": 215824,
+          "peak": 216860
+        },
+        {
+          "rows": 10000,
+          "duplicate": false,
+          "live": 1772096,
+          "peak": 1773132
+        }
+      ],
+      "afterDisposeBytes": 0
+    },
+    "finalFocusedRegression": {
+      "passed": 89
+    },
+    "lintSizeChangeset": "passed"
+  },
+  "limits": [
+    "No CPU throughput speedup is claimed; normalization admission and mutable output detachment add work.",
+    "Window input/output buffers and projection, borrowed reference selection, hive augmentation, partition merging, source adapter allocations and remaining scalar internals remain open.",
+    "Reservations do not certify total runtime heap or production Cloudflare memory enforcement.",
+    "Full final release gates, including coverage/reference, must still be refreshed on the final implementation."
+  ],
+  "followupEvidence": "docs/validation/window-output-admission-2026-11-13.json"
+}
