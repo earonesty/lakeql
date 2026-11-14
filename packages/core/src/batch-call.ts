@@ -1,4 +1,3 @@
-import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { type BatchExprValues, type PackedByteVector, vectorValue } from "./batch.js";
 import { expandDictionaryMask } from "./dictionary-mask.js";
 import { LakeqlError } from "./errors.js";
@@ -19,6 +18,7 @@ import type { MemoryScope } from "./memory-scope.js";
 import { regexpMatchesValue, regexpReplaceValue } from "./regex-functions.js";
 import { scalarStringWithAdmission } from "./scalar-cast-allocation.js";
 import { replaceAllWithAdmission } from "./string-replacement-allocation.js";
+import { transformStringWithAdmission } from "./string-transform-allocation.js";
 import { admitVectorBuffer } from "./vector-buffer.js";
 
 export function batchCallExprValues(
@@ -664,7 +664,7 @@ function nullifCallValues(
 }
 
 function unaryStringCallValues(
-  name: string,
+  name: "lower" | "upper" | "trim",
   args: BatchExprValues[],
   cb: (value: string) => string,
 ): BatchExprValues {
@@ -681,10 +681,7 @@ function unaryStringCallValues(
           actual: typeof value,
         });
       }
-      // Unicode full case mappings can expand a code point; reserve three code
-      // units per input unit for casing, while trimming cannot expand the input.
-      const units = value.length * (name === "trim" ? 1 : 3);
-      return admitVectorBuffer(valueScope, c.string + c.stringCodeUnit * units, () => cb(value));
+      return transformStringWithAdmission(value, name, cb, valueScope);
     },
   };
 }
@@ -733,8 +730,11 @@ function substrCallValues(args: BatchExprValues[]): BatchExprValues {
       if (typeof start !== "number" || typeof length !== "number") {
         throw new LakeqlError("LAKEQL_TYPE_ERROR", "substr() start and length must be numbers");
       }
-      return admitVectorBuffer(valueScope, c.string + c.stringCodeUnit * value.length, () =>
-        value.slice(start, start + length),
+      return transformStringWithAdmission(
+        value,
+        "substr",
+        (text) => text.slice(start, start + length),
+        valueScope,
       );
     },
   };

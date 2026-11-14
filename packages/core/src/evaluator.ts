@@ -9,6 +9,7 @@ import { setRecordValue } from "./record-value.js";
 import { regexpMatchesValue, regexpReplaceValue } from "./regex-functions.js";
 import { scalarStringWithAdmission } from "./scalar-cast-allocation.js";
 import { replaceAllWithAdmission } from "./string-replacement-allocation.js";
+import { transformStringWithAdmission } from "./string-transform-allocation.js";
 import { compareTimestampValues, isTimestampValue, timestampValueFromIso } from "./timestamp.js";
 import type { Row } from "./types.js";
 
@@ -403,13 +404,13 @@ function callFunction(name: string, args: EvalValue[], scope?: MemoryScope): Eva
   const fn = name.toLowerCase();
   switch (fn) {
     case "lower":
-      return unaryString(fn, args, (value) => value.toLowerCase());
+      return unaryString(fn, args, (value) => value.toLowerCase(), scope);
     case "upper":
-      return unaryString(fn, args, (value) => value.toUpperCase());
+      return unaryString(fn, args, (value) => value.toUpperCase(), scope);
     case "trim":
-      return unaryString(fn, args, (value) => value.trim());
+      return unaryString(fn, args, (value) => value.trim(), scope);
     case "substr":
-      return substr(args);
+      return substr(args, scope);
     case "replace":
       return replace(args, scope);
     case "regexp_matches":
@@ -499,12 +500,17 @@ function requireArgCount(name: string, args: EvalValue[], expected: number): voi
   }
 }
 
-function unaryString(name: string, args: EvalValue[], cb: (value: string) => string): EvalValue {
+function unaryString(
+  name: "lower" | "upper" | "trim",
+  args: EvalValue[],
+  cb: (value: string) => string,
+  scope?: MemoryScope,
+): EvalValue {
   requireArgCount(name, args, 1);
   const value = args[0] ?? null;
   if (value === null) return null;
   if (typeof value !== "string") throwType(name, "string", value);
-  return cb(value);
+  return transformStringWithAdmission(value, name, cb, scope);
 }
 
 function unaryNumber(name: string, args: EvalValue[], cb: (value: number) => number): EvalValue {
@@ -515,7 +521,7 @@ function unaryNumber(name: string, args: EvalValue[], cb: (value: number) => num
   return cb(value);
 }
 
-function substr(args: EvalValue[]): EvalValue {
+function substr(args: EvalValue[], scope?: MemoryScope): EvalValue {
   requireArgCount("substr", args, 3);
   const value = args[0] ?? null;
   const start = args[1] ?? null;
@@ -525,7 +531,12 @@ function substr(args: EvalValue[]): EvalValue {
   if (typeof start !== "number" || typeof length !== "number") {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "substr() start and length must be numbers");
   }
-  return value.slice(start, start + length);
+  return transformStringWithAdmission(
+    value,
+    "substr",
+    (text) => text.slice(start, start + length),
+    scope,
+  );
 }
 
 function replace(args: EvalValue[], scope?: MemoryScope): EvalValue {

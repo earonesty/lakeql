@@ -20,5 +20,6 @@
     "Remaining row scalar operations (including casing, regex, date and spatial operations), comparisons and HAVING/projection call sites still require allocation coverage. Optional scope is not a claim that every evaluator operation is admitted.",
     "Small remote fixture establishes operation, not throughput improvement or total runtime heap bounds.",
     "Six previously recorded Parquet conformance failures remain unresolved; this change does not assert release acceptance."
-  ]
+  ],
+  "followupEvidence": "string-transform-admission-2026-11-13.json"
 }
