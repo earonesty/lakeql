@@ -1,0 +1,102 @@
+{
+  "baseline": "05bc4e7",
+  "moduleName": "memory-scope,materialization-plan,owned-row-collector,window-vector",
+  "modules": [
+    {
+      "name": "memory-scope",
+      "baselineSourceSha256": "412b20ec7a8a720d3e6ea4b3a5703a9e76c12e409acbbdce5d7abbaefd081894",
+      "currentSourceSha256": "71567f2da14502a0d07b4837896366c0e4e1afaf2699c4d8d5e138a5110c2609"
+    },
+    {
+      "name": "materialization-plan",
+      "baselineSourceSha256": "afd8ab00bbdeac876bf63a1847a430680b456b4d9f86c85640ddd39fc69c8038",
+      "currentSourceSha256": "50678dab05ff2dbab803db1bf1a56fcb68995f7a92f17202ba1553334784cc13"
+    },
+    {
+      "name": "owned-row-collector",
+      "baselineSourceSha256": "e70893073780aea4cb3cef4eae5466afb5514b5ae41e50fbad72ffb5b9d6e3fe",
+      "currentSourceSha256": "9cf9814fec03a720cc8c60c442a6aba11ce7adebf7a190b4994ee3c181e2ea1f"
+    },
+    {
+      "name": "window-vector",
+      "baselineSourceSha256": "c021f35730200a6f9932294007abeadde8c8edb63207b289c221a45e06f87ac4",
+      "currentSourceSha256": "53fabd0c06712ab47ad742711b01214ea34cb7081cce86becbfc1512e94e21ec"
+    }
+  ],
+  "node": "v24.18.1",
+  "warmupPairs": 1,
+  "measuredPairs": 4,
+  "scope": "Alternating fresh Node processes; the named modules are replaced together by their prior implementations, with current dependencies. Local 40,000-row many-page fixture query, not cloud throughput. Source store/runtime overhead excluded from pool metrics. Value parity is covered by external conformance; benchmark checks count and release.",
+  "priorMedianMs": 2233.8243595,
+  "currentMedianMs": 2471.227889,
+  "runs": {
+    "prior": [
+      {
+        "scope": "Local memory-store query; fixture storage and runtime heap excluded; no cloud claim",
+        "node": "v24.18.1",
+        "rows": 40000,
+        "elapsedMs": 2207.140612,
+        "peakBytes": 801657,
+        "afterReleaseBytes": 0
+      },
+      {
+        "scope": "Local memory-store query; fixture storage and runtime heap excluded; no cloud claim",
+        "node": "v24.18.1",
+        "rows": 40000,
+        "elapsedMs": 2239.0977399999997,
+        "peakBytes": 801657,
+        "afterReleaseBytes": 0
+      },
+      {
+        "scope": "Local memory-store query; fixture storage and runtime heap excluded; no cloud claim",
+        "node": "v24.18.1",
+        "rows": 40000,
+        "elapsedMs": 2272.9361599999997,
+        "peakBytes": 801657,
+        "afterReleaseBytes": 0
+      },
+      {
+        "scope": "Local memory-store query; fixture storage and runtime heap excluded; no cloud claim",
+        "node": "v24.18.1",
+        "rows": 40000,
+        "elapsedMs": 2228.550979,
+        "peakBytes": 801657,
+        "afterReleaseBytes": 0
+      }
+    ],
+    "current": [
+      {
+        "scope": "Local memory-store query; fixture storage and runtime heap excluded; no cloud claim",
+        "node": "v24.18.1",
+        "rows": 40000,
+        "elapsedMs": 2477.285837,
+        "peakBytes": 801657,
+        "afterReleaseBytes": 0
+      },
+      {
+        "scope": "Local memory-store query; fixture storage and runtime heap excluded; no cloud claim",
+        "node": "v24.18.1",
+        "rows": 40000,
+        "elapsedMs": 2552.304819,
+        "peakBytes": 801657,
+        "afterReleaseBytes": 0
+      },
+      {
+        "scope": "Local memory-store query; fixture storage and runtime heap excluded; no cloud claim",
+        "node": "v24.18.1",
+        "rows": 40000,
+        "elapsedMs": 2442.559354,
+        "peakBytes": 801657,
+        "afterReleaseBytes": 0
+      },
+      {
+        "scope": "Local memory-store query; fixture storage and runtime heap excluded; no cloud claim",
+        "node": "v24.18.1",
+        "rows": 40000,
+        "elapsedMs": 2465.169941,
+        "peakBytes": 801657,
+        "afterReleaseBytes": 0
+      }
+    ]
+  }
+}

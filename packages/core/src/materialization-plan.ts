@@ -16,13 +16,17 @@ import type { Row } from "./types.js";
 
 export { MATERIALIZATION_CHARGES } from "./allocation-charges.js";
 
+/** Separate ownership supports replacing the row directory; combined ownership
+ * avoids extra handles when a consumer releases the whole batch together. */
+export type RowContainerOwnership = "separate" | "combined";
+
 export interface MaterializationPlan {
   readonly rows: number;
   readonly allocationBytes: number;
   readonly retainedBytes: number;
   readonly retainsInput: boolean;
   /** Input vectors and selection must stay immutable from planning to execution. */
-  execute(scope: MemoryScope): OwnedMemory<Row[]>;
+  execute(scope: MemoryScope, containerOwnership?: RowContainerOwnership): OwnedMemory<Row[]>;
 }
 
 /** Walk physical shape without decoding packed strings or constructing output
@@ -284,15 +288,35 @@ function planMaterialization(
       allocationBytes,
       retainedBytes: allocationBytes - scratchBytes,
       retainsInput,
-      execute(scope) {
+      execute(scope, containerOwnership = "separate") {
         const stage = scope.childStage(allocationBytes, "materialized output");
         try {
-          const output = stage.allocate(allocationBytes - scratchBytes, "materialized rows", () =>
-            rowIndex === undefined
-              ? materializeSelectedBatchRows(batch, selection)
-              : [materializeBatchRow(batch, rowIndex)],
+          if (containerOwnership === "combined") {
+            const output = stage.allocate(
+              allocationBytes - scratchBytes,
+              "materialized rows",
+              () =>
+                rowIndex === undefined
+                  ? materializeSelectedBatchRows(batch, selection)
+                  : [materializeBatchRow(batch, rowIndex)],
+            );
+            return scope.adopt(output.retain());
+          }
+          const directoryBytes = cost.array + rows * cost.arraySlot;
+          stage.allocate(
+            allocationBytes - scratchBytes - directoryBytes,
+            "materialized row payload",
+            () => undefined,
           );
-          return scope.adopt(output.retain());
+          const output = stage.allocateContainer(
+            directoryBytes,
+            "materialized row directory",
+            () =>
+              rowIndex === undefined
+                ? materializeSelectedBatchRows(batch, selection)
+                : [materializeBatchRow(batch, rowIndex)],
+          );
+          return scope.adopt(stage.retainAllocations(output.value));
         } finally {
           stage.dispose();
         }
@@ -311,12 +335,14 @@ export function materializeOwnedBatchRows(
   input: OwnedMemory<Batch>,
   selection?: Selection,
   budget: MemoryBudget = input.budget,
+  containerOwnership: RowContainerOwnership = "separate",
 ): OwnedMemory<Row[]> {
   return materializeOwnedPlan(
     input,
     (scope) => planBatchMaterialization(input.value, selection, scope),
     budget,
     (rows) => rows,
+    containerOwnership,
   );
 }
 
@@ -331,6 +357,7 @@ export function materializeOwnedBatchRow(
     (scope) => planBatchRowMaterialization(input.value, index, scope),
     budget,
     (rows) => rows[0] as Row,
+    "combined",
   );
 }
 
@@ -339,12 +366,13 @@ function materializeOwnedPlan<T>(
   createPlan: (scope: MemoryScope) => MaterializationPlan,
   budget: MemoryBudget,
   select: (rows: Row[]) => T,
+  containerOwnership: RowContainerOwnership,
 ): OwnedMemory<T> {
   const scope = new MemoryScope(budget);
   try {
     const source = scope.adopt(input.retainIn(budget));
     const plan = createPlan(scope);
-    const rows = plan.execute(scope);
+    const rows = plan.execute(scope, containerOwnership);
     if (!plan.retainsInput) source.release();
     // The output allocation and input pins must outlive the temporary scope.
     const output = scope.retainAllocations(select(rows.value));

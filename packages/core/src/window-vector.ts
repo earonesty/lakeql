@@ -2,7 +2,7 @@ import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { type Batch, batchExprValues, type Selection, selectedRowIndices } from "./batch.js";
 import { planBatchMaterialization } from "./materialization-plan.js";
 import { MemoryBudget } from "./memory-budget.js";
-import { MemoryScope } from "./memory-scope.js";
+import { MemoryScope, retainContainerPayload } from "./memory-scope.js";
 import type { Row } from "./types.js";
 import type { WindowExpr } from "./window.js";
 import type { WindowExecutionOptions } from "./window-backend.js";
@@ -37,22 +37,28 @@ export async function applyWindowsToVectorBatches(
     try {
       const entries = vectorEntries(inputs, indexScope);
       options.enforceBufferedRows?.(entries.length);
-      const rows = resultScope.allocate(
+      const rows = resultScope.allocateContainer(
         c.array + entries.length * c.arraySlot,
         "vector window result rows",
         () => new Array<Row>(entries.length),
       ).value;
       let position = 0;
       for (const input of inputs) {
-        const materialized = planBatchMaterialization(
-          input.batch,
-          input.selection,
-          resultScope,
-        ).execute(resultScope);
-        for (const row of materialized.value) {
-          const entry = entries[position] as VectorWindowEntry;
-          entry.row = row;
-          rows[position++] = row;
+        const materializationScope = resultScope.childScope();
+        try {
+          const materialized = planBatchMaterialization(
+            input.batch,
+            input.selection,
+            materializationScope,
+          ).execute(materializationScope);
+          for (const row of materialized.value) {
+            const entry = entries[position] as VectorWindowEntry;
+            entry.row = row;
+            rows[position++] = row;
+          }
+          retainContainerPayload(materialized, resultScope);
+        } finally {
+          materializationScope.dispose();
         }
       }
       if (options.estimateMemoryBytes !== undefined)

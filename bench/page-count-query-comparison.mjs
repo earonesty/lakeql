@@ -8,25 +8,36 @@ import ts from "typescript";
 
 const baseline = process.env.LAKEQL_COMPARE_BASELINE ?? "c6a848a";
 const moduleName = process.env.LAKEQL_COMPARE_MODULE ?? "physical";
-if (!/^[a-z-]+$/.test(moduleName)) throw new Error("Invalid comparison module");
-const source = execFileSync("git", ["show", `${baseline}:packages/core/src/${moduleName}.ts`], {
-  encoding: "utf8",
-});
-const compiled = ts.transpileModule(source, {
-  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
-}).outputText;
+const moduleNames = moduleName.split(",");
+if (moduleNames.some((name) => !/^[a-z-]+$/.test(name)))
+  throw new Error("Invalid comparison module");
+const modules = await Promise.all(
+  moduleNames.map(async (name) => {
+    const source = execFileSync("git", ["show", `${baseline}:packages/core/src/${name}.ts`], {
+      encoding: "utf8",
+    });
+    const target = new URL(`../packages/core/dist/${name}.js`, import.meta.url);
+    return {
+      name,
+      target: target.href,
+      compiled: ts.transpileModule(source, {
+        compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
+      }).outputText,
+      baselineSourceSha256: createHash("sha256").update(source).digest("hex"),
+      currentSourceSha256: createHash("sha256")
+        .update(await readFile(target))
+        .digest("hex"),
+    };
+  }),
+);
 const directory = await mkdtemp(join(tmpdir(), "lakeql-identity-compare-"));
 try {
-  const compiledPath = join(directory, "physical.mjs");
-  await writeFile(compiledPath, compiled);
   const hook = join(directory, "hook.mjs");
-  const target = new URL(`../packages/core/dist/${moduleName}.js`, import.meta.url);
   await writeFile(
     hook,
     `import { registerHooks } from "node:module";
-import { readFileSync } from "node:fs";
-const source = readFileSync(${JSON.stringify(compiledPath)}, "utf8");
-registerHooks({load(url, context, next) { return url === ${JSON.stringify(target.href)} ? {format:"module", source, shortCircuit:true} : next(url, context); }});
+const sources = new Map(${JSON.stringify(modules.map((entry) => [entry.target, entry.compiled]))});
+registerHooks({load(url, context, next) { return sources.has(url) ? {format:"module", source:sources.get(url), shortCircuit:true} : next(url, context); }});
 `,
   );
   const benchmark = fileURLToPath(new URL("./page-count-query.mjs", import.meta.url));
@@ -47,15 +58,16 @@ registerHooks({load(url, context, next) { return url === ${JSON.stringify(target
       {
         baseline,
         moduleName,
-        baselineSourceSha256: createHash("sha256").update(source).digest("hex"),
-        currentSourceSha256: createHash("sha256")
-          .update(await readFile(target))
-          .digest("hex"),
+        modules: modules.map(({ name, baselineSourceSha256, currentSourceSha256 }) => ({
+          name,
+          baselineSourceSha256,
+          currentSourceSha256,
+        })),
         node: process.version,
         warmupPairs: 1,
         measuredPairs: 4,
         scope:
-          "Alternating fresh Node processes; only the named module is replaced by the prior implementation, with current dependencies. Local 40,000-row many-page fixture query, not cloud throughput. Source store/runtime overhead excluded from pool metrics. Value parity is covered by external conformance; benchmark checks count and release.",
+          "Alternating fresh Node processes; the named modules are replaced together by their prior implementations, with current dependencies. Local 40,000-row many-page fixture query, not cloud throughput. Source store/runtime overhead excluded from pool metrics. Value parity is covered by external conformance; benchmark checks count and release.",
         priorMedianMs: median(runs.prior.map((r) => r.elapsedMs)),
         currentMedianMs: median(runs.current.map((r) => r.elapsedMs)),
         runs,

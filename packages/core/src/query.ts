@@ -36,6 +36,7 @@ import {
   materializeOwnedBatchRow,
   materializeOwnedBatchRows,
   planBatchRowMaterialization,
+  type RowContainerOwnership,
 } from "./materialization-plan.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
@@ -1235,7 +1236,12 @@ export class QueryResult {
           : this.ownedLateColumns(planning);
       if (lateColumns !== undefined) {
         try {
-          for await (const output of this.ownedLateLimitOutputs(lateColumns, startedAt, fail)) {
+          for await (const output of this.ownedLateLimitOutputs(
+            lateColumns,
+            startedAt,
+            ownedOutput ? "separate" : "combined",
+            fail,
+          )) {
             if (ownedOutput) yield output;
             else {
               try {
@@ -1373,7 +1379,11 @@ export class QueryResult {
                   ? detachOwnedBatch(selected, this.memoryBudget)
                   : stage.retainAllocations(selected);
               try {
-                const output = materializeCollectedOutput(input, fail);
+                const output = materializeCollectedOutput(
+                  input,
+                  fail,
+                  ownedOutput ? "separate" : "combined",
+                );
                 if (ownedOutput) yield output;
                 else {
                   try {
@@ -1667,6 +1677,7 @@ export class QueryResult {
   private async *ownedLateLimitOutputs(
     columns: { predicate: string[]; late: string[]; all: string[] },
     startedAt: number,
+    containerOwnership: RowContainerOwnership,
     fail?: (error: unknown) => never,
   ): AsyncIterable<OwnedMemory<Row[]>> {
     const config = this.config;
@@ -1764,7 +1775,7 @@ export class QueryResult {
                 enforceBudget(config.budget, this.stats, config.now, startedAt);
                 const projectedOwner = outputScope.retainAllocations(projected);
                 try {
-                  yield materializeCollectedOutput(projectedOwner, fail);
+                  yield materializeCollectedOutput(projectedOwner, fail, containerOwnership);
                 } finally {
                   projectedOwner.release();
                 }
@@ -3000,7 +3011,12 @@ export class QueryResult {
             outputScope.adopt(resultOwner.retain());
             const projectedOwner = outputScope.retainAllocations(projected);
             try {
-              const rows = materializeOwnedBatchRows(projectedOwner);
+              const rows = materializeOwnedBatchRows(
+                projectedOwner,
+                undefined,
+                projectedOwner.budget,
+                "combined",
+              );
               if (ownedOutput) return rows;
               try {
                 return rows.value;
@@ -6662,9 +6678,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function materializeCollectedOutput(
   input: OwnedMemory<Batch>,
   fail?: (error: unknown) => never,
+  containerOwnership: RowContainerOwnership = "separate",
 ): OwnedMemory<Row[]> {
   try {
-    return materializeOwnedBatchRows(input);
+    return materializeOwnedBatchRows(input, undefined, input.budget, containerOwnership);
   } catch (error) {
     if (fail !== undefined) return fail(error);
     throw error;

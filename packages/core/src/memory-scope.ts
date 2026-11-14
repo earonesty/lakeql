@@ -226,6 +226,17 @@ export class MemoryScope {
     return this.allocateWithReservation(this.reserve(bytes, purpose), allocate);
   }
 
+  /** Admit only a container's own storage. Every reachable payload must have
+   * separate ownership before this container can be replaced independently. */
+  allocateContainer<T extends object>(
+    bytes: number,
+    purpose: string,
+    allocate: () => T,
+  ): OwnedMemory<T> {
+    this.requireOpen();
+    return this.allocateWithReservation(this.reserve(bytes, purpose), allocate, true);
+  }
+
   /** Admit all new backing for this stage. Allocations cannot exceed this extent.
    * Existing source owners remain separately charged; unused capacity ends on disposal.
    */
@@ -360,6 +371,7 @@ export class MemoryScope {
   private allocateWithReservation<T>(
     reservation: MemoryReservation,
     allocate: () => T,
+    containerOnly = false,
   ): OwnedMemory<T> {
     let value: T;
     try {
@@ -369,7 +381,7 @@ export class MemoryScope {
       reservation.release();
       throw error;
     }
-    return this.track(value, reservation);
+    return this.track(value, reservation, containerOnly);
   }
 
   /** Reserve before starting I/O, and keep the reservation until I/O actually settles. */
@@ -452,8 +464,12 @@ export class MemoryScope {
     if (failed) throw failure;
   }
 
-  private track<T>(value: T, reservation: MemoryReservation): OwnedMemory<T> {
-    const owner = ownedMemory(value, reservation, this.budget);
+  private track<T>(
+    value: T,
+    reservation: MemoryReservation,
+    containerOnly = false,
+  ): OwnedMemory<T> {
+    const owner = new AtomicMemory(value, reservation, this.budget, containerOnly);
     return this.trackOwner(owner);
   }
 
@@ -563,6 +579,7 @@ export class MemoryScope {
 
 class AtomicMemory<T> implements OwnedMemory<T> {
   #released = false;
+  readonly #containerOnly: boolean;
   #payload: T;
   #reservation: MemoryReservation;
   declare readonly value: T;
@@ -572,7 +589,9 @@ class AtomicMemory<T> implements OwnedMemory<T> {
     value: T,
     reservation: MemoryReservation,
     readonly budget: MemoryBudget,
+    containerOnly = false,
   ) {
+    this.#containerOnly = containerOnly;
     this.#payload = value;
     this.#reservation = reservation;
     this.bytes = reservation.bytes;
@@ -588,6 +607,10 @@ class AtomicMemory<T> implements OwnedMemory<T> {
     allocationProvenance.set(this, null);
   }
 
+  get containerOnly(): boolean {
+    return this.#containerOnly;
+  }
+
   readValue(): T {
     if (this.#released) throw releasedOwnership();
     return this.#payload;
@@ -595,12 +618,22 @@ class AtomicMemory<T> implements OwnedMemory<T> {
 
   retain(): OwnedMemory<T> {
     if (this.#released) throw releasedOwnership();
-    return new AtomicMemory(this.#payload, this.#reservation.retain(), this.budget);
+    return new AtomicMemory(
+      this.#payload,
+      this.#reservation.retain(),
+      this.budget,
+      this.containerOnly,
+    );
   }
 
   retainIn(target: MemoryBudget): OwnedMemory<T> {
     if (this.#released) throw releasedOwnership();
-    return new AtomicMemory(this.#payload, this.#reservation.retainIn(target), target);
+    return new AtomicMemory(
+      this.#payload,
+      this.#reservation.retainIn(target),
+      target,
+      this.containerOnly,
+    );
   }
 
   release(): void {
@@ -614,14 +647,6 @@ class AtomicMemory<T> implements OwnedMemory<T> {
 
 function atomicValue(this: AtomicMemory<unknown>): unknown {
   return this.readValue();
-}
-
-function ownedMemory<T>(
-  value: T,
-  reservation: MemoryReservation,
-  budget: MemoryBudget,
-): OwnedMemory<T> {
-  return new AtomicMemory(value, reservation, budget);
 }
 
 function releasedOwnership(): LakeqlError {
@@ -766,6 +791,46 @@ export function retainSelectedAllocations(
     target.adopt(selected.retainAllocations(undefined));
   } finally {
     selected.dispose();
+  }
+}
+
+/** Retain payload after copying a container's references into a replacement.
+ * Only explicitly container-only atomic storage for the exact input value is
+ * omitted. Mixed and external owners remain pinned in full. Source stays live
+ * throughout admission; failure leaves target ownership unchanged. */
+export function retainContainerPayload(input: OwnedMemory<object>, target: MemoryScope): void {
+  const container = input.value;
+  const guard = input.retain();
+  const keep = (owner: OwnedMemory<unknown>) =>
+    !(owner instanceof AtomicMemory && owner.containerOnly && owner.value === container);
+  const adopt = (owner: OwnedMemory<unknown>, destination: MemoryScope) => {
+    const retained = owner.retainIn(destination.budget);
+    try {
+      destination.adopt(retained);
+    } catch (error) {
+      retained.release();
+      throw error;
+    }
+  };
+  try {
+    // Atomic and opaque input has no graph to traverse. Preserve its existing
+    // admission boundary instead of allocating a traversal frame for one owner.
+    const provenance = allocationProvenance.get(guard);
+    if (provenance === undefined || provenance === null) {
+      if (keep(guard)) adopt(guard, target);
+      return;
+    }
+    const selected = target.childScope();
+    try {
+      visitOwnedAllocations(guard, selected, (owner) => {
+        if (keep(owner)) adopt(owner, selected);
+      });
+      target.adopt(selected.retainAllocations(undefined));
+    } finally {
+      selected.dispose();
+    }
+  } finally {
+    guard.release();
   }
 }
 

@@ -56,6 +56,8 @@ for (const chunks of [1, 4, 64]) {
   const { budget, output, directories } = collect(chunks);
   await collectGarbage();
   const retainedDirectories = alive(directories);
+  if (process.env.LAKEQL_EXPECT_SEPARATE_ROW_CONTAINERS === "1")
+    assert.equal(retainedDirectories, chunks === 1 ? 1 : 0);
   const retainedBytes = budget.usedBytes;
   const peakBytes = budget.peakBytes;
   output.release();

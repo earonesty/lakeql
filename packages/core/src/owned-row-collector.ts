@@ -1,7 +1,7 @@
 import { LakeqlError } from "./errors.js";
 import { MATERIALIZATION_CHARGES } from "./materialization-plan.js";
 import type { MemoryBudget } from "./memory-budget.js";
-import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
+import { MemoryScope, type OwnedMemory, retainContainerPayload } from "./memory-scope.js";
 import type { Row } from "./types.js";
 
 interface RowChunk {
@@ -64,7 +64,7 @@ export class OwnedRowCollector {
       if (this.first !== undefined && this.first.next === undefined)
         return this.first.rows.retainIn(this.budget);
       const cost = MATERIALIZATION_CHARGES;
-      const rows = this.scope.allocate(
+      const rows = this.scope.allocateContainer(
         cost.array + this.count * cost.arraySlot,
         "collected output array",
         () => {
@@ -80,6 +80,8 @@ export class OwnedRowCollector {
       this.first = this.last = undefined;
       while (chunk !== undefined) {
         const next = chunk.next;
+        retainContainerPayload(chunk.rows, this.scope);
+        chunk.rows.release();
         chunk.next = undefined;
         this.scope.releaseAllocation(chunk);
         chunk = next;

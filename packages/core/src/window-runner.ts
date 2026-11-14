@@ -505,7 +505,7 @@ async function collectVectorWindowRunMatches(
           const batch = retainWindowBatch(input, stage);
           const source = stage.retainAllocations(batch);
           try {
-            const rows = materializeOwnedBatchRows(source, selection);
+            const rows = materializeOwnedBatchRows(source, selection, source.budget, "combined");
             try {
               for (const row of rows.value) {
                 pushWindowRunRow(options, runs, currentRun, row);

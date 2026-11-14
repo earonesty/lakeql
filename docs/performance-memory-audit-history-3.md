@@ -5403,3 +5403,48 @@ No runtime code changed. `bench/row-directory-retention.mjs` is a forced-GC
 reachability diagnostic, not a production memory or throughput benchmark. The
 implementation and local/HTTP/native-R2 validation remain required under F3/F4/M1.
 Evidence: `validation/row-directory-retention-2026-11-14.json`.
+
+### Separable row-container ownership (2026-11-14)
+
+Materialization now admits row directory and payload independently. Explicit
+container-only provenance survives retention and cross-budget pins, while opaque
+external and mixed atomic owners remain fully retained. A shared transfer helper
+walks admitted ownership graphs, excludes only the exact replaced container, and
+rolls back partial transfer on failure. Collectors and vector windows use it after
+copying row references. Input arrays are never mutated, sibling owners remain
+valid, and borrowed binary backing stays charged through final output release.
+
+The first unconditional implementation slowed the real 40,000-row many-page
+stream by 10.6% and 4.5%. Consumer-aware lifetime selection keeps combined storage
+for streaming/direct results and separate storage for replaced directories; no
+user flag is required. Final comparisons are 2.258 → 2.311 seconds and 2.281 →
+2.377 seconds (2.4% and 4.2% slower). This is an explicit ownership/CPU tradeoff,
+not an end-to-end speedup. The comparison harness replaces all affected modules
+together and records their source hashes.
+
+The reachability probe now sees zero obsolete source arrays in both four- and
+64-batch collection while final output stays held. One-chunk collection preserves
+its direct-return fast path. At 64 batches, retained admission falls 188,736 →
+168,256 bytes; collection peak rises 201,024 → 201,536 bytes for traversal. Vector
+window retained admission also falls to 168,256 bytes and its measured peak falls
+533,040 → 512,960 bytes. Final cleanup is zero. This does not remove the input
+chunks held before collection finishes; earlier compaction and headroom-sensitive
+transfer remain broader opportunities.
+
+Nine new cases cover sibling preservation, same-root child budgets, opaque/mixed
+owners, failed/closed-destination transfer, exact borrowed-binary backing charges,
+replacement overlap at exact capacity and one byte short, and both lifetime modes.
+Full release checks pass 3,980 regular/coverage tests (645 skipped), 93 Worker
+cases, 520 required conformance cases (one inactive guard skipped), 120 references,
+full build/types, clean 66-package consumer, lint, compatibility, large-file,
+changeset and deterministic fixtures. Thresholds/timeouts are unchanged.
+
+Native emulated R2 and real HTTP pressure retain 64/80 primary successes, sixteen
+typed budget failures, eight pinned retry failures and eight successful retries
+after release; final admission is zero. Native 64 MiB-pool managed heap still
+samples 120,900,472 bytes including post-release/eviction snapshots. Sparse GC
+samples do not establish total-runtime caps or statistical heap reductions. All
+52 public R2 scenarios also pass, preserving read concurrency at most four and
+zero warm ordinary-query data requests with 512 KiB shared headroom.
+
+Evidence: `validation/separate-row-containers-2026-11-14.json`.

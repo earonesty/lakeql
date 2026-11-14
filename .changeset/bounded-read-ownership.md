@@ -411,3 +411,9 @@ Avoid per-cell cycle-set mutation for leaf vector shapes during materialization 
 Avoid repeated column-directory enumeration during unmasked materialization
 planning while preserving a single mask scan for selected batches. Traversal
 uses existing workspace, with unchanged output forecasts and admission bounds.
+
+Separate materialized row-directory ownership from payload when consumers replace
+containers. Collection and vector windows release obsolete arrays while preserving
+sibling ownership and borrowed binary backing. Streaming/direct output uses
+combined ownership to avoid unnecessary handles. Ownership graph transfer admits
+its workspace; see the audit for measured retained-memory and CPU tradeoffs.

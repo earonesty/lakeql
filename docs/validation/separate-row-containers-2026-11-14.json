@@ -1,0 +1,223 @@
+{
+  "baseline": "05bc4e7",
+  "status": "validated consumer-aware implementation; full audit acceptance remains open",
+  "contract": [
+    "Container-only allocations carry explicit internal provenance; atomic mixed storage and opaque producers remain fully pinned.",
+    "Materialization can charge directory and payload independently without changing forecast totals.",
+    "Collectors and vector windows transfer payload ownership before releasing obsolete directory owners. Source arrays are never mutated.",
+    "Streaming and directly returned batches use combined ownership; collected output uses separate ownership, selected by the engine."
+  ],
+  "artifacts": {
+    "retention": "docs/benchmarks/separate-row-containers-retention-2026-11-14.json",
+    "page-initial": "docs/benchmarks/separate-row-containers-page-initial-2026-11-14.json",
+    "page-initial-repeat": "docs/benchmarks/separate-row-containers-page-initial-repeat-2026-11-14.json",
+    "page": "docs/benchmarks/separate-row-containers-page-2026-11-14.json",
+    "native-r2": "docs/benchmarks/separate-row-containers-native-r2-2026-11-14.json",
+    "heap64-http": "docs/benchmarks/separate-row-containers-heap64-http-2026-11-14.json",
+    "page-repeat": "docs/benchmarks/separate-row-containers-page-repeat-2026-11-14.json",
+    "public-r2": "docs/benchmarks/separate-row-containers-public-r2-2026-11-14.json"
+  },
+  "retention": {
+    "beforeArtifact": "docs/benchmarks/row-directory-retention-2026-11-14.json",
+    "afterArtifact": "docs/benchmarks/separate-row-containers-retention-2026-11-14.json",
+    "fourAnd64BatchSourceDirectories": "All obsolete source directories collect while final output remains held; one-chunk direct-return fast path correctly keeps its sole directory.",
+    "collector64RetainedBefore": 188736,
+    "collector64RetainedAfter": 168256,
+    "collector64PeakBefore": 201024,
+    "collector64PeakAfter": 201536,
+    "tradeoff": "Graph traversal adds 512 bytes to this collection peak, while reducing retained output storage. Exact boundary and one-byte-short cleanup are tested; this is not a universal peak-memory reduction."
+  },
+  "runtime": [
+    {
+      "transport": "native emulated R2",
+      "poolMiB": 64,
+      "jobs": 1,
+      "counts": {
+        "result": {
+          "ok": 4
+        },
+        "recovery": {},
+        "recoveryAfterRelease": {}
+      },
+      "maxSampledManagedHeapBytes": 46812140,
+      "finalAdmittedBytes": 0,
+      "peakAdmittedBytes": 28372105
+    },
+    {
+      "transport": "native emulated R2",
+      "poolMiB": 64,
+      "jobs": 4,
+      "counts": {
+        "result": {
+          "ok": 8,
+          "budget": 8
+        },
+        "recovery": {
+          "budget": 4
+        },
+        "recoveryAfterRelease": {
+          "ok": 4
+        }
+      },
+      "maxSampledManagedHeapBytes": 120900472,
+      "finalAdmittedBytes": 0,
+      "peakAdmittedBytes": 67107339
+    },
+    {
+      "transport": "native emulated R2",
+      "poolMiB": 128,
+      "jobs": 1,
+      "counts": {
+        "result": {
+          "ok": 4
+        },
+        "recovery": {},
+        "recoveryAfterRelease": {}
+      },
+      "maxSampledManagedHeapBytes": 46824948,
+      "finalAdmittedBytes": 0,
+      "peakAdmittedBytes": 28372105
+    },
+    {
+      "transport": "native emulated R2",
+      "poolMiB": 128,
+      "jobs": 4,
+      "counts": {
+        "result": {
+          "ok": 16
+        },
+        "recovery": {},
+        "recoveryAfterRelease": {}
+      },
+      "maxSampledManagedHeapBytes": 134516016,
+      "finalAdmittedBytes": 0,
+      "peakAdmittedBytes": 110918482
+    },
+    {
+      "transport": "localhost HTTP ranges",
+      "poolMiB": 64,
+      "jobs": 1,
+      "counts": {
+        "result": {
+          "ok": 4
+        },
+        "recovery": {},
+        "recoveryAfterRelease": {}
+      },
+      "maxSampledManagedHeapBytes": 39253060,
+      "finalAdmittedBytes": 0,
+      "peakAdmittedBytes": 28371777
+    },
+    {
+      "transport": "localhost HTTP ranges",
+      "poolMiB": 64,
+      "jobs": 4,
+      "counts": {
+        "result": {
+          "ok": 8,
+          "budget": 8
+        },
+        "recovery": {
+          "budget": 4
+        },
+        "recoveryAfterRelease": {
+          "ok": 4
+        }
+      },
+      "maxSampledManagedHeapBytes": 53855404,
+      "finalAdmittedBytes": 0,
+      "peakAdmittedBytes": 67106355
+    },
+    {
+      "transport": "localhost HTTP ranges",
+      "poolMiB": 128,
+      "jobs": 1,
+      "counts": {
+        "result": {
+          "ok": 4
+        },
+        "recovery": {},
+        "recoveryAfterRelease": {}
+      },
+      "maxSampledManagedHeapBytes": 27791428,
+      "finalAdmittedBytes": 0,
+      "peakAdmittedBytes": 28371777
+    },
+    {
+      "transport": "localhost HTTP ranges",
+      "poolMiB": 128,
+      "jobs": 4,
+      "counts": {
+        "result": {
+          "ok": 16
+        },
+        "recovery": {},
+        "recoveryAfterRelease": {}
+      },
+      "maxSampledManagedHeapBytes": 52409004,
+      "finalAdmittedBytes": 0,
+      "peakAdmittedBytes": 110917170
+    }
+  ],
+  "validation": {
+    "regularPassed": 3980,
+    "regularSkipped": 645,
+    "workerPassed": 93,
+    "requiredConformancePassed": 520,
+    "requiredConformanceSkipped": 1,
+    "referencePassed": 120,
+    "coverage": {
+      "statements": 91.4,
+      "branches": 85.55,
+      "functions": 95.91,
+      "lines": 93.2
+    },
+    "build": "passed",
+    "types": "passed",
+    "cleanConsumer": "passed; 66 packages",
+    "lint": "passed",
+    "compatibility": "passed",
+    "largeFiles": "passed",
+    "changeset": "passed",
+    "fixtures": "passed; no data diff",
+    "thresholdsAndTimeouts": "unchanged",
+    "finalContainerTestsPassed": 9
+  },
+  "remaining": [
+    "Whole-runtime caps remain unproven; runtime/GC bookkeeping and other audit gaps remain.",
+    "Collection still retains input chunks until final directory construction. Earlier compaction and headroom-sensitive transfer scheduling remain broader opportunities.",
+    "Graphs require admitted traversal workspace; this change does not promise identical minimum fitting caps for composite ownership."
+  ],
+  "runtimeBoundary": "All baseline, measured, retained-output, release and eviction snapshots included. Sparse GC-dependent samples are not exact peaks or statistical before/after evidence. Native emulated R2 and managed-heap-limited HTTP are not production Cloudflare total-memory caps; independent counters are not summed.",
+  "publicR2": {
+    "scenarios": 52,
+    "ordinaryScenarios": 40,
+    "maxOrdinaryReadConcurrency": 4,
+    "maxIncrementalAdmission": 416968,
+    "maxWarmOrdinaryDataRequests": 0,
+    "queryHeadroomBytes": 524288
+  },
+  "timing": [
+    {
+      "variant": "page-initial",
+      "priorMedianMs": 2233.8243595,
+      "currentMedianMs": 2471.227889
+    },
+    {
+      "variant": "page-initial-repeat",
+      "priorMedianMs": 2270.6229055,
+      "currentMedianMs": 2371.67782
+    },
+    {
+      "variant": "page",
+      "priorMedianMs": 2258.144567,
+      "currentMedianMs": 2311.472165
+    },
+    {
+      "variant": "page-repeat",
+      "priorMedianMs": 2280.5755950000002,
+      "currentMedianMs": 2377.0367035
+    }
+  ],
+  "timingInterpretation": "Unconditional separation is 10.6% and 4.5% slower on the local 40000-row many-page stream. Consumer-aware separation reduces but does not eliminate the measured cost: final runs are 2.4% and 4.2% slower. Accepted as a retained-container lifetime improvement with explicit CPU/peak-workspace costs, not a speedup. No cloud throughput claim."
+}
