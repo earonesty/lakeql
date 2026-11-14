@@ -1,0 +1,41 @@
+{
+  "requirements": ["V2", "V3"],
+  "status": "Broad release gates refreshed on the current implementation; full goal acceptance remains open",
+  "testedRevision": "0ec6dd35d217beaeedca3b29f029cadf5432fa60",
+  "gates": {
+    "conformance": {
+      "command": "pnpm test:conformance",
+      "passed": 517,
+      "skipped": 1,
+      "skipReason": "Inactive missing-required-Iceberg-fixture guard; actual external fixture cases ran."
+    },
+    "coverage": {
+      "command": "pnpm coverage",
+      "passed": 3325,
+      "skipped": 629,
+      "statementsPercent": 90.95,
+      "branchesPercent": 84.94,
+      "functionsPercent": 95.55,
+      "linesPercent": 92.82,
+      "thresholdsChanged": false,
+      "exclusionsChanged": false
+    },
+    "build": "pnpm build passed",
+    "cleanNpmConsumer": "pnpm check:packages passed; installed 66 dependencies in the isolated consumer",
+    "compatibility": "pnpm check:compatibility passed",
+    "fixtureIntegrity": "node scripts/check-fixtures.mjs passed; regenerated fixtures produced no Git changes",
+    "lint": "pnpm lint passed",
+    "typecheck": "pnpm typecheck passed",
+    "worker": "75 passed in the preceding stable-key run on these same production sources; not rerun in this gate refresh",
+    "reference": "104 passed in the preceding stable-key run on these same production sources; not rerun in this gate refresh"
+  },
+  "performanceEvidence": "docs/benchmarks/window-sort-interned-2026-11-14.json; benchmarks were not rerun during this gate refresh",
+  "completionAudit": {
+    "F1-F6": "Current gates support implemented behavior; they do not establish all lifecycle, metadata and lower-memory alternatives listed in the finite audit checklist.",
+    "M1": "The complete allocation matrix and remaining source/operator integration gaps are unresolved; notably legacy spill read pre-allocation, delegated task intermediates and planning/timestamp workspace.",
+    "M2": "Adaptive planning under low headroom, complete fairness/deadlock tests and transactional spill cleanup remain unresolved.",
+    "V1": "The complete constrained mixed-job matrix and production total-memory evidence remain unresolved. Reservation caps are not VM heap/RSS caps.",
+    "V2": "Scoped fixture/reference/kernel evidence exists, with explicit performance tradeoffs; it must not be generalized to all workloads.",
+    "V3": "Release commands pass on this revision, but final scope acceptance is not achieved while the above requirements remain open."
+  }
+}

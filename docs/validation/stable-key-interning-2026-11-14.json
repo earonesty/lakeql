@@ -57,5 +57,6 @@
     "Legacy spill-read pre-allocation admission, delegated task intermediates, transactional spill cleanup and other source/operator gaps remain open.",
     "Full mixed-job/adaptive scheduling acceptance and production Cloudflare total-memory evidence remain open.",
     "Reservation accounting does not establish total VM heap, external backing or RSS limits."
-  ]
+  ],
+  "followupEvidence": "docs/validation/release-refresh-2026-11-14.json"
 }
