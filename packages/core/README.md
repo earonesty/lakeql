@@ -87,3 +87,9 @@ storage through the supplied scope. The planning factory supplies this callback
 for object metadata, preserving dates and transport hints. Owned writes borrow
 immutable entries; callers must not mutate retained backing. Cache retention can
 be declined under pressure without failing an owned write.
+
+`ObjectStoreJsonCache.getOwnedEntry` admits read payloads and JSON parsing through
+the requested budget and returns releasable parsed entries. It uses the store's
+owned-range capability when available. Preliminary `head` metadata/probe storage
+and legacy adapter internals remain outside that query scope; this is not a total
+transport-memory guarantee. Remote writes still use the legacy serialization path.

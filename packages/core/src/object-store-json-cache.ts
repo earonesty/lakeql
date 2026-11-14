@@ -1,4 +1,8 @@
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
+import type { MemoryBudget } from "./memory-budget.js";
+import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
+import { parseOwnedJson } from "./owned-json-parse.js";
 import type { CacheAdapter, CacheEntry } from "./runtime.js";
 import type { ObjectStore } from "./store.js";
 
@@ -52,6 +56,77 @@ export class ObjectStoreJsonCache<T> implements CacheAdapter<T> {
     const entry: CacheEntry<T> = { value: parsed.value as T };
     if (parsed.expiresAt !== undefined) entry.expiresAt = parsed.expiresAt;
     return entry;
+  }
+
+  async getOwnedEntry(
+    key: string,
+    budget: MemoryBudget,
+  ): Promise<OwnedMemory<CacheEntry<T>> | undefined> {
+    const output = new MemoryScope(budget);
+    const scratch = output.childScope();
+    let parsed: OwnedMemory<unknown> | undefined;
+    try {
+      const path = scratch.allocate(
+        c.string + (this.prefix.length + key.length * 9 + 6) * c.stringCodeUnit,
+        "JSON cache path",
+        () => this.pathFor(key),
+      ).value;
+      const head = await this.store.head(path);
+      if (head === null) return undefined;
+      if (!Number.isSafeInteger(head.size) || head.size < 0) {
+        throw new LakeqlError("LAKEQL_CATALOG_ERROR", "Invalid JSON cache object size", { path });
+      }
+      const range = scratch.allocate(c.object + 2 * c.property, "JSON cache range", () => ({
+        offset: 0,
+        length: head.size,
+      })).value;
+      let bytes: Uint8Array;
+      if (this.store.getRangeOwned !== undefined) {
+        const owner = await this.store.getRangeOwned(path, range, scratch);
+        try {
+          bytes = scratch.adopt(owner).value;
+        } catch (error) {
+          owner.release();
+          throw error;
+        }
+      } else {
+        // Legacy adapter internals remain external; admit the requested payload
+        // before calling it and verify the returned extent before parsing.
+        bytes = (
+          await scratch.allocateAsync(c.view + head.size, "JSON cache read", () =>
+            this.store.getRange(path, range),
+          )
+        ).value;
+      }
+      if (bytes.byteLength !== head.size) {
+        throw new LakeqlError("LAKEQL_CATALOG_ERROR", "JSON cache read extent changed", { path });
+      }
+      try {
+        parsed = parseOwnedJson(bytes, output);
+      } catch (cause) {
+        if (!(cause instanceof SyntaxError)) throw cause;
+        throw new LakeqlError("LAKEQL_CATALOG_ERROR", `Invalid JSON cache entry at ${path}`, {
+          path,
+          cause,
+        });
+      }
+      if (!isStoredJsonCacheEntry(parsed.value)) {
+        throw new LakeqlError("LAKEQL_CATALOG_ERROR", `Invalid JSON cache entry at ${path}`, {
+          path,
+        });
+      }
+      if (parsed.value.expiresAt !== undefined && parsed.value.expiresAt <= this.now()) {
+        await this.store.delete(path);
+        return undefined;
+      }
+      const result = parsed as OwnedMemory<CacheEntry<T>>;
+      parsed = undefined;
+      return result;
+    } finally {
+      parsed?.release();
+      scratch.dispose();
+      output.dispose();
+    }
   }
 
   async set(key: string, entry: CacheEntry<T>): Promise<void> {

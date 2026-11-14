@@ -3937,3 +3937,28 @@ serialization and the broader allocation audit remain open.
 
 Build/typecheck passed; focused suites passed 14 tests; full suite passed 3,637
 with 629 skips. Evidence: `docs/validation/bounded-planning-cache-2026-11-14.json`.
+
+### 2026-11-14 — owned JSON-cache read and parse lifetime
+
+ObjectStoreJsonCache implements getOwnedEntry with an independent read lifetime.
+It admits path/range arguments, uses owned range reads when available, and keeps
+response bytes charged while the shared owned JSON parser admits decoded text
+and parsed-tree overlap. Returned entry ownership includes the parsed tree and
+survives internal scope disposal. Missing, expired, invalid, malformed and changed
+read extents release all acquired reservations. Budget failures preserve their
+typed errors rather than becoming parse errors. Legacy range adapters receive
+payload admission before the call, but their internal allocations remain external.
+
+Tests cover Unicode entries, exact capacity/one-byte-below boundaries for owned
+and legacy transports, failure cleanup and expiration. Real localhost HTTP tests
+exercise native 206 and ignored-range 200 responses with parsed ownership release.
+These are actual HTTP transport fixtures, not production-cloud measurements.
+
+The preliminary ObjectStore.head call remains an external metadata boundary;
+HTTP head probing may retain a full ignored-range response outside this query
+scope. This implementation does not close that gap. Same-size object replacement
+between HEAD and read also remains a store-version consistency limitation.
+Owned remote writes/serialization and the broader allocation audit remain open.
+
+Build/typecheck passed; focused suites passed 20 tests; full suite passed 3,643
+with 629 skips. Evidence: `docs/validation/owned-json-cache-read-2026-11-14.json`.
