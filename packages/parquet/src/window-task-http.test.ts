@@ -3,14 +3,19 @@ import { parquetWriteBuffer } from "hyparquet-writer";
 import { col, MemoryBudget, SharedMemoryCache, withObjectStoreReadControls } from "lakeql-core";
 import { expect, it } from "vitest";
 import { HttpObjectStore } from "../../http/src/index.js";
-import { createParquetLake } from "./index.js";
+import { aggregateParquetGroupTasksOwned, createParquetLake } from "./index.js";
 
-it.each([
-  { ignoreRange: false, mib: 64 },
-  { ignoreRange: true, mib: 64 },
-  { ignoreRange: false, mib: 128 },
-  { ignoreRange: true, mib: 128 },
-])("owns concurrent window tasks over HTTP: %j", async ({ ignoreRange, mib }) => {
+it.each(
+  [
+    { ignoreRange: false, mib: 64 },
+    { ignoreRange: true, mib: 64 },
+    { ignoreRange: false, mib: 128 },
+    { ignoreRange: true, mib: 128 },
+  ].flatMap((config) => [
+    { ...config, mixed: false },
+    { ...config, mixed: true },
+  ]),
+)("owns concurrent tasks over HTTP: %j", async ({ ignoreRange, mib, mixed }) => {
   const records = Array.from({ length: 256 }, (_, id) => ({
     id,
     region: id % 4,
@@ -86,10 +91,47 @@ it.each([
     for (const round of ["cold", "warm"]) {
       ranges.length = 0;
       const results = await Promise.all(
-        Array.from({ length: 4 }, () => query().run().toOwnedArray()),
+        Array.from({ length: 4 }, (_, job) =>
+          !mixed || job < 2
+            ? query().run().toOwnedArray()
+            : aggregateParquetGroupTasksOwned(
+                store,
+                Array.from({ length: 4 }, (_, rowGroup) => ({
+                  path: "windows.parquet",
+                  rowGroupCount: 4,
+                  rowGroupRanges: [{ start: rowGroup, end: rowGroup + 1 }],
+                  partitionValues: {},
+                })),
+                ["region"],
+                { total: { op: "sum", column: "id" }, n: { op: "count" } },
+                {
+                  memoryBudget: pool.child(16 * 1024 * 1024),
+                  batchSize: 16,
+                  maxConcurrentTasks: 2,
+                  scanRangeCache: {
+                    maxBytes: 4 * 1024 * 1024,
+                    coalesceBytes: 0,
+                    sharedCache: cache,
+                  },
+                },
+              ),
+        ),
       );
       try {
-        for (const result of results) expect(result.value).toEqual(records);
+        for (let index = 0; index < results.length; index++) {
+          const result = results[index];
+          if (!mixed || index < 2) expect(result?.value).toEqual(records);
+          else
+            expect(
+              [...(result?.value ?? [])].sort((a, b) => Number(a.region) - Number(b.region)),
+            ).toEqual(
+              Array.from({ length: 4 }, (_, region) => ({
+                region,
+                total: 8064 + 64 * region,
+                n: 64,
+              })),
+            );
+        }
         expect(pool.usedBytes).toBeGreaterThan(0);
         if (round === "warm")
           expect(() => pool.reserve(pool.maxBytes, "competing job")).toThrow(/budget/i);
