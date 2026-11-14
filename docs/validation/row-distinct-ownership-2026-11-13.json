@@ -76,5 +76,6 @@
     "Window input/output buffers and projection, borrowed reference selection, hive augmentation, partition merging, source adapter allocations and remaining scalar internals remain open.",
     "Reservations do not certify total runtime heap or production Cloudflare memory enforcement.",
     "Full final release gates, including coverage/reference, must still be refreshed on the final implementation."
-  ]
+  ],
+  "followupEvidence": "docs/validation/window-output-admission-2026-11-13.json"
 }

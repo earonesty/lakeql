@@ -2536,7 +2536,12 @@ describe("Lake query runtime", () => {
             { id: 6, region: "c", amount: 60 },
           ],
         },
-        budget: { maxBufferedRows: 2, maxWindowPartitionRows: 2, maxMemoryBytes: 170 },
+        budget: {
+          maxBufferedRows: 2,
+          maxWindowPartitionRows: 2,
+          maxMemoryBytes: 170,
+          maxAllocatedMemoryBytes: 65536,
+        },
       })
     ).lake
       .path("table")

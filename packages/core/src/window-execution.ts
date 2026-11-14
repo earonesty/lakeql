@@ -1,7 +1,9 @@
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { matches } from "./evaluator.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope } from "./memory-scope.js";
 import type { PathQueryInit, QueryBudget } from "./query.js";
+import { appendProjectedOutput } from "./row-output.js";
 import type { QueryStats, Row } from "./types.js";
 
 export interface WindowBatchExecutionOptions {
@@ -20,6 +22,7 @@ export interface WindowBatchExecutionOptions {
     row: Row,
     select: string[] | undefined,
     projections: PathQueryInit["projections"],
+    scope?: MemoryScope,
   ) => Row;
   compareRows: (left: Row, right: Row, orderBy: NonNullable<PathQueryInit["orderBy"]>) => number;
   createDistinct: (scope: MemoryScope, budget: QueryBudget) => { add(row: Row): boolean };
@@ -62,45 +65,73 @@ export async function* windowedRunQueryBatches(
     enforceWindowPartitionRows: (rows) => options.enforceWindowPartitionRows(config.budget, rows),
     enforceMemoryBytes: (bytes) => options.enforceMemoryBytes(config.budget, bytes),
   });
-  yield* postWindowQueryBatches({ ...options, rows: runs.flat() });
+  yield* postWindowQueryBatches({ ...options, rows: rowsFromRuns(runs) });
 }
 
 export async function* postWindowQueryBatches(
-  options: Omit<WindowBatchExecutionOptions, "matched"> & { rows: readonly Row[] },
+  options: Omit<WindowBatchExecutionOptions, "matched"> & { rows: Iterable<Row> },
 ): AsyncIterable<Row[]> {
   const { config, stats, startedAt } = options;
-  let rows = [...options.rows];
-  if (config.qualify !== undefined) rows = rows.filter((row) => matches(config.qualify, row));
-  if (config.orderBy !== undefined) {
-    rows.sort((left, right) => options.compareRows(left, right, config.orderBy ?? []));
-  }
-
   const scope = new MemoryScope(options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER));
   try {
+    let rows = options.rows;
+    // QUALIFY runs before ordering, DISTINCT, offset and limit. Retain only the
+    // qualifying references; no directory is needed for an unchanged sequence.
+    if (config.qualify !== undefined || config.orderBy !== undefined) {
+      const selected = scope.allocate(
+        c.array,
+        "window output row directory",
+        () => [] as Row[],
+      ).value;
+      for (const row of rows) {
+        if (config.qualify !== undefined && !matches(config.qualify, row, scope)) continue;
+        scope.allocate(c.arraySlot, "window output row reference", () => selected.push(row));
+      }
+      if (config.orderBy !== undefined) {
+        const scratch = scope.reserve(
+          c.array + selected.length * (c.arraySlot + c.object),
+          "window output sort workspace",
+        );
+        try {
+          selected.sort((left, right) => options.compareRows(left, right, config.orderBy ?? []));
+        } finally {
+          scratch.release();
+        }
+      }
+      rows = selected;
+    }
     const distinct =
       config.distinct === true ? options.createDistinct(scope, config.budget) : undefined;
     const batchSize = config.batchSize ?? 4096;
-    let batch: Row[] = [];
+    let batchScope = scope.childScope();
+    const newBatch = () =>
+      batchScope.allocate(c.array, "window output batch", () => [] as Row[]).value;
+    let batch = newBatch();
     let offsetSkipped = 0;
     let returned = 0;
     for (const row of rows) {
-      const projected = options.project(row, config.select, config.projections);
-      if (distinct !== undefined && !distinct.add(projected)) {
-        continue;
+      const projection = batchScope.childScope();
+      try {
+        const projected = options.project(row, config.select, config.projections, projection);
+        if (distinct !== undefined && !distinct.add(projected)) continue;
+        if (offsetSkipped < (config.offset ?? 0)) {
+          offsetSkipped += 1;
+          continue;
+        }
+        if (config.limit !== undefined && returned >= config.limit) break;
+        appendProjectedOutput(batch, projected, projection, batchScope, false);
+        returned += 1;
+        stats.rowsReturned += 1;
+        options.enforceBudget(config.budget, stats, config.now, startedAt);
+      } finally {
+        projection.dispose();
       }
-      if (offsetSkipped < (config.offset ?? 0)) {
-        offsetSkipped += 1;
-        continue;
-      }
-      if (config.limit !== undefined && returned >= config.limit) break;
-      batch.push(projected);
-      returned += 1;
-      stats.rowsReturned += 1;
-      options.enforceBudget(config.budget, stats, config.now, startedAt);
       if (batch.length >= batchSize) {
         stats.elapsedMs = config.now() - startedAt;
         yield batch;
-        batch = [];
+        batchScope.dispose();
+        batchScope = scope.childScope();
+        batch = newBatch();
       }
     }
     stats.elapsedMs = config.now() - startedAt;
@@ -109,4 +140,8 @@ export async function* postWindowQueryBatches(
   } finally {
     scope.dispose();
   }
+}
+
+function* rowsFromRuns(runs: readonly (readonly Row[])[]): Iterable<Row> {
+  for (const run of runs) yield* run;
 }

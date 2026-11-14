@@ -1,0 +1,36 @@
+{
+  "requirements": ["F2", "F4", "M1", "M2", "V1", "V2"],
+  "status": "Window output projection, row filtering and output directories now use allocation admission; complete window retained-state ownership remains open",
+  "contract": [
+    "appendProjectedOutput is shared by ordinary, ordered and window output paths. Each window projection uses a row scratch scope and hands surviving allocations to its output batch. Advancing or closing the stream releases batch storage.",
+    "Post-window QUALIFY uses scoped matches, with predicate scratch released per row. Both ordinary and resumable row-window collection also pass allocation scopes to WHERE evaluation.",
+    "Post-window execution accepts an iterable. Unchanged row sequences require no copied reference directory; run output is traversed without runs.flat(). QUALIFY/order cases admit a single selected-reference directory, and sorting admits temporary workspace before sort.",
+    "QUALIFY, ordering, projection, DISTINCT, offset and limit retain their existing sequence. Output directory and slot admission is separate from serialized operator limits."
+  ],
+  "validation": {
+    "focused": {
+      "passed": 98
+    },
+    "build": "passed",
+    "default": {
+      "passed": 3189,
+      "skipped": 629
+    },
+    "worker": {
+      "passed": 71
+    },
+    "typecheck": "passed",
+    "cases": [
+      "Window projection and QUALIFY expansion tested with and without final ordering. Oversized replace expressions reject under 64 KiB; successful output is checked exactly; failure cleanup preserves a sibling reservation.",
+      "Batch size one keeps stable live projection reservations across advance and releases on early return for ordered and unordered window output.",
+      "Real Brotli Parquet fixtures include window projection/filter execution over HTTP 206 and ignored-Range 200; Worker R2 coverage uses the same route with 64/128 MiB shared pools and 2 MiB query limits.",
+      "Existing window state/resume/spill tests continue to verify output and run partitioning. The 170-byte serialized-state test now explicitly supplies a separate 64 KiB allocation cap, preserving its serialized and row-budget assertions."
+    ]
+  },
+  "limits": [
+    "Window matched input, backend result ownership, resumable-state serialization and accumulated returned rows are not fully owned yet. A batch-scope guarantee does not establish a whole-window cap.",
+    "Source adapter backing, hive augmentation, borrowed references, remaining scalar internals and VM/GC memory remain separate open requirements.",
+    "The eliminated reference copies are structural allocation reductions; no CPU throughput speedup or total Worker heap bound is claimed.",
+    "Full final release gates and the complete audit acceptance matrix remain open."
+  ]
+}

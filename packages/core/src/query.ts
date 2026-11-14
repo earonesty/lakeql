@@ -82,6 +82,7 @@ import {
   valueForColumn,
 } from "./query-sort.js";
 import { RowDistinctSet } from "./row-distinct-set.js";
+import { appendProjectedOutput } from "./row-output.js";
 import type {
   CacheAdapter,
   MetricsHook,
@@ -6059,30 +6060,6 @@ function assignProjectedField(out: Row, key: string, value: unknown, scope?: Mem
 function copyProjectedFields(out: Row, row: Row, scope?: MemoryScope): void {
   for (const key in row)
     if (Object.hasOwn(row, key)) assignProjectedField(out, key, row[key], scope);
-}
-
-/** Same handoff for borrowed scans and retained ordered rows. */
-function appendProjectedOutput(
-  output: Row[],
-  projected: Row,
-  projection: MemoryScope,
-  target: MemoryScope,
-  owned: boolean,
-  retainedSource?: MemoryScope,
-): void {
-  let value = projected;
-  if (owned) {
-    const owner =
-      retainedSource?.tryRetainAllocation(projected) ??
-      detachOwnedRow(projected, target.budget, projection);
-    try {
-      value = target.adopt(owner).value;
-    } catch (error) {
-      owner.release();
-      throw error;
-    }
-  } else target.adopt(projection.retainAllocations(undefined));
-  target.allocate(allocationCharges.arraySlot, "row output slot", () => output.push(value));
 }
 
 function projectRowRange(
