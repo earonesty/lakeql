@@ -383,6 +383,8 @@ function canRepresentDirectVectorLeaf(leaf: ColumnDecoder["element"]): boolean {
   if (
     leaf.converted_type === "UTF8" ||
     leaf.converted_type === "JSON" ||
+    leaf.converted_type === "BSON" ||
+    logicalType?.type === "BSON" ||
     logicalType?.type === "STRING"
   ) {
     return true;
@@ -395,7 +397,6 @@ function canRepresentDirectVectorLeaf(leaf: ColumnDecoder["element"]): boolean {
   }
   if (
     leaf.converted_type === "DATE" ||
-    leaf.converted_type === "BSON" ||
     leaf.converted_type === "INTERVAL" ||
     logicalType?.type === "DATE" ||
     logicalType?.type === "UUID"
@@ -1269,9 +1270,16 @@ function decodeFlatPageVector(
   }
   const page = dataPageValues(bytes, header, decoder, dictionary, scope);
   if (page === undefined) return undefined;
-  if (decoder.element.converted_type === "JSON") {
+  if (
+    decoder.element.converted_type === "JSON" ||
+    decoder.element.converted_type === "BSON" ||
+    decoder.element.logical_type?.type === "BSON"
+  ) {
     if (page.dictionary !== undefined && isPackedDictionary(page.dictionary))
-      throw new LakeqlError("LAKEQL_PARQUET_READ_ERROR", "JSON requires a logical dictionary");
+      throw new LakeqlError(
+        "LAKEQL_PARQUET_READ_ERROR",
+        "Document values require a logical dictionary",
+      );
     return logicalPageVector(
       page.values,
       page.definitionLevels,

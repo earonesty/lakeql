@@ -747,7 +747,7 @@ describe("direct Parquet vector batches", () => {
     const bson = structuredClone(metadata);
     const rawLeaf = bson.schema.find((entry) => entry.name === "raw");
     if (rawLeaf !== undefined) rawLeaf.converted_type = "BSON";
-    expect(canReadParquetVectorBatches(bson, { columns: ["raw"] })).toBe(false);
+    expect(canReadParquetVectorBatches(bson, { columns: ["raw"] })).toBe(true);
 
     const missingMetadata = structuredClone(metadata);
     const firstColumn = missingMetadata.row_groups[0]?.columns[0];

@@ -1,0 +1,32 @@
+{
+  "status": "BSON reader integration verified; only two Brotli conformance cases remain failing",
+  "change": "Shared convertBsonValues supplies owned flat and nested conversion; parser callbacks supply public/fallback conversion. Dynamic BSON maps use logical vector construction, including dictionary and packed leaves. Public normalization preserves map member presence. Schema validation accepts BYTE_ARRAY BSON and rejects incompatible physical types. Existing unsupported nested tests now use INTERVAL, preserving their rejection assertions. The old BSON capability assertion was updated after real-reader and dictionary support was proven.",
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "packageInstallation": "passed",
+    "defaultTestsPassed": 3134,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 65,
+    "conformance": {
+      "passed": 515,
+      "failed": 2,
+      "skipped": 1,
+      "remaining": [
+        "large_string_map.brotli.parquet: public reader",
+        "large_string_map.brotli.parquet: owned query reader"
+      ],
+      "assertionsWeakened": false
+    },
+    "fixture": "Actual bson.parquet verifies expected member presence and nulls in public and owned results. Owned outputs stay charged until release.",
+    "dictionary": "Both PLAIN and deprecated PLAIN_DICTIONARY dictionaries decode through shared conversion; exact peak succeeds, one byte below rejects atomically. Packed nested BSON leaves have equivalent boundary coverage.",
+    "workerR2": "Local workerd/Miniflare native R2 binding, four concurrent owned-result queries, 64/128 MiB shared pools, 1 MiB per-query caps, cold/warm shared cache, early iterator return, cache eviction to zero. This is runtime/storage-binding validation, not a deployed Cloudflare benchmark.",
+    "errors": "Malformed second logical value rolls back the whole BSON conversion array; wrong physical BSON annotations reject before decoding."
+  },
+  "valueContract": "../parquet-types.md#logical-value-contracts",
+  "limits": [
+    "Decimal128 preserves exact bytes in a tagged logical value; SQL decimal128 arithmetic is not implied.",
+    "Public borrowed reader results transfer to caller-managed JS storage; tracked query limits are not a total VM heap cap.",
+    "Brotli capability and oversized-value admission remain open, along with broader performance audit gaps."
+  ]
+}

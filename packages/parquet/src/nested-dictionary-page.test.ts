@@ -62,7 +62,7 @@ it("rolls back malformed extents and unsupported logical dictionaries", () => {
       header("PLAIN"),
       {
         ...decoder,
-        element: { ...decoder.element, converted_type: "BSON" },
+        element: { ...decoder.element, converted_type: "INTERVAL" },
       },
       scope,
     ),

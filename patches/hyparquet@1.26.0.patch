@@ -62,7 +62,7 @@ index 4c1f9fc86827acbf9307a7fe18a7f5055d84b4bc..38101af2fa532f8f5be7b3ed365206df
  
  /** @type {import('../src/types.d.ts').FieldRepetitionType[]} */
 diff --git a/src/convert.js b/src/convert.js
-index a16a55f63edd892868b1f8526365b7743bc92ac1..6908604c4ed4bc0e33ee9ff64439675458e077fb 100644
+index a16a55f63edd892868b1f8526365b7743bc92ac1..ccd79f9c884a14026928fe2f42fe54eb5941caed 100644
 --- a/src/convert.js
 +++ b/src/convert.js
 @@ -78,15 +78,19 @@ export function convert(data, columnDecoder) {
@@ -97,6 +97,18 @@ index a16a55f63edd892868b1f8526365b7743bc92ac1..6908604c4ed4bc0e33ee9ff644396754
      return Array.from(data).map(v => parsers.timestampFromNanoseconds(parseInt96Nanos(v)))
    }
    if (ctype === 'DATE') {
+@@ -109,8 +114,9 @@ export function convert(data, columnDecoder) {
+   if (ctype === 'JSON') {
+     return data.map(v => JSON.parse(decoder.decode(v)))
+   }
+-  if (ctype === 'BSON') {
+-    throw new Error('parquet bson not supported')
++  if (ctype === 'BSON' || ltype?.type === 'BSON') {
++    if (!parsers.bsonFromBytes) throw new Error('parquet bson parser not configured')
++    return Array.from(data, value => parsers.bsonFromBytes(value))
+   }
+   if (ctype === 'INTERVAL') {
+     throw new Error('parquet interval not supported')
 diff --git a/src/datapage.js b/src/datapage.js
 index 998cc92643610b0220e57dcba0d3b715805692d9..867b983e4e1dc68f1147b8da6a8c692c8ccaed9c 100644
 --- a/src/datapage.js
@@ -177,13 +189,14 @@ index 1dd9ae87307f5b04d89248d8ab84dc078d24bf29..3d8cd4a165224b73ae1cafb92ab64ea3
    return true
  }
 diff --git a/src/types.d.ts b/src/types.d.ts
-index e374278e193f7c73d18d20481eeb0d3b83eccf87..340f5c8f6faad12c163372e4c7a6ab4a3b77f4e8 100644
+index e374278e193f7c73d18d20481eeb0d3b83eccf87..421243bfa6e9ce01a54cc92e2fd7f247919c37ca 100644
 --- a/src/types.d.ts
 +++ b/src/types.d.ts
-@@ -3,6 +3,14 @@
+@@ -3,6 +3,15 @@
   * Custom parsers for columns
   */
  export interface ParquetParsers {
++  bsonFromBytes?(value: Uint8Array): any
 +  /** Already-decoded scalar classes must not be traversed as shredded objects. */
 +  isScalarValue?(value: unknown): boolean
 +  /** Physical decimal leaf inside a VARIANT logical container. */
@@ -195,7 +208,7 @@ index e374278e193f7c73d18d20481eeb0d3b83eccf87..340f5c8f6faad12c163372e4c7a6ab4a
    timestampFromMilliseconds(millis: bigint): any
    timestampFromMicroseconds(micros: bigint): any
    timestampFromNanoseconds(nanos: bigint): any
-@@ -34,6 +42,7 @@ export interface BaseParquetReadOptions {
+@@ -34,6 +43,7 @@ export interface BaseParquetReadOptions {
    rowEnd?: number // last requested row index (exclusive)
    onChunk?: (chunk: ColumnData) => void // called when a column chunk is parsed. chunks may contain data outside the requested range.
    onPage?: (chunk: SubColumnData) => void // called when a data page is parsed. pages may contain data outside the requested range.
@@ -203,7 +216,7 @@ index e374278e193f7c73d18d20481eeb0d3b83eccf87..340f5c8f6faad12c163372e4c7a6ab4a
    compressors?: Compressors // custom decompressors
    utf8?: boolean // decode byte arrays as utf8 strings (default true)
    parsers?: ParquetParsers // custom parsers to decode advanced types
-@@ -263,6 +272,7 @@ export type Encoding =
+@@ -263,6 +273,7 @@ export type Encoding =
    | 'DELTA_BYTE_ARRAY'
    | 'RLE_DICTIONARY'
    | 'BYTE_STREAM_SPLIT'
@@ -211,7 +224,7 @@ index e374278e193f7c73d18d20481eeb0d3b83eccf87..340f5c8f6faad12c163372e4c7a6ab4a
  
  export type CompressionCodec =
    | 'UNCOMPRESSED'
-@@ -474,6 +484,7 @@ export interface ColumnDecoder {
+@@ -474,6 +485,7 @@ export interface ColumnDecoder {
    schemaPath: SchemaTree[]
    codec: CompressionCodec
    parsers: ParquetParsers

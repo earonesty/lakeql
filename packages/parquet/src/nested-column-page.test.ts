@@ -97,7 +97,7 @@ it("rejects orphan continuations and rolls back unsupported logical pages", () =
     element: {
       ...decoder.element,
       type: "BYTE_ARRAY",
-      converted_type: "BSON",
+      converted_type: "INTERVAL",
     },
   } as ColumnDecoder;
   expect(

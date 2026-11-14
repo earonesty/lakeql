@@ -34,6 +34,9 @@ it("declines unsupported packed annotations before reading", () => {
   };
   expect(canReadNestedColumn(binary, leaf)).toBe(true);
   expect(
-    canReadNestedColumn(binary, { ...leaf, element: { ...leaf.element, converted_type: "BSON" } }),
+    canReadNestedColumn(binary, {
+      ...leaf,
+      element: { ...leaf.element, converted_type: "INTERVAL" },
+    }),
   ).toBe(false);
 });

@@ -10,6 +10,8 @@ export function nestedPackedCapability(
   if (
     isDecimal(element) ||
     element.converted_type === "JSON" ||
+    element.converted_type === "BSON" ||
+    element.logical_type?.type === "BSON" ||
     (element.converted_type === undefined &&
       (element.logical_type?.type === "FLOAT16" || element.logical_type?.type === "TIMESTAMP"))
   )

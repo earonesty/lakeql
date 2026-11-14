@@ -2,6 +2,7 @@ import type { DecodedArray } from "hyparquet";
 import { convert } from "hyparquet/src/convert.js";
 import type { ColumnDecoder } from "hyparquet/src/types.js";
 import type { MemoryScope } from "lakeql-core";
+import { convertBsonValues } from "./bson-conversion.js";
 import { convertDecimalValues, isDecimal } from "./decimal.js";
 import { convertFloat16Values } from "./float16-values.js";
 import { convertJsonValues } from "./json-values.js";
@@ -17,6 +18,11 @@ export function convertDecodedValues(
   scope?: MemoryScope,
 ): DecodedArray {
   if (!isDecimal(columnDecoder.element)) {
+    if (
+      columnDecoder.element.converted_type === "BSON" ||
+      columnDecoder.element.logical_type?.type === "BSON"
+    )
+      return convertBsonValues(values, scope);
     if (columnDecoder.element.converted_type === "JSON") return convertJsonValues(values, scope);
     if (scope !== undefined) {
       if (

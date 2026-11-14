@@ -23,6 +23,9 @@ export default defineConfig({
       miniflare: {
         r2Buckets: ["MEMORY_TEST_BUCKET"],
         bindings: {
+          BSON_FIXTURE: readFileSync(
+            new URL("./fixtures/external/parquet-testing/data/bson.parquet", import.meta.url),
+          ).toString("base64"),
           ALP_FIXTURE: readFileSync(
             new URL(
               "./fixtures/external/parquet-testing/data/alp_extended.zstd.parquet",

@@ -351,3 +351,5 @@ Admit temporary schema-validation directories against caller budgets in owned sc
 Close suspended row iterators when NDJSON, JSON, or CSV encoding fails, releasing producer-owned allocations without masking the original error. Share cleanup across failure and cancellation races.
 
 Decode ALP FLOAT/DOUBLE pages through shared public and owned reader dispatch, preserving exception bits and admitting output buffers before allocation. Validate page extents and exception positions before decoding.
+
+Decode BSON logical columns with admitted nonrecursive framing and value construction, exact integer/datetime values and explicit tagged BSON-specific values. Share conversion across public, owned, packed-leaf and dictionary paths; reject malformed framing, duplicate keys and invalid UTF-8.

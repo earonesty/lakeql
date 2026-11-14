@@ -8,7 +8,7 @@ Legend: supported+tested = covered by tests; supported = implemented with narrow
 
 | Area | Feature | Status | Notes |
 | --- | --- | --- | --- |
-| Parquet | BSON logical columns | detected+rejected | Selected BSON leaves reject during schema validation with LAKEQL_UNSUPPORTED_PARQUET_FEATURE and column/feature details. Unselected top-level columns remain readable. BSON decoding is not implemented; the external read-conformance cases remain failing. |
+| Parquet | BSON logical columns | supported+tested | BYTE_ARRAY BSON leaves decode through shared public and owned conversion, including packed leaves and dictionaries. Documents retain member presence; int64 and UTC datetime preserve precision. BSON-specific values use explicit tagged maps; decimal128 is an exact tagged byte payload, not SQL decimal arithmetic. Duplicate keys, malformed framing and invalid UTF-8 reject. |
 | Parquet | ALP encoding | supported+tested | FLOAT/DOUBLE V1 and V2 pages use one shared decoder with output admission and numeric planner forecasts. Real fixture bit parity includes NaN payloads, 64-bit deltas and variable vector sizes. Public and owned reader conformance passes; HTTP range and ignored-range concurrent reads are tested. |
 | Parquet | Brotli compression | planned | No bounded Brotli codec is registered. External read-conformance remains failing; the large string fixture also requires explicit oversized-value admission because its individual strings exceed the configured memory cap. |
 | Parquet | Primitive scalar columns | supported+tested | Covered by local fixtures and hyparquet decoding. |

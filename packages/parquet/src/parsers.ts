@@ -9,6 +9,7 @@ import {
   timestampFromEpoch,
 } from "lakeql-core";
 
+import { bsonFromBytes } from "./bson-conversion.js";
 import { int96EpochNanos, resolveInt96Interpretation } from "./int96-interpretation.js";
 import type { ParquetMetadata } from "./types.js";
 
@@ -16,6 +17,7 @@ const stringDecoder = new TextDecoder("utf-8", { ignoreBOM: true });
 
 export const lakeqlParquetParsers = {
   ...DEFAULT_PARSERS,
+  bsonFromBytes,
   decimalFromUnscaled,
   variantDecimal,
   isScalarValue: (value: unknown) => isDecimalValue(value) || isTimestampValue(value),
@@ -74,13 +76,19 @@ export function parquetParsersForMetadata(
   if (
     scope === undefined ||
     (metadata.schema !== undefined &&
-      !metadata.schema.some((element) => element.logical_type?.type === "VARIANT"))
+      !metadata.schema.some(
+        (element) =>
+          element.logical_type?.type === "VARIANT" ||
+          element.logical_type?.type === "BSON" ||
+          element.converted_type === "BSON",
+      ))
   )
     return parsers;
   let properties = 0;
   for (const key in parsers) if (Object.hasOwn(parsers, key)) properties++;
-  return scope.allocate(3 * c.object + properties * c.property, "variant parser table", () => ({
+  return scope.allocate(4 * c.object + properties * c.property, "logical parser table", () => ({
     ...parsers,
+    bsonFromBytes: (value: Uint8Array) => bsonFromBytes(value, scope),
     decimalFromUnscaled: (coefficient: bigint, scale: number) =>
       decimalFromUnscaled(coefficient, scale, scope),
     variantDecimal: (value: bigint | number | Uint8Array, scale: number) =>

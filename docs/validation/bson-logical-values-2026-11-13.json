@@ -27,5 +27,6 @@
   "limits": [
     "This checkpoint introduces a tested primitive, not a new public BSON capability.",
     "Explicit allocation charges do not establish a total VM heap cap."
-  ]
+  ],
+  "followupEvidence": "bson-reader-integration-2026-11-13.json"
 }

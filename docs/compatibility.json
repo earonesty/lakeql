@@ -2,16 +2,24 @@
   {
     "area": "Parquet",
     "feature": "BSON logical columns",
-    "status": "detected+rejected",
-    "notes": "Selected BSON leaves reject during schema validation with LAKEQL_UNSUPPORTED_PARQUET_FEATURE and column/feature details. Unselected top-level columns remain readable. BSON decoding is not implemented; the external read-conformance cases remain failing.",
+    "status": "supported+tested",
+    "notes": "BYTE_ARRAY BSON leaves decode through shared public and owned conversion, including packed leaves and dictionaries. Documents retain member presence; int64 and UTC datetime preserve precision. BSON-specific values use explicit tagged maps; decimal128 is an exact tagged byte payload, not SQL decimal arithmetic. Duplicate keys, malformed framing and invalid UTF-8 reject.",
     "evidence": [
       {
-        "file": "packages/parquet/src/bson-rejection.test.ts",
-        "pattern": "rejects the actual BSON fixture with typed schema diagnostics before page reads"
+        "file": "packages/parquet/src/bson-reader.test.ts",
+        "pattern": "decodes the actual BSON fixture through public and owned readers"
       },
       {
-        "file": "packages/parquet/src/schema-validation.test.ts",
-        "pattern": "rejects selected BSON annotations before decoding while preserving unrelated projections"
+        "file": "packages/parquet/src/bson-values.test.ts",
+        "pattern": "retains BSON-specific scalar type information"
+      },
+      {
+        "file": "packages/parquet/src/bson-conversion.test.ts",
+        "pattern": "logical dictionary with exact admission"
+      },
+      {
+        "file": "packages/parquet/src/bson.workerd.ts",
+        "pattern": "decodes BSON through concurrent Worker R2 queries"
       }
     ]
   },

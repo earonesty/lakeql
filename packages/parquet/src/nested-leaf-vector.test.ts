@@ -95,7 +95,7 @@ it("shares packed UTF8 backing and declines unsupported logical annotations befo
       input,
       {
         ...textDecoder,
-        element: { ...textDecoder.element, converted_type: "BSON" },
+        element: { ...textDecoder.element, converted_type: "INTERVAL" },
       },
       unsupported,
     ),
@@ -113,6 +113,15 @@ it.each([
       lakeqlParquetParsers.timestampFromNanoseconds(-1n),
       lakeqlParquetParsers.timestampFromNanoseconds(0n),
     ],
+  },
+  {
+    name: "BSON",
+    element: { converted_type: "BSON" },
+    bytes: [
+      Uint8Array.from([12, 0, 0, 0, 16, 97, 0, 1, 0, 0, 0, 0]),
+      Uint8Array.from([15, 0, 0, 0, 16, 97, 0, 1, 0, 0, 0, 10, 98, 0, 0]),
+    ],
+    expected: [{ a: 1 }, { a: 1, b: null }],
   },
   {
     name: "JSON",

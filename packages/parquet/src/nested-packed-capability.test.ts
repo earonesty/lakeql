@@ -7,11 +7,12 @@ it("shares packed logical capabilities without decoding payloads", () => {
   expect(nestedPackedCapability({ ...base, converted_type: "UTF8" })).toBe("text");
   expect(nestedPackedCapability({ ...base, logical_type: { type: "STRING" } })).toBe("text");
   expect(nestedPackedCapability({ ...base, converted_type: "JSON" })).toBe("converted");
+  expect(nestedPackedCapability({ ...base, converted_type: "BSON" })).toBe("converted");
   expect(
     nestedPackedCapability({ ...base, converted_type: "DECIMAL", precision: 9, scale: 2 }),
   ).toBe("converted");
   expect(nestedPackedCapability({ ...base, logical_type: { type: "FLOAT16" } })).toBe("converted");
-  expect(nestedPackedCapability({ ...base, converted_type: "BSON" })).toBeUndefined();
+  expect(nestedPackedCapability({ ...base, converted_type: "INTERVAL" })).toBeUndefined();
   expect(nestedPackedCapability({ ...base, converted_type: "INTERVAL" })).toBeUndefined();
   // Conflicting annotations retain conversion precedence used by the decoder.
   expect(
