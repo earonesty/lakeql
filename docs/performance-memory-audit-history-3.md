@@ -3837,3 +3837,23 @@ Evidence: `docs/validation/current-planning-release-gates-2026-11-14.json`.
 These gates validate current implementation behavior but do not close remaining
 allocation gaps or replace constrained-runtime benchmark refresh and the full
 F1–F6/M1–M2/V1–V3 acceptance review.
+
+### 2026-11-14 — current planning mixed-query and Worker runtime matrix
+
+Source 30f7ae8 completed all eight mixed-query scenarios: local memory/HTTP,
+64/128 MiB pools, 4/16 MiB caches, two cold/warm rounds with four overlapping
+queries and pinned prior output. Maximum admitted allocation increased from
+53,954,370 to 53,956,046 bytes. HTTP concurrency remains two; fitting warm caches
+require four discovery reads, while smaller caches require 37 reads per round.
+Every scenario releases all reservations. This is one run, not a latency claim.
+
+Local workerd native-emulated-R2 and separate localhost-HTTP runs under verified
+64 and 128 MiB V8 managed-heap settings completed all scenarios. Every transport
+and runtime configuration retained the same success/budget outcomes: one job
+succeeds at either pool size; four jobs yield two successes/two budget rejections
+at 64 MiB, and four successes at 128 MiB. Final eviction leaves zero reservations.
+
+Evidence: `docs/validation/current-planning-runtime-2026-11-14.json`. Raw heap,
+backing and embedder samples remain separate in the artifacts. Sampling is sparse
+and cannot establish exact peaks. Managed-heap flags exclude external backing
+and are not production Cloudflare total-memory limits; V1 remains open.
