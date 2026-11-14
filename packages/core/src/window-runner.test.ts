@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { batchFromColumns } from "./batch.js";
 import { col } from "./expr.js";
+import { MemoryBudget } from "./memory-budget.js";
+import { MemoryScope } from "./memory-scope.js";
 import type { QueryStats, Row } from "./types.js";
 import {
   collectWindowMatches,
@@ -88,6 +90,95 @@ describe("window runner", () => {
     expect(runs.map((run) => run.map((row) => row.id))).toEqual([[1, 2], [3]]);
     expect(options.stats.rowsDecoded).toBe(3);
     expect(options.stats.rowsMatched).toBe(3);
+  });
+
+  it.each([
+    false,
+    true,
+  ])("pins owned task output through streaming (early close=%s)", async (earlyClose) => {
+    const options: WindowRunnerOptions = runnerOptions({}, {});
+    const pool = new MemoryBudget(65536);
+    options.memoryBudget = pool;
+    options.config.batchSize = 1;
+    options.config.select = ["running"];
+    options.config.scanner.executeWindowTasks = async () => {
+      throw new Error("legacy path selected");
+    };
+    options.config.scanner.executeOwnedWindowTasks = async (_tasks, _windows, execution) => {
+      expect(execution.memoryBudget).toBe(pool);
+      const scope = new MemoryScope(pool);
+      try {
+        const rows = scope.allocate(8192, "owned task fixture", () => [
+          { running: 10 },
+          { running: 30 },
+        ]).value;
+        return scope.retainAllocations(rows);
+      } finally {
+        scope.dispose();
+      }
+    };
+    options.tasksFromObjects = async () => [
+      {
+        path: "table",
+        rowGroupRanges: [{ start: 0, end: 1 }],
+        partitionValues: {},
+        window: {
+          topology: "window-partition-fanout",
+          available: true,
+          bucketCount: 2,
+          partitionBy: [col("account")],
+        },
+      },
+    ];
+    const iterator = executeWindowBatches(options)[Symbol.asyncIterator]();
+    expect((await iterator.next()).value).toEqual([{ running: 10 }]);
+    expect(pool.usedBytes).toBeGreaterThanOrEqual(8192);
+    if (earlyClose) await iterator.return?.();
+    else {
+      expect((await iterator.next()).value).toEqual([{ running: 30 }]);
+      expect((await iterator.next()).done).toBe(true);
+    }
+    expect(pool.usedBytes).toBe(0);
+  });
+
+  it.each([
+    "abort",
+    "wrong-budget",
+  ] as const)("releases returned task ownership on %s", async (failure) => {
+    const controller = new AbortController();
+    const options: WindowRunnerOptions = runnerOptions({}, { signal: controller.signal });
+    const pool = new MemoryBudget(65536);
+    const source = failure === "wrong-budget" ? new MemoryBudget(65536) : pool;
+    options.memoryBudget = pool;
+    options.config.scanner.executeOwnedWindowTasks = async () => {
+      const scope = new MemoryScope(source);
+      try {
+        const rows = scope.allocate(8192, "task output", () => [{ running: 1 }]).value;
+        if (failure === "abort") controller.abort();
+        return scope.retainAllocations(rows);
+      } finally {
+        scope.dispose();
+      }
+    };
+    options.tasksFromObjects = async () => [
+      {
+        path: "table",
+        rowGroupRanges: [],
+        partitionValues: {},
+        window: {
+          topology: "window-partition-fanout",
+          available: true,
+          bucketCount: 2,
+          partitionBy: [col("account")],
+        },
+      },
+    ];
+    const iterator = executeWindowBatches(options)[Symbol.asyncIterator]();
+    await expect(iterator.next()).rejects.toMatchObject({
+      code: failure === "abort" ? "LAKEQL_ABORTED" : "LAKEQL_VALIDATION_ERROR",
+    });
+    expect(source.usedBytes).toBe(0);
+    expect(pool.usedBytes).toBe(0);
   });
 
   it("executes planned window task rows through post-window processing", async () => {

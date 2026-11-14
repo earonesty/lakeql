@@ -44,7 +44,7 @@ import { asyncBufferFromObjectInfo, asyncBufferFromStore } from "./store-buffer.
 import type { ParquetMetadata, StoreAsyncBuffer } from "./types.js";
 import { parquetValueDecoders } from "./value-decoders.js";
 import { canReadParquetVectorBatches, readParquetVectorBatchesFromFile } from "./vector-batches.js";
-import { windowParquetTasks } from "./window-task.js";
+import { windowParquetTasksOwned } from "./window-task.js";
 
 export class ParquetScanAdapter implements ScanAdapter {
   readonly scanOwnedVectorBatches?: NonNullable<ScanAdapter["scanOwnedVectorBatches"]>;
@@ -599,7 +599,20 @@ export class ParquetScanAdapter implements ScanAdapter {
     windows: Record<string, WindowExpr>,
     options: WindowTaskExecutionOptions,
   ): Promise<Row[]> {
-    return windowParquetTasks(this.store, tasks, windows, {
+    const owned = await this.executeOwnedWindowTasks(tasks, windows, options);
+    try {
+      return owned.value;
+    } finally {
+      owned.release();
+    }
+  }
+
+  async executeOwnedWindowTasks(
+    tasks: TaskInput[],
+    windows: Record<string, WindowExpr>,
+    options: WindowTaskExecutionOptions,
+  ): Promise<OwnedMemory<Row[]>> {
+    return windowParquetTasksOwned(this.store, tasks, windows, {
       ...(options.memoryBudget === undefined ? {} : { memoryBudget: options.memoryBudget }),
       batchSize: options.batchSize,
       budget: options.budget,

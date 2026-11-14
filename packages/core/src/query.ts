@@ -241,6 +241,11 @@ export interface ScanAdapter {
   scanColumnBatches?(path: string, options: ScanOptions): AsyncIterable<ScanColumnBatch>;
   planObjects?(objects: ObjectInfo[], options: ScanObjectPlanOptions): Promise<ObjectInfo[]>;
   planTask?(path: string, options: ScanTaskPlanOptions): Promise<ScanTaskPlan>;
+  executeOwnedWindowTasks?(
+    tasks: TaskInput[],
+    windows: Record<string, WindowExpr>,
+    options: WindowTaskExecutionOptions,
+  ): Promise<OwnedMemory<Row[]>>;
   executeWindowTasks?(
     tasks: TaskInput[],
     windows: Record<string, WindowExpr>,
@@ -6293,7 +6298,8 @@ function plannedWindowExecutionMode(
   plannedBucketCount: number,
 ): WindowExecutionMode {
   if (
-    config.scanner.executeWindowTasks !== undefined &&
+    (config.scanner.executeOwnedWindowTasks !== undefined ||
+      config.scanner.executeWindowTasks !== undefined) &&
     windowTaskPlanForWindows(config.windows ?? {}, plannedBucketCount).available === true
   ) {
     return "parquet-work-unit-fanout";

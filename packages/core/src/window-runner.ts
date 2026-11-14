@@ -87,7 +87,7 @@ export async function* executeWindowBatches(options: WindowRunnerOptions): Async
   try {
     const { config, stats } = options;
     const startedAt = config.now();
-    const taskRows = await collectWindowTaskMatches(options, startedAt);
+    const taskRows = await collectWindowTaskMatches(options, startedAt, retainedScope);
     if (taskRows !== undefined) {
       yield* postWindowQueryBatches({
         ...windowBatchOptions(options, startedAt, retainedScope),
@@ -288,9 +288,14 @@ export async function collectWindowRuns(
 async function collectWindowTaskMatches(
   options: WindowRunnerOptions,
   startedAt: number,
+  retainedScope: MemoryScope,
 ): Promise<Row[] | undefined> {
   const { config, stats } = options;
-  if (config.windows === undefined || config.scanner.executeWindowTasks === undefined) {
+  if (
+    config.windows === undefined ||
+    (config.scanner.executeOwnedWindowTasks === undefined &&
+      config.scanner.executeWindowTasks === undefined)
+  ) {
     return undefined;
   }
   const { planned: objects, skipped } = await options.planObjects();
@@ -304,14 +309,43 @@ async function collectWindowTaskMatches(
     if (task.size !== undefined) stats.bytesRequested += task.size;
     options.enforceBudget(config.budget, stats, config.now, startedAt);
   }
-  return config.scanner.executeWindowTasks(tasks, config.windows, {
-    ...(options.memoryBudget === undefined ? {} : { memoryBudget: options.memoryBudget }),
+  const executionOptions = {
+    memoryBudget: retainedScope.budget,
     budget: config.budget,
     stats,
     now: config.now,
     startedAt,
     batchSize: config.batchSize ?? 4096,
-  });
+  };
+  if (config.scanner.executeOwnedWindowTasks !== undefined) {
+    const owned = await config.scanner.executeOwnedWindowTasks(
+      tasks,
+      config.windows,
+      executionOptions,
+    );
+    try {
+      if (config.budget.signal?.aborted)
+        throw new LakeqlError("LAKEQL_ABORTED", "Window task execution aborted");
+      options.enforceBudget(config.budget, stats, config.now, startedAt);
+      return retainedScope.adopt(owned).value;
+    } catch (error) {
+      owned.release();
+      throw error;
+    }
+  }
+  const rows = await config.scanner.executeWindowTasks?.(tasks, config.windows, executionOptions);
+  if (rows === undefined) return undefined;
+  if (config.budget.signal?.aborted)
+    throw new LakeqlError("LAKEQL_ABORTED", "Window task execution aborted");
+  options.enforceBudget(config.budget, stats, config.now, startedAt);
+  // Legacy adapter allocation is external; admit independent retained storage.
+  const retained = retainedScope.allocate(
+    c.array + rows.length * c.arraySlot,
+    "legacy window task rows",
+    () => [] as Row[],
+  ).value;
+  for (const row of rows) retained.push(retainWindowRow(row, retainedScope));
+  return retained;
 }
 
 async function collectVectorWindowRows(
