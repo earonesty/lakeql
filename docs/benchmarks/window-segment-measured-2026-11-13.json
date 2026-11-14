@@ -1,0 +1,172 @@
+{
+  "description": "Growing and alternating sum frames over presorted numeric input, two warmups and three timed rounds. Construction and independent frame-sum validation excluded. Tree workspace admission only; row storage, expression results, output arrays and total VM heap are not measured. Local execution, not cloud latency.",
+  "sourceHashes": {
+    "window-segment-tree": "6d57c9e481d0bd8355302ee216c07aa9537745eead3f3ee278b857635feedc56",
+    "window-aggregate": "c278529b7661b6a9013f8a9bd340e52ce2f0093f6c776e5dd67cf884d13a67a9",
+    "window-backend": "08049c6bd3cff75f0a9040fe0d3fb7de4be1554cdbfd0e2d75081431f69ff5f0"
+  },
+  "results": [
+    {
+      "rows": 256,
+      "workload": "growing",
+      "budgetBytes": 0,
+      "mode": "incremental or recomputed spans",
+      "peakBytes": 0,
+      "medianMilliseconds": 0.1523059999999994,
+      "samples": [0.17270500000000055, 0.12077800000000138, 0.1523059999999994]
+    },
+    {
+      "rows": 256,
+      "workload": "growing",
+      "budgetBytes": 238719,
+      "mode": "incremental or recomputed spans",
+      "peakBytes": 0,
+      "medianMilliseconds": 0.0835979999999985,
+      "samples": [0.0835979999999985, 0.08004999999999995, 0.09047100000000086]
+    },
+    {
+      "rows": 256,
+      "workload": "growing",
+      "budgetBytes": 238720,
+      "mode": "incremental or recomputed spans",
+      "peakBytes": 0,
+      "medianMilliseconds": 0.0803110000000018,
+      "samples": [0.0803110000000018, 0.07318800000000181, 0.27396700000000607]
+    },
+    {
+      "rows": 256,
+      "workload": "alternating",
+      "budgetBytes": 0,
+      "mode": "incremental or recomputed spans",
+      "peakBytes": 0,
+      "medianMilliseconds": 1.0679820000000007,
+      "samples": [1.173499999999997, 1.0679820000000007, 1.0546270000000035]
+    },
+    {
+      "rows": 256,
+      "workload": "alternating",
+      "budgetBytes": 238719,
+      "mode": "incremental or recomputed spans",
+      "peakBytes": 0,
+      "medianMilliseconds": 1.0332070000000044,
+      "samples": [1.0332070000000044, 0.9944130000000015, 1.0422129999999967]
+    },
+    {
+      "rows": 256,
+      "workload": "alternating",
+      "budgetBytes": 238720,
+      "mode": "measured tree",
+      "peakBytes": 238720,
+      "medianMilliseconds": 0.1451630000000037,
+      "samples": [0.20569799999999816, 0.1451630000000037, 0.11982600000000332]
+    },
+    {
+      "rows": 1024,
+      "workload": "growing",
+      "budgetBytes": 0,
+      "mode": "incremental or recomputed spans",
+      "peakBytes": 0,
+      "medianMilliseconds": 0.0797499999999971,
+      "samples": [0.0796100000000024, 0.0797499999999971, 0.20738099999999804]
+    },
+    {
+      "rows": 1024,
+      "workload": "growing",
+      "budgetBytes": 951423,
+      "mode": "incremental or recomputed spans",
+      "peakBytes": 0,
+      "medianMilliseconds": 0.07965000000000089,
+      "samples": [0.07838699999999932, 0.07985000000000042, 0.07965000000000089]
+    },
+    {
+      "rows": 1024,
+      "workload": "growing",
+      "budgetBytes": 951424,
+      "mode": "incremental or recomputed spans",
+      "peakBytes": 0,
+      "medianMilliseconds": 0.08065200000000061,
+      "samples": [0.08065200000000061, 0.07967000000000013, 0.08641200000000282]
+    },
+    {
+      "rows": 1024,
+      "workload": "alternating",
+      "budgetBytes": 0,
+      "mode": "incremental or recomputed spans",
+      "peakBytes": 0,
+      "medianMilliseconds": 15.908915000000007,
+      "samples": [17.137269000000003, 15.908915000000007, 15.761175999999992]
+    },
+    {
+      "rows": 1024,
+      "workload": "alternating",
+      "budgetBytes": 951423,
+      "mode": "incremental or recomputed spans",
+      "peakBytes": 0,
+      "medianMilliseconds": 16.190304999999995,
+      "samples": [16.190304999999995, 17.043982999999997, 16.04799700000001]
+    },
+    {
+      "rows": 1024,
+      "workload": "alternating",
+      "budgetBytes": 951424,
+      "mode": "measured tree",
+      "peakBytes": 951424,
+      "medianMilliseconds": 0.27219299999998725,
+      "samples": [0.4122069999999951, 0.27038899999999444, 0.27219299999998725]
+    },
+    {
+      "rows": 2048,
+      "workload": "growing",
+      "budgetBytes": 0,
+      "mode": "incremental or recomputed spans",
+      "peakBytes": 0,
+      "medianMilliseconds": 0.35194299999997725,
+      "samples": [0.1234230000000025, 0.35194299999997725, 0.35715300000001093]
+    },
+    {
+      "rows": 2048,
+      "workload": "growing",
+      "budgetBytes": 1901695,
+      "mode": "incremental or recomputed spans",
+      "peakBytes": 0,
+      "medianMilliseconds": 0.13551599999999553,
+      "samples": [0.12307200000000762, 0.13551599999999553, 0.17106200000000626]
+    },
+    {
+      "rows": 2048,
+      "workload": "growing",
+      "budgetBytes": 1901696,
+      "mode": "incremental or recomputed spans",
+      "peakBytes": 0,
+      "medianMilliseconds": 0.2899759999999958,
+      "samples": [0.35355599999999754, 0.2899759999999958, 0.12170900000000984]
+    },
+    {
+      "rows": 2048,
+      "workload": "alternating",
+      "budgetBytes": 0,
+      "mode": "incremental or recomputed spans",
+      "peakBytes": 0,
+      "medianMilliseconds": 66.06079899999997,
+      "samples": [66.06079899999997, 67.69969700000001, 64.10713799999996]
+    },
+    {
+      "rows": 2048,
+      "workload": "alternating",
+      "budgetBytes": 1901695,
+      "mode": "incremental or recomputed spans",
+      "peakBytes": 0,
+      "medianMilliseconds": 64.958933,
+      "samples": [64.05640200000005, 70.28376500000002, 64.958933]
+    },
+    {
+      "rows": 2048,
+      "workload": "alternating",
+      "budgetBytes": 1901696,
+      "mode": "measured tree",
+      "peakBytes": 1901696,
+      "medianMilliseconds": 0.5160119999999324,
+      "samples": [0.5160119999999324, 0.5341059999999516, 0.502426000000014]
+    }
+  ]
+}

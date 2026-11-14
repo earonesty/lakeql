@@ -2,12 +2,12 @@ import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
 import { evaluate } from "./evaluator.js";
 import type { Scalar } from "./expr.js";
-import type { MemoryBudget } from "./memory-budget.js";
+import type { MemoryBudget, MemoryReservation } from "./memory-budget.js";
 import type { AggregateOp } from "./query.js";
 import { compareAggregateScalars, numericAggregateValue } from "./scalar-order.js";
 import type { Row } from "./types.js";
 import type { WindowExpr } from "./window.js";
-import { createWindowAggregateEvaluator } from "./window-aggregate.js";
+import { createWindowAggregateAccumulator } from "./window-aggregate.js";
 import { frameSpan } from "./window-frame.js";
 import { WindowPeers } from "./window-peers.js";
 import { filterRow, type WindowRow } from "./window-utils.js";
@@ -41,21 +41,43 @@ export function segmentTreeAggregateValues(
   const op = expr.fn.aggregate;
   if (!isSegmentAggregate(op)) return undefined;
   if (partition.length === 0) return [];
-  const bytes = segmentTreeWorkspaceBytes(partition.length);
-  const reservation = budget?.tryReserve(bytes, "window segment tree workspace");
-  if (budget !== undefined && reservation === undefined) {
-    const evaluateFrame = createWindowAggregateEvaluator(expr);
+  const accumulator = createWindowAggregateAccumulator(expr);
+  let previousStart = -1;
+  let previousEnd = 0;
+  let visits = 0;
+  let attemptedTree = false;
+  let tree: SegmentTree | undefined;
+  let reservation: MemoryReservation | undefined;
+  try {
     return partition.map((_row, index) => {
       const span = frameSpan(partition, index, expr, peers);
-      return evaluateFrame(spanRows(partition, span.start, span.end));
+      if (tree !== undefined) return aggregateValue(op, tree.query(span));
+      if (span.start !== previousStart || span.end < previousEnd) {
+        accumulator.reset();
+        previousEnd = span.start;
+      }
+      visits += span.end - previousEnd;
+      // A tree costs a full input pass and a retained directory. Avoid that cost
+      // for monotone frames; attempt it only after measured repeated traversal.
+      if (!attemptedTree && visits > partition.length * 4) {
+        attemptedTree = true;
+        reservation = budget?.tryReserve(
+          segmentTreeWorkspaceBytes(partition.length),
+          "window segment tree workspace",
+        );
+        if (budget === undefined || reservation !== undefined) {
+          accumulator.reset();
+          tree = new SegmentTree(partition, expr, op);
+          return aggregateValue(op, tree.query(span));
+        }
+      }
+      const value = accumulator.append(spanRows(partition, previousEnd, span.end));
+      previousStart = span.start;
+      previousEnd = span.end;
+      return value;
     });
-  }
-  try {
-    const tree = new SegmentTree(partition, expr, op);
-    return partition.map((_row, index) =>
-      aggregateValue(op, tree.query(frameSpan(partition, index, expr, peers))),
-    );
   } finally {
+    accumulator.reset();
     reservation?.release();
   }
 }

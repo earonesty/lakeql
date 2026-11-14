@@ -2,7 +2,10 @@ import { expect, it } from "vitest";
 import { col, lit } from "./expr.js";
 import type { AggregateOp } from "./query.js";
 import type { WindowExpr } from "./window.js";
-import { createWindowAggregateEvaluator } from "./window-aggregate.js";
+import {
+  createWindowAggregateAccumulator,
+  createWindowAggregateEvaluator,
+} from "./window-aggregate.js";
 
 it.each([
   ["sum", 8, null],
@@ -107,4 +110,38 @@ it("avoids collection construction for fixed-state aggregate frames", () => {
   expect(results).toEqual(Array(100).fill(3));
   expect(maps).toBe(0);
   expect(sets).toBe(0);
+});
+
+it("appends state across chunks and clears partial progress after failure", () => {
+  const accumulator = createWindowAggregateAccumulator({
+    fn: { aggregate: "sum" },
+    args: [col("value")],
+    over: { partitionBy: [], orderBy: [] },
+  });
+  expect(accumulator.append([{ value: 1 }, { value: 2 }])).toBe(3);
+  expect(accumulator.append([])).toBe(3);
+  expect(accumulator.append([{ value: 3 }])).toBe(6);
+  expect(() =>
+    accumulator.append(
+      (function* () {
+        yield { value: 100 };
+        throw new Error("failed append");
+      })(),
+    ),
+  ).toThrow("failed append");
+  expect(accumulator.append([{ value: 7 }])).toBe(7);
+  accumulator.reset();
+  expect(accumulator.append([])).toBeNull();
+  expect(() =>
+    accumulator.append([
+      {
+        get value() {
+          accumulator.reset();
+          return 1;
+        },
+      },
+    ]),
+  ).toThrow(/reenter/);
+  expect(accumulator.append([{ value: 9 }])).toBe(9);
+  accumulator.reset();
 });

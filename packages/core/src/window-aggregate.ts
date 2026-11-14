@@ -11,9 +11,28 @@ export function aggregateWindowValue(rows: Iterable<Row>, expr: WindowExpr): Sca
   return createWindowAggregateEvaluator(expr)(rows);
 }
 
-/** Operation-local evaluator. Reuse fixed state across frames and allocate
- * collection state only for aggregate capabilities that require it. */
+/** Operation-local evaluator for independent frames. */
 export function createWindowAggregateEvaluator(expr: WindowExpr): (rows: Iterable<Row>) => Scalar {
+  const accumulator = createWindowAggregateAccumulator(expr);
+  let active = false;
+  return (rows) => {
+    if (active) throw aggregateReentry();
+    active = true;
+    try {
+      return accumulator.append(rows);
+    } finally {
+      active = false;
+      accumulator.reset();
+    }
+  };
+}
+
+/** Append-only aggregate state over immutable ordered rows. Call reset when a
+ * frame removes rows; no inverse arithmetic or retained per-row directory. */
+export function createWindowAggregateAccumulator(expr: WindowExpr): {
+  append(rows: Iterable<Row>): Scalar;
+  reset(): void;
+} {
   if (typeof expr.fn !== "object") {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Window expression is not an aggregate");
   }
@@ -21,25 +40,32 @@ export function createWindowAggregateEvaluator(expr: WindowExpr): (rows: Iterabl
   requireExactWindowAggregate(op);
   const state = new AggregateState(op, quantile(expr));
   let active = false;
-  return (rows) => {
-    if (active)
-      throw new LakeqlError(
-        "LAKEQL_VALIDATION_ERROR",
-        "Window aggregate evaluation cannot reenter",
-      );
-    active = true;
-    try {
-      for (const row of rows) {
-        if (!filterRow(expr, row)) continue;
-        const value = aggregateInputValue(expr, row);
-        state.add(value, expr.distinct === true);
+  return {
+    append(rows) {
+      if (active) throw aggregateReentry();
+      active = true;
+      try {
+        for (const row of rows) {
+          if (!filterRow(expr, row)) continue;
+          state.add(aggregateInputValue(expr, row), expr.distinct === true);
+        }
+        return state.value();
+      } catch (error) {
+        state.reset();
+        throw error;
+      } finally {
+        active = false;
       }
-      return state.value();
-    } finally {
-      active = false;
+    },
+    reset() {
+      if (active) throw aggregateReentry();
       state.reset();
-    }
+    },
   };
+}
+
+function aggregateReentry(): LakeqlError {
+  return new LakeqlError("LAKEQL_VALIDATION_ERROR", "Window aggregate evaluation cannot reenter");
 }
 
 function aggregateInputValue(expr: WindowExpr, row: Row): Scalar {

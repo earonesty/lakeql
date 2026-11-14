@@ -45,5 +45,33 @@
       "fileSizeGate": "passed"
     },
     "next": "Investigate generic incremental accumulation for frames whose start is unchanged and end grows. Moving or shrinking frames still require reset/recomputation or another admitted structure. Output arrays, scalar expression payloads and whole-runtime limits remain unproven."
+  },
+  "measuredFrames": {
+    "change": "Start with an operation-local append-only aggregate over immutable ordered rows. Reuse state when frame start stays fixed and end does not retreat. Reset and recompute whenever rows leave the frame. Only after estimated visits exceed four partition passes is a segment tree attempted; successful admission replaces the accumulator, failed admission retains recomputation.",
+    "contract": "This is a generic frame transition rule, independent of query text, column names and row values. It supports the existing nine mergeable non-distinct aggregates and all admitted frame-span modes; exclusion/distinct capability checks remain intact. No inverse arithmetic or per-row accumulator directory is introduced.",
+    "evidence": "../benchmarks/window-segment-measured-2026-11-13.json",
+    "intermediateEvidence": "../benchmarks/window-segment-incremental-2026-11-13.json",
+    "measurement": "At 2048 rows growing frames use zero tree bytes and take 0.14\u20130.35 ms across zero, one-byte-short and full tree budgets, versus about 63 ms before incremental reuse. Alternating full/narrow frames take about 65 ms without tree capacity and 0.52 ms with measured admission of 1901696 bytes. Three local timed samples; not a cloud-throughput claim.",
+    "edgeCases": [
+      "Growing frames read each input exactly once even with enough budget for a tree; no tree reservation is created.",
+      "Dynamic bounds grow, repeat, shrink, empty and move; all nine aggregate outputs match independent full-frame recomputation, including nulls and filters.",
+      "Exact and one-byte-short shared-pool tree admission preserves a sibling reservation; tree starts only after repeated visits.",
+      "Failures during admitted tree construction release workspace. Append failures discard partial state; empty appends preserve state; explicit reset empties it; reentrant append/reset reject safely."
+    ],
+    "validation": {
+      "defaultPassed": 2987,
+      "defaultSkipped": 629,
+      "workerPassed": 61,
+      "referencePassed": 104,
+      "focusedAggregateAndMemoryPassed": 24,
+      "emptyAndSharedFrameChecks": "passed",
+      "build": "passed",
+      "typecheck": "passed",
+      "lint": "passed",
+      "cleanPackageInstall": "passed",
+      "compatibility": "passed",
+      "fileSizeGate": "passed"
+    },
+    "limits": "The four-pass threshold is a conservative work heuristic, not a universal latency optimum. Adverse moving frames remain quadratic when tree admission is unavailable. Output arrays, scalar payloads, fixed execution metadata and whole-runtime allocation coverage remain separate unfinished work. Existing decimal and ALP/BSON/BROTLI gaps remain."
   }
 }

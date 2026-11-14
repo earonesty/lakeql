@@ -21,7 +21,7 @@ const expr: WindowExpr = {
   },
 };
 
-it("selects tree or span recomputation within exact shared-budget availability", () => {
+it("keeps growing frames incremental within exact shared-budget availability", () => {
   for (const length of [1, 7, 16]) {
     const required = segmentTreeWorkspaceBytes(length);
     for (const cap of [0, required - 1, required]) {
@@ -33,7 +33,7 @@ it("selects tree or span recomputation within exact shared-budget availability",
         id,
         get amount() {
           reads++;
-          expect(budget.usedBytes).toBe(cap === required ? required : 0);
+          expect(budget.usedBytes).toBe(0);
           return id + 1;
         },
       }));
@@ -43,9 +43,9 @@ it("selects tree or span recomputation within exact shared-budget availability",
         expect(segmentTreeAggregateValues(partition, expr, peers, budget)).toEqual(
           Array.from({ length }, (_, id) => ((id + 1) * (id + 2)) / 2),
         );
-        expect(reads).toBe(cap === required ? length : (length * (length + 1)) / 2);
+        expect(reads).toBe(length);
         expect(budget.usedBytes).toBe(0);
-        expect(budget.peakBytes).toBe(cap === required ? required : 0);
+        expect(budget.peakBytes).toBe(0);
         expect(pool.usedBytes).toBe(37);
       } finally {
         peers.dispose();
@@ -56,18 +56,60 @@ it("selects tree or span recomputation within exact shared-budget availability",
   }
 });
 
-it("releases admitted tree workspace after an expression failure", () => {
-  const partition = partitionRows(
-    [
-      { id: 1, amount: 1 },
-      { id: 2, amount: "invalid" },
-    ],
-    expr,
-  );
-  const budget = new MemoryBudget(segmentTreeWorkspaceBytes(partition.length));
-  expect(() => segmentTreeAggregateValues(partition, expr, undefined, budget)).toThrow(/numeric/);
-  expect(budget.usedBytes).toBe(0);
-  expect(budget.peakBytes).toBe(budget.maxBytes);
+function alternatingExpression(): WindowExpr {
+  return {
+    ...expr,
+    over: {
+      ...expr.over,
+      frame: {
+        mode: "rows",
+        start: { kind: "preceding", offset: col("before") },
+        end: { kind: "following", offset: col("after") },
+      },
+    },
+  };
+}
+
+it("admits a tree only after repeated visits and releases it on completion or failure", () => {
+  const length = 32;
+  const required = segmentTreeWorkspaceBytes(length);
+  for (const cap of [required - 1, required]) {
+    for (const fail of [false, true]) {
+      const pool = new MemoryBudget(cap + 37);
+      const retained = pool.child(37).reserve(37, "concurrent output");
+      const budget = pool.child(cap);
+      let visits = 0;
+      let firstAdmittedVisit = 0;
+      const rows = Array.from({ length }, (_, id) => ({
+        id,
+        before: id % 2 === 0 ? id : 0,
+        after: id % 2 === 0 ? length - id - 1 : 0,
+        get amount() {
+          visits++;
+          if (budget.usedBytes > 0) {
+            firstAdmittedVisit ||= visits;
+            if (fail) throw new Error("admitted leaf failed");
+          }
+          return id + 1;
+        },
+      }));
+      const dynamic = alternatingExpression();
+      const run = () =>
+        segmentTreeAggregateValues(partitionRows(rows, dynamic), dynamic, undefined, budget);
+      if (fail && cap === required) expect(run).toThrow("admitted leaf failed");
+      else
+        expect(run()).toEqual(
+          rows.map((_row, id) => (id % 2 === 0 ? (length * (length + 1)) / 2 : id + 1)),
+        );
+      expect(budget.peakBytes).toBe(cap === required ? required : 0);
+      expect(budget.usedBytes).toBe(0);
+      if (cap === required) expect(firstAdmittedVisit).toBeGreaterThan(length * 3);
+      else expect(firstAdmittedVisit).toBe(0);
+      expect(pool.usedBytes).toBe(37);
+      retained.release();
+      expect(pool.usedBytes).toBe(0);
+    }
+  }
   expect(segmentTreeAggregateValues([], expr, undefined, new MemoryBudget(0))).toEqual([]);
   for (const size of [-1, NaN, Infinity, 0.5, Number.MAX_SAFE_INTEGER])
     expect(() => segmentTreeWorkspaceBytes(size)).toThrow();
@@ -89,7 +131,52 @@ it("propagates query budget to window aggregates and keeps null and filter seman
         (row) => row.total,
       ),
     ).toEqual([null, null, 3]);
-    expect(memoryBudget.peakBytes).toBe(cap);
+    expect(memoryBudget.peakBytes).toBe(0);
     expect(memoryBudget.usedBytes).toBe(0);
+  }
+});
+
+it("reuses growing frames and resets correctly when dynamic bounds shrink or move", async () => {
+  const { aggregateWindowValue } = await import("./window-aggregate.js");
+  const { frameRows } = await import("./window-frame.js");
+  const rows = [0, 1, 2, 0, 4, 2, 1, 7].map((before, id) => ({
+    id,
+    before,
+    after: [0, 2, 0, 0, 1, 0, 0, 0][id] ?? 0,
+    amount: id === 2 ? null : id - 3,
+  }));
+  for (const aggregate of [
+    "count",
+    "sum",
+    "avg",
+    "min",
+    "max",
+    "var_pop",
+    "var_samp",
+    "stddev_pop",
+    "stddev_samp",
+  ] as const) {
+    for (const endKind of ["following", "preceding"] as const) {
+      const dynamic: WindowExpr = {
+        ...expr,
+        fn: { aggregate },
+        filter: gt("id", 0),
+        over: {
+          ...expr.over,
+          frame: {
+            mode: "rows",
+            start: { kind: "preceding", offset: col("before") },
+            end: { kind: endKind, offset: col("after") },
+          },
+        },
+      };
+      const partition = partitionRows(rows, dynamic);
+      const expected = partition.map((_row, index) =>
+        aggregateWindowValue(frameRows(partition, index, dynamic), dynamic),
+      );
+      const budget = new MemoryBudget(0);
+      expect(segmentTreeAggregateValues(partition, dynamic, undefined, budget)).toEqual(expected);
+      expect(budget.usedBytes).toBe(0);
+    }
   }
 });
