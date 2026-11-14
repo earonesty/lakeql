@@ -1,8 +1,10 @@
 import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
-import { evaluate, jsonSafeValue } from "./evaluator.js";
-import { stableStringify } from "./manifest.js";
+import { evaluate } from "./evaluator.js";
+import type { MemoryScope } from "./memory-scope.js";
+import { internStableDataKey } from "./owned-checkpoint-encoding.js";
 import { detachOwnedRow } from "./owned-row-detachment.js";
+import { snapshotScalarWithAdmission } from "./owned-snapshot-rows.js";
 import type { Row } from "./types.js";
 import type { WindowExpr } from "./window.js";
 import type { WindowExecutionOptions } from "./window-backend.js";
@@ -36,22 +38,58 @@ export function partitionWindowWorkUnitRows(
   rows: readonly WindowWorkUnitRow[],
   windows: Record<string, WindowExpr>,
   bucketCount: number,
+  options: WindowExecutionOptions = {},
 ): WindowWorkUnitPartial {
-  validateBucketCount(bucketCount);
-  const buckets = new Map<number, WindowWorkUnitBucket>();
-  for (const row of rows) {
-    const bucket = windowPartitionBucket(row.row, windows, bucketCount);
-    let target = buckets.get(bucket);
-    if (target === undefined) {
-      target = { bucket, rows: [] };
-      buckets.set(bucket, target);
+  return withWindowResultScope(options, (scope) => {
+    validateBucketCount(bucketCount);
+    const scratch = scope.childScope();
+    const buckets = scratch.allocate(
+      c.object,
+      "window partition directory",
+      () => new Map<number, WindowWorkUnitBucket>(),
+    ).value;
+    for (const entry of rows) {
+      const bucket = windowPartitionBucket(entry.row, windows, bucketCount, scope);
+      let target = buckets.get(bucket);
+      if (target === undefined) {
+        scratch.allocate(c.property, "window partition directory entry", () => undefined);
+        target = scope.allocate(
+          c.object + 2 * c.property + c.array,
+          "window partition bucket",
+          () => ({ bucket, rows: [] as WindowWorkUnitRow[] }),
+        ).value;
+        buckets.set(bucket, target);
+      }
+      const detached = detachOwnedRow(entry.row, scope.budget, scope);
+      try {
+        scope.adopt(detached);
+      } catch (error) {
+        detached.release();
+        throw error;
+      }
+      target.rows.push(
+        scope.allocate(c.arraySlot + 2 * c.object + 4 * c.property, "window partition row", () => ({
+          ordinal: { ...entry.ordinal },
+          row: detached.value,
+        })).value,
+      );
     }
-    target.rows.push({ ordinal: row.ordinal, row: { ...row.row } });
-  }
-  return {
-    bucketCount,
-    buckets: [...buckets.values()].sort((left, right) => left.bucket - right.bucket),
-  };
+    const directory = scope.allocate(
+      c.array + buckets.size * c.arraySlot,
+      "window partition output directory",
+      () => [...buckets.values()],
+    ).value;
+    const sort = scratch.reserve(directory.length * c.arraySlot, "window partition ordering");
+    try {
+      directory.sort((left, right) => left.bucket - right.bucket);
+    } finally {
+      sort.release();
+    }
+    return scope.allocate(c.object + 2 * c.property, "window partition partial", () => ({
+      bucketCount,
+      buckets: directory,
+    })).value;
+  });
 }
 
 export async function evaluateWindowWorkUnitPartials(
@@ -167,10 +205,41 @@ export function windowPartitionBucket(
   row: Row,
   windows: Record<string, WindowExpr>,
   bucketCount: number,
+  parent?: MemoryScope,
 ): number {
   validateBucketCount(bucketCount);
-  const key = windowPartitionKey(row, windows);
-  return hashString(key) % bucketCount;
+  // The key is consumed synchronously; per-row expression and normalization
+  // storage must not accumulate with the retained partial.
+  const temporary = parent?.childScope();
+  try {
+    return withWindowResultScope(
+      temporary === undefined ? {} : { resultScope: temporary },
+      (scope) => {
+        const keys = scope.allocate(
+          c.array,
+          "window partition keys",
+          () => [] as unknown[][],
+        ).value;
+        for (const alias in windows) {
+          if (!Object.hasOwn(windows, alias)) continue;
+          const expr = windows[alias];
+          if (expr === undefined) continue;
+          const values = scope.allocate(
+            c.arraySlot + c.array + expr.over.partitionBy.length * c.arraySlot,
+            "window partition expressions",
+            () =>
+              expr.over.partitionBy.map((part) =>
+                snapshotScalarWithAdmission(evaluate(part, row, scope), scope),
+              ),
+          ).value;
+          keys.push(values);
+        }
+        return hashString(internStableDataKey(keys, scope)) % bucketCount;
+      },
+    );
+  } finally {
+    temporary?.dispose();
+  }
 }
 
 function validateBucketCount(bucketCount: number): void {
@@ -181,13 +250,6 @@ function validateBucketCount(bucketCount: number): void {
       { bucketCount },
     );
   }
-}
-
-function windowPartitionKey(row: Row, windows: Record<string, WindowExpr>): string {
-  const keys = Object.values(windows).map((expr) =>
-    expr.over.partitionBy.map((part) => jsonSafeValue(evaluate(part, row))),
-  );
-  return stableStringify(keys);
 }
 
 function hashString(value: string): number {

@@ -80,7 +80,12 @@ export type {
   ReadParquetOptions,
 } from "./types.js";
 export type { WindowParquetTasksOptions } from "./window-task.js";
-export { windowParquetTask, windowParquetTasks } from "./window-task.js";
+export {
+  windowParquetTask,
+  windowParquetTaskOwned,
+  windowParquetTasks,
+  windowParquetTasksOwned,
+} from "./window-task.js";
 
 export interface PlanParquetRowGroupsOptions {
   where?: Expr;

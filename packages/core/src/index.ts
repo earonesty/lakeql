@@ -24,6 +24,7 @@ export * from "./memory-store.js";
 export * from "./object-key.js";
 export * from "./object-store-cache.js";
 export * from "./object-store-json-cache.js";
+export { detachOwnedRow } from "./owned-row-detachment.js";
 export { byteView, type OwnedStreamOptions, readOwnedStream } from "./owned-stream.js";
 export { readOwnedStreamWindow } from "./owned-stream-window.js";
 export * from "./physical.js";

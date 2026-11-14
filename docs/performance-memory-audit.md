@@ -1,6 +1,6 @@
 # Performance and memory budget audit
 
-Latest targeted evidence: `docs/validation/work-unit-failure-drain-2026-11-14.json`. Task merge admission: `docs/validation/window-task-sparse-buckets-2026-11-14.json`. Last full release gates: `docs/validation/release-refresh-2026-11-14.json`. Full release acceptance remains open.
+Latest execution evidence: `docs/validation/owned-parquet-window-tasks-2026-11-14.json`. Partition admission: `docs/validation/window-task-partition-admission-2026-11-14.json`. Failure lifetime: `docs/validation/work-unit-failure-drain-2026-11-14.json`. Task merge admission: `docs/validation/window-task-sparse-buckets-2026-11-14.json`. Last full release gates: `docs/validation/release-refresh-2026-11-14.json`. Full release acceptance remains open.
 
 LakeQL has further opportunities to remove repeated whole-state work from per-row
 execution. The highest-value work is shared incremental memory accounting, followed

@@ -11,7 +11,7 @@ import type { Row } from "./types.js";
 
 /** Synchronous kernels transfer plain results at return, unless a caller keeps
  * an explicit result scope through streaming or asynchronous checkpoint writes. */
-export function withWindowResultScope<T extends readonly unknown[]>(
+export function withWindowResultScope<T>(
   options: { memoryBudget?: MemoryBudget; resultScope?: MemoryScope },
   run: (scope: MemoryScope) => T,
 ): T {

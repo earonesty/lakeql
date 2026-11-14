@@ -1,0 +1,24 @@
+{
+  "change": "Window task partitioning accepts execution budget/result ownership options. Sparse buckets, row copies, copied ordinals and result directories are admitted before construction. Partition expressions use scoped evaluation and existing scalar snapshot normalization plus stable-key admission; temporary keys are released per row. Parquet forwards its caller budget into partitioning. The common synchronous result-scope helper now supports records as well as arrays.",
+  "validation": {
+    "typescriptBuild": "passed",
+    "formatting": "passed",
+    "targetedTests": 19,
+    "edgeCases": [
+      "measured partition peak succeeds, peak minus one rejects without leaked charges",
+      "oversized replace expression rejects under 64 KiB",
+      "100 key probes release all scratch each time",
+      "existing large sparse bucket, mutable payload, ordering and Parquet task fixtures"
+    ],
+    "broaderWindowWorkUnitTests": {
+      "files": 31,
+      "passed": 268
+    }
+  },
+  "remaining": [
+    "Parquet scan buffers and partial lifetime across asynchronous task completion remain unowned; partition construction admission does not close that lifecycle gap.",
+    "Transport replacement allocation and core scanner owned-task capability remain open.",
+    "No whole-query or production Worker heap cap is claimed."
+  ],
+  "followupEvidence": "docs/validation/owned-parquet-window-tasks-2026-11-14.json"
+}

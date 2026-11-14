@@ -21,6 +21,7 @@ import {
   scanParquetTaskColumnBatches,
   windowParquetTask,
   windowParquetTasks,
+  windowParquetTasksOwned,
   writeParquet,
 } from "./index.js";
 import { testQueryStats } from "./test-helpers.js";
@@ -434,4 +435,63 @@ it("shares the caller allocation budget with window indexes after task fan-in", 
     expect(pool.peakBytes).toBeLessThanOrEqual(cap);
     expect(pool.usedBytes).toBe(0);
   }
+});
+
+it.each([
+  false,
+  true,
+])("retains task storage across a delayed transport boundary (failure=%s)", async (fail) => {
+  const store = memoryStore();
+  await writeParquet(store, "owned-window.parquet", {
+    rowGroupSize: [2],
+    columnData: [{ name: "key", data: [1, 2] }],
+  });
+  const tasks: TaskInput[] = [
+    {
+      path: "owned-window.parquet",
+      rowGroupRanges: [{ start: 0, end: 1 }],
+      projectedColumns: ["key"],
+      partitionValues: {},
+    },
+  ];
+  const windows = {
+    rn: { fn: "row_number", args: [], over: { partitionBy: [], orderBy: [{ expr: col("key") }] } },
+  } satisfies Record<string, import("lakeql-core").WindowExpr>;
+  const pool = new MemoryBudget(1024 * 1024);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let entered!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const pending = windowParquetTasksOwned(store, tasks, windows, {
+    memoryBudget: pool,
+    async partialBoundary(partial) {
+      entered();
+      await gate;
+      if (fail) throw new Error("transport failed");
+      return jsonWorkUnitBoundary(partial);
+    },
+  });
+  const outcome = pending.then(
+    (value) => ({ value }),
+    (error: unknown) => ({ error }),
+  );
+  await ready;
+  expect(pool.usedBytes).toBeGreaterThan(0);
+  expect(() => pool.reserve(pool.availableBytes + 1, "competing job")).toThrow(/budget/i);
+  release();
+  const result = await outcome;
+  if ("error" in result) {
+    expect(fail).toBe(true);
+    expect(result.error).toEqual(new Error("transport failed"));
+  } else {
+    expect(fail).toBe(false);
+    expect(result.value.value.map((row) => row.rn)).toEqual([1, 2]);
+    expect(pool.usedBytes).toBeGreaterThan(0);
+    result.value.release();
+  }
+  expect(pool.usedBytes).toBe(0);
 });

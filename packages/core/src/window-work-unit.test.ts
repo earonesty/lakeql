@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { col } from "./expr.js";
+import { col, lit } from "./expr.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope } from "./memory-scope.js";
 import type { WindowExpr } from "./window.js";
@@ -116,6 +116,53 @@ describe("window work units", () => {
       evaluateWindowWorkUnitPartials([partial], windows, { memoryBudget: small }),
     ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
     expect(small.usedBytes).toBe(0);
+  });
+
+  it("admits partition retention at its measured peak and cleans up failed admission", () => {
+    const rows = [
+      { ordinal: { task: 0, row: 0 }, row: { id: 1, region: "east", bytes: new Uint8Array(8192) } },
+    ];
+    const measured = new MemoryBudget(65536);
+    const expected = partitionWindowWorkUnitRows(rows, windows, 3, { memoryBudget: measured });
+    expect(measured.usedBytes).toBe(0);
+    const exact = new MemoryBudget(measured.peakBytes);
+    expect(partitionWindowWorkUnitRows(rows, windows, 3, { memoryBudget: exact })).toEqual(
+      expected,
+    );
+    expect(exact.usedBytes).toBe(0);
+    const short = new MemoryBudget(measured.peakBytes - 1);
+    expect(() => partitionWindowWorkUnitRows(rows, windows, 3, { memoryBudget: short })).toThrow(
+      /budget/i,
+    );
+    expect(short.usedBytes).toBe(0);
+  });
+
+  it("rejects oversized partition-key expressions and releases per-row scratch", () => {
+    const pool = new MemoryBudget(65536);
+    const scope = new MemoryScope(pool);
+    const expanding: Record<string, WindowExpr> = {
+      rn: {
+        fn: "row_number",
+        args: [],
+        over: {
+          partitionBy: [
+            {
+              kind: "call",
+              fn: "replace",
+              args: [col("region"), lit("x"), lit("a".repeat(50000))],
+            },
+          ],
+          orderBy: [],
+        },
+      },
+    };
+    expect(() => windowPartitionBucket({ region: "xxx" }, expanding, 2, scope)).toThrow(/budget/i);
+    expect(pool.usedBytes).toBe(0);
+    for (let i = 0; i < 100; i++) {
+      windowPartitionBucket({ region: "east" }, windows, 2, scope);
+      expect(pool.usedBytes).toBe(0);
+    }
+    scope.dispose();
   });
 
   it("repartitions rows by window partition key and restores source order after evaluation", async () => {
