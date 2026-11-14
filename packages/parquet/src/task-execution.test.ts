@@ -1027,3 +1027,32 @@ it.each([
     expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
   }
 });
+
+it.each([
+  "rows",
+  "columns",
+] as const)("reads inherited-name physical columns through %s tasks", async (kind) => {
+  const store = memoryStore();
+  await writeParquet(store, "special-column.parquet", {
+    columnData: [{ name: "constructor", type: "INT32", data: [10, 20] }],
+  });
+  const task: TaskInput = {
+    path: "special-column.parquet",
+    rowGroupRanges: [{ start: 0, end: 1 }],
+    projectedColumns: ["constructor", "region"],
+    partitionValues: { region: "west" },
+  };
+  const pool = new MemoryBudget(128 * 1024);
+  const rows = [];
+  if (kind === "rows")
+    for await (const batch of scanParquetTaskBatches(store, task, { memoryBudget: pool }))
+      rows.push(...batch);
+  else
+    for await (const batch of scanParquetTaskColumnBatches(store, task, { memoryBudget: pool }))
+      rows.push(...materializeBatchRows(batch.batch));
+  expect(rows).toEqual([
+    { constructor: 10, region: "west" },
+    { constructor: 20, region: "west" },
+  ]);
+  expect(pool.usedBytes).toBe(0);
+});

@@ -1,0 +1,19 @@
+{
+  "date": "2026-11-14",
+  "changes": [
+    "Share physical-column projection planning between row and column task scans.",
+    "Reuse the caller projection when all requested columns are physical; otherwise admit the filtered array before populating it.",
+    "Remove only own partition properties, so inherited names remain physical columns."
+  ],
+  "validation": {
+    "build": "passed",
+    "targeted_tests": 55,
+    "fixtures": "Real Parquet constructor column [10,20] plus virtual region column succeeds in both row and column task scans.",
+    "allocation_test": "No reservation for unchanged projection; filtered projection storage is charged and releases with scope.",
+    "typecheck": "passed"
+  },
+  "remaining": [
+    "Broader unscoped converter/helper workspace and legacy/spill/resume allocation coverage remain open.",
+    "Final full gates and mixed-job runtime pressure acceptance remain open."
+  ]
+}

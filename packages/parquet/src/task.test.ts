@@ -483,3 +483,22 @@ it("admits aggregate column planning and distinguishes own partition columns", a
   tight.dispose();
   expect(tight.budget.usedBytes).toBe(0);
 });
+
+it("reuses physical projections and admits only filtered projection storage", async () => {
+  const { taskPhysicalReadColumns } = await import("./task.js");
+  const { MemoryBudget, MemoryScope } = await import("lakeql-core");
+  const scope = new MemoryScope(new MemoryBudget(1024));
+  const task: TaskInput = {
+    path: "data",
+    rowGroupRanges: [],
+    projectedColumns: ["constructor", "id"],
+    partitionValues: { region: "west" },
+  };
+  expect(taskPhysicalReadColumns(task, scope)).toBe(task.projectedColumns);
+  expect(scope.budget.usedBytes).toBe(0);
+  task.projectedColumns = ["region", "constructor", "id"];
+  expect(taskPhysicalReadColumns(task, scope)).toEqual(["constructor", "id"]);
+  expect(scope.budget.usedBytes).toBeGreaterThan(0);
+  scope.dispose();
+  expect(scope.budget.usedBytes).toBe(0);
+});

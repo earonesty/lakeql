@@ -25,6 +25,7 @@ import {
   iterateTaskRowWindows,
   type PlanParquetTaskWorkUnitsOptions,
   type ScanParquetTaskOptions,
+  taskPhysicalReadColumns,
   taskReadOptions,
   validateTaskWorkUnitOptions,
 } from "./task.js";
@@ -50,9 +51,7 @@ export async function* scanParquetTaskBatches(
       allowValueCheckedScalarDecimals: true,
       memoryBudget: options.memoryBudget,
     });
-    const physicalColumns = task.projectedColumns?.filter(
-      (column) => !(column in task.partitionValues),
-    );
+    const physicalColumns = taskPhysicalReadColumns(task, scope);
     for (const { rowStart, rowEnd } of iterateTaskRowWindows(metadata, task, scope)) {
       for await (const batch of readParquetObjectBatchesFromFile(
         file,
@@ -92,9 +91,7 @@ export async function* scanParquetTaskColumnBatches(
       allowValueCheckedScalarDecimals: true,
       memoryBudget: options.memoryBudget,
     });
-    const physicalColumns = task.projectedColumns?.filter(
-      (column) => !(column in task.partitionValues),
-    );
+    const physicalColumns = taskPhysicalReadColumns(task, scope);
     for (const { rowStart, rowEnd } of iterateTaskRowWindows(metadata, task, scope)) {
       for await (const batch of readParquetColumnBatchesFromFile(
         file,

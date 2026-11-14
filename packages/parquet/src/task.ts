@@ -337,6 +337,23 @@ export function groupAggregateTasks(tasks: TaskInput[], parent?: MemoryScope): T
   }
 }
 
+/** Reuse the requested projection when no virtual partition columns need removal. */
+export function taskPhysicalReadColumns(task: TaskInput, scope: MemoryScope): string[] | undefined {
+  const requested = task.projectedColumns;
+  if (requested === undefined) return undefined;
+  let count = 0;
+  for (const column of requested) if (!Object.hasOwn(task.partitionValues, column)) count++;
+  if (count === requested.length) return requested;
+  const physical = scope.allocate(
+    c.array + count * c.arraySlot,
+    "task physical projection",
+    () => [] as string[],
+  ).value;
+  for (const column of requested)
+    if (!Object.hasOwn(task.partitionValues, column)) physical.push(column);
+  return physical;
+}
+
 export function aggregateTaskReadColumns(
   task: TaskInput,
   spec: AggregateSpec,
