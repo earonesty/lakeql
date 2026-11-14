@@ -257,5 +257,14 @@
     "capabilities": "Decimal scalar arithmetic kernels, comparison and output exist, but generic expression/order/group/aggregate execution and Parquet decoder hooks remain unintegrated. CPU vector capability declarations do not yet advertise decimal execution; aggregate scalar adapters reject the unsupported shape instead of coercing it. Existing 30 conformance failures remain.",
     "discoveredBoundary": "The in-memory row scanner has no owned-vector scan capability: toOwnedArray rejects for ordinary numeric rows as well as decimals. Verified explicitly. Normal query projection and the owned vector/materialization APIs are validated separately; no claim of owned in-memory query support.",
     "remaining": "Integrate exact decimal reader conversion and generic operator capabilities with independent fixture, cloud/R2, checkpoint and allocation tests. Array/descriptor and native BigInt/GC accounting still do not constitute a portable whole-heap cap."
+  },
+  "binaryVariantDecimalCheckpoint": {
+    "evidence": "conformance-value-parity-2026-11-13.json#binaryVariantDecimalIntegration",
+    "defaultPassed": 2907,
+    "defaultSkipped": 621,
+    "workerPassed": 59,
+    "referencePassed": 104,
+    "buildLintTypecheckCleanInstall": "passed",
+    "detail": "Exact binary-variant decimal scalars now survive public and owned readers, HTTP/native-R2 paths and JSON output. Parser and scalar construction participate in owned read scopes. Independent conformance is 495 passed, 14 failed, 1 skipped; the release gate remains open."
   }
 }

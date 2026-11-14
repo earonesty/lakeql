@@ -1,6 +1,6 @@
 # Performance and memory budget audit
 
-Latest corpus value-parity findings: `docs/validation/conformance-value-parity-2026-11-13.json` (30 failures; release gate remains open).
+Latest corpus value-parity findings: `docs/validation/conformance-value-parity-2026-11-13.json` (14 failures; release gate remains open).
 
 LakeQL has further opportunities to remove repeated whole-state work from per-row
 execution. The highest-value work is shared incremental memory accounting, followed
@@ -32,14 +32,14 @@ from a persistent leak, but does not cap external backing or prove production
 Cloudflare total-memory safety. See the constrained-runtime section below.
 
 Current stream-admission checkpoint (November 13, 2026) passes
-**2,890 default tests** (621 skipped), **57 Worker tests**, and **104 reference
+**2,907 default tests** (621 skipped), **59 Worker tests**, and **104 reference
 tests**, plus TypeScript build, typecheck and lint. These counts are recorded in
 `docs/validation/stream-lifetime-2026-11-13.json`. Distribution build,
 expanded clean npm install smoke checks, compatibility and tracked-file size checks
 also pass. Coverage and fixture reproducibility remain earlier checkpoints that
 require final-revision reruns.
 
-The latest full external conformance checkpoint reports **479 passed, 30 failed,
+The latest full external conformance checkpoint reports **495 passed, 14 failed,
 one skipped**. It checks both reader paths and compares owned values with public
 output, in addition to cardinality and cleanup. Eleven additional differential
 findings were fixed or independently validated as representation differences;

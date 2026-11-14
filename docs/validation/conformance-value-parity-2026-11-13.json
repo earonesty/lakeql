@@ -354,5 +354,40 @@
     ],
     "discoveredDuringTesting": "Compute digit growth as coefficientDigits + (resultScale - inputScale); adding the scale before subtracting can round the size forecast near MAX_SAFE_INTEGER. Tests cover equal extreme scales.",
     "remaining": "The explicit backing forecast is not a portable bound on native BigInt implementation scratch or delayed GC. Division/rounding semantics, generic decimal vector capabilities, comparisons/hash/sort/aggregates, readers and cloud fixture integration remain. The 30 conformance failures are unchanged."
+  },
+  "binaryVariantDecimalIntegration": {
+    "change": "Pinned hyparquet adds an optional decimalFromUnscaled parser hook for binary variant decimal4/8/16 carriers. LakeQL preserves unsafe coefficients as DecimalValue; safe coefficients retain numeric compatibility with correctly rounded scaling. Public decoded-row normalization preserves the scalar class. Owned object/column readers supply scoped parser tables for variant schemas, admitting scalar backing and large-scale formatting scratch before allocation; other schemas reuse shared tables.",
+    "boundary": "Binary variant coefficients have a format-defined 4/8/16-byte extent and a one-byte scale. This integration does not relax the schema guard for ordinary/shredded high-precision decimal leaves, whose conversion and operator contracts still need integration.",
+    "evidence": "../benchmarks/variant-decimal-integrated-2026-11-13.json",
+    "previousEvidence": "../benchmarks/variant-decimal-oracle-2026-11-13.json",
+    "validation": {
+      "defaultPassed": 2907,
+      "defaultSkipped": 621,
+      "focusedParserHttpPassed": 25,
+      "independentDocumentedDecimalPassed": 16,
+      "workerPassed": 59,
+      "referencePassed": 104,
+      "conformancePassed": 495,
+      "conformanceFailed": 14,
+      "conformanceSkipped": 1,
+      "build": "passed",
+      "typecheck": "passed",
+      "lint": "passed",
+      "cleanNpmInstall": "passed"
+    },
+    "edgeCases": [
+      "Signed 32/64/128-bit coefficient extremes",
+      "Scales 0/9/23/255",
+      "Positive and negative safe-integer representation boundaries",
+      "Truncated carriers reject before parser invocation",
+      "Nested scalar class preservation",
+      "Exact and one-byte-short parser/scalar admission; closed scopes reject callbacks",
+      "Non-variant schemas allocate no parser table",
+      "All eight previously rounded real fixture values match documented exact digits through both readers"
+    ],
+    "cloudEvidence": "Real case-070 fixture passes public/owned reads and exact JSON output over HTTP 206 and ignored-range 200 responses. Local workerd native R2 tests exercise 64/128 MiB shared pools, three concurrent owned queries and a cancelled peer, with per-query pool/4 limits and zero final reservations. This is not production Cloudflare total-heap certification.",
+    "distribution": "Clean npm-install smoke reads the real decimal fixture through public and owned APIs and checks exact spelling plus pool cleanup, proving bundled consumers receive the parser patch.",
+    "timeoutObservation": "An initial conformance run concurrent with the default suite timed out on overflow_i16_page_cnt, giving 15 failures. Two subsequent isolated conformance runs passed that case and reported the same 14 remaining failures. No timeout setting or assertion was changed.",
+    "remaining": "Four shredded high-precision decimal fixtures still reject through both readers; ALP, BSON and BROTLI account for six other failures. Generic decimal expression/order/group/aggregate integration and broader decoder/runtime memory accounting remain open. No tests were waived."
   }
 }

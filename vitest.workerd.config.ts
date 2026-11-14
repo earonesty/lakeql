@@ -7,12 +7,20 @@ const dictionaryFixture = new URL(
   import.meta.url,
 );
 
+const decimalFixture = new URL(
+  "./fixtures/external/parquet-testing/shredded_variant/case-070.parquet",
+  import.meta.url,
+);
+
 export default defineConfig({
   plugins: [
     cloudflareTest({
       miniflare: {
         r2Buckets: ["MEMORY_TEST_BUCKET"],
         bindings: {
+          DECIMAL_VARIANT_FIXTURE: existsSync(decimalFixture)
+            ? readFileSync(decimalFixture).toString("base64")
+            : "",
           DICTIONARY_EXTENT_FIXTURE: existsSync(dictionaryFixture)
             ? readFileSync(dictionaryFixture).toString("base64")
             : "",

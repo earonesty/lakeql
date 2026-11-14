@@ -1,8 +1,7 @@
 diff --git a/src/assemble.js b/src/assemble.js
-index 7ca6014024c18e52a22233a8e2efb8052c3a74a7..b9861cc01b231e49d05b2e0f19ec21d2c56d6773 100644
 --- a/src/assemble.js
 +++ b/src/assemble.js
-@@ -83,7 +83,7 @@ export function assembleLists(output, definitionLevels, repetitionLevels, values
+@@ -83,7 +83,7 @@
        // assert(currentDepth === maxDefinitionLevel || currentDepth === repetitionPath.length - 2)
        currentContainer.push(values[valueIndex++])
      } else if (currentDepth === repetitionPath.length - 2) {
@@ -11,7 +10,7 @@ index 7ca6014024c18e52a22233a8e2efb8052c3a74a7..b9861cc01b231e49d05b2e0f19ec21d2
      } else {
        currentContainer.push([])
      }
-@@ -138,15 +138,17 @@ export function assembleNested(subcolumnData, schema, parsers, depth = 0) {
+@@ -138,15 +138,17 @@
      const mapName = schema.children[0].element.name
  
      // Assemble keys and values
@@ -33,7 +32,7 @@ index 7ca6014024c18e52a22233a8e2efb8052c3a74a7..b9861cc01b231e49d05b2e0f19ec21d2
        throw new Error('parquet map column key/value length mismatch')
      }
  
-@@ -211,13 +213,13 @@ function assembleMaps(keys, values, depth) {
+@@ -211,13 +213,13 @@
    const out = []
    for (let i = 0; i < keys.length; i++) {
      if (depth) {
@@ -50,10 +49,9 @@ index 7ca6014024c18e52a22233a8e2efb8052c3a74a7..b9861cc01b231e49d05b2e0f19ec21d2
          }
          out.push(obj)
 diff --git a/src/convert.js b/src/convert.js
-index a16a55f63edd892868b1f8526365b7743bc92ac1..6d6097797d3e11d2a9a105c35ffd8029af7ae3ff 100644
 --- a/src/convert.js
 +++ b/src/convert.js
-@@ -95,6 +95,7 @@ export function convert(data, columnDecoder) {
+@@ -95,6 +95,7 @@
      return arr
    }
    if (!ctype && type === 'INT96') {
@@ -62,10 +60,9 @@ index a16a55f63edd892868b1f8526365b7743bc92ac1..6d6097797d3e11d2a9a105c35ffd8029
    }
    if (ctype === 'DATE') {
 diff --git a/src/plain.js b/src/plain.js
-index 7a513d461704772bbde225525ccf4b66aa8b486e..9961ab91923c67cac24771e95ef06faa4db44f46 100644
 --- a/src/plain.js
 +++ b/src/plain.js
-@@ -90,7 +90,7 @@ function readPlainInt64(reader, count) {
+@@ -90,7 +90,7 @@
  function readPlainInt96(reader, count) {
    const values = new Array(count)
    for (let i = 0; i < count; i++) {
@@ -75,10 +72,9 @@ index 7a513d461704772bbde225525ccf4b66aa8b486e..9961ab91923c67cac24771e95ef06faa
      values[i] = BigInt(high) << 64n | low
    }
 diff --git a/src/schema.js b/src/schema.js
-index 1dd9ae87307f5b04d89248d8ab84dc078d24bf29..3d8cd4a165224b73ae1cafb92ab64ea3ca03812f 100644
 --- a/src/schema.js
 +++ b/src/schema.js
-@@ -107,7 +107,7 @@ export function getMaxDefinitionLevel(schemaPath) {
+@@ -107,7 +107,7 @@
  export function isListLike(schema) {
    if (!schema) return false
    if (schema.element.converted_type !== 'LIST') return false
@@ -87,7 +83,7 @@ index 1dd9ae87307f5b04d89248d8ab84dc078d24bf29..3d8cd4a165224b73ae1cafb92ab64ea3
  
    const firstChild = schema.children[0]
    if (firstChild.children.length > 1) return false
-@@ -125,17 +125,18 @@ export function isListLike(schema) {
+@@ -125,17 +125,18 @@
  export function isMapLike(schema) {
    if (!schema) return false
    if (schema.element.converted_type !== 'MAP') return false
@@ -110,13 +106,14 @@ index 1dd9ae87307f5b04d89248d8ab84dc078d24bf29..3d8cd4a165224b73ae1cafb92ab64ea3
    return true
  }
 diff --git a/src/types.d.ts b/src/types.d.ts
-index e374278e193f7c73d18d20481eeb0d3b83eccf87..436640b4efb77de0ba10fcc250a6df00156e568e 100644
 --- a/src/types.d.ts
 +++ b/src/types.d.ts
-@@ -3,6 +3,8 @@
+@@ -3,6 +3,10 @@
   * Custom parsers for columns
   */
  export interface ParquetParsers {
++  /** Exact signed decimal carrier; binary variant coefficients are at most 128 bits. */
++  decimalFromUnscaled?(coefficient: bigint, scale: number): any
 +  /** Signed 96-bit physical carrier before Julian-day interpretation. */
 +  timestampFromInt96?(physical: bigint): any
    timestampFromMilliseconds(millis: bigint): any
@@ -125,7 +122,7 @@ index e374278e193f7c73d18d20481eeb0d3b83eccf87..436640b4efb77de0ba10fcc250a6df00
 diff --git a/src/variant.js b/src/variant.js
 --- a/src/variant.js
 +++ b/src/variant.js
-@@ -73,9 +73,10 @@ function decodeTypedValue(typedValue, metadata, parsers) {
+@@ -73,9 +73,10 @@
      return result
    }
  
@@ -138,3 +135,43 @@ diff --git a/src/variant.js b/src/variant.js
    }
  
    // Arrays
+@@ -208,11 +209,11 @@
+     return value
+   }
+   case 8:
+-    return readVariantDecimal(reader, 4)
++    return readVariantDecimal(reader, 4, parsers)
+   case 9:
+-    return readVariantDecimal(reader, 8)
++    return readVariantDecimal(reader, 8, parsers)
+   case 10:
+-    return readVariantDecimal(reader, 16)
++    return readVariantDecimal(reader, 16, parsers)
+   case 11: {
+     const value = reader.view.getInt32(reader.offset, true)
+     reader.offset += 4
+@@ -331,9 +332,10 @@
+ /**
+  * @param {DataReader} reader
+  * @param {number} width
+- * @returns {number}
+- */
+-function readVariantDecimal(reader, width) {
++ * @param {ParquetParsers} parsers
++ * @returns {any}
++ */
++function readVariantDecimal(reader, width, parsers) {
+   const scale = reader.view.getUint8(reader.offset)
+   reader.offset += 1
+   let unscaled
+@@ -350,7 +352,9 @@
+     reader.offset += 16
+   }
+ 
+-  return Number(unscaled) * 10 ** -scale
++  return parsers.decimalFromUnscaled
++    ? parsers.decimalFromUnscaled(unscaled, scale)
++    : Number(unscaled) * 10 ** -scale
+ }
+ 
+ /**

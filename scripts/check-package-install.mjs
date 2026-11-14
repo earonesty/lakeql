@@ -38,6 +38,10 @@ try {
     readFileSync(join(root, "fixtures/external/parquet-testing/shredded_variant/case-030.parquet")),
   );
   writeFileSync(
+    join(consumerDirectory, "variant-decimal.parquet"),
+    readFileSync(join(root, "fixtures/external/parquet-testing/shredded_variant/case-070.parquet")),
+  );
+  writeFileSync(
     join(consumerDirectory, "smoke.mjs"),
     `import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
@@ -100,6 +104,13 @@ assert.equal(pool.usedBytes, 0);
 const cancelled = lake.path("nation.parquet").batchSize(1).streamNdjson().getReader();
 assert.equal((await cancelled.read()).done, false);
 await cancelled.cancel();
+assert.equal(pool.usedBytes, 0);
+await store.put("variant-decimal.parquet", readFileSync(new URL("variant-decimal.parquet", import.meta.url)));
+const decimalFixtureRows = await readParquetObjects(store, "variant-decimal.parquet");
+assert.equal(String(decimalFixtureRows[0].var), "123456789.987654321");
+const decimalFixtureOwned = await lake.path("variant-decimal.parquet").run().toOwnedArray();
+assert.equal(String(decimalFixtureOwned.value[0].var), "123456789.987654321");
+decimalFixtureOwned.release();
 assert.equal(pool.usedBytes, 0);
 const exactDecimal = decimalFromParts(123456789987654321n, 9);
 const decimalRows = materializeBatchRows(batchFromColumns({ amount: [exactDecimal, null] }));

@@ -1,6 +1,7 @@
 /// <reference types="@cloudflare/vitest-pool-workers/types" />
 import { env } from "cloudflare:test";
 import {
+  decimalFromParts,
   eq,
   gatherOwnedBatch,
   Lake,
@@ -874,6 +875,54 @@ it
       const iterator = lake.path(path).batchSize(1).run().rows()[Symbol.asyncIterator]();
       expect((await iterator.next()).value).toEqual(expected[0]);
       await iterator.return?.();
+      expect(pool.usedBytes).toBe(0);
+      expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
+    } finally {
+      await store.delete(path);
+    }
+  },
+);
+
+const decimalVariantFixture = (env as unknown as { DECIMAL_VARIANT_FIXTURE: string })
+  .DECIMAL_VARIANT_FIXTURE;
+it.skipIf(!decimalVariantFixture).each([64, 128])(
+  "preserves exact binary-variant decimals through concurrent native R2 reads (%i MiB)",
+  async (mib) => {
+    const bucket = (env as unknown as { MEMORY_TEST_BUCKET: R2BucketLike }).MEMORY_TEST_BUCKET;
+    const store = new R2ObjectStore(bucket);
+    const path = `exact-decimal-${mib}.parquet`;
+    await store.put(
+      path,
+      Uint8Array.from(atob(decimalVariantFixture), (char) => char.charCodeAt(0)),
+    );
+    const pool = new MemoryBudget(mib * 1024 * 1024);
+    try {
+      const expected = [{ id: 1, var: decimalFromParts(123456789987654321n, 9) }];
+      expect(await readParquetObjects(store, path)).toEqual(expected);
+      const lake = createParquetLake({
+        store,
+        memoryPool: pool,
+        scanRangeCache: { maxBytes: 0 },
+        budget: { maxAllocatedMemoryBytes: pool.maxBytes / 4 },
+      });
+      const cancel = async () => {
+        const iterator = lake.path(path).batchSize(1).run().rows()[Symbol.asyncIterator]();
+        expect((await iterator.next()).value).toEqual(expected[0]);
+        await iterator.return?.();
+      };
+      const [outputs] = await Promise.all([
+        Promise.all([1, 3, 32].map((size) => lake.path(path).batchSize(size).run().toOwnedArray())),
+        cancel(),
+      ]);
+      try {
+        for (const output of outputs) expect(output.value).toEqual(expected);
+      } finally {
+        for (const output of outputs) output.release();
+      }
+      expect(pool.usedBytes).toBe(0);
+      expect(await new Response(lake.path(path).streamJson()).text()).toBe(
+        '[{"id":1,"var":"123456789.987654321"}]',
+      );
       expect(pool.usedBytes).toBe(0);
       expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
     } finally {

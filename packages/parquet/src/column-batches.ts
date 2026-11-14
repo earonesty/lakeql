@@ -178,7 +178,7 @@ export async function readParquetColumnBatch(
       decompressionScope === undefined
         ? lakeqlParquetCompressors
         : scopedParquetCompressors(decompressionScope),
-    parsers: parquetParsersForMetadata(metadata),
+    parsers: parquetParsersForMetadata(metadata, decompressionScope),
     utf8: false,
     onChunk(chunk) {
       appendColumnChunk(columnValues, chunk, rowStart, rowEnd);

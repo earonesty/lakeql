@@ -65,7 +65,10 @@ export async function* readParquetObjectBatchesFromFile(
         rowFormat: "object",
         rowStart,
         rowEnd,
-        parsers: parquetParsersForMetadata(metadata),
+        parsers: parquetParsersForMetadata(
+          metadata,
+          options.allocationScope ?? options.decompressionScope,
+        ),
         utf8: false,
       };
       if (options.columns) readOptions.columns = options.columns;

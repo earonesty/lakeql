@@ -45,13 +45,23 @@ const report = {
   description:
     "Independent documented decimal digits from vendored cases.json, never converted to Number for expected values. Both readers over memoryStore; no cloud/HTTP or whole-heap claim. String comparison is exact for these fixed-form fixture values.",
   node: process.version,
+  sources: Object.fromEntries(
+    [
+      "packages/parquet/src/parsers.ts",
+      "packages/parquet/src/decoded-rows.ts",
+      "packages/parquet/src/object-batches.ts",
+      "packages/parquet/src/column-batches.ts",
+      "patches/hyparquet@1.26.0.patch",
+    ].map((path) => [path, createHash("sha256").update(readFileSync(path)).digest("hex")]),
+  ),
   casesSha256: createHash("sha256")
     .update(readFileSync(`${root}cases.json`))
     .digest("hex"),
   results,
 };
 writeFileSync(
-  "docs/benchmarks/variant-decimal-oracle-2026-11-13.json",
+  process.env.LAKEQL_VARIANT_DECIMAL_REPORT ??
+    "docs/benchmarks/variant-decimal-oracle-2026-11-13.json",
   `${JSON.stringify(report, null, 2)}\n`,
 );
 console.log(JSON.stringify(results, null, 2));
