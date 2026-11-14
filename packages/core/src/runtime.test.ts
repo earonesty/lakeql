@@ -160,3 +160,48 @@ it("keeps spill usage exact across replacement, rejection and repeated deletion"
   await spill.delete("a");
   expect(await spill.usage()).toEqual({ entries: 0, byteSize: 0 });
 });
+
+it("stages spill replacement without publishing it and rolls back idempotently", async () => {
+  const { MemorySpillAdapter } = await import("./runtime.js");
+  const spill = new MemorySpillAdapter({ maxBytes: 6 });
+  await spill.write("state", Uint8Array.of(1, 2, 3));
+  await expect(spill.stageWrite("state", new Uint8Array(4))).rejects.toMatchObject({
+    code: "LAKEQL_BUDGET_EXCEEDED",
+  });
+  expect(await spill.usage()).toEqual({ entries: 1, byteSize: 3 });
+  const input = Uint8Array.of(4, 5, 6);
+  const staged = await spill.stageWrite("state", input);
+  input.fill(9);
+  expect(await spill.read("state")).toEqual(Uint8Array.of(1, 2, 3));
+  expect(await spill.usage()).toEqual({ entries: 2, byteSize: 6 });
+  await expect(spill.write("other", Uint8Array.of(1))).rejects.toMatchObject({
+    code: "LAKEQL_BUDGET_EXCEEDED",
+  });
+  await staged.rollback();
+  await staged.rollback();
+  await expect(staged.commit()).rejects.toMatchObject({ code: "LAKEQL_VALIDATION_ERROR" });
+  expect(await spill.usage()).toEqual({ entries: 1, byteSize: 3 });
+  const replacement = await spill.stageWrite("state", Uint8Array.of(4, 5));
+  expect(await replacement.commit()).toEqual({ id: "state", byteSize: 2 });
+  await replacement.commit();
+  await replacement.rollback();
+  expect(await spill.read("state")).toEqual(Uint8Array.of(4, 5));
+  expect(await spill.usage()).toEqual({ entries: 1, byteSize: 2 });
+});
+
+it("does not overwrite a competing spill writer when a staged commit conflicts", async () => {
+  const { MemorySpillAdapter } = await import("./runtime.js");
+  const spill = new MemorySpillAdapter({ maxBytes: 8 });
+  await spill.write("state", Uint8Array.of(1));
+  const first = await spill.stageWrite("state", Uint8Array.of(2));
+  const second = await spill.stageWrite("state", Uint8Array.of(3));
+  await second.commit();
+  await expect(first.commit()).rejects.toMatchObject({ code: "LAKEQL_VALIDATION_ERROR" });
+  await first.rollback();
+  expect(await spill.read("state")).toEqual(Uint8Array.of(3));
+  expect(await spill.usage()).toEqual({ entries: 1, byteSize: 1 });
+  const absent = await spill.stageWrite("new", new Uint8Array(0));
+  await expect(spill.read("new")).rejects.toMatchObject({ code: "LAKEQL_OBJECT_NOT_FOUND" });
+  await absent.commit();
+  expect(await spill.usage()).toEqual({ entries: 2, byteSize: 1 });
+});

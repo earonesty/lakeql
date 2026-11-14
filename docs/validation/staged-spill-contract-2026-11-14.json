@@ -1,0 +1,31 @@
+{
+  "date": "2026-11-14",
+  "changes": [
+    "Add optional SpillAdapter.stageWrite with explicit commit/rollback lifecycle; legacy adapters remain valid.",
+    "Implement staged writes in MemorySpillAdapter, leaving published data readable until commit and checking the observed entry version before replacement.",
+    "Include pending payloads in spill capacity/usage; stage replacement requires capacity for old and new payload overlap.",
+    "Make rollback and successful repeated commit idempotent; rolled-back writes cannot commit. Track version identity separately from payload so transactions do not pin overwritten buffers."
+  ],
+  "validation": {
+    "build": "passed",
+    "targeted_tests": 29,
+    "final_runtime_tests": 9,
+    "cases": [
+      "unpublished staged replacement",
+      "input detachment",
+      "staging overlap rejection preserves existing entry",
+      "pending bytes constrain ordinary writes",
+      "rollback preserves existing entry",
+      "commit replaces and updates ledger",
+      "competing staged commit conflict preserves winner",
+      "zero-byte staged entry"
+    ],
+    "typecheck": "passed"
+  },
+  "remaining": [
+    "Query/window checkpoint writers do not yet use staged writes; cancellation cleanup integration remains open.",
+    "Other spill adapters need explicit staging/conditional-write capabilities or documented legacy behavior.",
+    "Multi-run window checkpoint commit/rollback and failures during commit need full lifecycle validation.",
+    "No claim that adapter payload accounting is a total heap cap."
+  ]
+}
