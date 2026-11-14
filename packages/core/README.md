@@ -72,3 +72,18 @@ budget before returning, and release that retained handle on eviction. Entries
 and their metadata must remain immutable while shared. Legacy `get`/`set` adapters
 remain supported, but their retained allocations are outside this ownership
 contract. The optional methods do not impose a retention policy on those adapters.
+
+Use `memoryPlanningCache({ memoryBudget: pool, maxBytes })` with the same shared
+pool passed to `Lake` to retain bounded discovery metadata between queries.
+`maxBytes` defaults to 64 MiB and remains subject to available shared-pool capacity;
+zero disables retention. Entries use LRU eviction and are reclaimable by sibling
+allocations. `ttlMs` and per-entry `expiresAt` support expiration. `clear()` releases
+cache retention; active owned readers keep their pins until release. Legacy reads
+return independent copies whose lifetime transfers to the caller.
+
+`OwnedEntryCache<T>` provides the same ownership and eviction machinery for other
+value domains. Its required `clone(value, scope)` callback must admit all copied
+storage through the supplied scope. The planning factory supplies this callback
+for object metadata, preserving dates and transport hints. Owned writes borrow
+immutable entries; callers must not mutate retained backing. Cache retention can
+be declined under pressure without failing an owned write.

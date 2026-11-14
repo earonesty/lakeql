@@ -3916,3 +3916,24 @@ allocation accounting. No whole-runtime bound is inferred from this interface.
 
 Build/typecheck passed; focused suites passed 102 tests; full suite passed 3,630
 with 629 skips. Evidence: `docs/validation/owned-planning-cache-contract-2026-11-14.json`.
+
+### 2026-11-14 — bounded shared-pool planning cache adapter
+
+OwnedEntryCache reuses SharedMemoryCache LRU eviction, shared-pool reclamation
+and ownership pins. It charges cache key/directory/record storage alongside the
+retained payload so even empty entries consume capacity. memoryPlanningCache
+supplies the admitted object-metadata copier, preserving dates and range hints.
+Legacy reads/writes copy independently; owned writes retain immutable input in
+the shared pool. Replacement invalidates stale entries even if the new entry
+cannot be retained. Expiry, clear, disabled caching and limit validation are
+explicit contracts. Owned insertion can decline under pressure without failing
+the query. Generic value domains supply an admitted clone callback.
+
+Tests cover pin survival across LRU eviction, shared-pool sibling reclamation,
+legacy copy isolation, expiry, stale replacement removal, actual cold/warm query
+reuse, disabled caching and exact cache capacity versus one byte below including
+metadata/key charges. This is in-process storage evidence; remote cache transport,
+serialization and the broader allocation audit remain open.
+
+Build/typecheck passed; focused suites passed 14 tests; full suite passed 3,637
+with 629 skips. Evidence: `docs/validation/bounded-planning-cache-2026-11-14.json`.
