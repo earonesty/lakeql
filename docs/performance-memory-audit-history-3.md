@@ -5181,3 +5181,24 @@ Evidence: `validation/measured-input-cancellation-2026-11-14.json`.
 Final checks pass all 3,945 regular tests (645 skipped), 90 Worker tests,
 TypeScript build, typecheck and lint. Production source is unchanged from
 `0b74d0e`; earlier full release evidence remains scoped to that runtime.
+
+### Disposed measured-plan retention (2026-11-14)
+
+A forced-GC reachability probe found both compressed input buffers remained
+reachable while a disposed measured numeric plan was held, despite zero admitted
+bytes. Decoder closures retained their input views. Disposal now clears those
+plans, the input owner directory and its source-scope reference. In the same probe
+both buffers collect while the disposed plan remains strongly held. This is a
+Node diagnostic, not a production requirement to force GC or a whole-runtime cap.
+
+All 48 focused tests pass, including independent output lifetimes across plan
+disposal and cancellation under pinned shared pressure. New cleanup cases verify
+that both input releases run if either throws, the first error (including undefined)
+is preserved, and repeated disposal does not release again. The native R2
+cancellation/recovery fixtures remain part of the full release validation.
+Evidence: `validation/measured-plan-retention-2026-11-14.json`.
+
+Full release gates pass: 3,947 regular/coverage tests (645 skipped), 90 Worker
+tests, 520 required conformance cases (one inactive guard skipped), 120 references,
+full build/types, clean 66-package consumer and repository checks. Fixture data
+is unchanged after regeneration. Thresholds and timeouts remain unchanged.

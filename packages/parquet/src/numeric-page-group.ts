@@ -135,10 +135,25 @@ export function planNumericPageGroup(
   async function measureOwned(file: StoreAsyncBuffer, scope: MemoryScope) {
     const inputs: OwnedMemory<Uint8Array>[] = [];
     const measured: NonNullable<ReturnType<typeof planFlatNumericVector>>[] = [];
+    let sourceScope: MemoryScope | undefined = scope;
     let closed = false;
     const dispose = () => {
+      if (closed) return;
       closed = true;
-      for (const input of inputs) input.release();
+      // Decode closures borrow compressed inputs. Detach them even when callers
+      // keep the disposed plan; output owners retain their own backing pins.
+      measured.length = 0;
+      sourceScope = undefined;
+      let failure: { error: unknown } | undefined;
+      for (const input of inputs) {
+        try {
+          input.release();
+        } catch (error) {
+          failure ??= { error };
+        }
+      }
+      inputs.length = 0;
+      if (failure !== undefined) throw failure.error;
     };
     try {
       for (const [i, entry] of entries.entries()) {
@@ -184,9 +199,9 @@ export function planNumericPageGroup(
           _maxConcurrentReads?: number,
           decode: (work: () => Vector) => Vector = (work) => work(),
         ) {
-          if (closed || scope.disposed)
+          if (closed || sourceScope === undefined || sourceScope.disposed)
             throw new LakeqlError("LAKEQL_ABORTED", "Measured numeric inputs disposed");
-          if (target.budget !== scope.budget)
+          if (target.budget !== sourceScope.budget)
             throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Measured numeric job budget changed");
           const group = target.childStage(measuredBytes, "measured numeric decode group");
           const owners: OwnedMemory<Vector>[] = [];

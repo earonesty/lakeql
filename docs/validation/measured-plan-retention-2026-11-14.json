@@ -1,0 +1,59 @@
+{
+  "runtimeBase": "bdd1e5e",
+  "requirements": ["M1", "M2", "V1", "V2"],
+  "finding": "Disposed measured numeric plans retained decoder closures over compressed input buffers after reservations reached zero.",
+  "probe": "node --expose-gc bench/measured-input-retention.mjs",
+  "baseline": {
+    "node": "v24.18.1",
+    "sourceSha256": "9efd4326c0a3e40b5af4c451c9f395d241bd4d92f6bc49b63e712c0d5cea925a",
+    "heldDisposedPlans": 1,
+    "inputBuffers": 2,
+    "collected": [false, false],
+    "finalAdmittedBytes": 0,
+    "limitation": "Forced-GC Node reachability diagnostic; not a production GC requirement or whole-runtime cap."
+  },
+  "current": {
+    "node": "v24.18.1",
+    "sourceSha256": "41bd8b3acb7f7815293edaa5db7e72bc019e791251249358f61fc2bf4271a82f",
+    "heldDisposedPlans": 1,
+    "inputBuffers": 2,
+    "collected": [true, true],
+    "finalAdmittedBytes": 0,
+    "limitation": "Forced-GC Node reachability diagnostic; not a production GC requirement or whole-runtime cap."
+  },
+  "contract": [
+    "Detach decoder plans, input-owner directory and source-scope reference on disposal.",
+    "Returned vector owners retain independent backing pins.",
+    "Disposal is idempotent and attempts every input release, preserving the first thrown value including undefined."
+  ],
+  "focusedPassed": 48,
+  "limits": [
+    "Forced-GC diagnostic establishes reachability under Node, not a production GC requirement or total-memory cap.",
+    "No throughput or public-cloud latency claim.",
+    "Broader allocation coverage and whole-runtime headroom remain open."
+  ],
+  "validation": {
+    "regularPassed": 3947,
+    "regularSkipped": 645,
+    "workerPassed": 90,
+    "requiredConformancePassed": 520,
+    "requiredConformanceSkipped": 1,
+    "referencePassed": 120,
+    "coverage": {
+      "statements": 91.39,
+      "branches": 85.54,
+      "functions": 95.9,
+      "lines": 93.19
+    },
+    "build": "passed",
+    "typecheck": "passed",
+    "cleanConsumer": "passed; 66 installed packages",
+    "lint": "passed",
+    "compatibility": "passed",
+    "largeFiles": "passed",
+    "changeset": "passed",
+    "fixtureReproducibility": "passed; no data diff",
+    "thresholdsAndTimeouts": "unchanged",
+    "workerDiagnostics": "Deliberately cancelled native R2 streams emit pump canceled; assertions pass."
+  }
+}

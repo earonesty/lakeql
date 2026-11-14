@@ -10,7 +10,7 @@ import {
   memoryStore,
   SharedMemoryCache,
 } from "lakeql-core";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { MemoryStageScheduler } from "../../core/dist/memory-stage-scheduler.js";
 import { DecodedColumnCache } from "./decoded-column-cache.js";
 import { readParquetMetadataFromFile } from "./metadata-cache.js";
@@ -1546,4 +1546,52 @@ it.each([
     pinned.release();
   }
   expect(pool.usedBytes).toBe(0);
+});
+
+it.each([
+  new Error("first release failed"),
+  undefined,
+])("drains measured inputs once after a release throws %s", async (failure) => {
+  const { file, plan } = await fixture(1, 1 << 20, "ZSTD");
+  const scope = new MemoryScope(new MemoryBudget(plan.bytes));
+  const childStage = scope.childStage.bind(scope);
+  let releases = 0;
+  const spy = vi.spyOn(scope, "childStage").mockImplementation((...args) => {
+    const child = childStage(...args);
+    const retain = child.retainAllocations.bind(child);
+    child.retainAllocations = <T>(value: T) => {
+      const owner = retain(value);
+      return {
+        ...owner,
+        release() {
+          owner.release();
+          releases++;
+          if (releases === 1) throw failure;
+          throw new Error("later release failed");
+        },
+      };
+    };
+    return child;
+  });
+  try {
+    const measured = await plan.measureOwned(file, scope);
+    let caught = false;
+    try {
+      measured.dispose();
+    } catch (error) {
+      caught = true;
+      expect(error).toBe(failure);
+    }
+    expect(caught).toBe(true);
+    expect(releases).toBe(2);
+    expect(scope.budget.usedBytes).toBe(0);
+    measured.dispose();
+    expect(releases).toBe(2);
+    await expect(measured.executeOwned(file, scope)).rejects.toMatchObject({
+      code: "LAKEQL_ABORTED",
+    });
+  } finally {
+    spy.mockRestore();
+    scope.dispose();
+  }
 });

@@ -399,3 +399,5 @@ Detach released scope ownership graphs, drain all cleanup phases after callback 
 Settle scheduled stages only after cleanup, release failed output before admitting queued work, and preserve scheduler progress through cleanup exceptions, cancellation and reentrant callbacks.
 
 Measure numeric decode inputs once when shared-pool admission still fails after reclamation and active-stage progress. Preserve parallel reads when the conservative plan fits, and never retry execution failures or queue-capacity errors.
+
+Detach compressed-input decoder closures when measured numeric plans are disposed, while preserving independent output ownership and draining input cleanup after release failures.
