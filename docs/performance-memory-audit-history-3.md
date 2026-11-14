@@ -5355,3 +5355,24 @@ Full release gates pass 3,965 regular/coverage tests (645 skipped), 93 Worker te
 full build/types, clean 66-package consumer, lint, compatibility, large-file,
 changeset and deterministic-fixture checks. Thresholds/timeouts are unchanged.
 Evidence: `validation/materialization-column-traversal-2026-11-14.json`.
+
+### Window planning lifetime review (2026-11-14)
+
+Inspection suggested child planning scopes might transfer into retained window
+results. The negative control disproved this: `retainAllocations` captures direct
+allocations, and `withWindowResultScope` disposes children before returning.
+Production code remains unchanged. Three new row/run/vector cases compare retained
+empty output with zero versus sixteen window expressions, including a valid empty
+vector schema. All retain identical output charges.
+
+Three further cases throw during partition evaluation after allocation, assert
+exact error propagation and zero failed-job charges beside a pinned sibling, then
+successfully retry in the same result scope. Output stays charged through disposal.
+All 58 focused and 3,971 regular tests pass (645 regular skips), as do 120 reference
+cases, types and lint. Five native R2 adapter cases and both 64/128 MiB public
+Parquet/R2 fixture cases pass; the latter include four concurrent owned window
+outputs surviving cache eviction (32 unrelated tests filtered out).
+
+This is lifecycle evidence, not a new performance result or runtime-cap proof.
+Full public window lifecycle and broader scaling remain open. Evidence:
+`validation/window-planning-lifecycle-2026-11-14.json`.

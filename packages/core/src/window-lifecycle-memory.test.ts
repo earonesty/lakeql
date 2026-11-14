@@ -101,3 +101,88 @@ it.each([
     Array(5).fill(["id", "p", "key", "amount"]),
   );
 });
+
+it.each([
+  "rows",
+  "runs",
+  "vectors",
+] as const)("%s window results do not retain sort-planning metadata", async (route) => {
+  const retained = async (expressions: Record<string, WindowExpr>) => {
+    const budget = new MemoryBudget(1024 * 1024);
+    const resultScope = new MemoryScope(budget);
+    try {
+      const options = { memoryBudget: budget, resultScope };
+      if (route === "rows") expect(applyWindowsToRows([], expressions, options)).toEqual([]);
+      else if (route === "runs")
+        expect(applyWindowsToRuns([[]], expressions, options)).toEqual([[]]);
+      else
+        expect(
+          await applyWindowsToVectorBatches(
+            [{ batch: batchFromColumns({ p: [], key: [] }) }],
+            expressions,
+            options,
+          ),
+        ).toEqual([]);
+      return budget.usedBytes;
+    } finally {
+      resultScope.dispose();
+      expect(budget.usedBytes).toBe(0);
+    }
+  };
+  const many = Object.fromEntries(
+    Array.from({ length: 16 }, (_, index) => [`rank${index}`, windows.rank as WindowExpr]),
+  );
+  expect(await retained(many)).toBe(await retained({}));
+});
+
+it.each([
+  "rows",
+  "runs",
+  "vectors",
+] as const)("%s window evaluation failure releases scratch and recovers beside a pinned sibling", async (route) => {
+  const pool = new MemoryBudget(1024 * 1024);
+  const sibling = pool.reserve(37, "sibling output");
+  const budget = pool.child(1024 * 1024 - 37);
+  const resultScope = new MemoryScope(budget);
+  const failure = new Error("partition consumer failed");
+  let probes = 0;
+  const execute = async (fail: boolean) => {
+    const options = {
+      memoryBudget: budget,
+      resultScope,
+      enforceWindowPartitionRows: () => {
+        probes++;
+        expect(budget.usedBytes).toBeGreaterThan(0);
+        if (fail) throw failure;
+      },
+    };
+    if (route === "rows") return applyWindowsToRows(fixture, windows, options);
+    const runs = [fixture.slice(0, 2), [], fixture.slice(2)];
+    if (route === "runs") return applyWindowsToRuns(runs, windows, options).flat();
+    return applyWindowsToVectorBatches(
+      runs.map((rows) => ({
+        batch: batchFromColumns(
+          Object.fromEntries(
+            ["id", "p", "key", "amount"].map((key) => [key, rows.map((row) => row[key])]),
+          ),
+        ),
+      })),
+      windows,
+      options,
+    );
+  };
+  try {
+    await expect(execute(true)).rejects.toBe(failure);
+    expect(probes).toBe(1);
+    expect(budget.usedBytes).toBe(0);
+    expect(pool.usedBytes).toBe(37);
+    expect(await execute(false)).toEqual(expected);
+    expect(budget.usedBytes).toBeGreaterThan(0);
+    expect(pool.usedBytes).toBe(budget.usedBytes + 37);
+  } finally {
+    resultScope.dispose();
+    expect(pool.usedBytes).toBe(37);
+    sibling.release();
+    expect(pool.usedBytes).toBe(0);
+  }
+});

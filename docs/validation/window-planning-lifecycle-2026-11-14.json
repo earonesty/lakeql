@@ -1,0 +1,48 @@
+{
+  "runtimeRevision": "8e926e2",
+  "productionCodeChanged": false,
+  "finding": "The hypothesized transfer of window sort-planning metadata into returned output is disproved. MemoryScope.retainAllocations captures direct allocations only; withWindowResultScope disposes child planning scopes before returning. No lifetime rewrite is needed.",
+  "newTests": {
+    "emptyOutputMetadata": {
+      "routes": [
+        "rows",
+        "runs",
+        "vectors"
+      ],
+      "comparison": "Sixteen window expressions retain the same output charge as no expressions for identical empty inputs. Empty vector inputs retain the referenced schema.",
+      "cases": 3
+    },
+    "partitionFailure": {
+      "routes": [
+        "rows",
+        "runs",
+        "vectors"
+      ],
+      "cases": 3,
+      "assertions": [
+        "Callback runs after allocations exist and its exact error propagates.",
+        "All failed-job admission returns to zero while a 37-byte sibling stays pinned.",
+        "The same result scope and budget successfully retry with reference-equal output.",
+        "Successful output remains admitted until disposal; final pool usage is zero."
+      ]
+    }
+  },
+  "validation": {
+    "focusedPassed": 58,
+    "regularPassed": 3971,
+    "regularSkipped": 645,
+    "nativeR2AdapterPassed": 5,
+    "nativeR2WindowPassed": 2,
+    "nativeR2WindowFilteredOut": 32,
+    "referencePassed": 120,
+    "typecheck": "passed",
+    "lint": "passed"
+  },
+  "nativeFixture": "packages/parquet/src/index.workerd.ts: owns deferred top-k over native R2 with a %s MiB shared pool; includes four concurrent owned window queries, 64/128 MiB admission pools, real generated Parquet in emulated R2, cache eviction and retained output assertions.",
+  "boundaries": [
+    "No new benchmark or speedup claim: runtime code is unchanged.",
+    "Native emulated R2 differs from public remote cloud latency and production memory accounting.",
+    "These cases strengthen F4 lifetime evidence without proving complete public window lifecycle, broader scaling, or whole-runtime memory caps.",
+    "Full coverage/build/conformance release gates were verified on runtime revision 8e926e2; this test-only follow-up reruns regular, targeted native, reference, types and lint checks."
+  ]
+}
