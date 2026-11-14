@@ -1,0 +1,236 @@
+diff --git a/packages/core/src/scalar-read-workspace.test.ts b/packages/core/src/scalar-read-workspace.test.ts
+index b9e9d1d..96f5390 100644
+--- a/packages/core/src/scalar-read-workspace.test.ts
++++ b/packages/core/src/scalar-read-workspace.test.ts
+@@ -138,3 +138,91 @@ it("handles union leaves and reversed extents within one admitted stage", () =>
+   expect(pool.peakBytes).toBe(pool.maxBytes);
+   expect(pool.usedBytes).toBe(0);
+ });
++
++it("reuses only the immutable right scalar while retaining a bounded live pair", () => {
++  const vector = packed([1, 2, 200]);
++  const scope = new MemoryScope(new MemoryBudget(4096));
++  const reader = new ScalarReadWorkspace(scope);
++  reader.reuseImmutableRight();
++  const decode = vi.spyOn(TextDecoder.prototype, "decode");
++  try {
++    for (let i = 0; i < 1000; i++)
++      expect(reader.consume(vector, i % 2, 2, (a, b) => String(a).length - String(b).length)).toBe(
++        i % 2 ? -198 : -199,
++      );
++    expect(decode).toHaveBeenCalledTimes(1001);
++    expect(scope.budget.peakBytes).toBe(c.object + 4 * c.property + bytes(2) + bytes(200));
++  } finally {
++    decode.mockRestore();
++    reader.dispose();
++    scope.dispose();
++  }
++  expect(scope.budget.usedBytes).toBe(0);
++});
++
++it("drops optional reuse metadata to admit a larger required pair at the original exact cap", () => {
++  const pool = new MemoryBudget(37 + bytes(1) + bytes(400));
++  const sibling = pool.reserve(37, "sibling");
++  const scope = new MemoryScope(pool);
++  const reader = new ScalarReadWorkspace(scope);
++  reader.reuseImmutableRight();
++  const vector = packed([1, 2, 400]);
++  expect(reader.consume(vector, 0, 1, (a, b) => String(a).length - String(b).length)).toBe(-1);
++  expect(reader.consume(vector, 0, 2, (a, b) => String(a).length - String(b).length)).toBe(-399);
++  expect(pool.peakBytes).toBe(pool.maxBytes);
++  reader.dispose();
++  scope.dispose();
++  expect(pool.usedBytes).toBe(37);
++  sibling.release();
++});
++
++it("declines optional reuse inside a fixed admitted stage", () => {
++  const pool = new MemoryBudget(bytes(1) + bytes(200));
++  const parent = new MemoryScope(pool);
++  const stage = parent.childStage(pool.maxBytes, "fixed comparison stage");
++  const reader = new ScalarReadWorkspace(stage);
++  reader.reuseImmutableRight();
++  expect(
++    reader.consume(packed([1, 200]), 0, 1, (a, b) => String(a).length - String(b).length),
++  ).toBe(-199);
++  reader.dispose();
++  stage.dispose();
++  parent.dispose();
++  expect(pool.usedBytes).toBe(0);
++});
++
++it("invalidates reused values across vectors and releases them on consumer failure", () => {
++  const scope = new MemoryScope(new MemoryBudget(4096));
++  const reader = new ScalarReadWorkspace(scope);
++  reader.reuseImmutableRight();
++  expect(reader.consume(packed([1, 2]), 0, 1, (a, b) => String(a).length - String(b).length)).toBe(
++    -1,
++  );
++  const next = packed([1, 200]);
++  expect(reader.consume(next, 0, 1, (a, b) => String(a).length - String(b).length)).toBe(-199);
++  expect(() =>
++    reader.consume(next, 0, 1, () => {
++      throw new Error("consumer failure");
++    }),
++  ).toThrow("consumer failure");
++  expect(scope.budget.usedBytes).toBe(0);
++  reader.dispose();
++  scope.dispose();
++});
++
++it("keeps mutable borrowed reads fresh when reuse is not enabled", () => {
++  const vector: Vector = {
++    type: "utf8-view",
++    data: Uint8Array.of(97, 98),
++    fixedLength: 1,
++    length: 2,
++  };
++  const scope = new MemoryScope(new MemoryBudget(4096));
++  const reader = new ScalarReadWorkspace(scope);
++  expect(reader.consume(vector, 0, 1, (a, b) => String(a).localeCompare(String(b)))).toBe(-1);
++  vector.data[1] = 96;
++  expect(reader.consume(vector, 0, 1, (a, b) => String(a).localeCompare(String(b)))).toBe(1);
++  reader.dispose();
++  scope.dispose();
++  expect(scope.budget.usedBytes).toBe(0);
++});
+diff --git a/packages/core/src/scalar-read-workspace.ts b/packages/core/src/scalar-read-workspace.ts
+index bf69ed9..2654f67 100644
+--- a/packages/core/src/scalar-read-workspace.ts
++++ b/packages/core/src/scalar-read-workspace.ts
+@@ -1,3 +1,4 @@
++import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
+ import { scalarVectorValue, type Vector } from "./batch.js";
+ import { LakeqlError } from "./errors.js";
+ import type { Scalar } from "./expr.js";
+@@ -16,8 +17,32 @@ export class ScalarReadWorkspace implements VectorAllocator {
+   private active = false;
+   private closed = false;
+ 
++  private retainedRight:
++    | { vector: Vector; index: number; value: Scalar; bytes: number }
++    | undefined;
++  private retainedMetadata: MemoryReservation | undefined;
++  private reuse = false;
++
+   constructor(private readonly scope: MemoryScope) {}
+ 
++  /** Opt in only while the source is immutable and repeated right operands are
++   * expected. Fixed stage allowances cannot refund optional storage. */
++  reuseImmutableRight(): void {
++    this.requireOpen();
++    this.reuse = !this.scope.hasAdmission;
++  }
++
++  clearReuse(): void {
++    this.dropRetainedRight();
++  }
++
++  private dropRetainedRight(): void {
++    this.retainedRight = undefined;
++    this.retainedMetadata?.release();
++    this.retainedMetadata = undefined;
++    this.reuse = false;
++  }
++
+   consume(
+     vector: Vector,
+     left: number,
+@@ -30,7 +55,47 @@ export class ScalarReadWorkspace implements VectorAllocator {
+     this.active = true;
+     this.used = 0;
+     try {
+-      return compare(scalarVectorValue(vector, left, this), scalarVectorValue(vector, right, this));
++      // Stage allowances are consumed rather than refunded on release, so
++      // optional metadata must not spend capacity promised to required reads.
++      if (this.scope.hasAdmission) this.dropRetainedRight();
++      if (!this.reuse)
++        return compare(
++          scalarVectorValue(vector, left, this),
++          scalarVectorValue(vector, right, this),
++        );
++      if (!this.retainedMetadata) {
++        try {
++          this.retainedMetadata = this.scope.reserve(
++            c.object + 4 * c.property,
++            "retained comparison scalar metadata",
++          );
++        } catch (error) {
++          if (!(error instanceof LakeqlError) || error.code !== "LAKEQL_BUDGET_EXCEEDED")
++            throw error;
++          this.dropRetainedRight();
++        }
++      }
++      const hit = this.retainedRight?.vector === vector && this.retainedRight.index === right;
++      let rightValue: Scalar = hit ? (this.retainedRight?.value ?? null) : null;
++      let rightBytes = hit ? (this.retainedRight?.bytes ?? 0) : 0;
++      if (this.retainedRight) this.retainedRight.value = null;
++      this.used = rightBytes;
++      const leftValue = scalarVectorValue(vector, left, this);
++      if (!hit) {
++        const before = this.used;
++        rightValue = scalarVectorValue(vector, right, this);
++        rightBytes = this.used - before;
++      }
++      const result = compare(leftValue, rightValue);
++      if (this.reuse) {
++        if (this.retainedRight) {
++          this.retainedRight.vector = vector;
++          this.retainedRight.index = right;
++          this.retainedRight.value = rightValue;
++          this.retainedRight.bytes = rightBytes;
++        } else this.retainedRight = { vector, index: right, value: rightValue, bytes: rightBytes };
++      }
++      return result;
+     } catch (error) {
+       this.release();
+       throw error;
+@@ -49,7 +114,19 @@ export class ScalarReadWorkspace implements VectorAllocator {
+     if (!Number.isSafeInteger(bytes) || bytes < 0 || !Number.isSafeInteger(needed))
+       throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Invalid scalar read extent");
+     if (needed > this.capacity) {
+-      const extra = this.scope.reserve(needed - this.capacity, "scalar comparison growth");
++      let extra: MemoryReservation;
++      try {
++        extra = this.scope.reserve(needed - this.capacity, "scalar comparison growth");
++      } catch (error) {
++        if (
++          !this.retainedMetadata ||
++          !(error instanceof LakeqlError) ||
++          error.code !== "LAKEQL_BUDGET_EXCEEDED"
++        )
++          throw error;
++        this.dropRetainedRight();
++        extra = this.scope.reserve(needed - this.capacity, "scalar comparison growth");
++      }
+       try {
+         this.backing = this.backing === undefined ? extra : this.backing.merge(extra);
+       } catch (error) {
+@@ -77,6 +154,7 @@ export class ScalarReadWorkspace implements VectorAllocator {
+   }
+ 
+   private release(): void {
++    this.dropRetainedRight();
+     this.backing?.release();
+     this.backing = undefined;
+     this.capacity = 0;
+diff --git a/packages/core/src/vector-sort.ts b/packages/core/src/vector-sort.ts
+index b4eb54b..81a42dc 100644
+--- a/packages/core/src/vector-sort.ts
++++ b/packages/core/src/vector-sort.ts
+@@ -167,6 +167,7 @@ export function vectorTopKOwnedBatch(
+           index = parent;
+         }
+         heap[index] = row;
++        if (size === capacity && capacity < selectedRows) reader.reuseImmutableRight();
+       } else if (compare(row, heap[0] as number) < 0) {
+         let index = 0;
+         while (index * 2 + 1 < size) {
+@@ -181,6 +182,7 @@ export function vectorTopKOwnedBatch(
+         heap[index] = row;
+       }
+     }
++    reader.clearReuse();
+     // In-place heap sort keeps ordering workspace inside the admitted buffer.
+     for (let end = size - 1; end > 0; end--) {
+       const value = heap[end] as number;

@@ -1,0 +1,2624 @@
+{
+  "sourceCommit": "384c4f5ffcdf36d2539553f3bf52283cdbd7ca31",
+  "node": "v24.18.1",
+  "matrix": "cardinality",
+  "comparison": {
+    "baselineRevision": "384c4f5ffcdf36d2539553f3bf52283cdbd7ca31",
+    "baselineSourceHashes": {
+      "scalar-read-workspace": "38a739453cea0a7a0d217cf58ace46162a848c5ac10ca36af58ec0979e11ac6c",
+      "vector-sort": "4427f29e2fabb7187a85c0fdb8b8c2887fed76e800909b3dcbb8a58da4d4fbbd"
+    },
+    "candidateModuleHashes": {
+      "scalar-read-workspace": "92951985c5ee36294609bbe3298fdf1324182e92be820725153ae7d99ac2aa37",
+      "vector-sort": "9ae5cb826f6dc7327b083c7eaefb7625b5f86a256191095f7195c5dbfde1155b"
+    },
+    "variants": {
+      "direct": "baseline reader and top-k implementation",
+      "scalarReuse": "current built reader and top-k implementation"
+    },
+    "limitation": "Baseline reader/top-k modules use current unchanged dependencies; this is a two-module comparison, not a historical whole-revision build.",
+    "provenanceNote": "Equivalent baseline sources were transpiled by the initial helper; final candidate modules match the hashes recorded by the subsequent shapes helper run.",
+    "reportNote": "Descriptive metadata was normalized after measurement; original harness digest and raw timings are preserved. Prototype was rejected and reverted."
+  },
+  "harnessSha256": "caeb7ea43ddf7bb551bf38527ec5d00b6143868323ba4871eb3f99e067820be9",
+  "description": "Alternating unchanged scalar-reader/top-k modules against the experimental current-right scalar memo. Reuse is enabled only after the candidate heap fills and disabled before final sorting. No whole-column or dictionary decoding cache is built. Matrix/cardinality, source/oracle exclusions and measured sample conditions otherwise match the shared harness.",
+  "limitations": [
+    "Sequential synchronous Node selections with retained outputs model reuse/overlap, not asynchronous cloud jobs.",
+    "Unicode allocation uses a conservative UTF16 upper bound derived from UTF8 bytes; runtime/native/GC overhead and oracle memory are outside reservation accounting.",
+    "Experimental cache only; no production policy or timing threshold inferred from one run."
+  ],
+  "results": [
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 32,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 64,
+      "selectionStride": 1,
+      "variants": {
+        "direct": {
+          "medianMs": 3.570081500000015,
+          "incrementalPeak": 988,
+          "decodedValues": null,
+          "samplesMs": [
+            5.005030000000005, 3.510464000000013, 3.349109999999996, 3.688459999999992,
+            3.6296990000000164, 3.279989999999998
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 2.710501999999991,
+          "incrementalPeak": 1308,
+          "decodedValues": null,
+          "samplesMs": [
+            3.2951479999999833, 2.9220650000000035, 2.907307000000003, 2.513696999999979,
+            2.1619039999999927, 2.3434959999999876
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 94764,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 32,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 64,
+      "selectionStride": 1,
+      "variants": {
+        "direct": {
+          "medianMs": 4.861910499999993,
+          "incrementalPeak": 5264,
+          "decodedValues": null,
+          "samplesMs": [
+            5.185389999999984, 5.0347969999999975, 4.734870999999998, 4.914649999999995,
+            4.585180000000037, 4.809170999999992
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 3.9874175000000207,
+          "incrementalPeak": 5264,
+          "decodedValues": null,
+          "samplesMs": [
+            3.982744000000025, 3.6229660000000194, 3.8960109999999872, 4.555043000000012,
+            3.9920910000000163, 4.947923000000003
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 99040,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 256,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 64,
+      "selectionStride": 1,
+      "variants": {
+        "direct": {
+          "medianMs": 3.590108999999984,
+          "incrementalPeak": 1884,
+          "decodedValues": null,
+          "samplesMs": [
+            8.495416999999975, 3.2864020000000096, 3.073330999999996, 3.8938159999999584,
+            4.50872499999997, 3.221210000000042
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 2.2997734999999864,
+          "incrementalPeak": 2204,
+          "decodedValues": null,
+          "samplesMs": [
+            2.1623440000000187, 2.38886100000002, 2.822528000000034, 2.237946999999963,
+            2.1902769999999805, 2.36160000000001
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 109996,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 256,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 64,
+      "selectionStride": 1,
+      "variants": {
+        "direct": {
+          "medianMs": 4.899792000000019,
+          "incrementalPeak": 27664,
+          "decodedValues": null,
+          "samplesMs": [
+            4.779966999999999, 4.742425000000026, 4.9320430000000215, 4.867541000000017,
+            4.93746299999998, 6.677391000000057
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 4.101252499999987,
+          "incrementalPeak": 27664,
+          "decodedValues": null,
+          "samplesMs": [
+            4.504728, 4.051735000000008, 4.527770999999973, 4.015525999999966, 3.925446000000022,
+            4.150769999999966
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 135776,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 32,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 64,
+      "selectionStride": 1,
+      "variants": {
+        "direct": {
+          "medianMs": 3.5114264999999705,
+          "incrementalPeak": 1260,
+          "decodedValues": null,
+          "samplesMs": [
+            3.2568469999999934, 3.404604999999947, 3.767488999999955, 3.8215699999999515,
+            3.618247999999994, 3.3262569999999414
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 2.7381395000000452,
+          "incrementalPeak": 1580,
+          "decodedValues": null,
+          "samplesMs": [
+            2.661695000000009, 2.7631870000000163, 2.781480999999985, 2.713092000000074,
+            2.7760510000000522, 2.4567489999999452
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 148172,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 32,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 64,
+      "selectionStride": 1,
+      "variants": {
+        "direct": {
+          "medianMs": 6.561413000000016,
+          "incrementalPeak": 9536,
+          "decodedValues": null,
+          "samplesMs": [
+            9.41559099999995, 9.40945899999997, 5.5896020000000135, 5.777826000000005,
+            6.4526180000000295, 6.670208000000002
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 5.011312500000031,
+          "incrementalPeak": 9536,
+          "decodedValues": null,
+          "samplesMs": [
+            5.085773000000017, 9.358744000000002, 4.905864000000065, 6.6301129999999375,
+            4.888289999999984, 4.936852000000044
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 156448,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 256,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 64,
+      "selectionStride": 1,
+      "variants": {
+        "direct": {
+          "medianMs": 3.550058999999976,
+          "incrementalPeak": 2344,
+          "decodedValues": null,
+          "samplesMs": [
+            4.0644680000000335, 4.201606999999967, 3.4649479999999357, 3.4419659999999794,
+            3.431084999999939, 3.6351700000000164
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 2.650413999999955,
+          "incrementalPeak": 2476,
+          "decodedValues": null,
+          "samplesMs": [
+            2.445228000000043, 2.691090999999915, 2.6097369999999955, 3.330645000000004,
+            3.369519000000082, 2.5879959999999755
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 177928,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 256,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 64,
+      "selectionStride": 1,
+      "variants": {
+        "direct": {
+          "medianMs": 6.59214099999997,
+          "incrementalPeak": 54336,
+          "decodedValues": null,
+          "samplesMs": [
+            6.4014720000000125, 7.189016000000038, 6.456124999999929, 6.160327000000052,
+            6.877007000000049, 6.72815700000001
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 5.573616500000014,
+          "incrementalPeak": 54336,
+          "decodedValues": null,
+          "samplesMs": [
+            5.516885000000002, 5.630348000000026, 5.339160999999876, 5.721581000000015,
+            6.316520999999966, 5.322789000000057
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 229920,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 32,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 64,
+      "selectionStride": 10,
+      "variants": {
+        "direct": {
+          "medianMs": 0.4909250000000611,
+          "incrementalPeak": 988,
+          "decodedValues": null,
+          "samplesMs": [
+            0.587336999999934, 0.4822480000000269, 0.49217799999996714, 0.4896720000001551,
+            0.4851140000000669, 1.6321550000000116
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.3263895000000048,
+          "incrementalPeak": 1308,
+          "decodedValues": null,
+          "samplesMs": [
+            0.33976000000006934, 0.31777899999997317, 0.3175779999999122, 0.3283080000001064,
+            0.32447099999990314, 0.3591870000000199
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 104892,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 32,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 64,
+      "selectionStride": 10,
+      "variants": {
+        "direct": {
+          "medianMs": 1.795568000000003,
+          "incrementalPeak": 5264,
+          "decodedValues": null,
+          "samplesMs": [
+            1.7515000000000782, 2.4890600000001086, 1.7642449999998462, 1.818365999999969,
+            2.013193000000001, 1.7727700000000368
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 1.6455255000000761,
+          "incrementalPeak": 5264,
+          "decodedValues": null,
+          "samplesMs": [
+            1.6942320000000564, 1.6304219999999532, 1.636363000000074, 1.6039220000000114,
+            1.7127570000000105, 1.6546880000000783
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 109168,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 256,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 64,
+      "selectionStride": 10,
+      "variants": {
+        "direct": {
+          "medianMs": 0.4912504999999783,
+          "incrementalPeak": 1884,
+          "decodedValues": null,
+          "samplesMs": [
+            0.5202300000000832, 0.49873999999999796, 0.5025970000001507, 0.4837609999999586,
+            0.47322200000007797, 0.46976500000005217
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.3474949999999808,
+          "incrementalPeak": 2204,
+          "decodedValues": null,
+          "samplesMs": [
+            0.348636999999826, 0.3483770000000277, 0.3516819999999825, 0.3466129999999339,
+            0.3358530000000428, 0.3220369999999093
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 120124,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 256,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 64,
+      "selectionStride": 10,
+      "variants": {
+        "direct": {
+          "medianMs": 1.9085814999999684,
+          "incrementalPeak": 27664,
+          "decodedValues": null,
+          "samplesMs": [
+            4.870816999999988, 1.8876370000000406, 1.86812000000009, 1.9295259999998962,
+            2.0100270000000364, 1.825550000000021
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 1.7187685000000101,
+          "incrementalPeak": 27664,
+          "decodedValues": null,
+          "samplesMs": [
+            1.7599060000000009, 1.6761780000001636, 1.817495000000008, 2.120816999999988,
+            1.6761989999999969, 1.6776310000000194
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 145904,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 32,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 64,
+      "selectionStride": 10,
+      "variants": {
+        "direct": {
+          "medianMs": 0.49401049999994484,
+          "incrementalPeak": 1260,
+          "decodedValues": null,
+          "samplesMs": [
+            0.49581400000010944, 0.49832900000001246, 0.48439299999995455, 0.4703859999999622,
+            0.5200700000000325, 0.49220699999978024
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.3514274999999998,
+          "incrementalPeak": 1580,
+          "decodedValues": null,
+          "samplesMs": [
+            0.3455109999999877, 0.35691300000007686, 0.36226299999998446, 0.3457610000000386,
+            0.3459419999999227, 0.4067259999999351
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 158300,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 32,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 64,
+      "selectionStride": 10,
+      "variants": {
+        "direct": {
+          "medianMs": 2.193467499999997,
+          "incrementalPeak": 9412,
+          "decodedValues": null,
+          "samplesMs": [
+            2.8019490000001497, 2.162475000000086, 2.1644280000000435, 2.9516419999999925,
+            2.2225069999999505, 2.163275999999996
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 2.105908500000055,
+          "incrementalPeak": 9412,
+          "decodedValues": null,
+          "samplesMs": [
+            2.1097360000001117, 2.1020809999999983, 2.483789999999999, 2.2826799999998,
+            2.0842979999999898, 2.0715829999999187
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 166452,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 256,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 64,
+      "selectionStride": 10,
+      "variants": {
+        "direct": {
+          "medianMs": 0.5156165000000783,
+          "incrementalPeak": 2344,
+          "decodedValues": null,
+          "samplesMs": [
+            0.5049710000000687, 0.48414199999979246, 0.48179800000002615, 0.5262620000000879,
+            0.5309600000000501, 1.2137870000001385
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.3611104999999952,
+          "incrementalPeak": 2476,
+          "decodedValues": null,
+          "samplesMs": [
+            0.4774099999999635, 0.3435869999998431, 0.3465230000001611, 0.34341700000004494,
+            0.4090410000001157, 0.37569799999982934
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 188056,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 256,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 64,
+      "selectionStride": 10,
+      "variants": {
+        "direct": {
+          "medianMs": 2.3392274999999927,
+          "incrementalPeak": 52644,
+          "decodedValues": null,
+          "samplesMs": [
+            2.3012659999999414, 6.082361000000219, 5.498751000000084, 2.270417999999836,
+            2.3743939999999384, 2.304061000000047
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 3.7310554999999113,
+          "incrementalPeak": 52644,
+          "decodedValues": null,
+          "samplesMs": [
+            2.501733999999942, 4.945618999999851, 5.017463000000134, 5.658431999999948,
+            2.516491999999971, 2.2976300000000265
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 238356,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 32,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 64,
+      "selectionStride": 100,
+      "variants": {
+        "direct": {
+          "medianMs": 0.10310449999997218,
+          "incrementalPeak": 988,
+          "decodedValues": null,
+          "samplesMs": [
+            0.10377599999992526, 0.10243300000001909, 0.10814400000003843, 0.09834500000010848,
+            0.10094099999992068, 0.10400600000002669
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.08926300000007359,
+          "incrementalPeak": 1308,
+          "decodedValues": null,
+          "samplesMs": [
+            0.08747499999981301, 0.0872349999999642, 0.08979900000008456, 0.09865500000000793,
+            0.08872700000006262, 0.1024729999999181
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 104892,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 32,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 64,
+      "selectionStride": 100,
+      "variants": {
+        "direct": {
+          "medianMs": 0.4904790000000503,
+          "incrementalPeak": 4884,
+          "decodedValues": null,
+          "samplesMs": [
+            0.5656060000001162, 0.4882700000000568, 0.49268800000004376, 0.5314619999999195,
+            0.4795529999998962, 0.48818999999980406
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.5004930000000058,
+          "incrementalPeak": 4884,
+          "decodedValues": null,
+          "samplesMs": [
+            0.49986199999989367, 0.5062239999999747, 0.501124000000118, 0.49290799999994306,
+            0.4726909999999407, 0.5212920000001304
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 108788,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 256,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 64,
+      "selectionStride": 100,
+      "variants": {
+        "direct": {
+          "medianMs": 0.10458649999986847,
+          "incrementalPeak": 1884,
+          "decodedValues": null,
+          "samplesMs": [
+            0.10494699999981094, 0.1025240000001304, 0.11011699999994562, 0.10422599999992599,
+            0.10653099999990445, 0.10014899999987392
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.0964924999999539,
+          "incrementalPeak": 2204,
+          "decodedValues": null,
+          "samplesMs": [
+            0.12373299999990195, 0.09149299999990035, 0.09245400000008885, 0.09964799999988827,
+            0.09677299999998468, 0.09621199999992314
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 120124,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 256,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 64,
+      "selectionStride": 100,
+      "variants": {
+        "direct": {
+          "medianMs": 0.5316665000001422,
+          "incrementalPeak": 23924,
+          "decodedValues": null,
+          "samplesMs": [
+            0.5180259999999635, 0.531020000000126, 0.533245000000079, 0.5323130000001584,
+            0.5545650000001388, 0.49969099999998434
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.5722329999999829,
+          "incrementalPeak": 23924,
+          "decodedValues": null,
+          "samplesMs": [
+            0.5490540000000692, 0.5568889999999556, 0.6287939999999708, 0.5781090000000404,
+            2.043591000000106, 0.5663569999999254
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 142164,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 32,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 64,
+      "selectionStride": 100,
+      "variants": {
+        "direct": {
+          "medianMs": 0.13584149999996953,
+          "incrementalPeak": 1260,
+          "decodedValues": null,
+          "samplesMs": [
+            0.11974499999996624, 0.12544699999989462, 0.12468499999999949, 0.14657599999986815,
+            0.17953800000009323, 0.14623600000004444
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.12019150000003265,
+          "incrementalPeak": 1580,
+          "decodedValues": null,
+          "samplesMs": [
+            0.11905400000000554, 0.11203099999988808, 0.13589600000000246, 0.12132900000005975,
+            0.14928200000008474, 0.11080900000001748
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 158300,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 32,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 64,
+      "selectionStride": 100,
+      "variants": {
+        "direct": {
+          "medianMs": 0.6118129999999837,
+          "incrementalPeak": 8936,
+          "decodedValues": null,
+          "samplesMs": [
+            0.5936389999999392, 0.5763959999999315, 0.5905430000000251, 1.990060000000085,
+            0.7183230000000549, 0.6299870000000283
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.5843009999999822,
+          "incrementalPeak": 8936,
+          "decodedValues": null,
+          "samplesMs": [
+            0.5792109999999866, 0.5784799999998995, 0.5785199999997985, 0.5893909999999778,
+            0.6472690000000512, 0.6180750000000899
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 165976,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 256,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 64,
+      "selectionStride": 100,
+      "variants": {
+        "direct": {
+          "medianMs": 0.14159700000004705,
+          "incrementalPeak": 2344,
+          "decodedValues": null,
+          "samplesMs": [
+            0.1358149999998659, 0.14435200000002624, 0.13884200000006786, 0.2785549999998693,
+            0.2655409999999847, 0.13403300000004492
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.12142399999993359,
+          "incrementalPeak": 2476,
+          "decodedValues": null,
+          "samplesMs": [
+            0.14856000000008862, 0.11561800000004041, 0.11802299999999377, 0.11433499999998276,
+            0.21543599999995422, 0.1248249999998734
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 188056,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 256,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 64,
+      "selectionStride": 100,
+      "variants": {
+        "direct": {
+          "medianMs": 0.6311445000001186,
+          "incrementalPeak": 48136,
+          "decodedValues": null,
+          "samplesMs": [
+            0.6207200000001194, 0.7553929999999127, 0.6694910000001073, 0.6033669999999347,
+            0.6040080000000216, 0.6415690000001177
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.672948500000075,
+          "incrementalPeak": 48136,
+          "decodedValues": null,
+          "samplesMs": [
+            0.6426309999999376, 0.6727680000001328, 0.6731290000000172, 0.663569999999936,
+            2.1660420000000613, 0.6907510000000912
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 233848,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 32,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 1024,
+      "selectionStride": 1,
+      "variants": {
+        "direct": {
+          "medianMs": 3.3754650000000765,
+          "incrementalPeak": 988,
+          "decodedValues": null,
+          "samplesMs": [
+            3.1041090000001077, 4.421360999999706, 3.2123129999999946, 3.1229040000002897,
+            4.562938000000031, 3.5386170000001584
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 2.327400500000067,
+          "incrementalPeak": 1308,
+          "decodedValues": null,
+          "samplesMs": [
+            2.2753680000000713, 2.299393000000009, 2.328367000000071, 2.339016999999785,
+            2.326434000000063, 2.4434329999999136
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 125484,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 32,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 1024,
+      "selectionStride": 1,
+      "variants": {
+        "direct": {
+          "medianMs": 5.230184999999892,
+          "incrementalPeak": 5264,
+          "decodedValues": null,
+          "samplesMs": [
+            6.578845000000001, 5.200188000000253, 5.245723999999882, 5.162096999999903,
+            5.214645999999902, 5.631631000000198
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 4.363401500000009,
+          "incrementalPeak": 5264,
+          "decodedValues": null,
+          "samplesMs": [
+            4.219449999999597, 5.824034000000211, 4.488357000000178, 5.46235200000001,
+            4.16158200000018, 4.23844599999984
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 129760,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 256,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 1024,
+      "selectionStride": 1,
+      "variants": {
+        "direct": {
+          "medianMs": 3.598800500000152,
+          "incrementalPeak": 1884,
+          "decodedValues": null,
+          "samplesMs": [
+            3.2421690000001036, 3.4409330000003138, 4.08069899999964, 3.3832350000002407,
+            4.615194999999858, 3.7566679999999906
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 2.407175000000052,
+          "incrementalPeak": 2204,
+          "decodedValues": null,
+          "samplesMs": [
+            2.3737920000003214, 3.794589999999971, 2.3902130000001307, 2.29377199999999,
+            2.614516999999978, 2.4241369999999733
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 355756,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 256,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 1024,
+      "selectionStride": 1,
+      "variants": {
+        "direct": {
+          "medianMs": 6.156079500000033,
+          "incrementalPeak": 27664,
+          "decodedValues": null,
+          "samplesMs": [
+            6.992183999999725, 6.086268000000018, 6.318023999999696, 6.225891000000047,
+            5.441773000000012, 5.842298999999912
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 4.321903000000248,
+          "incrementalPeak": 27664,
+          "decodedValues": null,
+          "samplesMs": [
+            4.2850540000004, 4.18401300000005, 4.358752000000095, 4.732666999999765,
+            4.16595899999993, 5.267765000000054
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 381536,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 32,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 1024,
+      "selectionStride": 1,
+      "variants": {
+        "direct": {
+          "medianMs": 3.3368774999999005,
+          "incrementalPeak": 1260,
+          "decodedValues": null,
+          "samplesMs": [
+            3.162547999999788, 5.323812000000089, 3.4077509999997346, 3.9555130000003373,
+            3.210258000000067, 3.2660040000000663
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 2.366578999999774,
+          "incrementalPeak": 1580,
+          "decodedValues": null,
+          "samplesMs": [
+            2.322124999999687, 2.370886999999584, 2.3622709999999643, 2.4211019999997916,
+            2.3425239999996847, 2.389701999999943
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 209612,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 32,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 1024,
+      "selectionStride": 1,
+      "variants": {
+        "direct": {
+          "medianMs": 5.618430999999873,
+          "incrementalPeak": 9284,
+          "decodedValues": null,
+          "samplesMs": [
+            5.8667239999999765, 5.206679999999778, 7.424187999999958, 5.155815000000075,
+            6.879782999999861, 5.37013799999977
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 4.441152499999816,
+          "incrementalPeak": 9284,
+          "decodedValues": null,
+          "samplesMs": [
+            4.373550999999679, 4.45361099999991, 4.428693999999723, 4.343564000000242,
+            4.506732000000284, 6.090745999999854
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 217636,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 256,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 1024,
+      "selectionStride": 1,
+      "variants": {
+        "direct": {
+          "medianMs": 3.6457445000000916,
+          "incrementalPeak": 2344,
+          "decodedValues": null,
+          "samplesMs": [
+            3.8857020000000375, 3.5898340000003373, 3.6144509999999173, 4.436439000000064,
+            3.502530000000206, 3.677038000000266
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 2.823359499999924,
+          "incrementalPeak": 2476,
+          "decodedValues": null,
+          "samplesMs": [
+            2.423526000000038, 3.7368710000000647, 2.592033999999785, 2.515299000000141,
+            3.054685000000063, 3.5591560000002573
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 669448,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 256,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 1024,
+      "selectionStride": 1,
+      "variants": {
+        "direct": {
+          "medianMs": 6.24487699999986,
+          "incrementalPeak": 51620,
+          "decodedValues": null,
+          "samplesMs": [
+            5.4334969999999885, 5.383254000000306, 6.985501999999997, 6.7307120000000396,
+            6.501149999999598, 5.988604000000123
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 4.533151000000089,
+          "incrementalPeak": 51620,
+          "decodedValues": null,
+          "samplesMs": [
+            5.418109000000186, 4.638368999999784, 4.542769000000135, 4.523533000000043,
+            4.430587999999716, 4.4662060000000565
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 718724,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 32,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 1024,
+      "selectionStride": 10,
+      "variants": {
+        "direct": {
+          "medianMs": 0.46230599999989863,
+          "incrementalPeak": 988,
+          "decodedValues": null,
+          "samplesMs": [
+            0.46352299999989555, 0.4610889999999017, 0.45431600000028993, 0.4603770000003351,
+            0.47151800000028743, 0.47295100000019374
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.31571999999982836,
+          "incrementalPeak": 1308,
+          "decodedValues": null,
+          "samplesMs": [
+            0.31502299999965544, 0.3164170000000013, 0.32150599999977203, 0.3371860000002016,
+            0.30826999999999316, 0.30370200000015757
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 135612,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 32,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 1024,
+      "selectionStride": 10,
+      "variants": {
+        "direct": {
+          "medianMs": 1.7803440000000137,
+          "incrementalPeak": 5264,
+          "decodedValues": null,
+          "samplesMs": [
+            1.7700939999999719, 1.8205489999995734, 2.828339000000142, 1.766247999999905,
+            1.7905940000000555, 1.7641639999997096
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 1.6398744999999053,
+          "incrementalPeak": 5264,
+          "decodedValues": null,
+          "samplesMs": [
+            1.6201129999999466, 1.6621709999999439, 1.873439999999846, 1.6378859999999804,
+            1.6304620000000796, 1.6418629999998302
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 139888,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 256,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 1024,
+      "selectionStride": 10,
+      "variants": {
+        "direct": {
+          "medianMs": 0.5230910000002496,
+          "incrementalPeak": 1884,
+          "decodedValues": null,
+          "samplesMs": [
+            0.528034999999818, 0.5656559999997626, 0.5189280000004146, 0.5272540000000845,
+            0.4916960000000472, 0.48292999999966923
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.3738944999997784,
+          "incrementalPeak": 2204,
+          "decodedValues": null,
+          "samplesMs": [
+            1.4816920000002938, 1.1490749999998116, 0.3576739999998608, 0.390114999999696,
+            0.34540999999990163, 0.3548179999997956
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 365884,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 256,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 1024,
+      "selectionStride": 10,
+      "variants": {
+        "direct": {
+          "medianMs": 1.8909029999999802,
+          "incrementalPeak": 27664,
+          "decodedValues": null,
+          "samplesMs": [
+            2.747407000000294, 1.8453570000001491, 1.8521500000001652, 2.2755379999998695,
+            1.8793510000000424, 1.902454999999918
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 1.7225405000001501,
+          "incrementalPeak": 27664,
+          "decodedValues": null,
+          "samplesMs": [
+            1.7349490000001424, 1.7075279999999111, 1.650600000000395, 1.7841409999996358,
+            2.417334999999639, 1.7101320000001579
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 391664,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 32,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 1024,
+      "selectionStride": 10,
+      "variants": {
+        "direct": {
+          "medianMs": 0.48427749999996195,
+          "incrementalPeak": 1260,
+          "decodedValues": null,
+          "samplesMs": [
+            0.4844029999999293, 0.4777099999996608, 0.4841519999999946, 0.5378630000000157,
+            0.4731209999999919, 0.5865649999996094
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.4029539999999088,
+          "incrementalPeak": 1580,
+          "decodedValues": null,
+          "samplesMs": [
+            0.3328470000001289, 0.35357599999997547, 0.3334480000003168, 0.4523319999998421,
+            0.7786470000000918, 0.4938600000000406
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 219740,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 32,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 1024,
+      "selectionStride": 10,
+      "variants": {
+        "direct": {
+          "medianMs": 1.932826999999861,
+          "incrementalPeak": 9316,
+          "decodedValues": null,
+          "samplesMs": [
+            1.7948919999998907, 4.9028189999999086, 1.963539999999739, 1.9021139999999832,
+            1.9905810000000201, 1.8724279999996725
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 1.6879149999999754,
+          "incrementalPeak": 9316,
+          "decodedValues": null,
+          "samplesMs": [
+            1.6501090000001568, 1.6442879999999604, 1.6933100000001104, 1.7520610000001398,
+            1.6825199999998404, 1.6933500000000095
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 227796,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 256,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 1024,
+      "selectionStride": 10,
+      "variants": {
+        "direct": {
+          "medianMs": 0.545307499999808,
+          "incrementalPeak": 2156,
+          "decodedValues": null,
+          "samplesMs": [
+            0.5440049999997427, 2.1426970000002257, 0.5326629999999568, 0.5466099999998733,
+            0.49996199999986857, 0.5572899999997389
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.48278949999985343,
+          "incrementalPeak": 2476,
+          "decodedValues": null,
+          "samplesMs": [
+            0.6211800000000949, 0.3885320000003958, 0.3978500000002896, 0.4316329999996924,
+            0.9616120000000592, 0.5339460000000145
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 679388,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 256,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 1024,
+      "selectionStride": 10,
+      "variants": {
+        "direct": {
+          "medianMs": 2.192706500000213,
+          "incrementalPeak": 51876,
+          "decodedValues": null,
+          "samplesMs": [
+            2.2396100000000843, 1.9658240000003389, 1.9378209999999854, 4.0539380000000165,
+            2.2479960000000574, 2.145803000000342
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 1.8268869999999424,
+          "incrementalPeak": 51876,
+          "decodedValues": null,
+          "samplesMs": [
+            1.7531639999997424, 1.9775259999996706, 1.81656299999986, 1.8197589999999764,
+            1.8340149999999085, 1.856467000000066
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 729108,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 32,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 1024,
+      "selectionStride": 100,
+      "variants": {
+        "direct": {
+          "medianMs": 0.1062499999998181,
+          "incrementalPeak": 988,
+          "decodedValues": null,
+          "samplesMs": [
+            0.287181000000146, 0.11875400000008085, 0.10717199999999139, 0.10532799999964482,
+            0.09848599999986618, 0.09899700000005396
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.10014400000000023,
+          "incrementalPeak": 1308,
+          "decodedValues": null,
+          "samplesMs": [
+            0.3500090000002274, 0.1149769999997261, 0.09663200000022698, 0.10365599999977348,
+            0.0914119999997638, 0.08843600000000151
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 135612,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 32,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 1024,
+      "selectionStride": 100,
+      "variants": {
+        "direct": {
+          "medianMs": 0.4731059999999161,
+          "incrementalPeak": 4884,
+          "decodedValues": null,
+          "samplesMs": [
+            0.46825200000012046, 0.4779599999997117, 0.46628899999996065, 0.505862999999863,
+            0.461308999999801, 0.5158519999999953
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.4717239999999947,
+          "incrementalPeak": 4884,
+          "decodedValues": null,
+          "samplesMs": [
+            0.4756859999997687, 0.46386400000028516, 0.4604580000000169, 0.471328000000085,
+            0.5151909999999589, 0.4721199999999044
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 139508,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 256,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 1024,
+      "selectionStride": 100,
+      "variants": {
+        "direct": {
+          "medianMs": 0.10981700000002093,
+          "incrementalPeak": 1884,
+          "decodedValues": null,
+          "samplesMs": [
+            0.10049900000012713, 0.10923599999978251, 0.11428499999965425, 0.1162690000001021,
+            0.10814300000038202, 0.11039800000025934
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.11351349999995364,
+          "incrementalPeak": 2204,
+          "decodedValues": null,
+          "samplesMs": [
+            0.5798230000000331, 0.14072500000020227, 0.10774300000002768, 0.10394499999983964,
+            0.10316499999998996, 0.1192839999998796
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 365884,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 256,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 1024,
+      "selectionStride": 100,
+      "variants": {
+        "direct": {
+          "medianMs": 0.5156765000001542,
+          "incrementalPeak": 23924,
+          "decodedValues": null,
+          "samplesMs": [
+            0.5228850000003149, 0.5366810000000442, 0.5084679999999935, 0.46959500000002663,
+            0.624166000000514, 0.48753800000031333
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.5088285000001633,
+          "incrementalPeak": 23924,
+          "decodedValues": null,
+          "samplesMs": [
+            0.5116840000000593, 0.6647930000003726, 0.5059730000002673, 0.4765780000002451,
+            0.5971559999998135, 0.48141800000030344
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 387924,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 32,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 1024,
+      "selectionStride": 100,
+      "variants": {
+        "direct": {
+          "medianMs": 0.1406449999999495,
+          "incrementalPeak": 1260,
+          "decodedValues": null,
+          "samplesMs": [
+            0.1348440000001574, 0.1539599999996426, 0.14644599999974162, 0.15074399999957677,
+            0.12267100000008213, 0.12367300000005343
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.13450849999981074,
+          "incrementalPeak": 1580,
+          "decodedValues": null,
+          "samplesMs": [
+            0.14492299999983516, 0.16568199999983335, 0.12874199999987468, 0.1402749999997468,
+            0.11064900000019406, 0.1050279999999475
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 219740,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 32,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 1024,
+      "selectionStride": 100,
+      "variants": {
+        "direct": {
+          "medianMs": 0.5412900000001173,
+          "incrementalPeak": 8936,
+          "decodedValues": null,
+          "samplesMs": [
+            0.5413600000001679, 0.5399669999997059, 0.6290849999995771, 0.5412200000000666,
+            0.5422420000004422, 0.5268420000002152
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.5515239999999721,
+          "incrementalPeak": 8936,
+          "decodedValues": null,
+          "samplesMs": [
+            0.5450769999997647, 0.5488340000001699, 0.5542139999997744, 0.5205310000001191,
+            0.5915839999997843, 0.588158000000476
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 227416,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 256,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 1024,
+      "selectionStride": 100,
+      "variants": {
+        "direct": {
+          "medianMs": 0.1388715000002776,
+          "incrementalPeak": 2156,
+          "decodedValues": null,
+          "samplesMs": [
+            0.14491300000008778, 0.1519960000005085, 0.17959799999971438, 0.1328300000004674,
+            0.12735999999949854, 0.12771100000009028
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.13713849999976446,
+          "incrementalPeak": 2476,
+          "decodedValues": null,
+          "samplesMs": [
+            0.15207699999973556, 0.15761699999984558, 0.2819609999996828, 0.11758199999985663,
+            0.11523699999997916, 0.12219999999979336
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 679388,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 256,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 1024,
+      "selectionStride": 100,
+      "variants": {
+        "direct": {
+          "medianMs": 0.6465179999995598,
+          "incrementalPeak": 48136,
+          "decodedValues": null,
+          "samplesMs": [
+            0.8059180000000197, 0.5491649999994479, 0.5540339999997741, 2.948153999999704,
+            0.6817849999997634, 0.6112509999993563
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.6041940000004615,
+          "incrementalPeak": 48136,
+          "decodedValues": null,
+          "samplesMs": [
+            0.6303180000004431, 0.5780700000004799, 0.6307990000004793, 0.6422000000002299,
+            0.5618589999994583, 0.5542939999995724
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 725368,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 32,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 10000,
+      "selectionStride": 1,
+      "variants": {
+        "direct": {
+          "medianMs": 3.844714500000009,
+          "incrementalPeak": 988,
+          "decodedValues": null,
+          "samplesMs": [
+            4.154988999999659, 5.9790150000008, 3.457684999999401, 6.682690999999977,
+            3.534440000000359, 3.3227310000002035
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 2.566280000000006,
+          "incrementalPeak": 1308,
+          "decodedValues": null,
+          "samplesMs": [
+            3.0214230000001407, 2.676382999999987, 2.590860999999677, 2.489309999999932,
+            2.541699000000335, 2.3990599999997357
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 412716,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 32,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 10000,
+      "selectionStride": 1,
+      "variants": {
+        "direct": {
+          "medianMs": 5.2467759999995,
+          "incrementalPeak": 5264,
+          "decodedValues": null,
+          "samplesMs": [
+            5.292993000000024, 5.120007000000442, 4.994340000000193, 5.740414999999302,
+            5.222810999999638, 5.2707409999993615
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 6.143019500000264,
+          "incrementalPeak": 5264,
+          "decodedValues": null,
+          "samplesMs": [
+            4.587513999999828, 13.878961000000345, 5.83212900000035, 6.453910000000178,
+            5.519729999999981, 13.443049999999857
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 416992,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 256,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 10000,
+      "selectionStride": 1,
+      "variants": {
+        "direct": {
+          "medianMs": 4.549633000000085,
+          "incrementalPeak": 1884,
+          "decodedValues": null,
+          "samplesMs": [
+            4.161481999999523, 5.446552999999767, 5.3647680000003675, 3.7040600000000268,
+            3.5526239999999234, 4.937784000000647
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 3.132176999999956,
+          "incrementalPeak": 2204,
+          "decodedValues": null,
+          "samplesMs": [
+            3.3412859999998545, 2.92855899999995, 2.715095999999903, 3.912341000000197,
+            3.335794999999962, 2.685480000000098
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 2653612,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 256,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 10000,
+      "selectionStride": 1,
+      "variants": {
+        "direct": {
+          "medianMs": 6.1320639999999,
+          "incrementalPeak": 27664,
+          "decodedValues": null,
+          "samplesMs": [
+            6.046552999999221, 6.536044999999831, 5.528416999999536, 6.394549000000552,
+            6.175715999999738, 6.088412000000062
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 5.3048204999995505,
+          "incrementalPeak": 27664,
+          "decodedValues": null,
+          "samplesMs": [
+            5.36907599999995, 5.3239119999998366, 4.346759999999449, 4.663738000000194,
+            5.2857289999992645, 5.676876999999877
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 2679392,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 32,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 10000,
+      "selectionStride": 1,
+      "variants": {
+        "direct": {
+          "medianMs": 4.303363000000445,
+          "incrementalPeak": 1260,
+          "decodedValues": null,
+          "samplesMs": [
+            3.9173209999999017, 5.075513000000683, 4.4118020000005345, 3.4359250000006796,
+            4.194924000000356, 6.554200000000492
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 3.064794500000062,
+          "incrementalPeak": 1580,
+          "decodedValues": null,
+          "samplesMs": [
+            3.294767999999749, 3.218844999999419, 3.032282999999552, 2.6973530000004757,
+            3.0973060000005717, 2.657977999999275
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 784076,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 32,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 10000,
+      "selectionStride": 1,
+      "variants": {
+        "direct": {
+          "medianMs": 7.540232000000287,
+          "incrementalPeak": 9316,
+          "decodedValues": null,
+          "samplesMs": [
+            7.246584000000439, 9.629083000000719, 5.947316000000683, 5.714436999999634,
+            7.833880000000136, 13.9729269999998
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 5.153951499999948,
+          "incrementalPeak": 9316,
+          "decodedValues": null,
+          "samplesMs": [
+            5.638234000000011, 6.078102000000399, 4.669668999999885, 7.076452999999674,
+            4.442349999999351, 4.332242999999835
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 792132,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 256,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 10000,
+      "selectionStride": 1,
+      "variants": {
+        "direct": {
+          "medianMs": 4.96262999999999,
+          "incrementalPeak": 2156,
+          "decodedValues": null,
+          "samplesMs": [
+            5.476179000000229, 5.168807999999444, 5.923390999999356, 3.989767000000029,
+            4.615506999999525, 4.756452000000536
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 3.4028269999998884,
+          "incrementalPeak": 2476,
+          "decodedValues": null,
+          "samplesMs": [
+            2.872482000000673, 4.579999999999927, 3.777237000000241, 3.887274000000616,
+            2.940079999999398, 3.0284169999995356
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 5264972,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 256,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 10000,
+      "selectionStride": 1,
+      "variants": {
+        "direct": {
+          "medianMs": 7.349903999999697,
+          "incrementalPeak": 51876,
+          "decodedValues": null,
+          "samplesMs": [
+            5.825205999999525, 5.630999999999403, 16.317495000001145, 8.192036000000371,
+            7.84429099999943, 6.8555169999999634
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 5.617514499998833,
+          "incrementalPeak": 51876,
+          "decodedValues": null,
+          "samplesMs": [
+            6.786556999999448, 6.086327999999412, 5.307800999999017, 5.321516999998494,
+            4.876136999999289, 5.913511999999173
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 5314692,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 32,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 10000,
+      "selectionStride": 10,
+      "variants": {
+        "direct": {
+          "medianMs": 0.5749230000001262,
+          "incrementalPeak": 988,
+          "decodedValues": null,
+          "samplesMs": [
+            0.6298470000001544, 0.5487339999999676, 0.5350279999984195, 0.5395669999998063,
+            0.6011120000002848, 0.6583499999997002
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.44198750000032305,
+          "incrementalPeak": 1308,
+          "decodedValues": null,
+          "samplesMs": [
+            2.1186820000002626, 0.41351899999972375, 0.439567999999781, 0.4444070000008651,
+            9.419058000001314, 0.42121399999996356
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 422844,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 32,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 10000,
+      "selectionStride": 10,
+      "variants": {
+        "direct": {
+          "medianMs": 2.172023000000081,
+          "incrementalPeak": 5264,
+          "decodedValues": null,
+          "samplesMs": [
+            1.7706670000006852, 1.8606560000007448, 7.3228780000008555, 2.898110000000088,
+            1.784192000000985, 2.4833899999994173
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 1.7353044999990743,
+          "incrementalPeak": 5264,
+          "decodedValues": null,
+          "samplesMs": [
+            1.7158629999994446, 1.650499999999738, 2.519786999999269, 1.6411920000009559,
+            1.754745999998704, 3.7177539999993314
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 427120,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 256,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 10000,
+      "selectionStride": 10,
+      "variants": {
+        "direct": {
+          "medianMs": 0.5977059999995618,
+          "incrementalPeak": 1884,
+          "decodedValues": null,
+          "samplesMs": [
+            0.5642929999994521, 0.5931170000003476, 0.6165820000005624, 0.6022949999987759,
+            0.605279999999766, 0.5821369999994204
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.4555735000003551,
+          "incrementalPeak": 2204,
+          "decodedValues": null,
+          "samplesMs": [
+            0.4794640000000072, 0.5268130000004021, 0.4325760000010632, 0.47857099999964703,
+            0.4257820000002539, 0.41893899999922724
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 2663740,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 256,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 10000,
+      "selectionStride": 10,
+      "variants": {
+        "direct": {
+          "medianMs": 2.6513554999992266,
+          "incrementalPeak": 27664,
+          "decodedValues": null,
+          "samplesMs": [
+            2.1156370000007882, 2.4270529999994324, 8.3718340000014, 2.875657999999021,
+            2.1141139999999723, 3.9332109999995737
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 1.9775110000000495,
+          "incrementalPeak": 27664,
+          "decodedValues": null,
+          "samplesMs": [
+            3.384938000001057, 1.6653479999986303, 2.312197000001106, 2.0756209999999555,
+            1.7236980000016047, 1.8794010000001435
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 2689520,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 32,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 10000,
+      "selectionStride": 10,
+      "variants": {
+        "direct": {
+          "medianMs": 0.5856680000006236,
+          "incrementalPeak": 1260,
+          "decodedValues": null,
+          "samplesMs": [
+            0.6097079999999551, 0.5289269999993849, 0.8761099999992439, 0.5616280000012921,
+            1.0809559999997873, 0.5494749999998021
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.42316200000095705,
+          "incrementalPeak": 1580,
+          "decodedValues": null,
+          "samplesMs": [
+            0.42403900000135764, 0.42228500000055647, 0.45530800000051386, 0.36642100000062783,
+            0.4440169999998034, 0.36476699999911943
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 794204,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 32,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 10000,
+      "selectionStride": 10,
+      "variants": {
+        "direct": {
+          "medianMs": 1.859443000000283,
+          "incrementalPeak": 9380,
+          "decodedValues": null,
+          "samplesMs": [
+            1.8460070000000997, 1.9807220000002417, 1.863811999999598, 1.8550740000009682,
+            6.9869849999995495, 1.848813999999038
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 2.568850499999826,
+          "incrementalPeak": 9380,
+          "decodedValues": null,
+          "samplesMs": [
+            7.019455999999991, 1.761979999999312, 5.360389999999825, 1.6918580000001384,
+            3.316790000000765, 1.8209109999988868
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 802324,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 256,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 10000,
+      "selectionStride": 10,
+      "variants": {
+        "direct": {
+          "medianMs": 0.6223675000001094,
+          "incrementalPeak": 2344,
+          "decodedValues": null,
+          "samplesMs": [
+            0.8367369999996299, 0.713633999999729, 0.6058420000008482, 0.6105000000006839,
+            0.6342349999995349, 0.604088000000047
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.48224300000038056,
+          "incrementalPeak": 2476,
+          "decodedValues": null,
+          "samplesMs": [
+            0.5294580000008864, 0.5229550000003655, 0.4439169999986916, 0.4651659999999538,
+            0.49932000000080734, 0.43683299999975134
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 5275288,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 256,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 10000,
+      "selectionStride": 10,
+      "variants": {
+        "direct": {
+          "medianMs": 2.348650500000076,
+          "incrementalPeak": 52388,
+          "decodedValues": null,
+          "samplesMs": [
+            1.9501639999998588, 2.535697999999684, 2.1616030000004685, 4.321824000000561,
+            2.1128410000001168, 4.062695000000531
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 2.38744349999979,
+          "incrementalPeak": 52388,
+          "decodedValues": null,
+          "samplesMs": [
+            3.3417959999987943, 1.8458279999995284, 2.5736290000004374, 2.201257999999143,
+            4.07406599999922, 1.7704860000012559
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 5325332,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 32,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 10000,
+      "selectionStride": 100,
+      "variants": {
+        "direct": {
+          "medianMs": 0.14936649999981455,
+          "incrementalPeak": 988,
+          "decodedValues": null,
+          "samplesMs": [
+            0.14135600000008708, 0.15822800000023562, 0.1557539999994333, 0.1429790000001958,
+            0.1314380000003439, 0.35143199999947683
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.15185099999962404,
+          "incrementalPeak": 1308,
+          "decodedValues": null,
+          "samplesMs": [
+            0.1444420000007085, 0.25117300000056275, 0.13094699999965087, 0.1657519999989745,
+            0.15915899999890826, 0.14454300000033982
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 422844,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 32,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 10000,
+      "selectionStride": 100,
+      "variants": {
+        "direct": {
+          "medianMs": 0.5390409999999974,
+          "incrementalPeak": 4884,
+          "decodedValues": null,
+          "samplesMs": [
+            0.8272790000009991, 0.5198189999991882, 0.5237170000000333, 0.5543649999999616,
+            2.70982499999991, 0.5097910000004049
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.9951995000001261,
+          "incrementalPeak": 4884,
+          "decodedValues": null,
+          "samplesMs": [
+            4.718381000000591, 1.468866999999591, 0.5096799999992072, 0.5177850000000035,
+            6.179712999999538, 0.5215320000006614
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 426740,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 256,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 10000,
+      "selectionStride": 100,
+      "variants": {
+        "direct": {
+          "medianMs": 0.19146099999943544,
+          "incrementalPeak": 1884,
+          "decodedValues": null,
+          "samplesMs": [
+            0.2102359999989858, 0.1726859999998851, 0.22429299999930663, 0.2162670000016078,
+            0.15711600000031467, 0.1609840000000986
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.1674654999987979,
+          "incrementalPeak": 2204,
+          "decodedValues": null,
+          "samplesMs": [
+            0.15094399999907182, 0.1536789999991015, 0.19465700000000652, 0.18125199999849428,
+            0.14439200000015262, 0.21189899999990303
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 2663740,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 1,
+      "width": 256,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 10000,
+      "selectionStride": 100,
+      "variants": {
+        "direct": {
+          "medianMs": 0.604769500000657,
+          "incrementalPeak": 23924,
+          "decodedValues": null,
+          "samplesMs": [
+            0.5592740000010963, 0.557039999999688, 0.6502650000002177, 1.2564980000006472,
+            0.5422520000010991, 2.1494999999995343
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 1.0055044999999154,
+          "incrementalPeak": 23924,
+          "decodedValues": null,
+          "samplesMs": [
+            1.2095890000000509, 0.865390999999363, 0.5620589999998629, 1.1456180000004679,
+            0.624536999999691, 1.2064030000001367
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 2685780,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 32,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 10000,
+      "selectionStride": 100,
+      "variants": {
+        "direct": {
+          "medianMs": 0.16395350000038889,
+          "incrementalPeak": 1260,
+          "decodedValues": null,
+          "samplesMs": [
+            0.159179000000222, 0.16434900000058406, 0.16654399999970337, 0.16355800000019372,
+            0.15963099999862607, 0.1661629999998695
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.18690700000024663,
+          "incrementalPeak": 1580,
+          "decodedValues": null,
+          "samplesMs": [
+            2.042579000000842, 0.14589500000147382, 0.19020799999998417, 0.16195499999957974,
+            0.3137609999994311, 0.18360600000050908
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 794204,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 32,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 10000,
+      "selectionStride": 100,
+      "variants": {
+        "direct": {
+          "medianMs": 2.6211135000003196,
+          "incrementalPeak": 8936,
+          "decodedValues": null,
+          "samplesMs": [
+            0.5788910000010219, 4.534083000000464, 0.5852620000005118, 5.6550050000005285,
+            0.7081440000001749, 5.340482999999949
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.5781590000005963,
+          "incrementalPeak": 8936,
+          "decodedValues": null,
+          "samplesMs": [
+            0.5716869999996561, 0.5780290000002424, 0.595060999999987, 0.5651749999997264,
+            0.7921019999994314, 0.5782890000009502
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 801880,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 256,
+      "limit": 3,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 10000,
+      "selectionStride": 100,
+      "variants": {
+        "direct": {
+          "medianMs": 0.20659899999918707,
+          "incrementalPeak": 2344,
+          "decodedValues": null,
+          "samplesMs": [
+            0.23544399999991583, 0.21667800000068382, 0.19890399999894726, 0.17307699999946635,
+            0.2142939999994269, 0.19461599999885948
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.17129300000033254,
+          "incrementalPeak": 2476,
+          "decodedValues": null,
+          "samplesMs": [
+            0.3440780000000814, 0.16806699999870034, 0.1677959999997256, 0.1730360000001383,
+            0.23116599999957543, 0.16955000000052678
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 5275288,
+        "directFits": true,
+        "cacheFits": true
+      }
+    },
+    {
+      "shape": "dictionary",
+      "keys": 2,
+      "width": 256,
+      "limit": 100,
+      "reuse": 1,
+      "nulls": "last",
+      "rows": 10000,
+      "cardinality": 10000,
+      "selectionStride": 100,
+      "variants": {
+        "direct": {
+          "medianMs": 1.1065900000012334,
+          "incrementalPeak": 48136,
+          "decodedValues": null,
+          "samplesMs": [
+            1.5061569999998028, 0.5922759999994014, 1.1407090000029712, 1.31644999999844,
+            0.6096189999989292, 1.0724709999994957
+          ]
+        },
+        "scalarReuse": {
+          "medianMs": 0.7643204999985755,
+          "incrementalPeak": 48136,
+          "decodedValues": null,
+          "samplesMs": [
+            0.6195579999985057, 0.9090829999986454, 0.592345999997633, 1.259052999997948,
+            1.1591540000008536, 0.6130249999987427
+          ]
+        }
+      },
+      "pressure": {
+        "exactDirectCap": 5321080,
+        "directFits": true,
+        "cacheFits": true
+      }
+    }
+  ]
+}

@@ -10,6 +10,11 @@ import {
   vectorTopKOwnedBatch,
 } from "../packages/core/dist/index.js";
 
+const comparisonModule = process.env.LAKEQL_TOPK_COMPARE_MODULE;
+const baselineTopK = comparisonModule
+  ? (await import(comparisonModule)).vectorTopKOwnedBatch
+  : vectorTopKOwnedBatch;
+const candidateName = comparisonModule ? "scalarReuse" : "cached";
 const encoder = new TextEncoder();
 const prefixes = ["é", "界", "🙂", "A", "𐀀", "\uE000"];
 function text(key, width) {
@@ -167,11 +172,10 @@ function run(config, cached, oracle, order, cap = 64 * 1024 * 1024) {
           ).value;
     baseline = pool.usedBytes;
     const start = performance.now();
-    if (cached) prepared = decodeKeys(input, scope, config.keys);
+    if (cached && !comparisonModule) prepared = decodeKeys(input, scope, config.keys);
+    const topK = cached ? vectorTopKOwnedBatch : baselineTopK;
     for (let job = 0; job < config.reuse; job++)
-      outputs.push(
-        vectorTopKOwnedBatch(prepared?.input ?? input, order, { limit: config.limit }, selection),
-      );
+      outputs.push(topK(prepared?.input ?? input, order, { limit: config.limit }, selection));
     const elapsedMs = performance.now() - start;
     const incrementalPeak = pool.peakBytes - baseline;
     for (const output of outputs) assert.deepEqual(materializeBatchRows(output.value), oracle);
@@ -223,11 +227,11 @@ for (const config of scenarios()) {
     nulls: key ? "last" : nulls,
   }));
   const oracle = expected(config, order);
-  const samples = { direct: [], cached: [] };
+  const samples = { direct: [], [candidateName]: [] };
   for (let round = 0; round < 8; round++) {
     for (const cached of round % 2 ? [true, false] : [false, true]) {
       const observation = run(config, cached, oracle, order);
-      if (round >= 2) samples[cached ? "cached" : "direct"].push(observation);
+      if (round >= 2) samples[cached ? candidateName : "direct"].push(observation);
     }
   }
   const variants = Object.fromEntries(
@@ -263,11 +267,15 @@ const report = {
   sourceCommit: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
   node: process.version,
   matrix,
+  comparison: comparisonModule
+    ? { baseline: comparisonModule, candidate: "current built runtime", candidateName }
+    : undefined,
   harnessSha256: createHash("sha256")
     .update(readFileSync(import.meta.filename))
     .digest("hex"),
-  description:
-    "Matrix shapes uses Unicode nullable packed and dictionary keys; one/two ordering terms, widths 32/256, k 3/100, one/four selections sharing preparation with all results retained. Two warmups/six samples, alternating variant order. Cache construction included, fixture construction and independent stable-sort oracle excluded. 64 MiB modeled pool; dictionaries decode unique values only. Matrix cardinality varies dictionary size 64/1024/10000 and selection stride 1/10/100 at one selection per preparation, nulls last, with exact-direct-cap pressure trials.",
+  description: comparisonModule
+    ? "Alternating baseline and current scalar-reader/top-k implementations; no whole-key cache. Source/oracle construction excluded, two warmups/six samples, same shapes/cardinality matrices and tracked 64 MiB pool."
+    : "Matrix shapes uses Unicode nullable packed and dictionary keys; one/two ordering terms, widths 32/256, k 3/100, one/four selections sharing preparation with all results retained. Two warmups/six samples, alternating variant order. Cache construction included, fixture construction and independent stable-sort oracle excluded. 64 MiB modeled pool; dictionaries decode unique values only. Matrix cardinality varies dictionary size 64/1024/10000 and selection stride 1/10/100 at one selection per preparation, nulls last, with exact-direct-cap pressure trials.",
   limitations: [
     "Sequential synchronous Node selections with retained outputs model reuse/overlap, not asynchronous cloud jobs.",
     "Unicode allocation uses a conservative UTF16 upper bound derived from UTF8 bytes; runtime/native/GC overhead and oracle memory are outside reservation accounting.",
@@ -282,7 +290,8 @@ writeFileSync(
 console.log(
   JSON.stringify({
     scenarios: results.length,
-    cachedFaster: results.filter((r) => r.variants.cached.medianMs < r.variants.direct.medianMs)
-      .length,
+    cachedFaster: results.filter(
+      (r) => r.variants[candidateName].medianMs < r.variants.direct.medianMs,
+    ).length,
   }),
 );
