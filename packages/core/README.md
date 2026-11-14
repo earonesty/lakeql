@@ -105,3 +105,8 @@ legacy HEAD cache. Stores without the capability retain their legacy behavior.
 not just object payloads. Empty objects and negative lookups therefore consume
 capacity, and `maxBytes: 0` disables their retention too. Owned range allocation
 forecasts include metadata for a possible cold cache copy.
+
+Valid cache replacements invalidate an older entry even when the new entry is
+too large to retain; existing reader pins remain valid until release. An owned
+entry-cache lookup that cannot pin the whole entry within the requesting child
+budget returns a miss, allowing the caller's normal read path to apply its limits.

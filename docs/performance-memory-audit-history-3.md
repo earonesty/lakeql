@@ -4094,3 +4094,25 @@ Worker tests pass 75, reference tests 104, and required external conformance 520
 with one inactive guard skip. Evidence:
 `docs/validation/cache-accounting-mixed-runtime-2026-11-14.json`. This is a single
 Node benchmark run per case, not a Worker memory-cap or stable latency claim.
+
+### 2026-11-14 — cache replacement and child-pin pressure semantics
+
+SharedMemoryCache now invalidates an existing key before declining a valid but
+oversized or unaffordable replacement, for both allocated and owned insertion.
+Previously the oversized fast return left stale backing under the same key.
+Incompatible allocation pools are rejected before mutation. Independent active
+pins still retain the old value until their consumers release
+it. Rejected allocated insertions do not invoke their allocation factory, and
+rejected owned insertions do not consume the caller's handle. Invalid cost inputs
+are still validated before cache mutation.
+
+OwnedEntryCache treats a budget failure while pinning an existing entry as a miss.
+The query can rediscover/copy metadata under its own limits instead of being
+forced to pin a larger cache entry. Tests cover child-pin rejection, zero leaked
+child reservations, stale replacement invalidation and pin survival. An HTTP
+adapter regression verifies that a freshly fetched larger object which cannot
+be retained does not cause subsequent range reads to return the older object.
+
+Build/typecheck passed; targeted core/Parquet tests passed 85, typed cache 9 and
+HTTP 10; final full suite passed 3,664 with 629 skips. Evidence:
+`docs/validation/cache-replacement-pressure-2026-11-14.json`.

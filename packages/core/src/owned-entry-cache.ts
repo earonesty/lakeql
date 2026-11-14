@@ -45,7 +45,13 @@ export class OwnedEntryCache<T> implements CacheAdapter<T> {
     key: string,
     budget: MemoryBudget,
   ): Promise<OwnedMemory<CacheEntry<T>> | undefined> {
-    const owner = this.cache.acquireOwned<CacheEntry<T>>(key, budget);
+    let owner: OwnedMemory<CacheEntry<T>> | undefined;
+    try {
+      owner = this.cache.acquireOwned<CacheEntry<T>>(key, budget);
+    } catch (error) {
+      if (isLakeqlError(error) && error.code === "LAKEQL_BUDGET_EXCEEDED") return undefined;
+      throw error;
+    }
     if (owner === undefined) return undefined;
     if (owner.value.expiresAt !== undefined && owner.value.expiresAt <= Date.now()) {
       owner.release();
@@ -56,13 +62,13 @@ export class OwnedEntryCache<T> implements CacheAdapter<T> {
   }
 
   async setOwnedEntry(key: string, entry: OwnedMemory<CacheEntry<T>>): Promise<void> {
+    if (!this.cache.supportsOwnedRetention(entry.budget)) return;
     this.cache.delete(key);
     if (this.options.maxBytes === 0) return;
     if (entry.value.expiresAt !== undefined && entry.value.expiresAt <= Date.now()) {
       this.cache.delete(key);
       return;
     }
-    if (!this.cache.supportsOwnedRetention(entry.budget)) return;
     const scope = new MemoryScope(this.options.memoryBudget);
     try {
       // Count directory/key/record storage alongside retained payload, including

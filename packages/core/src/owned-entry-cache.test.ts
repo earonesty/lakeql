@@ -1,5 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { MemoryBudget } from "./memory-budget.js";
+import { MemoryScope } from "./memory-scope.js";
 import { memoryStore } from "./memory-store.js";
 import { memoryPlanningCache } from "./owned-entry-cache.js";
 import { Lake } from "./query.js";
@@ -119,4 +120,37 @@ it("enforces exact cache capacity including keys and directory records", async (
     cache.clear();
     expect(pool.usedBytes).toBe(0);
   }
+});
+
+it("treats cache entries too large for a child pin as misses", async () => {
+  const pool = new MemoryBudget(65536);
+  const cache = memoryPlanningCache({ memoryBudget: pool });
+  await cache.set("a", { value: [{ path: "a", size: 1 }] });
+  const retained = pool.usedBytes;
+  expect(retained).toBeGreaterThan(0);
+  const child = pool.child(retained - 1);
+  expect(await cache.getOwnedEntry("a", child)).toBeUndefined();
+  expect(child.usedBytes).toBe(0);
+  cache.clear();
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("does not invalidate compatible entries when a different pool attempts insertion", async () => {
+  const pool = new MemoryBudget(65536);
+  const cache = memoryPlanningCache({ memoryBudget: pool });
+  await cache.set("a", { value: [{ path: "old", size: 1 }] });
+  const retained = pool.usedBytes;
+  const foreign = new MemoryScope(new MemoryBudget(65536));
+  const owner = foreign.allocate(4096, "foreign cache value", () => ({
+    value: [{ path: "new", size: 2 }],
+  }));
+  await cache.setOwnedEntry("a", owner);
+  const result = await cache.getOwnedEntry("a", pool);
+  expect(result?.value.value[0]?.path).toBe("old");
+  result?.release();
+  expect(pool.usedBytes).toBe(retained);
+  foreign.dispose();
+  cache.clear();
+  expect(foreign.budget.usedBytes).toBe(0);
+  expect(pool.usedBytes).toBe(0);
 });

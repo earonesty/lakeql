@@ -1,0 +1,28 @@
+{
+  "sourceBase": "afabc11",
+  "scope": "Cache replacement invalidation, child-pin fallback and cross-pool isolation",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedCoreAndParquetTests": 85,
+    "focusedTypedCacheTests": 9,
+    "focusedHttpTests": 10,
+    "fullSuite": {
+      "passed": 3664,
+      "skipped": 629,
+      "log": "/tmp/cache-replacement-pool-isolation-verified.log"
+    }
+  },
+  "evidence": [
+    "Oversized compatible replacements invalidate stale entries without allocating or consuming caller ownership",
+    "Independent old reader pins survive invalidation",
+    "Incompatible pool insertions preserve existing compatible entries",
+    "Typed cache entries too large to pin under a child budget behave as misses",
+    "Fresh HTTP object larger than cache capacity cannot leave stale bytes for subsequent range reads"
+  ],
+  "remaining": [
+    "Automatic HTTP pool propagation",
+    "Remote write serialization admission",
+    "Broader allocation and final runtime/release acceptance"
+  ]
+}

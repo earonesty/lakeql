@@ -617,3 +617,32 @@ it("bounds missing objects, empty objects and empty ranges by metadata capacity"
   await disabled.get("missing");
   expect(counted.counters.get).toBe(2);
 });
+
+it("invalidates rejected replacements while preserving already acquired pins", () => {
+  const pool = new MemoryBudget(64);
+  const cache = new SharedMemoryCache({ memoryBudget: pool, maxBytes: 8 });
+  cache.set("key", "old", 4);
+  const pin = cache.acquire<string>("key");
+  let allocated = false;
+  expect(
+    cache.setAllocated("key", 9, () => {
+      allocated = true;
+      return "new";
+    }),
+  ).toBe(false);
+  expect(allocated).toBe(false);
+  expect(cache.get("key")).toBeUndefined();
+  expect(pin?.value).toBe("old");
+  expect(pool.usedBytes).toBe(4);
+  pin?.release();
+  expect(pool.usedBytes).toBe(0);
+  const scope = new MemoryScope(pool);
+  const small = scope.allocate(4, "small", () => "old");
+  const large = scope.allocate(9, "large", () => "new");
+  expect(cache.setOwned("key", small)).toBe(true);
+  expect(cache.setOwned("key", large)).toBe(false);
+  expect(cache.acquireOwned("key")).toBeUndefined();
+  expect(large.value).toBe("new");
+  scope.dispose();
+  expect(pool.usedBytes).toBe(0);
+});

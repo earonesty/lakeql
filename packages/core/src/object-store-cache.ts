@@ -125,12 +125,10 @@ export class SharedMemoryCache {
         "Owned cache cost must cover its backing bytes",
       );
     }
-    if (
-      this.memoryBudget === undefined ||
-      !owner.budget.sharesPoolWith(this.memoryBudget) ||
-      cacheBytes > this.maxBytes
-    )
+    if (this.memoryBudget === undefined || !owner.budget.sharesPoolWith(this.memoryBudget))
       return false;
+    this.delete(key);
+    if (cacheBytes > this.maxBytes) return false;
     let retained: OwnedMemory<T>;
     try {
       retained = owner.retainIn(this.memoryBudget);
@@ -138,7 +136,6 @@ export class SharedMemoryCache {
       if (isLakeqlError(error) && error.code === "LAKEQL_BUDGET_EXCEEDED") return false;
       throw error;
     }
-    this.delete(key);
     return this.insert(key, {
       value: retained.value,
       bytes: cacheBytes,
@@ -166,8 +163,8 @@ export class SharedMemoryCache {
     if (!Number.isSafeInteger(bytes) || bytes < 0) {
       throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Invalid cache byte count", { bytes });
     }
-    if (bytes > this.maxBytes) return false;
     this.delete(key);
+    if (bytes > this.maxBytes) return false;
     const reservation = this.memoryBudget?.tryReserve(bytes, "cache payload");
     if (this.memoryBudget !== undefined && reservation === undefined) return false;
     let value: T;
