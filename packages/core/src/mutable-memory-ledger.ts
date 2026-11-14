@@ -115,10 +115,7 @@ export class MutableMemoryLedger {
         this.chunks.pop();
         last.release();
       } else {
-        const [used, unused] = last.partition([last.bytes - bytes, bytes]);
-        if (!used || !unused) throw new Error("Missing mutable ledger reservation extent");
-        this.chunks[this.chunks.length - 1] = used;
-        unused.release();
+        last.shrink(last.bytes - bytes);
       }
       this.payload -= bytes;
       this.spare -= bytes;

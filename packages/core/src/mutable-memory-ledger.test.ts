@@ -60,7 +60,7 @@ it("reclaims spare capacity for a sibling while keeping committed payload charge
   expect(pool.usedBytes).toBe(0);
 });
 
-it("protects pending bytes from reclaimers and rolls back a partitioned new chunk", () => {
+it("protects pending bytes from reclaimers and rolls back a trimmed new chunk", () => {
   const scope = new MemoryScope(new MemoryBudget(65536));
   const growth = new MutableMemoryLedger(scope);
   growth.append(32, "first", () => {});
@@ -134,4 +134,33 @@ it("reclaims released storage across multiple chunks including their metadata", 
   expect(ledger.usedBytes).toBe(0);
   expect(scope.budget.usedBytes).toBe(0);
   scope.dispose();
+});
+
+it("trims a partial chunk without replacing its reservation handle", () => {
+  const budget = new MemoryBudget(65536);
+  const reserve = budget.reserve.bind(budget);
+  const handles: ReturnType<MemoryBudget["reserve"]>[] = [];
+  vi.spyOn(budget, "reserve").mockImplementation((bytes, purpose) => {
+    const handle = reserve(bytes, purpose);
+    vi.spyOn(handle, "partition").mockImplementation(() => {
+      throw Error("unexpected partition");
+    });
+    handles.push(handle);
+    return handle;
+  });
+  const scope = new MemoryScope(budget);
+  const ledger = new MutableMemoryLedger(scope);
+  ledger.append(64, "initial", () => {});
+  const handle = handles[0];
+  if (!handle) throw Error("missing reservation");
+  const admitted = handle.bytes;
+  ledger.trim();
+  expect(handle.bytes).toBeLessThan(admitted);
+  expect(budget.usedBytes).toBe(handle.bytes);
+  ledger.release(32);
+  ledger.trim();
+  expect(ledger.usedBytes).toBe(32);
+  expect(budget.usedBytes).toBe(handle.bytes);
+  scope.dispose();
+  expect(budget.usedBytes).toBe(0);
 });
