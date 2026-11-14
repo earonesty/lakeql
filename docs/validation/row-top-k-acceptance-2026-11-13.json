@@ -1,6 +1,6 @@
 {
   "requirement": "F3, with overlapping F2/M1 ownership obligations",
-  "status": "Selection algorithm and owned replacement boundary verified; full public fallback ownership remains incomplete",
+  "status": "Selection and bounded row fallback ownership integrated; remaining checkpoint, projection and unlimited-sort allocation gaps stay open",
   "verified": [
     "BoundedTopK uses a worst-first heap with encounter ordinals; later equal candidates cannot displace earlier candidates.",
     "Tests compare full stable sorting across null placement, ascending/descending terms, multiple keys and capacities from zero through input length plus one.",
@@ -14,9 +14,9 @@
   },
   "remainingGap": {
     "source": "packages/core/src/query.ts collectOrderedMatches",
-    "finding": "The row scanner fallback retains raw rows in BoundedTopK, applies BufferMemory serialized-size accounting after mutation, and does not transfer retained rows/descriptors into a MemoryScope. Passing memoryBudget to the scanner does not establish ownership of retained operator rows.",
+    "finding": "Bounded collectOrderedMatches now detaches rows into OwnedBoundedTopK and holds result ownership through its consumers. Evidence: docs/validation/borrowed-row-detachment-2026-11-13.json. Unlimited sort buffering, serialization/deserialization and projection scratch still require admission.",
     "relatedRoute": "Projected rank-reference selection uses OwnedBoundedTopK when scanOwnedVectorBatches is available, but retains a borrowed BoundedTopK branch otherwise.",
-    "nextAction": "Establish a generic admitted row detachment/ownership contract for borrowed scanner output, then integrate retained selection and result transfer. Account for source lifetime and replacement overlap before mutation; preserve stable ties, nulls, offsets and scanner compatibility."
+    "nextAction": "Review rejected-candidate copy overhead, restore/serialization admission and complete fallback output lifetimes without claiming whole-query allocation coverage."
   },
   "limits": "This audit does not infer end-to-end row fallback memory bounds from owned-selector tests or mark F3/M1 complete."
 }

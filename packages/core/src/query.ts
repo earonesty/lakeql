@@ -37,6 +37,7 @@ import { OwnedAggregateState } from "./owned-aggregate-state.js";
 import { OwnedBoundedTopK } from "./owned-bounded-top-k.js";
 import { OwnedGroupDirectory } from "./owned-group-directory.js";
 import { collectOwnedRows } from "./owned-row-collector.js";
+import { detachOwnedRow } from "./owned-row-detachment.js";
 import {
   type AcceleratorPolicy,
   CpuPhysicalBackend,
@@ -1635,28 +1636,36 @@ export class QueryResult {
     enforceBufferedRowsBudget(config.budget, matched.length);
     enforceOperatorMemoryBudget(config.budget, estimateOperatorMemoryBytes(matched));
     const startedAt = config.now();
-    await this.collectOrderedMatches(matched, topK, startedAt);
-    matched.sort((left, right) => compareRows(left, right, orderBy));
-    const start = config.offset ?? 0;
-    const end = start + config.limit;
-    const rows = matched
-      .slice(start, end)
-      .map((row) => project(row, config.select, config.projections));
-    for (const _row of rows) {
-      this.stats.rowsReturned += 1;
-      enforceBudget(config.budget, this.stats, config.now, startedAt);
+    const retainedScope = new MemoryScope(
+      this.memoryBudget,
+      config.budget.signal ? [config.budget.signal] : [],
+    );
+    try {
+      await this.collectOrderedMatches(matched, topK, startedAt, retainedScope);
+      matched.sort((left, right) => compareRows(left, right, orderBy));
+      const start = config.offset ?? 0;
+      const end = start + config.limit;
+      const rows = matched
+        .slice(start, end)
+        .map((row) => project(row, config.select, config.projections));
+      for (const _row of rows) {
+        this.stats.rowsReturned += 1;
+        enforceBudget(config.budget, this.stats, config.now, startedAt);
+      }
+      this.stats.elapsedMs = config.now() - startedAt;
+      const state = topKOperatorState(orderBy, config.offset ?? 0, config.limit, matched);
+      const operatorState = serializeTopKOperatorState(state);
+      const result: TopKResult = { rows, operatorState };
+      if (options.spill !== undefined) {
+        result.operatorSpill = await options.spill.write(
+          options.spillId ?? `topk-${this.stats.queryId}`,
+          operatorState,
+        );
+      }
+      return result;
+    } finally {
+      retainedScope.dispose();
     }
-    this.stats.elapsedMs = config.now() - startedAt;
-    const state = topKOperatorState(orderBy, config.offset ?? 0, config.limit, matched);
-    const operatorState = serializeTopKOperatorState(state);
-    const result: TopKResult = { rows, operatorState };
-    if (options.spill !== undefined) {
-      result.operatorSpill = await options.spill.write(
-        options.spillId ?? `topk-${this.stats.queryId}`,
-        operatorState,
-      );
-    }
-    return result;
   }
 
   async sortWithState(options: SortOptions = {}): Promise<SortResult> {
@@ -2459,33 +2468,41 @@ export class QueryResult {
         ? undefined
         : (config.offset ?? 0) + config.limit;
     const startedAt = config.now();
-    await this.collectOrderedMatches(matched, topK, startedAt);
-    matched.sort((left, right) => compareRows(left, right, config.orderBy ?? []));
-    const batchSize = config.batchSize ?? 4096;
-    let batch: Row[] = [];
-    let offsetSkipped = 0;
-    let returned = 0;
-    const distinct = config.distinct === true ? new Set<string>() : undefined;
-    for (const row of matched) {
-      const projected = project(row, config.select, config.projections);
-      if (distinct !== undefined && !addDistinctRow(distinct, projected, config.budget)) continue;
-      if (offsetSkipped < (config.offset ?? 0)) {
-        offsetSkipped += 1;
-        continue;
+    const retainedScope = new MemoryScope(
+      this.memoryBudget,
+      config.budget.signal ? [config.budget.signal] : [],
+    );
+    try {
+      await this.collectOrderedMatches(matched, topK, startedAt, retainedScope);
+      matched.sort((left, right) => compareRows(left, right, config.orderBy ?? []));
+      const batchSize = config.batchSize ?? 4096;
+      let batch: Row[] = [];
+      let offsetSkipped = 0;
+      let returned = 0;
+      const distinct = config.distinct === true ? new Set<string>() : undefined;
+      for (const row of matched) {
+        const projected = project(row, config.select, config.projections);
+        if (distinct !== undefined && !addDistinctRow(distinct, projected, config.budget)) continue;
+        if (offsetSkipped < (config.offset ?? 0)) {
+          offsetSkipped += 1;
+          continue;
+        }
+        if (config.limit !== undefined && returned >= config.limit) break;
+        batch.push(projected);
+        returned += 1;
+        stats.rowsReturned += 1;
+        enforceBudget(config.budget, stats, config.now, startedAt);
+        if (batch.length >= batchSize) {
+          stats.elapsedMs = config.now() - startedAt;
+          yield batch;
+          batch = [];
+        }
       }
-      if (config.limit !== undefined && returned >= config.limit) break;
-      batch.push(projected);
-      returned += 1;
-      stats.rowsReturned += 1;
-      enforceBudget(config.budget, stats, config.now, startedAt);
-      if (batch.length >= batchSize) {
-        stats.elapsedMs = config.now() - startedAt;
-        yield batch;
-        batch = [];
-      }
+      stats.elapsedMs = config.now() - startedAt;
+      if (batch.length > 0) yield batch;
+    } finally {
+      retainedScope.dispose();
     }
-    stats.elapsedMs = config.now() - startedAt;
-    if (batch.length > 0) yield batch;
   }
 
   private tryColumnarTopKRows(): Promise<Row[] | undefined>;
@@ -3047,31 +3064,40 @@ export class QueryResult {
     matched: Row[],
     topK: number | undefined,
     startedAt: number,
+    allocationScope: MemoryScope,
   ): Promise<void> {
     const config = this.config;
     const { stats } = this;
     const { planned: paths, skipped: skippedFiles } = await this.planObjects();
     stats.filesSkipped = skippedFiles;
     const orderBy = config.orderBy ?? [];
-    const selection =
-      topK === undefined
-        ? undefined
-        : new BoundedTopK<Row>(topK, (a, b) => compareRows(a, b, orderBy));
     const memory =
       config.budget.maxMemoryBytes === undefined
         ? undefined
         : new BufferMemory<Row>(
             (row) => estimateOperatorMemoryBytes([row]) - 2,
-            selection === undefined ? matched : [],
+            topK === undefined ? matched : [],
           );
-    if (selection !== undefined) {
-      for (const row of matched) {
-        const change = selection.add(row);
-        if (change.accepted) {
-          for (const removed of change.removed) memory?.remove(removed);
-          memory?.add(row);
-        }
+    const selection =
+      topK === undefined
+        ? undefined
+        : new OwnedBoundedTopK<Row>(
+            allocationScope,
+            topK,
+            (a, b) => compareRows(a, b, orderBy),
+            memory,
+          );
+    const offer = (row: Row) => {
+      if (selection === undefined || topK === 0) return;
+      const owner = detachOwnedRow(row, allocationScope.budget);
+      try {
+        selection.offer(owner);
+      } finally {
+        owner.release();
       }
+    };
+    if (selection !== undefined) {
+      for (const row of matched) offer(row);
       matched.length = 0;
     }
     const columns = projectedReadColumns(config.select, config.where, orderBy, config.projections);
@@ -3107,11 +3133,7 @@ export class QueryResult {
             matched.push(row);
             memory?.add(row);
           } else {
-            const change = selection.add(row);
-            if (change.accepted) {
-              for (const removed of change.removed) memory?.remove(removed);
-              memory?.add(row);
-            }
+            offer(row);
           }
           enforceBufferedRowsBudget(config.budget, selection?.size ?? matched.length);
           if (memory !== undefined) enforceOperatorMemoryBudget(config.budget, memory.bytes);
@@ -3119,7 +3141,15 @@ export class QueryResult {
       }
     }
     if (selection !== undefined) {
-      for (const row of selection.drainSorted()) matched.push(row);
+      const output = allocationScope.adopt(selection.finish());
+      allocationScope.allocate(
+        allocationCharges.array + output.value.length * allocationCharges.arraySlot,
+        "ordered row result directory",
+        () => {
+          for (const row of output.value) matched.push(row);
+          return matched;
+        },
+      );
     }
     stats.elapsedMs = config.now() - startedAt;
   }

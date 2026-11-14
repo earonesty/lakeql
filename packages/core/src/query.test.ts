@@ -282,7 +282,7 @@ describe("Lake query runtime", () => {
         rowsByPath: { table: rows },
         vectorBatches: false,
         columnBatches: false,
-        budget: { maxMemoryBytes: bytes },
+        budget: { maxMemoryBytes: bytes, maxAllocatedMemoryBytes: 65536 },
       });
     const { lake } = await create(maxMemoryBytes);
     await expect(
@@ -2178,7 +2178,7 @@ describe("Lake query runtime", () => {
       (
         await makeLake({
           rowsByPath: { table: [{ id: 2 }, { id: 1 }] },
-          budget: { maxMemoryBytes: 1 },
+          budget: { maxMemoryBytes: 1, maxAllocatedMemoryBytes: 65536 },
         })
       ).lake
         .path("table")

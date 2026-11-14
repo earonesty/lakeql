@@ -1,0 +1,41 @@
+{
+  "status": "Implemented; focused, default, Worker and explicit HTTP row-fallback validation passed",
+  "acceptance": ["F2", "F3", "M1"],
+  "contract": "Detach stable borrowed scanner data into independently owned backing before scanner advancement. Reserve container, property, traversal descriptor and binary-view storage before constructing it. Immutable scalar values receive retained charges. Preserve plain/null-prototype records, arrays, binary slices, timestamps and decimal scalars; reject cycles, accessors and unsupported custom prototypes.",
+  "validation": {
+    "testsPassed": 97,
+    "build": "passed",
+    "cases": [
+      "nested source mutation isolation",
+      "binary slice detachment",
+      "timestamp mutation isolation",
+      "immutable decimal retention",
+      "__proto__ as an own data field",
+      "exact measured simultaneous cap",
+      "one-byte-short rollback",
+      "sibling reservation preservation",
+      "cycle rejection",
+      "accessor rejection without invocation"
+    ],
+    "integrationCases": [
+      "Reused scanner row, nested object and binary storage detached before scanner mutation.",
+      "Winner ownership remains live while ordered batches are yielded; early consumer return releases it.",
+      "Candidate admission failure closes scanner and preserves sibling allocation.",
+      "Resumable scalar rows remain correct after scanner mutation.",
+      "Unsupported nested checkpoint serialization releases retained winners."
+    ],
+    "defaultTestsPassed": 3029,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61,
+    "httpRowFallbackTestsPassed": 2,
+    "remoteEvidence": "Real wide-timestamp Parquet through a row-only parquetScanner adapter, four concurrent ordered/offset queries over HTTP 206 and ignored-range 200 responses, repeated after cache reuse. Shared pool peak bounded and final eviction returns usage to zero. Worker suite passed, but the new borrowed-row adapter is HTTP-only."
+  },
+  "limits": [
+    "Bounded collectOrderedMatches now uses OwnedBoundedTopK and holds winners through projection/checkpoint work. Unlimited sorting, checkpoint deserialize/serialize allocations, hive merge scratch and result projection/output directories still require ownership review.",
+    "Input data properties must remain stable during synchronous traversal; proxies and arbitrary object behavior have no detachment guarantee.",
+    "Charge units and traversal admission do not establish total VM heap bounds or expose hidden immutable-string backing size.",
+    "Supported scanner value shapes must be reconciled with public compatibility before query integration; unsupported prototypes are not silently flattened.",
+    "Candidate detachment currently occurs before the selector rejects noncompetitive rows; performance scaling and avoiding unnecessary rejected-payload copies remain to be measured."
+  ],
+  "testContractClarification": "Existing exact serialized-size tests now specify a separate 65536-byte allocation allowance. Their serialized boundaries and expected errors are unchanged; production allocation/serialized limits were not relaxed."
+}

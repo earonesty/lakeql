@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import {
   col,
+  Lake,
   lit,
   MemoryBudget,
   SharedMemoryCache,
@@ -10,7 +11,7 @@ import {
 } from "lakeql-core";
 import { expect, it } from "vitest";
 import { HttpObjectStore } from "../../http/src/index.js";
-import { createParquetLake } from "./index.js";
+import { createParquetLake, parquetScanner } from "./index.js";
 
 it.each([
   false,
@@ -189,6 +190,32 @@ it.each([
           };
         }),
       );
+    // Expose only borrowed row scanning to exercise the fallback deliberately.
+    const rowScanner = parquetScanner(store, {
+      scanRangeCache: { maxBytes: 256 * 1024, coalesceBytes: 0, sharedCache: cache },
+    });
+    const rowLake = new Lake({
+      store,
+      scanner: { scan: rowScanner.scan.bind(rowScanner) },
+      memoryPool: pool,
+      budget: { maxAllocatedMemoryBytes: 512 * 1024 },
+    });
+    cache.deleteWhere(() => true);
+    for (let round = 0; round < 2; round++) {
+      const selected = await Promise.all(
+        Array.from({ length: 4 }, () =>
+          rowLake
+            .path("timestamps.parquet")
+            .batchSize(2)
+            .orderBy([{ column: "timestamp_nanos" }])
+            .offset(1)
+            .limit(2)
+            .toArray(),
+        ),
+      );
+      for (const output of selected) expect(output).toEqual([expected[2], expected[0]]);
+      expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
+    }
     expect(peak).toBeLessThanOrEqual(2);
   } finally {
     cache.deleteWhere(() => true);
