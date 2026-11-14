@@ -1,0 +1,225 @@
+{
+  "description": "Local window sort planning, two warmups and three timed rounds. Baseline reproduces the previous pairwise compatibility loop using the unchanged standalone compatibility function. Cached and admitted modes use identical grouping semantics; output group membership/order is independently compared on every run. Input generation, validation and scope disposal excluded. Reservation peaks are not VM heap or cloud latency measurements.",
+  "sourceHashes": {
+    "window-query": "330d3ec532e0df02106278ec06757b4fd958213709c35948a656b63a709f2c2f",
+    "owned-checkpoint-encoding": "c97d74b5b5a6084453c65159aaf7b8bf0140b4c9fc68c456849a6293ff6a04dc"
+  },
+  "results": [
+    {
+      "count": 128,
+      "workload": "compatible",
+      "mode": "baseline",
+      "peakBytes": 0,
+      "medianMilliseconds": 0.5993589999999998,
+      "samples": [0.5993589999999998, 0.5667880000000025, 0.6876759999999962]
+    },
+    {
+      "count": 128,
+      "workload": "compatible",
+      "mode": "cached",
+      "peakBytes": 0,
+      "medianMilliseconds": 0.37105900000000247,
+      "samples": [0.3366840000000053, 0.39824999999999733, 0.37105900000000247]
+    },
+    {
+      "count": 128,
+      "workload": "compatible",
+      "mode": "admitted",
+      "peakBytes": 19100,
+      "medianMilliseconds": 6.769535999999995,
+      "samples": [6.769535999999995, 6.882770000000008, 4.454504]
+    },
+    {
+      "count": 128,
+      "workload": "partitions",
+      "mode": "baseline",
+      "peakBytes": 0,
+      "medianMilliseconds": 4.401473999999993,
+      "samples": [4.330701000000005, 4.420017999999999, 4.401473999999993]
+    },
+    {
+      "count": 128,
+      "workload": "partitions",
+      "mode": "cached",
+      "peakBytes": 0,
+      "medianMilliseconds": 0.2711710000000096,
+      "samples": [0.2681049999999914, 0.3098140000000029, 0.2711710000000096]
+    },
+    {
+      "count": 128,
+      "workload": "partitions",
+      "mode": "admitted",
+      "peakBytes": 112004,
+      "medianMilliseconds": 5.569744999999983,
+      "samples": [4.296285000000012, 5.569744999999983, 6.748325999999992]
+    },
+    {
+      "count": 128,
+      "workload": "order-branches",
+      "mode": "baseline",
+      "peakBytes": 0,
+      "medianMilliseconds": 23.25363600000003,
+      "samples": [23.06793700000003, 26.78817799999996, 23.25363600000003]
+    },
+    {
+      "count": 128,
+      "workload": "order-branches",
+      "mode": "cached",
+      "peakBytes": 0,
+      "medianMilliseconds": 0.4802150000000438,
+      "samples": [0.5198700000000258, 0.47449399999999287, 0.4802150000000438]
+    },
+    {
+      "count": 128,
+      "workload": "order-branches",
+      "mode": "admitted",
+      "peakBytes": 97522,
+      "medianMilliseconds": 3.269040000000018,
+      "samples": [3.269040000000018, 3.365791999999999, 3.1592130000000225]
+    },
+    {
+      "count": 512,
+      "workload": "compatible",
+      "mode": "baseline",
+      "peakBytes": 0,
+      "medianMilliseconds": 0.8972309999999766,
+      "samples": [0.9060369999999693, 0.8972309999999766, 0.8801480000000197]
+    },
+    {
+      "count": 512,
+      "workload": "compatible",
+      "mode": "cached",
+      "peakBytes": 0,
+      "medianMilliseconds": 0.8098760000000311,
+      "samples": [0.7770840000000021, 2.995654000000002, 0.8098760000000311]
+    },
+    {
+      "count": 512,
+      "workload": "compatible",
+      "mode": "admitted",
+      "peakBytes": 68252,
+      "medianMilliseconds": 19.602536999999984,
+      "samples": [19.602536999999984, 23.814003000000014, 14.391628000000026]
+    },
+    {
+      "count": 512,
+      "workload": "partitions",
+      "mode": "baseline",
+      "peakBytes": 0,
+      "medianMilliseconds": 67.68653099999995,
+      "samples": [67.68653099999995, 69.17829199999994, 65.065834]
+    },
+    {
+      "count": 512,
+      "workload": "partitions",
+      "mode": "cached",
+      "peakBytes": 0,
+      "medianMilliseconds": 0.8333000000000084,
+      "samples": [0.8333000000000084, 1.1698740000000498, 0.8118499999999358]
+    },
+    {
+      "count": 512,
+      "workload": "partitions",
+      "mode": "admitted",
+      "peakBytes": 444548,
+      "medianMilliseconds": 18.85375600000009,
+      "samples": [18.85375600000009, 18.92091199999993, 13.002549999999928]
+    },
+    {
+      "count": 512,
+      "workload": "order-branches",
+      "mode": "baseline",
+      "peakBytes": 0,
+      "medianMilliseconds": 384.8337099999999,
+      "samples": [382.14311, 384.8337099999999, 386.7747280000003]
+    },
+    {
+      "count": 512,
+      "workload": "order-branches",
+      "mode": "cached",
+      "peakBytes": 0,
+      "medianMilliseconds": 2.641928000000007,
+      "samples": [2.601731999999629, 2.641928000000007, 4.161993000000166]
+    },
+    {
+      "count": 512,
+      "workload": "order-branches",
+      "mode": "admitted",
+      "peakBytes": 386290,
+      "medianMilliseconds": 19.076305000000048,
+      "samples": [13.895662999999786, 19.076305000000048, 22.108538999999837]
+    },
+    {
+      "count": 1024,
+      "workload": "compatible",
+      "mode": "baseline",
+      "peakBytes": 0,
+      "medianMilliseconds": 3.2150879999999233,
+      "samples": [3.2150879999999233, 1.793149000000085, 9.369624999999814]
+    },
+    {
+      "count": 1024,
+      "workload": "compatible",
+      "mode": "cached",
+      "peakBytes": 0,
+      "medianMilliseconds": 1.5514840000000731,
+      "samples": [1.5514840000000731, 1.5483070000000225, 1.5892139999996289]
+    },
+    {
+      "count": 1024,
+      "workload": "compatible",
+      "mode": "admitted",
+      "peakBytes": 133788,
+      "medianMilliseconds": 25.067794999999933,
+      "samples": [25.067794999999933, 27.555762999999843, 24.49944400000004]
+    },
+    {
+      "count": 1024,
+      "workload": "partitions",
+      "mode": "baseline",
+      "peakBytes": 0,
+      "medianMilliseconds": 278.4895059999999,
+      "samples": [281.0527069999998, 278.4895059999999, 277.437234]
+    },
+    {
+      "count": 1024,
+      "workload": "partitions",
+      "mode": "cached",
+      "peakBytes": 0,
+      "medianMilliseconds": 1.8414899999997942,
+      "samples": [2.2389090000006036, 1.8414899999997942, 1.659867999999733]
+    },
+    {
+      "count": 1024,
+      "workload": "partitions",
+      "mode": "admitted",
+      "peakBytes": 887988,
+      "medianMilliseconds": 37.39277899999979,
+      "samples": [40.673971999999594, 32.46794000000045, 37.39277899999979]
+    },
+    {
+      "count": 1024,
+      "workload": "order-branches",
+      "mode": "baseline",
+      "peakBytes": 0,
+      "medianMilliseconds": 1603.6276180000004,
+      "samples": [1591.2456070000007, 1613.606511, 1603.6276180000004]
+    },
+    {
+      "count": 1024,
+      "workload": "order-branches",
+      "mode": "cached",
+      "peakBytes": 0,
+      "medianMilliseconds": 11.373000999999931,
+      "samples": [10.458166000000347, 12.927299000000858, 11.373000999999931]
+    },
+    {
+      "count": 1024,
+      "workload": "order-branches",
+      "mode": "admitted",
+      "peakBytes": 771364,
+      "medianMilliseconds": 46.26280299999962,
+      "samples": [45.84416400000009, 46.26280299999962, 46.5616059999993]
+    }
+  ]
+}

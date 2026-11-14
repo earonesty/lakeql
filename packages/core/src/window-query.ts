@@ -1,8 +1,12 @@
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import type { Expr } from "./expr.js";
 import { collectExprColumns } from "./expr-utils.js";
 import { stableStringify } from "./manifest.js";
+import type { MemoryScope } from "./memory-scope.js";
+import { stringifyOwnedStableData } from "./owned-checkpoint-encoding.js";
 import type { OrderByTerm } from "./query.js";
 import type { WindowExpr } from "./window.js";
+import { retainWindowValue } from "./window-value-ownership.js";
 
 export interface WindowReadColumnInput {
   select?: string[];
@@ -91,40 +95,108 @@ export function collectWindowColumns(expr: WindowExpr, columns: Set<string>): vo
 
 export function compatibleWindowSortGroups<T extends CompatibleWindowSortItem>(
   items: readonly T[],
+  scope?: MemoryScope,
 ): CompatibleWindowSortGroup<T>[] {
-  const groups: CompatibleWindowSortGroup<T>[] = [];
-  const ordered = [...items].sort(
-    (left, right) => right.expr.over.orderBy.length - left.expr.over.orderBy.length,
-  );
-  for (const item of ordered) {
-    const group = groups.find((candidate) =>
-      windowSortSpecsCompatible(candidate.sortExpr, item.expr),
+  const scratch = scope?.childScope();
+  const allocate = <V>(
+    owner: MemoryScope | undefined,
+    bytes: number,
+    purpose: string,
+    create: () => V,
+  ): V => (owner === undefined ? create() : owner.allocate(bytes, purpose, create).value);
+  try {
+    const groups = allocate(
+      scope,
+      c.array,
+      "window sort groups",
+      () => [] as CompatibleWindowSortGroup<T>[],
     );
-    if (group === undefined) {
-      groups.push({ sortExpr: item.expr, items: [item] });
-      continue;
+    if (items.length === 0) return groups;
+    const partitions = allocate(
+      scratch,
+      c.object,
+      "window sort partition directory",
+      () => new Map<string, { group: CompatibleWindowSortGroup<T>; keys: string[] }[]>(),
+    );
+    const ordered = allocate(
+      scratch,
+      c.array + items.length * c.arraySlot,
+      "window ordered sort items",
+      () => [...items],
+    );
+    const sorting = scratch?.reserve(
+      c.array + items.length * (c.arraySlot + c.object),
+      "window sort planning workspace",
+    );
+    try {
+      ordered.sort((left, right) => right.expr.over.orderBy.length - left.expr.over.orderBy.length);
+    } finally {
+      sorting?.release();
     }
-    if (group.sortExpr.over.orderBy.length < item.expr.over.orderBy.length) {
-      group.sortExpr = item.expr;
+    const key = (value: unknown) => {
+      if (scratch === undefined) return stableStringify(value);
+      const temporary = scratch.childScope();
+      try {
+        const owner = stringifyOwnedStableData(value, temporary);
+        try {
+          return retainWindowValue(owner.value, scratch, temporary) as string;
+        } finally {
+          owner.release();
+        }
+      } finally {
+        temporary.dispose();
+      }
+    };
+    for (const item of ordered) {
+      const partition = key(item.expr.over.partitionBy);
+      const keys = allocate(
+        scratch,
+        c.array + item.expr.over.orderBy.length * c.arraySlot,
+        "window order term keys",
+        () => Array.from(item.expr.over.orderBy, key),
+      );
+      let candidates = partitions.get(partition);
+      const candidate = candidates?.find((entry) =>
+        keys.every((value, index) => value === entry.keys[index]),
+      );
+      if (candidate !== undefined) {
+        allocate(scope, c.arraySlot, "compatible window item", () =>
+          candidate.group.items.push(item),
+        );
+        continue;
+      }
+      const group = allocate(
+        scope,
+        c.object + 2 * c.property + c.array + c.arraySlot,
+        "window sort group",
+        () => ({ sortExpr: item.expr, items: [item] }),
+      );
+      allocate(scope, c.arraySlot, "window sort group reference", () => groups.push(group));
+      if (candidates === undefined) {
+        candidates = allocate(
+          scratch,
+          c.property + c.array,
+          "window partition candidates",
+          () => [],
+        );
+        partitions.set(partition, candidates);
+      }
+      const entry = allocate(
+        scratch,
+        c.arraySlot + c.object + 2 * c.property,
+        "window sort candidate",
+        () => ({ group, keys }),
+      );
+      candidates.push(entry);
     }
-    group.items.push(item);
+    return groups;
+  } finally {
+    scratch?.dispose();
   }
-  return groups;
 }
 
 export function windowSortGroupCount(windows: Record<string, WindowExpr>): number {
-  const sortGroups = new Set<string>();
-  for (const group of compatibleWindowSortGroups(
-    Object.values(windows).map((expr) => ({ expr })),
-  )) {
-    sortGroups.add(
-      stableStringify({
-        partitionBy: group.sortExpr.over.partitionBy,
-        orderBy: group.sortExpr.over.orderBy,
-      }),
-    );
-  }
-  return sortGroups.size;
+  return compatibleWindowSortGroups(Object.values(windows).map((expr) => ({ expr }))).length;
 }
 
 export function windowTaskPlanForWindows(

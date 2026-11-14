@@ -43,5 +43,6 @@
     "Legacy spill-read pre-allocation admission, delegated task intermediates, transactional spill cleanup and other operator/source gaps remain open.",
     "The full mixed-job/adaptive scheduling matrix and production Cloudflare total-memory evidence remain open.",
     "Allocation units do not establish a total VM heap, external backing or RSS cap."
-  ]
+  ],
+  "followupEvidence": "docs/validation/window-sort-planning-2026-11-14.json"
 }

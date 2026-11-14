@@ -51,7 +51,7 @@ export function applyWindowsToRows(
     if (options.estimateMemoryBytes !== undefined) {
       options.enforceMemoryBytes?.(options.estimateMemoryBytes(rows));
     }
-    for (const group of windowSortGroups(windows)) {
+    for (const group of windowSortGroups(windows, resultScope.childScope())) {
       const groupScope = new MemoryScope(
         options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER),
       );
@@ -96,7 +96,7 @@ export function applyWindowsToRuns(
       "window result runs",
       () => inputRuns.map((run) => copyWindowRows(run, resultScope)),
     ).value;
-    for (const group of windowSortGroups(windows)) {
+    for (const group of windowSortGroups(windows, resultScope.childScope())) {
       const groupScope = new MemoryScope(
         options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER),
       );
@@ -168,10 +168,26 @@ export function applyWindowsToRuns(
   });
 }
 
-export function windowSortGroups(windows: Record<string, WindowExpr>) {
-  return compatibleWindowSortGroups(
-    Object.entries(windows).map(([alias, expr]) => ({ alias, expr })),
-  );
+export function windowSortGroups(windows: Record<string, WindowExpr>, scope?: MemoryScope) {
+  const items: { alias: string; expr: WindowExpr }[] =
+    scope === undefined
+      ? []
+      : scope.allocate(
+          c.array,
+          "window expression directory",
+          () => [] as { alias: string; expr: WindowExpr }[],
+        ).value;
+  for (const alias in windows) {
+    if (!Object.hasOwn(windows, alias)) continue;
+    const expr = windows[alias];
+    if (expr === undefined) continue;
+    if (scope === undefined) items.push({ alias, expr });
+    else
+      scope.allocate(c.arraySlot + c.object + 2 * c.property, "window expression entry", () =>
+        items.push({ alias, expr }),
+      );
+  }
+  return compatibleWindowSortGroups(items, scope);
 }
 
 export function windowRowsForExpr<T extends WindowRow>(

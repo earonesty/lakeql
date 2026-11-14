@@ -1,0 +1,63 @@
+{
+  "requirements": ["F4", "M1", "V2", "V3"],
+  "status": "Execution sort-group planning admitted; repeated compatibility serialization removed; full acceptance remains open",
+  "implementation": [
+    "Sort planning computes partition/order keys once per item and restricts candidate search to the matching partition key. Descending order-key length preserves stable longest-prefix group selection without the unreachable sort-expression replacement branch.",
+    "Scoped planning admits expression directories, ordered references, sorting scratch, candidate maps, group records and keys. Equal immutable key strings reuse retained backing; per-key formatting scratch releases immediately.",
+    "Execution backends keep planning metadata in temporary child scopes, separate from retained result rows. Planning keys release once groups are built.",
+    "Sort-group counting now uses the compatible-group count directly, removing a redundant serialization and Set pass."
+  ],
+  "validation": {
+    "newCases": 3,
+    "cases": [
+      "Stable longest-prefix grouping and partition separation without input reordering",
+      "Measured exact planning peak succeeds and one byte below rejects",
+      "Oversized serialized sort expressions reject while preserving a sibling reservation"
+    ],
+    "recordBoundaryUpdate": "Existing exact record tests now measure the combined peak including transient planning directories; they still independently assert the retained result-record charge.",
+    "build": "pnpm exec tsc -b passed before runtime checks and benchmarks",
+    "limitations": "Coverage, external conformance and full packaging were not refreshed for this change.",
+    "default": {
+      "passed": 3322,
+      "skipped": 629
+    },
+    "worker": {
+      "passed": 75,
+      "scope": "Includes real Parquet window-key, frame, value and resume routes in local workerd R2"
+    },
+    "reference": {
+      "passed": 104
+    },
+    "typecheck": "pnpm typecheck passed",
+    "lint": "pnpm lint passed"
+  },
+  "performance": {
+    "script": "bench/window-sort-planning.mjs",
+    "report": "docs/benchmarks/window-sort-planning-2026-11-14.json",
+    "method": "Two warmups and three timed samples; legacy pairwise baseline versus cached and admitted implementations, with identical group membership/order asserted on every run.",
+    "windows1024MedianMilliseconds": {
+      "compatible": {
+        "baselineUntracked": 3.215088,
+        "admitted": 25.067795
+      },
+      "distinctPartitions": {
+        "baselineUntracked": 278.489506,
+        "admitted": 37.392779
+      },
+      "distinctOrderBranches": {
+        "baselineUntracked": 1603.627618,
+        "admitted": 46.262803
+      }
+    },
+    "compatibleAdmittedPeakBytes": 133788,
+    "tradeoff": "Admitted planning has material CPU overhead for already-compatible plans. Equal-key reuse reduced peak storage in the compatible 1024-window experiment from 542850 to 133788 bytes; it did not remove formatting/admission CPU cost.",
+    "limitations": "Local planning kernels; baseline does not account for memory. No cloud-latency, VM-heap or across-the-board speedup claim."
+  },
+  "remainingAcceptance": [
+    "Explain/read-column/task-topology planning metadata, timestamp-bound arithmetic and other execution metadata still require complete admission review.",
+    "Legacy spill-read pre-allocation admission, delegated task intermediates, transactional spill cleanup and other source/operator gaps remain open.",
+    "Full concurrent mixed-job/adaptive scheduling acceptance and production Cloudflare total-memory evidence remain open.",
+    "Reservation accounting does not establish total VM heap, external backing or RSS limits.",
+    "Low-headroom alternatives for cached planning remain part of adaptive acceptance; no fallback guarantee is established by this change."
+  ]
+}

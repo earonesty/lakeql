@@ -55,7 +55,7 @@ export async function applyWindowsToVectorBatches(
       }
       if (options.estimateMemoryBytes !== undefined)
         options.enforceMemoryBytes?.(options.estimateMemoryBytes(rows));
-      for (const group of windowSortGroups(windows)) {
+      for (const group of windowSortGroups(windows, resultScope.childScope())) {
         const groupScope = indexScope.childScope();
         try {
           const sorted = vectorWindowRows(inputs, entries, group.sortExpr, groupScope);

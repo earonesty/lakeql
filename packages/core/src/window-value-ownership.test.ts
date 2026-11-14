@@ -214,7 +214,13 @@ it.each([
 it.each(["rows", "runs"])("admits result records at the exact boundary (%s)", (route) => {
   // One array, two slots, two records with one property; runs add one outer array/slot.
   const bytes = 64 + 2 * 16 + 2 * (64 + 64) + (route === "runs" ? 80 : 0);
-  for (const limit of [bytes, bytes - 1]) {
+  const measured = new MemoryBudget(65536);
+  const input = [{ id: 1 }, { id: 2 }];
+  if (route === "rows") applyWindowsToRows(input, {}, { memoryBudget: measured });
+  else applyWindowsToRuns([input], {}, { memoryBudget: measured });
+  const peak = measured.peakBytes; // Includes transient sort-planning directories.
+  expect(measured.usedBytes).toBe(0);
+  for (const limit of [peak, peak - 1]) {
     const budget = new MemoryBudget(limit);
     const resultScope = new MemoryScope(budget);
     const rows = [{ id: 1 }, { id: 2 }];
@@ -222,7 +228,7 @@ it.each(["rows", "runs"])("admits result records at the exact boundary (%s)", (r
       route === "rows"
         ? applyWindowsToRows(rows, {}, { memoryBudget: budget, resultScope })
         : applyWindowsToRuns([rows], {}, { memoryBudget: budget, resultScope });
-    if (limit === bytes) {
+    if (limit === peak) {
       expect(run()).toEqual(route === "rows" ? rows : [rows]);
       expect(budget.usedBytes).toBe(bytes);
     } else {
