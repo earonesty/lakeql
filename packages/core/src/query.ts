@@ -10,6 +10,7 @@ import {
 } from "./batch.js";
 import { vectorCallExprSupported } from "./batch-call.js";
 import { BufferMemory } from "./buffer-memory.js";
+import { checkedAsyncIterable } from "./checked-async-iterable.js";
 import { readCheckpointSpill } from "./checkpoint-spill-read.js";
 import { withCheckpointSpillBatch } from "./checkpoint-spill-write-batch.js";
 import { admittedColumnNames } from "./column-names.js";
@@ -871,7 +872,10 @@ export class QueryResult {
         scanOptions.columns = physicalColumns;
       }
       if (config.where !== undefined) scanOptions.where = config.where;
-      for await (const rawBatch of config.scanner.scan(object.path, scanOptions)) {
+      for await (const rawBatch of checkedAsyncIterable(
+        config.scanner.scan(object.path, scanOptions),
+        config.budget.signal,
+      )) {
         for (const rawRow of rawBatch) {
           const row = config.hive ? { ...partitionValues, ...rawRow } : rawRow;
           stats.rowsDecoded += 1;
@@ -959,7 +963,10 @@ export class QueryResult {
           scanOptions.columns = physicalColumns;
         }
         if (config.where !== undefined) scanOptions.where = config.where;
-        for await (const rawBatch of config.scanner.scan(object.path, scanOptions)) {
+        for await (const rawBatch of checkedAsyncIterable(
+          config.scanner.scan(object.path, scanOptions),
+          config.budget.signal,
+        )) {
           const outputBatchSize = config.batchSize ?? 4096;
           for (let start = 0; start < rawBatch.length; start += outputBatchSize) {
             const batchScope = predicateScope.childScope();
@@ -1380,10 +1387,14 @@ export class QueryResult {
   ): AsyncIterable<ScanVectorBatch & { owner?: OwnedMemory<ScanVectorBatch> }> {
     const scanner = this.config.scanner;
     if (scanner.scanOwnedVectorBatches !== undefined) {
-      for await (const owner of scanner.scanOwnedVectorBatches(path, {
-        ...options,
-        memoryBudget: this.memoryBudget,
-      })) {
+      for await (const owner of checkedAsyncIterable(
+        scanner.scanOwnedVectorBatches(path, {
+          ...options,
+          memoryBudget: this.memoryBudget,
+        }),
+        options.budget.signal,
+        (owner) => owner.release(),
+      )) {
         try {
           yield { ...owner.value, owner };
         } finally {
@@ -1392,7 +1403,7 @@ export class QueryResult {
       }
     } else {
       const scan = vectorBatchScanner(scanner);
-      if (scan) yield* scan(scanner, path, options);
+      if (scan) yield* checkedAsyncIterable(scan(scanner, path, options), options.budget.signal);
     }
   }
 
@@ -3250,10 +3261,14 @@ export class QueryResult {
       // Iteration consumers must detach their state before requesting the next input.
       // Retained-vector consumers need explicit ownership transfer before opting in.
       if (scanOwned !== undefined) {
-        for await (const owner of scanOwned.call(config.scanner, object.path, {
-          ...scanOptions,
-          memoryBudget: this.memoryBudget,
-        })) {
+        for await (const owner of checkedAsyncIterable(
+          scanOwned.call(config.scanner, object.path, {
+            ...scanOptions,
+            memoryBudget: this.memoryBudget,
+          }),
+          config.budget.signal,
+          (owner) => owner.release(),
+        )) {
           try {
             enforceBudget(config.budget, this.stats, config.now, startedAt);
             yield {
@@ -3270,7 +3285,10 @@ export class QueryResult {
       }
       if (scanColumns === undefined) continue;
       let rowOffset = 0;
-      for await (const batch of scanColumns.call(config.scanner, object.path, scanOptions)) {
+      for await (const batch of checkedAsyncIterable(
+        scanColumns.call(config.scanner, object.path, scanOptions),
+        config.budget.signal,
+      )) {
         enforceBudget(config.budget, this.stats, config.now, startedAt);
         yield { batch, sourceIdentity: physicalSourceIdentity(object, rowOffset) };
         rowOffset += batch.rowCount;
@@ -3349,7 +3367,10 @@ export class QueryResult {
         scanOptions.columns = physicalColumns;
       }
       if (config.where !== undefined) scanOptions.where = config.where;
-      for await (const rawBatch of config.scanner.scan(object.path, scanOptions)) {
+      for await (const rawBatch of checkedAsyncIterable(
+        config.scanner.scan(object.path, scanOptions),
+        config.budget.signal,
+      )) {
         for (const rawRow of rawBatch) {
           const row = config.hive ? { ...partitionValues, ...rawRow } : rawRow;
           stats.rowsDecoded += 1;
@@ -3439,7 +3460,10 @@ export class QueryResult {
         scanOptions.columns = physicalColumns;
       }
       if (config.where !== undefined) scanOptions.where = config.where;
-      for await (const rawBatch of config.scanner.scan(object.path, scanOptions)) {
+      for await (const rawBatch of checkedAsyncIterable(
+        config.scanner.scan(object.path, scanOptions),
+        config.budget.signal,
+      )) {
         for (const rawRow of rawBatch) {
           const row = config.hive ? { ...partitionValues, ...rawRow } : rawRow;
           stats.rowsDecoded += 1;

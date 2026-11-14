@@ -118,6 +118,7 @@ it.each([
           await pending;
           expect(pool.usedBytes).toBeGreaterThan(0);
           if (outcome === "failure") throw Error("scan failed");
+          if (outcome === "cancel-empty") return;
           yield [{ id: 1 }, { id: 2 }];
         } finally {
           closed = true;
@@ -136,7 +137,7 @@ it.each([
           outcome === "failure" ? { message: "scan failed" } : { code: "LAKEQL_ABORTED" },
         );
   await entered;
-  if (outcome === "cancel") controller.abort();
+  if (outcome === "cancel" || outcome === "cancel-empty") controller.abort();
   expect(pool.usedBytes).toBeGreaterThan(0);
   finish();
   await checked;

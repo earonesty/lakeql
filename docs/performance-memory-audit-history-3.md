@@ -3545,3 +3545,25 @@ discovery/explain lifetimes remain separate open work.
 Validation: build/typecheck passed; focused suites passed 107 tests; full suite
 passed 3,567 with 629 skips. Evidence:
 `docs/validation/slice-manifest-lifetime-2026-11-14.json`.
+
+### 2026-11-14 — cancellation at scan advancement and empty completion
+
+Added a shared checked async-iteration boundary for row scans, projected borrowed
+and owned vector scans, physical column inputs, and window scan inputs. It checks
+abort before initial advancement, after each asynchronous result (including empty
+completion), and before requesting another value after consumer handoff. Owned
+sources supply a discard callback to release a result rejected before handoff.
+In-flight advancement is awaited rather than detached; source iterator cleanup
+runs before the rejection completes.
+
+Focused tests cover delayed empty completion, delayed values, post-abort owned
+allocations, cancellation while the consumer holds a value, and early consumer
+return. The slice regression now also covers a delayed scanner that returns no
+rows. These changes preserve the existing request scheduling; they do not prove
+that arbitrary external adapters stop ongoing I/O immediately. Broader output
+ownership and runtime memory acceptance remain open.
+
+Queries with no abort signal return the original iterable without an extra async
+generator; an identity test verifies that fast path. Final build/typecheck passed;
+full suite passed 3,573 tests with 629 skips. Evidence:
+`docs/validation/scan-completion-cancellation-2026-11-14.json`.

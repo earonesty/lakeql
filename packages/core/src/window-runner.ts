@@ -1,6 +1,7 @@
 import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { predicateSelection, selectedRowCount } from "./batch.js";
 import { BufferMemory } from "./buffer-memory.js";
+import { checkedAsyncIterable } from "./checked-async-iterable.js";
 import { withCheckpointSpillBatch } from "./checkpoint-spill-write-batch.js";
 import { LakeqlError } from "./errors.js";
 import { matches } from "./evaluator.js";
@@ -249,7 +250,10 @@ export async function collectWindowMatches(
         scanOptions.columns = physicalColumns;
       }
       if (config.where !== undefined) scanOptions.where = config.where;
-      for await (const rawBatch of config.scanner.scan(object.path, scanOptions)) {
+      for await (const rawBatch of checkedAsyncIterable(
+        config.scanner.scan(object.path, scanOptions),
+        config.budget.signal,
+      )) {
         for (const rawRow of rawBatch) {
           const row = config.hive ? { ...partitionValues, ...rawRow } : rawRow;
           stats.rowsDecoded += 1;
@@ -506,7 +510,10 @@ async function collectRowWindowRunMatches(
         scanOptions.columns = physicalColumns;
       }
       if (config.where !== undefined) scanOptions.where = config.where;
-      for await (const rawBatch of config.scanner.scan(object.path, scanOptions)) {
+      for await (const rawBatch of checkedAsyncIterable(
+        config.scanner.scan(object.path, scanOptions),
+        config.budget.signal,
+      )) {
         for (const rawRow of rawBatch) {
           const row = config.hive ? { ...partitionValues, ...rawRow } : rawRow;
           stats.rowsDecoded += 1;
@@ -696,14 +703,24 @@ async function* windowScanInputs(
 ): AsyncIterable<ScanVectorBatch & { owner?: OwnedMemory<ScanVectorBatch> }> {
   const owned = options.config.scanner.scanOwnedVectorBatches;
   if (owned === undefined) {
-    if (borrowed !== undefined) yield* borrowed(options.config.scanner, path, scanOptions);
+    if (borrowed !== undefined)
+      yield* checkedAsyncIterable(
+        borrowed(options.config.scanner, path, scanOptions),
+        scanOptions.budget.signal,
+      );
     return;
   }
-  for await (const owner of owned.call(options.config.scanner, path, {
-    ...scanOptions,
-    memoryBudget:
-      scanOptions.memoryBudget ?? options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER),
-  })) {
+  for await (const owner of checkedAsyncIterable(
+    owned.call(options.config.scanner, path, {
+      ...scanOptions,
+      memoryBudget:
+        scanOptions.memoryBudget ??
+        options.memoryBudget ??
+        new MemoryBudget(Number.MAX_SAFE_INTEGER),
+    }),
+    scanOptions.budget.signal,
+    (owner) => owner.release(),
+  )) {
     try {
       yield { ...owner.value, owner };
     } finally {
