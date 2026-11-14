@@ -165,14 +165,11 @@ export async function* readAlignedNumericPageGroups(
                 ? await plan.measureOwned(file, scope)
                 : undefined;
             const executionPlan = measured ?? plan;
+            const decodeInto = (target: MemoryScope) =>
+              executionPlan.executeOwned(file, target, options.maxConcurrentReads, options.decode);
             try {
               if (options.scheduler === undefined || scope.hasAdmission) {
-                decoded = await executionPlan.executeOwned(
-                  file,
-                  scope,
-                  options.maxConcurrentReads,
-                  options.decode,
-                );
+                decoded = await decodeInto(scope);
               } else {
                 const completion = await options.scheduler.run({
                   budget: scope.budget,
@@ -182,11 +179,7 @@ export async function* readAlignedNumericPageGroups(
                   async execute(stage) {
                     // Keep per-page ownership: a composite scheduled output would
                     // retain exhausted peers until the last aligned page retires.
-                    decoded = await executionPlan.executeOwned(
-                      file,
-                      stage,
-                      options.maxConcurrentReads,
-                    );
+                    decoded = await decodeInto(stage);
                   },
                 });
                 completion.release();

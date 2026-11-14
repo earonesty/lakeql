@@ -810,14 +810,20 @@ it.each([
     })(),
   }));
   const rows = [];
+  let decodes = 0;
   for await (const owner of readAlignedNumericPageGroups(file, sources, scope, {
     rowEnd: 1,
+    decode(work) {
+      decodes++;
+      return work();
+    },
     ...(scheduler === undefined ? {} : { scheduler }),
   })) {
     rows.push(...materializeBatchRows(owner.value.batch));
     owner.release();
   }
   expect(rows).toEqual(values.map((i) => ({ a: i, b: i % 3 ? i + 0.5 : null })));
+  expect(decodes).toBe(entries.length);
   expect(root.peakBytes).toBeLessThanOrEqual(8192);
   expect(root.usedBytes).toBe(0);
   scope.dispose();

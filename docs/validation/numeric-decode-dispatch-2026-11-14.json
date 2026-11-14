@@ -1,0 +1,23 @@
+{
+  "baseCommit": "b7a4337",
+  "requirements": ["M2", "V2"],
+  "change": "Direct and scheduled numeric replacements share dispatch and preserve the decode instrumentation callback.",
+  "regression": {
+    "fixture": "packages/parquet/src/numeric-page-group.test.ts",
+    "before": "Scheduled measured ZSTD case reports zero callbacks instead of two.",
+    "after": "Direct and scheduled cases report one callback per numeric column, correct rows and zero final reservations under 8 KiB cap."
+  },
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "numericPageTests": 37,
+    "regularPassed": 3729,
+    "regularSkipped": 629,
+    "workerPassed": 82
+  },
+  "limitations": [
+    "No throughput improvement claimed.",
+    "Prior affected decode-time statistics undercounted work; wall-clock observations remain unchanged.",
+    "Full audit acceptance remains open."
+  ]
+}

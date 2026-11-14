@@ -4391,3 +4391,12 @@ Reviewed `MemoryStageScheduler` admission and its callers. Added two adversarial
 The implementation's fairness boundary is explicit: `vector-batches.ts` shares numeric schedulers by root pool; `numeric-page-alignment.ts` submits planned numeric replacement stages unless an enclosing stage already supplies admission. `concatScheduledBatches` is another explicit scheduled operation. This does not establish scheduling fairness for every operator/query path, and FIFO may leave free capacity idle behind a larger head. These tests verify the stated FIFO contract rather than a throughput or bounded-wait claim. The existing read semaphore has its own FIFO/cancelled-entry tests; transport slots are distinct from memory-stage admission.
 
 Final verification: 15 scheduler tests and typecheck passed. Evidence: `docs/validation/stage-fifo-admission-2026-11-14.json`. No runtime implementation changed.
+
+
+### M2/V2 shared scheduled numeric decode instrumentation (2026-11-14)
+
+The scheduler integration review found that direct numeric replacement execution forwarded `options.decode`, while scheduled execution omitted it. Public numeric scans supply this wrapper to record decode time, so scheduled numeric replacement work was omitted from that statistic. The two paths now share one `decodeInto` dispatch function that forwards the same plan, concurrency and instrumentation arguments while varying only the admitted scope. This removes duplicated argument lists without changing planning, reservations or transport scheduling.
+
+Extended the real ZSTD fixture that forces measured decoding under an 8 KiB job cap: direct and scheduled execution must each invoke the decoder wrapper once per numeric column, preserve nullable values, stay within the cap and release all tracked storage. Before the fix, the scheduled case failed with zero callbacks instead of two; afterward all 37 numeric-page-group tests pass. Prior end-to-end wall-clock measurements remain wall-clock observations, but decode-time statistics from affected scheduled paths undercounted work and should not be treated as complete CPU attribution. This is a measurement correctness fix, not a claimed throughput improvement.
+
+Final verification: build/typecheck passed; 37 numeric-page tests, 3,729 regular tests (629 skipped), and 82 Worker tests passed. Evidence: `docs/validation/numeric-decode-dispatch-2026-11-14.json`.

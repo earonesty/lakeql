@@ -246,6 +246,8 @@ for the stated reservation/live-allocation invariant.
 
 Owned metadata cancellation follow-up: controlled HEAD now binds query/caller cancellation to its read scope and transfers successful metadata into the caller scope. Queued disposal and pending HTTP cancellation are covered alongside real HTTP ownership fixtures; see `validation/owned-head-read-controls-2026-11-14.json`. Real HTTP header/partial-body cancellation and queued-slot recovery also pass (`validation/owned-head-http-cancellation-2026-11-14.json`). R2 settlement coverage verifies that non-abortable binding calls retain the read slot until settlement, then reject late metadata and admit the next reader (`validation/r2-metadata-cancellation-2026-11-14.json`; 82 Worker tests passed).
 
+Scheduled numeric decode instrumentation follow-up: direct and scheduled replacements now share dispatch, fixing omitted decode-time callbacks in the scheduled path. The measured ZSTD regression fails before the fix and passes afterward; prior affected decode-time breakdowns undercount work (wall-clock timings are unaffected). See `validation/numeric-decode-dispatch-2026-11-14.json`.
+
 ### Current acceptance status
 
 | Requirement | Current evidence | Remaining acceptance work |
