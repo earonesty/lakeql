@@ -387,3 +387,5 @@ Admit retained typed-array views as well as backing for shared and compact gathe
 Share allocation-free packed range access across selected concatenation and gather, preserving fixed-width traversal counts and rejecting out-of-bounds payload extents before gather allocation.
 
 Reuse physical input batches for identity CPU projections instead of rebuilding unchanged column directories and descriptor owners. Preserve standalone projection copy semantics, backend selection, metrics, limits and nonidentity projection behavior.
+
+Reuse materialization-planning ancestry capacity across sibling rows, merging exclusive reservations instead of allocating per-cell frame reservations. Preserve depth bounds and output forecasts while allowing exact fixed-stage planning allowances to succeed.

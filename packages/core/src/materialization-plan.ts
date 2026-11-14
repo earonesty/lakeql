@@ -9,7 +9,7 @@ import {
 } from "./batch.js";
 import { decimalFormatAllocationBytes, requireDecimalValue } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
-import type { MemoryBudget } from "./memory-budget.js";
+import type { MemoryBudget, MemoryReservation } from "./memory-budget.js";
 import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
 import type { Row } from "./types.js";
 
@@ -66,6 +66,7 @@ function planMaterialization(
   )
     throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Invalid materialization row extent");
   const planning = parent?.childScope();
+  let traversal: MemoryReservation | undefined;
   try {
     const cost = MATERIALIZATION_CHARGES;
     let retainsInput = false;
@@ -100,6 +101,7 @@ function planMaterialization(
         ? new Set<Vector>()
         : planning.allocate(cost.object, "materialization traversal", () => new Set<Vector>())
             .value;
+    let depthCapacity = 0;
     function visit(vector: Vector, index: number): number {
       if (index < 0 || index >= vectorLength(vector) || !Number.isSafeInteger(index))
         throw new LakeqlError(
@@ -109,7 +111,19 @@ function planMaterialization(
       if (active.has(vector))
         throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Cyclic materialization vector");
       if ("valid" in vector && vector.valid?.[index] === 0) return 4;
-      const frame = planning?.reserve(cost.property, "materialization traversal frame");
+      // Set/stack capacity survives sibling visits. Admit each depth once rather
+      // than creating a reservation for every cell (or consuming stage capacity
+      // again after release, which does not replenish a fixed admission).
+      if (planning !== undefined && active.size >= depthCapacity) {
+        const next = planning.reserve(cost.property, "materialization traversal depth");
+        try {
+          traversal = traversal === undefined ? next : traversal.merge(next);
+          depthCapacity++;
+        } catch (error) {
+          next.release();
+          throw error;
+        }
+      }
       try {
         active.add(vector);
         switch (vector.type) {
@@ -229,7 +243,6 @@ function planMaterialization(
         }
       } finally {
         active.delete(vector);
-        frame?.release();
       }
     }
     for (
@@ -263,6 +276,7 @@ function planMaterialization(
       },
     };
   } finally {
+    traversal?.release();
     planning?.dispose();
   }
 }

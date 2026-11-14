@@ -4961,3 +4961,27 @@ production cannot require this GC. Whole-runtime headroom and broader scheduling
 fairness and cancellation acceptance remain open. Detailed counter values,
 commands/conditions and raw artifacts are linked from
 `validation/current-concurrent-runtime-2026-11-14.json`.
+
+### Materialization traversal high-water capacity (2026-11-14)
+
+Scoped planning reserved/released a frame for every visited cell. Siblings reuse
+ancestry depth, so fixed stage allowance was repeatedly consumed even when live
+planning storage fit. The final implementation holds one merged exclusive
+reservation for the high-water depth and releases it after planning. It uses the
+existing merge contract, with no per-frame directory or configuration. Exact
+stage capacity, cap-minus-one, null/excluded cells, cycles and malformed indices
+have regression coverage. Initial full regular validation passed 3,912 cases;
+the final merged variant passes all 14 focused tests, including one additional
+null/exclusion case. Final full validation passes 3,913 regular/coverage tests (645 skipped), 84 Worker tests and 520 required external conformance cases (one inactive guard skipped), plus build, types and lint. Coverage is 91.35% statements, 85.52% branches, 95.90% functions and 93.16% lines with unchanged thresholds. Conformance retains its existing timeouts and assertions.
+
+The initial scope-owned capacity variant created an AtomicMemory owner per depth
+and regressed the real single-row-per-page workload (2.786 → 3.032 seconds); those
+measurements are archived separately. The merged-reservation variant measures
+3.153 → 3.024 seconds on that workload. For 32,768 depth-four rows, planning
+reservations fall 131,073 → 5, modeled peak remains 320 bytes and median planning
+time falls 51.126 → 5.302 ms. Output forecasts remain equal to the prior module.
+Native R2 repeated pressure/recovery passes (32 primary successes, eight expected
+budget failures, four successful post-release retries). The 64 MiB/four-job
+managed-heap sample still reaches 97,148,452 bytes; sparse GC-dependent samples
+do not establish total memory caps. See
+`validation/materialization-traversal-capacity-2026-11-14.json`.

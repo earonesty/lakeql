@@ -6,8 +6,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
-const baseline = "c6a848a";
-const source = execFileSync("git", ["show", `${baseline}:packages/core/src/physical.ts`], {
+const baseline = process.env.LAKEQL_COMPARE_BASELINE ?? "c6a848a";
+const moduleName = process.env.LAKEQL_COMPARE_MODULE ?? "physical";
+if (!/^[a-z-]+$/.test(moduleName)) throw new Error("Invalid comparison module");
+const source = execFileSync("git", ["show", `${baseline}:packages/core/src/${moduleName}.ts`], {
   encoding: "utf8",
 });
 const compiled = ts.transpileModule(source, {
@@ -18,7 +20,7 @@ try {
   const compiledPath = join(directory, "physical.mjs");
   await writeFile(compiledPath, compiled);
   const hook = join(directory, "hook.mjs");
-  const target = new URL("../packages/core/dist/physical.js", import.meta.url);
+  const target = new URL(`../packages/core/dist/${moduleName}.js`, import.meta.url);
   await writeFile(
     hook,
     `import { registerHooks } from "node:module";
@@ -44,6 +46,7 @@ registerHooks({load(url, context, next) { return url === ${JSON.stringify(target
     JSON.stringify(
       {
         baseline,
+        moduleName,
         baselineSourceSha256: createHash("sha256").update(source).digest("hex"),
         currentSourceSha256: createHash("sha256")
           .update(await readFile(target))
@@ -52,7 +55,7 @@ registerHooks({load(url, context, next) { return url === ${JSON.stringify(target
         warmupPairs: 1,
         measuredPairs: 4,
         scope:
-          "Alternating fresh Node processes; only physical.ts is replaced by the prior implementation, with current dependencies. Local 40,000-row many-page fixture query, not cloud throughput. Source store/runtime overhead excluded from pool metrics. Value parity is covered by external conformance; benchmark checks count and release.",
+          "Alternating fresh Node processes; only the named module is replaced by the prior implementation, with current dependencies. Local 40,000-row many-page fixture query, not cloud throughput. Source store/runtime overhead excluded from pool metrics. Value parity is covered by external conformance; benchmark checks count and release.",
         priorMedianMs: median(runs.prior.map((r) => r.elapsedMs)),
         currentMedianMs: median(runs.current.map((r) => r.elapsedMs)),
         runs,

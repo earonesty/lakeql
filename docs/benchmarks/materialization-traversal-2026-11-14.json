@@ -1,0 +1,137 @@
+{
+  "baseline": "5457712",
+  "baselineSourceSha256": "8dfb5abc208764e4cdd5619d560bfbc2d880e3026b56cde5438a1a416e6a587d",
+  "currentSourceSha256": "cbc263b86c3f16dc8ce323c1b84f9f8972693f435584ab7725c4830adddc0370",
+  "node": "v24.18.1",
+  "warmups": 4,
+  "samples": 8,
+  "scope": "Local planning-only comparison; prior materialization module uses current dependencies. Borrowed inputs and subsequent row construction excluded. Alternating variants, reservation counts measured separately from timings; no whole-heap or cloud claim.",
+  "cases": [
+    {
+      "shape": "numeric",
+      "rows": 256,
+      "planningPeakBytes": 128,
+      "allocationBytes": 41274,
+      "retainedBytes": 41098,
+      "reservationCalls": {
+        "prior": 257,
+        "current": 2
+      },
+      "priorMedianMs": 0.5351789999999994,
+      "currentMedianMs": 0.0530545000000302,
+      "afterReleaseBytes": 0
+    },
+    {
+      "shape": "numeric",
+      "rows": 4096,
+      "planningPeakBytes": 128,
+      "allocationBytes": 655674,
+      "retainedBytes": 655498,
+      "reservationCalls": {
+        "prior": 4097,
+        "current": 2
+      },
+      "priorMedianMs": 1.7967479999999796,
+      "currentMedianMs": 0.2367670000000146,
+      "afterReleaseBytes": 0
+    },
+    {
+      "shape": "numeric",
+      "rows": 32768,
+      "planningPeakBytes": 128,
+      "allocationBytes": 5243194,
+      "retainedBytes": 5243018,
+      "reservationCalls": {
+        "prior": 32769,
+        "current": 2
+      },
+      "priorMedianMs": 13.673224000000005,
+      "currentMedianMs": 1.8160184999999842,
+      "afterReleaseBytes": 0
+    },
+    {
+      "shape": "nested",
+      "rows": 256,
+      "planningPeakBytes": 320,
+      "allocationBytes": 196410,
+      "retainedBytes": 196234,
+      "reservationCalls": {
+        "prior": 1025,
+        "current": 5
+      },
+      "priorMedianMs": 0.44937699999996994,
+      "currentMedianMs": 0.07795250000003762,
+      "afterReleaseBytes": 0
+    },
+    {
+      "shape": "nested",
+      "rows": 4096,
+      "planningPeakBytes": 320,
+      "allocationBytes": 3137850,
+      "retainedBytes": 3137674,
+      "reservationCalls": {
+        "prior": 16385,
+        "current": 5
+      },
+      "priorMedianMs": 6.4728885000000105,
+      "currentMedianMs": 0.7572680000000105,
+      "afterReleaseBytes": 0
+    },
+    {
+      "shape": "nested",
+      "rows": 32768,
+      "planningPeakBytes": 320,
+      "allocationBytes": 25100602,
+      "retainedBytes": 25100426,
+      "reservationCalls": {
+        "prior": 131073,
+        "current": 5
+      },
+      "priorMedianMs": 51.125936000000024,
+      "currentMedianMs": 5.301535499999943,
+      "afterReleaseBytes": 0
+    },
+    {
+      "shape": "packed-text",
+      "rows": 256,
+      "planningPeakBytes": 128,
+      "allocationBytes": 217402,
+      "retainedBytes": 184458,
+      "reservationCalls": {
+        "prior": 257,
+        "current": 2
+      },
+      "priorMedianMs": 0.1391124999998965,
+      "currentMedianMs": 0.025667999999996027,
+      "afterReleaseBytes": 0
+    },
+    {
+      "shape": "packed-text",
+      "rows": 4096,
+      "planningPeakBytes": 128,
+      "allocationBytes": 3473722,
+      "retainedBytes": 2949258,
+      "reservationCalls": {
+        "prior": 4097,
+        "current": 2
+      },
+      "priorMedianMs": 2.037842499999897,
+      "currentMedianMs": 0.2620995000000903,
+      "afterReleaseBytes": 0
+    },
+    {
+      "shape": "packed-text",
+      "rows": 32768,
+      "planningPeakBytes": 128,
+      "allocationBytes": 27787578,
+      "retainedBytes": 23593098,
+      "reservationCalls": {
+        "prior": 32769,
+        "current": 2
+      },
+      "priorMedianMs": 14.713901000000078,
+      "currentMedianMs": 2.0377019999999675,
+      "afterReleaseBytes": 0
+    }
+  ]
+}

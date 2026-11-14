@@ -1,0 +1,78 @@
+{
+  "runtimeBase": "5457712",
+  "requirements": ["M1", "M2", "V1", "V2"],
+  "finding": "Scoped materialization planning reserved/released an ancestry frame per visited cell. This created transient ownership bookkeeping and repeatedly consumed fixed stage admission even though sibling visits reuse depth capacity.",
+  "fix": "Reserve traversal capacity once per maximum depth, merge exclusive reservations without readmission, and release the merged extent when planning ends. No reservation directory or new configuration is added. Null/excluded cells do not acquire frames.",
+  "validation": {
+    "build": "pnpm exec tsc -b passed",
+    "regularSkipped": 645,
+    "timeoutsUnchanged": true,
+    "finalAdditionalCase": "All six traversal tests and eight materialization-plan tests pass on final merged-reservation implementation.",
+    "regularPassed": 3913,
+    "coverage": {
+      "statements": 91.35,
+      "branches": 85.52,
+      "functions": 95.9,
+      "lines": 93.16,
+      "thresholds": "unchanged"
+    },
+    "typecheck": "passed",
+    "lint": "passed",
+    "workerPassed": 84,
+    "requiredConformancePassed": 520,
+    "requiredConformanceSkipped": 1
+  },
+  "benchmark": {
+    "artifact": "docs/benchmarks/materialization-traversal-2026-11-14.json",
+    "cases": 9,
+    "warmups": 4,
+    "samples": 8,
+    "nested32768RowsDepth4": {
+      "priorReservationCalls": 131073,
+      "currentReservationCalls": 5,
+      "planningPeakBytes": 320,
+      "priorMedianMs": 51.125936000000024,
+      "currentMedianMs": 5.301535499999943
+    },
+    "peakPlanningCharge": "Unchanged for every case",
+    "plannedOutputCharge": "Unchanged for every case",
+    "cleanup": "Zero for every case",
+    "scope": "Planning only; borrowed input and subsequent output construction excluded. Prior module uses current dependencies, not a whole historical build. No cloud or total-heap claim."
+  },
+  "regressions": [
+    "Exact fixed-stage planning capacity succeeds across 1000 nested sibling rows; one byte below required depth rejects and cleans up.",
+    "Reservation construction is bounded by depth across 1/1000/10000 rows.",
+    "Cyclic and invalid nested input errors release all planning charges.",
+    "Null/excluded payloads require no depth capacity beyond the traversal base."
+  ],
+  "remaining": [
+    "This reduces a demonstrated source of allocation churn; it does not establish whole-runtime caps or solve all metadata accounting."
+  ],
+  "smallPageComparison": {
+    "artifact": "docs/benchmarks/page-count-traversal-2026-11-14.json",
+    "priorMedianMs": 3152.683964,
+    "currentMedianMs": 3024.00621,
+    "scope": "Four alternating fresh-process pairs; only the materialization module is substituted. Not a whole historical build or a universal speedup."
+  },
+  "rejectedExperiment": {
+    "artifacts": [
+      "docs/benchmarks/materialization-traversal-scoped-experiment-2026-11-14.json",
+      "docs/benchmarks/page-count-traversal-scoped-experiment-2026-11-14.json"
+    ],
+    "design": "The first candidate held each depth via planning.allocate(..., () => undefined). It removed per-cell reservations but added an AtomicMemory owner per depth.",
+    "result": "One-row-per-page median regressed from 2786.249 to 3032.378 ms. Replaced those owners with the existing exclusive reservation merge contract."
+  },
+  "nativeWorkerPressure": {
+    "artifact": "docs/benchmarks/worker-recovery-r2-traversal-2026-11-14.json",
+    "scenarios": 4,
+    "roundsPerScenario": 4,
+    "primaryJobs": 40,
+    "primarySucceeded": 32,
+    "primaryTypedFailures": 8,
+    "pinnedRetryTypedFailures": 4,
+    "postReleaseRetriesSucceeded": 4,
+    "allCleanupZero": true,
+    "sampled64MiBFourJobManagedHeapBytes": 97148452,
+    "boundary": "Managed heap still exceeds the 64 MiB admission pool. Sparse single-run heap samples depend on GC timing; no whole-runtime-cap or statistical heap-reduction claim."
+  }
+}
