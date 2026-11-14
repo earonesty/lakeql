@@ -1,0 +1,47 @@
+{
+  "date": "2026-11-14",
+  "sourceCommit": "246b165a5d1fd0365685e9b9ecd000a4da0ea857",
+  "requirements": ["V2", "V3"],
+  "validation": {
+    "build": "passed: public bundles and declarations",
+    "typecheck": "passed",
+    "package_consumer": "passed: clean temporary npm consumer, 66 installed packages and fixture smoke tests",
+    "workerd": {
+      "passed": 75,
+      "files": 21
+    },
+    "reference": {
+      "passed": 104,
+      "files": 4
+    },
+    "required_external_conformance": {
+      "passed": 520,
+      "skipped": 1,
+      "skip_reason": "Inactive missing-external-fixture guard; required external fixtures were present."
+    },
+    "coverage": {
+      "passed": 3664,
+      "skipped": 629,
+      "statements": 91.26,
+      "branches": 85.39,
+      "functions": 95.78,
+      "lines": 93.07,
+      "thresholds_changed": false
+    },
+    "lint": "passed after formatting new validation JSON",
+    "fixtures": "passed deterministic regeneration; no fixture changes",
+    "compatibility": "passed",
+    "large_files": "passed",
+    "changeset": "passed"
+  },
+  "notes": [
+    "All release commands were exercised individually; typecheck/full-suite evidence is also in cache-replacement-pressure-2026-11-14.json.",
+    "Logs: /tmp/cache-ownership-{coverage,build,packages,workerd,reference,conformance,fixtures,lint}.log.",
+    "Fixture regeneration produced no tracked changes.",
+    "Mixed-query evidence remains tied to 550ff5c and the constrained Worker runtime evidence to 30f7ae8; neither is relabeled as a run on this source."
+  ],
+  "remaining": [
+    "F1\u2013F6/M1\u2013M2/V1\u2013V3 acceptance review and known implementation gaps remain open.",
+    "Further runtime changes require appropriate gates to be refreshed before final acceptance."
+  ]
+}

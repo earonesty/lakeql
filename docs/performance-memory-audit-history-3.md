@@ -4116,3 +4116,19 @@ be retained does not cause subsequent range reads to return the older object.
 Build/typecheck passed; targeted core/Parquet tests passed 85, typed cache 9 and
 HTTP 10; final full suite passed 3,664 with 629 skips. Evidence:
 `docs/validation/cache-replacement-pressure-2026-11-14.json`.
+
+### 2026-11-14 — release refresh after cache ownership integration
+
+Runtime source 246b165 passes public build/declarations, clean npm consumer
+installation (66 packages), Worker (75), reference (104), required external
+conformance (520 plus one inactive missing-fixture guard), coverage (3,664 passed /
+629 skipped), lint, compatibility, file-size, changeset and deterministic fixture
+regeneration checks. Fixture regeneration leaves no tracked changes. Typecheck
+and full-suite evidence also cover this source. Coverage thresholds are unchanged:
+91.26% statements, 85.39% branches, 95.78% functions, 93.07% lines.
+
+Evidence: `docs/validation/current-cache-ownership-release-gates-2026-11-14.json`.
+The audit opening now distinguishes current implementation/release evidence from
+older mixed-query and constrained Worker runs, with historical links retained in
+an expandable index. These checks do not close the remaining allocation and
+whole-runtime acceptance requirements.
