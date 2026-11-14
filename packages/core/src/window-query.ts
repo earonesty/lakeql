@@ -5,6 +5,7 @@ import { collectExprColumns } from "./expr-utils.js";
 import { stableStringify } from "./manifest.js";
 import type { MemoryScope } from "./memory-scope.js";
 import { internStableDataKey } from "./owned-checkpoint-encoding.js";
+import { detachOwnedRow } from "./owned-row-detachment.js";
 import type { OrderByTerm } from "./query.js";
 import type { WindowExpr } from "./window.js";
 
@@ -211,40 +212,88 @@ export function windowSortGroupCount(windows: Record<string, WindowExpr>): numbe
 export function windowTaskPlanForWindows(
   windows: Record<string, WindowExpr>,
   plannedBucketCount: number,
+  parent?: MemoryScope,
 ): WindowTaskPlan {
-  const partitionSpecs = Object.values(windows).map((expr) => expr.over.partitionBy);
-  if (partitionSpecs.length === 0 || partitionSpecs.every((spec) => spec.length === 0)) {
-    return {
-      topology: "window-partition-fanout",
-      available: false,
-      bucketCount: 1,
-      reason: "window query has one global semantic partition",
-    };
+  const output = parent?.childScope();
+  const scratch = output?.childScope();
+  try {
+    let first: Expr[] | undefined;
+    let firstKey: string | undefined;
+    let global = false;
+    let unequal = false;
+    for (const alias in windows) {
+      if (!Object.hasOwn(windows, alias)) continue;
+      const expr = windows[alias];
+      if (expr === undefined) continue;
+      const spec = expr.over.partitionBy;
+      if (spec.length === 0) {
+        global = true;
+        continue;
+      }
+      if (first === undefined) {
+        first = spec;
+        continue;
+      }
+      if (unequal || global) continue;
+      firstKey ??=
+        scratch === undefined ? stableStringify(first) : internStableDataKey(first, scratch);
+      const comparison = scratch?.childScope();
+      try {
+        const key =
+          comparison === undefined ? stableStringify(spec) : internStableDataKey(spec, comparison);
+        unequal = key !== firstKey;
+      } finally {
+        comparison?.dispose();
+      }
+    }
+    const reason =
+      first === undefined
+        ? "window query has one global semantic partition"
+        : global
+          ? "window query mixes global and partitioned windows"
+          : unequal
+            ? "window partition specs are not identical"
+            : undefined;
+    let partitionBy = first;
+    if (reason === undefined && output !== undefined && scratch !== undefined) {
+      const borrowed = scratch.allocate(
+        c.object + c.property,
+        "window partition input wrapper",
+        () => ({ partitionBy: first }),
+      ).value;
+      partitionBy = output.adopt(detachOwnedRow(borrowed, output.budget)).value
+        .partitionBy as Expr[];
+    }
+    const create = (): WindowTaskPlan =>
+      reason === undefined
+        ? {
+            topology: "window-partition-fanout",
+            available: true,
+            bucketCount: Math.max(1, Math.min(64, plannedBucketCount)),
+            partitionBy: partitionBy ?? [],
+          }
+        : { topology: "window-partition-fanout", available: false, bucketCount: 1, reason };
+    if (output === undefined || parent === undefined) return create();
+    const strings =
+      c.string +
+      "window-partition-fanout".length * c.stringCodeUnit +
+      (reason === undefined ? 0 : c.string + reason.length * c.stringCodeUnit);
+    const result = output.allocate(
+      c.object + 4 * c.property + strings,
+      "window task topology",
+      create,
+    );
+    const owner = output.retainAllocations(result.value);
+    try {
+      return parent.adopt(owner).value;
+    } catch (error) {
+      owner.release();
+      throw error;
+    }
+  } finally {
+    scratch?.dispose();
+    output?.dispose();
   }
-  if (partitionSpecs.some((spec) => spec.length === 0)) {
-    return {
-      topology: "window-partition-fanout",
-      available: false,
-      bucketCount: 1,
-      reason: "window query mixes global and partitioned windows",
-    };
-  }
-  const [first, ...rest] = partitionSpecs;
-  const firstKey = stableStringify(first ?? []);
-  if (rest.some((spec) => stableStringify(spec) !== firstKey)) {
-    return {
-      topology: "window-partition-fanout",
-      available: false,
-      bucketCount: 1,
-      reason: "window partition specs are not identical",
-    };
-  }
-  return {
-    topology: "window-partition-fanout",
-    available: true,
-    bucketCount: Math.max(1, Math.min(64, plannedBucketCount)),
-    partitionBy: first ?? [],
-  };
 }
 
 export function windowSortSpecsCompatible(left: WindowExpr, right: WindowExpr): boolean {
