@@ -113,8 +113,8 @@ class AggregateState {
   private last: Scalar | undefined;
   private values: number[] | undefined;
   private valuesReservation: MemoryReservation | undefined;
-  private valuesScope: MemoryScope | undefined;
-  private valuesLedger: MutableMemoryLedger | undefined;
+  private bufferScope: MemoryScope | undefined;
+  private bufferLedger: MutableMemoryLedger | undefined;
   private modeValues: Map<string, { value: Scalar; count: number }> | undefined;
   private seenDistinct: Set<string> | undefined;
   private keyReservation: MemoryReservation | undefined;
@@ -129,9 +129,9 @@ class AggregateState {
     this.count = this.sum = this.mean = this.m2 = 0;
     this.min = this.max = this.first = this.last = undefined;
     this.values = undefined;
-    this.valuesScope?.dispose();
-    this.valuesScope = undefined;
-    this.valuesLedger = undefined;
+    this.bufferScope?.dispose();
+    this.bufferScope = undefined;
+    this.bufferLedger = undefined;
     this.valuesReservation?.release();
     this.valuesReservation = undefined;
     this.modeValues = undefined;
@@ -224,25 +224,33 @@ class AggregateState {
     }
   }
 
+  private ledger(): MutableMemoryLedger | undefined {
+    if (!(this.budget instanceof MemoryBudget || this.budget instanceof MemoryScope))
+      return undefined;
+    if (this.bufferLedger === undefined) {
+      this.bufferScope =
+        this.budget instanceof MemoryScope
+          ? this.budget.childScope()
+          : new MemoryScope(this.budget);
+      // Drop all backing before the ledger releases admission on scope closure.
+      this.bufferScope.signal.addEventListener(
+        "abort",
+        () => {
+          this.values = undefined;
+          this.modeValues = undefined;
+          this.seenDistinct = undefined;
+        },
+        { once: true },
+      );
+      this.bufferLedger = new MutableMemoryLedger(this.bufferScope);
+    }
+    return this.bufferLedger;
+  }
+
   private addQuantileValue(value: number): void {
-    if (this.budget instanceof MemoryBudget || this.budget instanceof MemoryScope) {
-      if (this.valuesLedger === undefined) {
-        this.valuesScope =
-          this.budget instanceof MemoryScope
-            ? this.budget.childScope()
-            : new MemoryScope(this.budget);
-        // Register before the ledger's abort hook: drop backing references before
-        // its admission is released when the parent closes this child scope.
-        this.valuesScope.signal.addEventListener(
-          "abort",
-          () => {
-            this.values = undefined;
-          },
-          { once: true },
-        );
-        this.valuesLedger = new MutableMemoryLedger(this.valuesScope);
-      }
-      this.valuesLedger.append(
+    const ledger = this.ledger();
+    if (ledger !== undefined) {
+      ledger.append(
         (this.values === undefined ? charges.array : 0) + charges.arraySlot,
         "window quantile values",
         () => {
@@ -311,10 +319,21 @@ class AggregateState {
       charges.property +
       (first ? charges.object : 0) +
       (mode ? charges.object + 2 * charges.property : 0);
-    let reservation = this.budget?.reserve(
-      jsonScalarKeyAllocationBytes(value) + entryBytes,
-      "window aggregate JSON key",
-    );
+    const admissionBytes = jsonScalarKeyAllocationBytes(value) + entryBytes;
+    const ledger = this.ledger();
+    if (ledger !== undefined) {
+      let added = false;
+      let retainedBytes = 0;
+      ledger.append(admissionBytes, "window aggregate JSON key", () => {
+        const key = JSON.stringify(jsonSafeValue(value));
+        added = insert(key);
+        if (added)
+          retainedBytes = charges.string + charges.stringCodeUnit * key.length + entryBytes;
+      });
+      ledger.release(admissionBytes - retainedBytes);
+      return added;
+    }
+    let reservation = this.budget?.reserve(admissionBytes, "window aggregate JSON key");
     try {
       const key = JSON.stringify(jsonSafeValue(value));
       const added = insert(key);

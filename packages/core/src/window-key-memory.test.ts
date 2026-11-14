@@ -25,7 +25,7 @@ it.each([
         args: [col("value")],
         over: { partitionBy: [], orderBy: [] },
       },
-      budget,
+      { reserve: budget.reserve.bind(budget) },
     );
     if (cap < bytes) {
       expect(() => state.append([{ value }])).toThrow();
@@ -80,7 +80,7 @@ it("retains only actual key storage after numeric formatting and preserves JSON 
       args: [col("value")],
       over: { partitionBy: [], orderBy: [] },
     },
-    budget,
+    { reserve: budget.reserve.bind(budget) },
   );
   expect(state.append([{ value: 123 }])).toBe(1);
   const retained = c.object + c.property + c.string + 3 * c.stringCodeUnit;

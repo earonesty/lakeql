@@ -1,0 +1,37 @@
+{
+  "status": "Implemented; focused, default and Worker validation passed",
+  "change": "Mode, distinct and quantile share one scoped MutableMemoryLedger. JSON normalization and key insertion are admitted together; only retained key and entry storage remains logically used afterward. Duplicate scratch returns to reclaimable spare capacity. Reserve-only sources preserve their exact reservation path.",
+  "validation": {
+    "focusedTestsPassed": 14,
+    "build": "passed",
+    "cases": [
+      "exact first-key capacity including ledger metadata",
+      "one-byte-short rejection",
+      "fewer than 32 reserve calls for 16384 duplicate-heavy rows",
+      "sibling reclaim preserves aggregate values",
+      "parent scope closure rejects retained-state reads",
+      "reserve-only source compatibility",
+      "quantile and key cleanup"
+    ],
+    "defaultTestsPassed": 3015,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61
+  },
+  "benchmark": "docs/benchmarks/window-buffered-key-ledger-2026-11-13.json",
+  "measurements": {
+    "rows": 16384,
+    "uniqueModeMilliseconds": 5.698,
+    "uniqueDistinctMilliseconds": 3.218,
+    "duplicateModeMilliseconds": 1.296,
+    "duplicateDistinctMilliseconds": 1.26,
+    "uniqueModePeakReservationBytes": 5577856,
+    "uniqueDistinctPeakReservationBytes": 2385360,
+    "duplicateModePeakReservationBytes": 11520,
+    "duplicateDistinctPeakReservationBytes": 6440,
+    "comparison": "Prior per-key shrinking checkpoint measured unique mode/distinct at 15.29/12.25ms and duplicate mode/distinct at 6.66/6.36ms. Local runs are directional, not cloud latency or VM heap measurements. Ledger metadata and reclaimable spare capacity increase admitted peaks."
+  },
+  "limitations": [
+    "Scalar source payload ownership and complete query outputs remain separate open audit work.",
+    "Formatting forecasts and ledger metadata are conservative reservation units, not total runtime heap bounds."
+  ]
+}
