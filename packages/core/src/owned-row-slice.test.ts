@@ -53,21 +53,24 @@ it("detaches selected nested bytes before producer advance and closure", async (
   expect(budget.usedBytes).toBe(0);
 });
 
-it("admits exact peak, rejects one byte below, and preserves sibling reservations", async () => {
+it("preserves the mandatory boundary and declines optional workspace beside a sibling", async () => {
   const measure = new MemoryBudget(65536);
   const measured = await collectOwnedRowSlice(batches(), measure, 1, 4);
   const peak = measure.peakBytes;
   measured.rows.release();
-  for (const cap of [peak - 1, peak]) {
+  // The fixture's mandatory row/directory overlap is 1696 bytes. Higher
+  // measured peaks can include optional container-ownership traversal.
+  for (const cap of [1695, 1696, peak - 1, peak]) {
     const budget = new MemoryBudget(cap + 37);
     const sibling = budget.reserve(37, "sibling");
-    if (cap < peak)
+    if (cap < 1696)
       await expect(collectOwnedRowSlice(batches(), budget, 1, 4)).rejects.toMatchObject({
         code: "LAKEQL_BUDGET_EXCEEDED",
       });
     else {
       const result = await collectOwnedRowSlice(batches(), budget, 1, 4);
-      expect(result.rows.value).toHaveLength(4);
+      expect(result.rows.value).toEqual([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
+      expect(budget.peakBytes).toBeLessThanOrEqual(cap + 37);
       result.rows.release();
     }
     expect(budget.usedBytes).toBe(37);

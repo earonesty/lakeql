@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import type { Batch } from "./batch.js";
+import { LakeqlError } from "./errors.js";
 import {
   MATERIALIZATION_CHARGES,
   materializeOwnedBatchRows,
@@ -151,8 +152,8 @@ it("does not leak a retained pin when the destination is already closed", () => 
   expect(pool.usedBytes).toBe(0);
 });
 
-it("admits replacement overlap exactly and releases all partial collection on one-byte shortage", () => {
-  const execute = (cap: number) => {
+it("declines optional compaction before rejecting mandatory replacement overlap", () => {
+  const execute = (cap: number, retainedDirectories = 0) => {
     const pool = new MemoryBudget(cap);
     const collector = new OwnedRowCollector(pool);
     let peak = 0;
@@ -184,7 +185,11 @@ it("admits replacement overlap exactly and releases all partial collection on on
       try {
         expect(output.value.map((row) => row.value)).toEqual([1, 2, 3, 4, 1, 2, 3, 4]);
         expect(pool.usedBytes).toBe(
-          payloadBytes + MATERIALIZATION_CHARGES.array + 8 * MATERIALIZATION_CHARGES.arraySlot,
+          payloadBytes +
+            MATERIALIZATION_CHARGES.array +
+            8 * MATERIALIZATION_CHARGES.arraySlot +
+            retainedDirectories *
+              (MATERIALIZATION_CHARGES.array + 4 * MATERIALIZATION_CHARGES.arraySlot),
         );
         peak = pool.peakBytes;
       } finally {
@@ -198,7 +203,11 @@ it("admits replacement overlap exactly and releases all partial collection on on
   };
   const peak = execute(16384);
   expect(execute(peak)).toBe(peak);
-  expect(() => execute(peak - 1)).toThrow(/budget/);
+  expect(execute(peak - 1, 1)).toBeLessThanOrEqual(peak - 1);
+  // Two 778-byte chunks, two 192-byte collector nodes and a 192-byte result
+  // directory must overlap before either source directory can be released.
+  expect(execute(2132, 2)).toBe(2132);
+  expect(() => execute(2131)).toThrow(/budget/);
 });
 
 it.each([
@@ -228,6 +237,111 @@ it.each([
   } finally {
     source.dispose();
     target.dispose();
+  }
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("retains the whole container when replacement workspace cannot fit beside live payload", () => {
+  const pool = new MemoryBudget(176);
+  const source = new MemoryScope(pool);
+  const row = source.allocate(96, "payload", () => ({ value: 7 })).value;
+  const array = source.allocateContainer(80, "directory", () => [row]).value;
+  const input = source.retainAllocations(array);
+  source.dispose();
+  const target = new MemoryScope(pool);
+  try {
+    retainContainerPayload(input, target);
+    input.release();
+    expect(row.value).toBe(7);
+    expect(pool.usedBytes).toBe(176);
+    expect(pool.peakBytes).toBe(176);
+  } finally {
+    input.release();
+    target.dispose();
+  }
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("releases partial graph traversal before falling back to the full owner", () => {
+  const pool = new MemoryBudget(432);
+  const source = new MemoryScope(pool);
+  const payload = source.allocate(96, "payload", () => ({ value: 7 }));
+  const array = source.allocateContainer(80, "directory", () => [payload.value]);
+  const nested = source.retainBacking(array.value, [array]);
+  const input = source.retainBacking(array.value, [payload, nested]);
+  const kept = input.retain();
+  source.dispose();
+  const target = new MemoryScope(pool.child(432));
+  try {
+    retainContainerPayload(kept, target);
+    kept.release();
+    expect(target.budget.usedBytes).toBe(176);
+    expect(pool.usedBytes).toBe(176);
+    expect(pool.peakBytes).toBe(432);
+  } finally {
+    kept.release();
+    target.dispose();
+  }
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("does not treat a payload producer error as optional traversal admission", () => {
+  const pool = new MemoryBudget(4096);
+  const source = new MemoryScope(pool);
+  const failure = new LakeqlError("LAKEQL_BUDGET_EXCEEDED", "producer failed", {
+    purpose: "ownership traversal frame",
+  });
+  const opaque = (): OwnedMemory<object> => ({
+    value: {},
+    bytes: 0,
+    budget: pool,
+    retain: opaque,
+    retainIn: () => {
+      throw failure;
+    },
+    release: () => {},
+  });
+  const directory = source.allocateContainer(80, "directory", () => [{}]);
+  source.adopt(opaque());
+  const input = source.retainAllocations(directory.value);
+  source.dispose();
+  const target = new MemoryScope(pool);
+  try {
+    expect(() => retainContainerPayload(input, target)).toThrow(failure);
+    expect(pool.usedBytes).toBe(80);
+  } finally {
+    input.release();
+    target.dispose();
+  }
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("does not evict a reusable cache solely to compact a row directory", () => {
+  const pool = new MemoryBudget(256);
+  const source = new MemoryScope(pool);
+  const row = source.allocate(96, "payload", () => ({ value: 7 })).value;
+  const array = source.allocateContainer(80, "directory", () => [row]).value;
+  const input = source.retainAllocations(array);
+  source.dispose();
+  const cache = pool.reserve(80, "reusable cache");
+  let reclaimed = 0;
+  const detach = pool.registerReclaimer(() => {
+    reclaimed++;
+    cache.release();
+  });
+  const target = new MemoryScope(pool);
+  try {
+    retainContainerPayload(input, target);
+    input.release();
+    expect(reclaimed).toBe(0);
+    expect(pool.usedBytes).toBe(256);
+    target.dispose();
+    expect(pool.usedBytes).toBe(80);
+  } finally {
+    detach();
+    input.release();
+    target.dispose();
+    cache.release();
   }
   expect(pool.usedBytes).toBe(0);
 });

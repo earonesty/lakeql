@@ -417,3 +417,7 @@ containers. Collection and vector windows release obsolete arrays while preservi
 sibling ownership and borrowed binary backing. Streaming/direct output uses
 combined ownership to avoid unnecessary handles. Ownership graph transfer admits
 its workspace; see the audit for measured retained-memory and CPU tradeoffs.
+
+Decline optional container compaction when traversal workspace is unavailable,
+retaining the original complete owner without evicting reusable caches. Preserve
+mandatory output limits and propagate producer failures; callers need no new flag.

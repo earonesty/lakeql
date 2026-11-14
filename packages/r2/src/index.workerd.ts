@@ -1,10 +1,13 @@
 /// <reference types="@cloudflare/vitest-pool-workers/types" />
 import { env } from "cloudflare:test";
 import {
+  MATERIALIZATION_CHARGES,
   MemoryBudget,
   MemoryScope,
   MemoryStageScheduler,
+  materializeOwnedBatchRows,
   ObjectStoreJsonCache,
+  retainContainerPayload,
   withObjectStoreReadControls,
 } from "lakeql-core";
 import { expect, it } from "vitest";
@@ -282,4 +285,54 @@ it("advances queued native R2 reads after scheduled output cleanup fails", async
     finish();
     await bucket.delete(path);
   }
+});
+
+it.each([
+  false,
+  true,
+])("preserves native R2 binary output when container-transfer pressure=%s", async (pressure) => {
+  const bucket = (env as unknown as { MEMORY_TEST_BUCKET: R2BucketLike }).MEMORY_TEST_BUCKET;
+  const store = new R2ObjectStore(bucket);
+  const path = `container-transfer-${pressure}`;
+  await store.put(path, Uint8Array.of(9, 1, 2, 3, 8));
+  const pool = new MemoryBudget(4096);
+  const source = new MemoryScope(pool);
+  const target = new MemoryScope(pool);
+  let output: ReturnType<typeof materializeOwnedBatchRows> | undefined;
+  let pinned: ReturnType<MemoryBudget["reserve"]> | undefined;
+  try {
+    const range = await store.getRangeOwned(path, { offset: 1, length: 3 }, source);
+    const input = source.retainAllocations({
+      rowCount: 1,
+      columns: {
+        bytes: { type: "binary-view" as const, data: range.value, fixedLength: 3, length: 1 },
+      },
+    });
+    try {
+      output = materializeOwnedBatchRows(input);
+    } finally {
+      input.release();
+      source.dispose();
+    }
+    const expected = output.value[0]?.bytes;
+    const retainedBytes = pool.usedBytes;
+    if (pressure) pinned = pool.reserve(pool.maxBytes - pool.usedBytes, "other job pinned output");
+    retainContainerPayload(output, target);
+    output.release();
+    expect(expected).toEqual(Uint8Array.of(1, 2, 3));
+    expect(pool.usedBytes).toBe(
+      (pinned?.bytes ?? 0) +
+        retainedBytes -
+        (pressure ? 0 : MATERIALIZATION_CHARGES.array + MATERIALIZATION_CHARGES.arraySlot),
+    );
+    target.dispose();
+    expect(pool.usedBytes).toBe(pinned?.bytes ?? 0);
+  } finally {
+    output?.release();
+    source.dispose();
+    target.dispose();
+    pinned?.release();
+    await store.delete(path);
+  }
+  expect(pool.usedBytes).toBe(0);
 });

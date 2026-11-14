@@ -5448,3 +5448,45 @@ samples do not establish total-runtime caps or statistical heap reductions. All
 zero warm ordinary-query data requests with 512 KiB shared headroom.
 
 Evidence: `validation/separate-row-containers-2026-11-14.json`.
+
+### Workspace-aware container transfer (2026-11-14)
+
+A baseline negative control failed to transfer 176 bytes of already-live output
+because optional ownership traversal needed additional capacity. An initial
+fallback restored fitting execution but still attempted reclaiming admission,
+evicting an 80-byte reusable cache before discovering compaction could not fit.
+The final policy checks available workspace before each frame and declines
+without cache eviction. Partial traversal and payload pins release before the
+complete source owner is retained. No exception classification is needed; genuine
+producer errors and mandatory allocation failures propagate normally.
+
+The 176-byte case now succeeds at a 176-byte peak. A 256-byte pool preserves both
+176-byte output and an 80-byte cache with zero reclaimer calls. Tests also cover
+partial traversal rollback and a producer budget error that must propagate.
+Collection succeeds at its 2,132-byte mandatory overlap and rejects at 2,131;
+owned slices preserve a sibling while succeeding at 1,696 and rejecting at 1,695.
+A measured peak can include optional work, so tests no longer infer that every
+peak-minus-one trial must fail. External Parquet references tighten through any
+successful lower-workspace execution until both a fitting boundary and one-byte
+rejection are proven, within 32 boundary checks. DuckDB value equality and zero cleanup
+remain asserted on every trial; no timeout or threshold changed.
+
+Two real native-R2 range/binary-materialization cases cover available-workspace
+compaction and fallback with all remaining pool capacity pinned by another job.
+Borrowed backing remains owned until final release. All 66 focused cases, 3,984
+regular/coverage tests (645 skipped), 95 Worker cases, 520 required conformance
+cases (one inactive guard skipped), 120 references and complete release gates pass.
+The isolated many-page query comparison is 2.268 → 2.254 seconds, near parity;
+no speedup claim is made. With ample workspace, the prior obsolete-directory
+reachability and retained-byte improvements remain verified.
+
+Unprofiled native R2 and real HTTP pressure/recovery retain 64/80 primary successes,
+sixteen typed failures, eight pinned retry failures and eight successful retries
+after release. Final admission is zero. Native managed heap still samples
+97,992,664 bytes at a 64 MiB admission pool, including release/eviction snapshots.
+These sparse GC-dependent samples do not establish a runtime cap or statistical
+heap reduction. All 52 public-R2 scenarios pass with at most four reads and zero
+warm ordinary-query data requests at 512 KiB shared headroom. Broader scheduling,
+earlier collection compaction and whole-runtime acceptance remain open.
+
+Evidence: `validation/container-transfer-headroom-2026-11-14.json`.

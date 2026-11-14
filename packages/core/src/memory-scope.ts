@@ -797,7 +797,8 @@ export function retainSelectedAllocations(
 /** Retain payload after copying a container's references into a replacement.
  * Only explicitly container-only atomic storage for the exact input value is
  * omitted. Mixed and external owners remain pinned in full. Source stays live
- * throughout admission; failure leaves target ownership unchanged. */
+ * throughout admission; failure leaves target ownership unchanged. If traversal
+ * workspace cannot fit, retain the whole source instead of failing compaction. */
 export function retainContainerPayload(input: OwnedMemory<object>, target: MemoryScope): void {
   const container = input.value;
   const guard = input.retain();
@@ -821,14 +822,23 @@ export function retainContainerPayload(input: OwnedMemory<object>, target: Memor
       return;
     }
     const selected = target.childScope();
+    let traversed = false;
     try {
-      visitOwnedAllocations(guard, selected, (owner) => {
-        if (keep(owner)) adopt(owner, selected);
-      });
-      target.adopt(selected.retainAllocations(undefined));
+      traversed = visitOwnedAllocations(
+        guard,
+        selected,
+        (owner) => {
+          if (keep(owner)) adopt(owner, selected);
+        },
+        true,
+      );
+      if (traversed) target.adopt(selected.retainAllocations(undefined));
     } finally {
       selected.dispose();
     }
+    // Directory compaction is optional. Release partial traversal/pins before
+    // retaining the original owner when only traversal workspace cannot fit.
+    if (!traversed) adopt(guard, target);
   } finally {
     guard.release();
   }
@@ -866,9 +876,11 @@ function visitOwnedAllocations(
   input: OwnedMemory<unknown>,
   parent: MemoryScope,
   visit: (owner: OwnedMemory<unknown>, opaque: boolean) => void,
-): void {
+  declineOnWorkspaceLimit = false,
+): boolean {
   const guard = input.retain();
   let traversal: MemoryScope | undefined;
+  let workspaceDenied = false;
   try {
     const frames = parent.childScope();
     traversal = frames;
@@ -877,12 +889,19 @@ function visitOwnedAllocations(
       index: number;
       parent: OwnedMemory<Frame> | undefined;
     }
-    const push = (owner: OwnedMemory<unknown>, parent: OwnedMemory<Frame> | undefined) =>
-      frames.allocate(c.object + 3 * c.property, "ownership traversal frame", () => ({
+    const push = (owner: OwnedMemory<unknown>, parent: OwnedMemory<Frame> | undefined) => {
+      // This optimization must not evict reusable cache entries just to acquire
+      // traversal scratch. Mandatory traversals keep normal reclaiming admission.
+      if (declineOnWorkspaceLimit && frames.availableAllocationBytes < c.object + 3 * c.property) {
+        workspaceDenied = true;
+        return undefined;
+      }
+      return frames.allocate(c.object + 3 * c.property, "ownership traversal frame", () => ({
         owner,
         index: 0,
         parent,
       }));
+    };
     let frame: OwnedMemory<Frame> | undefined = push(guard, undefined);
     while (frame !== undefined) {
       const state: Frame = frame.value;
@@ -903,6 +922,7 @@ function visitOwnedAllocations(
       frame.release();
       frame = parent;
     }
+    return !workspaceDenied;
   } finally {
     traversal?.dispose();
     guard.release();
