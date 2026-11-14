@@ -5,6 +5,7 @@ import { matches } from "./evaluator.js";
 import { materializeOwnedBatchRows } from "./materialization-plan.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
+import { OwnedRowCollector } from "./owned-row-collector.js";
 import { detachOwnedBatch, detachOwnedRow } from "./owned-row-detachment.js";
 import type {
   PathQueryInit,
@@ -123,6 +124,16 @@ export async function executeWindowWithState(
   const retainedScope = new MemoryScope(
     options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER),
   );
+  const collector = new OwnedRowCollector(retainedScope.budget);
+  let collected: OwnedMemory<Row[]> | undefined;
+  const retainOutput = (output: OwnedMemory<Row[]>) => {
+    try {
+      collector.append(output);
+    } catch (error) {
+      collector.dispose();
+      throw error;
+    }
+  };
   try {
     const { config } = options;
     const windows = config.windows ?? {};
@@ -143,18 +154,23 @@ export async function executeWindowWithState(
       await collectWindowRuns(options, runs, startedAt, retainedScope);
     }
 
-    const rows: Row[] = [];
     const batches =
       windowOptions.spill === undefined
         ? windowedQueryBatches({
             ...windowBatchOptions(options, startedAt, retainedScope),
+            retainOutput,
             matched: matched ?? [],
           })
         : windowedRunQueryBatches({
             ...windowBatchOptions(options, startedAt, retainedScope),
+            retainOutput,
             runs,
           });
-    for await (const batch of batches) rows.push(...batch);
+    for await (const _batch of batches) {
+      /* Ownership is retained before each yield. */
+    }
+    collected = collector.finish();
+    const rows = collected.value;
 
     const state =
       windowOptions.spill === undefined
@@ -167,6 +183,8 @@ export async function executeWindowWithState(
     }
     return result;
   } finally {
+    collected?.release();
+    collector.dispose();
     retainedScope.dispose();
   }
 }

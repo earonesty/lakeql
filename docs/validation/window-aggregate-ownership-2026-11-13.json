@@ -45,5 +45,6 @@
     "Delegated task output ownership, post-write cancellation and full mixed-job/adaptive scheduling acceptance remain open.",
     "Custom reserve-only kernel budgets retain their legacy reservation-only contract; full payload ownership uses MemoryBudget/MemoryScope as public query execution does.",
     "Tracked allocation units are not total VM heap, external backing or production Cloudflare memory certification."
-  ]
+  ],
+  "followupEvidence": "docs/validation/window-collection-ownership-2026-11-13.json"
 }

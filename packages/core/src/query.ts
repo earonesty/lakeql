@@ -1104,6 +1104,32 @@ export class QueryResult {
    */
   async toOwnedArray(): Promise<OwnedMemory<Row[]>> {
     const config = this.config;
+    if (config.windows !== undefined && Object.keys(config.windows).length > 0) {
+      const options = this.windowRunnerOptions();
+      async function* ownedWindows(
+        fail: (error: unknown) => never,
+      ): AsyncIterable<OwnedMemory<Row[]>> {
+        let queued: OwnedMemory<Row[]> | undefined;
+        options.batchExecution.retainOutput = (output) => {
+          queued = output.retain();
+        };
+        try {
+          for await (const _batch of executeWindowBatches(options)) {
+            const output = queued;
+            queued = undefined;
+            if (output === undefined)
+              throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Missing owned window output");
+            yield output;
+          }
+        } catch (error) {
+          fail(error);
+        } finally {
+          queued?.release();
+        }
+      }
+      return collectOwnedRows(ownedWindows, this.memoryBudget, config.budget.signal);
+    }
+
     if (
       config.orderBy !== undefined &&
       config.limit !== undefined &&
@@ -1713,7 +1739,8 @@ export class QueryResult {
     if (
       this.canOwnProjectedOutput() ||
       this.canOwnRowProjectedOutput() ||
-      this.canOwnOrderedRowOutput()
+      this.canOwnOrderedRowOutput() ||
+      (this.config.windows !== undefined && Object.keys(this.config.windows).length > 0)
     ) {
       const owner = await this.toOwnedArray();
       // Plain rows transfer to caller management. Use toOwnedArray to keep their

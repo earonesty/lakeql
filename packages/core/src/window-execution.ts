@@ -1,7 +1,7 @@
 import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { matches } from "./evaluator.js";
 import { MemoryBudget } from "./memory-budget.js";
-import { MemoryScope } from "./memory-scope.js";
+import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
 import type { PathQueryInit, QueryBudget } from "./query.js";
 import { appendProjectedOutput } from "./row-output.js";
 import type { QueryStats, Row } from "./types.js";
@@ -9,6 +9,8 @@ import type { QueryStats, Row } from "./types.js";
 export interface WindowBatchExecutionOptions {
   memoryBudget?: MemoryBudget;
   resultScope?: MemoryScope;
+  /** Synchronous receiver retains independently before the producer advances. */
+  retainOutput?: (output: OwnedMemory<Row[]>) => void;
   config: PathQueryInit & {
     budget: QueryBudget;
     now: () => number;
@@ -124,6 +126,15 @@ export async function* postWindowQueryBatches(
     const newBatch = () =>
       batchScope.allocate(c.array, "window output batch", () => [] as Row[]).value;
     let batch = newBatch();
+    const retainBatch = () => {
+      if (options.retainOutput === undefined) return;
+      const owner = batchScope.retainAllocations(batch);
+      try {
+        options.retainOutput(owner);
+      } finally {
+        owner.release();
+      }
+    };
     let offsetSkipped = 0;
     let returned = 0;
     for (const row of rows) {
@@ -136,7 +147,13 @@ export async function* postWindowQueryBatches(
           continue;
         }
         if (config.limit !== undefined && returned >= config.limit) break;
-        appendProjectedOutput(batch, projected, projection, batchScope, false);
+        appendProjectedOutput(
+          batch,
+          projected,
+          projection,
+          batchScope,
+          options.retainOutput !== undefined,
+        );
         returned += 1;
         stats.rowsReturned += 1;
         options.enforceBudget(config.budget, stats, config.now, startedAt);
@@ -145,6 +162,7 @@ export async function* postWindowQueryBatches(
       }
       if (batch.length >= batchSize) {
         stats.elapsedMs = config.now() - startedAt;
+        retainBatch();
         yield batch;
         batchScope.dispose();
         batchScope = scope.childScope();
@@ -152,7 +170,10 @@ export async function* postWindowQueryBatches(
       }
     }
     stats.elapsedMs = config.now() - startedAt;
-    if (batch.length > 0) yield batch;
+    if (batch.length > 0) {
+      retainBatch();
+      yield batch;
+    }
     config.metrics?.timing("lakeql.query.elapsed", stats.elapsedMs, { queryId: stats.queryId });
   } finally {
     scope.dispose();

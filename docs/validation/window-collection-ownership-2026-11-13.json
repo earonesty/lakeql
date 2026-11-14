@@ -1,0 +1,60 @@
+{
+  "requirements": ["F2", "F4", "M1", "V3"],
+  "status": "Final window row collection and projected checkpoint-output ownership integrated; full acceptance remains open",
+  "implementation": [
+    "Window projection supports a synchronous owned-batch receiver. It detaches owned output through the existing row projection handoff before the producer releases its batch.",
+    "Window QueryResult.toOwnedArray uses the shared owned-row collector. Plain toArray transfers the collected result to caller management at return; owned results stay charged until release.",
+    "Resumable window execution uses the same collector instead of spreading plain batches into an untracked array. Collected projected output stays owned through all awaited checkpoint writes.",
+    "Admission failure releases collected output; successful plain/checkpoint return transfers rows to caller management. Collector metadata and final reference-array allocation follow the existing generic collector contract."
+  ],
+  "validation": {
+    "default": {
+      "passed": 3285,
+      "skipped": 629
+    },
+    "newCases": {
+      "passed": 6,
+      "scope": [
+        "Owned window result remains charged across a sibling allocation until release",
+        "Cumulative projection growth rejects at a 64 KiB cap for plain, owned and checkpoint collection",
+        "Projected output stays charged during a delayed checkpoint write and releases after success or write failure"
+      ]
+    },
+    "build": "pnpm exec tsc -b passed before runtime tests",
+    "typecheck": "pnpm typecheck passed",
+    "lint": "pnpm lint passed",
+    "limitations": "Performance benchmarks were not rerun for this collection change. Local fixture execution does not certify production total-memory enforcement.",
+    "worker": {
+      "passed": 75,
+      "scope": "Full local workerd suite, including real Parquet window and windowState routes with shared 64/128 MiB pools"
+    },
+    "reference": {
+      "passed": 104
+    },
+    "conformance": {
+      "passed": 517,
+      "skipped": 1,
+      "skipReason": "Inactive missing-required-Iceberg-fixture guard; external fixture cases ran."
+    },
+    "coverage": {
+      "passed": 3285,
+      "skipped": 629,
+      "statementsPercent": 91.02,
+      "branchesPercent": 85.04,
+      "functionsPercent": 95.67,
+      "linesPercent": 92.9,
+      "thresholdsChanged": false,
+      "exclusionsChanged": false
+    },
+    "fullBuild": "pnpm build passed",
+    "cleanNpmConsumer": "pnpm check:packages passed; installed 66 dependencies into isolated consumer",
+    "compatibility": "pnpm check:compatibility passed"
+  },
+  "remainingAcceptance": [
+    "Checkpoint state restoration, serialization and spill-buffer allocation still require ownership integration; retaining projected result rows does not account for serialized state.",
+    "Window planning/frame-bound expression workspace, delegated task intermediate output and post-write cancellation remain open.",
+    "Other documented operator/source gaps and the complete mixed-job/adaptive-scheduling matrix remain open.",
+    "Owned output detaches mutable values and may temporarily overlap producer and collector storage. This is admitted overlap, not a claim of minimal copying.",
+    "Shared reservations do not establish total VM heap, external backing, RSS or production Cloudflare limits."
+  ]
+}
