@@ -1,7 +1,8 @@
 diff --git a/src/assemble.js b/src/assemble.js
+index 7ca6014024c18e52a22233a8e2efb8052c3a74a7..b9861cc01b231e49d05b2e0f19ec21d2c56d6773 100644
 --- a/src/assemble.js
 +++ b/src/assemble.js
-@@ -83,7 +83,7 @@
+@@ -83,7 +83,7 @@ export function assembleLists(output, definitionLevels, repetitionLevels, values
        // assert(currentDepth === maxDefinitionLevel || currentDepth === repetitionPath.length - 2)
        currentContainer.push(values[valueIndex++])
      } else if (currentDepth === repetitionPath.length - 2) {
@@ -10,7 +11,7 @@ diff --git a/src/assemble.js b/src/assemble.js
      } else {
        currentContainer.push([])
      }
-@@ -138,15 +138,17 @@
+@@ -138,15 +138,17 @@ export function assembleNested(subcolumnData, schema, parsers, depth = 0) {
      const mapName = schema.children[0].element.name
  
      // Assemble keys and values
@@ -32,7 +33,7 @@ diff --git a/src/assemble.js b/src/assemble.js
        throw new Error('parquet map column key/value length mismatch')
      }
  
-@@ -211,13 +213,13 @@
+@@ -211,13 +213,13 @@ function assembleMaps(keys, values, depth) {
    const out = []
    for (let i = 0; i < keys.length; i++) {
      if (depth) {
@@ -48,10 +49,23 @@ diff --git a/src/assemble.js b/src/assemble.js
            obj[keys[i][j]] = value === undefined ? null : value
          }
          out.push(obj)
+diff --git a/src/constants.js b/src/constants.js
+index 4c1f9fc86827acbf9307a7fe18a7f5055d84b4bc..38101af2fa532f8f5be7b3ed365206dfc7156f66 100644
+--- a/src/constants.js
++++ b/src/constants.js
+@@ -23,6 +23,7 @@ export const Encodings = [
+   'DELTA_BYTE_ARRAY',
+   'RLE_DICTIONARY',
+   'BYTE_STREAM_SPLIT',
++  'ALP',
+ ]
+ 
+ /** @type {import('../src/types.d.ts').FieldRepetitionType[]} */
 diff --git a/src/convert.js b/src/convert.js
+index a16a55f63edd892868b1f8526365b7743bc92ac1..6908604c4ed4bc0e33ee9ff64439675458e077fb 100644
 --- a/src/convert.js
 +++ b/src/convert.js
-@@ -78,15 +78,19 @@
+@@ -78,15 +78,19 @@ export function convert(data, columnDecoder) {
  
    // Skip utf8 conversion for plain BYTE_ARRAY inside VARIANT
    const isVariant = schemaPath?.some(s => s.element.logical_type?.type === 'VARIANT')
@@ -75,7 +89,7 @@ diff --git a/src/convert.js b/src/convert.js
          arr[i] = parseDecimal(data[i]) * factor
        } else {
          arr[i] = Number(data[i]) * factor
-@@ -95,6 +99,7 @@
+@@ -95,6 +99,7 @@ export function convert(data, columnDecoder) {
      return arr
    }
    if (!ctype && type === 'INT96') {
@@ -83,10 +97,42 @@ diff --git a/src/convert.js b/src/convert.js
      return Array.from(data).map(v => parsers.timestampFromNanoseconds(parseInt96Nanos(v)))
    }
    if (ctype === 'DATE') {
+diff --git a/src/datapage.js b/src/datapage.js
+index 998cc92643610b0220e57dcba0d3b715805692d9..867b983e4e1dc68f1147b8da6a8c692c8ccaed9c 100644
+--- a/src/datapage.js
++++ b/src/datapage.js
+@@ -16,7 +16,7 @@ import { snappyUncompress } from './snappy.js'
+  * @param {ColumnDecoder} columnDecoder
+  * @returns {DataPage} definition levels, repetition levels, and array of values
+  */
+-export function readDataPage(bytes, daph, { type, element, schemaPath }) {
++export function readDataPage(bytes, daph, { type, element, schemaPath, valueDecoders }) {
+   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+   const reader = { view, offset: 0 }
+   /** @type {DecodedArray} */
+@@ -59,6 +59,8 @@ export function readDataPage(bytes, daph, { type, element, schemaPath }) {
+   } else if (daph.encoding === 'DELTA_LENGTH_BYTE_ARRAY') {
+     dataPage = new Array(nValues)
+     deltaLengthByteArray(reader, nValues, dataPage)
++  } else if (valueDecoders?.[daph.encoding]) {
++    dataPage = valueDecoders[daph.encoding](reader, type, nValues)
+   } else {
+     throw new Error(`parquet unsupported encoding: ${daph.encoding}`)
+   }
+@@ -197,6 +199,8 @@ export function readDataPageV2(compressedBytes, ph, columnDecoder) {
+     deltaByteArray(pageReader, nValues, dataPage)
+   } else if (daph2.encoding === 'BYTE_STREAM_SPLIT') {
+     dataPage = byteStreamSplit(pageReader, nValues, type, element.type_length)
++  } else if (columnDecoder.valueDecoders?.[daph2.encoding]) {
++    dataPage = columnDecoder.valueDecoders[daph2.encoding](pageReader, type, nValues)
+   } else {
+     throw new Error(`parquet unsupported encoding: ${daph2.encoding}`)
+   }
 diff --git a/src/plain.js b/src/plain.js
+index 7a513d461704772bbde225525ccf4b66aa8b486e..9961ab91923c67cac24771e95ef06faa4db44f46 100644
 --- a/src/plain.js
 +++ b/src/plain.js
-@@ -90,7 +90,7 @@
+@@ -90,7 +90,7 @@ function readPlainInt64(reader, count) {
  function readPlainInt96(reader, count) {
    const values = new Array(count)
    for (let i = 0; i < count; i++) {
@@ -96,9 +142,10 @@ diff --git a/src/plain.js b/src/plain.js
      values[i] = BigInt(high) << 64n | low
    }
 diff --git a/src/schema.js b/src/schema.js
+index 1dd9ae87307f5b04d89248d8ab84dc078d24bf29..3d8cd4a165224b73ae1cafb92ab64ea3ca03812f 100644
 --- a/src/schema.js
 +++ b/src/schema.js
-@@ -107,7 +107,7 @@
+@@ -107,7 +107,7 @@ export function getMaxDefinitionLevel(schemaPath) {
  export function isListLike(schema) {
    if (!schema) return false
    if (schema.element.converted_type !== 'LIST') return false
@@ -107,7 +154,7 @@ diff --git a/src/schema.js b/src/schema.js
  
    const firstChild = schema.children[0]
    if (firstChild.children.length > 1) return false
-@@ -125,17 +125,18 @@
+@@ -125,17 +125,18 @@ export function isListLike(schema) {
  export function isMapLike(schema) {
    if (!schema) return false
    if (schema.element.converted_type !== 'MAP') return false
@@ -130,6 +177,7 @@ diff --git a/src/schema.js b/src/schema.js
    return true
  }
 diff --git a/src/types.d.ts b/src/types.d.ts
+index e374278e193f7c73d18d20481eeb0d3b83eccf87..340f5c8f6faad12c163372e4c7a6ab4a3b77f4e8 100644
 --- a/src/types.d.ts
 +++ b/src/types.d.ts
 @@ -3,6 +3,14 @@
@@ -147,10 +195,35 @@ diff --git a/src/types.d.ts b/src/types.d.ts
    timestampFromMilliseconds(millis: bigint): any
    timestampFromMicroseconds(micros: bigint): any
    timestampFromNanoseconds(nanos: bigint): any
+@@ -34,6 +42,7 @@ export interface BaseParquetReadOptions {
+   rowEnd?: number // last requested row index (exclusive)
+   onChunk?: (chunk: ColumnData) => void // called when a column chunk is parsed. chunks may contain data outside the requested range.
+   onPage?: (chunk: SubColumnData) => void // called when a data page is parsed. pages may contain data outside the requested range.
++  valueDecoders?: Partial<Record<Encoding, (reader: DataReader, type: ParquetType, count: number) => DecodedArray>>
+   compressors?: Compressors // custom decompressors
+   utf8?: boolean // decode byte arrays as utf8 strings (default true)
+   parsers?: ParquetParsers // custom parsers to decode advanced types
+@@ -263,6 +272,7 @@ export type Encoding =
+   | 'DELTA_BYTE_ARRAY'
+   | 'RLE_DICTIONARY'
+   | 'BYTE_STREAM_SPLIT'
++  | 'ALP'
+ 
+ export type CompressionCodec =
+   | 'UNCOMPRESSED'
+@@ -474,6 +484,7 @@ export interface ColumnDecoder {
+   schemaPath: SchemaTree[]
+   codec: CompressionCodec
+   parsers: ParquetParsers
++  valueDecoders?: Partial<Record<Encoding, (reader: DataReader, type: ParquetType, count: number) => DecodedArray>>
+   compressors?: Compressors
+   utf8?: boolean
+ }
 diff --git a/src/variant.js b/src/variant.js
+index 3efa7335335275c1e3a44409bd59b4928c860a49..75c0c6c797ec26b4c559605e18d7e0135ed7d04e 100644
 --- a/src/variant.js
 +++ b/src/variant.js
-@@ -49,7 +49,7 @@
+@@ -49,7 +49,7 @@ export function decodeVariantColumn(value, parsers = DEFAULT_PARSERS) {
   * @returns {any}
   */
  function decodeTypedValue(typedValue, metadata, parsers) {
@@ -159,7 +232,7 @@ diff --git a/src/variant.js b/src/variant.js
  
    // Handle {typed_value, value} wrapper - unwrap and recurse
    if (typedValue && typeof typedValue === 'object' && !Array.isArray(typedValue) && !(typedValue instanceof Uint8Array)) {
-@@ -73,9 +73,10 @@
+@@ -73,9 +73,10 @@ function decodeTypedValue(typedValue, metadata, parsers) {
      return result
    }
  
@@ -172,7 +245,7 @@ diff --git a/src/variant.js b/src/variant.js
    }
  
    // Arrays
-@@ -208,11 +209,11 @@
+@@ -208,11 +209,11 @@ function readVariantPrimitive(reader, typeId, parsers) {
      return value
    }
    case 8:
@@ -187,21 +260,20 @@ diff --git a/src/variant.js b/src/variant.js
    case 11: {
      const value = reader.view.getInt32(reader.offset, true)
      reader.offset += 4
-@@ -331,9 +332,10 @@
+@@ -331,9 +332,10 @@ function readVariantArray(reader, header, metadata, parsers) {
  /**
   * @param {DataReader} reader
   * @param {number} width
 - * @returns {number}
-- */
--function readVariantDecimal(reader, width) {
 + * @param {ParquetParsers} parsers
 + * @returns {any}
-+ */
+  */
+-function readVariantDecimal(reader, width) {
 +function readVariantDecimal(reader, width, parsers) {
    const scale = reader.view.getUint8(reader.offset)
    reader.offset += 1
    let unscaled
-@@ -350,7 +352,9 @@
+@@ -350,7 +352,9 @@ function readVariantDecimal(reader, width) {
      reader.offset += 16
    }
  

@@ -1,5 +1,6 @@
 import { zstdCompressSync } from "node:zlib";
 import { DEFAULT_PARSERS } from "hyparquet/src/convert.js";
+import { readDataPage, readDataPageV2 } from "hyparquet/src/datapage.js";
 import { getSchemaPath } from "hyparquet/src/schema.js";
 import type { ColumnDecoder, PageHeader } from "hyparquet/src/types.js";
 import { parquetWriteBuffer } from "hyparquet-writer";
@@ -7,6 +8,7 @@ import { batchFromVectors, MemoryBudget, MemoryScope, materializeBatchRows } fro
 import { expect, it } from "vitest";
 import { readParquetMetadataFromFile } from "./metadata-cache.js";
 import { planFlatNumericPage, readNumericPage } from "./numeric-page.js";
+import { parquetValueDecoders } from "./value-decoders.js";
 import { planFlatNumericVector, planFlatNumericVectorHeader } from "./vector-batches.js";
 import { planZstdWorkspaceBytes } from "./zstd-workspace-plan.js";
 
@@ -916,4 +918,53 @@ it("retains admitted decompression backing borrowed by logical binary carriers",
   expect(scope.budget.usedBytes).toBe(bytes.length);
   owner.release();
   expect(scope.budget.usedBytes).toBe(0);
+});
+
+it.each([
+  false,
+  true,
+])("plans and executes ALP with nullable V2=%s under exact admission", async (v2) => {
+  const column = await decoder();
+  column.type = "DOUBLE";
+  const original = page(v2);
+  const prefix = v2 ? 2 : 6;
+  const bytes = new Uint8Array(prefix + 24);
+  bytes.set(original.bytes.subarray(0, prefix));
+  const view = new DataView(bytes.buffer, prefix);
+  view.setUint8(2, 3);
+  view.setInt32(3, 2, true);
+  view.setUint32(7, 4, true);
+  view.setBigInt64(15, 1n, true);
+  const header = original.header;
+  header.compressed_page_size = bytes.length;
+  header.uncompressed_page_size = bytes.length;
+  const data = header.data_page_header ?? header.data_page_header_v2;
+  if (!data) throw Error("Missing header");
+  data.encoding = "ALP";
+  const hooked = { ...column, valueDecoders: parquetValueDecoders() };
+  const legacy = v2
+    ? readDataPageV2(bytes, header, hooked)
+    : readDataPage(
+        bytes,
+        header.data_page_header as NonNullable<PageHeader["data_page_header"]>,
+        hooked,
+      );
+  expect(Array.from(legacy.dataPage)).toEqual([1, 1]);
+  expect(legacy.definitionLevels).toEqual([1, 0, 1, 0]);
+  const plan = planFlatNumericPage(bytes, header, column);
+  if (!plan) throw Error("Missing ALP plan");
+  for (const cap of [plan.bytes, plan.bytes - 1]) {
+    const scope = new MemoryScope(new MemoryBudget(cap));
+    try {
+      if (cap === plan.bytes) {
+        const result = plan.execute(scope);
+        expect(Array.from(result.values)).toEqual([1, 1]);
+        expect(Array.from(result.definitionLevels ?? [])).toEqual([1, 0, 1, 0]);
+        expect(scope.budget.peakBytes).toBe(plan.bytes);
+      } else expect(() => plan.execute(scope)).toThrow(/budget/i);
+    } finally {
+      scope.dispose();
+    }
+    expect(scope.budget.usedBytes).toBe(0);
+  }
 });

@@ -29,6 +29,7 @@ import type {
   ReadParquetBatchOptions,
   StoreAsyncBuffer,
 } from "./types.js";
+import { parquetValueDecoders } from "./value-decoders.js";
 
 interface ColumnBatchPlan {
   readColumns: string[];
@@ -179,6 +180,7 @@ export async function readParquetColumnBatch(
         ? lakeqlParquetCompressors
         : scopedParquetCompressors(decompressionScope),
     parsers: parquetParsersForMetadata(metadata, decompressionScope),
+    valueDecoders: parquetValueDecoders(decompressionScope),
     utf8: false,
     onChunk(chunk) {
       appendColumnChunk(columnValues, chunk, rowStart, rowEnd);

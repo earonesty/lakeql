@@ -349,3 +349,5 @@ Validate Parquet schemas in one iterative pass, avoiding repeated ancestor-path 
 Admit temporary schema-validation directories against caller budgets in owned scans, task execution, and indexed planning; release them on every exit and skip traversal for empty projections.
 
 Close suspended row iterators when NDJSON, JSON, or CSV encoding fails, releasing producer-owned allocations without masking the original error. Share cleanup across failure and cancellation races.
+
+Decode ALP FLOAT/DOUBLE pages through shared public and owned reader dispatch, preserving exception bits and admitting output buffers before allocation. Validate page extents and exception positions before decoding.

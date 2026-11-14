@@ -17,9 +17,29 @@
   },
   {
     "area": "Parquet",
-    "feature": "ALP encoding and Brotli compression",
+    "feature": "ALP encoding",
+    "status": "supported+tested",
+    "notes": "FLOAT/DOUBLE V1 and V2 pages use one shared decoder with output admission and numeric planner forecasts. Real fixture bit parity includes NaN payloads, 64-bit deltas and variable vector sizes. Public and owned reader conformance passes; HTTP range and ignored-range concurrent reads are tested.",
+    "evidence": [
+      {
+        "file": "packages/parquet/src/alp-values.test.ts",
+        "pattern": "decodes every ALP fixture vector bit-for-bit"
+      },
+      {
+        "file": "packages/parquet/src/numeric-page.test.ts",
+        "pattern": "plans and executes ALP with nullable"
+      },
+      {
+        "file": "packages/parquet/src/alp-http.test.ts",
+        "pattern": "streams real ALP fixture across concurrent HTTP reads"
+      }
+    ]
+  },
+  {
+    "area": "Parquet",
+    "feature": "Brotli compression",
     "status": "planned",
-    "notes": "No ALP decoder or bounded Brotli codec is registered. External fixtures currently fail through both readers; these capabilities and their admission contracts remain unresolved release work."
+    "notes": "No bounded Brotli codec is registered. External read-conformance remains failing; the large string fixture also requires explicit oversized-value admission because its individual strings exceed the configured memory cap."
   },
   {
     "area": "Parquet",

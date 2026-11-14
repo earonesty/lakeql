@@ -1,7 +1,13 @@
 import { decompressPage } from "hyparquet/src/datapage.js";
 import { getMaxDefinitionLevel, getMaxRepetitionLevel } from "hyparquet/src/schema.js";
 import type { ColumnDecoder, DecodedArray, PageHeader } from "hyparquet/src/types.js";
-import { LakeqlError, type MemoryScope, type Vector } from "lakeql-core";
+import {
+  MATERIALIZATION_CHARGES as c,
+  LakeqlError,
+  type MemoryScope,
+  type Vector,
+} from "lakeql-core";
+import { readAlpValues } from "./alp-values.js";
 import { readPackedBinaryValues } from "./binary-values.js";
 import { scopedParquetCompressors, ZSTD_REUSABLE_WORKSPACE_BYTES } from "./compressors.js";
 import { readPackedDeltaBinaryValues } from "./delta-binary-values.js";
@@ -57,6 +63,7 @@ export function readNumericPage(
       ? dictionaryLength === undefined
       : (encoding !== "PLAIN" &&
           encoding !== "BYTE_STREAM_SPLIT" &&
+          !(encoding === "ALP" && (decoder.type === "FLOAT" || decoder.type === "DOUBLE")) &&
           !(
             encoding === "DELTA_BINARY_PACKED" &&
             (decoder.type === "INT32" || decoder.type === "INT64")
@@ -201,11 +208,13 @@ export function readNumericPage(
     };
   }
   const values =
-    encoding === "DELTA_BINARY_PACKED"
-      ? readDeltaValues(reader, present, decoder.type === "INT32", scope)
-      : encoding === "BYTE_STREAM_SPLIT"
-        ? readByteStreamSplitValues(reader, decoder.type, present, scope)
-        : readPlainValues(reader, decoder.type, present, decoder.element.type_length, scope);
+    encoding === "ALP"
+      ? readAlpValues(reader, decoder.type, present, scope)
+      : encoding === "DELTA_BINARY_PACKED"
+        ? readDeltaValues(reader, present, decoder.type === "INT32", scope)
+        : encoding === "BYTE_STREAM_SPLIT"
+          ? readByteStreamSplitValues(reader, decoder.type, present, scope)
+          : readPlainValues(reader, decoder.type, present, decoder.element.type_length, scope);
   // Binary carrier arrays borrow page backing through their element views.
   // Keep the page owner until the enclosing decode scope releases those views.
   if (!plainBinaryEncoded) releaseDecodedScratch(page, bytes, values, scope);
@@ -301,6 +310,7 @@ export function planFlatNumericPageHeader(
     const bytes =
       (maximum > 0 ? count : 0) +
       count * width +
+      (page.encoding === "ALP" ? 2 * c.view : 0) +
       (compressed ? header.uncompressed_page_size : 0) +
       (zstd ? ZSTD_REUSABLE_WORKSPACE_BYTES : 0) +
       (decoder.codec === "GZIP" ? GZIP_WORKSPACE_BYTES : 0);
@@ -402,11 +412,14 @@ function describeFlatNumericPage(
   }
   const booleanValues = decoder.type === "BOOLEAN";
   const payload = present * width;
-  const encodedPayload = booleanValues
-    ? encoding === "PLAIN"
-      ? Math.ceil(present / 8)
-      : 0
-    : payload;
+  const encodedPayload =
+    encoding === "ALP"
+      ? 0
+      : booleanValues
+        ? encoding === "PLAIN"
+          ? Math.ceil(present / 8)
+          : 0
+        : payload;
   const decodedBytes = compressed ? header.uncompressed_page_size - valueOffset : 0;
   const available = compressed ? decodedBytes : inputLength - valueOffset;
   if (
@@ -424,11 +437,15 @@ function describeFlatNumericPage(
     bytes !== undefined &&
     (bytes.byteOffset + valueOffset) % width === 0;
   const copiesValues =
-    booleanValues || encoding === "BYTE_STREAM_SPLIT" || (!compressed && !borrowsInput);
+    booleanValues ||
+    encoding === "ALP" ||
+    encoding === "BYTE_STREAM_SPLIT" ||
+    (!compressed && !borrowsInput);
   const extent =
     (present < count ? count : 0) +
     decodedBytes +
     (copiesValues ? payload : 0) +
+    (encoding === "ALP" ? 2 * c.view : 0) +
     (compressed && decoder.codec === "GZIP" ? GZIP_WORKSPACE_BYTES : 0) +
     (zstd
       ? bytes === undefined
@@ -478,7 +495,9 @@ function flatLevelLayout(
 function supportsFlatValueEncoding(decoder: ColumnDecoder, encoding: unknown): boolean {
   return decoder.type === "BOOLEAN"
     ? encoding === "PLAIN" || encoding === "RLE"
-    : encoding === "PLAIN" || encoding === "BYTE_STREAM_SPLIT";
+    : encoding === "PLAIN" ||
+        encoding === "BYTE_STREAM_SPLIT" ||
+        (encoding === "ALP" && (decoder.type === "FLOAT" || decoder.type === "DOUBLE"));
 }
 
 function numericValueWidth(decoder: ColumnDecoder): number {

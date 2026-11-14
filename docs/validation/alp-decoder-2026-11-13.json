@@ -15,5 +15,6 @@
     "Validate full reader conformance and remote range fixtures after integration; all six recorded conformance failures are still open.",
     "Decoder performs BigInt scalar arithmetic; VM scratch is not an explicit heap cap. Optimize only with fixture bit-parity and measured evidence.",
     "Offset preflight has O(number of vectors + exceptions) work; decoding is linear in values and packed bytes."
-  ]
+  ],
+  "followupEvidence": "alp-reader-integration-2026-11-13.json"
 }

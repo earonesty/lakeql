@@ -28,6 +28,7 @@ import {
   readPreparedPageBody,
 } from "./page-window.js";
 import { recoverColumnExtents } from "./recover-column-extents.js";
+import { parquetValueDecoders } from "./value-decoders.js";
 
 export {
   type PreparedPageWindow,
@@ -1330,6 +1331,13 @@ function dataPageValues(
         ...(admitted.booleanValues === true ? { booleanValues: true } : {}),
       };
   }
+  columnDecoder = {
+    ...columnDecoder,
+    valueDecoders: {
+      ...columnDecoder.valueDecoders,
+      ...parquetValueDecoders(scope),
+    },
+  };
   if (header.type === "DATA_PAGE") {
     const dataHeader = header.data_page_header;
     if (dataHeader === undefined) return undefined;

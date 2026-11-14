@@ -36,9 +36,10 @@ inside supported VARIANT containers have a separate exact coefficient/scale path
 including supported precision up to 38. This does not imply general exact decimal
 arithmetic or ordering support across every operator.
 
-ALP encoding and Brotli compression are not implemented in the current reader/codec
-paths. Their external read-conformance cases remain failing, alongside BSON reads;
-explicit rejection is not a conformance waiver or a claim that the release gate passes.
+ALP FLOAT/DOUBLE decoding supports V1/V2 pages through public and owned readers,
+with exact fixture bit parity and admitted output buffers. Brotli compression and
+BSON decoding remain unimplemented; their four external read-conformance cases
+remain failing. Explicit rejection is not a conformance waiver.
 
 See [the compatibility matrix](compatibility.md) for tested capabilities and evidence.
 New logical types must update `docs/compatibility.json` before becoming compatibility

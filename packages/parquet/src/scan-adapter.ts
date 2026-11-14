@@ -42,6 +42,7 @@ import { rowGroupMayMatch } from "./row-group-pruning.js";
 import { rejectUnsupportedParquetSchema } from "./schema.js";
 import { asyncBufferFromObjectInfo, asyncBufferFromStore } from "./store-buffer.js";
 import type { ParquetMetadata, StoreAsyncBuffer } from "./types.js";
+import { parquetValueDecoders } from "./value-decoders.js";
 import { canReadParquetVectorBatches, readParquetVectorBatchesFromFile } from "./vector-batches.js";
 import { windowParquetTasks } from "./window-task.js";
 
@@ -223,6 +224,7 @@ export class ParquetScanAdapter implements ScanAdapter {
           rowEnd,
           compressors: lakeqlParquetCompressors,
           parsers: parquetParsersForMetadata(metadata),
+          valueDecoders: parquetValueDecoders(),
           utf8: false,
         };
         if (readColumns) readOptions.columns = readColumns;

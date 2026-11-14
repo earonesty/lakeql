@@ -17,6 +17,7 @@ import type {
   ReadParquetBatchOptions,
   StoreAsyncBuffer,
 } from "./types.js";
+import { parquetValueDecoders } from "./value-decoders.js";
 
 export async function* readParquetObjectBatchesFromFile(
   file: StoreAsyncBuffer,
@@ -69,6 +70,7 @@ export async function* readParquetObjectBatchesFromFile(
           metadata,
           options.allocationScope ?? options.decompressionScope,
         ),
+        valueDecoders: parquetValueDecoders(options.allocationScope ?? options.decompressionScope),
         utf8: false,
       };
       if (options.columns) readOptions.columns = options.columns;
