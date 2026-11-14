@@ -1,11 +1,7 @@
 {
   "date": "2026-11-14",
   "sourceCommit": "12527c2",
-  "requirements": [
-    "M2",
-    "V1",
-    "V2"
-  ],
+  "requirements": ["M2", "V1", "V2"],
   "artifacts": [
     "docs/benchmarks/mixed-query-memory-2026-11-14.json",
     "docs/benchmarks/workerd-owned-current-2026-11-14.json",
@@ -29,18 +25,9 @@
     "local_workerd_emulated_r2": {
       "rows": 32768,
       "payload_characters_per_row": 256,
-      "pool_mib": [
-        64,
-        128
-      ],
-      "jobs": [
-        1,
-        4
-      ],
-      "rounds": [
-        "cold",
-        "warm"
-      ],
+      "pool_mib": [64, 128],
+      "jobs": [1, 4],
+      "rounds": ["cold", "warm"],
       "four_jobs_64_mib": "Two succeed and two typed budget rejections in each round; tracked peak 63.99 MiB.",
       "four_jobs_128_mib": "All four succeed; tracked peak 105.78 MiB.",
       "max_sampled_managed_heap_64_mib_four_jobs": 81.26,

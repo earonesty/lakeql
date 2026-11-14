@@ -1,9 +1,6 @@
 {
   "date": "2026-11-14",
-  "requirements": [
-    "F3",
-    "M1"
-  ],
+  "requirements": ["F3", "M1"],
   "changes": [
     "General projected scan read-column planning uses the admitted shared column collector.",
     "Compute deferred predicate/late read columns once per execution, with admitted deduplication, ordering, name/list storage, combined emulated-read list and plan record.",

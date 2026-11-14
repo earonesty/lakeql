@@ -1,9 +1,6 @@
 {
   "date": "2026-11-14",
-  "requirements": [
-    "M1",
-    "M2"
-  ],
+  "requirements": ["M1", "M2"],
   "changes": [
     "Scoped selection pipeline cache entries reserve modeled metadata from the caller shared root pool, rather than retaining a completed child query budget.",
     "Memory pressure reclaims least-recently-used entries in the requesting pool; optional retention is declined when pinned work leaves insufficient room.",

@@ -1,9 +1,6 @@
 {
   "date": "2026-11-14",
-  "requirements": [
-    "M1",
-    "M2"
-  ],
+  "requirements": ["M1", "M2"],
   "changes": [
     "Reserve active pipeline metadata before shader/pipeline creation even when caching is disabled or the entry is too large to retain.",
     "Cache retention shares the active reservation in the root pool, avoiding duplicate physical charges.",

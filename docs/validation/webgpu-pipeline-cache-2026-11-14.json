@@ -1,9 +1,6 @@
 {
   "date": "2026-11-14",
-  "requirements": [
-    "M1",
-    "M2"
-  ],
+  "requirements": ["M1", "M2"],
   "changes": [
     "Replace unbounded pipeline promise map with LRU retention bounded by both entry count and modeled source/key metadata bytes.",
     "Default limits are 64 entries and 1 MiB modeled metadata; zero disables retention and oversized entries execute uncached.",

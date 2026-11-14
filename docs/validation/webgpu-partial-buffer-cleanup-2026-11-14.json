@@ -1,9 +1,6 @@
 {
   "date": "2026-11-14",
-  "requirements": [
-    "M1",
-    "M2"
-  ],
+  "requirements": ["M1", "M2"],
   "changes": [
     "Register each successful GPU buffer creation immediately in selection, reduction, vector top-k and resident-cache construction cleanup lists.",
     "Destroy newly created upload buffers if queue.writeBuffer throws before ownership can transfer to the caller."

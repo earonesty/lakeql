@@ -1,10 +1,6 @@
 {
   "date": "2026-11-14",
-  "requirements": [
-    "F2",
-    "F3",
-    "M1"
-  ],
+  "requirements": ["F2", "F3", "M1"],
   "changes": [
     "General borrowed projected scans now pass an allocation scope to physical execution, selection gathering and projection.",
     "Detach only selected borrowed output and share owned row materialization; release stage, detached input and materialized output on iterator cleanup.",

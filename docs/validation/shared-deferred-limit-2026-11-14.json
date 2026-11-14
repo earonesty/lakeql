@@ -1,11 +1,6 @@
 {
   "date": "2026-11-14",
-  "requirements": [
-    "F2",
-    "F3",
-    "M1",
-    "M2"
-  ],
+  "requirements": ["F2", "F3", "M1", "M2"],
   "changes": [
     "Use ownedProjectedScanInputs and the shared bounded deferred gather for borrowed and owned projected limit queries.",
     "Remove the accumulated row-reference implementation and unused row-key/batching helpers; offset skipping no longer retains a query-wide reference list.",

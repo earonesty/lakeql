@@ -1,10 +1,6 @@
 {
   "date": "2026-11-14",
-  "requirements": [
-    "F2",
-    "M1",
-    "M2"
-  ],
+  "requirements": ["F2", "M1", "M2"],
   "changes": [
     "Admit modeled selection execution records, typed-array views, API descriptors/handles, labels and result records in addition to payload backing.",
     "Include ownership/reclaimer fields in retained pipeline metadata charges.",
