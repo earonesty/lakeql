@@ -1,0 +1,27 @@
+{
+  "sourceBase": "be8251e",
+  "scope": "Retained raw object/range cache metadata and empty-entry bounds",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 121,
+    "fullSuite": {
+      "passed": 3660,
+      "skipped": 629,
+      "log": "/tmp/raw-cache-metadata-full.log"
+    }
+  },
+  "evidence": [
+    "100 negative lookups remain within 2 KiB retained capacity",
+    "Empty objects and ranges consume capacity",
+    "Zero capacity does not retain misses",
+    "Cold owned-read forecast matches measured peak including metadata",
+    "Defensive output copies and eviction lifetimes retain prior behavior"
+  ],
+  "remaining": [
+    "Lookup-key construction and legacy runtime internals",
+    "Automatic HTTP pool propagation",
+    "Generic cache callers must supply complete costs",
+    "Full audit and final runtime/release validation"
+  ]
+}

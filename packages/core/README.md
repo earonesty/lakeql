@@ -100,3 +100,8 @@ for a missing object. Discovery and owned JSON-cache reads preserve that lifetim
 URI, read-control and cache wrappers forward the capability. The cache wrapper
 currently delegates owned metadata reads directly; it does not retain them in its
 legacy HEAD cache. Stores without the capability retain their legacy behavior.
+
+`cachedObjectStore` capacity includes retained entry/key metadata and byte views,
+not just object payloads. Empty objects and negative lookups therefore consume
+capacity, and `maxBytes: 0` disables their retention too. Owned range allocation
+forecasts include metadata for a possible cold cache copy.

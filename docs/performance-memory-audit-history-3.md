@@ -4051,3 +4051,23 @@ entry overhead and automatic HTTP pool propagation remain separate audit items.
 
 Build/typecheck passed; focused suites passed 120 tests; full suite passed 3,659
 with 629 skips. Evidence: `docs/validation/default-planning-cache-2026-11-14.json`.
+
+### 2026-11-14 — raw object-cache entry metadata charges
+
+cachedObjectStore now charges key strings, record/directory storage and byte views
+for full-object and range entries, in addition to payload bytes. Empty responses
+and cached misses have positive costs, so their entry count cannot grow without
+consuming byte capacity. HEAD metadata uses the same shared entry-cost helper.
+Owned-read forecasts include cold defensive-copy metadata and match the measured
+cold peak in the boundary test. Existing payload-only tests now provide enough
+capacity for actual retained metadata and verify measured backing lifetime.
+
+Tests cover 100 distinct negative lookups under a 2 KiB cache, eviction of early
+misses, empty objects/ranges, disabled retention, defensive copies, and forecast
+agreement. This accounts for retained wrapper storage; caller-created lookup keys,
+legacy adapter allocation internals and general runtime heap overhead remain
+outside this change's proof. SharedMemoryCache's generic byte-cost API still
+requires its callers to provide a complete retention cost.
+
+Build/typecheck passed; focused suites passed 121 tests; full suite passed 3,660
+with 629 skips. Evidence: `docs/validation/raw-cache-entry-accounting-2026-11-14.json`.

@@ -5,7 +5,7 @@ import type { MemoryScope, OwnedMemory } from "./memory-scope.js";
 import type { ListOptions, ObjectHead, ObjectInfo, ObjectStore } from "./store.js";
 
 export interface ObjectStoreCacheOptions {
-  /** Maximum cached payload and HEAD metadata bytes. Defaults to 64 MiB. */
+  /** Maximum cached payload and retained entry metadata bytes. Defaults to 64 MiB. */
   maxBytes?: number;
   /** Optional time-to-live for cache entries. Entries do not expire by default. */
   ttlMs?: number;
@@ -268,7 +268,7 @@ export function cachedObjectStore(
   }
 
   function set(key: string, value: CacheValue): void {
-    const bytes = valueBytes(value);
+    const bytes = valueBytes(key, value);
     sharedCache.setAllocated(key, bytes, () => cloneValue(value), {
       priority: objectCachePriority(value, options),
     });
@@ -290,7 +290,14 @@ export function cachedObjectStore(
             const forecast = allocation(path, range);
             // Cold reads may retain a cache copy alongside the source output. Hits
             // allocate only the output copy, covered by this conservative forecast.
-            return { bytes: forecast.bytes + range.length, output: forecast.output };
+            return {
+              bytes:
+                forecast.bytes +
+                range.length +
+                c.view +
+                cacheEntryBytes(rangeKey(path, range), path),
+              output: forecast.output,
+            };
           },
         }),
     ...(ownedRead === undefined
@@ -397,15 +404,20 @@ function headKey(path: string): string {
   return `head:${path}`;
 }
 
-function valueBytes(value: CacheValue): number {
-  if (value.kind === "object") return value.value?.byteLength ?? 0;
-  if (value.kind === "range") return value.value.byteLength;
+function cacheEntryBytes(key: string, path: string): number {
+  return (
+    2 * c.object + 8 * c.property + 2 * c.string + (key.length + path.length) * c.stringCodeUnit
+  );
+}
+
+function valueBytes(key: string, value: CacheValue): number {
+  const entry = cacheEntryBytes(key, value.path);
+  if (value.kind === "object")
+    return entry + (value.value === null ? 0 : c.view + value.value.byteLength);
+  if (value.kind === "range") return entry + c.view + value.value.byteLength;
   const head = value.value;
   return (
-    2 * c.object +
-    8 * c.property +
-    2 * c.string +
-    (value.path.length * 2 + 5) * c.stringCodeUnit +
+    entry +
     (head === null
       ? 0
       : c.object +

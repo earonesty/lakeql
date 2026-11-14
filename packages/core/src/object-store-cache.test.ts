@@ -339,7 +339,7 @@ describe("cache allocation ownership", () => {
 });
 
 it("preserves owned reads through caching and charges defensive output copies", async () => {
-  const budget = new MemoryBudget(12);
+  const budget = new MemoryBudget(2048);
   const scope = new MemoryScope(budget);
   const base = countingStore(memoryStore());
   await base.put("file", Uint8Array.of(1, 2, 3, 4));
@@ -354,12 +354,13 @@ it("preserves owned reads through caching and charges defensive output copies", 
   const cache = new SharedMemoryCache({ memoryBudget: budget });
   const store = cachedObjectStore(inner, {}, cache);
   const first = await store.getRangeOwned?.("file", { offset: 0, length: 4 }, scope);
-  expect(budget.usedBytes).toBe(8);
+  const withOutput = budget.usedBytes;
+  expect(withOutput).toBeGreaterThan(8);
   first?.value.fill(9);
   first?.release();
   const second = await store.getRangeOwned?.("file", { offset: 0, length: 4 }, scope);
   expect(second?.value).toEqual(Uint8Array.of(1, 2, 3, 4));
-  expect(budget.usedBytes).toBe(8);
+  expect(budget.usedBytes).toBe(withOutput);
   expect(reads).toBe(1);
   second?.release();
   await store.put("file", Uint8Array.of(5, 6, 7, 8));
@@ -540,26 +541,25 @@ it("uses owned entry eviction cost without misreporting its physical backing cha
 it("forecasts cold cache copies and preserves exact-buffer layout", async () => {
   const inner = memoryStore();
   await inner.put("file", Uint8Array.of(1, 2, 3, 4));
-  const pool = new MemoryBudget(8);
-  const cache = new SharedMemoryCache({ maxBytes: 4, memoryBudget: pool });
-  const store = cachedObjectStore(inner, { maxBytes: 4 }, cache);
-  expect(store.getRangeOwnedAllocation?.("file", { offset: 0, length: 4 })).toEqual({
-    bytes: 8,
-    output: "exact-buffer",
-  });
+  const pool = new MemoryBudget(2048);
+  const cache = new SharedMemoryCache({ maxBytes: 1024, memoryBudget: pool });
+  const store = cachedObjectStore(inner, { maxBytes: 1024 }, cache);
+  const forecast = store.getRangeOwnedAllocation?.("file", { offset: 0, length: 4 });
+  expect(forecast?.output).toBe("exact-buffer");
+  expect(forecast?.bytes).toBeGreaterThan(8);
   for (let pass = 0; pass < 2; pass++) {
-    const scope = new MemoryScope(pool.child(8));
+    const scope = new MemoryScope(pool.child(2048));
     const owner = await store.getRangeOwned?.("file", { offset: 0, length: 4 }, scope);
     expect(owner?.value).toEqual(Uint8Array.of(1, 2, 3, 4));
     expect(owner?.value.buffer.byteLength).toBe(4);
-    expect(pool.usedBytes).toBe(8);
+    expect(pool.usedBytes).toBe(forecast?.bytes);
     owner?.release();
     scope.dispose();
-    expect(pool.usedBytes).toBe(4);
+    expect(pool.usedBytes).toBe((forecast?.bytes ?? 0) - 4);
   }
   cache.deleteWhere(() => true);
   expect(pool.usedBytes).toBe(0);
-  expect(pool.peakBytes).toBe(8);
+  expect(pool.peakBytes).toBe(forecast?.bytes);
 });
 
 it("bounds cached HEAD metadata including negative results and transport hints", async () => {
@@ -588,4 +588,32 @@ it("bounds cached HEAD metadata including negative results and transport hints",
     await limited.head("file");
     expect(heads).toBe(maxBytes === charged ? 1 : 2);
   }
+});
+
+it("bounds missing objects, empty objects and empty ranges by metadata capacity", async () => {
+  const backing = memoryStore();
+  await backing.put("empty", new Uint8Array());
+  const pool = new MemoryBudget(65536);
+  const shared = new SharedMemoryCache({ memoryBudget: pool, maxBytes: 2048 });
+  const counted = countingStore(backing);
+  const store = cachedObjectStore(counted, {}, shared);
+  for (let i = 0; i < 100; i++) await store.get(`missing-${i}`);
+  expect(pool.usedBytes).toBeGreaterThan(0);
+  expect(pool.usedBytes).toBeLessThanOrEqual(2048);
+  counted.counters.get = 0;
+  await store.get("missing-0");
+  expect(counted.counters.get).toBe(1);
+  shared.deleteWhere(() => true);
+  await store.get("empty");
+  expect(pool.usedBytes).toBeGreaterThan(0);
+  shared.deleteWhere(() => true);
+  await store.getRange("empty", { offset: 0, length: 0 });
+  expect(pool.usedBytes).toBeGreaterThan(0);
+  shared.deleteWhere(() => true);
+  expect(pool.usedBytes).toBe(0);
+  const disabled = cachedObjectStore(counted, { maxBytes: 0 });
+  counted.counters.get = 0;
+  await disabled.get("missing");
+  await disabled.get("missing");
+  expect(counted.counters.get).toBe(2);
 });
