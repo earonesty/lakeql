@@ -226,6 +226,7 @@ it("releases earlier output before a failed deferred-column read finishes closin
     resume = resolve;
   });
   const reads: number[] = [];
+  let planningBytes = 0;
   const lake = new Lake({
     store,
     memoryPool: pool,
@@ -235,6 +236,7 @@ it("releases earlier output before a failed deferred-column read finishes closin
       },
       async *scanOwnedVectorBatches(_path, options) {
         const late = options.columns?.includes("value") === true;
+        if (!late) planningBytes = pool.usedBytes;
         const start = options.rowStart ?? 0;
         const end = options.rowEnd ?? 2;
         try {
@@ -282,7 +284,8 @@ it("releases earlier output before a failed deferred-column read finishes closin
     expect(reads).toEqual([0, 1]);
     // Current predicate/gather backing can remain until outer cleanup, but the
     // first output's 2,000-byte text payload must already be released.
-    expect(pool.usedBytes).toBeLessThan(1024);
+    expect(planningBytes).toBeGreaterThan(0);
+    expect(pool.usedBytes - planningBytes).toBeLessThan(1024);
   } finally {
     resume();
   }

@@ -3639,3 +3639,30 @@ Build/typecheck passed; full suite passed 3,590 tests with 629 skips. Evidence:
 `docs/validation/discovery-admission-2026-11-14.json`. Signal-bound parent scopes
 also need a cancellation lifetime audit before claiming every integrated path
 holds metadata through in-flight cleanup.
+
+### 2026-11-14 — independent discovery lifetimes across query routes
+
+Deferred limit/aggregate reads, physical column inputs, row matching/ordering/sort
+collection, and all window collection routes now use discovery scopes independent
+of cancellation-bound operator state. Scopes release in `finally` after in-flight
+scan/iterator cleanup settles. Explain construction retains discovery and its task
+owner through result construction. The private planner now requires a receiving
+scope; no internal query call silently transfers discovered storage at return.
+
+Delayed ordered-row, deferred-column and row-window tests use long object paths
+to prove metadata remains charged after abort and while callbacks still reference
+it, then require zero reservations after settlement. They exposed that window
+scans did not receive discovered ObjectInfo at all. Row and vector window options
+now share one helper that carries the object, budget and timing fields, preserving
+transport/version metadata while varying only batch size. Existing failed-deferred
+output cleanup assertions now subtract captured planning storage while still
+proving prior output payloads are released before scanner shutdown.
+
+Sidecar planning containers, adapter-added schema plans, discovery parser/auxiliary
+workspace and external cache retention still need separate admission contracts.
+Explain's returned presentation data and slice outputs also remain outside owned
+output APIs. This integration does not close the full M1/M2 or runtime acceptance
+requirements.
+
+Final build/typecheck passed; full suite passed 3,593 tests with 629 skips.
+Evidence: `docs/validation/discovery-scan-lifetime-2026-11-14.json`.

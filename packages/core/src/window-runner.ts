@@ -48,7 +48,7 @@ export interface WindowRunnerOptions {
   memoryBudget?: MemoryBudget;
   config: WindowRunnerConfig;
   stats: QueryStats;
-  planObjects(): Promise<{ planned: ObjectInfo[]; skipped: number }>;
+  planObjects(scope: MemoryScope): Promise<{ planned: ObjectInfo[]; skipped: number }>;
   tasksFromObjects(objects: ObjectInfo[]): Promise<TaskInput[]>;
   ownedTasksFromObjects?(objects: ObjectInfo[]): Promise<OwnedMemory<TaskInput[]>>;
   vectorBatchScanner(scanner: ScanAdapter): VectorBatchScanner | undefined;
@@ -230,44 +230,53 @@ export async function collectWindowMatches(
   retainedScope?: MemoryScope,
 ): Promise<WindowExecutionMode> {
   const { config, stats } = options;
-  const scope =
-    retainedScope ??
-    new MemoryScope(options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER));
+  const discovery = new MemoryScope(
+    options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER),
+  );
   try {
-    const buffer = new WindowRowBuffer(options, scope, matched);
-    const { planned: paths, skipped: skippedFiles } = await options.planObjects();
-    stats.filesSkipped = skippedFiles;
-    const columns = windowReadColumns(config, scope.childScope());
-    for (const object of paths) {
-      stats.filesPlanned += 1;
-      stats.filesRead += 1;
-      stats.bytesRequested += object.size;
-      options.enforceBudget(config.budget, stats, config.now, startedAt);
-      const scanOptions = rowScanOptions(options, startedAt);
-      const partitionValues = config.hive ? options.parseHivePartitions(object.path) : {};
-      const physicalColumns = columns?.filter((column) => !Object.hasOwn(partitionValues, column));
-      if (physicalColumns !== undefined && physicalColumns.length > 0) {
-        scanOptions.columns = physicalColumns;
-      }
-      if (config.where !== undefined) scanOptions.where = config.where;
-      for await (const rawBatch of checkedAsyncIterable(
-        config.scanner.scan(object.path, scanOptions),
-        config.budget.signal,
-      )) {
-        for (const rawRow of rawBatch) {
-          const row = config.hive ? { ...partitionValues, ...rawRow } : rawRow;
-          stats.rowsDecoded += 1;
-          options.enforceBudget(config.budget, stats, config.now, startedAt);
-          if (!matches(config.where, row, scope)) continue;
-          stats.rowsMatched += 1;
-          buffer.append(row);
+    const scope =
+      retainedScope ??
+      new MemoryScope(options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER));
+    try {
+      const buffer = new WindowRowBuffer(options, scope, matched);
+      const { planned: paths, skipped: skippedFiles } = await options.planObjects(discovery);
+      stats.filesSkipped = skippedFiles;
+      const columns = windowReadColumns(config, scope.childScope());
+      for (const object of paths) {
+        stats.filesPlanned += 1;
+        stats.filesRead += 1;
+        stats.bytesRequested += object.size;
+        options.enforceBudget(config.budget, stats, config.now, startedAt);
+        const scanOptions = windowScanOptions(options, startedAt, object);
+        const partitionValues = config.hive ? options.parseHivePartitions(object.path) : {};
+        const physicalColumns = columns?.filter(
+          (column) => !Object.hasOwn(partitionValues, column),
+        );
+        if (physicalColumns !== undefined && physicalColumns.length > 0) {
+          scanOptions.columns = physicalColumns;
+        }
+        if (config.where !== undefined) scanOptions.where = config.where;
+        for await (const rawBatch of checkedAsyncIterable(
+          config.scanner.scan(object.path, scanOptions),
+          config.budget.signal,
+        )) {
+          for (const rawRow of rawBatch) {
+            const row = config.hive ? { ...partitionValues, ...rawRow } : rawRow;
+            stats.rowsDecoded += 1;
+            options.enforceBudget(config.budget, stats, config.now, startedAt);
+            if (!matches(config.where, row, scope)) continue;
+            stats.rowsMatched += 1;
+            buffer.append(row);
+          }
         }
       }
+      stats.elapsedMs = config.now() - startedAt;
+      return "row-materialized";
+    } finally {
+      if (retainedScope === undefined) scope.dispose();
     }
-    stats.elapsedMs = config.now() - startedAt;
-    return "row-materialized";
   } finally {
-    if (retainedScope === undefined) scope.dispose();
+    discovery.dispose();
   }
 }
 
@@ -304,65 +313,76 @@ async function collectWindowTaskMatches(
   retainedScope: MemoryScope,
 ): Promise<Row[] | undefined> {
   const { config, stats } = options;
-  if (
-    config.windows === undefined ||
-    (config.scanner.executeOwnedWindowTasks === undefined &&
-      config.scanner.executeWindowTasks === undefined)
-  ) {
-    return undefined;
-  }
-  const { planned: objects, skipped } = await options.planObjects();
-  const taskOwner = await options.ownedTasksFromObjects?.(objects);
+  const discovery = new MemoryScope(
+    options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER),
+  );
   try {
-    const tasks = taskOwner?.value ?? (await options.tasksFromObjects(objects));
-    if (tasks.some((task) => task.window?.available !== true)) return undefined;
-
-    stats.filesSkipped = skipped;
-    for (const task of tasks) {
-      stats.filesPlanned += 1;
-      stats.filesRead += 1;
-      if (task.size !== undefined) stats.bytesRequested += task.size;
-      options.enforceBudget(config.budget, stats, config.now, startedAt);
+    if (
+      config.windows === undefined ||
+      (config.scanner.executeOwnedWindowTasks === undefined &&
+        config.scanner.executeWindowTasks === undefined)
+    ) {
+      return undefined;
     }
-    const executionOptions = {
-      memoryBudget: retainedScope.budget,
-      budget: config.budget,
-      stats,
-      now: config.now,
-      startedAt,
-      batchSize: config.batchSize ?? 4096,
-    };
-    if (config.scanner.executeOwnedWindowTasks !== undefined) {
-      const owned = await config.scanner.executeOwnedWindowTasks(
+    const { planned: objects, skipped } = await options.planObjects(discovery);
+    const taskOwner = await options.ownedTasksFromObjects?.(objects);
+    try {
+      const tasks = taskOwner?.value ?? (await options.tasksFromObjects(objects));
+      if (tasks.some((task) => task.window?.available !== true)) return undefined;
+
+      stats.filesSkipped = skipped;
+      for (const task of tasks) {
+        stats.filesPlanned += 1;
+        stats.filesRead += 1;
+        if (task.size !== undefined) stats.bytesRequested += task.size;
+        options.enforceBudget(config.budget, stats, config.now, startedAt);
+      }
+      const executionOptions = {
+        memoryBudget: retainedScope.budget,
+        budget: config.budget,
+        stats,
+        now: config.now,
+        startedAt,
+        batchSize: config.batchSize ?? 4096,
+      };
+      if (config.scanner.executeOwnedWindowTasks !== undefined) {
+        const owned = await config.scanner.executeOwnedWindowTasks(
+          tasks,
+          config.windows,
+          executionOptions,
+        );
+        try {
+          if (config.budget.signal?.aborted)
+            throw new LakeqlError("LAKEQL_ABORTED", "Window task execution aborted");
+          options.enforceBudget(config.budget, stats, config.now, startedAt);
+          return retainedScope.adopt(owned).value;
+        } catch (error) {
+          owned.release();
+          throw error;
+        }
+      }
+      const rows = await config.scanner.executeWindowTasks?.(
         tasks,
         config.windows,
         executionOptions,
       );
-      try {
-        if (config.budget.signal?.aborted)
-          throw new LakeqlError("LAKEQL_ABORTED", "Window task execution aborted");
-        options.enforceBudget(config.budget, stats, config.now, startedAt);
-        return retainedScope.adopt(owned).value;
-      } catch (error) {
-        owned.release();
-        throw error;
-      }
+      if (rows === undefined) return undefined;
+      if (config.budget.signal?.aborted)
+        throw new LakeqlError("LAKEQL_ABORTED", "Window task execution aborted");
+      options.enforceBudget(config.budget, stats, config.now, startedAt);
+      // Legacy adapter allocation is external; admit independent retained storage.
+      const retained = retainedScope.allocate(
+        c.array + rows.length * c.arraySlot,
+        "legacy window task rows",
+        () => [] as Row[],
+      ).value;
+      for (const row of rows) retained.push(retainWindowRow(row, retainedScope));
+      return retained;
+    } finally {
+      taskOwner?.release();
     }
-    const rows = await config.scanner.executeWindowTasks?.(tasks, config.windows, executionOptions);
-    if (rows === undefined) return undefined;
-    if (config.budget.signal?.aborted)
-      throw new LakeqlError("LAKEQL_ABORTED", "Window task execution aborted");
-    options.enforceBudget(config.budget, stats, config.now, startedAt);
-    // Legacy adapter allocation is external; admit independent retained storage.
-    const retained = retainedScope.allocate(
-      c.array + rows.length * c.arraySlot,
-      "legacy window task rows",
-      () => [] as Row[],
-    ).value;
-    for (const row of rows) retained.push(retainWindowRow(row, retainedScope));
-    return retained;
   } finally {
-    taskOwner?.release();
+    discovery.dispose();
   }
 }
 
@@ -372,61 +392,73 @@ async function collectVectorWindowRows(
   retainedScope: MemoryScope,
 ): Promise<Row[] | undefined> {
   const { config, stats } = options;
-  const scanVectorBatches = vectorWindowScanner(options);
-  if (scanVectorBatches === undefined) return undefined;
+  const discovery = new MemoryScope(
+    options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER),
+  );
+  try {
+    const scanVectorBatches = vectorWindowScanner(options);
+    if (scanVectorBatches === undefined) return undefined;
 
-  const { planned: paths, skipped: skippedFiles } = await options.planObjects();
-  stats.filesSkipped = skippedFiles;
-  const columns = windowReadColumns(config, retainedScope.childScope());
-  const inputs = retainedScope.allocate(
-    c.array,
-    "window vector inputs",
-    () => [] as VectorWindowBatch[],
-  ).value;
-  for (const object of paths) {
-    stats.filesPlanned += 1;
-    stats.filesRead += 1;
-    stats.bytesRequested += object.size;
-    options.enforceBudget(config.budget, stats, config.now, startedAt);
-    const scanOptions = {
-      ...vectorScanOptions(options, startedAt),
-      memoryBudget: retainedScope.budget,
-    };
-    if (columns !== undefined && columns.length > 0) scanOptions.columns = columns;
-    if (config.where !== undefined) scanOptions.where = config.where;
-    for await (const input of scanVectorBatches(config.scanner, object.path, scanOptions)) {
-      const stage = retainedScope.childScope();
-      try {
-        const selection = predicateSelection(input.batch, config.where, stage);
-        const count = selectedRowCount(input.batch.rowCount, selection);
-        if (count === 0) continue;
-        const batch = retainWindowBatch(input, stage);
-        retainedScope.adopt(stage.retainAllocations(undefined));
-        stats.rowsMatched += count;
-        retainedScope.allocate(
-          c.arraySlot + c.object + 2 * c.property,
-          "window vector input",
-          () => {
-            inputs.push({ batch, selection });
-          },
-        );
-        options.enforceBufferedRows(config.budget, stats.rowsMatched);
-        options.enforceBudget(config.budget, stats, config.now, startedAt);
-        stats.elapsedMs = config.now() - startedAt;
-      } finally {
-        stage.dispose();
+    const { planned: paths, skipped: skippedFiles } = await options.planObjects(discovery);
+    stats.filesSkipped = skippedFiles;
+    const columns = windowReadColumns(config, retainedScope.childScope());
+    const inputs = retainedScope.allocate(
+      c.array,
+      "window vector inputs",
+      () => [] as VectorWindowBatch[],
+    ).value;
+    for (const object of paths) {
+      stats.filesPlanned += 1;
+      stats.filesRead += 1;
+      stats.bytesRequested += object.size;
+      options.enforceBudget(config.budget, stats, config.now, startedAt);
+      const scanOptions = {
+        ...windowScanOptions(
+          options,
+          startedAt,
+          object,
+          options.columnarBatchSize(config.batchSize),
+        ),
+        memoryBudget: retainedScope.budget,
+      };
+      if (columns !== undefined && columns.length > 0) scanOptions.columns = columns;
+      if (config.where !== undefined) scanOptions.where = config.where;
+      for await (const input of scanVectorBatches(config.scanner, object.path, scanOptions)) {
+        const stage = retainedScope.childScope();
+        try {
+          const selection = predicateSelection(input.batch, config.where, stage);
+          const count = selectedRowCount(input.batch.rowCount, selection);
+          if (count === 0) continue;
+          const batch = retainWindowBatch(input, stage);
+          retainedScope.adopt(stage.retainAllocations(undefined));
+          stats.rowsMatched += count;
+          retainedScope.allocate(
+            c.arraySlot + c.object + 2 * c.property,
+            "window vector input",
+            () => {
+              inputs.push({ batch, selection });
+            },
+          );
+          options.enforceBufferedRows(config.budget, stats.rowsMatched);
+          options.enforceBudget(config.budget, stats, config.now, startedAt);
+          stats.elapsedMs = config.now() - startedAt;
+        } finally {
+          stage.dispose();
+        }
       }
     }
+    stats.elapsedMs = config.now() - startedAt;
+    return applyWindowsToVectorBatches(inputs, config.windows ?? {}, {
+      memoryBudget: retainedScope.budget,
+      resultScope: retainedScope,
+      estimateMemoryBytes: options.estimateMemoryBytes,
+      enforceBufferedRows: (rows) => options.enforceBufferedRows(config.budget, rows),
+      enforceWindowPartitionRows: (rows) => options.enforceWindowPartitionRows(config.budget, rows),
+      enforceMemoryBytes: (bytes) => options.enforceMemoryBytes(config.budget, bytes),
+    });
+  } finally {
+    discovery.dispose();
   }
-  stats.elapsedMs = config.now() - startedAt;
-  return applyWindowsToVectorBatches(inputs, config.windows ?? {}, {
-    memoryBudget: retainedScope.budget,
-    resultScope: retainedScope,
-    estimateMemoryBytes: options.estimateMemoryBytes,
-    enforceBufferedRows: (rows) => options.enforceBufferedRows(config.budget, rows),
-    enforceWindowPartitionRows: (rows) => options.enforceWindowPartitionRows(config.budget, rows),
-    enforceMemoryBytes: (bytes) => options.enforceMemoryBytes(config.budget, bytes),
-  });
 }
 
 async function collectVectorWindowRunMatches(
@@ -437,53 +469,65 @@ async function collectVectorWindowRunMatches(
   retainedScope: MemoryScope,
 ): Promise<boolean> {
   const { config, stats } = options;
-  const scanVectorBatches = vectorWindowScanner(options);
-  if (scanVectorBatches === undefined) return false;
+  const discovery = new MemoryScope(
+    options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER),
+  );
+  try {
+    const scanVectorBatches = vectorWindowScanner(options);
+    if (scanVectorBatches === undefined) return false;
 
-  const { planned: paths, skipped: skippedFiles } = await options.planObjects();
-  stats.filesSkipped = skippedFiles;
-  const columns = windowReadColumns(config, retainedScope.childScope());
-  for (const object of paths) {
-    stats.filesPlanned += 1;
-    stats.filesRead += 1;
-    stats.bytesRequested += object.size;
-    options.enforceBudget(config.budget, stats, config.now, startedAt);
-    const scanOptions = {
-      ...vectorScanOptions(options, startedAt),
-      memoryBudget: retainedScope.budget,
-    };
-    if (columns !== undefined && columns.length > 0) scanOptions.columns = columns;
-    if (config.where !== undefined) scanOptions.where = config.where;
-    for await (const input of scanVectorBatches(config.scanner, object.path, scanOptions)) {
-      const stage = retainedScope.childScope();
-      try {
-        const selection = predicateSelection(input.batch, config.where, stage);
-        const count = selectedRowCount(input.batch.rowCount, selection);
-        stats.rowsMatched += count;
-        if (count === 0) continue;
-        const batch = retainWindowBatch(input, stage);
-        const source = stage.retainAllocations(batch);
+    const { planned: paths, skipped: skippedFiles } = await options.planObjects(discovery);
+    stats.filesSkipped = skippedFiles;
+    const columns = windowReadColumns(config, retainedScope.childScope());
+    for (const object of paths) {
+      stats.filesPlanned += 1;
+      stats.filesRead += 1;
+      stats.bytesRequested += object.size;
+      options.enforceBudget(config.budget, stats, config.now, startedAt);
+      const scanOptions = {
+        ...windowScanOptions(
+          options,
+          startedAt,
+          object,
+          options.columnarBatchSize(config.batchSize),
+        ),
+        memoryBudget: retainedScope.budget,
+      };
+      if (columns !== undefined && columns.length > 0) scanOptions.columns = columns;
+      if (config.where !== undefined) scanOptions.where = config.where;
+      for await (const input of scanVectorBatches(config.scanner, object.path, scanOptions)) {
+        const stage = retainedScope.childScope();
         try {
-          const rows = materializeOwnedBatchRows(source, selection);
+          const selection = predicateSelection(input.batch, config.where, stage);
+          const count = selectedRowCount(input.batch.rowCount, selection);
+          stats.rowsMatched += count;
+          if (count === 0) continue;
+          const batch = retainWindowBatch(input, stage);
+          const source = stage.retainAllocations(batch);
           try {
-            for (const row of rows.value) {
-              pushWindowRunRow(options, runs, currentRun, row);
-              options.enforceBudget(config.budget, stats, config.now, startedAt);
+            const rows = materializeOwnedBatchRows(source, selection);
+            try {
+              for (const row of rows.value) {
+                pushWindowRunRow(options, runs, currentRun, row);
+                options.enforceBudget(config.budget, stats, config.now, startedAt);
+              }
+            } finally {
+              rows.release();
             }
           } finally {
-            rows.release();
+            source.release();
           }
+          stats.elapsedMs = config.now() - startedAt;
         } finally {
-          source.release();
+          stage.dispose();
         }
-        stats.elapsedMs = config.now() - startedAt;
-      } finally {
-        stage.dispose();
       }
     }
+    stats.elapsedMs = config.now() - startedAt;
+    return true;
+  } finally {
+    discovery.dispose();
   }
-  stats.elapsedMs = config.now() - startedAt;
-  return true;
 }
 
 async function collectRowWindowRunMatches(
@@ -493,41 +537,52 @@ async function collectRowWindowRunMatches(
   startedAt: number,
 ): Promise<WindowExecutionMode> {
   const { config, stats } = options;
-  const scope = new MemoryScope(options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER));
+  const discovery = new MemoryScope(
+    options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER),
+  );
   try {
-    const { planned: paths, skipped: skippedFiles } = await options.planObjects();
-    stats.filesSkipped = skippedFiles;
-    const columns = windowReadColumns(config, scope.childScope());
-    for (const object of paths) {
-      stats.filesPlanned += 1;
-      stats.filesRead += 1;
-      stats.bytesRequested += object.size;
-      options.enforceBudget(config.budget, stats, config.now, startedAt);
-      const scanOptions = rowScanOptions(options, startedAt);
-      const partitionValues = config.hive ? options.parseHivePartitions(object.path) : {};
-      const physicalColumns = columns?.filter((column) => !Object.hasOwn(partitionValues, column));
-      if (physicalColumns !== undefined && physicalColumns.length > 0) {
-        scanOptions.columns = physicalColumns;
-      }
-      if (config.where !== undefined) scanOptions.where = config.where;
-      for await (const rawBatch of checkedAsyncIterable(
-        config.scanner.scan(object.path, scanOptions),
-        config.budget.signal,
-      )) {
-        for (const rawRow of rawBatch) {
-          const row = config.hive ? { ...partitionValues, ...rawRow } : rawRow;
-          stats.rowsDecoded += 1;
-          options.enforceBudget(config.budget, stats, config.now, startedAt);
-          if (!matches(config.where, row, scope)) continue;
-          stats.rowsMatched += 1;
-          pushWindowRunRow(options, runs, currentRun, row);
+    const scope = new MemoryScope(
+      options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER),
+    );
+    try {
+      const { planned: paths, skipped: skippedFiles } = await options.planObjects(discovery);
+      stats.filesSkipped = skippedFiles;
+      const columns = windowReadColumns(config, scope.childScope());
+      for (const object of paths) {
+        stats.filesPlanned += 1;
+        stats.filesRead += 1;
+        stats.bytesRequested += object.size;
+        options.enforceBudget(config.budget, stats, config.now, startedAt);
+        const scanOptions = windowScanOptions(options, startedAt, object);
+        const partitionValues = config.hive ? options.parseHivePartitions(object.path) : {};
+        const physicalColumns = columns?.filter(
+          (column) => !Object.hasOwn(partitionValues, column),
+        );
+        if (physicalColumns !== undefined && physicalColumns.length > 0) {
+          scanOptions.columns = physicalColumns;
+        }
+        if (config.where !== undefined) scanOptions.where = config.where;
+        for await (const rawBatch of checkedAsyncIterable(
+          config.scanner.scan(object.path, scanOptions),
+          config.budget.signal,
+        )) {
+          for (const rawRow of rawBatch) {
+            const row = config.hive ? { ...partitionValues, ...rawRow } : rawRow;
+            stats.rowsDecoded += 1;
+            options.enforceBudget(config.budget, stats, config.now, startedAt);
+            if (!matches(config.where, row, scope)) continue;
+            stats.rowsMatched += 1;
+            pushWindowRunRow(options, runs, currentRun, row);
+          }
         }
       }
+      stats.elapsedMs = config.now() - startedAt;
+      return "row-materialized";
+    } finally {
+      scope.dispose();
     }
-    stats.elapsedMs = config.now() - startedAt;
-    return "row-materialized";
   } finally {
-    scope.dispose();
+    discovery.dispose();
   }
 }
 
@@ -567,20 +622,15 @@ function windowBatchOptions(
   };
 }
 
-function rowScanOptions(options: WindowRunnerOptions, startedAt: number): ScanOptions {
+function windowScanOptions(
+  options: WindowRunnerOptions,
+  startedAt: number,
+  object: ObjectInfo,
+  batchSize = options.config.batchSize ?? 4096,
+): ScanOptions {
   return {
-    batchSize: options.config.batchSize ?? 4096,
-    stats: options.stats,
-    ...(options.memoryBudget === undefined ? {} : { memoryBudget: options.memoryBudget }),
-    budget: options.config.budget,
-    now: options.config.now,
-    startedAt,
-  };
-}
-
-function vectorScanOptions(options: WindowRunnerOptions, startedAt: number): ScanOptions {
-  return {
-    batchSize: options.columnarBatchSize(options.config.batchSize),
+    object,
+    batchSize,
     stats: options.stats,
     ...(options.memoryBudget === undefined ? {} : { memoryBudget: options.memoryBudget }),
     budget: options.config.budget,
