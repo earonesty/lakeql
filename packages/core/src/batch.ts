@@ -27,7 +27,7 @@ import {
 } from "./timestamp.js";
 import type { Row } from "./types.js";
 import { buildUnionChildren } from "./union-construction.js";
-import { admitVectorBuffer } from "./vector-buffer.js";
+import { admitVectorBuffer, type VectorAllocator } from "./vector-buffer.js";
 
 const decimalZero = new DecimalValue(0n, 0);
 
@@ -1164,7 +1164,7 @@ export function batchExprValues(batch: Batch, expr: Expr, scope?: MemoryScope): 
   }
 }
 
-export function scalarVectorValue(vector: Vector, index: number, scope?: MemoryScope): Scalar {
+export function scalarVectorValue(vector: Vector, index: number, scope?: VectorAllocator): Scalar {
   if (index < 0 || index >= vectorLength(vector)) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Vector index is out of bounds", {
       index,

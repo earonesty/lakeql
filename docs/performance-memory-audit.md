@@ -1,6 +1,6 @@
 # Performance and memory budget audit
 
-Latest corpus value-parity findings: `docs/validation/conformance-value-parity-2026-11-13.json` (14 failures; release gate remains open).
+Latest corpus value-parity findings: `docs/validation/conformance-value-parity-2026-11-13.json` (6 failures; release gate remains open).
 
 LakeQL has further opportunities to remove repeated whole-state work from per-row
 execution. The highest-value work is shared incremental memory accounting, followed
@@ -31,14 +31,14 @@ under verified 64/128 MiB V8 heap settings; this distinguishes runtime GC policy
 from a persistent leak, but does not cap external backing or prove production
 Cloudflare total-memory safety. See the constrained-runtime section below.
 
-Latest execution checkpoint (November 13, 2026): **2,945 default tests**
+Latest execution checkpoint (November 13, 2026): **2,958 default tests**
 (629 skipped) and **61 Worker tests** pass, with build, typecheck, lint and clean
-package installation. Owned top-K now admits typed scalar reads and packed-text
-decoding before comparison, sharing row/vector ordering semantics. Its measured
-comparison workspace stays constant as row count grows (fixed top-3); reusable
-reader workspace remains a performance opportunity. Decimal predicates retain
-adaptive literal preparation under tight budgets. Evidence and remaining gaps:
-`docs/validation/conformance-value-parity-2026-11-13.json`.
+package installation. Owned top-K reuses admitted scalar-read workspace and shares
+row/vector ordering semantics. At 10,000 rows, measured bigint/wide-timestamp/text
+selection improved from about 44 ms to 0.9/1.6/3.0 ms without increasing tracked
+workspace. Real Spark INT96 top-K also caught and now verifies shared-dictionary
+concat admission. Exact decimal ordering and broader allocation coverage remain open.
+Evidence and gaps: `docs/validation/conformance-value-parity-2026-11-13.json`.
 
 External conformance now reports **511 passed, 6 failed, one skipped**; the six
 remaining failures are ALP, BSON and BROTLI through both readers. No assertions

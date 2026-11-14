@@ -30,6 +30,7 @@ import {
 import type { OrderByTerm } from "./query.js";
 import { setRecordValue } from "./record-value.js";
 import { compareOrderedScalars } from "./scalar-order.js";
+import { ScalarReadWorkspace } from "./scalar-read-workspace.js";
 import { planSelectedConcat } from "./selected-concat.js";
 import { structConcatInputs } from "./struct-concat.js";
 import { compactOwnedUnionBatch, needsUnionCompaction } from "./union-compaction.js";
@@ -100,6 +101,7 @@ export function vectorTopKOwnedBatch(
   }
   const capacity = options.limit === 0 ? 0 : Math.min(selectedRows, offset + options.limit);
   const scope = new MemoryScope(input.budget);
+  const reader = new ScalarReadWorkspace(scope);
   try {
     scope.adopt(input.retain());
     const heap = scope.allocate(
@@ -108,7 +110,7 @@ export function vectorTopKOwnedBatch(
       () => new Uint32Array(capacity),
     ).value;
     const compare = (left: number, right: number) =>
-      compareBatchRows(batch, left, right, normalized, scope);
+      compareBatchRows(batch, left, right, normalized, scope, reader);
     // Detect monotonic selected input without allocating sort keys. Stop as soon
     // as both directions occur; mixed input uses the bounded heap below.
     let direction = 0;
@@ -139,6 +141,7 @@ export function vectorTopKOwnedBatch(
           ordinal++;
         }
       }
+      reader.dispose();
       return gatherOwnedBatch(input, heap.subarray(offset, offset + options.limit));
     }
     let size = 0;
@@ -184,8 +187,10 @@ export function vectorTopKOwnedBatch(
       }
       heap[index] = value;
     }
+    reader.dispose();
     return gatherOwnedBatch(input, selected.subarray(offset, offset + options.limit));
   } finally {
+    reader.dispose();
     scope.dispose();
   }
 }
@@ -571,6 +576,7 @@ function compareBatchRows(
   rightIndex: number,
   orderBy: readonly OrderByTerm[],
   scope?: MemoryScope,
+  reader?: ScalarReadWorkspace,
 ): number {
   for (const term of orderBy) {
     const vector = batch.columns[term.column];
@@ -579,19 +585,18 @@ function compareBatchRows(
         column: term.column,
       });
     }
-    const scratch =
-      scope !== undefined && !scalarReadAllocationFree(vector) ? scope.childScope() : undefined;
-    try {
-      const read = scope === undefined ? vectorValue : scalarVectorValue;
-      const comparison = compareOrderedScalars(
-        read(vector, leftIndex, scratch ?? scope),
-        read(vector, rightIndex, scratch ?? scope),
-        term,
-      );
-      if (comparison !== 0) return comparison;
-    } finally {
-      scratch?.dispose();
-    }
+    const read = scope === undefined ? vectorValue : scalarVectorValue;
+    const comparison =
+      reader !== undefined && !scalarReadAllocationFree(vector)
+        ? reader.consume(vector, leftIndex, rightIndex, (left, right) =>
+            compareOrderedScalars(left, right, term),
+          )
+        : compareOrderedScalars(
+            read(vector, leftIndex, scope),
+            read(vector, rightIndex, scope),
+            term,
+          );
+    if (comparison !== 0) return comparison;
   }
   return leftIndex - rightIndex;
 }
@@ -799,7 +804,14 @@ function concatVectors(
       indexCopies,
     );
   }
-  if (vectors.some((vector) => concatLogicalShape(vector) === "timestamp96")) {
+  const sharedDictionary =
+    first.type === "dict" &&
+    vectors.every((vector) => vector.type === "dict" && vector.dictionary === first.dictionary);
+  if (
+    !sharedDictionary &&
+    !prepared?.sharedNullDictionary &&
+    vectors.some((vector) => concatLogicalShape(vector) === "timestamp96")
+  ) {
     const selections = vectors.map(selectVector);
     if (
       selections.every(

@@ -85,12 +85,16 @@ const report = {
       "packages/core/src/vector-sort.ts",
       "packages/core/src/batch.ts",
       "packages/core/src/scalar-order.ts",
+      "packages/core/src/scalar-read-workspace.ts",
+      "packages/core/src/vector-buffer.ts",
+      "packages/core/src/memory-budget.ts",
     ].map((path) => [path, createHash("sha256").update(readFileSync(path)).digest("hex")]),
   ),
   results,
 };
 writeFileSync(
-  "docs/benchmarks/top-k-scalar-workspace-2026-11-13.json",
+  process.env.LAKEQL_TOP_K_SCALAR_REPORT ??
+    "docs/benchmarks/top-k-scalar-workspace-2026-11-13.json",
   `${JSON.stringify(report, null, 2)}\n`,
 );
 console.log(JSON.stringify(results, null, 2));

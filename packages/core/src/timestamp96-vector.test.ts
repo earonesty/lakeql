@@ -161,3 +161,29 @@ it("concatenates mixed widths in either order and reconstructs grouped wide batc
     expect(scope.budget.usedBytes).toBe(0);
   }
 });
+
+it("preserves shared wide timestamp dictionaries within the planned index extent", () => {
+  const dictionary = wide([1n << 64n, 3n]);
+  const batches = [0, 1].map((index) =>
+    batchFromVectors({
+      at: { type: "dict", dictionary, indices: Uint32Array.of(index, index) },
+    }),
+  );
+  expect(planConcat(batches)?.bytes).toBe(16);
+  for (const cap of [15, 16]) {
+    const scope = new MemoryScope(new MemoryBudget(cap));
+    const inputs = batches.map((batch) => scope.retainAllocations(batch));
+    if (cap === 15) expect(() => concatOwnedBatches(inputs)).toThrow(/budget/);
+    else {
+      const output = concatOwnedBatches(inputs);
+      expect(output.value.columns.at).toMatchObject({ type: "dict", dictionary });
+      const at = output.value.columns.at;
+      if (at === undefined) throw new Error("Missing timestamp output");
+      expect(vectorValue(at, 2)).toMatchObject({ epochNanoseconds: 3n });
+      output.release();
+    }
+    for (const input of inputs) input.release();
+    scope.dispose();
+    expect(scope.budget.usedBytes).toBe(0);
+  }
+});

@@ -1,5 +1,7 @@
 import { isLakeqlError, LakeqlError } from "./errors.js";
 
+const reservationState = Symbol("reservation state");
+
 /** Allocation admission, separate from serialized operator-size limits. */
 export class MemoryBudget {
   private readonly chain: readonly MemoryBudget[];
@@ -114,7 +116,46 @@ export class MemoryBudget {
       if (released)
         throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Cannot retain released memory");
     };
-    return {
+    const result: MemoryReservation & { [reservationState](consume?: boolean): Allocation } = {
+      [reservationState]: (consume = false) => {
+        requireLive();
+        if (consume) released = true;
+        return allocation;
+      },
+      merge: (other) => {
+        requireLive();
+        const state = (
+          other as MemoryReservation & { [reservationState]?: (consume?: boolean) => Allocation }
+        )[reservationState];
+        if (state === undefined || other.budget !== this)
+          throw new LakeqlError(
+            "LAKEQL_VALIDATION_ERROR",
+            "Merging requires reservations from one budget",
+          );
+        const second = state();
+        if (second === allocation)
+          throw new LakeqlError(
+            "LAKEQL_VALIDATION_ERROR",
+            "Cannot merge a reservation with itself",
+          );
+        for (const ledger of [allocation, second]) {
+          if (
+            ledger.holders.size !== chain.length ||
+            chain.some((budget) => ledger.holders.get(budget) !== 1)
+          )
+            throw new LakeqlError(
+              "LAKEQL_VALIDATION_ERROR",
+              "Merging requires exclusive reservation ownership",
+            );
+        }
+        const total = allocation.bytes + second.bytes;
+        validateBytes(total);
+        // Transfer installed charges. No pool release, readmission, or reclamation.
+        state(true);
+        released = true;
+        allocation.bytes = total;
+        return this.handle(allocation);
+      },
       bytes: allocation.bytes,
       budget: this,
       retain: () => {
@@ -190,6 +231,7 @@ export class MemoryBudget {
         }
       },
     };
+    return result;
   }
 
   private reclaimLocal(bytes: number): void {
@@ -229,6 +271,9 @@ export interface MemoryReservation {
    * On failure the original reservation remains live and unchanged.
    */
   partition(bytes: readonly number[]): MemoryReservation[];
+  /** Combine two exclusive extents from the same budget without readmission.
+   * On success both original handles are consumed; failure preserves them. */
+  merge(other: MemoryReservation): MemoryReservation;
   /** Idempotent; the allocation remains charged while another holder retains it. */
   release(): void;
 }

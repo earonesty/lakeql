@@ -92,6 +92,12 @@ assert.equal(new TextDecoder().decode(recovered[0].name), "ALGERIA");
 assert.equal(new TextDecoder().decode(recovered[24].name), "UNITED STATES");
 const pool = new MemoryBudget(64 * 1024 * 1024);
 const lake = createParquetLake({ store, memoryPool: pool, scanRangeCache: { maxBytes: 0 } });
+const timestampTopK = await lake.path("int96.parquet").select(["a"])
+  .orderBy([{ column: "a" }]).limit(3).batchSize(2).run().toOwnedArray();
+assert.deepEqual(timestampTopK.value.map(({ a }) => timestampEpochForUnit(a, "nanos")),
+  [1704070800000000000n, 1704141296123456000n, 1735599600000000000n]);
+timestampTopK.release();
+assert.equal(pool.usedBytes, 0);
 await store.put("variant-binary.parquet", readFileSync(new URL("variant-binary.parquet", import.meta.url)));
 const binaryExpected = [{ id: 1, var: new Uint8Array([10, 11, 12, 13]) }];
 assert.deepEqual(await readParquetObjects(store, "variant-binary.parquet"), binaryExpected);

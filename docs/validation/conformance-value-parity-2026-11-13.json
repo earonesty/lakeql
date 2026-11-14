@@ -598,5 +598,48 @@
     "cloudEvidence": "The documented FLBA12 timestamp fixture now passes four concurrent owned top-3 queries over HTTP 206 and ignored-range 200, with cache cleanup and the existing two-read concurrency bound. Native R2 64/128 MiB tests add four concurrent top-3 queries ordered by generated 1024-byte text keys. This distinguishes cloud object-store operation from local-buffer kernel tests.",
     "measurement": "For fixed top-3, explicit peak beyond retained input is 140 bytes for bigint, 524 for timestamp96 and 908 for 128-byte packed text, unchanged between 100 and 10000 input rows. The 10000-row medians are about 44 ms. No before/after speedup or total-heap claim is made.",
     "next": "Investigate a shared reusable comparison-reader reservation to reduce per-comparison scope/allocator work without removing admission. Then extend scoped ordering to exact decimals across vector and row operators. General decimal sorting/grouping/aggregate/arithmetic integration and broader allocation coverage remain incomplete."
+  },
+  "reusableTopKScalarReads": {
+    "change": "Scalar vector reads share a VectorAllocator contract between owning scopes and a synchronous ScalarReadWorkspace. Owned top-K reuses admitted capacity instead of constructing a child scope per comparison. Growth reserves only the additional live-pair extent and merges exclusive reservation ledgers without releasing or readmitting charges. Workspace releases before output gathering and in final cleanup.",
+    "contract": "Each scalar leaf emits one admitted payload; dictionary/union reads delegate to their leaf. One merged reservation tracks the maximum pair extent without an input-sized directory. Numeric callback results cannot directly expose borrowed scalars; active disposal retains admission until callback completion. Closed scopes and failed growth clean up reservations. Allocation-free reads retain their existing path.",
+    "evidence": "../benchmarks/top-k-scalar-workspace-reused-2026-11-13.json",
+    "previousEvidence": "../benchmarks/top-k-scalar-workspace-2026-11-13.json",
+    "validation": {
+      "defaultPassed": 2958,
+      "defaultSkipped": 629,
+      "workerPassed": 61,
+      "build": "passed",
+      "typecheck": "passed",
+      "lint": "passed",
+      "cleanNpmInstall": "passed",
+      "focusedMergePartitionWorkspacePassed": 17,
+      "focusedTimestampWorkspaceMergePassed": 19,
+      "referencePassed": 104,
+      "conformance": {
+        "passed": 511,
+        "failed": 6,
+        "skipped": 1,
+        "remaining": "ALP, BSON and BROTLI through both readers"
+      }
+    },
+    "edgeCases": [
+      "Changing left/right packed-text extents grow by the exact additional live-pair cost without double charging previous capacity.",
+      "One-byte-short second-read admission rejects before its decoder runs and releases the first scalar.",
+      "Consumer exceptions, disposed readers and parent-scope closure leave no retained reservations.",
+      "Disposal during a consumer callback preserves admission until callback completion.",
+      "A reclaimer that closes the scope during growth aborts safely.",
+      "10000 stable dictionary comparisons use two reserve calls and no child scopes.",
+      "Original bigint/timestamp64/timestamp96/packed-text exact-capacity tests still pass.",
+      "Reversed union-leaf reads reuse capacity within one exactly admitted stage without spending the allowance twice.",
+      "Reservation merge keeps root/child charges unchanged, invokes no reclaimer, and preserves input handles on rejected merges."
+    ],
+    "cloudEvidence": "Real HTTP wide-timestamp owned top-K and concurrent native R2 text-key top-K tests remain passing. Clean npm install additionally orders the real Spark INT96 fixture through owned top-K and checks exact nanoseconds and zero final reservations. Timings remain local kernel measurements, not cloud throughput.",
+    "measurement": "At 10000 rows and top-3, median bigint selection improves from 43.5 to 0.9 ms, timestamp96 from 44.0 to 1.6 ms, and 128-byte packed text from 44.2 to 3.0 ms. Explicit peak beyond retained input remains 140, 524 and 908 bytes respectively, unchanged from 100 to 10000 rows. Input construction and output checks are outside timing.",
+    "next": "Connect exact decimal ordering to the shared comparator while propagating comparison scopes through vector, late-materialized and row/window paths before advertising broad operator capabilities. Generic decimal grouping/aggregate/arithmetic integration, ordinary high-precision vectors and broader allocation coverage remain unfinished. Runtime metadata and delayed GC are not covered by the explicit payload bounds.",
+    "discoveredDuringTesting": "The added prepaid-stage test caught that releasing a reservation does not restore the stage allowance. The initial consolidation implementation failed that test. MemoryReservation.merge now consumes two exclusive same-budget handles and transfers existing charges to one handle. Shared, cross-budget, released and self merges reject without consuming live admission; merge/partition round trips and repeated growth preserve parent/child charges.",
+    "intermediateEvidence": "../benchmarks/top-k-scalar-workspace-reused-initial-2026-11-13.json",
+    "concatRegression": "The expanded clean-install Spark INT96 top-K test exposed a shared-dictionary execution mismatch: planning admitted only indices while execution expanded timestamp96 payload. Execution now preserves the shared dictionary, matching the admitted plan. Exact 16-byte and one-byte-short core regression checks and the real installed-package fixture pass.",
+    "postConcatEvidence": "../benchmarks/top-k-scalar-workspace-reused-concat-fixed-2026-11-13.json",
+    "postConcatMeasurement": "Repeat under concurrent validation load: 0.78/1.76/3.74 ms for bigint/timestamp96/packed text; tracked workspace unchanged at 140/524/908 bytes. Timing is indicative, not a cloud throughput measurement."
   }
 }

@@ -1,7 +1,10 @@
-import type { MemoryScope } from "./memory-scope.js";
+/** Payload allocator shared by owned scopes and synchronous borrowed readers. */
+export interface VectorAllocator {
+  allocate<T>(bytes: number, purpose: string, allocate: () => T): { value: T };
+}
 
 export function admitVectorBuffer<T>(
-  scope: MemoryScope | undefined,
+  scope: VectorAllocator | undefined,
   bytes: number,
   allocate: () => T,
 ): T {
