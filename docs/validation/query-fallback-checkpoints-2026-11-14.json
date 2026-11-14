@@ -1,0 +1,31 @@
+{
+  "date": "2026-11-14",
+  "requirements": ["F1", "M1", "M2"],
+  "changes": [
+    "Pass an allocation scope to one-shot physical aggregate fallback execution.",
+    "Retain the next snapshot before releasing the previous checkpoint; dispose iteration scratch while keeping independent checkpoint ownership.",
+    "Preserve checkpoint state when moving back to a persistent continuation.",
+    "If no backend supports the required scoped reduction shape, auto placement returns to the existing row aggregation path; required placement and budget failures are not silently downgraded."
+  ],
+  "validation": {
+    "build": "passed",
+    "targeted_fallback_tests": 3,
+    "scenarios": [
+      "Scalar and grouped one-shot backends receive an allocation scope on every execution.",
+      "Correct count/sum across 16 and 64 batches with identical peak reservations, proving no per-batch checkpoint accumulation for these fixed-state reductions.",
+      "Third-execution backend failure releases retained prior checkpoint and scratch.",
+      "Continuation-to-checkpoint-to-continuation transition preserves count, sum and median.",
+      "Binary input shape rejected by scoped vector reduction uses row counting correctly, with both routes explicitly observed and final reservations zero."
+    ],
+    "typecheck": "passed",
+    "full_default_suite": {
+      "passed": 3471,
+      "skipped": 629
+    }
+  },
+  "remaining": [
+    "Other row fallback/stateful expression, parser and physical planning allocations remain under audit.",
+    "This closes the columnar fallback snapshot ownership gap, not the entire allocation matrix or total runtime heap contract.",
+    "Remote/cloud fallback execution and broader shape/aggregate scaling remain separate acceptance work."
+  ]
+}

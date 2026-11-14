@@ -2087,7 +2087,20 @@ export class QueryResult {
       config.scanner.scanOwnedVectorBatches === undefined
     )
       return undefined;
-    return this.columnarAggregateRows(groupColumns, spec, options, startedAt);
+    const statsBefore = { ...this.stats };
+    try {
+      return await this.columnarAggregateRows(groupColumns, spec, options, startedAt);
+    } catch (error) {
+      if (
+        config.physicalExecution.acceleratorPolicy !== "required" &&
+        error instanceof LakeqlError &&
+        error.code === "LAKEQL_PHYSICAL_BACKEND_UNAVAILABLE"
+      ) {
+        Object.assign(this.stats, statsBefore);
+        return undefined;
+      }
+      throw error;
+    }
   }
 
   private async columnarAggregateRows(
@@ -2233,28 +2246,35 @@ export class QueryResult {
             config.where === undefined
               ? [operator]
               : [{ kind: "select", predicate: config.where }, operator];
-          const result = await this.executePhysicalBatch(
-            batch,
-            operators,
-            output,
-            sourceIdentity,
-            startedAt,
-            snapshot,
-          );
-          if (
-            result.output.kind !== "aggregate-snapshot" &&
-            result.output.kind !== "grouped-aggregate-snapshot"
-          )
-            throw new LakeqlError(
-              "LAKEQL_PHYSICAL_BACKEND_FAILURE",
-              "Reduction did not return a checkpoint",
+          const stage = scope.childScope();
+          try {
+            const result = await this.executePhysicalBatch(
+              batch,
+              operators,
+              output,
+              sourceIdentity,
+              startedAt,
+              snapshot,
+              stage,
             );
-          snapshot = result.output;
-          checkpoint?.release();
-          checkpoint = undefined;
-          this.stats.rowsMatched += result.metrics.selectedRows ?? batch.rowCount;
-          if (snapshot.kind === "grouped-aggregate-snapshot")
-            enforceBufferedRowsBudget(config.budget, snapshot.snapshot.groups.length);
+            if (
+              result.output.kind !== "aggregate-snapshot" &&
+              result.output.kind !== "grouped-aggregate-snapshot"
+            )
+              throw new LakeqlError(
+                "LAKEQL_PHYSICAL_BACKEND_FAILURE",
+                "Reduction did not return a checkpoint",
+              );
+            const next = stage.retainAllocations(result.output);
+            checkpoint?.release();
+            checkpoint = next;
+            snapshot = result.output;
+            this.stats.rowsMatched += result.metrics.selectedRows ?? batch.rowCount;
+            if (snapshot.kind === "grouped-aggregate-snapshot")
+              enforceBufferedRowsBudget(config.budget, snapshot.snapshot.groups.length);
+          } finally {
+            stage.dispose();
+          }
         }
       }
       let result: OwnedMemory<Row[]>;

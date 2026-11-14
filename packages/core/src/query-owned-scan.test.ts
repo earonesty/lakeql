@@ -256,7 +256,8 @@ it("preserves aggregate state when continuation placement changes between batche
       median: { op: "median", column: "id" },
     });
   expect(rows).toEqual([{ n: 5, total: 15, median: 3 }]);
-  expect(opens).toBe(2);
+  // Two persistent continuations and one owned one-shot checkpoint execution.
+  expect(opens).toBe(3);
   expect(pool.usedBytes).toBe(0);
 });
 
