@@ -5077,3 +5077,40 @@ the first 64 MiB row-expression case. Its isolated eight-case fixture passed,
 then the complete unchanged suite passed all 86 in 33.11 seconds. The new native
 R2 cleanup fixture passed in both full runs. Initial timeout evidence is retained;
 no cause beyond the observed timeout is asserted.
+
+### Scheduler settlement after cleanup failures (2026-11-14)
+
+The baseline negative control received a successful output and then an unhandled
+cleanup rejection. The exception skipped active/job cleanup, allowing queued work
+to remain stranded. Stages now retain the proposed output until all cleanup has
+completed; failures discard it before draining the queue. All input releases are
+attempted, including partial acquisition and queued cancellation. The first
+execution/cleanup error is preserved, while cancellation remains typed abort.
+
+A settlement counter defers reentrant queue draining during cleanup. This prevents
+newly queued work from being rejected against a failed output that is about to
+release. Existing FIFO and same-job nested-stage rejection remain intact. Tests
+cover failed publication, job reuse, input acquisition failure, multiple throwing
+queued-input releases, cancellation guard retention/failure and undefined errors.
+A native R2 fixture validates actual queued range progress after a failed stage.
+
+Live public R2 HTTP 206 validation passes four jobs at each 64/128-byte engine
+range budget, preserving one/two concurrent reads, identical SHA256 payloads and
+zero final admission. The old validation script accessed a released output when
+recording its digest; it now records the digest while the owner is live. These
+are internal scheduler/range-buffer checks, not automatic query scheduling or
+whole-Worker memory-cap evidence.
+
+Final scheduler microbenchmark medians are mixed: about 0.6 µs extra per empty
+stage, with one/eight-buffer cases faster. The initial error-recording closure
+was removed to avoid per-stage function allocation; its measurement is archived.
+No tuning flag weakens required cleanup.
+Evidence: `validation/scheduler-failure-settlement-2026-11-14.json`.
+
+Final validation passes 3,936 regular/coverage tests (645 skipped), 87 Worker
+tests, 520 required conformance cases (one inactive guard skipped), 120 references,
+full build/types, clean 66-package consumer, lint, compatibility, large-file and
+changeset checks. Fixture regeneration preserves all hashes and Git/LFS confirms
+no fixture changes. Thresholds and timeouts remain unchanged. This closes the
+identified scheduler failure paths, not broader operator integration or total
+runtime memory acceptance.

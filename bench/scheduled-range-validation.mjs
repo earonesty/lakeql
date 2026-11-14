@@ -70,6 +70,7 @@ for (const capacity of [64, 128]) {
   assert.equal(scheduler.queuedStages, 4 - capacity / 64);
   const results = await Promise.all(jobs);
   assert.equal(new Set(results.map((result) => result.value)).size, 1);
+  const sha256 = results[0].value;
   for (const result of results) result.release();
   assert.equal(pool.usedBytes, 0);
   assert.equal(pool.peakBytes, capacity);
@@ -81,7 +82,7 @@ for (const capacity of [64, 128]) {
     peakReads,
     peakChargedBytes: pool.peakBytes,
     finalChargedBytes: pool.usedBytes,
-    sha256: results[0].value,
+    sha256,
   });
 }
 console.log(

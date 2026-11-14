@@ -45,6 +45,7 @@ export class MemoryStageScheduler {
   private readonly jobs = new Set<MemoryBudget>();
   private active = 0;
   private draining = false;
+  private settling = 0;
 
   constructor(
     private readonly pool: MemoryBudget,
@@ -91,10 +92,23 @@ export class MemoryStageScheduler {
       for (const input of request.inputs ?? []) inputs.push(input.retainIn(request.budget));
       if (request.signal?.aborted) throw aborted();
     } catch (error) {
-      for (const input of inputs) input.release();
-      this.jobs.delete(request.budget);
+      this.settling++;
+      try {
+        for (const input of inputs) {
+          try {
+            input.release();
+          } catch {
+            // Preserve admission failure while attempting every input cleanup.
+          }
+        }
+      } finally {
+        this.jobs.delete(request.budget);
+        this.settling--;
+        this.drain();
+      }
       throw error;
     }
+
     return new Promise<OwnedMemory<T>>((resolve, reject) => {
       const controller = new AbortController();
       const cancel = () => {
@@ -117,32 +131,59 @@ export class MemoryStageScheduler {
         reject,
         run: async (scope) => {
           let cancellationGuard: OwnedMemory<undefined> | undefined;
+          let output: OwnedMemory<T> | undefined;
+          let failure: { error: unknown } | undefined;
           const cancelScope = () => {
             if (scope.disposed) return;
-            // Abort nested transports promptly without freeing completed scratch
-            // that the still-running callback can access until it settles.
-            cancellationGuard = scope.retainTreeAllocations(undefined);
-            scope.dispose();
+            try {
+              // Completed scratch stays pinned until execution settles. If an
+              // opaque owner's retain fails, leave the scope live for final cleanup.
+              cancellationGuard = scope.retainTreeAllocations(undefined);
+              scope.dispose();
+            } catch (error) {
+              failure ??= { error };
+            }
           };
           controller.signal.addEventListener("abort", cancelScope, { once: true });
           try {
-            // Guards remain outside the scope until execution settles. The
-            // scope pins also make aliased inputs survive output handoff.
             const scopedInputs = inputs.map((input) => scope.adopt(input.retain()));
             const value = await request.execute(scope, controller.signal, scopedInputs);
             if (controller.signal.aborted) throw aborted();
-            const output = scope.retainAllocations(value);
-            resolve(output);
+            output = scope.retainAllocations(value);
           } catch (error) {
-            reject(controller.signal.aborted ? aborted() : error);
-          } finally {
+            failure ??= { error };
+          }
+          this.settling++;
+          try {
             controller.signal.removeEventListener("abort", cancelScope);
-            scope.dispose();
-            cancellationGuard?.release();
+            try {
+              scope.dispose();
+            } catch (error) {
+              failure ??= { error };
+            }
+            try {
+              cancellationGuard?.release();
+            } catch (error) {
+              failure ??= { error };
+            }
             this.active--;
-            this.finish(stage);
+            const finished = this.finish(stage);
+            failure ??= finished;
+            if (failure !== undefined || controller.signal.aborted) {
+              try {
+                output?.release();
+              } catch (error) {
+                failure ??= { error };
+              }
+              output = undefined;
+            }
+          } finally {
+            this.settling--;
             this.drain();
           }
+          if (controller.signal.aborted) reject(aborted());
+          else if (failure !== undefined) reject(failure.error);
+          else resolve(output as OwnedMemory<T>);
         },
       };
       request.signal?.addEventListener("abort", cancel, { once: true });
@@ -152,14 +193,32 @@ export class MemoryStageScheduler {
     });
   }
 
-  private finish(stage: Stage): void {
-    stage.detach();
-    for (const input of stage.inputs) input.release();
-    this.jobs.delete(stage.budget);
+  private finish(stage: Stage): { error: unknown } | undefined {
+    let failure: { error: unknown } | undefined;
+    this.settling++;
+    try {
+      try {
+        stage.detach();
+      } catch (error) {
+        failure = { error };
+      }
+      for (const input of stage.inputs) {
+        try {
+          input.release();
+        } catch (error) {
+          failure ??= { error };
+        }
+      }
+    } finally {
+      stage.inputs.length = 0;
+      this.jobs.delete(stage.budget);
+      this.settling--;
+    }
+    return failure;
   }
 
   private drain(): void {
-    if (this.draining) return;
+    if (this.draining || this.settling > 0) return;
     this.draining = true;
     try {
       while (this.queue.length > 0) {

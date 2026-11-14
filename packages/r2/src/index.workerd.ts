@@ -3,6 +3,7 @@ import { env } from "cloudflare:test";
 import {
   MemoryBudget,
   MemoryScope,
+  MemoryStageScheduler,
   ObjectStoreJsonCache,
   withObjectStoreReadControls,
 } from "lakeql-core";
@@ -201,6 +202,84 @@ it("keeps a native R2 range charged through settlement when another owner throws
   } finally {
     finish();
     scope.dispose();
+    await bucket.delete(path);
+  }
+});
+
+it("advances queued native R2 reads after scheduled output cleanup fails", async () => {
+  const bucket = (env as unknown as { MEMORY_TEST_BUCKET: R2BucketLike }).MEMORY_TEST_BUCKET;
+  const path = "scheduled-cleanup-range";
+  const bytes = Uint8Array.from({ length: 256 }, (_, index) => index);
+  await bucket.put(path, bytes);
+  let enter!: () => void;
+  let finish!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    enter = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const delayed: R2BucketLike = {
+    head: bucket.head.bind(bucket),
+    put: bucket.put.bind(bucket),
+    delete: bucket.delete.bind(bucket),
+    list: bucket.list.bind(bucket),
+    async get(key, options) {
+      const object = await bucket.get(key, options);
+      enter();
+      await gate;
+      return object;
+    },
+  };
+  const pool = new MemoryBudget(136);
+  const scheduler = new MemoryStageScheduler(pool);
+  const firstStore = new R2ObjectStore(delayed);
+  const nextStore = new R2ObjectStore(bucket);
+  const first = scheduler.run({
+    budget: pool.child(136),
+    bytes: 136,
+    purpose: "first R2 read",
+    async execute(scope) {
+      const original = scope.allocate(8, "throwing owner", () => ({})).retain();
+      scope.adopt({
+        value: original.value,
+        bytes: original.bytes,
+        budget: original.budget,
+        retain: original.retain,
+        retainIn: original.retainIn,
+        release() {
+          original.release();
+          throw new Error("scheduled cleanup failure");
+        },
+      });
+      return (await firstStore.getRangeOwned(path, { offset: 32, length: 128 }, scope)).value;
+    },
+  });
+  const rejected = expect(first).rejects.toThrow("scheduled cleanup failure");
+  try {
+    await entered;
+    let nextStarted = false;
+    const next = scheduler.run({
+      budget: pool.child(128),
+      bytes: 128,
+      purpose: "next R2 read",
+      async execute(scope) {
+        nextStarted = true;
+        return (await nextStore.getRangeOwned(path, { offset: 64, length: 128 }, scope)).value;
+      },
+    });
+    expect(nextStarted).toBe(false);
+    expect(scheduler.queuedStages).toBe(1);
+    finish();
+    await rejected;
+    const result = await next;
+    expect([...result.value]).toEqual([...bytes.slice(64, 192)]);
+    result.release();
+    expect(pool.usedBytes).toBe(0);
+    expect(scheduler.activeStages).toBe(0);
+    expect(scheduler.queuedStages).toBe(0);
+  } finally {
+    finish();
     await bucket.delete(path);
   }
 });

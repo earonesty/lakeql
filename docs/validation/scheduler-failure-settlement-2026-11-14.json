@@ -1,0 +1,95 @@
+{
+  "runtimeBase": "25c924e",
+  "requirements": ["M2", "V1", "V2"],
+  "sourceSha256": "61dd4828650aa7cabb75c768d94c9c2ce8fc577e6410df41e84b419803137dd3",
+  "finding": "A cleanup exception could escape a discarded internal stage promise after output had already resolved, skipping active-count decrement and job removal and stranding queued work.",
+  "negativeControl": "New failure test on the baseline resolved rather than rejected and produced an unhandled cleanup rejection.",
+  "contract": [
+    "Publish output only after successful scope, cancellation-guard and transferred-input cleanup.",
+    "Attempt all cleanup, remove job slots and advance the queue on error. Discard failed output before admitting queued work.",
+    "Defer reentrant queue draining through settlement; preserve FIFO admission and one outstanding stage per job.",
+    "Cancellation wins as LAKEQL_ABORTED; completed scratch stays charged until executing work settles.",
+    "Preserve the first execution/cleanup error, including undefined."
+  ],
+  "tests": {
+    "focusedPassed": 23,
+    "newCases": 7,
+    "nativeR2FocusedPassed": 5,
+    "nativeR2Case": "An actual binding range response is held in the first stage; after cleanup fails, the queued range starts and returns exactly bytes 64\u2013191. All admission and scheduler counters finish at zero."
+  },
+  "benchmarks": {
+    "artifact": "docs/benchmarks/scheduler-settlement-2026-11-14.json",
+    "scope": "Same-runtime scheduler-only comparison with current dependencies. Four warmup and eight measured alternating-order rounds. Serial independent stages with held output until caller release; exact admission and zero final charges checked. No cloud, decode, concurrent throughput or total-heap claim.",
+    "mediansMsPer1000Stages": {
+      "0": {
+        "reference": 3.8029104999999674,
+        "current": 4.391494499999993
+      },
+      "1": {
+        "reference": 8.651997500000022,
+        "current": 6.647520500000013
+      },
+      "8": {
+        "reference": 24.07434550000005,
+        "current": 23.381375500000047
+      }
+    },
+    "tradeoff": "Mixed timings: empty stages add about 0.6 microseconds each in this run, while one/eight-buffer cases improve. No universal speedup claim; error cleanup is not optional.",
+    "initialArtifact": "docs/benchmarks/scheduler-settlement-initial-2026-11-14.json",
+    "simplification": "Removed an unnecessary always-created error-recording closure; failure records allocate only on error."
+  },
+  "liveCloud": {
+    "artifact": "docs/benchmarks/scheduler-settlement-live-r2-2026-11-14.json",
+    "reports": [
+      {
+        "capacity": 64,
+        "requests": 4,
+        "peakReads": 1,
+        "peakChargedBytes": 64,
+        "finalChargedBytes": 0,
+        "sha256": "2cfec0a4f47064260b26799537642d22c0b125637bdbe70d25cd046576f345a1"
+      },
+      {
+        "capacity": 128,
+        "requests": 4,
+        "peakReads": 2,
+        "peakChargedBytes": 128,
+        "finalChargedBytes": 0,
+        "sha256": "2cfec0a4f47064260b26799537642d22c0b125637bdbe70d25cd046576f345a1"
+      }
+    ],
+    "boundary": "64/128-byte engine range-buffer pools, not MiB Worker limits or automatic scanner scheduling. Real public R2 HTTP 206 payloads, read concurrency and release verified."
+  },
+  "validation": {
+    "regularPassed": 3936,
+    "regularSkipped": 645,
+    "coverage": {
+      "statements": 91.38,
+      "branches": 85.53,
+      "functions": 95.9,
+      "lines": 93.18,
+      "thresholds": "unchanged"
+    },
+    "workerPassed": 87,
+    "requiredConformancePassed": 520,
+    "requiredConformanceSkipped": 1,
+    "referencePassed": 120,
+    "build": "full bundles/declarations and fixture TypeScript passed",
+    "typecheck": "passed",
+    "cleanPackageConsumer": {
+      "passed": true,
+      "installedPackages": 66
+    },
+    "lint": "passed",
+    "compatibility": "passed",
+    "largeFiles": "passed",
+    "changeset": "passed",
+    "fixtureReproducibility": "passed; identical hashes and no Git/LFS fixture diff",
+    "timeouts": "unchanged"
+  },
+  "remaining": [
+    "Scheduler integration remains numeric replacement stages and explicit scheduled concat/fixture ranges; broader operator integration is still open.",
+    "Whole-runtime headroom and scheduler metadata accounting are not proven by this change.",
+    "An opaque input owner must implement its ownership contract. If cancellation pinning fails, the stage signal still aborts but scope ownership remains until callback settlement to avoid premature buffer release."
+  ]
+}

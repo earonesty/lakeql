@@ -395,3 +395,5 @@ Grow reusable JSON scalar and traversal workspace through shared incremental adm
 Share reservation method implementations and bind callbacks only when used, reducing ownership bookkeeping while preserving detached callbacks and allocation-transfer semantics.
 
 Detach released scope ownership graphs, drain all cleanup phases after callback failures, and release incoming allocations when snapshot invalidation fails or closes the scope. Pending I/O remains charged until settlement.
+
+Settle scheduled stages only after cleanup, release failed output before admitting queued work, and preserve scheduler progress through cleanup exceptions, cancellation and reentrant callbacks.
