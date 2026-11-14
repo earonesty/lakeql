@@ -14,7 +14,6 @@ import {
   normalizedWindowName,
   partitionRows,
   partitionSpans,
-  samePeer,
   sortWindowRows,
   stableKey,
   type WindowRow,
@@ -226,16 +225,16 @@ function evaluatePartitionWithPeers(
     case "row_number":
       return rows.map((_row, index) => index + 1);
     case "rank":
-      return rankValues(rows, expr, false);
+      return rankValues(rows.length, peers, false);
     case "dense_rank":
-      return rankValues(rows, expr, true);
+      return rankValues(rows.length, peers, true);
     case "percent_rank": {
       if (rows.length <= 1) return rows.map(() => 0);
-      const ranks = rankValues(rows, expr, false) as number[];
+      const ranks = rankValues(rows.length, peers, false) as number[];
       return ranks.map((rank) => (rank - 1) / (rows.length - 1));
     }
     case "cume_dist":
-      return cumeDistValues(rows, expr);
+      return cumeDistValues(rows.length, peers);
     case "ntile":
       return ntileValues(rows, expr);
     case "lag":
@@ -261,42 +260,21 @@ function evaluatePartitionWithPeers(
   }
 }
 
-function rankValues(rows: readonly Row[], expr: WindowExpr, dense: boolean): number[] {
-  const sorted = partitionRows(rows, expr);
-  const ranks: number[] = [];
-  let rank = 1;
-  let denseRank = 1;
-  for (let index = 0; index < sorted.length; index += 1) {
-    const previous = sorted[index - 1];
-    const current = sorted[index];
-    if (
-      index > 0 &&
-      previous !== undefined &&
-      current !== undefined &&
-      !samePeer(previous, current)
-    ) {
-      rank = index + 1;
-      denseRank += 1;
-    }
-    ranks.push(dense ? denseRank : rank);
+/** Ranking consumes the same immutable peer boundaries as frame evaluation.
+ * Sequential cursor traversal visits each boundary once, including all-tie input. */
+function rankValues(length: number, peers: WindowPeers, dense: boolean): number[] {
+  const ranks = new Array<number>(length);
+  for (let index = 0; index < length; index++) {
+    const peer = peers.peer(index);
+    ranks[index] = (dense ? peer.group : peer.start) + 1;
   }
   return ranks;
 }
 
-function cumeDistValues(rows: readonly Row[], expr: WindowExpr): number[] {
-  const sorted = partitionRows(rows, expr);
-  const out: number[] = [];
-  for (let index = 0; index < sorted.length; index += 1) {
-    let endPeer = index;
-    while (endPeer + 1 < sorted.length) {
-      const current = sorted[index];
-      const next = sorted[endPeer + 1];
-      if (current === undefined || next === undefined || !samePeer(current, next)) break;
-      endPeer += 1;
-    }
-    out.push((endPeer + 1) / rows.length);
-  }
-  return out;
+function cumeDistValues(length: number, peers: WindowPeers): number[] {
+  const values = new Array<number>(length);
+  for (let index = 0; index < length; index++) values[index] = peers.peer(index).end / length;
+  return values;
 }
 
 function ntileValues(rows: readonly Row[], expr: WindowExpr): number[] {

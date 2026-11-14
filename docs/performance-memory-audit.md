@@ -31,14 +31,13 @@ under verified 64/128 MiB V8 heap settings; this distinguishes runtime GC policy
 from a persistent leak, but does not cap external backing or prove production
 Cloudflare total-memory safety. See the constrained-runtime section below.
 
-Latest execution checkpoint (November 13, 2026): **2,958 default tests**
-(629 skipped) and **61 Worker tests** pass, with build, typecheck, lint and clean
-package installation. Owned top-K reuses admitted scalar-read workspace and shares
-row/vector ordering semantics. At 10,000 rows, measured bigint/wide-timestamp/text
-selection improved from about 44 ms to 0.9/1.6/3.0 ms without increasing tracked
-workspace. Real Spark INT96 top-K also caught and now verifies shared-dictionary
-concat admission. Exact decimal ordering and broader allocation coverage remain open.
-Evidence and gaps: `docs/validation/conformance-value-parity-2026-11-13.json`.
+Latest execution checkpoint (November 13, 2026): window ranking now reuses
+bounded peer cursors. At 2,048 tied rows, local cume_dist time falls from 415 ms
+to 0.46 ms with no peer index. Real HTTP fixtures exposed and now test corrected
+implicit all-column projection in windows. Validation and allocation limitations:
+`docs/validation/window-ranking-peers-2026-11-13.json`.
+Prior scalar-workspace evidence and decimal gaps:
+`docs/validation/conformance-value-parity-2026-11-13.json`.
 
 External conformance now reports **511 passed, 6 failed, one skipped**; the six
 remaining failures are ALP, BSON and BROTLI through both readers. No assertions

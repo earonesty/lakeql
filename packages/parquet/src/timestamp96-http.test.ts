@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import {
+  col,
+  lit,
   MemoryBudget,
   SharedMemoryCache,
   timestampFromEpoch,
@@ -99,6 +101,46 @@ it.each([
     } finally {
       for (const output of ordered) output.release();
     }
+    const ranked = await Promise.all(
+      Array.from({ length: 4 }, () => {
+        let query = lake.path("timestamps.parquet").batchSize(2);
+        for (const fn of ["rank", "dense_rank", "percent_rank", "cume_dist"] as const)
+          query = query.window(fn, {
+            fn,
+            args: [],
+            over: {
+              partitionBy: [],
+              orderBy: [{ expr: col("timestamp_nanos") }],
+            },
+          });
+        return query
+          .window("all_tied", {
+            fn: "cume_dist",
+            args: [],
+            over: {
+              partitionBy: [],
+              orderBy: [{ expr: lit(1) }],
+            },
+          })
+          .run()
+          .toArray();
+      }),
+    );
+    const ranks = [3, 4, 2, 5, 6, 1];
+    for (const output of ranked)
+      expect(output).toEqual(
+        expected.map((row, index) => {
+          const rank = ranks[index] ?? 0;
+          return {
+            ...row,
+            rank,
+            dense_rank: rank,
+            percent_rank: (rank - 1) / 5,
+            cume_dist: rank / 6,
+            all_tied: 1,
+          };
+        }),
+      );
     expect(peak).toBeLessThanOrEqual(2);
   } finally {
     cache.deleteWhere(() => true);

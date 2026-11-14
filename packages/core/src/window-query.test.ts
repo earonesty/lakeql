@@ -3,6 +3,7 @@ import { col } from "./expr.js";
 import type { WindowExpr } from "./window.js";
 import {
   compatibleWindowSortGroups,
+  windowReadColumns,
   windowSortGroupCount,
   windowTaskPlanForWindows,
 } from "./window-query.js";
@@ -52,3 +53,14 @@ function rowNumber(partitionBy: WindowExpr["over"]["partitionBy"], orderExprs: W
     },
   } satisfies WindowExpr;
 }
+
+it("prunes window source columns only with an explicit bounded projection", () => {
+  const windows = { rank: rowNumber([], [col("key")]) };
+  for (const select of [undefined, [], ["*"]]) {
+    expect(
+      windowReadColumns({ windows, ...(select === undefined ? {} : { select }) }),
+    ).toBeUndefined();
+  }
+  expect(windowReadColumns({ windows, select: ["payload", "rank"] })).toEqual(["key", "payload"]);
+  expect(windowReadColumns({ windows, projections: { renamed: col("payload") } })).toBeUndefined();
+});

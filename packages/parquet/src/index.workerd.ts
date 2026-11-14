@@ -2,11 +2,13 @@
 import { env } from "cloudflare:test";
 import {
   and,
+  col,
   decimalFromParts,
   eq,
   gatherOwnedBatch,
   gt,
   Lake,
+  lit,
   lt,
   MemoryBudget,
   MemoryScope,
@@ -786,6 +788,40 @@ it.each([64, 128])("owns deferred top-k over native R2 with a %s MiB shared pool
     } finally {
       for (const owner of textOwners) owner.release();
     }
+    const ranked = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        lake
+          .path(path)
+          .batchSize(10)
+          .window("rank", {
+            fn: "rank",
+            args: [],
+            over: {
+              partitionBy: [],
+              orderBy: [{ expr: col("id"), direction: "desc" }],
+            },
+          })
+          .window("tied", {
+            fn: "cume_dist",
+            args: [],
+            over: {
+              partitionBy: [],
+              orderBy: [{ expr: lit(1) }],
+            },
+          })
+          .run()
+          .toArray(),
+      ),
+    );
+    for (const rows of ranked)
+      expect(rows).toEqual(
+        text.map((value, id) => ({
+          id,
+          text: value,
+          rank: 100 - id,
+          tied: 1,
+        })),
+      );
     expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
   } finally {
     scans.mockRestore();
