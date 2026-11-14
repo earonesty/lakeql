@@ -2,10 +2,7 @@
   "runtimeSource": "14a1948",
   "change": "Extend existing native R2 fixture test with concurrent slice/resume coverage; no production changes.",
   "matrix": {
-    "poolMiB": [
-      64,
-      128
-    ],
+    "poolMiB": [64, 128],
     "concurrentJobs": 4,
     "rows": 100,
     "rowGroups": 10,
