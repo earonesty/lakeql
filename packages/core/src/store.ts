@@ -245,13 +245,33 @@ function controlledObjectStore(
     ...(ownedHead === undefined
       ? {}
       : {
-          headOwned: (path: string, scope: MemoryScope) =>
-            controlledRead(
-              normalized,
-              semaphore,
-              () => ownedHead(path, scope),
-              (owner) => owner?.release(),
-            ),
+          headOwned: async (path: string, scope: MemoryScope) => {
+            const readScope = scope.childScope(
+              normalized.signal === undefined ? [] : [normalized.signal],
+            );
+            try {
+              return await controlledRead(
+                { ...normalized, signal: readScope.signal },
+                semaphore,
+                async () => {
+                  const owner = await ownedHead(path, readScope);
+                  if (owner === null) return null;
+                  const retained = owner.retain();
+                  try {
+                    return scope.adopt(retained);
+                  } catch (error) {
+                    retained.release();
+                    throw error;
+                  } finally {
+                    owner.release();
+                  }
+                },
+                (owner) => owner?.release(),
+              );
+            } finally {
+              readScope.dispose();
+            }
+          },
         }),
     ...(store.getRangeOwnedAllocation === undefined
       ? {}

@@ -244,6 +244,8 @@ to the promised read/validation contract must be resolved explicitly. The origin
 engine allowance requires runtime headroom; no exact RSS guarantee is substituted
 for the stated reservation/live-allocation invariant.
 
+Owned metadata cancellation follow-up: controlled HEAD now binds query/caller cancellation to its read scope and transfers successful metadata into the caller scope. Queued disposal and pending HTTP cancellation are covered alongside real HTTP ownership fixtures; see `validation/owned-head-read-controls-2026-11-14.json`.
+
 ### Current acceptance status
 
 | Requirement | Current evidence | Remaining acceptance work |

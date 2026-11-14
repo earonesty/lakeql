@@ -4,7 +4,10 @@ import { MemoryScope } from "./memory-scope.js";
 import { memoryStore } from "./memory-store.js";
 import { withObjectStoreReadControls } from "./store.js";
 
-it("cancels a queued owned read without waiting for an unrelated active read", async () => {
+it.each([
+  "range",
+  "head",
+] as const)("cancels a queued owned %s without waiting for an unrelated active read", async (kind) => {
   let finish!: () => void;
   let started!: () => void;
   const gate = new Promise<void>((resolve) => {
@@ -17,6 +20,12 @@ it("cancels a queued owned read without waiting for an unrelated active read", a
   const store = withObjectStoreReadControls(
     {
       ...memoryStore(),
+      async headOwned(_path, scope) {
+        reads++;
+        started();
+        await gate;
+        return scope.allocate(8, "test metadata", () => ({ size: 8 })).retain();
+      },
       async getRangeOwned(_path, range, scope) {
         reads++;
         started();
@@ -29,10 +38,14 @@ it("cancels a queued owned read without waiting for an unrelated active read", a
   const pool = new MemoryBudget(16);
   const activeScope = new MemoryScope(pool);
   const queuedScope = new MemoryScope(pool);
-  if (store.getRangeOwned === undefined) throw new Error("missing owned reader");
-  const active = store.getRangeOwned("active", { offset: 0, length: 8 }, activeScope);
+  const { getRangeOwned, headOwned } = store;
+  if (getRangeOwned === undefined || headOwned === undefined)
+    throw new Error("missing owned reader");
+  const read = (path: string, scope: MemoryScope) =>
+    kind === "head" ? headOwned(path, scope) : getRangeOwned(path, { offset: 0, length: 8 }, scope);
+  const active = read("active", activeScope);
   await activeStarted;
-  const queued = store.getRangeOwned("queued", { offset: 0, length: 8 }, queuedScope);
+  const queued = read("queued", queuedScope);
   const rejected = expect(queued).rejects.toMatchObject({ code: "LAKEQL_ABORTED" });
   queuedScope.dispose();
   try {
@@ -43,7 +56,9 @@ it("cancels a queued owned read without waiting for an unrelated active read", a
   } finally {
     finish();
     const owner = await active;
-    owner.release();
+    expect(owner?.value).toBeDefined();
+    expect(pool.usedBytes).toBe(8);
+    owner?.release();
     activeScope.dispose();
   }
   expect(pool.usedBytes).toBe(0);

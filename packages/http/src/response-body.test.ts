@@ -316,6 +316,43 @@ it("propagates query read-control cancellation into pending owned HTTP I/O", asy
   scope.dispose();
 });
 
+it("propagates query read-control cancellation into pending owned HTTP metadata", async () => {
+  const controller = new AbortController();
+  const scope = new MemoryScope(new MemoryBudget(4096));
+  let started: (() => void) | undefined;
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  let cancelled = false;
+  const source = httpStore({
+    baseUrl: "https://test.invalid/",
+    fetch: async (_input, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener(
+          "abort",
+          () => {
+            cancelled = true;
+            reject(new Error("cancelled"));
+          },
+          { once: true },
+        );
+        started?.();
+      }),
+  });
+  const store = withObjectStoreReadControls(source, {
+    signal: controller.signal,
+    maxConcurrentReads: 1,
+  });
+  const read = store.headOwned?.("file", scope);
+  await ready;
+  controller.abort();
+  await expect(read).rejects.toMatchObject({ code: "LAKEQL_ABORTED" });
+  expect(cancelled).toBe(true);
+  expect(scope.disposed).toBe(false);
+  expect(scope.budget.usedBytes).toBe(0);
+  scope.dispose();
+});
+
 it("admits HTTP range storage before dispatch and transfers it without double charging", async () => {
   for (const cap of [3, 4]) {
     const budget = new MemoryBudget(cap);

@@ -4355,3 +4355,14 @@ Extended the Worker recovery probe to require successful owned collection after 
 Native workerd R2 and localhost HTTP under a verified 64 MiB managed-heap flag each ran four rounds across one/four jobs and 64/128 MiB reservation pools. All eight scenarios completed: 64 primary jobs succeeded and 16 returned typed budget failures. Eight additional retries while prior outputs remained pinned also returned typed budget failures. All eight post-release retries succeeded on the same pool/cache and returned the full 32,768-row fixture; final tracked usage was zero in every scenario. This provides concrete repeated-failure recovery evidence, without proving fairness, cancellation or every operator's self-held-capacity behavior.
 
 Runtime source `717b121`; harness hash and raw reports are recorded in `docs/validation/worker-pressure-recovery-2026-11-14.json`. Recovery requests affect later cache state and elapsed times, so these rounds are not baseline latency comparisons. Local R2 and HTTP remain distinct from production cloud operation, and managed heap does not cover total Worker/native memory. Only the benchmark harness and evidence changed; formatting and executable fixture assertions passed.
+
+
+### M2 owned metadata cancellation through read controls (2026-11-14)
+
+The read-control review found a concrete asymmetry: owned ranges combined the caller scope and query control signal in a child scope, while owned metadata passed the caller scope directly. Consequently, aborting read controls did not reach an in-flight HTTP metadata probe, and disposing a caller scope did not remove a queued metadata operation promptly.
+
+Controlled owned metadata now uses a signal-bound child scope, retains/transfers successful metadata into the caller scope before disposing temporary read ownership, releases rejected transfers and the adapter-returned independent owner, and preserves null results. The shared semaphore and post-read cancellation checks remain intact. The existing queue fixture now covers both metadata and range operations: cancellation rejects while an unrelated active read remains gated, no queued transport/admission occurs, and the successful active owner remains charged until release. A pending HTTP metadata probe test verifies that query control cancellation reaches the transport while leaving the caller scope usable and with zero tracked storage.
+
+This closes the demonstrated metadata cancellation gap, not general job fairness or whole-pipeline scheduling acceptance.
+
+Final verification: build/typecheck passed; 30 focused tests, 3,725 regular tests (629 skipped), and 81 Worker tests passed. Evidence: `owned-head-read-controls-2026-11-14.json`.
