@@ -548,3 +548,38 @@ it("admits metadata-free work-unit descriptors and detaches their mutable task s
   ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
   expect(tight.usedBytes).toBe(0);
 });
+
+it.each([
+  false,
+  true,
+])("retains owned work-unit storage after planning (metadata=%s)", async (metadata) => {
+  const { MemoryBudget } = await import("lakeql-core");
+  const { planParquetTaskWorkUnitsOwned } = await import("./index.js");
+  const store = memoryStore();
+  await writeParquet(store, "owned-plan.parquet", {
+    rowGroupSize: [2, 2],
+    columnData: [{ name: "id", type: "INT32", data: [1, 2, 3, 4] }],
+  });
+  const task: TaskInput = {
+    path: "owned-plan.parquet",
+    rowGroupCount: 2,
+    rowGroupRanges: [{ start: 0, end: 2 }],
+    partitionValues: { region: "west" },
+  };
+  const pool = new MemoryBudget(128 * 1024);
+  const options = metadata ? { maxRowsPerTask: 2 } : { maxRowGroupsPerTask: 1 };
+  const owned = await planParquetTaskWorkUnitsOwned(store, task, {
+    ...options,
+    memoryBudget: pool,
+  });
+  expect(owned.value).toHaveLength(2);
+  expect(pool.usedBytes).toBe(owned.bytes);
+  expect(owned.bytes).toBeGreaterThan(0);
+  expect(() => pool.reserve(pool.maxBytes, "competing job")).toThrow(/budget/);
+  const retained = owned.retain();
+  owned.release();
+  expect(retained.value[0]?.partitionValues).toEqual({ region: "west" });
+  expect(pool.usedBytes).toBe(retained.bytes);
+  retained.release();
+  expect(pool.usedBytes).toBe(0);
+});

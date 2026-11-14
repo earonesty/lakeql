@@ -1,0 +1,20 @@
+{
+  "date": "2026-11-14",
+  "changes": [
+    "Expose planParquetTaskWorkUnitsOwned returning OwnedMemory<TaskInput[]> and route the plain API through it.",
+    "Keep metadata in a separate child scope and release it before transferring the planned task owner.",
+    "Returned task arrays, descriptors and detached payloads remain charged until the last retained owner releases."
+  ],
+  "validation": {
+    "build": "passed",
+    "targeted_tests": 47,
+    "fixtures": "Metadata-backed and metadata-free plans each produce two work units from a real Parquet file. Live reservation equals owner bytes after return; a competing full-pool reservation fails; retain/release preserves tasks and final release returns usage to zero.",
+    "typecheck": "passed"
+  },
+  "remaining": [
+    "Generic aggregate-task grouping topology is not yet admitted.",
+    "The plain API intentionally transfers storage to caller ownership at return.",
+    "Borrowed-only store metadata preallocation remains external to admission.",
+    "Full current-revision gates and mixed-job scheduling/resource acceptance remain open."
+  ]
+}

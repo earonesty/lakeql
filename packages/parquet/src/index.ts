@@ -73,6 +73,7 @@ export type {
 } from "./task.js";
 export {
   planParquetTaskWorkUnits,
+  planParquetTaskWorkUnitsOwned,
   readParquetMetadata,
   scanParquetTaskBatches,
   scanParquetTaskColumnBatches,

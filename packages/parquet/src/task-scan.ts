@@ -7,6 +7,7 @@ import {
   MemoryScope,
   matches,
   type ObjectStore,
+  type OwnedMemory,
   planBatchMaterialization,
   planBatchRowMaterialization,
   type Row,
@@ -161,6 +162,20 @@ export async function planParquetTaskWorkUnits(
   task: TaskInput,
   options: PlanParquetTaskWorkUnitsOptions,
 ): Promise<TaskInput[]> {
+  const owned = await planParquetTaskWorkUnitsOwned(store, task, options);
+  try {
+    return owned.value;
+  } finally {
+    owned.release();
+  }
+}
+
+/** Retain planned task storage until the scheduler or caller explicitly releases it. */
+export async function planParquetTaskWorkUnitsOwned(
+  store: ObjectStore,
+  task: TaskInput,
+  options: PlanParquetTaskWorkUnitsOptions,
+): Promise<OwnedMemory<TaskInput[]>> {
   validateTaskWorkUnitOptions(options);
   const scope = new MemoryScope(options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER));
   try {
@@ -171,17 +186,22 @@ export async function planParquetTaskWorkUnits(
         (range) => Number.isFinite(range.start) && Number.isFinite(range.end),
       )
     ) {
-      return splitTaskWorkUnits(task, task.rowGroupCount, undefined, options, scope);
+      return scope.retainAllocations(
+        splitTaskWorkUnits(task, task.rowGroupCount, undefined, options, scope),
+      );
     }
     const file = await taskSource(store, task.path, { ...options, memoryBudget: scope.budget });
-    const { metadata } = await taskMetadataOwned(task.path, file, scope, options);
-    return splitTaskWorkUnits(
+    const metadataScope = scope.childScope();
+    const { metadata } = await taskMetadataOwned(task.path, file, metadataScope, options);
+    const units = splitTaskWorkUnits(
       task,
       metadata.row_groups.length,
       (index) => Number(metadata.row_groups[index]?.num_rows ?? 0),
       options,
       scope,
     );
+    metadataScope.dispose();
+    return scope.retainAllocations(units);
   } finally {
     scope.dispose();
   }
