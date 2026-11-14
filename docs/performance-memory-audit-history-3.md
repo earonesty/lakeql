@@ -4132,3 +4132,25 @@ The audit opening now distinguishes current implementation/release evidence from
 older mixed-query and constrained Worker runs, with historical links retained in
 an expandable index. These checks do not close the remaining allocation and
 whole-runtime acceptance requirements.
+
+### 2026-11-14 — automatic HTTP cache pool propagation
+
+ObjectStore exposes withDefaultMemoryBudget as an immutable configuration
+capability. HttpObjectStore binds default pool/cache limits into a separate store
+without overriding explicit adapter settings. createParquetLake supplies its
+existing pool and cache capacity when caching is enabled. URI, cache and
+read-control wrappers preserve the capability. Rebound controlled stores share
+the original semaphore and normalized signal, preventing multiple lakes from
+multiplying configured transport concurrency or resetting timeout state.
+
+A real written Parquet fixture served by a localhost server ignoring ranges
+requires one request on the cold query and zero on the warm query through URI,
+cache and read-control wrappers. The same fixture with zero factory capacity
+retains no cache bytes and issues fresh reads. Tests also verify immutable binding,
+explicit limit precedence, cross-binding concurrency and final shared-pool
+reclamation. Caller-created scanners and stores lacking the optional capability
+retain their existing configuration; no unrelated pool is silently replaced.
+
+Build/typecheck passed; initial focused suites passed 14 tests, concurrency/queue
+checks 5, enabled/disabled real HTTP checks 2; full suite passed 3,668 with 629
+skips. Evidence: `docs/validation/default-http-pool-propagation-2026-11-14.json`.

@@ -180,3 +180,19 @@ it("falls back to bounded transport when a child cannot pin the full cached back
   store.clearFullObjectCache();
   expect(pool.usedBytes).toBe(0);
 });
+
+it("binds default pools immutably and preserves explicit pool and cache limits", async () => {
+  const pool = new MemoryBudget(65536);
+  const original = new HttpObjectStore({
+    baseUrl: "https://example.test",
+    maxFullObjectCacheBytes: 0,
+    fetch: async () => new Response(new Uint8Array(200)),
+  });
+  const bound = original.withDefaultMemoryBudget(pool, 4096);
+  expect(bound).not.toBe(original);
+  expect(bound.withDefaultMemoryBudget(new MemoryBudget(65536))).toBe(bound);
+  const scope = new MemoryScope(pool);
+  (await bound.headOwned("file", scope))?.release();
+  scope.dispose();
+  expect(pool.usedBytes).toBe(0);
+});

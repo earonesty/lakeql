@@ -1128,7 +1128,11 @@ export function createParquetLake(config: ParquetLakeConfig): Lake {
   const store =
     config.cache === undefined
       ? config.store
-      : cachedObjectStore(config.store, config.cache, sharedCache);
+      : cachedObjectStore(
+          config.store.withDefaultMemoryBudget?.(memoryPool, config.cache.maxBytes) ?? config.store,
+          config.cache,
+          sharedCache,
+        );
   const planningCache =
     config.planningCache ??
     (config.cache === undefined

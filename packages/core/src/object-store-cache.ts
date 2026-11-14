@@ -279,6 +279,16 @@ export function cachedObjectStore(
   const ownedHead = inner.headOwned?.bind(inner);
   const allocation = inner.getRangeOwnedAllocation?.bind(inner);
   return {
+    ...(inner.withDefaultMemoryBudget === undefined
+      ? {}
+      : {
+          withDefaultMemoryBudget: (budget: MemoryBudget, maxCacheBytes?: number) =>
+            cachedObjectStore(
+              inner.withDefaultMemoryBudget?.(budget, maxCacheBytes) ?? inner,
+              options,
+              sharedCache,
+            ),
+        }),
     ...(ownedHead === undefined ? {} : { headOwned: ownedHead }),
     ...(ownedRead === undefined || allocation === undefined
       ? {}

@@ -91,3 +91,30 @@ it("releases independently owned metadata when scope adoption fails", async () =
   expect(foreign.budget.usedBytes).toBe(0);
   expect(target.budget.usedBytes).toBe(0);
 });
+
+it("shares configured read concurrency across default-budget store bindings", async () => {
+  const base: ObjectStore = memoryStore();
+  base.withDefaultMemoryBudget = () => base;
+  let active = 0,
+    peak = 0;
+  base.headOwned = async (_path, scope) => {
+    active++;
+    peak = Math.max(peak, active);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    active--;
+    return scope.allocate(64, "head", () => ({ size: 1 })).retain();
+  };
+  const controlled = withObjectStoreReadControls(base, { maxConcurrentReads: 1 });
+  const pool = new MemoryBudget(65536);
+  const scope = new MemoryScope(pool);
+  const first = controlled.withDefaultMemoryBudget?.(pool);
+  const second = controlled.withDefaultMemoryBudget?.(pool);
+  const owners = await Promise.all([
+    first?.headOwned?.("a", scope),
+    second?.headOwned?.("b", scope),
+  ]);
+  expect(peak).toBe(1);
+  for (const owner of owners) owner?.release();
+  scope.dispose();
+  expect(pool.usedBytes).toBe(0);
+});

@@ -43,7 +43,10 @@ export class HttpObjectStore implements ObjectStore {
   private readonly fullObjectCache: SharedMemoryCache;
   private readonly maxResponseBytes: number;
 
+  private readonly options: HttpStoreOptions;
+
   constructor(options: HttpStoreOptions) {
+    this.options = { ...options };
     this.baseUrl = options.baseUrl.endsWith("/") ? options.baseUrl : `${options.baseUrl}/`;
     // Bind the global fetch to globalThis: browsers throw "Illegal invocation"
     // if `fetch` is called as a method (`this.fetchImpl(...)`) with a non-global
@@ -65,6 +68,17 @@ export class HttpObjectStore implements ObjectStore {
     this.fullObjectCache = new SharedMemoryCache({
       maxBytes: maxCacheBytes,
       ...(options.memoryBudget === undefined ? {} : { memoryBudget: options.memoryBudget }),
+    });
+  }
+
+  withDefaultMemoryBudget(budget: MemoryBudget, maxCacheBytes?: number): HttpObjectStore {
+    if (this.options.memoryBudget !== undefined) return this;
+    return new HttpObjectStore({
+      ...this.options,
+      memoryBudget: budget,
+      ...(this.options.maxFullObjectCacheBytes !== undefined || maxCacheBytes === undefined
+        ? {}
+        : { maxFullObjectCacheBytes: maxCacheBytes }),
     });
   }
 

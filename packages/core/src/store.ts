@@ -1,4 +1,5 @@
 import { LakeqlError } from "./errors.js";
+import type { MemoryBudget } from "./memory-budget.js";
 import type { MemoryScope, OwnedMemory } from "./memory-scope.js";
 import { ReadSemaphore } from "./read-semaphore.js";
 
@@ -48,6 +49,10 @@ export interface ObjectHead {
  * a runtime API directly.
  */
 export interface ObjectStore {
+  /** Return a store using these default cache bounds without mutating the source
+   * or overriding explicit adapter configuration.
+   */
+  withDefaultMemoryBudget?(budget: MemoryBudget, maxCacheBytes?: number): ObjectStore;
   get(path: string): Promise<Uint8Array | null>;
 
   getRange(path: string, range: { offset: number; length: number }): Promise<Uint8Array>;
@@ -120,6 +125,15 @@ export function uriObjectStore(
   const allocation = store.getRangeOwnedAllocation?.bind(store);
   const ownedHead = store.headOwned?.bind(store);
   const wrapped: ObjectStore = {
+    ...(store.withDefaultMemoryBudget === undefined
+      ? {}
+      : {
+          withDefaultMemoryBudget: (budget: MemoryBudget, maxCacheBytes?: number) =>
+            uriObjectStore(
+              store.withDefaultMemoryBudget?.(budget, maxCacheBytes) ?? store,
+              authorities,
+            ),
+        }),
     ...(ownedHead === undefined
       ? {}
       : {
@@ -192,9 +206,27 @@ export function withObjectStoreReadControls(
     normalized.maxConcurrentReads === undefined
       ? undefined
       : new ReadSemaphore(normalized.maxConcurrentReads);
+  return controlledObjectStore(store, normalized, semaphore);
+}
+
+function controlledObjectStore(
+  store: ObjectStore,
+  normalized: ObjectStoreReadControls,
+  semaphore: ReadSemaphore | undefined,
+): ObjectStore {
   const ownedRead = store.getRangeOwned?.bind(store);
   const ownedHead = store.headOwned?.bind(store);
   return {
+    ...(store.withDefaultMemoryBudget === undefined
+      ? {}
+      : {
+          withDefaultMemoryBudget: (budget: MemoryBudget, maxCacheBytes?: number) =>
+            controlledObjectStore(
+              store.withDefaultMemoryBudget?.(budget, maxCacheBytes) ?? store,
+              normalized,
+              semaphore,
+            ),
+        }),
     ...(ownedHead === undefined
       ? {}
       : {

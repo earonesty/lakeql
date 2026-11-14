@@ -49,3 +49,9 @@ pool, owned probe bodies release after metadata construction. This makes pool
 ownership explicit rather than retaining query allocations in an unrelated cache.
 `clearFullObjectCache()` releases retained responses; successful PUT/DELETE also
 invalidate the affected entry. Existing returned ranges remain valid.
+
+`withDefaultMemoryBudget(pool, maxCacheBytes)` returns a separately configured
+HTTP store when no pool was explicitly supplied. It does not mutate the source
+store or override explicit pool/cache options. `createParquetLake` uses this
+capability automatically when its cache is enabled, including through supported
+store wrappers.

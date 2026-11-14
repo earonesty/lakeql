@@ -1,6 +1,6 @@
 # Performance and memory budget audit
 
-Current implementation: `docs/validation/cache-replacement-pressure-2026-11-14.json`.
+Current implementation: `docs/validation/default-http-pool-propagation-2026-11-14.json`.
 Current release checks (source `246b165`):
 `docs/validation/current-cache-ownership-release-gates-2026-11-14.json`.
 

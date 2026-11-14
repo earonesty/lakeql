@@ -40,3 +40,10 @@ and inherits `cache.maxBytes` and `cache.ttlMs`. Discovery entries are reclaimab
 under shared-pool pressure; zero capacity disables retention. An explicit
 `planningCache` continues to override the default. No second pool configuration is
 needed for default discovery caching.
+
+With `cache` enabled, the factory also passes the existing pool and cache capacity
+as defaults to stores that support `withDefaultMemoryBudget`. HTTP probe caching
+therefore needs no duplicate pool setting. Explicit adapter pool/cache options
+remain authoritative, and a zero factory cache capacity disables default probe
+retention. URI, cache and read-control wrappers preserve this capability; rebound
+read-control stores share the original semaphore and cancellation signal.

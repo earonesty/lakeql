@@ -1,0 +1,29 @@
+{
+  "sourceBase": "6d32047",
+  "scope": "Immutable default store-budget binding and automatic HTTP probe cache configuration",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "initialFocusedTests": 14,
+    "concurrencyAndQueueTests": 5,
+    "realHttpEnabledDisabledTests": 2,
+    "fullSuite": {
+      "passed": 3668,
+      "skipped": 629,
+      "log": "/tmp/default-http-pool-full.log"
+    }
+  },
+  "evidence": [
+    "Factory uses its existing shared pool and cache capacity without duplicate HTTP configuration",
+    "Real written Parquet over ignored-range HTTP uses one cold request and zero warm requests",
+    "Zero factory capacity disables default probe retention",
+    "URI/cache/read-control wrappers preserve capability",
+    "Rebound stores retain the same read semaphore and normalized cancellation signal",
+    "Explicit adapter budgets and limits are not overridden"
+  ],
+  "remaining": [
+    "Caller-created scanners and adapters without budget-binding capability",
+    "Remote write serialization admission",
+    "Broader allocation and constrained-runtime acceptance"
+  ]
+}
