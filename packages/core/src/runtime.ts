@@ -128,11 +128,21 @@ export interface StagedSpillWrite {
   rollback(): Promise<void>;
 }
 
+/** Writes remain private until an atomic, version-checked batch commit.
+ * Callers must commit or roll back, and must await writes before commit.
+ */
+export interface SpillWriteBatch {
+  write(id: string, data: Uint8Array): Promise<SpillRef>;
+  commit(): Promise<void>;
+  rollback(): Promise<void>;
+}
+
 export interface SpillAdapter {
   write(id: string, data: Uint8Array): Promise<SpillRef>;
   /** Caller must commit or roll back every staged write. Adapter usage and caps
    * include pending payloads as well as published entries. */
   stageWrite?(id: string, data: Uint8Array): Promise<StagedSpillWrite>;
+  beginWriteBatch?(): SpillWriteBatch;
   read(ref: SpillRef | string): Promise<Uint8Array>;
   /** Admit the read buffer before allocating it. The returned independent owner
    * remains charged until released by the consumer. Adapter storage is separate.
@@ -171,25 +181,78 @@ export class MemorySpillAdapter implements SpillAdapter {
   }
 
   async stageWrite(id: string, data: Uint8Array): Promise<StagedSpillWrite> {
+    const prepared = this.prepareWrite(id, data);
+    return {
+      ref: prepared.ref,
+      commit: async () => {
+        prepared.validate();
+        return prepared.publish();
+      },
+      rollback: async () => prepared.rollback(),
+    };
+  }
+
+  beginWriteBatch(): SpillWriteBatch {
+    const writes = new Map<string, ReturnType<MemorySpillAdapter["prepareWrite"]>>();
+    let state: "open" | "committed" | "rolled-back" = "open";
+    return {
+      write: async (id, data) => {
+        if (state !== "open")
+          throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Spill batch is closed");
+        if (writes.has(id))
+          throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Duplicate spill batch target", { id });
+        const prepared = this.prepareWrite(id, data);
+        try {
+          writes.set(id, prepared);
+        } catch (error) {
+          prepared.rollback();
+          throw error;
+        }
+        return prepared.ref;
+      },
+      commit: async () => {
+        if (state === "committed") return;
+        if (state !== "open")
+          throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Spill batch was rolled back");
+        // Validate the entire write set before publication. No await or external
+        // callback can observe an intermediate commit in this in-memory adapter.
+        for (const prepared of writes.values()) prepared.validate();
+        for (const prepared of writes.values()) prepared.publish();
+        state = "committed";
+        writes.clear();
+      },
+      rollback: async () => {
+        if (state !== "open") return;
+        for (const prepared of writes.values()) prepared.rollback();
+        writes.clear();
+        state = "rolled-back";
+      },
+    };
+  }
+
+  private prepareWrite(id: string, data: Uint8Array) {
     if (!id) throw new LakeqlError("LAKEQL_TYPE_ERROR", "spill id must be non-empty");
     this.requireCapacity(this.byteSize + this.stagedBytes + data.byteLength);
     const previousVersion = this.entries.get(id)?.version;
     const previousBytes = this.entries.get(id)?.data.byteLength ?? 0;
-    let pending: Uint8Array | undefined = copyBytes(data);
-    const ref = Object.freeze({ id, byteSize: pending.byteLength });
-    this.stagedBytes += pending.byteLength;
+    let pending: { data: Uint8Array; version: symbol } | undefined = {
+      data: copyBytes(data),
+      version: Symbol(),
+    };
+    const ref = Object.freeze({ id, byteSize: pending.data.byteLength });
+    this.stagedBytes += pending.data.byteLength;
     this.stagedEntries++;
     let committed = false;
     const release = () => {
       if (pending === undefined) return;
-      this.stagedBytes -= pending.byteLength;
+      this.stagedBytes -= pending.data.byteLength;
       this.stagedEntries--;
       pending = undefined;
     };
     return {
       ref,
-      commit: async () => {
-        if (committed) return ref;
+      validate: () => {
+        if (committed) return;
         if (pending === undefined)
           throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Spill write was rolled back");
         if (this.entries.get(id)?.version !== previousVersion)
@@ -198,15 +261,18 @@ export class MemorySpillAdapter implements SpillAdapter {
             "Spill entry changed during staged write",
             { id },
           );
-        this.entries.set(id, { data: pending, version: Symbol() });
-        this.byteSize += pending.byteLength - previousBytes;
+      },
+      publish: () => {
+        if (committed) return ref;
+        if (pending === undefined)
+          throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Spill write was rolled back");
+        this.entries.set(id, pending);
+        this.byteSize += pending.data.byteLength - previousBytes;
         committed = true;
         release();
         return ref;
       },
-      rollback: async () => {
-        release();
-      },
+      rollback: release,
     };
   }
 

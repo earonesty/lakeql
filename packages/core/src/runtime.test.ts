@@ -205,3 +205,53 @@ it("does not overwrite a competing spill writer when a staged commit conflicts",
   await absent.commit();
   expect(await spill.usage()).toEqual({ entries: 2, byteSize: 1 });
 });
+
+it("commits a spill batch only after validating every target version", async () => {
+  const { MemorySpillAdapter } = await import("./runtime.js");
+  const spill = new MemorySpillAdapter({ maxBytes: 10 });
+  await spill.write("a", Uint8Array.of(1));
+  await spill.write("b", Uint8Array.of(2));
+  const conflict = spill.beginWriteBatch();
+  await conflict.write("a", Uint8Array.of(3));
+  await conflict.write("b", Uint8Array.of(4));
+  await spill.write("b", Uint8Array.of(9));
+  await expect(conflict.commit()).rejects.toMatchObject({ code: "LAKEQL_VALIDATION_ERROR" });
+  expect(await spill.read("a")).toEqual(Uint8Array.of(1));
+  expect(await spill.read("b")).toEqual(Uint8Array.of(9));
+  await conflict.rollback();
+  await conflict.rollback();
+  expect(await spill.usage()).toEqual({ entries: 2, byteSize: 2 });
+  const batch = spill.beginWriteBatch();
+  await batch.write("a", Uint8Array.of(5));
+  await batch.write("b", Uint8Array.of(6));
+  await batch.write("new", Uint8Array.of(7));
+  await expect(batch.write("a", Uint8Array.of(8))).rejects.toMatchObject({
+    code: "LAKEQL_VALIDATION_ERROR",
+  });
+  expect(await spill.usage()).toEqual({ entries: 5, byteSize: 5 });
+  await batch.commit();
+  await batch.commit();
+  await batch.rollback();
+  expect(await spill.read("a")).toEqual(Uint8Array.of(5));
+  expect(await spill.read("b")).toEqual(Uint8Array.of(6));
+  expect(await spill.read("new")).toEqual(Uint8Array.of(7));
+  expect(await spill.usage()).toEqual({ entries: 3, byteSize: 3 });
+  await expect(batch.write("later", Uint8Array.of(0))).rejects.toMatchObject({
+    code: "LAKEQL_VALIDATION_ERROR",
+  });
+});
+
+it("releases all pending spill-batch bytes after an overlap budget rejection", async () => {
+  const { MemorySpillAdapter } = await import("./runtime.js");
+  const spill = new MemorySpillAdapter({ maxBytes: 4 });
+  await spill.write("prior", Uint8Array.of(1, 2));
+  const batch = spill.beginWriteBatch();
+  await batch.write("run", Uint8Array.of(3, 4));
+  await expect(batch.write("checkpoint", Uint8Array.of(5))).rejects.toMatchObject({
+    code: "LAKEQL_BUDGET_EXCEEDED",
+  });
+  await batch.rollback();
+  expect(await spill.read("prior")).toEqual(Uint8Array.of(1, 2));
+  expect(await spill.usage()).toEqual({ entries: 1, byteSize: 2 });
+  await expect(batch.commit()).rejects.toMatchObject({ code: "LAKEQL_VALIDATION_ERROR" });
+});
