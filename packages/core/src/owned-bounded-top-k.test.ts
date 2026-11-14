@@ -154,3 +154,38 @@ it("admits replacement overlap at the exact cap and rejects one byte below witho
     expect(pool.usedBytes).toBe(0);
   }
 });
+
+it("checks borrowed candidates without allocation and leaves stable ties intact", () => {
+  const pool = new MemoryBudget(65536);
+  const scope = new MemoryScope(pool);
+  const heap = new OwnedBoundedTopK<number>(scope, 1, (a, b) => a - b);
+  expect(heap.wouldAccept(3)).toBe(true);
+  const input = scope.allocate(32, "candidate", () => 3);
+  heap.offer(input);
+  const pressure = pool.reserve(pool.availableBytes, "sibling pressure");
+  expect(heap.wouldAccept(3)).toBe(false);
+  expect(heap.wouldAccept(4)).toBe(false);
+  expect(heap.wouldAccept(2)).toBe(true);
+  pressure.release();
+  const output = heap.finish();
+  expect(output.value).toEqual([3]);
+  output.release();
+  scope.dispose();
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("closes on a borrowed precheck comparator failure without releasing caller input", () => {
+  const pool = new MemoryBudget(65536);
+  const scope = new MemoryScope(pool);
+  const input = scope.allocate(32, "caller payload", () => 3);
+  const heap = new OwnedBoundedTopK<number>(scope, 1, () => {
+    throw Error("precheck failed");
+  });
+  heap.offer(input);
+  expect(() => heap.wouldAccept(2)).toThrow("precheck failed");
+  expect(input.value).toBe(3);
+  expect(pool.usedBytes).toBe(32);
+  expect(() => heap.wouldAccept(1)).toThrow(/disposed/);
+  scope.dispose();
+  expect(pool.usedBytes).toBe(0);
+});

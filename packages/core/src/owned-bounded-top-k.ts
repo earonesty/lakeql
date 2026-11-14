@@ -19,7 +19,7 @@ export class OwnedBoundedTopK<T> {
   constructor(
     parent: MemoryScope,
     limit: number,
-    compare: (left: T, right: T) => number,
+    private readonly compare: (left: T, right: T) => number,
     private readonly memory?: BufferMemory<T>,
   ) {
     this.scope = parent.childScope();
@@ -40,6 +40,21 @@ export class OwnedBoundedTopK<T> {
 
   get size(): number {
     return this.heap.size;
+  }
+
+  /** Read-only check before detaching borrowed payload. Input and ordering keys
+   * must stay stable until offer; offer still performs the authoritative check. */
+  wouldAccept(value: T): boolean {
+    this.requireOpen();
+    if (this.heap.limit === 0) return false;
+    if (this.heap.size < this.heap.limit) return true;
+    try {
+      const worst = this.heap.worst;
+      return worst !== undefined && this.compare(value, worst.owner.value) < 0;
+    } catch (error) {
+      this.dispose();
+      throw error;
+    }
   }
 
   offer(input: OwnedMemory<T>): boolean {

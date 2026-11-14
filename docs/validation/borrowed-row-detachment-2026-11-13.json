@@ -35,7 +35,7 @@
     "Input data properties must remain stable during synchronous traversal; proxies and arbitrary object behavior have no detachment guarantee.",
     "Charge units and traversal admission do not establish total VM heap bounds or expose hidden immutable-string backing size.",
     "Supported scanner value shapes must be reconciled with public compatibility before query integration; unsupported prototypes are not silently flattened.",
-    "Candidate detachment currently occurs before the selector rejects noncompetitive rows; performance scaling and avoiding unnecessary rejected-payload copies remain to be measured."
+    "Rejected-candidate copy avoidance and benchmark evidence: docs/validation/row-top-k-precheck-2026-11-13.json."
   ],
   "testContractClarification": "Existing exact serialized-size tests now specify a separate 65536-byte allocation allowance. Their serialized boundaries and expected errors are unchanged; production allocation/serialized limits were not relaxed."
 }

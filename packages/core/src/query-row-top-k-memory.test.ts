@@ -110,3 +110,29 @@ it("unwinds scanner and selection ownership on candidate admission failure", asy
   expect(pool.usedBytes).toBe(37);
   sibling.release();
 });
+
+it("skips detaching oversized rejected payloads but admits better replacements", async () => {
+  const pool = new MemoryBudget(8192);
+  const store = memoryStore();
+  await store.put("table", new Uint8Array(1));
+  const lake = new Lake({
+    store,
+    memoryPool: pool,
+    scanner: {
+      async *scan() {
+        yield [{ score: 1, payload: new Uint8Array([1]) }];
+        yield [{ score: 1, payload: new Uint8Array(65536) }];
+        yield [{ score: 2, payload: new Uint8Array(65536) }];
+        yield [{ score: 0, payload: new Uint8Array([0]) }];
+      },
+    },
+  });
+  expect(
+    await lake
+      .path("table")
+      .orderBy([{ column: "score" }])
+      .limit(1)
+      .toArray(),
+  ).toEqual([{ score: 0, payload: new Uint8Array([0]) }]);
+  expect(pool.usedBytes).toBe(0);
+});

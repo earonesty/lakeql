@@ -27,6 +27,11 @@ export class BoundedTopK<T> {
     return this.heap.length;
   }
 
+  /** Borrow the current worst candidate without changing order or ownership. */
+  get worst(): T | undefined {
+    return this.heap[0]?.value;
+  }
+
   add(value: T): { accepted: false } | { accepted: true; removed: T[] } {
     if (this.limit === 0) return REJECTED;
     if (this.ordinal === Number.MAX_SAFE_INTEGER) {

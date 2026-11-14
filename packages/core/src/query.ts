@@ -3088,7 +3088,7 @@ export class QueryResult {
             memory,
           );
     const offer = (row: Row) => {
-      if (selection === undefined || topK === 0) return;
+      if (selection === undefined || !selection.wouldAccept(row)) return;
       const owner = detachOwnedRow(row, allocationScope.budget);
       try {
         selection.offer(owner);
