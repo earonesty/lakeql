@@ -8,6 +8,7 @@ import type { ColumnDecoder, DataPageHeader } from "hyparquet/src/types.js";
 import { MemoryBudget, MemoryScope } from "lakeql-core";
 import { expect, it } from "vitest";
 import { validateBsonFraming } from "./bson-framing.js";
+import { decodeBsonValue } from "./bson-values.js";
 
 const i32 = (value: number) => {
   const out = Buffer.alloc(4);
@@ -60,7 +61,15 @@ it("validates actual Parquet BSON payloads without constructing decoded document
     validateBsonFraming(value as Uint8Array, scope);
     expect(scope.budget.usedBytes).toBe(0);
   }
+  expect(Array.from(values, (value) => decodeBsonValue(value as Uint8Array, scope))).toEqual([
+    new Map([["a", 1]]),
+    new Map<string, unknown>([
+      ["a", 1],
+      ["b", null],
+    ]),
+  ]);
   scope.dispose();
+  expect(scope.budget.usedBytes).toBe(0);
 });
 
 it("validates framing for every BSON wire type, including deprecated types", () => {

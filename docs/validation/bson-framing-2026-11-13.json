@@ -22,5 +22,6 @@
   "limits": [
     "Stack reservations use explicit allocation units, not a total VM heap measure.",
     "No broader release or Worker acceptance claim is added by these isolated primitive tests."
-  ]
+  ],
+  "followupEvidence": "bson-logical-values-2026-11-13.json"
 }

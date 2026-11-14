@@ -1,0 +1,31 @@
+{
+  "status": "Admitted logical decoder implemented and tested; public/owned reader integration remains open",
+  "change": "decodeBsonValue first validates framing, then constructs dynamic maps and arrays using an admitted explicit stack. Strings use fatal UTF-8 decoding; duplicate document keys reject rather than silently overwrite. Binary output is detached even for Node Buffer inputs. Array index strings are not materialized. Construction errors release partially built output; successful output ownership transfers to the parent scope.",
+  "valueContract": {
+    "native": "Documents use Map, arrays use Array, int32/double use number, int64 uses bigint, UTC datetime uses exact TimestampValue, and strings/booleans/null retain native values.",
+    "tagged": "BSON-specific values use maps carrying $bson plus explicit fields: binary (subtype, bytes), objectId (bytes), regex (pattern, options), dbPointer (namespace, id), code/symbol (value), codeWithScope (code, scope), timestamp (increment, seconds), decimal128 (bytes), undefined/minKey/maxKey.",
+    "boundary": "Decimal128 remains an explicitly tagged exact 16-byte value, not an implicitly rounded number or a claim of SQL decimal128 arithmetic. Regex and code are stored data, never evaluated. Tagged maps are a logical representation, not an automatic BSON re-encoding API; ordinary source documents may contain the same field names."
+  },
+  "validation": {
+    "build": "passed",
+    "focusedTestsPassed": 10,
+    "cases": [
+      "Actual non-null BSON payloads extracted from the vendored Parquet fixture decode to expected dynamic maps",
+      "Every wire type including deprecated values, binary subtypes and code scopes",
+      "Minimum int64 integer and UTC milliseconds retain precision; negative zero retained",
+      "Mutating source Buffer after decode cannot mutate retained binary/objectId/decimal128 output",
+      "Invalid UTF-8, duplicate document keys and malformed regex options reject with zero retained usage",
+      "2000 nested output documents construct without recursive calls; framing separately tests 5000 levels",
+      "Exact measured peak succeeds, one byte less rejects and cleans up; output remains charged until parent disposal"
+    ]
+  },
+  "remaining": [
+    "Wire shared logical conversion, dictionary handling, public parser callbacks and owned vector paths to this decoder.",
+    "Update schema rejection tests and compatibility contract only after reader integration succeeds.",
+    "Validate actual HTTP and Worker R2 reads, full default suites and conformance after integration. Four BSON/Brotli cases remain failing."
+  ],
+  "limits": [
+    "This checkpoint introduces a tested primitive, not a new public BSON capability.",
+    "Explicit allocation charges do not establish a total VM heap cap."
+  ]
+}
