@@ -130,6 +130,9 @@ export interface StagedSpillWrite {
 
 /** Writes remain private until an atomic, version-checked batch commit.
  * Callers must commit or roll back, and must await writes before commit.
+ * Rollback is idempotent and affects only uncommitted storage. Once commit
+ * succeeds, later cancellation or rollback must not remove published entries.
+ * Cancellation while commit is in flight does not imply publication was stopped.
  */
 export interface SpillWriteBatch {
   write(id: string, data: Uint8Array): Promise<SpillRef>;

@@ -9,6 +9,7 @@ describe.each(["sort", "window"] as const)("%s checkpoint batches", (operator) =
   it.each([
     "success",
     "cancel",
+    "commit-cancel",
     "conflict",
     "write-failure",
   ] as const)("publishes runs and checkpoint together: %s", async (outcome) => {
@@ -36,9 +37,16 @@ describe.each(["sort", "window"] as const)("%s checkpoint batches", (operator) =
       const batch = begin();
       return {
         ...batch,
+        async commit() {
+          if (outcome === "commit-cancel") {
+            ready.resolve();
+            await gate.promise;
+          }
+          await batch.commit();
+        },
         async write(id, data) {
           const ref = await batch.write(id, data);
-          if (id === "state") {
+          if (id === "state" && outcome !== "commit-cancel") {
             ready.resolve();
             await gate.promise;
             if (outcome === "write-failure") throw new Error("checkpoint storage failure");
@@ -70,7 +78,7 @@ describe.each(["sort", "window"] as const)("%s checkpoint batches", (operator) =
     await expect(spill.read("state-run-000000")).rejects.toMatchObject({
       code: "LAKEQL_OBJECT_NOT_FOUND",
     });
-    if (outcome === "cancel") controller.abort();
+    if (outcome === "cancel" || outcome === "commit-cancel") controller.abort();
     if (outcome === "conflict") await spill.write("state", Uint8Array.of(4));
     gate.resolve();
     const result = await settled;
@@ -86,6 +94,13 @@ describe.each(["sort", "window"] as const)("%s checkpoint batches", (operator) =
                 { id: 2, rn: 2 },
               ],
         );
+      expect((await spill.read("state-run-000000")).byteLength).toBeGreaterThan(0);
+      expect((await spill.usage()).entries).toBe(2);
+    } else if (outcome === "commit-cancel") {
+      expect(result).toMatchObject({ error: { code: "LAKEQL_ABORTED" } });
+      // Commit may already be in flight when cancellation arrives. Rollback
+      // must never delete its successfully published checkpoint.
+      expect(await spill.read("state")).not.toEqual(prior);
       expect((await spill.read("state-run-000000")).byteLength).toBeGreaterThan(0);
       expect((await spill.usage()).entries).toBe(2);
     } else {

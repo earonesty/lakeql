@@ -8,11 +8,13 @@ export async function withCheckpointSpillBatch<T>(
   spill: SpillAdapter | undefined,
   scope: MemoryScope,
   operation: (target: SpillAdapter | undefined) => Promise<T>,
+  checkBudget?: () => void,
 ): Promise<T> {
   if (spill?.beginWriteBatch === undefined) return operation(spill);
   // Keep rollback bookkeeping charged even if the query scope is cancelled.
   const lifetime = new MemoryScope(scope.budget);
   const check = () => {
+    checkBudget?.();
     if (scope.disposed) throw new LakeqlError("LAKEQL_ABORTED", "Checkpoint batch scope disposed");
   };
   try {

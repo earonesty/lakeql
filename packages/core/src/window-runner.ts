@@ -188,27 +188,32 @@ export async function executeWindowWithState(
     windowScope.dispose();
     const rows = collected.value;
 
-    return await withCheckpointSpillBatch(windowOptions.spill, retainedScope, async (spill) => {
-      checkCheckpoint();
-      const state =
-        spill === undefined
-          ? windowOperatorState(windows, matched ?? [], retainedScope)
-          : await windowOperatorStateFromRuns(
-              windows,
-              runs,
-              spill,
-              spillId,
-              retainedScope,
-              checkCheckpoint,
-            );
-      const operatorState = serializeWindowOperatorState(state, retainedScope);
-      const result: WindowResult = { rows, operatorState };
-      if (spill !== undefined) {
-        result.operatorSpill = await spill.write(spillId, operatorState);
+    return await withCheckpointSpillBatch(
+      windowOptions.spill,
+      retainedScope,
+      async (spill) => {
         checkCheckpoint();
-      }
-      return result;
-    });
+        const state =
+          spill === undefined
+            ? windowOperatorState(windows, matched ?? [], retainedScope)
+            : await windowOperatorStateFromRuns(
+                windows,
+                runs,
+                spill,
+                spillId,
+                retainedScope,
+                checkCheckpoint,
+              );
+        const operatorState = serializeWindowOperatorState(state, retainedScope);
+        const result: WindowResult = { rows, operatorState };
+        if (spill !== undefined) {
+          result.operatorSpill = await spill.write(spillId, operatorState);
+          checkCheckpoint();
+        }
+        return result;
+      },
+      checkCheckpoint,
+    );
   } finally {
     collected?.release();
     collector.dispose();
