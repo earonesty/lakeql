@@ -6,6 +6,36 @@ import type { MemoryScope } from "./memory-scope.js";
 
 export type VectorProjectionSpec = Record<string, Expr>;
 
+/** A physical projection may borrow its input when every output mapping and
+ * column order is unchanged. Public vectorProjectBatch still creates a directory.
+ */
+export function isIdentityVectorProjection(
+  batch: Batch,
+  select?: readonly string[],
+  projections?: VectorProjectionSpec,
+): boolean {
+  if (projections !== undefined)
+    for (const name in projections) if (Object.hasOwn(projections, name)) return false;
+  if (select === undefined || select.length === 0 || select.includes("*")) {
+    if (select !== undefined)
+      for (const name of select)
+        if (
+          name !== "*" &&
+          (!Object.hasOwn(batch.columns, name) || batch.columns[name] === undefined)
+        )
+          return false;
+    for (const name in batch.columns)
+      if (Object.hasOwn(batch.columns, name) && batch.columns[name] === undefined) return false;
+    return true;
+  }
+  let index = 0;
+  for (const name in batch.columns) {
+    if (!Object.hasOwn(batch.columns, name)) continue;
+    if (select[index++] !== name || batch.columns[name] === undefined) return false;
+  }
+  return index === select.length;
+}
+
 export function vectorProjectBatch(
   batch: Batch,
   select?: readonly string[],

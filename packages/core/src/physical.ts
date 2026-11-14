@@ -38,7 +38,11 @@ import {
   updateVectorGroupByState,
   type VectorGroupByStateSnapshot,
 } from "./vector-group-by.js";
-import { type VectorProjectionSpec, vectorProjectBatch } from "./vector-project.js";
+import {
+  isIdentityVectorProjection,
+  type VectorProjectionSpec,
+  vectorProjectBatch,
+} from "./vector-project.js";
 import {
   gatherSelectedBatch,
   vectorOrderByBatch,
@@ -630,12 +634,13 @@ export class CpuPhysicalBackend implements PhysicalExecutionBackend {
           break;
         }
         case "project":
-          batch = vectorProjectBatch(
-            batch,
-            operator.select,
-            operator.projections,
-            context.allocationScope,
-          );
+          if (!isIdentityVectorProjection(batch, operator.select, operator.projections))
+            batch = vectorProjectBatch(
+              batch,
+              operator.select,
+              operator.projections,
+              context.allocationScope,
+            );
           break;
         case "reduce": {
           if (

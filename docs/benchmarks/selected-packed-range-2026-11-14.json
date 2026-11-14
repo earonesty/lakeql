@@ -1,0 +1,124 @@
+{
+  "baseline": "c6a848a",
+  "negativeControl": {
+    "baselineGatherSourceSha256": "0252af46dd6f39eae538a35c93529563afef306ca03890dcaa4358b4fed501f5",
+    "baselineAcceptedOutOfBoundsRange": true,
+    "currentRejectsBeforeAllocation": true
+  },
+  "baselineSourceSha256": "9d4409a755e645ea896068470f01fc7856f1c0de02c6fbee7554e01a4e4051cf",
+  "currentSourceSha256": "be7580f34cdff8cac843ff9ac2945a91caac5545a9e3c192d14996df03da06bd",
+  "node": "v24.18.1",
+  "warmups": 20,
+  "samples": 20,
+  "scope": "Local selected packed planning plus execution, alternating variants. Prior selected-packed module uses current dependencies, not a complete historical build. Borrowed source/oracle and runtime heap overhead excluded; no cloud performance claim.",
+  "cases": [
+    {
+      "shape": "utf8",
+      "rows": 256,
+      "width": 8,
+      "peakBytes": 4056,
+      "afterReleaseBytes": 0,
+      "priorMs": 0.11376450000000204,
+      "currentMs": 0.09379649999999629
+    },
+    {
+      "shape": "utf8",
+      "rows": 256,
+      "width": 256,
+      "peakBytes": 58368,
+      "afterReleaseBytes": 0,
+      "priorMs": 0.24536250000002724,
+      "currentMs": 0.2668834999999774
+    },
+    {
+      "shape": "utf8",
+      "rows": 4096,
+      "width": 8,
+      "peakBytes": 64944,
+      "afterReleaseBytes": 0,
+      "priorMs": 0.4889724999999885,
+      "currentMs": 0.4749364999999841
+    },
+    {
+      "shape": "utf8",
+      "rows": 4096,
+      "width": 256,
+      "peakBytes": 935424,
+      "afterReleaseBytes": 0,
+      "priorMs": 3.349668999999949,
+      "currentMs": 3.3625840000000267
+    },
+    {
+      "shape": "binary",
+      "rows": 256,
+      "width": 8,
+      "peakBytes": 4056,
+      "afterReleaseBytes": 0,
+      "priorMs": 0.03176949999999579,
+      "currentMs": 0.02726150000000871
+    },
+    {
+      "shape": "binary",
+      "rows": 256,
+      "width": 256,
+      "peakBytes": 58368,
+      "afterReleaseBytes": 0,
+      "priorMs": 0.02722649999998339,
+      "currentMs": 0.02695550000004232
+    },
+    {
+      "shape": "binary",
+      "rows": 4096,
+      "width": 8,
+      "peakBytes": 64944,
+      "afterReleaseBytes": 0,
+      "priorMs": 0.18790000000001328,
+      "currentMs": 0.16192050000006475
+    },
+    {
+      "shape": "binary",
+      "rows": 4096,
+      "width": 256,
+      "peakBytes": 935424,
+      "afterReleaseBytes": 0,
+      "priorMs": 0.22045050000002675,
+      "currentMs": 0.20695499999999356
+    },
+    {
+      "shape": "utf8-view",
+      "rows": 256,
+      "width": 8,
+      "peakBytes": 4056,
+      "afterReleaseBytes": 0,
+      "priorMs": 0.03461999999996124,
+      "currentMs": 0.03492599999998447
+    },
+    {
+      "shape": "utf8-view",
+      "rows": 256,
+      "width": 256,
+      "peakBytes": 58368,
+      "afterReleaseBytes": 0,
+      "priorMs": 0.034544999999980064,
+      "currentMs": 0.03069799999997258
+    },
+    {
+      "shape": "utf8-view",
+      "rows": 4096,
+      "width": 8,
+      "peakBytes": 64944,
+      "afterReleaseBytes": 0,
+      "priorMs": 0.276551500000096,
+      "currentMs": 0.2461195000000771
+    },
+    {
+      "shape": "utf8-view",
+      "rows": 4096,
+      "width": 256,
+      "peakBytes": 935424,
+      "afterReleaseBytes": 0,
+      "priorMs": 0.3253234999999677,
+      "currentMs": 0.3060574999999517
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "runtimeBase": "c6a848a",
+  "requirements": ["F5", "M1", "V2"],
+  "finding": "Selected packed planning/execution created a two-number array per visited row. Gather/concat used separate range access and did not reject payload extents beyond the visible data view.",
+  "fix": [
+    "Share scalar packed-byte start/length access between gather/concat and selected planning/execution, removing per-row range tuples.",
+    "Validate safe nonnegative row/start/length and payload boundaries before gather output admission, including visible subarray bounds.",
+    "Read fixedLength once while measuring a range, preserving existing exact traversal-count tests."
+  ],
+  "validation": {
+    "build": "pnpm exec tsc -b passed",
+    "regularPassed": 3907,
+    "regularSkipped": 645,
+    "focusedRangeCases": 12,
+    "workerPassed": 84,
+    "workerCommand": "pnpm test:workerd --no-file-parallelism",
+    "types": "pnpm typecheck passed",
+    "lint": "pnpm lint passed",
+    "conformance": "Two pre-identity full attempts and an isolated page-count query exceeded the unchanged timeout. Generic physical identity-projection follow-up now passes all 520 required cases (one inactive guard skipped), with a measured ~20% local query improvement. See physical-identity-projection-2026-11-14.json."
+  },
+  "negativeControl": {
+    "baseline": "c6a848a",
+    "result": "Baseline compactGatherPlan accepts an out-of-bounds packed range; current helper rejects with LAKEQL_VALIDATION_ERROR before allocation.",
+    "reproduction": "node bench/selected-packed-range.mjs"
+  },
+  "benchmark": {
+    "runs": [
+      "docs/benchmarks/selected-packed-range-2026-11-14.json",
+      "docs/benchmarks/selected-packed-range-repeat-2026-11-14.json"
+    ],
+    "casesPerRun": 12,
+    "warmups": 20,
+    "samples": 20,
+    "currentFasterCases": [9, 11],
+    "binaryCases": "All four binary cases improve in both runs.",
+    "scope": "Alternating local plan+execute; prior selected-packed module uses current dependencies. Not a complete historical build or a cloud measurement. Peak admitted output is unchanged; all owners release to zero."
+  },
+  "rejectedAlternative": {
+    "artifact": "docs/benchmarks/byte-range-copy-2026-11-14.json",
+    "decision": "Do not replace all native subarray/set copies with scalar loops. Tiny ranges favor loops, but large ranges strongly favor native copying. No new production threshold or configuration added."
+  },
+  "regressionEvidence": [
+    "Initial full suite: 3896 passed, one traversal-count failure from reading fixedLength twice. Reused the measured length for fixed-width start validation; existing traversal assertions then pass unchanged.",
+    "Malformed range tests cover visible subarrays, negative/fractional/nonfinite fixed lengths and row offsets; null hidden ranges remain unread and empty end-of-payload values remain valid."
+  ],
+  "boundaries": [
+    "Native copy/encoding subarray views still need explicit scratch accounting; this change removes range tuples, not every temporary allocation.",
+    "Packed output descriptors and planner containers remain separate accounting gaps.",
+    "The release-gate refresh on beebd97 predates this runtime change; full acceptance remains open."
+  ]
+}

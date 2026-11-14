@@ -3,6 +3,7 @@ import { type Batch, type PackedByteVector, type Vector, vectorLength } from "./
 import { LakeqlError } from "./errors.js";
 import type { MemoryReservation } from "./memory-budget.js";
 import type { MemoryScope, OwnedMemory } from "./memory-scope.js";
+import { packedByteLength, packedByteStart } from "./packed-byte-range.js";
 import { planSelectedConcat } from "./selected-concat.js";
 import { losslessUtf8Bytes } from "./utf8-size.js";
 import { admitVectorBuffer } from "./vector-buffer.js";
@@ -399,20 +400,14 @@ function resolvedIndex(vector: Vector, index: number): number {
 
 function rangeStart(vector: PackedGatherLeaf, index: number): number {
   if (vector.type === "binary") return 0;
-  const row = (vector.rowOffset ?? 0) + index;
-  return vector.ranges === undefined
-    ? row * (vector.fixedLength ?? 0)
-    : (vector.ranges[row * 2] ?? 0);
+  return packedByteStart(vector, index);
 }
 
 function rangeLength(vector: PackedGatherLeaf, index: number): number {
   if (vector.type === "binary")
     return vector.valid?.[index] === 0 ? 0 : (vector.values[index]?.byteLength ?? 0);
   if (vector.valid?.[index] === 0) return 0;
-  const row = (vector.rowOffset ?? 0) + index;
-  return vector.ranges === undefined
-    ? (vector.fixedLength ?? 0)
-    : (vector.ranges[row * 2 + 1] ?? 0);
+  return packedByteLength(vector, index);
 }
 
 function payloadBytes(

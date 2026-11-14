@@ -4898,3 +4898,39 @@ remain verified. The allocation matrix now explicitly describes retained gather
 view admission/provenance and its remaining descriptor/scratch gaps. See
 `validation/current-gather-release-gates-2026-11-14.json`; full audit acceptance
 remains open.
+
+### Shared packed-range access (2026-11-14)
+
+A local copy probe found that scalar byte loops help tiny values but strongly
+regress large values; no universal copy replacement or threshold was introduced.
+Tracing the adjacent paths found duplicated range logic and per-row tuple arrays.
+Shared scalar range access now removes those tuples and validates visible payload
+bounds consistently. A reproducible baseline-module negative control confirms old
+gather planning accepted an out-of-bounds range. Twelve new cases cover malformed
+extents, visible backing slices, null hidden payload and empty boundary values.
+The existing fixed-width metadata visit-count test exposed an extra read during
+implementation; the helper now reuses the measured length and that assertion is
+unchanged. Full regular validation passes 3,897 tests (645 skipped), build/types
+and lint pass, and all 84 native Worker tests pass. Two warmed alternating
+12-case comparisons favor current execution in 9/12 and 11/12 cases; this is not
+a uniform speedup or cloud result. Native copy/encoding view scratch and metadata
+admission remain open. See `validation/packed-range-access-2026-11-14.json`.
+
+The pending range refactor remains uncommitted: two required conformance runs each passed 519 cases but timed out on the page-count fixture. An isolated run spent 5.261 seconds in query/row collection, 0.162 seconds in the oracle and 0.273 seconds in parity assertions. A standalone profiled query took 3.762 seconds, returned 40,000 rows, peaked at 802,047 admitted bytes and released to zero. Diagnostic test logging was removed; no timeout/assertion was changed. Investigate per-page query/planner/ownership cost before pushing. See `validation/page-count-query-diagnostic-2026-11-14.json`.
+
+### Generic physical identity projection (2026-11-14)
+
+The page-count fixture is Boolean, so its query cost does not exercise the pending
+packed-range refactor. Profiling exposed redundant projection descriptor/owner
+construction. CPU project now recognizes unchanged mappings/order and borrows the
+input batch; public vectorProjectBatch keeps its copy contract. Ten new cases
+cover zero-allocation identity, wildcard/explicit columns, reordering/subsets,
+aliases, missing-column errors and public directory independence. All 3,907
+regular tests pass (645 skipped), with build/types and 520 required conformance
+cases passing. The first identity-projection conformance attempt still timed out;
+the later complete unchanged run passed. No timeout/assertions were altered.
+A clean alternating-process comparison improves the 40,000-row fixture median
+from 4.023 to 3.221 seconds, with 390 fewer admitted peak bytes and zero after
+release. This repeats the earlier ~19% improvement observed in a run that briefly
+overlapped type checking. All 84 native Worker tests and lint pass. See
+`validation/physical-identity-projection-2026-11-14.json`.

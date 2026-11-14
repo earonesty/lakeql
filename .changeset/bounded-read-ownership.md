@@ -383,3 +383,7 @@ Evaluate column null predicates from validity and dictionary/union metadata with
 Share predicate-mask allocation and admit typed-array views alongside backing bytes. Include views for wider CASE choices and selected-index buffers while preserving mask reuse, temporary cleanup and low-memory predicate fallbacks.
 
 Admit retained typed-array views as well as backing for shared and compact gathers, including empty output and timestamp96 planes. Compact selection includes view cost in its measured decision; exact memory limits may therefore require additional view allowance. Preserve array provenance so repeated compaction releases obsolete charges.
+
+Share allocation-free packed range access across selected concatenation and gather, preserving fixed-width traversal counts and rejecting out-of-bounds payload extents before gather allocation.
+
+Reuse physical input batches for identity CPU projections instead of rebuilding unchanged column directories and descriptor owners. Preserve standalone projection copy semantics, backend selection, metrics, limits and nonidentity projection behavior.

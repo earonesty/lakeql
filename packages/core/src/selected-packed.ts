@@ -1,6 +1,7 @@
 import type { Vector } from "./batch.js";
 import { LakeqlError } from "./errors.js";
 import type { MemoryScope } from "./memory-scope.js";
+import { packedByteLength, packedByteStart } from "./packed-byte-range.js";
 import type { SelectedConcatPlan } from "./selected-concat.js";
 import { losslessUtf8Bytes } from "./utf8-size.js";
 import { admitVectorBuffer } from "./vector-buffer.js";
@@ -13,27 +14,12 @@ export function packedSelectionKind(vector: Vector): "text" | "binary" | undefin
   return undefined;
 }
 
-function range(vector: Vector, index: number): readonly [number, number] | undefined {
-  if (vector.type === "utf8") {
-    const bytes = losslessUtf8Bytes(vector.values[index] ?? "");
-    return bytes === undefined ? undefined : [0, bytes];
-  }
-  if (vector.type === "binary") return [0, vector.values[index]?.byteLength ?? 0];
-  if (vector.type !== "utf8-view" && vector.type !== "binary-view") return undefined;
-  const row = (vector.rowOffset ?? 0) + index;
-  const start =
-    vector.ranges === undefined ? row * (vector.fixedLength ?? 0) : (vector.ranges[row * 2] ?? 0);
-  const length =
-    vector.ranges === undefined ? (vector.fixedLength ?? 0) : (vector.ranges[row * 2 + 1] ?? 0);
-  if (
-    !Number.isSafeInteger(start) ||
-    !Number.isSafeInteger(length) ||
-    start < 0 ||
-    length < 0 ||
-    start + length > vector.data.byteLength
-  )
-    throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Selected packed range exceeds payload");
-  return [start, length];
+function rangeLength(vector: Vector, index: number): number | undefined {
+  if (vector.type === "utf8") return losslessUtf8Bytes(vector.values[index] ?? "");
+  if (vector.type === "binary") return vector.values[index]?.byteLength ?? 0;
+  if (vector.type === "utf8-view" || vector.type === "binary-view")
+    return packedByteLength(vector, index);
+  return undefined;
 }
 
 /** Select expansion or a detached union by complete output cost. Neither path
@@ -61,9 +47,9 @@ export function planSelectedPacked(
         nullable = true;
         return;
       }
-      const span = range(input.leaf, index);
-      if (span === undefined) lossless = false;
-      else payload += span[1];
+      const length = rangeLength(input.leaf, index);
+      if (length === undefined) lossless = false;
+      else payload += length;
     });
   if (!lossless) return undefined;
   const maskBytes = nullable ? rows : 0;
@@ -132,9 +118,12 @@ export function planSelectedPacked(
       for (const input of inputs)
         input.forEach((index) => {
           const leaf = input.leaf;
-          const span = index < 0 ? [0, 0] : range(leaf, index);
-          if (span === undefined) throw new Error("Selected text changed after planning");
-          const [start = 0, length = 0] = span;
+          const length = index < 0 ? 0 : rangeLength(leaf, index);
+          if (length === undefined) throw new Error("Selected text changed after planning");
+          const start =
+            index >= 0 && (leaf.type === "utf8-view" || leaf.type === "binary-view")
+              ? packedByteStart(leaf, index)
+              : 0;
           ranges[row * 2] = offset;
           ranges[row * 2 + 1] = length;
           if (index >= 0) {
