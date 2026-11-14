@@ -10,6 +10,7 @@ import {
   estimateBatchBytes,
   getOrCreateVectorGroupByValues,
   LakeqlError,
+  MemoryScope,
   mergePhysicalScoredCandidates,
   PhysicalBackendExecutionError,
   type PhysicalCapabilities,
@@ -610,150 +611,188 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
     const predicate = kernel;
     const transfer = physicalTransferBytes(compiled.fragment, kernel);
     enforceRuntimeBudget(compiled.fragment.id, context, transfer);
-    const attempt = physicalAttempt(this.id);
-    const selectionAttempt = this.#devices.scoped(
-      this.id,
-      async (lease) => {
-        const deviceLimit = Math.min(
-          lease.device.limits.maxBufferSize,
-          lease.device.limits.maxStorageBufferBindingSize,
-        );
-        if (transfer.largestBufferBytes > deviceLimit) {
-          throw new LakeqlError(
-            "LAKEQL_PHYSICAL_BACKEND_UNSUPPORTED",
-            "Fragment exceeds the acquired WebGPU device buffer limit",
-            {
-              fragmentId: compiled.fragment.id,
-              actual: transfer.largestBufferBytes,
-              limit: deviceLimit,
-            },
-          );
-        }
-        const buffers: GPUBuffer[] = [];
-        try {
-          const values = uploadValues(input.batch.columns, predicate.columns, input.batch.rowCount);
-          const valueBuffer = createUploadBuffer(
-            lease.device,
-            lease.runtime.constants.bufferUsage,
-            values,
-            `lakeql:${compiled.fragment.id}:values`,
-          );
-          buffers.push(valueBuffer);
-
-          const validity = uploadValidity(
-            input.batch.columns,
-            predicate.columns,
-            input.batch.rowCount,
-          );
-          const validityBuffer = createUploadBuffer(
-            lease.device,
-            lease.runtime.constants.bufferUsage,
-            validity,
-            `lakeql:${compiled.fragment.id}:validity`,
-          );
-          buffers.push(validityBuffer);
-
-          attempt.uploadBytes = transfer.uploadBytes;
-          const entries: GPUBindGroupEntry[] = [
-            { binding: 0, resource: { buffer: valueBuffer } },
-            { binding: 1, resource: { buffer: validityBuffer } },
-          ];
-
-          const outputBytes = alignedBufferBytes(input.batch.rowCount * 4);
-          const output = lease.device.createBuffer({
-            label: `lakeql:${compiled.fragment.id}:selection`,
-            size: outputBytes,
-            usage:
-              lease.runtime.constants.bufferUsage.STORAGE |
-              lease.runtime.constants.bufferUsage.COPY_SRC,
-          });
-          buffers.push(output);
-
-          const readback = lease.device.createBuffer({
-            label: `lakeql:${compiled.fragment.id}:readback`,
-            size: outputBytes,
-            usage:
-              lease.runtime.constants.bufferUsage.MAP_READ |
-              lease.runtime.constants.bufferUsage.COPY_DST,
-          });
-          buffers.push(readback);
-
-          entries.push({ binding: predicate.outputBinding, resource: { buffer: output } });
-
-          const pipeline = await this.#pipeline(lease.device, lease.generation, predicate);
-          throwIfAborted(signal);
-          const bindGroup = lease.device.createBindGroup({
-            layout: pipeline.getBindGroupLayout(0),
-            entries,
-          });
-          const encoder = lease.device.createCommandEncoder({
-            label: `lakeql:${compiled.fragment.id}`,
-          });
-          if (input.batch.rowCount > 0) {
-            const pass = encoder.beginComputePass();
-            pass.setPipeline(pipeline);
-            pass.setBindGroup(0, bindGroup);
-            pass.dispatchWorkgroups(Math.ceil(input.batch.rowCount / this.#workgroupSize));
-            pass.end();
-          }
-          encoder.copyBufferToBuffer(output, 0, readback, 0, outputBytes);
-          lease.device.queue.submit([encoder.finish()]);
-          attempt.dispatches = input.batch.rowCount === 0 ? 0 : 1;
-          attempt.readbackBytes = transfer.outputBytes;
-          await lease.device.queue.onSubmittedWorkDone();
-          throwIfAborted(signal);
-          await readback.mapAsync(lease.runtime.constants.mapMode.READ, 0, outputBytes);
-          try {
-            const words = new Uint32Array(readback.getMappedRange(0, outputBytes));
-            const result = new Uint8Array(input.batch.rowCount);
-            for (let index = 0; index < result.length; index += 1) {
-              result[index] = words[index] === 1 ? 1 : 0;
-            }
-            return result;
-          } finally {
-            readback.unmap();
-          }
-        } finally {
-          for (const buffer of buffers) buffer.destroy();
-        }
-      },
-      signal,
+    // Independent lifetime: caller cancellation must not release backing while
+    // submitted device work or mapping still uses it.
+    const resultScope =
+      context.allocationScope === undefined
+        ? undefined
+        : new MemoryScope(context.allocationScope.budget);
+    const workspace = context.allocationScope?.reserve(
+      transfer.uploadBytes + transfer.deviceBytes,
+      "WebGPU selection host upload and device backing",
     );
-    const selection = await capturePhysicalAttempt(selectionAttempt, attempt, now, startedAt);
-    const elapsedMs = now() - startedAt;
-    enforceElapsedBudget(compiled.fragment.id, context, elapsedMs, now);
-    const selectedRows = selectedRowCount(selection.length, selection);
-    if (
-      context.enforceOutputRows !== false &&
-      context.budget?.maxOutputRows !== undefined &&
-      selectedRows > context.budget.maxOutputRows
-    ) {
-      throw new LakeqlError(
-        "LAKEQL_BUDGET_EXCEEDED",
-        `Query exceeded output rows budget (${selectedRows} > ${context.budget.maxOutputRows})`,
-        {
-          resource: "output rows",
-          actual: selectedRows,
-          limit: context.budget.maxOutputRows,
-          fragmentId: compiled.fragment.id,
+    try {
+      if (resultScope !== undefined && context.allocationScope !== undefined) {
+        resultScope.admitReserved(
+          context.allocationScope.reserve(input.batch.rowCount, "WebGPU selection mask"),
+        );
+      }
+      const admittedMask = resultScope?.allocate(
+        input.batch.rowCount,
+        "WebGPU selection mask",
+        () => new Uint8Array(input.batch.rowCount),
+      ).value;
+      const attempt = physicalAttempt(this.id);
+      const selectionAttempt = this.#devices.scoped(
+        this.id,
+        async (lease) => {
+          const deviceLimit = Math.min(
+            lease.device.limits.maxBufferSize,
+            lease.device.limits.maxStorageBufferBindingSize,
+          );
+          if (transfer.largestBufferBytes > deviceLimit) {
+            throw new LakeqlError(
+              "LAKEQL_PHYSICAL_BACKEND_UNSUPPORTED",
+              "Fragment exceeds the acquired WebGPU device buffer limit",
+              {
+                fragmentId: compiled.fragment.id,
+                actual: transfer.largestBufferBytes,
+                limit: deviceLimit,
+              },
+            );
+          }
+          const buffers: GPUBuffer[] = [];
+          try {
+            const values = uploadValues(
+              input.batch.columns,
+              predicate.columns,
+              input.batch.rowCount,
+            );
+            const valueBuffer = createUploadBuffer(
+              lease.device,
+              lease.runtime.constants.bufferUsage,
+              values,
+              `lakeql:${compiled.fragment.id}:values`,
+            );
+            buffers.push(valueBuffer);
+
+            const validity = uploadValidity(
+              input.batch.columns,
+              predicate.columns,
+              input.batch.rowCount,
+            );
+            const validityBuffer = createUploadBuffer(
+              lease.device,
+              lease.runtime.constants.bufferUsage,
+              validity,
+              `lakeql:${compiled.fragment.id}:validity`,
+            );
+            buffers.push(validityBuffer);
+
+            attempt.uploadBytes = transfer.uploadBytes;
+            const entries: GPUBindGroupEntry[] = [
+              { binding: 0, resource: { buffer: valueBuffer } },
+              { binding: 1, resource: { buffer: validityBuffer } },
+            ];
+
+            const outputBytes = alignedBufferBytes(input.batch.rowCount * 4);
+            const output = lease.device.createBuffer({
+              label: `lakeql:${compiled.fragment.id}:selection`,
+              size: outputBytes,
+              usage:
+                lease.runtime.constants.bufferUsage.STORAGE |
+                lease.runtime.constants.bufferUsage.COPY_SRC,
+            });
+            buffers.push(output);
+
+            const readback = lease.device.createBuffer({
+              label: `lakeql:${compiled.fragment.id}:readback`,
+              size: outputBytes,
+              usage:
+                lease.runtime.constants.bufferUsage.MAP_READ |
+                lease.runtime.constants.bufferUsage.COPY_DST,
+            });
+            buffers.push(readback);
+
+            entries.push({ binding: predicate.outputBinding, resource: { buffer: output } });
+
+            const pipeline = await this.#pipeline(lease.device, lease.generation, predicate);
+            throwIfAborted(signal);
+            const bindGroup = lease.device.createBindGroup({
+              layout: pipeline.getBindGroupLayout(0),
+              entries,
+            });
+            const encoder = lease.device.createCommandEncoder({
+              label: `lakeql:${compiled.fragment.id}`,
+            });
+            if (input.batch.rowCount > 0) {
+              const pass = encoder.beginComputePass();
+              pass.setPipeline(pipeline);
+              pass.setBindGroup(0, bindGroup);
+              pass.dispatchWorkgroups(Math.ceil(input.batch.rowCount / this.#workgroupSize));
+              pass.end();
+            }
+            encoder.copyBufferToBuffer(output, 0, readback, 0, outputBytes);
+            lease.device.queue.submit([encoder.finish()]);
+            attempt.dispatches = input.batch.rowCount === 0 ? 0 : 1;
+            attempt.readbackBytes = transfer.outputBytes;
+            await lease.device.queue.onSubmittedWorkDone();
+            throwIfAborted(signal);
+            await readback.mapAsync(lease.runtime.constants.mapMode.READ, 0, outputBytes);
+            try {
+              const words = new Uint32Array(readback.getMappedRange(0, outputBytes));
+              const result = admittedMask ?? new Uint8Array(input.batch.rowCount);
+              for (let index = 0; index < result.length; index += 1) {
+                result[index] = words[index] === 1 ? 1 : 0;
+              }
+              return result;
+            } finally {
+              readback.unmap();
+            }
+          } finally {
+            for (const buffer of buffers) buffer.destroy();
+          }
         },
+        signal,
       );
+      const selection = await capturePhysicalAttempt(selectionAttempt, attempt, now, startedAt);
+      const elapsedMs = now() - startedAt;
+      enforceElapsedBudget(compiled.fragment.id, context, elapsedMs, now);
+      const selectedRows = selectedRowCount(selection.length, selection);
+      if (
+        context.enforceOutputRows !== false &&
+        context.budget?.maxOutputRows !== undefined &&
+        selectedRows > context.budget.maxOutputRows
+      ) {
+        throw new LakeqlError(
+          "LAKEQL_BUDGET_EXCEEDED",
+          `Query exceeded output rows budget (${selectedRows} > ${context.budget.maxOutputRows})`,
+          {
+            resource: "output rows",
+            actual: selectedRows,
+            limit: context.budget.maxOutputRows,
+            fragmentId: compiled.fragment.id,
+          },
+        );
+      }
+      if (resultScope !== undefined && context.allocationScope !== undefined) {
+        const owner = resultScope.retainAllocations(selection);
+        try {
+          context.allocationScope.adopt(owner);
+        } catch (error) {
+          owner.release();
+          throw error;
+        }
+      }
+      return {
+        output: { kind: "selection", selection },
+        metrics: {
+          backendId: this.id,
+          elapsedMs,
+          inputRows: input.batch.rowCount,
+          selectedRows,
+          outputRows: selectedRows,
+          inputBytes: estimateBatchBytes(input.batch),
+          uploadBytes: transfer.uploadBytes,
+          readbackBytes: transfer.outputBytes,
+          dispatches: input.batch.rowCount === 0 ? 0 : 1,
+          replayed: false,
+        },
+      };
+    } finally {
+      workspace?.release();
+      resultScope?.dispose();
     }
-    return {
-      output: { kind: "selection", selection },
-      metrics: {
-        backendId: this.id,
-        elapsedMs,
-        inputRows: input.batch.rowCount,
-        selectedRows,
-        outputRows: selectedRows,
-        inputBytes: estimateBatchBytes(input.batch),
-        uploadBytes: transfer.uploadBytes,
-        readbackBytes: transfer.outputBytes,
-        dispatches: input.batch.rowCount === 0 ? 0 : 1,
-        replayed: false,
-      },
-    };
   }
 
   async #executeReduction(

@@ -1,0 +1,31 @@
+{
+  "date": "2026-11-14",
+  "requirements": [
+    "M1",
+    "M2"
+  ],
+  "changes": [
+    "Scoped selection reserves host upload backing plus device upload/output/readback buffers before device work.",
+    "Pre-admit the result mask using the parent stage reservation contract and an independent result scope.",
+    "Workspace and mask survive caller-scope disposal until asynchronous device work settles; only the mask transfers to the caller on success."
+  ],
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "coverage": [
+      "Dawn selection produces the correct mask at exact peak; one byte less rejects with LAKEQL_BUDGET_EXCEEDED.",
+      "A four-row one-column selection reserves 100 backing bytes at peak and retains only its four-byte result.",
+      "Pre-admitted parent stage capacity is consumed without double reservation.",
+      "Controlled pending pipeline failure verifies reservations remain live after caller-scope disposal and are released after all four device buffers are destroyed."
+    ],
+    "full_default_suite": {
+      "passed": 3498,
+      "skipped": 629
+    }
+  },
+  "remaining": [
+    "Planner allocation-scope capability remains disabled until descriptor and persistent pipeline-cache accounting are covered.",
+    "The new reservation counts explicit backing, not GPU-driver metadata, total JavaScript heap or whole-Worker RSS.",
+    "Required scoped WebGPU selection remains a compatibility gap; reduction/vector scoped admission is separate unfinished work."
+  ]
+}

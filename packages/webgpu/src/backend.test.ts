@@ -11,6 +11,8 @@ import {
   isNull,
   Lake,
   type LakeqlError,
+  MemoryBudget,
+  MemoryScope,
   memoryStore,
   or,
   type PhysicalFragment,
@@ -130,6 +132,35 @@ describe.runIf(await dawnAdapterAvailable())("WebGpuPhysicalBackend with Dawn", 
         expect.objectContaining({ backendId: "cpu", operators: ["select"], output: "selection" }),
       ]);
     }
+  });
+
+  it("admits selection backing and transfers only its mask", async () => {
+    const batch = batchFromVectors({ value: { type: "u32", values: Uint32Array.of(1, 2, 3, 4) } });
+    const target = fragment(batch, gt("value", 2));
+    const compiled = await backend.compile(target);
+    const run = async (capacity: number, preadmit = false) => {
+      const pool = new MemoryBudget(capacity);
+      const scope = new MemoryScope(pool);
+      if (preadmit) scope.admit(capacity, "selection stage");
+      try {
+        const result = await backend.execute(
+          compiled,
+          { kind: "batch", batch },
+          { allocationScope: scope },
+        );
+        expect(result.output).toEqual({ kind: "selection", selection: Uint8Array.of(0, 0, 1, 1) });
+        expect(pool.usedBytes).toBe(4);
+        return pool.peakBytes;
+      } finally {
+        scope.dispose();
+        expect(pool.usedBytes).toBe(0);
+      }
+    };
+    const peak = await run(65536);
+    expect(peak).toBe(100);
+    expect(await run(peak)).toBe(peak);
+    expect(await run(peak, true)).toBe(peak);
+    await expect(run(peak - 1)).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
   });
 
   it("dispatches more than one workgroup and reuses the compiled pipeline", async () => {
@@ -434,6 +465,48 @@ it.each([
   }
 });
 
+it("pins selection backing until pending device work settles after scope disposal", async () => {
+  let started!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  let settle!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    settle = resolve;
+  });
+  const destroyed: number[] = [];
+  const backend = new WebGpuPhysicalBackend(() =>
+    failingPipelineRuntime({
+      destroyed,
+      pipeline: async () => {
+        started();
+        await pending;
+      },
+    }),
+  );
+  const pool = new MemoryBudget(65536);
+  const scope = new MemoryScope(pool);
+  try {
+    const batch = batchFromVectors({ value: { type: "u32", values: Uint32Array.of(1, 2, 3, 4) } });
+    const compiled = await backend.compile(fragment(batch, gt("value", 1)));
+    const work = backend.execute(compiled, { kind: "batch", batch }, { allocationScope: scope });
+    const rejected = expect(work).rejects.toThrow();
+    await ready;
+    expect(pool.usedBytes).toBe(100);
+    scope.dispose();
+    expect(pool.usedBytes).toBe(100);
+    expect(destroyed).toEqual([]);
+    settle();
+    await rejected;
+    expect(destroyed).toEqual([1, 2, 3, 4]);
+    expect(pool.usedBytes).toBe(0);
+  } finally {
+    settle();
+    scope.dispose();
+    backend.close();
+  }
+});
+
 function execute(
   backend: WebGpuPhysicalBackend,
   batch: Parameters<typeof physicalInputFromBatch>[0],
@@ -477,6 +550,7 @@ function failingPipelineRuntime(failure?: {
   createAt?: number;
   uploadAt?: number;
   destroyed: number[];
+  pipeline?: () => Promise<void>;
 }): WebGpuRuntime {
   let created = 0;
   let uploaded = 0;
@@ -514,6 +588,7 @@ function failingPipelineRuntime(failure?: {
       return {} as GPUShaderModule;
     },
     async createComputePipelineAsync() {
+      await failure?.pipeline?.();
       throw new Error("device lost while compiling pipeline");
     },
   } as unknown as GPUDevice;
