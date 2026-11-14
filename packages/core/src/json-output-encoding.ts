@@ -6,7 +6,7 @@ import { writeJsonInteger } from "./json-integer-output.js";
 import { jsonOutputUtf8Bytes } from "./json-output-size.js";
 import { JsonScalarFormatter } from "./json-scalar-output.js";
 import { isPlainJsonAscii } from "./json-string-size.js";
-import type { MemoryReservation } from "./memory-budget.js";
+import { JsonTraversalBudget } from "./json-traversal-budget.js";
 import type { MemoryScope, OwnedMemory } from "./memory-scope.js";
 import { isTimestampValue } from "./timestamp.js";
 
@@ -29,9 +29,13 @@ export function encodeOwnedJsonOutput(
   const bytes = size + prefix.length + suffix.length;
   const construction = scope.childScope();
   const scalar = new JsonScalarFormatter(construction);
-  type Frame = { iterator: Generator<unknown>; closing: number; reservation: MemoryReservation };
+  type Frame = { iterator: Generator<unknown>; closing: number };
   const frames: Frame[] = [];
-  let traversal: MemoryReservation | undefined;
+  const traversal = new JsonTraversalBudget(
+    construction,
+    4 * c.object + 8 * c.property + c.arraySlot,
+    c.array + c.object,
+  );
   try {
     const output = construction.allocate(
       bytes + c.view,
@@ -139,11 +143,7 @@ export function encodeOwnedJsonOutput(
           return;
         }
         case "object": {
-          traversal ??= construction.reserve(c.array + c.object, "JSON writing traversal");
-          const reservation = construction.reserve(
-            4 * c.object + 8 * c.property + c.arraySlot,
-            "JSON writing frame",
-          );
+          traversal.admit(frames.length + 1);
           const array = Array.isArray(value);
           function* children(): Generator<unknown> {
             if (Array.isArray(value)) {
@@ -165,7 +165,7 @@ export function encodeOwnedJsonOutput(
               }
             }
           }
-          frames.push({ iterator: children(), closing: array ? 93 : 125, reservation });
+          frames.push({ iterator: children(), closing: array ? 93 : 125 });
           byte(array ? 91 : 123);
         }
       }
@@ -178,7 +178,6 @@ export function encodeOwnedJsonOutput(
       if (next.done) {
         byte(frame.closing);
         frames.pop();
-        frame.reservation.release();
       } else write(next.value);
     }
     ascii(suffix);
@@ -186,8 +185,7 @@ export function encodeOwnedJsonOutput(
       throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "JSON value changed during encoding");
     return output.retain();
   } finally {
-    for (const frame of frames) frame.reservation.release();
-    traversal?.release();
+    traversal.dispose();
     scalar.dispose();
     construction.dispose();
   }

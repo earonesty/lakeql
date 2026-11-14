@@ -7,6 +7,8 @@ HTTP response cleanup follow-up: [validation](validation/http-response-cleanup-2
 JSON sizing follow-up: [validation](validation/iterative-json-sizing-2026-11-14.json); iterative admitted traversal, build/typecheck and 3,678 tests passed (629 skipped). Output writing is also iterative in the follow-up below; cache-write serialization remains open.
 
 JSON writing follow-up: [validation](validation/iterative-json-writing-2026-11-14.json); iterative admitted output writing, build/typecheck and 3,680 tests passed (629 skipped).
+
+JSON traversal performance follow-up: [initial measurement](validation/json-traversal-benchmark-2026-11-14.json), [reservation-reuse measurement](validation/json-traversal-reuse-benchmark-2026-11-14.json). Shared high-water admission reduces churn, but the 1,000-row encoding kernel remains about 5.5× slower than recursion; optimization remains open. Build/typecheck and 3,682 tests passed (629 skipped).
 Current release checks (source `246b165`):
 `docs/validation/current-cache-ownership-release-gates-2026-11-14.json`.
 

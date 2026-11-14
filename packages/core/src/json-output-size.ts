@@ -5,7 +5,7 @@ import { isIntervalValue } from "./interval.js";
 import { jsonIntegerBytes } from "./json-integer-output.js";
 import { JsonScalarFormatter } from "./json-scalar-output.js";
 import { jsonStringUtf8Bytes } from "./json-string-size.js";
-import type { MemoryReservation } from "./memory-budget.js";
+import { JsonTraversalBudget } from "./json-traversal-budget.js";
 import type { MemoryScope } from "./memory-scope.js";
 import { isTimestampValue } from "./timestamp.js";
 
@@ -19,7 +19,11 @@ import { isTimestampValue } from "./timestamp.js";
  */
 export function jsonOutputUtf8Bytes(value: unknown, scope?: MemoryScope): number | undefined {
   const scalar = new JsonScalarFormatter(scope);
-  let base: MemoryReservation | undefined;
+  const traversal = new JsonTraversalBudget(
+    scope,
+    5 * c.object + 12 * c.property + c.arraySlot,
+    2 * c.object + c.array,
+  );
   const ancestors = new Set<object>();
   type Frame = {
     value: object;
@@ -27,7 +31,6 @@ export function jsonOutputUtf8Bytes(value: unknown, scope?: MemoryScope): number
     bytes: number;
     count: number;
     key: string | undefined;
-    reservation: MemoryReservation | undefined;
   };
   const frames: Frame[] = [];
   function* entries(value: object): Generator<{ key?: string; value: unknown }> {
@@ -73,18 +76,13 @@ export function jsonOutputUtf8Bytes(value: unknown, scope?: MemoryScope): number
       case "object": {
         if (ancestors.has(value))
           throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Cyclic JSON output");
-        base ??= scope?.reserve(2 * c.object + c.array, "JSON sizing traversal");
-        const reservation = scope?.reserve(
-          5 * c.object + 12 * c.property + c.arraySlot,
-          "JSON sizing frame",
-        );
+        traversal.admit(frames.length + 1);
         frames.push({
           value,
           entries: entries(value),
           bytes: 2,
           count: 0,
           key: undefined,
-          reservation,
         });
         ancestors.add(value);
         return undefined;
@@ -107,7 +105,6 @@ export function jsonOutputUtf8Bytes(value: unknown, scope?: MemoryScope): number
       if (next.done) {
         frames.pop();
         ancestors.delete(frame.value);
-        frame.reservation?.release();
         if (frames.length === 0) return frame.bytes;
         accumulate(frames[frames.length - 1] as Frame, frame.bytes);
       } else {
@@ -119,8 +116,7 @@ export function jsonOutputUtf8Bytes(value: unknown, scope?: MemoryScope): number
     }
     return undefined;
   } finally {
-    for (const frame of frames) frame.reservation?.release();
-    base?.release();
+    traversal.dispose();
     scalar.dispose();
   }
 }

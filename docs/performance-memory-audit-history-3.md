@@ -4178,3 +4178,13 @@ Focused encoding/stream validation: 41 tests passed. New fixtures encode 20,000 
 These are reservation units, not a total VM heap guarantee: generator internals, retained container capacity, GC, caller-owned values, and stateful mutation remain separate concerns. Standard cache JSON write serialization remains open and cannot reuse query scalar formatting unchanged.
 
 Final verification: build, typecheck, formatting, and full suite passed (3,680 tests / 629 skipped). Two decimal fixtures now allow admitted writer frames in addition to scalar formatting and output backing; their output and release assertions remain intact.
+
+### JSON traversal reservation reuse and measured regression (2026-11-14)
+
+Added `bench/json-output-traversal.mjs`, comparing current built sizing/writing against recursive source revision `5e4d280` with identical inputs and 64 MiB reservation budgets. Each case verifies UTF-8 bytes and zero outstanding reservations, with one warmup and five measured rounds. The 20,000-level input fails with recursive stack overflow and succeeds iteratively. Raw evidence: `json-traversal-benchmark-2026-11-14.json` (source a8e3f63) and `json-traversal-reuse-benchmark-2026-11-14.json` (subsequent working implementation, identified by built-module SHA256 hashes).
+
+The benchmark exposed a significant shallow row-array regression. Initial iterative median was about 2.72 ms versus recursive 0.34 ms for 1,000 objects. Both passes now share `JsonTraversalBudget`: capacity is reserved once per maximum nesting depth and reused for siblings. Charges remain live until traversal completion, accounting for retained stack capacity more conservatively than releasing on each pop. This reduces reservation churn and centralizes disposal/admission logic.
+
+An isolated rerun measured row-array medians of 1.83 ms iterative versus 0.34 ms recursive, wide-numbers 2.39 versus 2.09 ms, and small-row 0.0134 versus 0.0106 ms. Deep iterative encoding took 46.15 ms; recursion could not complete. The shallow-row regression remains OPEN: generator/frame overhead needs further investigation. These sequential kernel measurements do not establish query/cloud performance or whole-heap bounds. Tests cover sibling reuse, high-water retention, failure during depth growth, and idempotent disposal, alongside existing deep/Unicode/exact-capacity suites.
+
+Final validation: build/typecheck passed; full suite 3,682 passed / 629 skipped, 401 passing files.
