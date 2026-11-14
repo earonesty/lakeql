@@ -4934,3 +4934,30 @@ from 4.023 to 3.221 seconds, with 390 fewer admitted peak bytes and zero after
 release. This repeats the earlier ~19% improvement observed in a run that briefly
 overlapped type checking. All 84 native Worker tests and lint pass. See
 `validation/physical-identity-projection-2026-11-14.json`.
+
+### Current concurrent runtime/headroom evidence (2026-11-14)
+
+On `4f20d13`, all 52 live public R2 scenarios pass at 64/128 MiB pool caps
+with 512 KiB shared query headroom. Maximum incremental charge is 416,968 bytes;
+ordinary warm data reads remain zero and concurrency remains at most four.
+Local memory/HTTP matrices with factory or range-only caching complete all 128
+mixed jobs and return admitted storage to zero. These local/Node observations
+are kept separate from Worker runtime measurements.
+
+Native workerd/R2 and localhost HTTP with a verified 64 MiB managed-heap flag
+complete 64/80 primary owned-collection jobs; 16 report expected typed budget
+failures at the 64 MiB pool/four-job setting. All eight pinned retries reject and
+all eight post-release retries succeed in the same pool/cache. No scenario leaks
+admitted storage after eviction. The separate heap-limit probe reaches the heap
+limit after seven million-element arrays; it proves the managed-heap flag is
+effective, not that all runtime memory is covered.
+
+Native R2's sampled managed heap reaches 108,379,340 bytes at a 64 MiB admission
+pool, so pool success cannot establish a whole-runtime cap. A separate run collects
+GC only after measured rounds, release and eviction: all four diagnostics return
+managed heap to 5,028,800–5,352,656 bytes and backing storage to 366,064 bytes.
+That supports pending reclamation rather than large reachable retained state;
+production cannot require this GC. Whole-runtime headroom and broader scheduling,
+fairness and cancellation acceptance remain open. Detailed counter values,
+commands/conditions and raw artifacts are linked from
+`validation/current-concurrent-runtime-2026-11-14.json`.
