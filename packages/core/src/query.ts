@@ -4011,6 +4011,23 @@ async function writeOwnedCheckpoint(
   }
 }
 
+async function readCheckpointSpill(
+  spill: SpillAdapter,
+  id: string,
+  scope: MemoryScope,
+): Promise<Uint8Array> {
+  if (spill.readOwned === undefined) return spill.read(id);
+  const owner = await spill.readOwned(id, scope.budget);
+  try {
+    // Cancellation can dispose the parent while the adapter is completing I/O.
+    // Keep the independent owner until settlement, then reject before decoding.
+    return scope.adopt(owner).value;
+  } catch (error) {
+    owner.release();
+    throw error;
+  }
+}
+
 function deserializeSortRunRows(bytes: Uint8Array, scope: MemoryScope): Row[] {
   const parsed = scope.adopt(parseOwnedJson(bytes, scope)).value;
   if (!Array.isArray(parsed) || !parsed.every(isTopKSnapshotRow)) {
@@ -4029,7 +4046,7 @@ async function topKRowsFromState(
 ): Promise<Row[]> {
   const state =
     isSpilledOperatorState(options.operatorState) && options.spill !== undefined
-      ? await options.spill.read(options.operatorState.spillRef)
+      ? await readCheckpointSpill(options.spill, options.operatorState.spillRef, scope)
       : options.operatorState;
   if (isSpilledOperatorState(state)) {
     throw new LakeqlError("LAKEQL_BOOKMARK_INVALID", "Top-k spill state requires a spill adapter", {
@@ -4072,7 +4089,7 @@ async function sortRunsFromState(
 ): Promise<Row[][]> {
   const state =
     isSpilledOperatorState(options.operatorState) && options.spill !== undefined
-      ? await options.spill.read(options.operatorState.spillRef)
+      ? await readCheckpointSpill(options.spill, options.operatorState.spillRef, scope)
       : options.operatorState;
   if (isSpilledOperatorState(state)) {
     throw new LakeqlError("LAKEQL_BOOKMARK_INVALID", "Sort spill state requires a spill adapter", {
@@ -4112,7 +4129,9 @@ async function sortRunsFromState(
         },
       );
     }
-    runs.push(deserializeSortRunRows(await options.spill.read(run.spillRef), scope));
+    runs.push(
+      deserializeSortRunRows(await readCheckpointSpill(options.spill, run.spillRef, scope), scope),
+    );
   }
   return runs;
 }

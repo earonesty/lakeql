@@ -1,0 +1,24 @@
+{
+  "status": "Implemented; build, default and Worker validation passed",
+  "contract": "SpillAdapter optionally supplies readOwned(ref, budget), admitting output storage before allocation and returning an independent OwnedMemory handle. MemorySpillAdapter implements it using exact byteLength plus view charge before copying. Top-k and sort restore select the capability automatically. Returned read ownership is adopted into the restore scope and overlaps parsed source/detachment. Late completion after cancellation releases the independent owner when scope adoption rejects.",
+  "validation": {
+    "build": "passed",
+    "focusedTestsPassed": 110,
+    "cases": [
+      "Exact byte/view capacity succeeds; one byte short rejects",
+      "Sibling reservation and stored spill bytes survive read denial",
+      "Returned read copy is independent of stored data",
+      "Missing entry does not reserve",
+      "Both stateful operators retain a pending owned read through cancellation and release after settlement"
+    ],
+    "defaultTestsPassed": 3060,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61
+  },
+  "boundaries": [
+    "Legacy custom adapters without readOwned use their existing read contract; pre-allocation admission is not guaranteed for those adapters.",
+    "Memory adapter backing storage/write copies are governed by its maxBytes limit, not by read ownership.",
+    "Remote adapters must implement pre-allocation admission themselves; an in-memory read test does not establish remote transport buffering bounds.",
+    "Legacy aggregate restore has not yet adopted this capability."
+  ]
+}

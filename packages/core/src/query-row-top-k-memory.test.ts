@@ -398,3 +398,51 @@ it.each([
   expect(observed[0]).toBeGreaterThan(0);
   expect(observed[1]).toBe(observed[0]);
 });
+
+it.each([
+  "topKWithState",
+  "sortWithState",
+] as const)("%s releases an owned spill read that settles after cancellation", async (method) => {
+  const pool = new MemoryBudget(65536);
+  const controller = new AbortController();
+  const store = memoryStore();
+  const spill = memorySpillAdapter();
+  const state =
+    method === "topKWithState"
+      ? { version: 1, orderBy: [{ column: "score" }], rows: [{ score: 1 }], offset: 0, limit: 2 }
+      : { version: 1, orderBy: [{ column: "score" }], runs: [{ rows: [{ score: 1 }] }] };
+  await spill.write("state", new TextEncoder().encode(JSON.stringify(state)));
+  const ready = Promise.withResolvers<void>();
+  const gate = Promise.withResolvers<void>();
+  const read = spill.readOwned;
+  if (!read) throw new Error("owned read missing");
+  spill.readOwned = async (ref, budget) => {
+    const owner = await read.call(spill, ref, budget);
+    ready.resolve();
+    await gate.promise;
+    return owner;
+  };
+  const lake = new Lake({
+    store,
+    memoryPool: pool,
+    budget: { signal: controller.signal },
+    scanner: {
+      async *scan() {
+        yield [];
+      },
+    },
+  });
+  const pending = lake
+    .path("table")
+    .orderBy([{ column: "score" }])
+    .limit(2)
+    .run()
+    [method]({ operatorState: { spillRef: "state" }, spill });
+  const rejected = expect(pending).rejects.toMatchObject({ code: "LAKEQL_ABORTED" });
+  await ready.promise;
+  controller.abort();
+  expect(pool.usedBytes).toBeGreaterThan(0);
+  gate.resolve();
+  await rejected;
+  expect(pool.usedBytes).toBe(0);
+});

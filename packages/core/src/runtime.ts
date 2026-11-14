@@ -1,4 +1,7 @@
+import { MATERIALIZATION_CHARGES } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
+import type { MemoryBudget } from "./memory-budget.js";
+import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
 import type { Bookmark } from "./types.js";
 
 export interface CacheEntry<T> {
@@ -118,6 +121,10 @@ export interface SpillUsage {
 export interface SpillAdapter {
   write(id: string, data: Uint8Array): Promise<SpillRef>;
   read(ref: SpillRef | string): Promise<Uint8Array>;
+  /** Admit the read buffer before allocating it. The returned independent owner
+   * remains charged until released by the consumer. Adapter storage is separate.
+   */
+  readOwned?(ref: SpillRef | string, budget: MemoryBudget): Promise<OwnedMemory<Uint8Array>>;
   delete(ref: SpillRef | string): Promise<void>;
   usage(): Promise<SpillUsage>;
 }
@@ -159,6 +166,22 @@ export class MemorySpillAdapter implements SpillAdapter {
       throw new LakeqlError("LAKEQL_OBJECT_NOT_FOUND", `No spill entry ${id}`, { id });
     }
     return copyBytes(data);
+  }
+
+  async readOwned(ref: SpillRef | string, budget: MemoryBudget): Promise<OwnedMemory<Uint8Array>> {
+    const id = spillId(ref);
+    const data = this.entries.get(id);
+    if (!data) throw new LakeqlError("LAKEQL_OBJECT_NOT_FOUND", `No spill entry ${id}`, { id });
+    const scope = new MemoryScope(budget);
+    try {
+      return scope
+        .allocate(MATERIALIZATION_CHARGES.view + data.byteLength, "spill read buffer", () =>
+          copyBytes(data),
+        )
+        .retain();
+    } finally {
+      scope.dispose();
+    }
   }
 
   async delete(ref: SpillRef | string): Promise<void> {

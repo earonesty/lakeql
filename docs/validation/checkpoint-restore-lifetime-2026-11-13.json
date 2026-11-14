@@ -18,6 +18,7 @@
     "Restore still requires simultaneous source and detached-row allocation, admitted before copying.",
     "Top-k keeps source ownership through object planning until initial candidates enter the heap.",
     "Scope release is deterministic budget ownership, not a guarantee of immediate garbage collection.",
-    "Spill adapter read buffers still require pre-read admission."
-  ]
+    "Memory spill reads now support pre-allocation ownership (linked evidence); legacy adapters and aggregate restore remain separate."
+  ],
+  "spillReadEvidence": "spill-owned-read-2026-11-13.json"
 }
