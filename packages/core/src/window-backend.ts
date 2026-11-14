@@ -4,7 +4,7 @@ import type { MemoryBudget } from "./memory-budget.js";
 import type { Row } from "./types.js";
 import type { WindowExpr } from "./window.js";
 import { aggregateWindowValue } from "./window-aggregate.js";
-import { frameRows } from "./window-frame.js";
+import { frameRowIterator } from "./window-frame.js";
 import { WindowPeers } from "./window-peers.js";
 import { compatibleWindowSortGroups } from "./window-query.js";
 import { segmentTreeAggregateValues } from "./window-segment-tree.js";
@@ -213,7 +213,7 @@ function evaluatePartitionWithPeers(
     const segmentValues = segmentTreeAggregateValues(partition, expr, peers, budget);
     if (segmentValues !== undefined) return segmentValues;
     return partition.map((_item, index) =>
-      aggregateWindowValue(frameRows(partition, index, expr, peers), expr),
+      aggregateWindowValue(frameRowIterator(partition, index, expr, peers), expr),
     );
   }
   const rows = partition.map((item) => item.row);
@@ -239,13 +239,11 @@ function evaluatePartitionWithPeers(
       return offsetValues(rows, expr, 1);
     case "first_value":
       return partition.map((_item, index) => {
-        const row = firstFrameValue(frameRows(partition, index, expr, peers), expr);
-        return row === undefined ? null : evaluate(valueArg(expr), row);
+        return frameValueAt(frameRowIterator(partition, index, expr, peers), expr, 1);
       });
     case "last_value":
       return partition.map((_item, index) => {
-        const row = lastFrameValue(frameRows(partition, index, expr, peers), expr);
-        return row === undefined ? null : evaluate(valueArg(expr), row);
+        return frameValueAt(frameRowIterator(partition, index, expr, peers, true), expr, 1);
       });
     case "nth_value":
       return nthValue(partition, expr, peers);
@@ -335,9 +333,7 @@ function nthValue(
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "nth_value requires a positive integer position");
   }
   return partition.map((_item, index) => {
-    const rows = frameValueRows(frameRows(partition, index, expr, peers), expr);
-    const target = rows[nth - 1];
-    return target === undefined ? null : evaluate(valueArg(expr), target);
+    return frameValueAt(frameRowIterator(partition, index, expr, peers), expr, nth);
   });
 }
 
@@ -364,17 +360,11 @@ function numericArg(expr: WindowExpr, index: number, fallback: number): number {
   return arg.value;
 }
 
-function firstFrameValue(rows: readonly Row[], expr: WindowExpr): Row | undefined {
-  return frameValueRows(rows, expr)[0];
-}
-
-function lastFrameValue(rows: readonly Row[], expr: WindowExpr): Row | undefined {
-  const values = frameValueRows(rows, expr);
-  return values[values.length - 1];
-}
-
-function frameValueRows(rows: readonly Row[], expr: WindowExpr): Row[] {
-  if (expr.ignoreNulls !== true) return [...rows];
-  const arg = valueArg(expr);
-  return rows.filter((row) => evaluate(arg, row) !== null);
+function frameValueAt(rows: Iterable<Row>, expr: WindowExpr, ordinal: number): unknown {
+  for (const row of rows) {
+    const value = evaluate(valueArg(expr), row);
+    if (expr.ignoreNulls === true && value === null) continue;
+    if (--ordinal === 0) return value;
+  }
+  return null;
 }

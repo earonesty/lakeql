@@ -1,0 +1,34 @@
+{
+  "change": "Frame exclusion and value-window execution use a reversible row iterator with constant state. It skips excluded contiguous intervals instead of inserting each excluded row into a Set. Legacy frameRows remains a collecting wrapper for callers that explicitly request an array.",
+  "consumers": "Non-segment aggregate windows consume the iterator directly. First/last/nth value stop at the required value, traverse backwards for last_value, and test IGNORE NULLS during iteration. They no longer copy and filter complete frames, and each visited value is evaluated once.",
+  "boundaryContract": "Exclusion boundaries are copied from the mutable WindowPeers cursor before yielding. Excluded peer intervals can lie partly or entirely outside the frame. TIES retains the current row only when it lies inside the frame. CURRENT ROW needs no peer lookup.",
+  "benchmarks": {
+    "before": "../benchmarks/window-frame-values-before-2026-11-13.json",
+    "after": "../benchmarks/window-frame-values-after-2026-11-13.json",
+    "method": "Compiled-source hashes identify the executed baseline and updated modules. Full-partition IGNORE NULLS reads, independent constant-output validation, two warmups and three timed local samples. Construction and output checking excluded.",
+    "rows": 2048,
+    "firstValueMilliseconds": [61.694, 0.775],
+    "lastValueMilliseconds": [60.171, 0.176],
+    "nthValueMilliseconds": [64.032, 0.269]
+  },
+  "edgeCases": [
+    "Independent exclusion filter across ROWS/GROUPS/RANGE, every exclusion mode, preceding/following ends, both traversal directions, with and without peer cursors.",
+    "Consumer moves the shared peer cursor after the first yielded row; the iterator preserves its original boundaries.",
+    "First/last/nth value with and without IGNORE NULLS; input getter counts bound visited values to at most five per output in the regression fixture.",
+    "Existing frame search, peer, aggregate and backend cases remain in the full suite."
+  ],
+  "cloudFixtures": "Four concurrent queries over the real external wide-timestamp Parquet fixture verify first/last/nth value and existing ranking/count outputs for HTTP 206 and ignored-range 200. Native R2 64/128 MiB shared-pool runs verify last_value over 1024-byte text payloads along with all source columns, cache cleanup and existing rank/count checks.",
+  "validation": {
+    "defaultPassed": 2992,
+    "defaultSkipped": 629,
+    "workerPassed": 61,
+    "referencePassed": 104,
+    "build": "passed",
+    "typecheck": "passed",
+    "lint": "passed",
+    "cleanPackageInstall": "passed",
+    "compatibility": "passed",
+    "fileSizeGate": "passed"
+  },
+  "limits": "The iterator does not admit output arrays or retained input rows. Large nth positions and unsupported aggregate families can still visit many rows; quantile/distinct/mode storage requires separate allocation accounting. These changes do not establish whole-query or production Cloudflare heap limits. Decimal and ALP/BSON/BROTLI conformance gaps remain open."
+}

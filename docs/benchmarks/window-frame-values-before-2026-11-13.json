@@ -1,0 +1,63 @@
+{
+  "description": "Full-partition first/last/nth value with IGNORE NULLS, two warmups and three timed samples. Construction and independent constant-output validation excluded. Local runtime; no whole-heap or cloud measurement.",
+  "compiledSourceHashes": {
+    "window-backend": "36d5a6524072a7cc4a922974ade7ae7490e155f79963cd415122e66e4a58d1cd",
+    "window-frame": "148a961d58f8dd5c18cd3d68daaa97b99d3259ddecc3712f09c18f113e532633"
+  },
+  "results": [
+    {
+      "rows": 256,
+      "fn": "first_value",
+      "medianMilliseconds": 1.5565730000000002,
+      "samples": [1.5565730000000002, 1.745559, 1.3317189999999997]
+    },
+    {
+      "rows": 256,
+      "fn": "last_value",
+      "medianMilliseconds": 1.201073000000001,
+      "samples": [1.201073000000001, 1.1851429999999965, 1.2038179999999983]
+    },
+    {
+      "rows": 256,
+      "fn": "nth_value",
+      "medianMilliseconds": 1.1017259999999993,
+      "samples": [1.1776290000000031, 1.093500000000006, 1.1017259999999993]
+    },
+    {
+      "rows": 1024,
+      "fn": "first_value",
+      "medianMilliseconds": 19.08826599999999,
+      "samples": [17.635860000000008, 19.532593000000006, 19.08826599999999]
+    },
+    {
+      "rows": 1024,
+      "fn": "last_value",
+      "medianMilliseconds": 18.21241599999999,
+      "samples": [16.86117999999999, 19.226146, 18.21241599999999]
+    },
+    {
+      "rows": 1024,
+      "fn": "nth_value",
+      "medianMilliseconds": 18.183750999999972,
+      "samples": [20.05601999999999, 18.183750999999972, 17.308472999999992]
+    },
+    {
+      "rows": 2048,
+      "fn": "first_value",
+      "medianMilliseconds": 61.69367399999999,
+      "samples": [61.63807899999995, 61.69367399999999, 62.68739599999992]
+    },
+    {
+      "rows": 2048,
+      "fn": "last_value",
+      "medianMilliseconds": 60.17054299999995,
+      "samples": [64.90779999999995, 60.17054299999995, 59.13876899999991]
+    },
+    {
+      "rows": 2048,
+      "fn": "nth_value",
+      "medianMilliseconds": 64.03160899999989,
+      "samples": [64.03160899999989, 62.04206999999997, 65.62969999999996]
+    }
+  ]
+}

@@ -31,12 +31,12 @@ under verified 64/128 MiB V8 heap settings; this distinguishes runtime GC policy
 from a persistent leak, but does not cap external backing or prove production
 Cloudflare total-memory safety. See the constrained-runtime section below.
 
-Latest execution checkpoint (November 13, 2026): aggregate windows reuse growing
-frames and admit trees only after repeated traversal warrants them. Details:
-`docs/validation/window-segment-budget-2026-11-13.json`.
-Ranking reuses bounded peer cursors and scalar equality without serialized keys:
-`docs/validation/window-ranking-peers-2026-11-13.json`.
-Scalar-workspace evidence and decimal gaps:
+Latest execution checkpoint (November 13, 2026): exclusions and value windows
+use reversible frame iteration without per-frame row copies or exclusion sets:
+`docs/validation/window-frame-iterator-2026-11-13.json`.
+Measured aggregate execution: `docs/validation/window-segment-budget-2026-11-13.json`.
+Prior ranking and scalar-workspace evidence:
+`docs/validation/window-ranking-peers-2026-11-13.json` and
 `docs/validation/conformance-value-parity-2026-11-13.json`.
 
 External conformance now reports **511 passed, 6 failed, one skipped**; the six

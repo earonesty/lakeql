@@ -113,6 +113,20 @@ it.each([
               orderBy: [{ expr: col("timestamp_nanos") }],
             },
           });
+        for (const fn of ["first_value", "last_value", "nth_value"] as const)
+          query = query.window(fn, {
+            fn,
+            args: fn === "nth_value" ? [col("timestamp_nanos"), lit(3)] : [col("timestamp_nanos")],
+            over: {
+              partitionBy: [],
+              orderBy: [{ expr: col("timestamp_nanos") }],
+              frame: {
+                mode: "rows",
+                start: { kind: "unbounded-preceding" },
+                end: { kind: "unbounded-following" },
+              },
+            },
+          });
         return query
           .window("running_count", {
             fn: { aggregate: "count" },
@@ -143,6 +157,9 @@ it.each([
             percent_rank: (rank - 1) / 5,
             cume_dist: rank / 6,
             running_count: rank,
+            first_value: expected[5]?.timestamp_nanos,
+            last_value: expected[4]?.timestamp_nanos,
+            nth_value: expected[0]?.timestamp_nanos,
             all_tied: 1,
           };
         }),

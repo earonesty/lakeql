@@ -23,15 +23,54 @@ export function frameRows(
   expr: WindowExpr,
   peers?: WindowPeers,
 ): Row[] {
+  return [...frameRowIterator(partition, index, expr, peers)];
+}
+
+/** Borrow frame rows with constant iterator state. Excluded intervals are jumped
+ * over, not enumerated; reverse traversal supports bounded last-value reads. */
+export function* frameRowIterator(
+  partition: readonly WindowRow[],
+  index: number,
+  expr: WindowExpr,
+  peers?: WindowPeers,
+  reverse = false,
+): IterableIterator<Row> {
   const span = frameSpan(partition, index, expr, peers);
-  const excluded = excludedRows(partition, index, span, expr.over.frame, peers);
-  const out: Row[] = [];
-  for (let rowIndex = span.start; rowIndex < span.end; rowIndex += 1) {
-    if (excluded.has(rowIndex)) continue;
-    const row = partition[rowIndex]?.row;
-    if (row !== undefined) out.push(row);
+  const exclude = expr.over.frame?.exclude ?? "no-others";
+  let excludedStart = -1;
+  let excludedEnd = -1;
+  if (exclude === "current-row") {
+    excludedStart = index;
+    excludedEnd = index + 1;
+  } else if (exclude === "group" || exclude === "ties") {
+    const peer = peers?.peer(index) ?? peerSpan(partition, index);
+    // Peer cursors are mutable: snapshot boundaries before yielding to a consumer.
+    excludedStart = peer.start;
+    excludedEnd = peer.end;
   }
-  return out;
+  const step = reverse ? -1 : 1;
+  for (
+    let rowIndex = reverse ? span.end - 1 : span.start;
+    rowIndex >= span.start && rowIndex < span.end;
+  ) {
+    if (
+      rowIndex >= excludedStart &&
+      rowIndex < excludedEnd &&
+      !(exclude === "ties" && rowIndex === index)
+    ) {
+      rowIndex = reverse
+        ? exclude === "ties" && rowIndex > index
+          ? index
+          : excludedStart - 1
+        : exclude === "ties" && rowIndex < index
+          ? index
+          : excludedEnd;
+      continue;
+    }
+    const row = partition[rowIndex]?.row;
+    if (row !== undefined) yield row;
+    rowIndex += step;
+  }
 }
 
 export function frameSpan(
@@ -303,32 +342,6 @@ function compareRangeValues(left: number | bigint, right: number | bigint): numb
 
 function rangeInfinity(): bigint {
   return 1n << 255n;
-}
-
-function excludedRows(
-  partition: readonly WindowRow[],
-  index: number,
-  span: FrameSpan,
-  frame: WindowFrame | undefined,
-  peers?: WindowPeers,
-): Set<number> {
-  const exclude = frame?.exclude ?? "no-others";
-  const out = new Set<number>();
-  if (exclude === "no-others") return out;
-  const peer = peers?.peer(index) ?? peerSpan(partition, index);
-  if (exclude === "current-row") {
-    out.add(index);
-    return out;
-  }
-  for (
-    let rowIndex = Math.max(span.start, peer.start);
-    rowIndex < Math.min(span.end, peer.end);
-    rowIndex += 1
-  ) {
-    if (exclude === "ties" && rowIndex === index) continue;
-    out.add(rowIndex);
-  }
-  return out;
 }
 
 function peerSpan(partition: readonly WindowRow[], index: number): FrameSpan {
