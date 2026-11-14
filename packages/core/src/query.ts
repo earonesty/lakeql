@@ -2589,6 +2589,7 @@ export class QueryResult {
         this.config.budget.maxBufferedRows === undefined
           ? undefined
           : new AggregateMemory(groupColumns, spec, groups, this.config.budget, checkpointScope);
+      aggregateMemory?.enforceBudget();
       const startedAt = this.config.now();
       const readColumns = aggregateReadColumns(
         groupColumns,
@@ -2636,10 +2637,7 @@ export class QueryResult {
           }
           group.add(aggregateRow);
           aggregateMemory?.update(key, group);
-          if (aggregateMemory !== undefined) {
-            enforceBufferedRowsBudget(this.config.budget, aggregateMemory.rows);
-            enforceOperatorMemoryBudget(this.config.budget, aggregateMemory.bytes);
-          }
+          aggregateMemory?.enforceBudget();
         } finally {
           keyScope.dispose();
         }
@@ -6420,6 +6418,11 @@ class AggregateMemory {
         ? 0
         : estimateOperatorMemoryBytes(aggregateOperatorState(groupColumns, spec, new Map()));
     for (const [key, group] of groups) this.update(key, group);
+  }
+
+  enforceBudget(): void {
+    enforceBufferedRowsBudget(this.budget, this.rows);
+    enforceOperatorMemoryBudget(this.budget, this.bytes);
   }
 
   update(key: string, group: AggregateGroup): void {

@@ -4269,3 +4269,11 @@ The lifecycle review found that public row `aggregateWithState` enforced `maxGro
 Tests cover inline and spilled two-group checkpoints: a limit of one fails with `LAKEQL_GROUP_LIMIT_EXCEEDED` before the scanner runs, while the exact limit of two resumes with correct totals and releases all tracked storage. A real Parquet fixture served over localhost HTTP tests both native 206 and ignored-range 200 responses: rejected restore causes zero new HTTP requests, while exact-limit resume performs reads and returns doubled totals. The checkpoint suite passes 23 tests and the HTTP fixture suite passes two. This closes the demonstrated restore-limit defect under F1/M2; it does not establish full row fallback/spill lifecycle completion or production spill atomicity.
 
 Final verification: build/typecheck/formatting passed; full suite 3,709 passed / 629 skipped (407 files). Evidence: `aggregate-restore-group-limit-2026-11-14.json`.
+
+### F1/F2 restored aggregate buffer enforcement (2026-11-14)
+
+The follow-up lifecycle review found that restored row-aggregate buffer/memory counters were populated but only enforced after a new scanned row. An empty continuation could finish and return state that already exceeded its configured retained-row limit. `AggregateMemory.enforceBudget()` now provides one shared check for restored state before scanning and for per-row updates, covering both buffered-row and serialized operator-memory limits. Allocation admission remains enforced independently by the checkpoint scope.
+
+Inline and spilled median checkpoints containing three values now reject a two-row limit before invoking an empty scanner; an exact three-row limit returns the existing median and releases all reservations. The real Parquet HTTP fixture also checks median checkpoint rejection with no additional requests for both 206 and ignored-range 200 servers. Focused aggregate suites pass 36 tests; both HTTP fixtures pass. This closes the demonstrated restore-validation gap, not all fallback/spill ownership or remote transaction acceptance.
+
+Final verification: build/typecheck passed; full suite 3,711 passed / 629 skipped (407 files). Evidence: `aggregate-restore-buffer-limit-2026-11-14.json`.

@@ -27,6 +27,8 @@ Owned R2 metadata follow-up: [validation](validation/owned-r2-metadata-2026-11-1
 Current release checks: [owned I/O gate refresh](validation/current-owned-io-release-gates-2026-11-14.json), runtime source `563df61`. Coverage runs 3,705 tests (629 skipped); all applicable release checks pass. Full finite acceptance remains open.
 
 F1 restore follow-up: [group-limit validation](validation/aggregate-restore-group-limit-2026-11-14.json). Restored row aggregates now honor `maxGroups` before accumulator construction or new reads. Build/typecheck and 3,709 tests passed (629 skipped); full acceptance remains open.
+
+F1/F2 buffer-restore follow-up: [validation](validation/aggregate-restore-buffer-limit-2026-11-14.json). Restored aggregate buffer/memory counters are now checked before scanning, including empty continuations, through the same enforcement method used for updates. Build/typecheck and 3,711 tests passed (629 skipped).
 Current release checks (source `246b165`):
 `docs/validation/current-cache-ownership-release-gates-2026-11-14.json`.
 

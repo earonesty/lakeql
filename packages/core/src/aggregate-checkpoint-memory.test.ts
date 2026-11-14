@@ -425,3 +425,54 @@ it.each([
   expect(scans).toBe(1);
   expect(pool.usedBytes).toBe(0);
 });
+
+it.each([
+  false,
+  true,
+])("checks restored buffered state even when the next scan is empty (spilled=%s)", async (spilled) => {
+  const store = memoryStore();
+  await store.put("table", new Uint8Array(1));
+  const pool = new MemoryBudget(1024 * 1024);
+  const spill = memorySpillAdapter();
+  const spec = { median: { op: "median" as const, column: "value" } };
+  const initial = new Lake({
+    store,
+    memoryPool: pool,
+    scanner: {
+      async *scan() {
+        yield [{ value: 1 }, { value: 2 }, { value: 3 }];
+      },
+    },
+  });
+  const first = await initial
+    .path("table")
+    .run()
+    .aggregateWithState([], spec, { spill, spillId: "buffered" });
+  const operatorState = spilled ? { spillRef: "buffered" } : first.operatorState;
+  for (const maxBufferedRows of [2, 3]) {
+    let scans = 0;
+    const resumed = new Lake({
+      store,
+      memoryPool: pool,
+      budget: { maxBufferedRows },
+      scanner: {
+        async *scan() {
+          scans++;
+          yield [];
+        },
+      },
+    });
+    const result = resumed
+      .path("table")
+      .run()
+      .aggregateWithState([], spec, { spill, operatorState });
+    if (maxBufferedRows === 2) {
+      await expect(result).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+      expect(scans).toBe(0);
+    } else {
+      expect((await result).rows).toEqual([{ median: 2 }]);
+      expect(scans).toBe(1);
+    }
+    expect(pool.usedBytes).toBe(0);
+  }
+});

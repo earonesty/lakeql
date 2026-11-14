@@ -69,6 +69,24 @@ it.each([
     ]);
     expect(requests).toBeGreaterThan(0);
     expect(pool.usedBytes).toBe(0);
+    const bufferedSpec = { median: { op: "median" as const, column: "value" } };
+    const buffered = await lake.path("fixture.parquet").run().aggregateWithState([], bufferedSpec);
+    const limited = createParquetLake({
+      memoryPool: pool,
+      budget: { maxBufferedRows: 2 },
+      store: new HttpObjectStore({
+        baseUrl: `http://127.0.0.1:${address.port}`,
+        maxFullObjectCacheBytes: 0,
+      }),
+    });
+    requests = 0;
+    await expect(
+      limited.path("fixture.parquet").run().aggregateWithState([], bufferedSpec, {
+        operatorState: buffered.operatorState,
+      }),
+    ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+    expect(requests).toBe(0);
+    expect(pool.usedBytes).toBe(0);
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) =>
