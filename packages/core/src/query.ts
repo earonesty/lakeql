@@ -40,6 +40,7 @@ import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
 import { MutableMemoryLedger } from "./mutable-memory-ledger.js";
 import { cloneObjectInfo, cloneObjectInfos } from "./object-info.js";
+import { readObjectHead } from "./read-object-head.js";
 
 export { parseHivePartitions } from "./hive-partitions.js";
 
@@ -5834,7 +5835,7 @@ async function expandPathsUncached(
         scope,
       );
     }
-    const head = await store.head(pattern);
+    const head = await readObjectHead(store, pattern, scope);
     throwIfAborted(budget.signal);
     if (!head) {
       throw new LakeqlError("LAKEQL_OBJECT_NOT_FOUND", `No object at ${pattern}`, {

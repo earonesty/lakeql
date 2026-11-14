@@ -1,0 +1,27 @@
+{
+  "sourceBase": "78144e5",
+  "scope": "Optional owned HEAD capability and wrapper/discovery integration",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 16,
+    "fullSuite": {
+      "passed": 3646,
+      "skipped": 629,
+      "log": "/tmp/owned-head-contract-full.log"
+    }
+  },
+  "evidence": [
+    "Discovery and JSON-cache use owned metadata without legacy HEAD",
+    "Metadata remains charged through query execution",
+    "URI/cache/read-control wrappers preserve capability and path normalization",
+    "Late results after cancellation release ownership",
+    "Foreign-budget adoption failure releases returned handle"
+  ],
+  "remaining": [
+    "Concrete HTTP owned probe implementation",
+    "Owned HEAD cache retention",
+    "Other adapter capability integration",
+    "Full allocation and runtime acceptance"
+  ]
+}

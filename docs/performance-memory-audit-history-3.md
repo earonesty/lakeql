@@ -3962,3 +3962,23 @@ Owned remote writes/serialization and the broader allocation audit remain open.
 
 Build/typecheck passed; focused suites passed 20 tests; full suite passed 3,643
 with 629 skips. Evidence: `docs/validation/owned-json-cache-read-2026-11-14.json`.
+
+### 2026-11-14 — owned HEAD capability and discovery routing
+
+ObjectStore exposes optional headOwned(path, scope), returning releasable metadata
+or null. A shared reader adopts metadata into the receiving scope and releases
+returned owners if adoption fails. Exact-path query discovery and owned JSON-cache
+reads use it when available. URI wrappers normalize owned paths; read controls
+apply the same concurrency and post-settlement cancellation checks as legacy HEAD,
+releasing discarded results. The caching wrapper forwards owned HEAD directly
+rather than falling back to its unowned metadata cache.
+
+Tests cover query and JSON-cache routing without legacy HEAD, query-lifetime
+metadata retention, URI/cache/control wrapper composition, late completion after
+cancellation, foreign-budget rejection and final reservation cleanup. This is a
+capability/lifetime contract with instrumented test adapters. HTTP probe admission
+still requires its concrete headOwned implementation; forwarding alone does not
+close the full-response probe allocation gap or add owned HEAD cache retention.
+
+Build/typecheck passed; focused suites passed 16 tests; full suite passed 3,646
+with 629 skips. Evidence: `docs/validation/owned-head-contract-2026-11-14.json`.

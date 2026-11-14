@@ -3,6 +3,7 @@ import { LakeqlError } from "./errors.js";
 import type { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
 import { parseOwnedJson } from "./owned-json-parse.js";
+import { readObjectHead } from "./read-object-head.js";
 import type { CacheAdapter, CacheEntry } from "./runtime.js";
 import type { ObjectStore } from "./store.js";
 
@@ -71,7 +72,7 @@ export class ObjectStoreJsonCache<T> implements CacheAdapter<T> {
         "JSON cache path",
         () => this.pathFor(key),
       ).value;
-      const head = await this.store.head(path);
+      const head = await readObjectHead(this.store, path, scratch);
       if (head === null) return undefined;
       if (!Number.isSafeInteger(head.size) || head.size < 0) {
         throw new LakeqlError("LAKEQL_CATALOG_ERROR", "Invalid JSON cache object size", { path });

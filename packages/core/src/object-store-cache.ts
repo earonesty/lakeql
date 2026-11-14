@@ -278,8 +278,10 @@ export function cachedObjectStore(
   }
 
   const ownedRead = inner.getRangeOwned?.bind(inner);
+  const ownedHead = inner.headOwned?.bind(inner);
   const allocation = inner.getRangeOwnedAllocation?.bind(inner);
   return {
+    ...(ownedHead === undefined ? {} : { headOwned: ownedHead }),
     ...(ownedRead === undefined || allocation === undefined
       ? {}
       : {

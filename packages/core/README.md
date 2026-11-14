@@ -93,3 +93,10 @@ the requested budget and returns releasable parsed entries. It uses the store's
 owned-range capability when available. Preliminary `head` metadata/probe storage
 and legacy adapter internals remain outside that query scope; this is not a total
 transport-memory guarantee. Remote writes still use the legacy serialization path.
+
+Stores may implement `headOwned(path, scope)` to admit metadata and any probe
+buffers before allocation. Return owned metadata in the supplied scope, or null
+for a missing object. Discovery and owned JSON-cache reads preserve that lifetime;
+URI, read-control and cache wrappers forward the capability. The cache wrapper
+currently delegates owned metadata reads directly; it does not retain them in its
+legacy HEAD cache. Stores without the capability retain their legacy behavior.

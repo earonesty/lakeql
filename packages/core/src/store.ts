@@ -77,6 +77,8 @@ export interface ObjectStore {
   list(prefix: string, options?: ListOptions): AsyncIterable<ObjectInfo>;
 
   head(path: string): Promise<ObjectHead | null>;
+  /** Admit metadata/probe allocation and return ownership through caller use. */
+  headOwned?(path: string, scope: MemoryScope): Promise<OwnedMemory<ObjectHead> | null>;
 }
 
 export interface ConditionalObjectStore extends ObjectStore {
@@ -116,7 +118,14 @@ export function uriObjectStore(
   );
   const ownedRead = store.getRangeOwned?.bind(store);
   const allocation = store.getRangeOwnedAllocation?.bind(store);
+  const ownedHead = store.headOwned?.bind(store);
   const wrapped: ObjectStore = {
+    ...(ownedHead === undefined
+      ? {}
+      : {
+          headOwned: (path: string, scope: MemoryScope) =>
+            ownedHead(normalizeObjectStorePath(path, mappings), scope),
+        }),
     ...(allocation === undefined
       ? {}
       : {
@@ -184,7 +193,19 @@ export function withObjectStoreReadControls(
       ? undefined
       : new ReadSemaphore(normalized.maxConcurrentReads);
   const ownedRead = store.getRangeOwned?.bind(store);
+  const ownedHead = store.headOwned?.bind(store);
   return {
+    ...(ownedHead === undefined
+      ? {}
+      : {
+          headOwned: (path: string, scope: MemoryScope) =>
+            controlledRead(
+              normalized,
+              semaphore,
+              () => ownedHead(path, scope),
+              (owner) => owner?.release(),
+            ),
+        }),
     ...(store.getRangeOwnedAllocation === undefined
       ? {}
       : {
