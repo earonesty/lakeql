@@ -1,0 +1,50 @@
+{
+  "requirements": ["F2", "F4", "M1", "M2", "V3"],
+  "status": "Scoped window restoration and shared checkpoint-read lifetimes integrated; full acceptance remains open",
+  "implementation": [
+    "Window query restoration uses the shared admitted JSON parser, validates parsed state without cloning it, and compares window definitions using admitted stable comparison.",
+    "Restored rows acquire independent owned payloads before each parsed run is released. Input buffering reuses exact known row and directory owners, avoiding a second detached copy.",
+    "Restored run directories and sliced run references reserve storage before allocation. Query timing and cancellation checks now include restoration and run reads.",
+    "The checkpoint spill-read helper is shared with aggregate, sort and top-k restoration. Owned adapters admit read buffers before allocation; legacy read-only adapters now charge returned buffers while retained.",
+    "Validation traverses record values without allocating Object.values directories."
+  ],
+  "validation": {
+    "default": {
+      "passed": 3298,
+      "skipped": 629,
+      "note": "Full run before adding the final cancellation regression and expanding the fixture matrix; production sources unchanged afterward."
+    },
+    "finalRestorationCases": {
+      "passed": 7,
+      "scope": [
+        "Encoded and object checkpoint restoration at measured exact peak and one byte below",
+        "Legacy returned-buffer retention accounting",
+        "Manifest and run resume uses owned reads instead of read",
+        "Malformed JSON and invalid row shape cleanup",
+        "Cancellation pins the in-flight owned buffer until settlement, then rejects before parsing"
+      ]
+    },
+    "http": {
+      "passed": 8,
+      "scope": "Expanded real Parquet matrix resumes inline encoded state and spilled state over HTTP 206 and ignored-Range 200 responses, row/vector source paths and shared 64/128 MiB pools."
+    },
+    "worker": {
+      "passed": 75,
+      "scope": "Full local workerd suite rerun with the expanded real Parquet R2 resume matrix."
+    },
+    "reference": {
+      "passed": 104
+    },
+    "build": "pnpm exec tsc -b passed before runtime tests",
+    "typecheck": "pnpm typecheck passed",
+    "lint": "pnpm lint passed",
+    "limitations": "Coverage, external conformance, full packaging and performance benchmarks were not refreshed for this change."
+  },
+  "remainingAcceptance": [
+    "Legacy SpillAdapter.read allocates externally before the engine can inspect byte length; post-read retention accounting is not pre-allocation admission. Only readOwned provides that contract.",
+    "Window planning/frame-bound expression workspaces and remaining metadata, delegated task output and other source/operator gaps remain open.",
+    "Transactional cleanup of already-created spill objects and adapter-owned persistent storage remain separate from in-flight read/parse/write accounting.",
+    "Full mixed-job/adaptive scheduling acceptance and production Cloudflare total-memory evidence remain open.",
+    "Shared reservations do not establish a total VM heap, external backing or RSS cap."
+  ]
+}

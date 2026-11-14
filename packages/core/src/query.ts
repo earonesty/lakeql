@@ -13,6 +13,7 @@ import {
 import { vectorCallExprSupported } from "./batch-call.js";
 import { BoundedTopK } from "./bounded-top-k.js";
 import { BufferMemory } from "./buffer-memory.js";
+import { readCheckpointSpill } from "./checkpoint-spill-read.js";
 import { csvOutputStream } from "./csv-output-stream.js";
 import { gatherDeferredColumns } from "./deferred-gather.js";
 import { LakeqlError } from "./errors.js";
@@ -4625,23 +4626,6 @@ async function writeOwnedCheckpoint(
     return await spill.write(id, pin.value);
   } finally {
     pin.release();
-  }
-}
-
-async function readCheckpointSpill(
-  spill: SpillAdapter,
-  id: string,
-  scope: MemoryScope,
-): Promise<Uint8Array> {
-  if (spill.readOwned === undefined) return spill.read(id);
-  const owner = await spill.readOwned(id, scope.budget);
-  try {
-    // Cancellation can dispose the parent while the adapter is completing I/O.
-    // Keep the independent owner until settlement, then reject before decoding.
-    return scope.adopt(owner).value;
-  } catch (error) {
-    owner.release();
-    throw error;
   }
 }
 

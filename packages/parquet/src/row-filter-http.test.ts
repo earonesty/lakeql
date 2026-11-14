@@ -109,6 +109,7 @@ it.each(
             "orderedDistinct",
             "window",
             "windowState",
+            "windowResume",
             "windowKeys",
             "windowPartitionKeys",
             "windowValues",
@@ -165,36 +166,53 @@ it.each(
                 query = query.select(["text"]).distinct();
               const result = query.run();
               const output =
-                route === "windowState" || route === "windowStateValues"
-                  ? result
-                      .windowWithState(vector ? { spill: memorySpillAdapter() } : {})
-                      .then((value) => value.rows)
-                  : route === "aggregate"
+                route === "windowResume"
+                  ? (async () => {
+                      const spill = vector ? memorySpillAdapter() : undefined;
+                      const first = await query.windowWithState(
+                        spill === undefined ? {} : { spill },
+                      );
+                      const resumed = await query.windowWithState({
+                        operatorState:
+                          spill === undefined
+                            ? first.operatorState
+                            : { spillRef: first.operatorSpill?.id ?? "missing" },
+                        ...(spill === undefined ? {} : { spill }),
+                      });
+                      return resumed.rows;
+                    })()
+                  : route === "windowState" || route === "windowStateValues"
                     ? result
-                        .aggregateWithState([], { count: { op: "count" } })
+                        .windowWithState(vector ? { spill: memorySpillAdapter() } : {})
                         .then((value) => value.rows)
-                    : route === "topK"
-                      ? result.topKWithState().then((value) => value.rows)
-                      : route === "sort"
-                        ? result.sortWithState().then((value) => value.rows)
-                        : result.toArray();
+                    : route === "aggregate"
+                      ? result
+                          .aggregateWithState([], { count: { op: "count" } })
+                          .then((value) => value.rows)
+                      : route === "topK"
+                        ? result.topKWithState().then((value) => value.rows)
+                        : route === "sort"
+                          ? result.sortWithState().then((value) => value.rows)
+                          : result.toArray();
               if (expand)
                 await expect(output).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
               else
                 expect(await output).toEqual(
-                  route.endsWith("Values")
-                    ? selected.map((row) => ({ ...row, value: "accepted text 1 猫" }))
-                    : route === "distinct" || route === "orderedDistinct"
-                      ? [
-                          projection
-                            ? { text: "dictionary text 1 猫", projected: "accepted text 1 猫" }
-                            : { text: "dictionary text 1 猫" },
-                        ]
-                      : route === "aggregate"
-                        ? [{ count: selected.length }]
-                        : route === "topK"
-                          ? selected.slice(0, 2)
-                          : selected,
+                  route === "windowResume"
+                    ? [...selected, ...selected]
+                    : route.endsWith("Values")
+                      ? selected.map((row) => ({ ...row, value: "accepted text 1 猫" }))
+                      : route === "distinct" || route === "orderedDistinct"
+                        ? [
+                            projection
+                              ? { text: "dictionary text 1 猫", projected: "accepted text 1 猫" }
+                              : { text: "dictionary text 1 猫" },
+                          ]
+                        : route === "aggregate"
+                          ? [{ count: selected.length }]
+                          : route === "topK"
+                            ? selected.slice(0, 2)
+                            : selected,
                 );
             }),
         );

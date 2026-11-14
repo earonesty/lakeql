@@ -138,12 +138,22 @@ export async function executeWindowWithState(
   try {
     const { config } = options;
     const windows = config.windows ?? {};
-    const previousRows = await windowRowsFromState(windows, windowOptions);
+    const startedAt = config.now();
+    const checkCheckpoint = () => {
+      if (config.budget.signal?.aborted)
+        throw new LakeqlError("LAKEQL_ABORTED", "Window checkpoint aborted");
+      options.enforceBudget(config.budget, options.stats, config.now, startedAt);
+    };
+    const previousRows = await windowRowsFromState(
+      windows,
+      windowOptions,
+      retainedScope,
+      checkCheckpoint,
+    );
     const runs =
       windowOptions.spill === undefined
         ? [previousRows]
-        : chunkRowsForRuns(previousRows, config.budget);
-    const startedAt = config.now();
+        : chunkRowsForRuns(previousRows, config.budget, retainedScope);
     let matched: Row[] | undefined;
     if (windowOptions.spill === undefined) {
       matched = runs[0] ?? [];
@@ -177,11 +187,6 @@ export async function executeWindowWithState(
     windowScope.dispose();
     const rows = collected.value;
 
-    const checkCheckpoint = () => {
-      if (config.budget.signal?.aborted)
-        throw new LakeqlError("LAKEQL_ABORTED", "Window checkpoint aborted");
-      options.enforceBudget(config.budget, options.stats, config.now, startedAt);
-    };
     checkCheckpoint();
     const state =
       windowOptions.spill === undefined
@@ -541,12 +546,23 @@ function pushWindowRunRow(
   }
 }
 
-function chunkRowsForRuns(rows: Row[], budget: QueryBudget): Row[][] {
-  if (rows.length === 0) return [];
-  const capacity = windowRunCapacity(budget);
-  const runs: Row[][] = [];
+function chunkRowsForRuns(rows: Row[], budget: QueryBudget, scope: MemoryScope): Row[][] {
+  if (rows.length === 0)
+    return scope.allocate(c.array, "empty restored window runs", () => [] as Row[][]).value;
+  const capacity = Math.min(rows.length, windowRunCapacity(budget));
+  const runs = scope.allocate(
+    c.array + Math.ceil(rows.length / capacity) * c.arraySlot,
+    "restored window runs",
+    () => [] as Row[][],
+  ).value;
   for (let index = 0; index < rows.length; index += capacity) {
-    runs.push(rows.slice(index, index + capacity));
+    runs.push(
+      scope.allocate(
+        c.array + Math.min(capacity, rows.length - index) * c.arraySlot,
+        "restored window run",
+        () => rows.slice(index, index + capacity),
+      ).value,
+    );
   }
   return runs;
 }
@@ -568,7 +584,10 @@ class WindowRowBuffer {
     private readonly scope: MemoryScope,
     private rows: Row[] = [],
   ) {
-    scope.allocate(c.array + rows.length * c.arraySlot, "window input directory", () => rows);
+    const known = scope.tryRetainAllocation(rows);
+    if (known === undefined)
+      scope.allocate(c.array + rows.length * c.arraySlot, "window input directory", () => rows);
+    else known.release();
     for (let index = 0; index < rows.length; index++) {
       const row = rows[index];
       if (row !== undefined) rows[index] = retainWindowRow(row, scope);
@@ -607,6 +626,11 @@ class WindowRowBuffer {
 }
 
 function retainWindowRow(row: Row, scope: MemoryScope): Row {
+  const known = scope.tryRetainAllocation(row);
+  if (known !== undefined) {
+    known.release();
+    return row;
+  }
   const owner = detachOwnedRow(row, scope.budget);
   try {
     return scope.adopt(owner).value;

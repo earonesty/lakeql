@@ -39,5 +39,6 @@
     "Completed spill objects may remain stored after cancellation or failure; this change accounts for in-flight encoding, not transactional spill deletion or adapter-owned storage.",
     "The complete concurrent mixed-job and adaptive scheduling acceptance matrix remains open.",
     "Admission units do not establish total VM heap, external backing, RSS or production Cloudflare memory limits."
-  ]
+  ],
+  "followupEvidence": "docs/validation/window-restoration-2026-11-14.json"
 }

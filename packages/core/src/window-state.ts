@@ -1,9 +1,12 @@
 import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
+import { readCheckpointSpill } from "./checkpoint-spill-read.js";
 import { LakeqlError } from "./errors.js";
 import { jsonSafeValue } from "./evaluator.js";
 import { stableStringify } from "./manifest.js";
 import type { MemoryScope } from "./memory-scope.js";
-import { encodeOwnedCheckpoint } from "./owned-checkpoint-encoding.js";
+import { encodeOwnedCheckpoint, equalStableData } from "./owned-checkpoint-encoding.js";
+import { parseOwnedJson } from "./owned-json-parse.js";
+import { detachOwnedRow } from "./owned-row-detachment.js";
 import { snapshotOwnedRows } from "./owned-snapshot-rows.js";
 import type { SpillAdapter, SpillRef } from "./runtime.js";
 import type { Row } from "./types.js";
@@ -62,7 +65,10 @@ export function deserializeWindowOperatorState(
 export async function windowRowsFromState(
   windows: Record<string, WindowExpr>,
   options: WindowOptions,
+  scope?: MemoryScope,
+  check?: () => void,
 ): Promise<Row[]> {
+  if (scope !== undefined) return ownedWindowRowsFromState(windows, options, scope, check);
   const state =
     isSpilledOperatorState(options.operatorState) && options.spill !== undefined
       ? await options.spill.read(options.operatorState.spillRef)
@@ -103,6 +109,80 @@ export async function windowRowsFromState(
     rows.push(...deserializeWindowRunRows(await options.spill.read(run.spillRef)));
   }
   return rows;
+}
+
+async function ownedWindowRowsFromState(
+  windows: Record<string, WindowExpr>,
+  options: WindowOptions,
+  scope: MemoryScope,
+  check?: () => void,
+): Promise<Row[]> {
+  const parsing = scope.childScope();
+  try {
+    check?.();
+    let state: unknown = options.operatorState;
+    if (isSpilledOperatorState(state)) {
+      if (options.spill === undefined)
+        throw new LakeqlError(
+          "LAKEQL_BOOKMARK_INVALID",
+          "Window spill state requires a spill adapter",
+        );
+      state = await readCheckpointSpill(options.spill, state.spillRef, parsing);
+      check?.();
+    }
+    const rows = scope.allocate(c.array, "restored window rows", () => [] as Row[]).value;
+    if (state === undefined) return rows;
+    const decoded =
+      state instanceof Uint8Array
+        ? parsing.adopt(parseOwnedJson(state, parsing)).value
+        : parsing.adopt(detachOwnedRow({ state }, scope.budget)).value.state;
+    if (!isWindowOperatorState(decoded))
+      throw new LakeqlError("LAKEQL_BOOKMARK_INVALID", "Window operator state is invalid");
+    if (!equalStableData(decoded.windows, windows, parsing))
+      throw new LakeqlError(
+        "LAKEQL_BOOKMARK_STALE",
+        "Window operator state does not match request",
+      );
+    const append = (input: readonly Row[]) => {
+      for (const row of input) {
+        const owner = detachOwnedRow(row, scope.budget);
+        try {
+          scope.adopt(owner);
+        } catch (error) {
+          owner.release();
+          throw error;
+        }
+        scope.allocate(c.arraySlot, "restored window row reference", () => rows.push(owner.value));
+      }
+    };
+    if (decoded.rows !== undefined) append(decoded.rows);
+    for (const run of decoded.runs ?? []) {
+      check?.();
+      if ("rows" in run) {
+        append(run.rows);
+        continue;
+      }
+      if (options.spill === undefined)
+        throw new LakeqlError(
+          "LAKEQL_BOOKMARK_INVALID",
+          "Window run spill state requires a spill adapter",
+        );
+      const runScope = parsing.childScope();
+      try {
+        const bytes = await readCheckpointSpill(options.spill, run.spillRef, runScope);
+        check?.();
+        const values = runScope.adopt(parseOwnedJson(bytes, runScope)).value;
+        if (!Array.isArray(values) || !values.every(isWindowSnapshotRow))
+          throw new LakeqlError("LAKEQL_BOOKMARK_INVALID", "Window run state is invalid");
+        append(values);
+      } finally {
+        runScope.dispose();
+      }
+    }
+    return rows;
+  } finally {
+    parsing.dispose();
+  }
 }
 
 export function windowOperatorState(
@@ -197,7 +277,7 @@ function isWindowOperatorState(value: unknown): value is WindowOperatorState {
     isRecord(value) &&
     value.version === 1 &&
     isRecord(value.windows) &&
-    Object.values(value.windows).every(isWindowExprSnapshot) &&
+    everyRecordValue(value.windows, isWindowExprSnapshot) &&
     ((Array.isArray(value.rows) &&
       value.rows.every(isWindowSnapshotRow) &&
       value.runs === undefined) ||
@@ -235,7 +315,7 @@ function snapshotValue(value: unknown): WindowSnapshotValue {
 }
 
 function isWindowSnapshotRow(value: unknown): value is Record<string, WindowSnapshotValue> {
-  return isRecord(value) && Object.values(value).every(isWindowSnapshotValue);
+  return isRecord(value) && everyRecordValue(value, isWindowSnapshotValue);
 }
 
 function isWindowRunState(value: unknown): value is WindowRunState {
@@ -275,4 +355,12 @@ function isSpilledOperatorState(value: unknown): value is { spillRef: string } {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function everyRecordValue(
+  record: Record<string, unknown>,
+  predicate: (value: unknown) => boolean,
+): boolean {
+  for (const key in record) if (Object.hasOwn(record, key) && !predicate(record[key])) return false;
+  return true;
 }
