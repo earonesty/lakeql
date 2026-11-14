@@ -23,13 +23,25 @@
     "lint": "passed",
     "compatibility": "passed",
     "large_files": "passed after sandbox denied child-process Git; rerun with escalation",
-    "changeset": "passed"
+    "changeset": "passed",
+    "coverage": {
+      "passed": 3399,
+      "skipped": 629,
+      "statements": 91.01,
+      "branches": 84.98,
+      "functions": 95.71,
+      "lines": 92.88,
+      "thresholds": "unchanged"
+    },
+    "full_build": "passed",
+    "clean_package_install": "passed; 66 dependencies installed in a temporary external consumer",
+    "fixture_regeneration": "passed; content hashes unchanged and Git worktree clean",
+    "required_external_iceberg_conformance": {
+      "passed": 520,
+      "skipped": 1,
+      "skip": "Inactive missing-fixture failure guard; required external matrix assertions passed."
+    }
   },
-  "not_refreshed": [
-    "coverage",
-    "package installation smoke check",
-    "fixture regeneration/checksums",
-    "required-external Iceberg matrix mode"
-  ],
-  "scope": "Runtime and correctness gate refresh after shared task and materialization changes; not final acceptance of F1-F6/M1-M2/V1-V3."
+  "not_refreshed": [],
+  "scope": "Release command refresh at source revision e18cf4a (7e080d0 changes only audit documentation). All listed commands pass; full F1-F6/M1-M2/V1-V3 acceptance remains open."
 }
