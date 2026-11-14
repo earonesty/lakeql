@@ -5,6 +5,8 @@ import { compareOrderedScalars } from "./scalar-order.js";
 import type { Row } from "./types.js";
 import type { WindowExpr, WindowOrderTerm } from "./window.js";
 
+const peerOrder = {};
+
 export interface WindowRow {
   row: Row;
   originalIndex: number;
@@ -59,11 +61,21 @@ export function compareWindowRows(
 }
 
 export function samePartition(left: WindowRow, right: WindowRow): boolean {
-  return stableKey(left.partitionKey) === stableKey(right.partitionKey);
+  return sameKeyValues(left.partitionKey, right.partitionKey);
 }
 
 export function samePeer(left: WindowRow, right: WindowRow): boolean {
-  return samePartition(left, right) && stableKey(left.orderKey) === stableKey(right.orderKey);
+  return samePartition(left, right) && sameKeyValues(left.orderKey, right.orderKey);
+}
+
+/** Peer equality must agree with ordering, including timestamp unit normalization
+ * and null/undefined equivalence. Compare borrowed scalars without serializing keys. */
+function sameKeyValues(left: readonly unknown[], right: readonly unknown[]): boolean {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index++)
+    if (compareOrderedScalars(left[index], right[index], peerOrder, "Window peer") !== 0)
+      return false;
+  return true;
 }
 
 export function partitionSpans(rows: readonly WindowRow[]): { start: number; end: number }[] {

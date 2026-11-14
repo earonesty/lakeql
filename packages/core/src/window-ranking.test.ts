@@ -1,6 +1,7 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { col } from "./expr.js";
 import { MemoryBudget } from "./memory-budget.js";
+import { TimestampValue, timestampFromEpoch } from "./timestamp.js";
 import type { WindowExpr, WindowRankingFn } from "./window.js";
 import { applyWindowsToRows, applyWindowsToRuns, evaluateWindowRows } from "./window-backend.js";
 import type { WindowRow } from "./window-utils.js";
@@ -97,4 +98,50 @@ it("preserves partitions, null peers and compatible sort prefixes across row run
   for (const output of outputs)
     expect(output.map((row) => [...functions.map((fn) => row[fn]), row.ordinal])).toEqual(expected);
   expect(pool.usedBytes).toBe(0);
+});
+
+it("uses mathematical timestamp peers across units without serializing keys", () => {
+  const rows = [
+    { id: 0, part: timestampFromEpoch(0n, "millis"), key: timestampFromEpoch(1000n, "millis") },
+    { id: 1, part: timestampFromEpoch(0n, "micros"), key: timestampFromEpoch(1000000n, "micros") },
+    { id: 2, part: timestampFromEpoch(0n, "nanos"), key: timestampFromEpoch(2000000000n, "nanos") },
+    { id: 3, part: timestampFromEpoch(1n, "millis"), key: timestampFromEpoch(1000n, "millis") },
+  ];
+  const windows: Record<string, WindowExpr> = {};
+  for (const fn of functions)
+    windows[fn] = {
+      ...expression(fn),
+      over: { partitionBy: [col("part")], orderBy: [{ expr: col("key") }] },
+    };
+  windows.ordinal = {
+    ...expression("row_number"),
+    over: {
+      partitionBy: [col("part")],
+      orderBy: [{ expr: col("key") }, { expr: col("id"), direction: "desc" }],
+    },
+  };
+  const serialization = vi.spyOn(TimestampValue.prototype, "toJSON").mockImplementation(() => {
+    throw new Error("Peer detection must not serialize timestamp keys");
+  });
+  try {
+    const outputs = [
+      applyWindowsToRows(rows, windows),
+      applyWindowsToRuns(
+        [rows.slice(0, 1), [...rows.slice(1, 2), ...rows.slice(3)], rows.slice(2, 3)],
+        windows,
+      )
+        .flat()
+        .sort((a, b) => Number(a.id) - Number(b.id)),
+    ];
+    for (const output of outputs)
+      expect(output.map((row) => [...functions.map((fn) => row[fn]), row.ordinal])).toEqual([
+        [1, 1, 0, 2 / 3, 2],
+        [1, 1, 0, 2 / 3, 1],
+        [3, 2, 1, 1, 3],
+        [1, 1, 0, 1, 1],
+      ]);
+    expect(serialization).not.toHaveBeenCalled();
+  } finally {
+    serialization.mockRestore();
+  }
 });

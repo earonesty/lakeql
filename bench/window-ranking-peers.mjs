@@ -49,6 +49,14 @@ const report = {
   sourceHash: createHash("sha256")
     .update(readFileSync("packages/core/src/window-backend.ts"))
     .digest("hex"),
+  sourceHashes: Object.fromEntries(
+    ["window-backend", "window-utils", "window-peers", "scalar-order"].map((name) => [
+      name,
+      createHash("sha256")
+        .update(readFileSync(`packages/core/src/${name}.ts`))
+        .digest("hex"),
+    ]),
+  ),
   results,
 };
 writeFileSync(process.env.LAKEQL_WINDOW_RANK_REPORT, `${JSON.stringify(report, null, 2)}\n`);

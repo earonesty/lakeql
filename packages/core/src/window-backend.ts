@@ -14,8 +14,9 @@ import {
   normalizedWindowName,
   partitionRows,
   partitionSpans,
+  samePartition,
+  samePeer,
   sortWindowRows,
-  stableKey,
   type WindowRow,
 } from "./window-utils.js";
 
@@ -122,7 +123,7 @@ function* mergeWindowPartitions(
 ): Iterable<RunWindowRow[]> {
   const cursors = runs.map(() => 0);
   let current: RunWindowRow[] = [];
-  let currentPartitionKey: string | undefined;
+  let currentPartition: RunWindowRow | undefined;
   while (true) {
     let bestRun = -1;
     let best: RunWindowRow | undefined;
@@ -136,12 +137,11 @@ function* mergeWindowPartitions(
     }
     if (best === undefined || bestRun === -1) break;
     cursors[bestRun] = (cursors[bestRun] ?? 0) + 1;
-    const partitionKey = stableKey(best.partitionKey);
-    if (currentPartitionKey !== undefined && partitionKey !== currentPartitionKey) {
+    if (currentPartition !== undefined && !samePartition(best, currentPartition)) {
       yield current;
       current = [];
     }
-    currentPartitionKey = partitionKey;
+    currentPartition = best;
     current.push(best);
   }
   if (current.length > 0) yield current;
@@ -152,14 +152,9 @@ function stabilizePrefixPeers(rows: WindowRow[]): void {
   while (start < rows.length) {
     const current = rows[start];
     if (current === undefined) break;
-    const partitionKey = stableKey(current.partitionKey);
-    const orderKey = stableKey(current.orderKey);
+
     let end = start + 1;
-    while (
-      end < rows.length &&
-      stableKey(rows[end]?.partitionKey ?? []) === partitionKey &&
-      stableKey(rows[end]?.orderKey ?? []) === orderKey
-    ) {
+    while (end < rows.length && samePeer(rows[end] as WindowRow, current)) {
       end += 1;
     }
     if (end - start > 1) {

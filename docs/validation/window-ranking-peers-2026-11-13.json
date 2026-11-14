@@ -46,5 +46,24 @@
     "compatibility": "passed",
     "fileSizeGate": "passed"
   },
-  "limits": "Peer-index admission is not output-array admission or total JavaScript heap. Existing row/window materialization allocation coverage remains incomplete. This is not a production Cloudflare memory certification. Exact decimal ordering, general decimal operators and final coverage/reproducibility remain open."
+  "limits": "Peer-index admission is not output-array admission or total JavaScript heap. Existing row/window materialization allocation coverage remains incomplete. This is not a production Cloudflare memory certification. Exact decimal ordering, general decimal operators and final coverage/reproducibility remain open.",
+  "peerEquality": {
+    "change": "Peer keys now compare borrowed scalars using the same semantics as ORDER BY, instead of JSON serialization. Merged-run partition detection and prefix-peer stabilization use the same shared equality helpers. A shared immutable order descriptor avoids an object per scalar comparison.",
+    "correctness": "Equal TimestampValue epochs with different millis/micros/nanos representations share partitions and peers. Null and undefined match ordering equivalence. Invalid scalar mixtures retain explicit comparator errors rather than serialized-text collisions.",
+    "regression": "Mixed-unit timestamp partitions and keys, rank/dense_rank/percent_rank/cume_dist and a longer compatible sort prefix, tested both as rows and merged uneven runs. A throwing TimestampValue.toJSON spy proves no serialization during peer detection.",
+    "evidence": "../benchmarks/window-ranking-peer-equality-2026-11-13.json",
+    "measurement": "At 2048 rows, all-tied cume_dist is 0.129 ms and eight-group cume_dist is 0.102 ms, versus 0.459/0.771 ms with cursor reuse plus serialized peer equality. Three local timed samples; not a cloud latency claim. Peer-index admission remains zero; output-array and total-heap coverage limitations remain.",
+    "validation": {
+      "defaultPassed": 2967,
+      "defaultSkipped": 629,
+      "workerPassed": 61,
+      "referencePassed": 104,
+      "build": "passed",
+      "typecheck": "passed",
+      "lint": "passed",
+      "cleanPackageInstall": "passed",
+      "compatibility": "passed",
+      "fileSizeGate": "passed"
+    }
+  }
 }

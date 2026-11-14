@@ -33,8 +33,8 @@ Cloudflare total-memory safety. See the constrained-runtime section below.
 
 Latest execution checkpoint (November 13, 2026): window ranking now reuses
 bounded peer cursors. At 2,048 tied rows, local cume_dist time falls from 415 ms
-to 0.46 ms with no peer index. Real HTTP fixtures exposed and now test corrected
-implicit all-column projection in windows. Validation and allocation limitations:
+to 0.13 ms with no peer index. Peer equality now matches scalar ordering across
+timestamp units; HTTP fixtures verify full-row window output. Evidence and limits:
 `docs/validation/window-ranking-peers-2026-11-13.json`.
 Prior scalar-workspace evidence and decimal gaps:
 `docs/validation/conformance-value-parity-2026-11-13.json`.
