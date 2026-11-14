@@ -3,6 +3,8 @@ import {
   batchFromColumns,
   gatherBatch,
   LakeqlError,
+  MemoryBudget,
+  MemoryScope,
   matches,
   materializeBatchRows,
   materializeSelectedBatchRows,
@@ -27,7 +29,7 @@ import {
   taskRowWindows,
   validateTaskWorkUnitOptions,
 } from "./task.js";
-import { taskSource } from "./task-source.js";
+import { taskMetadataOwned, taskSource } from "./task-source.js";
 import type { ParquetColumnBatch, ParquetMetadata, StoreAsyncBuffer } from "./types.js";
 
 export async function* scanParquetTaskBatches(
@@ -35,28 +37,38 @@ export async function* scanParquetTaskBatches(
   task: TaskInput,
   options: ScanParquetTaskOptions = {},
 ): AsyncIterable<Row[]> {
-  const file = await taskSource(store, task.path, options);
-  const metadata = await taskMetadata(task.path, file, options);
-  rejectUnsupportedParquetSchema(metadata, {
-    allowValueCheckedScalarDecimals: true,
-    memoryBudget: options.memoryBudget,
-  });
-  const physicalColumns = task.projectedColumns?.filter(
-    (column) => !(column in task.partitionValues),
-  );
-  for (const { rowStart, rowEnd } of taskRowWindows(metadata, task)) {
-    for await (const batch of readParquetObjectBatchesFromFile(
-      file,
-      metadata,
-      taskReadOptions(rowStart, rowEnd, physicalColumns, task.residualPredicate, options),
-    )) {
-      const rows = batch.rows
-        .map((row: Row) => ({ ...task.partitionValues, ...row }))
-        .filter((row: Row) => matches(task.residualPredicate, row))
-        .map((row: Row) => projectTaskRow(row, task.projectedColumns));
-      recordRowsMatched(options.stats, rows.length);
-      if (rows.length > 0) yield rows;
+  const scope = new MemoryScope(options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER));
+  options = { ...options, memoryBudget: scope.budget };
+  try {
+    const file = await taskSource(store, task.path, options);
+    const { metadata, cached } = await taskMetadataOwned(task.path, file, scope, options);
+    if (options.stats !== undefined) {
+      if (cached) options.stats.cacheHits++;
+      else options.stats.cacheMisses++;
     }
+    rejectUnsupportedParquetSchema(metadata, {
+      allowValueCheckedScalarDecimals: true,
+      memoryBudget: options.memoryBudget,
+    });
+    const physicalColumns = task.projectedColumns?.filter(
+      (column) => !(column in task.partitionValues),
+    );
+    for (const { rowStart, rowEnd } of taskRowWindows(metadata, task)) {
+      for await (const batch of readParquetObjectBatchesFromFile(
+        file,
+        metadata,
+        taskReadOptions(rowStart, rowEnd, physicalColumns, task.residualPredicate, options),
+      )) {
+        const rows = batch.rows
+          .map((row: Row) => ({ ...task.partitionValues, ...row }))
+          .filter((row: Row) => matches(task.residualPredicate, row))
+          .map((row: Row) => projectTaskRow(row, task.projectedColumns));
+        recordRowsMatched(options.stats, rows.length);
+        if (rows.length > 0) yield rows;
+      }
+    }
+  } finally {
+    scope.dispose();
   }
 }
 
@@ -65,73 +77,83 @@ export async function* scanParquetTaskColumnBatches(
   task: TaskInput,
   options: ScanParquetTaskOptions = {},
 ): AsyncIterable<ParquetColumnBatch> {
-  const file = await taskSource(store, task.path, options);
-  const metadata = await taskMetadata(task.path, file, options);
-  rejectUnsupportedParquetSchema(metadata, {
-    allowValueCheckedScalarDecimals: true,
-    memoryBudget: options.memoryBudget,
-  });
-  const physicalColumns = task.projectedColumns?.filter(
-    (column) => !(column in task.partitionValues),
-  );
-  for (const { rowStart, rowEnd } of taskRowWindows(metadata, task)) {
-    for await (const batch of readParquetColumnBatchesFromFile(
-      file,
-      metadata,
-      taskReadOptions(rowStart, rowEnd, physicalColumns, task.residualPredicate, options),
-    )) {
-      if (batch.residualPredicateSatisfied === true) {
+  const scope = new MemoryScope(options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER));
+  options = { ...options, memoryBudget: scope.budget };
+  try {
+    const file = await taskSource(store, task.path, options);
+    const { metadata, cached } = await taskMetadataOwned(task.path, file, scope, options);
+    if (options.stats !== undefined) {
+      if (cached) options.stats.cacheHits++;
+      else options.stats.cacheMisses++;
+    }
+    rejectUnsupportedParquetSchema(metadata, {
+      allowValueCheckedScalarDecimals: true,
+      memoryBudget: options.memoryBudget,
+    });
+    const physicalColumns = task.projectedColumns?.filter(
+      (column) => !(column in task.partitionValues),
+    );
+    for (const { rowStart, rowEnd } of taskRowWindows(metadata, task)) {
+      for await (const batch of readParquetColumnBatchesFromFile(
+        file,
+        metadata,
+        taskReadOptions(rowStart, rowEnd, physicalColumns, task.residualPredicate, options),
+      )) {
+        if (batch.residualPredicateSatisfied === true) {
+          if (
+            Object.keys(task.partitionValues).length === 0 &&
+            task.projectedColumns?.every((column) => column in batch.batch.columns) !== false
+          ) {
+            recordRowsMatched(options.stats, batch.batch.rowCount);
+            yield batch;
+            continue;
+          }
+          const rows = materializeBatchRows(batch.batch)
+            .map((row: Row) => ({ ...task.partitionValues, ...row }))
+            .map((row: Row) => projectTaskRow(row, task.projectedColumns));
+          if (rows.length > 0) {
+            recordRowsMatched(options.stats, rows.length);
+            yield { rowOffset: batch.rowOffset, batch: batchFromRows(rows, task.projectedColumns) };
+          }
+          continue;
+        }
         if (
           Object.keys(task.partitionValues).length === 0 &&
+          task.residualPredicate === undefined &&
           task.projectedColumns?.every((column) => column in batch.batch.columns) !== false
         ) {
-          recordRowsMatched(options.stats, batch.batch.rowCount);
           yield batch;
           continue;
         }
-        const rows = materializeBatchRows(batch.batch)
-          .map((row: Row) => ({ ...task.partitionValues, ...row }))
-          .map((row: Row) => projectTaskRow(row, task.projectedColumns));
+        const selection = tryPredicateSelection(batch.batch, task.residualPredicate);
+        if (
+          selection !== undefined &&
+          Object.keys(task.partitionValues).length === 0 &&
+          task.projectedColumns?.every((column) => column in batch.batch.columns) !== false
+        ) {
+          recordRowsMatched(options.stats, selectedRowCount(batch.batch.rowCount, selection));
+          yield {
+            rowOffset: batch.rowOffset,
+            batch: gatherBatch(batch.batch, selectionIndices(selection)),
+          };
+          continue;
+        }
+        const rows =
+          selection === undefined
+            ? materializeBatchRows(batch.batch)
+                .map((row: Row) => ({ ...task.partitionValues, ...row }))
+                .filter((row: Row) => matches(task.residualPredicate, row))
+                .map((row: Row) => projectTaskRow(row, task.projectedColumns))
+            : materializeSelectedBatchRows(batch.batch, selection)
+                .map((row: Row) => ({ ...task.partitionValues, ...row }))
+                .map((row: Row) => projectTaskRow(row, task.projectedColumns));
         if (rows.length > 0) {
-          recordRowsMatched(options.stats, rows.length);
           yield { rowOffset: batch.rowOffset, batch: batchFromRows(rows, task.projectedColumns) };
         }
-        continue;
-      }
-      if (
-        Object.keys(task.partitionValues).length === 0 &&
-        task.residualPredicate === undefined &&
-        task.projectedColumns?.every((column) => column in batch.batch.columns) !== false
-      ) {
-        yield batch;
-        continue;
-      }
-      const selection = tryPredicateSelection(batch.batch, task.residualPredicate);
-      if (
-        selection !== undefined &&
-        Object.keys(task.partitionValues).length === 0 &&
-        task.projectedColumns?.every((column) => column in batch.batch.columns) !== false
-      ) {
-        recordRowsMatched(options.stats, selectedRowCount(batch.batch.rowCount, selection));
-        yield {
-          rowOffset: batch.rowOffset,
-          batch: gatherBatch(batch.batch, selectionIndices(selection)),
-        };
-        continue;
-      }
-      const rows =
-        selection === undefined
-          ? materializeBatchRows(batch.batch)
-              .map((row: Row) => ({ ...task.partitionValues, ...row }))
-              .filter((row: Row) => matches(task.residualPredicate, row))
-              .map((row: Row) => projectTaskRow(row, task.projectedColumns))
-          : materializeSelectedBatchRows(batch.batch, selection)
-              .map((row: Row) => ({ ...task.partitionValues, ...row }))
-              .map((row: Row) => projectTaskRow(row, task.projectedColumns));
-      if (rows.length > 0) {
-        yield { rowOffset: batch.rowOffset, batch: batchFromRows(rows, task.projectedColumns) };
       }
     }
+  } finally {
+    scope.dispose();
   }
 }
 

@@ -29,7 +29,6 @@ import {
   vectorTopKOwnedBatch,
 } from "lakeql-core";
 import { readParquetColumnBatchesFromFile } from "./column-batches.js";
-import { readCachedParquetMetadata } from "./metadata-cache.js";
 import { recordRowsMatched } from "./read-metrics.js";
 import { rejectUnsupportedParquetSchema } from "./schema.js";
 import {
@@ -44,7 +43,7 @@ import {
   taskReadOptions,
   taskRowWindows,
 } from "./task.js";
-import { taskSource } from "./task-source.js";
+import { taskMetadataOwned, taskSource } from "./task-source.js";
 
 export async function aggregateParquetTask(
   store: ObjectStore,
@@ -95,11 +94,8 @@ async function aggregateTaskSnapshotOwned(
     const scanOptions = aggregateScanOptions(options);
     const file = await taskSource(store, task.path, options);
     enforceAggregateTaskBudget(scanOptions);
-    const { metadata, cached } = await readCachedParquetMetadata(
-      task.path,
-      file,
-      options.metadataCache,
-    );
+    const metadataScope = scope.childScope();
+    const { metadata, cached } = await taskMetadataOwned(task.path, file, metadataScope, options);
     recordMetadataCache(scanOptions, cached);
     rejectUnsupportedParquetSchema(metadata, {
       allowValueCheckedScalarDecimals: true,

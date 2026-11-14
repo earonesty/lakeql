@@ -880,3 +880,39 @@ it("bounds long partition constants across repeated aggregate scan batches", asy
   }
   expect(pool.usedBytes).toBe(0);
 });
+
+it.each([
+  "rows",
+  "columns",
+] as const)("retains task metadata through %s iterator lifetime", async (kind) => {
+  const store = memoryStore();
+  await writeParquet(store, "metadata-lifetime.parquet", {
+    rowGroupSize: [2, 2],
+    columnData: [{ name: "value", type: "DOUBLE", data: [1, 2, 3, 4] }],
+  });
+  const task: TaskInput = {
+    path: "metadata-lifetime.parquet",
+    rowGroupRanges: [{ start: 0, end: 2 }],
+    partitionValues: {},
+  };
+  const pool = new MemoryBudget(1024 * 1024);
+  const options = { memoryBudget: pool, batchSize: 1 };
+  const scan =
+    kind === "rows"
+      ? scanParquetTaskBatches(store, task, options)
+      : scanParquetTaskColumnBatches(store, task, options);
+  const iterator = scan[Symbol.asyncIterator]();
+  expect((await iterator.next()).done).toBe(false);
+  expect(pool.usedBytes).toBeGreaterThan(0);
+  await iterator.return?.();
+  expect(pool.usedBytes).toBe(0);
+  const rejected = new MemoryBudget(1);
+  const rejectedScan =
+    kind === "rows"
+      ? scanParquetTaskBatches(store, task, { memoryBudget: rejected })
+      : scanParquetTaskColumnBatches(store, task, { memoryBudget: rejected });
+  await expect(rejectedScan[Symbol.asyncIterator]().next()).rejects.toMatchObject({
+    code: "LAKEQL_BUDGET_EXCEEDED",
+  });
+  expect(rejected.usedBytes).toBe(0);
+});
