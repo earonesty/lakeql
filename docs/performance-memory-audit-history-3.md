@@ -4814,3 +4814,28 @@ typechecking pass. See `validation/stage-retained-input-progress-2026-11-14.json
 This is primitive-level evidence. It does not establish whole-query fairness,
 cover all metadata/operator scheduling, or relax the execution contract that a
 running callback must not await another scheduled stage.
+
+### M1 indexed-footer directory view admission
+
+The compact row-group directory previously charged eight backing bytes per group
+but omitted the typed-array view charge. `footerDirectoryBytes` now supplies one
+validated forecast (`view + groups * 8`) to both construction and indexed-source
+headroom selection. This keeps the decision to narrow an oversized footer read
+aligned with the allocation that follows. Empty directories still allocate a
+view and therefore require its charge. Forecasts reject invalid and unsafe
+capacities before construction.
+
+Real written Parquet tests retain exact/cap-minus-one checks for one and twenty
+groups, random-access equality, malformed input and changed-count rollback.
+A new empty-directory test verifies the fixed charge and one-byte-short rejection.
+Metadata benchmark setup now uses the same forecast; its directory preparation
+remains outside the timed decoder section. The 25 focused directory, metadata,
+indexed-source and HTTP failure tests pass.
+
+This fixes one explicit view-accounting gap; it does not claim that all parser
+helpers, borrowed DataViews, runtime or converter allocations are covered.
+
+Full validation passes: 3,757 regular tests (645 skipped), 82 Worker tests, build
+and types. Three additional exact-capacity fixtures initially omitted the view
+charge; they now use the shared forecast while retaining their pruning/lifetime
+assertions. Evidence: `validation/footer-directory-view-2026-11-14.json`.

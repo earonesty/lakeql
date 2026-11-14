@@ -1,4 +1,5 @@
 import { LakeqlError, type MemoryBudget, type MemoryScope, throwIfAborted } from "lakeql-core";
+import { footerDirectoryBytes } from "./footer-directory.js";
 import { readParquetFooterEnvelope } from "./incremental-metadata.js";
 import { indexedLeafBytes, openIndexedParquetEnvelope } from "./indexed-footer.js";
 import { readParquetFooterBuffer } from "./metadata-cache.js";
@@ -41,7 +42,7 @@ export async function acquireIndexedParquetSource(
       await narrow();
       envelope = readParquetFooterEnvelope(footer, undefined, acquisition);
     }
-    const directoryBytes = envelope.rowGroupCount * 8;
+    const directoryBytes = footerDirectoryBytes(envelope.rowGroupCount);
     // Retain a larger first read when the directory fits. Under pressure, discard
     // its page prefix before fetching exact backing; never overlap both buffers.
     if (

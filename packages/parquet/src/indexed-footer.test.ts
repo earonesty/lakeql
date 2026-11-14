@@ -3,6 +3,7 @@ import { parquetMetadata } from "hyparquet";
 import { parquetWriteBuffer } from "hyparquet-writer";
 import { MemoryBudget, MemoryScope } from "lakeql-core";
 import { expect, it } from "vitest";
+import { footerDirectoryBytes } from "./footer-directory.js";
 import { indexedLeafBytes, openIndexedParquetFooter } from "./indexed-footer.js";
 import { lakeqlParquetParsers } from "./parsers.js";
 
@@ -12,7 +13,7 @@ it("opens schema/envelope without materializing groups and respects directory li
     columnData: [{ name: "id", type: "INT32", data: Array.from({ length: 40 }, (_, i) => i) }],
   });
   const oracle = parquetMetadata(bytes, { parsers: lakeqlParquetParsers });
-  const capacity = 160 + indexedLeafBytes(oracle);
+  const capacity = footerDirectoryBytes(20) + indexedLeafBytes(oracle);
   const scope = new MemoryScope(new MemoryBudget(capacity));
   const indexed = openIndexedParquetFooter(bytes, scope);
   const { row_groups, ...envelope } = oracle;
@@ -50,7 +51,9 @@ it.skipIf(!existsSync(decimalFixture))(
     const oracle = await readParquetMetadataFromFile(
       await asyncBufferFromStore(store, "decimal.parquet"),
     );
-    const scope = new MemoryScope(new MemoryBudget(8 + indexedLeafBytes(oracle)));
+    const scope = new MemoryScope(
+      new MemoryBudget(footerDirectoryBytes(1) + indexedLeafBytes(oracle)),
+    );
     const source = openIndexedParquetFooter(
       bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length),
       scope,

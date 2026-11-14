@@ -1,6 +1,14 @@
 import type { MemoryScope } from "lakeql-core";
-import { LakeqlError } from "lakeql-core";
+import { LakeqlError, MATERIALIZATION_CHARGES } from "lakeql-core";
 import { readCompactHeader } from "./compact-header.js";
+
+/** Shared forecast for directory admission and indexed-footer headroom selection. */
+export function footerDirectoryBytes(groups: number): number {
+  const bytes = MATERIALIZATION_CHARGES.view + groups * 8;
+  if (!Number.isSafeInteger(groups) || groups < 0 || !Number.isSafeInteger(bytes))
+    throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Invalid footer directory capacity");
+  return bytes;
+}
 
 /** Fixed-width [start,end) pairs relative to the compact metadata view.
  * The caller retains the footer backing separately. No row-group trees survive.
@@ -20,7 +28,7 @@ export function indexFooterRowGroups(
     throw new LakeqlError("LAKEQL_PARQUET_READ_ERROR", "Invalid footer row-group count");
   const visit = (callback: (start: number, end: number, index: number) => void) =>
     visitFooterRowGroups(view, callback);
-  return scope.allocate(count * 8, "Parquet footer row-group directory", () => {
+  return scope.allocate(footerDirectoryBytes(count), "Parquet footer row-group directory", () => {
     const ranges = new Uint32Array(count * 2);
     let written = 0;
     visit((start, end, index) => {

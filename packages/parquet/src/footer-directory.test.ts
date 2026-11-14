@@ -1,10 +1,14 @@
 import { parquetWriteBuffer } from "hyparquet-writer";
-import { MemoryBudget, MemoryScope } from "lakeql-core";
+import { MATERIALIZATION_CHARGES as c, MemoryBudget, MemoryScope } from "lakeql-core";
 import { expect, it } from "vitest";
 import { readCompactHeader } from "./compact-header.js";
-import { footerRowGroupView, indexFooterRowGroups } from "./footer-directory.js";
+import {
+  footerDirectoryBytes,
+  footerRowGroupView,
+  indexFooterRowGroups,
+} from "./footer-directory.js";
 
-it.each([1, 20])("admits exactly eight directory bytes per row group (%i)", (groups) => {
+it.each([1, 20])("admits directory view plus eight bytes per row group (%i)", (groups) => {
   const bytes = parquetWriteBuffer({
     rowGroupSize: Array(groups).fill(2),
     columnData: [
@@ -13,10 +17,10 @@ it.each([1, 20])("admits exactly eight directory bytes per row group (%i)", (gro
   });
   const length = new DataView(bytes).getUint32(bytes.byteLength - 8, true);
   const view = new DataView(bytes, bytes.byteLength - 8 - length, length);
-  const budget = new MemoryBudget(groups * 8),
+  const budget = new MemoryBudget(c.view + groups * 8),
     scope = new MemoryScope(budget);
   const directory = indexFooterRowGroups(view, scope);
-  expect(budget.peakBytes).toBe(groups * 8);
+  expect(budget.peakBytes).toBe(c.view + groups * 8);
   expect(directory).toHaveLength(groups * 2);
   for (let index = 0; index < groups; index++) {
     const group = footerRowGroupView(view, directory, index);
@@ -27,7 +31,7 @@ it.each([1, 20])("admits exactly eight directory bytes per row group (%i)", (gro
   }
   scope.dispose();
   expect(budget.usedBytes).toBe(0);
-  const tight = new MemoryScope(new MemoryBudget(groups * 8 - 1));
+  const tight = new MemoryScope(new MemoryBudget(c.view + groups * 8 - 1));
   expect(() => indexFooterRowGroups(view, tight)).toThrow(/budget/);
   expect(tight.budget.peakBytes).toBe(0);
   tight.dispose();
@@ -56,7 +60,7 @@ it("decodes random-access groups independently without reading peer structs", as
   const leaves = expected.schema.filter((element) => element.type);
   const length = new DataView(bytes).getUint32(bytes.byteLength - 8, true);
   const view = new DataView(bytes, bytes.byteLength - 8 - length, length);
-  const scope = new MemoryScope(new MemoryBudget(160));
+  const scope = new MemoryScope(new MemoryBudget(c.view + 160));
   const directory = indexFooterRowGroups(view, scope);
   for (const index of [19, 0, 7, 7, 1])
     expect(decodeRowGroupMetadata(footerRowGroupView(view, directory, index), leaves)).toEqual(
@@ -82,14 +86,30 @@ it("rejects mismatched precomputed counts and releases failed directory allocati
   const length = new DataView(bytes).getUint32(bytes.byteLength - 8, true);
   const view = new DataView(bytes, bytes.byteLength - 8 - length, length);
   for (const count of [-1, NaN, 0.5, view.byteLength + 1, 0, 1, 3]) {
-    const scope = new MemoryScope(new MemoryBudget(64));
+    const scope = new MemoryScope(new MemoryBudget(c.view + 64));
     expect(() => indexFooterRowGroups(view, scope, count)).toThrow(/count|changed/);
     expect(scope.budget.usedBytes).toBe(0);
     scope.dispose();
   }
-  const scope = new MemoryScope(new MemoryBudget(16));
+  const scope = new MemoryScope(new MemoryBudget(c.view + 16));
   expect(indexFooterRowGroups(view, scope, 2)).toHaveLength(4);
-  expect(scope.budget.usedBytes).toBe(16);
+  expect(scope.budget.usedBytes).toBe(c.view + 16);
   scope.dispose();
   expect(scope.budget.usedBytes).toBe(0);
+});
+
+it("charges empty directory views and validates forecast capacities", () => {
+  const view = new DataView(Uint8Array.of(0x49, 0x0c, 0).buffer);
+  expect(footerDirectoryBytes(0)).toBe(c.view);
+  const scope = new MemoryScope(new MemoryBudget(c.view));
+  expect(indexFooterRowGroups(view, scope)).toHaveLength(0);
+  expect(scope.budget.usedBytes).toBe(c.view);
+  scope.dispose();
+  expect(scope.budget.usedBytes).toBe(0);
+  for (const count of [-1, NaN, Infinity, 0.5, Number.MAX_SAFE_INTEGER])
+    expect(() => footerDirectoryBytes(count)).toThrow(/capacity/);
+  const tight = new MemoryScope(new MemoryBudget(c.view - 1));
+  expect(() => indexFooterRowGroups(view, tight)).toThrow(/budget/);
+  expect(tight.budget.usedBytes).toBe(0);
+  tight.dispose();
 });

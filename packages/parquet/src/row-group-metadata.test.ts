@@ -108,7 +108,9 @@ it("bounds raw scratch by one column while retaining real wide-schema metadata",
   const { parquetWriteBuffer } = await import("hyparquet-writer");
   const { parquetMetadata } = await import("hyparquet");
   const { MemoryBudget, MemoryScope } = await import("lakeql-core");
-  const { indexFooterRowGroups, footerRowGroupView } = await import("./footer-directory.js");
+  const { footerDirectoryBytes, indexFooterRowGroups, footerRowGroupView } = await import(
+    "./footer-directory.js"
+  );
   const { decodeRowGroupMetadata } = await import("./row-group-metadata.js");
   const { lakeqlParquetParsers } = await import("./parsers.js");
   const scratchPeaks: number[] = [];
@@ -125,7 +127,7 @@ it("bounds raw scratch by one column while retaining real wide-schema metadata",
     const leaves = expected.schema.filter((element) => element.type);
     const footerLength = new DataView(file).getUint32(file.byteLength - 8, true);
     const view = new DataView(file, file.byteLength - footerLength - 8, footerLength);
-    const directoryScope = new MemoryScope(new MemoryBudget(16));
+    const directoryScope = new MemoryScope(new MemoryBudget(footerDirectoryBytes(2)));
     const directory = indexFooterRowGroups(view, directoryScope);
     const group = footerRowGroupView(view, directory, 1);
     directoryScope.dispose();

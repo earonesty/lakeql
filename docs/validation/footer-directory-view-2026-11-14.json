@@ -1,0 +1,40 @@
+{
+  "requirements": ["M1", "M2", "V2"],
+  "baseCommit": "54b8fe5",
+  "change": "Shared footerDirectoryBytes forecast includes typed-array view plus eight backing bytes per row group; construction and footer narrowing use the same forecast.",
+  "viewChargeBytes": 128,
+  "exactCapacities": {
+    "empty": 128,
+    "oneGroup": 136,
+    "twentyGroups": 288
+  },
+  "validation": {
+    "focusedPassed": 25,
+    "regularPassed": 3757,
+    "regularSkipped": 645,
+    "workerPassed": 82,
+    "build": "tsc -b passed",
+    "typecheck": "passed"
+  },
+  "edgeCases": [
+    "exact cap and cap minus one",
+    "empty typed array",
+    "malformed/truncated footer before admission",
+    "changed precomputed count rollback",
+    "unsafe/fractional/negative forecast capacity",
+    "real Parquet random-access equality and decimal pruning",
+    "owned indexed HTTP failure cleanup"
+  ],
+  "sources": {
+    "footer-directory.ts": "15f677e479613034fcf451ff519d530a73f6b5c78164206858c6fc1d965aaa80",
+    "indexed-source.ts": "d022441ee2bf29420b56441b28cfd5fe57bfc4ef91c86c20360c0b80bc26c707",
+    "footer-directory.test.ts": "c4d7afad3723e095fb1c1f627cea8427e1582d5d988f204d88f72b7f20135d01",
+    "indexed-footer.test.ts": "bffb51ad497a8d35efd1fd9acfaa4787b0be9385c5fa893113683086bbb9ebf0",
+    "row-group-plan.test.ts": "6063035672877319dca7856f270930f5aac362417242d0768faf24ecaeea5344"
+  },
+  "limits": [
+    "Explicit view charge is a model unit, not an exact VM size",
+    "Remaining borrowed views, parser/converter helpers and whole-runtime accounting are not closed",
+    "Previous live-cloud measurements predate this additional 128-byte directory charge"
+  ]
+}

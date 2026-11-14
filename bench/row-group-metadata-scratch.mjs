@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 import { MemoryBudget, MemoryScope } from "../packages/core/dist/index.js";
 import {
+  footerDirectoryBytes,
   footerRowGroupView,
   indexFooterRowGroups,
 } from "../packages/parquet/dist/footer-directory.js";
@@ -29,7 +30,7 @@ for (const width of [1, 8, 32, 128]) {
   const leaves = metadata.schema.filter((leaf) => leaf.type);
   const length = new DataView(bytes).getUint32(bytes.byteLength - 8, true);
   const view = new DataView(bytes, bytes.byteLength - length - 8, length);
-  const directoryScope = new MemoryScope(new MemoryBudget(16));
+  const directoryScope = new MemoryScope(new MemoryBudget(footerDirectoryBytes(2)));
   const group = footerRowGroupView(view, indexFooterRowGroups(view, directoryScope), 1);
   directoryScope.dispose();
   const entries = Object.entries(variants).map(([variant, decode]) => ({

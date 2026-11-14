@@ -2,7 +2,11 @@ import { parquetMetadata } from "hyparquet";
 import { parquetWriteBuffer } from "hyparquet-writer";
 import { gte, MemoryBudget, MemoryScope } from "lakeql-core";
 import { expect, it } from "vitest";
-import { footerRowGroupView, indexFooterRowGroups } from "./footer-directory.js";
+import {
+  footerDirectoryBytes,
+  footerRowGroupView,
+  indexFooterRowGroups,
+} from "./footer-directory.js";
 import { decodeRowGroupMetadata } from "./row-group-metadata.js";
 import { planRowGroupsFromMetadata, planRowGroupsFromSource } from "./row-group-plan.js";
 
@@ -14,7 +18,7 @@ it("plans directory-decoded groups in one pass with identical offsets and prunin
   const metadata = parquetMetadata(bytes);
   const length = new DataView(bytes).getUint32(bytes.byteLength - 8, true);
   const view = new DataView(bytes, bytes.byteLength - 8 - length, length);
-  const scope = new MemoryScope(new MemoryBudget(160));
+  const scope = new MemoryScope(new MemoryBudget(footerDirectoryBytes(20)));
   const directory = indexFooterRowGroups(view, scope);
   const leaves = metadata.schema.filter((element) => element.type);
   for (const where of [undefined, gte("id", 28), gte("id", 100)]) {
