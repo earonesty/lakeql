@@ -1,0 +1,50 @@
+{
+  "baseline": "332935d",
+  "status": "validated implementation; full audit acceptance remains open",
+  "contract": [
+    "Within a synchronous scalar comparison, equal physical packed-text dictionary indices with matching outer null state share one decoded immutable string.",
+    "Comparator still runs, preserving its validation and secondary-key/stable-tie behavior. Right index bounds remain checked.",
+    "No retained cache or additional workspace; binary and mutable/nested scalar values are not shared by this optimization."
+  ],
+  "validation": {
+    "focusedPassed": 27,
+    "regularPassed": 4004,
+    "regularSkipped": 645,
+    "workerPassed": 95,
+    "requiredConformancePassed": 520,
+    "requiredConformanceSkipped": 1,
+    "referencePassed": 120,
+    "releaseGates": "build, types, clean package consumer, lint, compatibility, large files, changeset, fixtures passed",
+    "thresholdsAndTimeouts": "unchanged"
+  },
+  "exactBoundary": {
+    "packedStringBytes": 200,
+    "oneScalarAdmissionBytes": 592,
+    "decodeCalls": 1,
+    "comparatorCalls": 1,
+    "finalAdmittedBytes": 0
+  },
+  "query": {
+    "method": "Two independent DuckDB-fixture comparisons, each one warmup/four alternating fresh-process measured pairs. Six cardinality/batch-size cases; nullable text primary key, descending secondary key, offset and limit. Every output checked and released to zero.",
+    "aggregateMedianMs": [[414.5285445, 407.36696], [416.094283, 413.999544]],
+    "interpretation": "Approximately 10\u201314% improvement for cardinality 16 / batch size 2048; overall near parity with mixed individual timings. No universal speedup or cloud-throughput claim."
+  },
+  "remaining": [
+    "F5 broader adaptive key preparation remains open.",
+    "Whole-runtime memory caps and broad audit acceptance remain open; this optimization adds no new retained state."
+  ],
+  "negativeControl": {
+    "baseline": "332935d",
+    "cap": 592,
+    "code": "LAKEQL_BUDGET_EXCEEDED",
+    "finalAdmittedBytes": 0
+  },
+  "publicR2": {
+    "scenarios": 52,
+    "ordinaryScenarios": 40,
+    "maxOrdinaryReadConcurrency": 4,
+    "maxIncrementalAdmission": 415448,
+    "maxWarmOrdinaryDataRequests": 0,
+    "queryHeadroomBytes": 524288
+  }
+}

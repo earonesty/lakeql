@@ -7,6 +7,8 @@ import { DuckDBInstance } from "@duckdb/node-api";
 import { MemoryBudget, memoryStore } from "../packages/core/dist/index.js";
 import { createParquetLake } from "../packages/parquet/dist/index.js";
 
+const mode = process.env.LAKEQL_DICTIONARY_QUERY_MODE ?? "materialize";
+assert.ok(["materialize", "topk"].includes(mode));
 const rows = 8192;
 const cases = [];
 for (const cardinality of [16, 1024, 8192]) {
@@ -35,11 +37,30 @@ for (const cardinality of [16, 1024, 8192]) {
     await store.put("fixture.parquet", bytes);
     const pool = new MemoryBudget(64 * 1024 * 1024);
     const lake = createParquetLake({ store, memoryPool: pool, scanRangeCache: { maxBytes: 0 } });
+    let query = lake.path("fixture.parquet").batchSize(batchSize);
+    let oracle = expected;
+    if (mode === "topk") {
+      query = query
+        .orderBy([
+          { column: "text", nulls: "last" },
+          { column: "id", direction: "desc" },
+        ])
+        .offset(7)
+        .limit(100);
+      oracle = [...expected]
+        .sort((a, b) => {
+          if (a.text === null || b.text === null) {
+            if (a.text !== b.text) return a.text === null ? 1 : -1;
+          } else if (a.text !== b.text) return a.text < b.text ? -1 : 1;
+          return b.id - a.id;
+        })
+        .slice(7, 107);
+    }
     const start = performance.now();
-    const output = await lake.path("fixture.parquet").batchSize(batchSize).run().toOwnedArray();
+    const output = await query.run().toOwnedArray();
     const elapsedMs = performance.now() - start;
     try {
-      assert.deepEqual(output.value, expected);
+      assert.deepEqual(output.value, oracle);
     } finally {
       output.release();
     }
@@ -60,6 +81,7 @@ console.log(
     scope:
       "Local real Parquet dictionary fixtures; output parity checked row by row. Fixture construction excluded from timing and admission. No cloud or total-heap claim.",
     node: process.version,
+    mode,
     elapsedMs: cases.reduce((sum, x) => sum + x.elapsedMs, 0),
     cases,
   }),

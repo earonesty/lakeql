@@ -182,3 +182,58 @@ it("holds scalar admission through a decoder callback that closes its scope", ()
     scope.dispose();
   }
 });
+
+it("decodes a shared immutable dictionary operand once while still calling the comparator", () => {
+  const vector: Vector = { type: "dict", indices: Uint32Array.of(0, 0), dictionary: packed([200]) };
+  const pool = new MemoryBudget(bytes(200));
+  const scope = new MemoryScope(pool);
+  const reader = new ScalarReadWorkspace(scope);
+  const decode = vi.spyOn(TextDecoder.prototype, "decode");
+  const compare = vi.fn((left, right) => {
+    expect(left).toBe(right);
+    return 7;
+  });
+  try {
+    expect(reader.consume(vector, 0, 1, compare)).toBe(7);
+    expect(compare).toHaveBeenCalledTimes(1);
+    expect(decode).toHaveBeenCalledTimes(1);
+    expect(pool.peakBytes).toBe(bytes(200));
+  } finally {
+    decode.mockRestore();
+    reader.dispose();
+    scope.dispose();
+  }
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("preserves different outer null states and rejects invalid right indices", () => {
+  const vector: Vector = {
+    type: "dict",
+    indices: Uint32Array.of(0, 0),
+    valid: Uint8Array.of(0, 1),
+    dictionary: packed([2]),
+  };
+  const scope = new MemoryScope(new MemoryBudget(4096));
+  const reader = new ScalarReadWorkspace(scope);
+  try {
+    expect(
+      reader.consume(vector, 0, 1, (left, right) => {
+        expect(left).toBe(null);
+        expect(right).toBe("aa");
+        return -1;
+      }),
+    ).toBe(-1);
+    expect(
+      reader.consume(vector, 1, 0, (left, right) => {
+        expect(left).toBe("aa");
+        expect(right).toBe(null);
+        return 1;
+      }),
+    ).toBe(1);
+    expect(() => reader.consume(vector, 0, 2, () => 0)).toThrow(/bounds/);
+    expect(scope.budget.usedBytes).toBe(0);
+  } finally {
+    reader.dispose();
+    scope.dispose();
+  }
+});

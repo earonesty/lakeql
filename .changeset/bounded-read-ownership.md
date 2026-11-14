@@ -431,3 +431,7 @@ Reuse decoded immutable dictionary strings within owned materialization when
 selected-row count predicts reuse and spare admitted workspace can hold the
 reference directory. Reserve mandatory output first, preserve parent stage caps,
 and fall back to direct decoding without cache eviction when workspace is scarce.
+
+Decode shared packed-text dictionary comparison operands once when their physical
+entry and outer null state match. Preserve comparator validation, secondary
+ordering, stable ties, and scalar admission without adding retained cache state.

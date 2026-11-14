@@ -260,3 +260,42 @@ it("deduplicates normalized order variants without per-duplicate storage", () =>
   }
   expect(pool.usedBytes).toBe(0);
 });
+
+it.each([
+  "asc",
+  "desc",
+] as const)("preserves secondary ordering and stable ties when dictionary operands share text: %s", (direction) => {
+  const scope = new MemoryScope(new MemoryBudget(65536));
+  const batch: Batch = {
+    rowCount: 6,
+    columns: {
+      id: { type: "i32", values: Int32Array.of(0, 1, 2, 3, 4, 5) },
+      key: {
+        type: "dict",
+        indices: new Uint32Array(6),
+        dictionary: {
+          type: "utf8-view",
+          data: new TextEncoder().encode("猫"),
+          fixedLength: 3,
+          length: 1,
+        },
+      },
+      secondary: { type: "i32", values: Int32Array.of(2, 1, 1, 3, 2, 1) },
+    },
+  };
+  const input = scope.allocate(512, "fixture", () => batch);
+  const output = vectorTopKOwnedBatch(
+    input,
+    [{ column: "key" }, { column: "secondary", direction }],
+    { offset: 1, limit: 3 },
+  );
+  try {
+    expect(materializeBatchRows(output.value).map((row) => row.id)).toEqual(
+      direction === "asc" ? [2, 5, 0] : [0, 4, 1],
+    );
+  } finally {
+    output.release();
+    scope.dispose();
+  }
+  expect(scope.budget.usedBytes).toBe(0);
+});

@@ -30,7 +30,18 @@ export class ScalarReadWorkspace implements VectorAllocator {
     this.active = true;
     this.used = 0;
     try {
-      return compare(scalarVectorValue(vector, left, this), scalarVectorValue(vector, right, this));
+      const first = scalarVectorValue(vector, left, this);
+      // One immutable decoded text can serve both operands when their physical
+      // dictionary entry and outer null state match. Still call the comparator:
+      // equality does not bypass its validation or tie-breaking contract.
+      const sameText =
+        vector.type === "dict" &&
+        vector.dictionary.type === "utf8-view" &&
+        right >= 0 &&
+        right < vector.indices.length &&
+        vector.indices[left] === vector.indices[right] &&
+        (vector.valid?.[left] === 0) === (vector.valid?.[right] === 0);
+      return compare(first, sameText ? first : scalarVectorValue(vector, right, this));
     } catch (error) {
       this.release();
       throw error;
