@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import {
   batchFromVectors,
   predicateSelection,
@@ -48,18 +49,18 @@ it("preserves wide timestamp scalar access, borrowed slices, ordering and predic
 
 it("admits wide gather exactly and retains detached output after input release", () => {
   const vector = wide([-(1n << 95n), (1n << 95n) - 1n]);
-  for (const cap of [35, 36]) {
+  for (const cap of [35 + 2 * c.view, 36 + 2 * c.view]) {
     const scope = new MemoryScope(new MemoryBudget(cap));
     const input = scope.retainAllocations(batchFromVectors({ at: vector }));
     try {
-      if (cap === 35) {
+      if (cap === 35 + 2 * c.view) {
         expect(() => gatherOwnedBatch(input, [1, 0, 1])).toThrow(/budget/);
         expect(scope.budget.peakBytes).toBe(0);
       } else {
         const output = gatherOwnedBatch(input, [1, 0, 1]);
         input.release();
         scope.dispose();
-        expect(scope.budget.usedBytes).toBe(36);
+        expect(scope.budget.usedBytes).toBe(36 + 2 * c.view);
         expect(vectorValue(output.value.columns.at ?? vector, 1)).toMatchObject({
           epochNanoseconds: -(1n << 95n),
         });

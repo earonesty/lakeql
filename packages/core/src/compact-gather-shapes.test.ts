@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import { materializeBatchRows, type Vector, vectorValue } from "./batch.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope } from "./memory-scope.js";
-import { compactGatherBytes } from "./packed-gather.js";
+import { compactGatherPlan } from "./packed-gather.js";
 import { gatherOwnedBatch } from "./vector-sort.js";
 
 const leaves: Vector[] = [
@@ -45,7 +45,8 @@ for (const leaf of leaves) {
         };
       for (const indices of [[], [0], [1], [2, 0, 2, 1]]) {
         const batch = { rowCount: 3, columns: { value: vector } };
-        const expectedBytes = compactGatherBytes(batch, indices);
+        const plan = compactGatherPlan(batch, indices);
+        const expectedBytes = plan === undefined ? undefined : plan.typedBytes + plan.viewBytes;
         expect(expectedBytes).toBeDefined();
         if (expectedBytes === undefined) throw new Error("Missing shape estimate");
         // Borrowed vector fixtures; owned padding forces the detachable path.

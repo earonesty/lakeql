@@ -4862,3 +4862,26 @@ configuration arithmetic gap, not the entire top-k/output ownership review.
 
 Validation: all 3,777 regular tests (645 skipped), 82 Worker tests, build and
 typechecking pass. Evidence: `validation/safe-row-limits-2026-11-14.json`.
+
+### Gather view accounting follow-up (in progress, 2026-11-14)
+
+The working-tree implementation forecasts retained typed-array views for both
+shared and compact gather output, including shared selection indices, nullable
+validity, empty arrays, and the two timestamp96 planes. Scoped borrowed gather
+uses existing child-stage admission for atomic output construction. Compact
+selection includes view charges in its measured capacity/size decision.
+
+An initial anonymous metadata charge failed repeated union compaction: obsolete
+view charges remained pinned. Associating each charge with its actual array
+restored all nine union-compaction tests, including 512 repeated selections per
+shape. The focused gather/top-k/compaction suite passes 67 tests. This change is
+not yet ready to push: the initial full run had 30 failures (3,852 passed), including
+that ownership issue and exact-budget expectations that still assume backing-only
+accounting. Those expectations and fixture checks must be reviewed individually,
+then the full suite and Worker/release gates rerun. No new performance claim is
+made. Object descriptors, planner metadata, and temporary copy views remain
+separate accounting gaps; this is not complete heap accounting.
+
+The gather follow-up now passes the full regular suite (3,883/645), then the expanded 29-test local scan suite and all 84 Worker tests. Both local and native R2 fixtures now test 9/900-row inputs and direct/generic scans, preserving shared and compact output after scanner shutdown. Build, type checks and lint pass. The 18-scenario local allocation benchmark verifies exact caps and cap-minus-one rejection before output allocation, with retained-owner release to zero. Coverage refresh is pending; this supersedes the in-progress failure status above without erasing the observed failures.
+
+Final gather coverage refresh passes 3,885 tests (645 skipped), at 91.34% statements, 85.45% branches, 95.88% functions and 93.15% lines with unchanged thresholds. Compatibility, blob and changeset checks pass; the latter two required escalation for their Git subprocess. Full audit acceptance and remaining release gates remain open.

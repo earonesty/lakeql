@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import {
   materializeBatchRows,
   scalarVectorValue,
@@ -44,13 +45,18 @@ it("preserves union values through traversal, slices, gathers, and admitted mate
   const batch = { rowCount: 4, columns: { a: vector, b: vector } };
   const indices = [3, 1, 3];
   const plan = sharedGatherPlan(batch, indices);
-  expect(plan).toEqual({ typedBytes: 12, retainsInput: true, createsJavaScriptArrays: false });
-  const gatherScope = new MemoryScope(new MemoryBudget(12));
+  expect(plan).toEqual({
+    typedBytes: 12,
+    viewBytes: c.view,
+    retainsInput: true,
+    createsJavaScriptArrays: false,
+  });
+  const gatherScope = new MemoryScope(new MemoryBudget(12 + c.view));
   const gathered = gatherBatch(batch, indices, gatherScope);
   expect(materializeBatchRows(gathered)).toEqual(
     indices.map((row) => ({ a: values[row], b: values[row] })),
   );
-  expect(gatherScope.budget.usedBytes).toBe(12);
+  expect(gatherScope.budget.usedBytes).toBe(12 + c.view);
   gatherScope.dispose();
   const materialization = planBatchMaterialization({ rowCount: 4, columns: { value: vector } });
   const output = materialization.execute(scope);

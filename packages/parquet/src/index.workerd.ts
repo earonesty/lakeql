@@ -271,9 +271,14 @@ it("enforces normal aggregate input admission through native R2 streams", async 
 });
 
 it.each([
-  false,
-  true,
-])("compacts gathered Parquet bytes from native R2 after scanner shutdown (direct=%s)", async (direct) => {
+  { direct: false, rows: 9 },
+  { direct: true, rows: 9 },
+  { direct: false, rows: 900 },
+  { direct: true, rows: 900 },
+])("retains gathered Parquet bytes from native R2 after scanner shutdown (direct=$direct, rows=$rows)", async ({
+  direct,
+  rows,
+}) => {
   const bucket = (env as unknown as { MEMORY_TEST_BUCKET: R2BucketLike }).MEMORY_TEST_BUCKET;
   const store = new R2ObjectStore(bucket);
   await writeParquet(store, "gather-owned.parquet", {
@@ -287,12 +292,12 @@ it.each([
       {
         name: "id",
         encoding: "RLE_DICTIONARY",
-        data: Array.from({ length: 9 }, (_, i) => 5 + (i % 3)),
+        data: Array.from({ length: rows }, (_, i) => 5 + (i % 3)),
       },
       {
         name: "raw",
         encoding: "RLE_DICTIONARY",
-        data: Array.from({ length: 9 }, (_, index) =>
+        data: Array.from({ length: rows }, (_, index) =>
           index % 3 === 0 ? Uint8Array.of(255, 0) : index % 3 === 1 ? null : new Uint8Array(),
         ),
       },
@@ -311,7 +316,7 @@ it.each([
     .scanOwnedVectorBatches("gather-owned.parquet", {
       ...(direct ? { columns: ["raw", "id"] } : {}),
       memoryBudget: producer,
-      batchSize: 3,
+      batchSize: rows,
       budget: {},
       stats: {
         queryId: "owned-gather",
@@ -344,7 +349,7 @@ it.each([
   bridge.dispose();
   next.value.release();
   await iterator.return?.();
-  expect(output.value.columns.raw?.type).toBe("binary-view");
+  expect(output.value.columns.raw?.type).toBe(rows === 9 ? "dict" : "binary-view");
   expect(producer.usedBytes).toBe(0);
   expect(consumer.usedBytes).toBeGreaterThan(16);
   expect(root.usedBytes).toBe(consumer.usedBytes);

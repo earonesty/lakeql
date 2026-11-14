@@ -381,3 +381,5 @@ Bound vector projection and deferred gather inputs even when scanners return ove
 Evaluate column null predicates from validity and dictionary/union metadata without decoding text or materializing nested values. Resolve indirection iteratively while preserving invalid-index errors and bounded predicate-mask admission.
 
 Share predicate-mask allocation and admit typed-array views alongside backing bytes. Include views for wider CASE choices and selected-index buffers while preserving mask reuse, temporary cleanup and low-memory predicate fallbacks.
+
+Admit retained typed-array views as well as backing for shared and compact gathers, including empty output and timestamp96 planes. Compact selection includes view cost in its measured decision; exact memory limits may therefore require additional view allowance. Preserve array provenance so repeated compaction releases obsolete charges.

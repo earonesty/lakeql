@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { type Batch, batchFromColumns, materializeBatchRows, vectorValue } from "./batch.js";
 import { DecimalValue, decimalFromParts } from "./decimal-value.js";
 import { createInMemoryLake } from "./in-memory.js";
@@ -138,14 +139,14 @@ it("shares one index buffer across decimal columns when detached output does not
   batchFromColumns(values, probe);
   const peak = probe.budget.peakBytes;
   probe.dispose();
-  const pool = new MemoryBudget(peak + 12);
+  const pool = new MemoryBudget(peak + 12 + c.view);
   const producer = new MemoryScope(pool);
   const input = producer.retainAllocations(batchFromColumns(values, producer));
   producer.dispose();
   const held = pool.usedBytes;
   const selected = gatherOwnedBatch(input, [2, 1, 0]);
   input.release();
-  expect(pool.usedBytes).toBe(held + 12);
+  expect(pool.usedBytes).toBe(held + 12 + c.view);
   const first = selected.value.columns.value;
   const second = selected.value.columns.other;
   expect(first?.type).toBe("dict");

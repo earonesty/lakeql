@@ -20,7 +20,7 @@ import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
 import type { MemoryStageScheduler } from "./memory-stage-scheduler.js";
 import { expandNestedDictionary, nestedDictionaryLeaf } from "./nested-dictionary.js";
 import {
-  compactGatherBytes,
+  compactGatherPlan,
   compactPackedGather,
   compactScalarDictionary,
   concatAdaptivePackedDictionaries,
@@ -245,7 +245,17 @@ export function gatherBatch(
   indices: readonly number[] | Uint32Array,
   scope?: MemoryScope,
 ): Batch {
-  return gatherBatchStorage(batch, indices, scope, false);
+  if (scope === undefined) return gatherBatchStorage(batch, indices, undefined, false, 0);
+  validateGatherIndices(batch, indices);
+  const plan = sharedGatherPlan(batch, indices);
+  const stage = scope.childStage(plan.typedBytes + plan.viewBytes, "gather output and views");
+  try {
+    const output = gatherBatchStorage(batch, indices, stage, false, plan.viewBytes);
+    scope.adopt(stage.retainAllocations(output));
+    return output;
+  } finally {
+    stage.dispose();
+  }
 }
 
 /** Gather selected rows, releasing index workspace after output construction. */
@@ -279,8 +289,10 @@ function gatherBatchStorage(
   indices: readonly number[] | Uint32Array,
   scope: MemoryScope | undefined,
   compact: boolean,
+  viewBytes: number,
 ): Batch {
   validateGatherIndices(batch, indices);
+
   let sharedIndices: Uint32Array | undefined;
   const selectionIndices = () => {
     if (sharedIndices !== undefined) return sharedIndices;
@@ -294,7 +306,10 @@ function gatherBatchStorage(
     return sharedIndices;
   };
   const columns: Record<string, Vector> = Object.create(null);
-  for (const [name, vector] of Object.entries(batch.columns)) {
+  for (const name in batch.columns) {
+    if (!Object.hasOwn(batch.columns, name)) continue;
+    const vector = batch.columns[name];
+    if (vector === undefined) continue;
     if (compact && scope !== undefined && packedGatherLeaf(vector) !== undefined) {
       columns[name] = compactPackedGather(vector, indices, scope);
       continue;
@@ -326,6 +341,29 @@ function gatherBatchStorage(
       columns[name] = gatherVector(vector, indices, scope);
     }
   }
+  // Associate metadata with the actual view so compaction can discard its charge
+  // together with obsolete backing. Stage admission already covers construction.
+  if (scope !== undefined && viewBytes > 0) {
+    const charge = (view: ArrayBufferView) =>
+      scope.allocate(c.view, "gather typed-array view", () => view);
+    for (const name in columns) {
+      const vector = columns[name];
+      if (vector === undefined) continue;
+      if ("valid" in vector && vector.valid !== undefined) charge(vector.valid);
+      if (vector.type === "dict") {
+        if (vector.indices !== sharedIndices) charge(vector.indices);
+      } else if (vector.type === "timestamp96") {
+        charge(vector.low);
+        charge(vector.high);
+      } else if (vector.type === "utf8-view" || vector.type === "binary-view") {
+        if (vector.ranges !== undefined) charge(vector.ranges);
+        charge(vector.data);
+      } else if ("values" in vector && ArrayBuffer.isView(vector.values)) {
+        charge(vector.values);
+      }
+    }
+    if (sharedIndices !== undefined) charge(sharedIndices);
+  }
   return { rowCount: indices.length, columns };
 }
 
@@ -342,17 +380,19 @@ export function gatherOwnedBatch(
     // Keep source storage admitted throughout output construction, including overlap.
     const source = scope.adopt(input.retainIn(budget));
     validateGatherIndices(input.value, indices);
-    const compactBytes = compactGatherBytes(input.value, indices);
+    const compactPlan = compactGatherPlan(input.value, indices);
+    const compactBytes =
+      compactPlan === undefined ? undefined : compactPlan.typedBytes + compactPlan.viewBytes;
     const compact =
       compactBytes !== undefined &&
       compactBytes < input.bytes &&
       compactBytes <= budget.availableBytes;
     const plan =
-      compact && compactBytes !== undefined
-        ? { typedBytes: compactBytes, retainsInput: false }
+      compact && compactPlan !== undefined
+        ? { ...compactPlan, retainsInput: false }
         : sharedGatherPlan(input.value, indices);
-    scope.admit(plan.typedBytes, "gather typed output");
-    const batch = gatherBatchStorage(input.value, indices, scope, compact);
+    scope.admit(plan.typedBytes + plan.viewBytes, "gather typed output and views");
+    const batch = gatherBatchStorage(input.value, indices, scope, compact, plan.viewBytes);
     if (!plan.retainsInput) source.release();
     return scope.retainAllocations(batch);
   } finally {

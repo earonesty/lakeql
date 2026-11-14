@@ -1,3 +1,4 @@
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { type Batch, type PackedByteVector, type Vector, vectorLength } from "./batch.js";
 import { LakeqlError } from "./errors.js";
 import type { MemoryReservation } from "./memory-budget.js";
@@ -428,12 +429,16 @@ function payloadBytes(
 }
 
 /** Exact new typed backing for a fully detachable gather, or undefined for shared shapes. */
-export function compactGatherBytes(
+export function compactGatherPlan(
   batch: Batch,
   indices: readonly number[] | Uint32Array,
-): number | undefined {
+): { typedBytes: number; viewBytes: number } | undefined {
   let bytes = 0;
-  for (const vector of Object.values(batch.columns)) {
+  let viewBytes = 0;
+  for (const name in batch.columns) {
+    if (!Object.hasOwn(batch.columns, name)) continue;
+    const vector = batch.columns[name];
+    if (vector === undefined) continue;
     const validity = indices.some((index) => resolvedIndex(vector, index) < 0) ? indices.length : 0;
     const scalarLeaf = dictionaryLeaf(vector);
     const leaf = packedGatherLeaf(vector);
@@ -441,18 +446,21 @@ export function compactGatherBytes(
       const payload = payloadBytes(vector, leaf, indices);
       if (!Number.isSafeInteger(payload) || payload > 0xffffffff) return undefined;
       bytes += payload + indices.length * 8 + validity;
+      viewBytes += (2 + (validity > 0 ? 1 : 0)) * c.view;
     } else if (scalarLeaf.type === "decimal") {
       const plan = planSelectedConcat([selectVectorIndices(vector, indices)]);
       if (plan === undefined) return undefined;
       bytes += plan.bytes;
+      if (validity > 0) viewBytes += c.view;
     } else if (scalarLeaf.type === "null") {
     } else if ("values" in scalarLeaf && ArrayBuffer.isView(scalarLeaf.values)) {
       bytes += indices.length * scalarLeaf.values.BYTES_PER_ELEMENT + validity;
+      viewBytes += (1 + (validity > 0 ? 1 : 0)) * c.view;
     } else {
       return undefined;
     }
   }
-  return Number.isSafeInteger(bytes) ? bytes : undefined;
+  return Number.isSafeInteger(bytes + viewBytes) ? { typedBytes: bytes, viewBytes } : undefined;
 }
 
 export function compactPackedGather(

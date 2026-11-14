@@ -301,9 +301,14 @@ it("does not advertise owned scans for a borrowed-only store", () => {
 });
 
 it.each([
-  false,
-  true,
-])("keeps gathered Parquet byte backing admitted after scanner shutdown (direct=%s)", async (direct) => {
+  { direct: false, rows: 9 },
+  { direct: true, rows: 9 },
+  { direct: false, rows: 900 },
+  { direct: true, rows: 900 },
+])("keeps gathered Parquet byte backing admitted after scanner shutdown (direct=$direct, rows=$rows)", async ({
+  direct,
+  rows,
+}) => {
   const store = memoryStore();
   await writeParquet(store, "gather-owned.parquet", {
     codec: "UNCOMPRESSED",
@@ -316,12 +321,12 @@ it.each([
       {
         name: "id",
         encoding: "RLE_DICTIONARY",
-        data: Array.from({ length: 9 }, (_, i) => 5 + (i % 3)),
+        data: Array.from({ length: rows }, (_, i) => 5 + (i % 3)),
       },
       {
         name: "raw",
         encoding: "RLE_DICTIONARY",
-        data: Array.from({ length: 9 }, (_, index) =>
+        data: Array.from({ length: rows }, (_, index) =>
           index % 3 === 0 ? Uint8Array.of(255, 0) : index % 3 === 1 ? null : new Uint8Array(),
         ),
       },
@@ -340,7 +345,7 @@ it.each([
     .scanOwnedVectorBatches("gather-owned.parquet", {
       ...(direct ? { columns: ["raw", "id"] } : {}),
       memoryBudget: producer,
-      batchSize: 3,
+      batchSize: rows,
       budget: {},
       stats: queryStats(),
       now: () => 0,
@@ -355,7 +360,8 @@ it.each([
   bridge.dispose();
   next.value.release();
   await iterator.return?.();
-  expect(output.value.columns.raw?.type).toBe("binary-view");
+  // For this small input, shared output is cheaper after counting output views.
+  expect(output.value.columns.raw?.type).toBe(rows === 9 ? "dict" : "binary-view");
   expect(producer.usedBytes).toBe(0);
   expect(consumer.usedBytes).toBeGreaterThan(16);
   expect(root.usedBytes).toBe(consumer.usedBytes);

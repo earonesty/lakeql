@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { batchFromColumns, materializeBatchRows } from "./batch.js";
 import { sharedGatherPlan } from "./gather-plan.js";
 import { MemoryBudget } from "./memory-budget.js";
@@ -27,16 +28,17 @@ it("admits mixed shared shapes atomically and shares one selection index buffer"
   // Scalar values/validity + one shared text/nested/packed index buffer.
   expect(plan).toEqual({
     typedBytes: 32 + 4 + 16,
+    viewBytes: 3 * c.view,
     retainsInput: true,
     createsJavaScriptArrays: false,
   });
-  const exact = root.child(input.bytes + plan.typedBytes);
+  const exact = root.child(input.bytes + plan.typedBytes + plan.viewBytes);
   const output = gatherOwnedBatch(input, indices, exact);
-  expect(output.bytes).toBe(input.bytes + plan.typedBytes);
+  expect(output.bytes).toBe(input.bytes + plan.typedBytes + plan.viewBytes);
   const rows = materializeBatchRows(batch);
   expect(materializeBatchRows(output.value)).toEqual(indices.map((index) => rows[index]));
   output.release();
-  const tight = root.child(input.bytes + plan.typedBytes - 1);
+  const tight = root.child(input.bytes + plan.typedBytes + plan.viewBytes - 1);
   expect(() => gatherOwnedBatch(input, indices, tight)).toThrow("budget");
   expect(tight.usedBytes).toBe(0);
   expect(tight.peakBytes).toBe(input.bytes); // No partially allocated output.
@@ -62,8 +64,11 @@ it("plans independent dictionary indices and avoids validity for all-present sel
     },
   };
   expect(sharedGatherPlan(batch, [0, 0]).typedBytes).toBe(16);
+  expect(sharedGatherPlan(batch, [0, 0]).viewBytes).toBe(2 * c.view);
   expect(sharedGatherPlan(batch, [0, 1]).typedBytes).toBe(18);
+  expect(sharedGatherPlan(batch, [0, 1]).viewBytes).toBe(3 * c.view);
   expect(sharedGatherPlan(batch, []).typedBytes).toBe(0);
+  expect(sharedGatherPlan(batch, []).viewBytes).toBe(2 * c.view);
 });
 
 it("keeps validity decisions column-specific for identical selected positions", () => {
@@ -85,16 +90,20 @@ it("keeps validity decisions column-specific for identical selected positions", 
   const positions = Uint32Array.of(0, 2);
   const plan = sharedGatherPlan(batch, positions);
   expect(plan.typedBytes).toBe(18);
-  const output = gatherOwnedBatch(input, positions, root.child(input.bytes + plan.typedBytes));
+  const output = gatherOwnedBatch(
+    input,
+    positions,
+    root.child(input.bytes + plan.typedBytes + plan.viewBytes),
+  );
   expect(output.value.columns.left?.valid).toBeUndefined();
   expect(output.value.columns.right?.valid).toEqual(Uint8Array.of(0, 1));
   expect(materializeBatchRows(output.value)).toEqual([
     { left: 1, right: null },
     { left: 3, right: 6 },
   ]);
-  expect(output.bytes).toBe(18);
+  expect(output.bytes).toBe(18 + 3 * c.view);
   output.release();
-  const tight = root.child(input.bytes + plan.typedBytes - 1);
+  const tight = root.child(input.bytes + plan.typedBytes + plan.viewBytes - 1);
   expect(() => gatherOwnedBatch(input, positions, tight)).toThrow(/budget/i);
   expect(tight.usedBytes).toBe(0);
   input.release();

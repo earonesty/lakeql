@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { type Batch, batchFromColumns, materializeBatchRows } from "./batch.js";
+import { sharedGatherPlan } from "./gather-plan.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope } from "./memory-scope.js";
 import { timestampFromEpoch } from "./timestamp.js";
@@ -47,7 +48,13 @@ it.each([
   scope.dispose();
   const order = [{ column: "key" }];
   const expected = materializeBatchRows(vectorTopKBatch(batch, order, { limit: 2 }));
-  const required = input.bytes + orderBytes + c.view + 8 + 2 * scalarBytes;
+  const gather = sharedGatherPlan(batch, [0, 1]);
+  const required =
+    input.bytes +
+    orderBytes +
+    c.view +
+    8 +
+    Math.max(2 * scalarBytes, gather.typedBytes + gather.viewBytes);
   const tight = budget.child(required - 1);
   const tightPin = input.retainIn(tight);
   expect(() => vectorTopKOwnedBatch(tightPin, order, { limit: 2 })).toThrow(/budget/i);
@@ -163,12 +170,12 @@ it("sizes the admitted heap from actual selected rows rather than an oversized l
   scope.dispose();
   const selected = new Uint8Array(128);
   selected[73] = 1;
-  // Normalization scratch dominates the one-index candidate/output overlap.
-  const child = root.child(input.bytes + orderBytes + 2 * c.object + 2 * c.property);
+  // Candidate and output views overlap during the gather.
+  const child = root.child(input.bytes + orderBytes + 2 * c.view + 4 + 8);
   const pin = input.retainIn(child);
   const output = vectorTopKOwnedBatch(pin, [{ column: "id" }], { limit: 1000000 }, selected);
   expect(materializeBatchRows(output.value)).toEqual([{ id: 73 }]);
-  expect(child.peakBytes).toBe(input.bytes + orderBytes + 2 * c.object + 2 * c.property);
+  expect(child.peakBytes).toBe(input.bytes + orderBytes + 2 * c.view + 4 + 8);
   output.release();
   pin.release();
   expect(child.usedBytes).toBe(0);

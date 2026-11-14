@@ -18,17 +18,17 @@ const input: Batch = {
 };
 
 it("releases temporary indices while retaining independent dictionary output indices", () => {
-  const budget = new MemoryBudget(c.view + 16);
+  const budget = new MemoryBudget(2 * c.view + 16);
   const scope = new MemoryScope(budget);
   try {
     const output = gatherSelectedBatch(input, new Uint8Array([1, 0, 1]), scope);
-    expect(budget.peakBytes).toBe(c.view + 16); // Temporary and output index buffers overlap.
-    expect(budget.usedBytes).toBe(8);
+    expect(budget.peakBytes).toBe(2 * c.view + 16); // Temporary and output index buffers overlap.
+    expect(budget.usedBytes).toBe(c.view + 8);
     expect(materializeBatchRows(output)).toEqual([{ text: "one" }, { text: "three" }]);
     const owner = scope.retainAllocations(output);
     scope.dispose();
     try {
-      expect(budget.usedBytes).toBe(8);
+      expect(budget.usedBytes).toBe(c.view + 8);
       expect(materializeBatchRows(owner.value)).toEqual([{ text: "one" }, { text: "three" }]);
     } finally {
       owner.release();
@@ -40,7 +40,7 @@ it("releases temporary indices while retaining independent dictionary output ind
 });
 
 it("releases index workspace when output admission fails one byte below overlap", () => {
-  const budget = new MemoryBudget(c.view + 15);
+  const budget = new MemoryBudget(2 * c.view + 15);
   const scope = new MemoryScope(budget);
   try {
     expect(() => gatherSelectedBatch(input, new Uint8Array([1, 0, 1]), scope)).toThrow();
