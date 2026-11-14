@@ -4409,3 +4409,12 @@ Reviewed existing RANGE binary-search, GROUPS cursor/index and frame-admission t
 The focused four-suite run passes 39 tests. Existing suites additionally verify logarithmic RANGE key visits, near-linear sequential GROUPS key visits, typed invalid offsets, timestamp interval ties, independent exclusion filtering, iterator cursor snapshots and bound-expression scratch release across row/run/vector routes. This strengthens F4's local boundary correctness and lower-memory evidence; it does not by itself complete public window lifecycle, current reference comparisons, transport fixtures or full allocation accounting.
 
 Final verification: 39 focused tests and typecheck passed. Evidence: `docs/validation/window-boundary-matrix-2026-11-14.json`. No runtime implementation changed.
+
+
+### F4/V2 current public dynamic-window reference matrix (2026-11-14)
+
+Extended the existing public CLI/DuckDB differential matrix with sixteen combinations of RANGE/GROUPS, ascending/descending ordering, and EXCLUDE NO OTHERS/CURRENT ROW/GROUP/TIES. Per-row CASE expressions vary both preceding and following offsets. Each case compares sum and count over a real written Parquet fixture with peer ties, a null aggregate value, multiple partitions and a singleton partition. Canonical full result rows are compared, including null sums and zero counts for empty excluded frames.
+
+All 120 reference tests pass across four files, including the sixteen added cases and existing deterministic randomized windows, timestamp intervals, ranking, value/holistic/statistical windows and format reference checks. This refresh supplies current public execution/reference evidence beyond the primitive oracle; fixture size is small and local-file based, so it establishes neither adaptive-index activation nor cloud memory-pressure behavior. Runtime source remains `558e3a5`.
+
+Final verification: all 120 reference tests, typecheck and formatting passed. Evidence: `docs/validation/window-dynamic-reference-2026-11-14.json`. No runtime implementation changed.

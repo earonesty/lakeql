@@ -240,6 +240,15 @@ describeReference("SQL CLI DuckDB reference comparisons", () => {
   });
 
   it.each([
+    ...["groups", "range"].flatMap((mode) =>
+      ["asc", "desc"].flatMap((direction) =>
+        ["no others", "current row", "group", "ties"].map((exclude) => ({
+          name: `dynamic ${mode} ${direction} exclude ${exclude}`,
+          sql: (table: string) =>
+            `select account, id, sum(amount) over (partition by account order by bucket ${direction} ${mode} between (case when id = 2 then 0 else 2 end) preceding and (case when id = 3 then 4 else 0 end) following exclude ${exclude}) as total, count(amount) over (partition by account order by bucket ${direction} ${mode} between (case when id = 2 then 0 else 2 end) preceding and (case when id = 3 then 4 else 0 end) following exclude ${exclude}) as present from ${table} order by account asc, id asc`,
+        })),
+      ),
+    ),
     {
       name: "ranking and distribution windows",
       sql: (table: string) =>
