@@ -4277,3 +4277,11 @@ The follow-up lifecycle review found that restored row-aggregate buffer/memory c
 Inline and spilled median checkpoints containing three values now reject a two-row limit before invoking an empty scanner; an exact three-row limit returns the existing median and releases all reservations. The real Parquet HTTP fixture also checks median checkpoint rejection with no additional requests for both 206 and ignored-range 200 servers. Focused aggregate suites pass 36 tests; both HTTP fixtures pass. This closes the demonstrated restore-validation gap, not all fallback/spill ownership or remote transaction acceptance.
 
 Final verification: build/typecheck passed; full suite 3,711 passed / 629 skipped (407 files). Evidence: `aggregate-restore-buffer-limit-2026-11-14.json`.
+
+### F1 duplicate aggregate restore groups (2026-11-14)
+
+Restore previously accepted repeated group keys and silently replaced the earlier accumulator group in the directory. Row checkpoint restore now rejects duplicates with `LAKEQL_BOOKMARK_INVALID` before constructing the duplicate group; vector restore rejects canonical duplicate keys with `LAKEQL_TYPE_ERROR` before restoring their accumulators. Both reuse the destination directory for membership checks, adding no extra key index or whole-state traversal.
+
+Focused aggregate/checkpoint tests pass 32 cases. New cases cover inline and spilled corrupt checkpoints, scanner non-invocation, zero remaining scope charges, and duplicate vector group snapshots. The real HTTP Parquet fixture now also rejects duplicate checkpoint groups without a new request for either 206 or ignored-range 200 transport. This is a malformed-state correctness/retention fix under F1/V2; it does not close the remaining generic lifecycle and spill-atomicity acceptance work.
+
+Final verification: build/typecheck/formatting passed; full suite 3,714 passed / 629 skipped (407 files). Evidence: `aggregate-duplicate-restore-2026-11-14.json`.

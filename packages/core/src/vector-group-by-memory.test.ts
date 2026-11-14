@@ -141,3 +141,16 @@ it("does not rescan accumulated groups after restore or during repeated merges",
   }
   checkAccounting(restored);
 });
+
+it("rejects duplicate restored vector groups instead of overwriting state", () => {
+  const spec = { total: { op: "sum", column: "value" } } as const;
+  const initial = createVectorGroupByState(["key"], spec);
+  updateVectorGroupByState(initial, batchFromColumns({ key: [1, 2], value: [2, 3] }));
+  const snapshot = snapshotVectorGroupByState(initial);
+  const first = snapshot.groups[0];
+  if (first === undefined) throw Error("Missing fixture group");
+  snapshot.groups.push(first);
+  expect(() => restoreVectorGroupByState(["key"], spec, snapshot)).toThrowError(
+    expect.objectContaining({ code: "LAKEQL_TYPE_ERROR" }),
+  );
+});

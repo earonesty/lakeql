@@ -59,6 +59,18 @@ it.each([
     ).rejects.toMatchObject({ code: "LAKEQL_GROUP_LIMIT_EXCEEDED" });
     expect(requests).toBe(0);
     expect(pool.usedBytes).toBe(0);
+    const duplicate = JSON.parse(new TextDecoder().decode(first.operatorState as Uint8Array));
+    duplicate.groups.push(duplicate.groups[0]);
+    await expect(
+      lake
+        .path("fixture.parquet")
+        .run()
+        .aggregateWithState(["key"], spec, {
+          operatorState: new TextEncoder().encode(JSON.stringify(duplicate)),
+        }),
+    ).rejects.toMatchObject({ code: "LAKEQL_BOOKMARK_INVALID" });
+    expect(requests).toBe(0);
+    expect(pool.usedBytes).toBe(0);
     const resumed = await lake
       .path("fixture.parquet")
       .run()

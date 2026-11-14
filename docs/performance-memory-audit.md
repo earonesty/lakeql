@@ -29,6 +29,8 @@ Current release checks: [owned I/O gate refresh](validation/current-owned-io-rel
 F1 restore follow-up: [group-limit validation](validation/aggregate-restore-group-limit-2026-11-14.json). Restored row aggregates now honor `maxGroups` before accumulator construction or new reads. Build/typecheck and 3,709 tests passed (629 skipped); full acceptance remains open.
 
 F1/F2 buffer-restore follow-up: [validation](validation/aggregate-restore-buffer-limit-2026-11-14.json). Restored aggregate buffer/memory counters are now checked before scanning, including empty continuations, through the same enforcement method used for updates. Build/typecheck and 3,711 tests passed (629 skipped).
+
+F1 malformed-restore follow-up: [validation](validation/aggregate-duplicate-restore-2026-11-14.json). Row/vector restore now rejects duplicate groups instead of silently replacing state, using the existing directory. Build/typecheck and 3,714 tests passed (629 skipped), including real HTTP checkpoint fixtures.
 Current release checks (source `246b165`):
 `docs/validation/current-cache-ownership-release-gates-2026-11-14.json`.
 

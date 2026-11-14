@@ -476,3 +476,45 @@ it.each([
     expect(pool.usedBytes).toBe(0);
   }
 });
+
+it.each([
+  false,
+  true,
+])("rejects duplicate restored group keys without scanning or leaking (spilled=%s)", async (spilled) => {
+  const pool = new MemoryBudget(1024 * 1024);
+  const store = memoryStore();
+  await store.put("table", new Uint8Array(1));
+  let scans = 0;
+  const lake = new Lake({
+    store,
+    memoryPool: pool,
+    scanner: {
+      async *scan() {
+        scans++;
+        yield [
+          { key: "a", value: 2 },
+          { key: "b", value: 3 },
+        ];
+      },
+    },
+  });
+  const spec = { total: { op: "sum" as const, column: "value" } };
+  const first = await lake.path("table").run().aggregateWithState(["key"], spec);
+  const snapshot = JSON.parse(new TextDecoder().decode(first.operatorState as Uint8Array));
+  snapshot.groups.push(snapshot.groups[0]);
+  const bytes = new TextEncoder().encode(JSON.stringify(snapshot));
+  const spill = memorySpillAdapter();
+  await spill.write("duplicate", bytes);
+  scans = 0;
+  await expect(
+    lake
+      .path("table")
+      .run()
+      .aggregateWithState(["key"], spec, {
+        spill,
+        operatorState: spilled ? { spillRef: "duplicate" } : bytes,
+      }),
+  ).rejects.toMatchObject({ code: "LAKEQL_BOOKMARK_INVALID" });
+  expect(scans).toBe(0);
+  expect(pool.usedBytes).toBe(0);
+});

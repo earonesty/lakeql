@@ -445,7 +445,10 @@ export function restoreVectorGroupByState(
   const state = createVectorGroupByState(keys, spec);
   for (const groupSnapshot of snapshot.groups) {
     const keyValues = groupSnapshot.keyValues.map((value) => restoreGroupValue(value));
-    state.groups.set(groupKey(keyValues), {
+    const key = groupKey(keyValues);
+    if (state.groups.has(key))
+      throw new LakeqlError("LAKEQL_TYPE_ERROR", "Duplicate aggregate checkpoint group", { key });
+    state.groups.set(key, {
       keyValues,
       states: restoreVectorAggregateStates(groupSnapshot.states, options),
     });

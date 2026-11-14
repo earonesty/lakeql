@@ -5150,10 +5150,15 @@ async function aggregateGroupsFromState(
       },
     );
   }
-  for (const group of snapshot.groups)
+  for (const group of snapshot.groups) {
+    if (groups.has(group.key))
+      throw new LakeqlError("LAKEQL_BOOKMARK_INVALID", "Duplicate aggregate checkpoint group", {
+        key: group.key,
+      });
     scope.allocate(aggregateGroupEntryBytes(group.key), "restored aggregate group entry", () =>
       groups.set(group.key, aggregateGroupFromSnapshot(spec, group, scope)),
     );
+  }
   return groups;
 }
 
