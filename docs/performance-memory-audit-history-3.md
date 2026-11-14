@@ -4885,3 +4885,16 @@ separate accounting gaps; this is not complete heap accounting.
 The gather follow-up now passes the full regular suite (3,883/645), then the expanded 29-test local scan suite and all 84 Worker tests. Both local and native R2 fixtures now test 9/900-row inputs and direct/generic scans, preserving shared and compact output after scanner shutdown. Build, type checks and lint pass. The 18-scenario local allocation benchmark verifies exact caps and cap-minus-one rejection before output allocation, with retained-owner release to zero. Coverage refresh is pending; this supersedes the in-progress failure status above without erasing the observed failures.
 
 Final gather coverage refresh passes 3,885 tests (645 skipped), at 91.34% statements, 85.45% branches, 95.88% functions and 93.15% lines with unchanged thresholds. Compatibility, blob and changeset checks pass; the latter two required escalation for their Git subprocess. Full audit acceptance and remaining release gates remain open.
+
+### Release-gate refresh on gather runtime (2026-11-14)
+
+Runtime `beebd97` passes the full published bundle/declaration build, clean
+66-package consumer, 120 reference cases, deterministic fixture regeneration,
+and required external conformance (520 passed, one inactive guard skipped).
+The initial isolated conformance run timed out on the large page-count fixture;
+the complete unchanged retry passed without adjusting timeout or assertions.
+Same-runtime coverage (3,885/645), 84 Worker tests, types and repository checks
+remain verified. The allocation matrix now explicitly describes retained gather
+view admission/provenance and its remaining descriptor/scratch gaps. See
+`validation/current-gather-release-gates-2026-11-14.json`; full audit acceptance
+remains open.
