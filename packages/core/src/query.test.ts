@@ -3942,7 +3942,7 @@ describe("Lake query runtime", () => {
 it.each([
   false,
   true,
-])("enforces exact serialized reference limits in late materialization (ordered=%s)", async (ordered) => {
+])("bounds retained late-materialization state (ordered=%s)", async (ordered) => {
   async function run(maxMemoryBytes: number) {
     const { lake } = await makeLake({
       vectorBatches: true,
@@ -3954,6 +3954,12 @@ it.each([
     if (ordered) query = query.orderBy([{ column: "score", direction: "desc" }]);
     return query.toArray();
   }
+  if (!ordered) {
+    // Streaming deferred limits no longer retain serialized row references.
+    await expect(run(1)).resolves.toEqual([{ score: 2, payload: "winner" }]);
+    return;
+  }
+
   let actual = 0;
   try {
     await run(1);

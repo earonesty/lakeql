@@ -21,7 +21,7 @@ it.each(
     { ignoreRange: true, ranked: true },
   ].flatMap((config) => [
     { ...config, borrowed: false, poolMiB: 64 },
-    ...(config.ranked ? [64, 128].map((poolMiB) => ({ ...config, borrowed: true, poolMiB })) : []),
+    ...[64, 128].map((poolMiB) => ({ ...config, borrowed: true, poolMiB })),
   ]),
 )("defers sparse output columns over HTTP: %j", async ({
   ignoreRange,
@@ -118,7 +118,7 @@ it.each(
     };
     const baseline = await query(["*"]).toOwnedArray();
     expect(baseline.value).toEqual([rows[256]]);
-    if (borrowed) expect(borrowedColumnReads).toBeGreaterThan(0);
+    if (borrowed && ranked) expect(borrowedColumnReads).toBeGreaterThan(0);
     baseline.release();
     const eagerBytes = transferred;
     const eagerRanges = [...ranges];

@@ -1068,7 +1068,6 @@ export class QueryResult {
   private canOwnProjectedOutput(): boolean {
     const config = this.config;
     return (
-      config.scanner.scanOwnedVectorBatches !== undefined &&
       config.orderBy === undefined &&
       (config.windows === undefined || Object.keys(config.windows).length === 0) &&
       config.qualify === undefined &&
@@ -1188,23 +1187,23 @@ export class QueryResult {
     )
       return;
     if (
-      ownedOutput &&
       this.ownedLateColumns() !== undefined &&
       config.physicalExecution.acceleratorPolicy !== "required"
     ) {
       try {
-        yield* this.ownedLateLimitOutputs(startedAt, fail);
+        for await (const output of this.ownedLateLimitOutputs(startedAt, fail)) {
+          if (ownedOutput) yield output;
+          else {
+            try {
+              yield output.value;
+            } finally {
+              output.release();
+            }
+          }
+        }
       } finally {
         stats.elapsedMs = config.now() - startedAt;
       }
-      return;
-    }
-    const lateMaterialized =
-      ownedOutput || config.physicalExecution.acceleratorPolicy === "required"
-        ? undefined
-        : await this.lateMaterializedLimitRows(startedAt);
-    if (lateMaterialized !== undefined) {
-      yield* rowsAsBatches(lateMaterialized, config.batchSize ?? 4096);
       return;
     }
     let offsetSkipped = 0;
@@ -1561,14 +1560,8 @@ export class QueryResult {
   ): AsyncIterable<OwnedMemory<Row[]>> {
     const config = this.config;
     const columns = this.ownedLateColumns();
-    const scan = config.scanner.scanOwnedVectorBatches;
-    if (
-      columns === undefined ||
-      scan === undefined ||
-      config.where === undefined ||
-      config.limit === undefined
-    )
-      throw new LakeqlError("LAKEQL_TYPE_ERROR", "Deferred output requires owned vector scans");
+    if (columns === undefined || config.where === undefined || config.limit === undefined)
+      throw new LakeqlError("LAKEQL_TYPE_ERROR", "Deferred output requires projected vector scans");
     if (config.limit === 0) return;
     let skip = config.offset ?? 0;
     let remaining = config.limit;
@@ -1592,14 +1585,14 @@ export class QueryResult {
         startedAt,
         canStopEarly: true,
       };
-      for await (const input of scan.call(config.scanner, object.path, {
+      for await (const input of this.ownedProjectedScanInputs(object.path, {
         ...options,
         columns: defer ? columns.predicate : [...columns.predicate, ...columns.late],
         where: config.where,
       })) {
         const stage = new MemoryScope(this.memoryBudget);
         try {
-          stage.adopt(input);
+          stage.adopt(input.retain());
           const { rowOffset, batch } = input.value;
           const physical = await this.executePhysicalBatch(
             batch,
@@ -1622,7 +1615,7 @@ export class QueryResult {
           const selected = indices.subarray(skip, skip + Math.min(count - skip, remaining));
           skip = 0;
           const read = (rowStart: number, rowEnd: number) =>
-            scan.call(config.scanner, object.path, {
+            this.ownedProjectedScanInputs(object.path, {
               ...options,
               columns: columns.late,
               rowStart,
@@ -1637,6 +1630,7 @@ export class QueryResult {
             const outputScope = new MemoryScope(this.memoryBudget);
             try {
               outputScope.adopt(gathered);
+              enforceBudget(config.budget, this.stats, config.now, startedAt);
               const projected = vectorProjectBatch(
                 gathered.value,
                 config.select,
@@ -1663,97 +1657,6 @@ export class QueryResult {
         }
       }
     }
-  }
-
-  private async lateMaterializedLimitRows(startedAt: number): Promise<Row[] | undefined> {
-    const config = this.config;
-    if (
-      config.limit === undefined ||
-      config.where === undefined ||
-      config.select === undefined ||
-      config.scanner.scanVectorBatches === undefined ||
-      !vectorExprSupported(config.where) ||
-      !Object.values(config.projections ?? {}).every(vectorExprSupported)
-    ) {
-      return undefined;
-    }
-    const predicateColumns = predicateReadColumns(config.where);
-    const outputColumns = outputReadColumns(config.select, config.projections);
-    if (predicateColumns.length === 0 || outputColumns.length === 0) return undefined;
-    const lateColumns = outputColumns.filter((column) => !predicateColumns.includes(column));
-    if (lateColumns.length === 0) return undefined;
-
-    const refs: RankedRowRef[] = [];
-    const refMemory =
-      config.budget.maxMemoryBytes === undefined
-        ? undefined
-        : new BufferMemory<RankedRowRef>((ref) => estimateOperatorMemoryBytes([ref]) - 2);
-    const maxRefs = (config.offset ?? 0) + config.limit;
-    const scanVectorBatches = config.scanner.scanVectorBatches;
-    const { planned: paths, skipped: skippedFiles } = await this.planObjects();
-    this.stats.filesSkipped = skippedFiles;
-    for (const object of paths) {
-      this.stats.filesPlanned += 1;
-      this.stats.filesRead += 1;
-      this.stats.bytesRequested += object.size;
-      enforceBudget(config.budget, this.stats, config.now, startedAt);
-      const scanOptions: ScanOptions = {
-        memoryBudget: this.memoryBudget,
-        object,
-        columns: predicateColumns,
-        where: config.where,
-        canStopEarly: true,
-        batchSize: columnarBatchSize(config.batchSize),
-        stats: this.stats,
-        budget: config.budget,
-        now: config.now,
-        startedAt,
-      };
-      for await (const { rowOffset, batch } of scanVectorBatches.call(
-        config.scanner,
-        object.path,
-        scanOptions,
-      )) {
-        const selection = predicateSelection(batch, config.where);
-        const selected = [...selectedRowIndices(batch.rowCount, selection)];
-        this.stats.rowsMatched += selected.length;
-        for (const index of selected) {
-          const ref: RankedRowRef = {
-            path: object.path,
-            object,
-            rowIndex: rowOffset + index,
-            keys: rankKeyRow(batch, index, predicateColumns),
-          };
-          refs.push(ref);
-          refMemory?.add(ref);
-          enforceBufferedRowsBudget(config.budget, refs.length);
-          if (refMemory !== undefined) enforceOperatorMemoryBudget(config.budget, refMemory.bytes);
-          if (refs.length >= maxRefs) break;
-        }
-        enforceBudget(config.budget, this.stats, config.now, startedAt);
-        if (refs.length >= maxRefs) break;
-      }
-      if (refs.length >= maxRefs) break;
-    }
-
-    const selectedRefs = refs.slice(config.offset ?? 0, maxRefs);
-    const rowsByRef = await this.materializeRowRefs(
-      selectedRefs,
-      outputColumns,
-      predicateColumns,
-      startedAt,
-      config.batchSize ?? 4096,
-    );
-    const rows = selectedRefs
-      .map((ref) => rowsByRef.get(rowRefKey(ref)))
-      .filter((row): row is Row => row !== undefined)
-      .map((row) => project(row, config.select, config.projections));
-    for (const _row of rows) {
-      this.stats.rowsReturned += 1;
-      enforceBudget(config.budget, this.stats, config.now, startedAt);
-    }
-    this.stats.elapsedMs = config.now() - startedAt;
-    return rows;
   }
 
   async toArray(): Promise<Row[]> {
@@ -5635,12 +5538,6 @@ function outputReadColumns(
   return [...columns].sort();
 }
 
-async function* rowsAsBatches(rows: readonly Row[], batchSize: number): AsyncIterable<Row[]> {
-  for (let index = 0; index < rows.length; index += batchSize) {
-    yield rows.slice(index, index + batchSize);
-  }
-}
-
 function aggregateReadColumns(
   groupColumns: string[],
   spec: AggregateSpec,
@@ -5786,20 +5683,6 @@ function materializationWindows(
   } finally {
     scratch?.release();
   }
-}
-
-function rankKeyRow(batch: Batch, rowIndex: number, columns: readonly string[]): Row {
-  const row: Row = {};
-  for (const column of columns) {
-    const vector = batch.columns[column];
-    if (vector === undefined) {
-      throw new LakeqlError("LAKEQL_UNKNOWN_COLUMN", `Unknown column ${column}`, {
-        column,
-      });
-    }
-    row[column] = vectorValue(vector, rowIndex);
-  }
-  return row;
 }
 
 function compareRankedRefs(
