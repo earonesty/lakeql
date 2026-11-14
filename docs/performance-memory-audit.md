@@ -42,10 +42,10 @@ R2 spill continuation follow-up: [validation](validation/r2-spill-continuation-2
 Current release checks (source `246b165`):
 `docs/validation/current-cache-ownership-release-gates-2026-11-14.json`.
 
-Latest mixed-query measurements (source `550ff5c`):
-`docs/validation/cache-accounting-mixed-runtime-2026-11-14.json`.
-Latest constrained Worker measurements (source `30f7ae8`):
-`docs/validation/current-planning-runtime-2026-11-14.json`.
+Latest mixed-query measurements (source `4d1dc00`):
+[shared range cache](benchmarks/mixed-query-current-2026-11-14.json) and [factory caches](benchmarks/mixed-query-factory-current-2026-11-14.json). All 128 jobs completed across memory/HTTP, cold/warm, and 64/128 MiB reservation pools; final tracked usage returned to zero and HTTP concurrency stayed at two. The 64 MiB factory-cache peak was 66,960,963 bytes, close to its reservation limit. These Node measurements do not establish whole-Worker memory caps or stable latency improvements.
+Latest constrained Worker measurements (source `4d1dc00`):
+[current Worker refresh](validation/current-worker-refresh-2026-11-14.json). All 12 scenarios completed with expected typed budget rejection under four-job/64 MiB pressure and zero final tracked usage. Managed-heap limits exclude external buffers and total Worker accounting.
 These sources cover different revisions and scopes. Full audit acceptance remains open.
 
 <details>

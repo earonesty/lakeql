@@ -4317,3 +4317,21 @@ The built-in spill backend is in-memory; `SpillAdapter` is the extension contrac
 Both 64/128 MiB reservation-pool fixtures pass, with correct aggregate totals/order, input checkpoint bytes charged during writes, zero retained query charges after success/failure, and peak charges within the pool. The full workerd suite passes 81 tests in 23 files. These small correctness fixtures are not memory-pressure or production-network benchmarks. Native R2 upload buffering remains external. No transaction is advertised by this test adapter: it proves the supported nontransactional fallback contract, not atomic multi-object publication. Core's atomic batch guarantees apply only to adapters exposing `beginWriteBatch`; production remote transaction evidence remains separate.
 
 Final verification: typecheck and all 81 workerd tests passed. Evidence: `r2-spill-continuation-2026-11-14.json`.
+
+
+### V1/V2 current mixed-query benchmark refresh (2026-11-14)
+
+Refreshed the unchanged mixed-query harness against source `4d1dc00`, using a real generated Parquet fixture, four overlapping collect/select/top-k/aggregate jobs, pinned prior output, 32 MiB per-query limits, 64/128 MiB shared pools and 4/16 MiB cache settings. Both shared-range-cache and factory-cache matrices cover memory and localhost HTTP 206 transports with cold/warm rounds. All 128 jobs completed; all scenarios returned tracked usage to zero after cleanup, and HTTP concurrency stayed at two.
+
+The shared-range-cache peak was 53,957,002 bytes. Factory-cache peaks were 66,960,963 bytes under the 64 MiB pool and 69,838,800 under 128 MiB. Factory cache capacities apply per configured cache, while the root pool bounds their combined tracked storage. The 64 MiB result leaves little reservation headroom. HTTP cold/warm request counts match prior reports: shared range cache 37/37 at 4 MiB and 37/4 at 16 MiB; factory caches 37/33 at 4 MiB, 41/12 at 64 MiB pool with 16 MiB caches, and 37/0 at 128 MiB with 16 MiB caches.
+
+Raw reports include source, harness and fixture hashes: `docs/benchmarks/mixed-query-current-2026-11-14.json` and `docs/benchmarks/mixed-query-factory-current-2026-11-14.json`. These are single-run regression observations, not stable latency or fairness evidence. Node includes fixture/server memory and sampled runtime usage exceeds configured reservation pools; samples may miss transient peaks. This does not prove a 64/128 MiB whole-Worker cap. Factory post-measurement reclamation is excluded from round peaks. Build passed before measurement; no runtime source changed in this refresh. Full audit acceptance remains open.
+
+
+### M2/V1/V2 constrained Worker refresh (2026-11-14)
+
+Reran the existing owned-output Worker harness against source `4d1dc00`: actual 32,768-row Parquet fixture, 256-character payloads, pinned output checksums, cold/warm rounds, one/four jobs, and 64/128 MiB shared reservation pools. Three transport/runtime configurations cover native emulated R2 and localhost HTTP with verified 64/128 MiB V8 managed-heap flags. All 12 scenarios completed. Each four-job/64 MiB round admitted two jobs and rejected two with `LAKEQL_BUDGET_EXCEEDED`; all other jobs succeeded. Every scenario evicted to zero tracked usage.
+
+The maximum tracked reservation was 67,108,545 bytes for the 64 MiB R2 pool, leaving only 319 bytes at that observed peak. At 128 MiB it was 110,920,090 bytes. The constrained 64 MiB managed-heap HTTP run sampled at most 50,877,724 bytes of JS heap; unconstrained R2 sampled up to 101,138,972 bytes. These sparse samples depend on GC timing and cannot establish total Worker memory safety. Managed heap excludes native/external backing and embedder memory; local transports do not establish production cloud latency. No fairness or stable performance claim follows from a single run.
+
+Evidence: `docs/validation/current-worker-refresh-2026-11-14.json`, with source/harness hashes and links to all raw samples. This refresh advances current-revision runtime evidence without closing broader scheduling, allocation-boundary or full audit acceptance requirements.

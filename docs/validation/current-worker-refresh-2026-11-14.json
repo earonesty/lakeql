@@ -1,0 +1,149 @@
+{
+  "sourceCommit": "4d1dc009efb31c6887558b079b01c75491cce1e5",
+  "requirements": ["M2", "V1", "V2"],
+  "harnessSha256": {
+    "bench/worker-heap.mjs": "a824e0ad2ac13a309a2fb6598df0f08c7af72fea9b9e41669cf78745348f23ec",
+    "bench/worker-heap-runtime.mjs": "345390f5dfe5f86ba9a9c3776109f9a27db5358c6839cb444359b23c532a73cf",
+    "bench/worker-heap-entry.mjs": "1935bd32a230b045860e8eb28be000f27a77fb3eb3d3370ea45e19fcfb478972"
+  },
+  "scenarios": [
+    {
+      "artifact": "docs/benchmarks/workerd-refresh-r2-2026-11-14.json",
+      "transport": "native emulated R2",
+      "managedHeapMiB": null,
+      "poolMiB": 64,
+      "jobs": 1,
+      "outcomes": [["ok"], ["ok"]],
+      "peakAdmittedBytes": 28372507,
+      "maxSampledHeapBytes": 41959464,
+      "finalReservedBytes": 0
+    },
+    {
+      "artifact": "docs/benchmarks/workerd-refresh-r2-2026-11-14.json",
+      "transport": "native emulated R2",
+      "managedHeapMiB": null,
+      "poolMiB": 64,
+      "jobs": 4,
+      "outcomes": [["ok", "ok", "budget", "budget"], ["ok", "ok", "budget", "budget"]],
+      "peakAdmittedBytes": 67108545,
+      "maxSampledHeapBytes": 55822656,
+      "finalReservedBytes": 0
+    },
+    {
+      "artifact": "docs/benchmarks/workerd-refresh-r2-2026-11-14.json",
+      "transport": "native emulated R2",
+      "managedHeapMiB": null,
+      "poolMiB": 128,
+      "jobs": 1,
+      "outcomes": [["ok"], ["ok"]],
+      "peakAdmittedBytes": 28372507,
+      "maxSampledHeapBytes": 41955628,
+      "finalReservedBytes": 0
+    },
+    {
+      "artifact": "docs/benchmarks/workerd-refresh-r2-2026-11-14.json",
+      "transport": "native emulated R2",
+      "managedHeapMiB": null,
+      "poolMiB": 128,
+      "jobs": 4,
+      "outcomes": [["ok", "ok", "ok", "ok"], ["ok", "ok", "ok", "ok"]],
+      "peakAdmittedBytes": 110920090,
+      "maxSampledHeapBytes": 101138972,
+      "finalReservedBytes": 0
+    },
+    {
+      "artifact": "docs/benchmarks/workerd-refresh-heap64-2026-11-14.json",
+      "transport": "localhost HTTP ranges",
+      "managedHeapMiB": 64,
+      "poolMiB": 64,
+      "jobs": 1,
+      "outcomes": [["ok"], ["ok"]],
+      "peakAdmittedBytes": 28372179,
+      "maxSampledHeapBytes": 27726236,
+      "finalReservedBytes": 0
+    },
+    {
+      "artifact": "docs/benchmarks/workerd-refresh-heap64-2026-11-14.json",
+      "transport": "localhost HTTP ranges",
+      "managedHeapMiB": 64,
+      "poolMiB": 64,
+      "jobs": 4,
+      "outcomes": [["ok", "ok", "budget", "budget"], ["ok", "ok", "budget", "budget"]],
+      "peakAdmittedBytes": 67107561,
+      "maxSampledHeapBytes": 43968060,
+      "finalReservedBytes": 0
+    },
+    {
+      "artifact": "docs/benchmarks/workerd-refresh-heap64-2026-11-14.json",
+      "transport": "localhost HTTP ranges",
+      "managedHeapMiB": 64,
+      "poolMiB": 128,
+      "jobs": 1,
+      "outcomes": [["ok"], ["ok"]],
+      "peakAdmittedBytes": 28372179,
+      "maxSampledHeapBytes": 27397268,
+      "finalReservedBytes": 0
+    },
+    {
+      "artifact": "docs/benchmarks/workerd-refresh-heap64-2026-11-14.json",
+      "transport": "localhost HTTP ranges",
+      "managedHeapMiB": 64,
+      "poolMiB": 128,
+      "jobs": 4,
+      "outcomes": [["ok", "ok", "ok", "ok"], ["ok", "ok", "ok", "ok"]],
+      "peakAdmittedBytes": 110918778,
+      "maxSampledHeapBytes": 50877724,
+      "finalReservedBytes": 0
+    },
+    {
+      "artifact": "docs/benchmarks/workerd-refresh-heap128-2026-11-14.json",
+      "transport": "localhost HTTP ranges",
+      "managedHeapMiB": 128,
+      "poolMiB": 64,
+      "jobs": 1,
+      "outcomes": [["ok"], ["ok"]],
+      "peakAdmittedBytes": 28372179,
+      "maxSampledHeapBytes": 17096548,
+      "finalReservedBytes": 0
+    },
+    {
+      "artifact": "docs/benchmarks/workerd-refresh-heap128-2026-11-14.json",
+      "transport": "localhost HTTP ranges",
+      "managedHeapMiB": 128,
+      "poolMiB": 64,
+      "jobs": 4,
+      "outcomes": [["ok", "ok", "budget", "budget"], ["ok", "ok", "budget", "budget"]],
+      "peakAdmittedBytes": 67107561,
+      "maxSampledHeapBytes": 43791056,
+      "finalReservedBytes": 0
+    },
+    {
+      "artifact": "docs/benchmarks/workerd-refresh-heap128-2026-11-14.json",
+      "transport": "localhost HTTP ranges",
+      "managedHeapMiB": 128,
+      "poolMiB": 128,
+      "jobs": 1,
+      "outcomes": [["ok"], ["ok"]],
+      "peakAdmittedBytes": 28372179,
+      "maxSampledHeapBytes": 16514676,
+      "finalReservedBytes": 0
+    },
+    {
+      "artifact": "docs/benchmarks/workerd-refresh-heap128-2026-11-14.json",
+      "transport": "localhost HTTP ranges",
+      "managedHeapMiB": 128,
+      "poolMiB": 128,
+      "jobs": 4,
+      "outcomes": [["ok", "ok", "ok", "ok"], ["ok", "ok", "ok", "ok"]],
+      "peakAdmittedBytes": 110918778,
+      "maxSampledHeapBytes": 96780668,
+      "finalReservedBytes": 0
+    }
+  ],
+  "limitations": [
+    "Single run per scenario; sampled heap peaks are lower bounds and GC timing varies.",
+    "Managed heap flags exclude external buffers, embedder allocations and total production Worker memory.",
+    "Native emulated R2 and localhost HTTP are distinct local transports, not production cloud network measurements.",
+    "Typed budget rejection is expected at insufficient shared capacity; no fairness or throughput guarantee is inferred."
+  ]
+}
