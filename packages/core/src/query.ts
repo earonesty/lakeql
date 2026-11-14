@@ -1186,155 +1186,176 @@ export class QueryResult {
       config.scanner.scanOwnedVectorBatches === undefined
     )
       return;
-    if (
-      this.ownedLateColumns() !== undefined &&
-      config.physicalExecution.acceleratorPolicy !== "required"
-    ) {
-      try {
-        for await (const output of this.ownedLateLimitOutputs(startedAt, fail)) {
-          if (ownedOutput) yield output;
-          else {
-            try {
-              yield output.value;
-            } finally {
-              output.release();
-            }
-          }
-        }
-      } finally {
-        stats.elapsedMs = config.now() - startedAt;
-      }
-      return;
-    }
-    let offsetSkipped = 0;
-    let returned = 0;
-    const { planned: paths, skipped: skippedFiles } = await this.planObjects();
-    stats.filesSkipped = skippedFiles;
-    const columns = projectedReadColumns(
-      config.select,
-      config.where,
-      undefined,
-      config.projections,
-    );
-    for (const object of paths) {
-      stats.filesPlanned += 1;
-      stats.filesRead += 1;
-      stats.bytesRequested += object.size;
-      enforceBudget(config.budget, stats, config.now, startedAt);
-      const scanOptions: ScanOptions = {
-        memoryBudget: this.memoryBudget,
-        object,
-        batchSize: limitAwareBatchSize(config.batchSize ?? 4096, config.limit, config.offset),
-        stats,
-        budget: config.budget,
-        now: config.now,
-        startedAt,
-      };
-      if (config.limit !== undefined) scanOptions.canStopEarly = true;
-      if (columns !== undefined && columns.length > 0) scanOptions.columns = columns;
-      if (config.where !== undefined) scanOptions.where = config.where;
-      if (config.where === undefined && (config.offset ?? 0) === 0 && config.limit !== undefined) {
-        scanOptions.rowEnd = Math.max(0, config.limit - returned);
-      }
-      for await (const { rowOffset, batch, owner } of this.projectedScanInputs(
-        object.path,
-        scanOptions,
-      )) {
-        const stage = new MemoryScope(this.memoryBudget);
+    const planning = new MemoryScope(this.memoryBudget);
+    try {
+      const lateColumns =
+        config.physicalExecution.acceleratorPolicy === "required"
+          ? undefined
+          : this.ownedLateColumns(planning);
+      if (lateColumns !== undefined) {
         try {
-          if (owner !== undefined) stage.adopt(owner.retain());
-          const sourceIdentity = physicalSourceIdentity(object, rowOffset);
-          let projectedBatch: Batch;
-          let selectedRows: number;
-          if (config.where !== undefined) {
-            const physical = await this.executePhysicalBatch(
-              batch,
-              [{ kind: "select", predicate: config.where }],
-              { kind: "selection" },
-              sourceIdentity,
-              startedAt,
-              undefined,
-              stage,
-            );
-            if (physical.output.kind !== "selection") {
-              throw new LakeqlError(
-                "LAKEQL_PHYSICAL_BACKEND_FAILURE",
-                "Selection physical fragment did not return a selection",
-                { actual: physical.output.kind },
-              );
-            }
-            const gathered = gatherSelectedBatch(batch, physical.output.selection, stage);
-            selectedRows = gathered.rowCount;
-            projectedBatch = vectorProjectBatch(gathered, config.select, config.projections, stage);
-          } else {
-            const physical = await this.executePhysicalBatch(
-              batch,
-              [
-                {
-                  kind: "project",
-                  ...(config.select === undefined ? {} : { select: config.select }),
-                  ...(config.projections === undefined ? {} : { projections: config.projections }),
-                },
-              ],
-              { kind: "batch" },
-              sourceIdentity,
-              startedAt,
-              undefined,
-              stage,
-            );
-            if (physical.output.kind !== "batch") {
-              throw new LakeqlError(
-                "LAKEQL_PHYSICAL_BACKEND_FAILURE",
-                "Projected physical fragment did not return a batch",
-                { actual: physical.output.kind },
-              );
-            }
-            selectedRows = physical.metrics.selectedRows ?? batch.rowCount;
-            projectedBatch = physical.output.batch;
-          }
-          stats.rowsMatched += selectedRows;
-          const skipped = Math.min(selectedRows, Math.max(0, (config.offset ?? 0) - offsetSkipped));
-          offsetSkipped += skipped;
-          const count = Math.min(
-            selectedRows - skipped,
-            config.limit === undefined ? Infinity : Math.max(0, config.limit - returned),
-          );
-          if (count > 0) {
-            const selected = sliceBatch(projectedBatch, skipped, skipped + count);
-            for (let index = 0; index < count; index++) {
-              returned++;
-              stats.rowsReturned++;
-              enforceBudget(config.budget, stats, config.now, startedAt);
-            }
-            stats.elapsedMs = config.now() - startedAt;
-            // Borrowed scanner storage is valid only until the iterator advances.
-            // Detach the selected output, rather than retaining the entire input batch.
-            const input =
-              owner === undefined
-                ? detachOwnedBatch(selected, this.memoryBudget)
-                : stage.retainAllocations(selected);
-            try {
-              const output = materializeCollectedOutput(input, fail);
-              if (ownedOutput) yield output;
-              else {
-                try {
-                  yield output.value;
-                } finally {
-                  output.release();
-                }
+          for await (const output of this.ownedLateLimitOutputs(lateColumns, startedAt, fail)) {
+            if (ownedOutput) yield output;
+            else {
+              try {
+                yield output.value;
+              } finally {
+                output.release();
               }
-            } finally {
-              input.release();
             }
           }
-          if (config.limit !== undefined && returned >= config.limit) return;
         } finally {
-          stage.dispose();
+          stats.elapsedMs = config.now() - startedAt;
+        }
+        return;
+      }
+      let offsetSkipped = 0;
+      let returned = 0;
+      const { planned: paths, skipped: skippedFiles } = await this.planObjects();
+      stats.filesSkipped = skippedFiles;
+      const columns = projectedReadColumns(
+        config.select,
+        config.where,
+        undefined,
+        config.projections,
+        planning,
+      );
+      for (const object of paths) {
+        stats.filesPlanned += 1;
+        stats.filesRead += 1;
+        stats.bytesRequested += object.size;
+        enforceBudget(config.budget, stats, config.now, startedAt);
+        const scanOptions: ScanOptions = {
+          memoryBudget: this.memoryBudget,
+          object,
+          batchSize: limitAwareBatchSize(config.batchSize ?? 4096, config.limit, config.offset),
+          stats,
+          budget: config.budget,
+          now: config.now,
+          startedAt,
+        };
+        if (config.limit !== undefined) scanOptions.canStopEarly = true;
+        if (columns !== undefined && columns.length > 0) scanOptions.columns = columns;
+        if (config.where !== undefined) scanOptions.where = config.where;
+        if (
+          config.where === undefined &&
+          (config.offset ?? 0) === 0 &&
+          config.limit !== undefined
+        ) {
+          scanOptions.rowEnd = Math.max(0, config.limit - returned);
+        }
+        for await (const { rowOffset, batch, owner } of this.projectedScanInputs(
+          object.path,
+          scanOptions,
+        )) {
+          const stage = new MemoryScope(this.memoryBudget);
+          try {
+            if (owner !== undefined) stage.adopt(owner.retain());
+            const sourceIdentity = physicalSourceIdentity(object, rowOffset);
+            let projectedBatch: Batch;
+            let selectedRows: number;
+            if (config.where !== undefined) {
+              const physical = await this.executePhysicalBatch(
+                batch,
+                [{ kind: "select", predicate: config.where }],
+                { kind: "selection" },
+                sourceIdentity,
+                startedAt,
+                undefined,
+                stage,
+              );
+              if (physical.output.kind !== "selection") {
+                throw new LakeqlError(
+                  "LAKEQL_PHYSICAL_BACKEND_FAILURE",
+                  "Selection physical fragment did not return a selection",
+                  { actual: physical.output.kind },
+                );
+              }
+              const gathered = gatherSelectedBatch(batch, physical.output.selection, stage);
+              selectedRows = gathered.rowCount;
+              projectedBatch = vectorProjectBatch(
+                gathered,
+                config.select,
+                config.projections,
+                stage,
+              );
+            } else {
+              const physical = await this.executePhysicalBatch(
+                batch,
+                [
+                  {
+                    kind: "project",
+                    ...(config.select === undefined ? {} : { select: config.select }),
+                    ...(config.projections === undefined
+                      ? {}
+                      : { projections: config.projections }),
+                  },
+                ],
+                { kind: "batch" },
+                sourceIdentity,
+                startedAt,
+                undefined,
+                stage,
+              );
+              if (physical.output.kind !== "batch") {
+                throw new LakeqlError(
+                  "LAKEQL_PHYSICAL_BACKEND_FAILURE",
+                  "Projected physical fragment did not return a batch",
+                  { actual: physical.output.kind },
+                );
+              }
+              selectedRows = physical.metrics.selectedRows ?? batch.rowCount;
+              projectedBatch = physical.output.batch;
+            }
+            stats.rowsMatched += selectedRows;
+            const skipped = Math.min(
+              selectedRows,
+              Math.max(0, (config.offset ?? 0) - offsetSkipped),
+            );
+            offsetSkipped += skipped;
+            const count = Math.min(
+              selectedRows - skipped,
+              config.limit === undefined ? Infinity : Math.max(0, config.limit - returned),
+            );
+            if (count > 0) {
+              const selected = sliceBatch(projectedBatch, skipped, skipped + count);
+              for (let index = 0; index < count; index++) {
+                returned++;
+                stats.rowsReturned++;
+                enforceBudget(config.budget, stats, config.now, startedAt);
+              }
+              stats.elapsedMs = config.now() - startedAt;
+              // Borrowed scanner storage is valid only until the iterator advances.
+              // Detach the selected output, rather than retaining the entire input batch.
+              const input =
+                owner === undefined
+                  ? detachOwnedBatch(selected, this.memoryBudget)
+                  : stage.retainAllocations(selected);
+              try {
+                const output = materializeCollectedOutput(input, fail);
+                if (ownedOutput) yield output;
+                else {
+                  try {
+                    yield output.value;
+                  } finally {
+                    output.release();
+                  }
+                }
+              } finally {
+                input.release();
+              }
+            }
+            if (config.limit !== undefined && returned >= config.limit) return;
+          } finally {
+            stage.dispose();
+          }
         }
       }
+      stats.elapsedMs = config.now() - startedAt;
+      config.metrics?.timing("lakeql.query.elapsed", stats.elapsedMs, { queryId: stats.queryId });
+    } finally {
+      planning.dispose();
     }
-    stats.elapsedMs = config.now() - startedAt;
-    config.metrics?.timing("lakeql.query.elapsed", stats.elapsedMs, { queryId: stats.queryId });
   }
 
   private async *projectedScanInputs(
@@ -1538,7 +1559,9 @@ export class QueryResult {
     );
   }
 
-  private ownedLateColumns(): { predicate: string[]; late: string[] } | undefined {
+  private ownedLateColumns(
+    scope: MemoryScope,
+  ): { predicate: string[]; late: string[]; all: string[] } | undefined {
     const config = this.config;
     if (
       config.limit === undefined ||
@@ -1547,20 +1570,49 @@ export class QueryResult {
       config.select.includes("*")
     )
       return undefined;
-    const predicate = predicateReadColumns(config.where);
-    const output = outputReadColumns(config.select, config.projections);
-    const late = output.filter((column) => !predicate.includes(column));
-    if (predicate.length === 0 || output.length === 0 || late.length === 0) return undefined;
-    return { predicate, late };
+    const predicate = admittedColumnNames(
+      scope,
+      (names) => collectExprColumns(config.where, names),
+      true,
+    );
+    if (predicate.length === 0) return undefined;
+    const late = admittedColumnNames(
+      scope,
+      (names) => {
+        const output = {
+          add(name: string) {
+            if (!predicate.includes(name)) names.add(name);
+          },
+        };
+        for (const name of config.select ?? []) output.add(name);
+        if (config.projections !== undefined)
+          for (const name in config.projections) {
+            if (Object.hasOwn(config.projections, name))
+              collectExprColumns(config.projections[name], output);
+          }
+      },
+      true,
+    );
+    if (late.length === 0) return undefined;
+    const all = scope.allocate(
+      allocationCharges.array + (predicate.length + late.length) * allocationCharges.arraySlot,
+      "combined projection read columns",
+      () => [...predicate, ...late],
+    ).value;
+    return scope.allocate(
+      allocationCharges.object + 3 * allocationCharges.property,
+      "deferred projection read plan",
+      () => ({ predicate, late, all }),
+    ).value;
   }
 
   private async *ownedLateLimitOutputs(
+    columns: { predicate: string[]; late: string[]; all: string[] },
     startedAt: number,
     fail?: (error: unknown) => never,
   ): AsyncIterable<OwnedMemory<Row[]>> {
     const config = this.config;
-    const columns = this.ownedLateColumns();
-    if (columns === undefined || config.where === undefined || config.limit === undefined)
+    if (config.where === undefined || config.limit === undefined)
       throw new LakeqlError("LAKEQL_TYPE_ERROR", "Deferred output requires projected vector scans");
     if (config.limit === 0) return;
     let skip = config.offset ?? 0;
@@ -1587,7 +1639,7 @@ export class QueryResult {
       };
       for await (const input of this.ownedProjectedScanInputs(object.path, {
         ...options,
-        columns: defer ? columns.predicate : [...columns.predicate, ...columns.late],
+        columns: defer ? columns.predicate : columns.all,
         where: config.where,
       })) {
         const stage = new MemoryScope(this.memoryBudget);
@@ -5518,24 +5570,6 @@ function projectedReadColumns(
   const columns = new Set<string>();
   collect(columns);
   return columns.size === 0 ? undefined : [...columns].sort();
-}
-
-function predicateReadColumns(where: Expr): string[] {
-  const columns = new Set<string>();
-  collectExprColumns(where, columns);
-  return [...columns].sort();
-}
-
-function outputReadColumns(
-  select: readonly string[],
-  projections: Record<string, Expr> | undefined,
-): string[] {
-  const columns = new Set<string>();
-  for (const column of select) {
-    if (column !== "*") columns.add(column);
-  }
-  for (const expr of Object.values(projections ?? {})) collectExprColumns(expr, columns);
-  return [...columns].sort();
 }
 
 function aggregateReadColumns(
