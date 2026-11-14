@@ -1,4 +1,4 @@
-import { brotliCompressSync, constants } from "node:zlib";
+import { brotliCompressSync, constants, createBrotliCompress } from "node:zlib";
 import { MemoryBudget, MemoryScope } from "lakeql-core";
 import { expect, it } from "vitest";
 import { BROTLI_SLOT_BYTES, BROTLI_STATE_BYTES, scopedParquetCompressors } from "./compressors.js";
@@ -48,6 +48,51 @@ it("rejects overlapping input/output before allocating workspace", () => {
     decompressBrotliInto(encoded, encoded.subarray(0, 5), memory.allocate, memory.release),
   ).toThrow(/overlap/);
   expect(memory.peak).toBe(0);
+});
+
+it("fits exact power-of-two output in one ring and preserves history across flushed blocks", async () => {
+  const block = new TextEncoder().encode("history ".repeat(8192));
+  let largest = 0;
+  const memory = workspace();
+  const allocate = (bytes: number) => {
+    largest = Math.max(largest, bytes);
+    return memory.allocate(bytes);
+  };
+  const compressed = brotliCompressSync(block);
+  expect(
+    decompressBrotliInto(compressed, new Uint8Array(block.length), allocate, memory.release),
+  ).toEqual(block);
+  expect(largest).toBe(block.length + 37);
+  expect(memory.live.size).toBe(0);
+
+  const encoder = createBrotliCompress();
+  const chunks: Buffer[] = [];
+  encoder.on("data", (chunk: Buffer) => chunks.push(chunk));
+  const complete = new Promise<void>((resolve, reject) => {
+    encoder.on("end", resolve);
+    encoder.on("error", reject);
+  });
+  const expected = new Uint8Array(block.length * 3);
+  for (let index = 0; index < 3; index++) {
+    expected.set(block, index * block.length);
+    encoder.write(block);
+    await new Promise<void>((resolve, reject) =>
+      encoder.flush(constants.BROTLI_OPERATION_FLUSH, (error) =>
+        error ? reject(error) : resolve(),
+      ),
+    );
+  }
+  encoder.end();
+  await complete;
+  expect(
+    decompressBrotliInto(
+      Buffer.concat(chunks),
+      new Uint8Array(expected.length),
+      allocate,
+      memory.release,
+    ),
+  ).toEqual(expected);
+  expect(memory.live.size).toBe(0);
 });
 
 it("decodes raw blocks and ring-buffer wrapping with offset views", () => {

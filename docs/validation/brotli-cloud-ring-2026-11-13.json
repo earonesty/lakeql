@@ -1,0 +1,34 @@
+{
+  "status": "Brotli Worker R2 and HTTP operation verified; fixed-output ring sizing reduces reserved memory",
+  "change": "A shared Node-only fixture producer supplies real Brotli Parquet bytes to local, HTTP and Worker tests. Worker bundles do not use Node compression. Decoder history ring is sized once from the known final output extent, capped by the encoded Brotli window. Exact powers of two no longer require a doubled ring. Using the intermediate metablock extent with a smaller ring proved invalid across later growth; the final-extent design avoids that history transition.",
+  "validation": {
+    "workerR2": "Two tests: four concurrent owned-result queries with batches 1/64/128/256, 64/128 MiB shared pools, 1 MiB per-query caps, cold/warm shared cache, retained output release, early iterator return, final cache eviction to zero. Native local workerd/Miniflare R2 binding, not deployed Cloudflare.",
+    "http": "Two tests: actual localhost HTTP 206 ranges and ignored-Range 200 full objects; four concurrent streaming queries, shared 64/128 MiB pools, 8 MiB per-query cap, global two-read bound. Warm queries make fewer physical reads; reusable allocations stay charged and eviction returns the pool to zero.",
+    "decoder": "Exact-power ring allocation assertion plus a three-metablock stream generated using Brotli flush. Byte parity, allocation cleanup, truncation, dictionary, random raw blocks, multiple quality settings and ring-wrap tests pass.",
+    "typecheck": "passed",
+    "fullDefault": {
+      "passed": 3149,
+      "skipped": 629
+    },
+    "fullWorker": {
+      "passed": 67
+    },
+    "fullConformance": {
+      "passed": 517,
+      "skipped": 1
+    }
+  },
+  "benchmarks": {
+    "before": "../benchmarks/brotli-ring-before-2026-11-13.json",
+    "after": "../benchmarks/brotli-ring-after-2026-11-13.json",
+    "command": "pnpm exec tsc -b && node bench/brotli.mjs",
+    "scope": "15 measured samples after 3 warmups, quality-4 compressed text and deterministic binary data, output sizes 64 KiB/256 KiB/1 MiB. Independent Node native decoder checks byte parity and supplies a CPU reference; its internal memory is untracked.",
+    "memory": "For 1 MiB text, peak reservation falls from 3,210,415 to 2,161,839 bytes; binary falls from 3,186,682 to 2,138,106. Each exact-power case saves one output-sized ring extent, with zero retained after release.",
+    "timing": "No speedup claim. Timings vary by data and run; the recorded 1 MiB text median increases from 1.37 to 2.30 ms, while binary decreases from 0.23 to 0.17 ms. These short sequential microbenchmarks do not establish a stable CPU regression or improvement. The default favors the smaller valid workspace."
+  },
+  "remaining": [
+    "Broader F1-F6/M1-M2/V1-V3 audit work and full acceptance gates remain active.",
+    "Hosted cloud latency/throughput, Worker heap/RSS caps and complete VM allocation accounting are not certified by these tests.",
+    "Bundle-cost measurement and larger representative performance samples remain open."
+  ]
+}

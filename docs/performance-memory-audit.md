@@ -1,6 +1,6 @@
 # Performance and memory budget audit
 
-Latest corpus value-parity findings: `docs/validation/conformance-value-parity-2026-11-13.json` (6 failures; release gate remains open).
+Latest codec/transport evidence: `docs/validation/brotli-cloud-ring-2026-11-13.json`. Conformance passes; full release acceptance remains open.
 
 LakeQL has further opportunities to remove repeated whole-state work from per-row
 execution. The highest-value work is shared incremental memory accounting, followed
@@ -35,18 +35,18 @@ Window buffer chunking and measurements: `docs/validation/window-key-ledger-2026
 
 Window quantile buffer admission and real HTTP/Worker fixture evidence: `docs/validation/window-quantile-admission-2026-11-13.json`. Mode/distinct key admission and fixture evidence: `docs/validation/window-key-admission-2026-11-13.json`; scalar payload ownership remains open.
 
-Latest execution checkpoint (November 13, 2026): coverage and deterministic
-fixture regeneration pass; BSON now rejects at selected-schema preflight.
+Historical checkpoint (November 13, 2026): coverage and fixture regeneration
+passed before ALP, BSON and Brotli integration.
 Release-gate evidence: `docs/validation/release-gate-review-2026-11-13.json`.
 Window evidence: `docs/validation/window-offset-cursors-2026-11-13.json`,
 `docs/validation/window-frame-iterator-2026-11-13.json`, and
 `docs/validation/window-segment-budget-2026-11-13.json`.
 
-External conformance now reports **511 passed, 6 failed, one skipped**; the six
-remaining failures are ALP, BSON and BROTLI through both readers. No assertions
-were waived. Generic decimal operators, ordinary high-precision vectors, broader
-allocation coverage and final coverage/reproducibility gates remain unfinished.
-These checks do not establish whole-runtime memory safety or release readiness.
+External conformance reports **517 passed, one skipped**. ALP and BSON decode;
+Brotli decodes bounded pages and rejects oversized pages at the requested cap.
+Conformance inspects page extents rather than filenames to require that rejection.
+Generic decimal operators, broader allocation coverage and final release gates
+remain unfinished. These checks do not establish whole-runtime memory safety.
 
 Supported public owned nested reads now use admitted schema planning, bounded
 column blocks, batch-level assembly and shared decoded-page/dictionary caches.
@@ -156,7 +156,7 @@ adjacent optimization alone is not a reason to expand the implementation.
 | M2 | Memory-responsive execution | Verify batch/read scheduling, lower-memory operator choices and typed failure at indivisible limits. Exercise cancellation, fairness and self-held-capacity deadlock cases. Document smart defaults and any required tradeoff configuration. |
 | V1 | End-to-end constrained concurrent operation | Run the mapped workloads at 64/128 MiB pools with multiple jobs, cold/warm caches, pinned outputs and concurrent read/decode. Distinguish local, real HTTP, workerd/R2 and production-cloud evidence; include runtime memory observations and headroom limits. |
 | V2 | Correctness and complexity evidence | Tie edge-case/fixture tests, reference comparisons and scaling counters to F1–F6/M1–M2. Archive benchmark conditions and changes, not just passing test counts. |
-| V3 | Final release and scope review | Re-run applicable gates on the final implementation, account for all conformance outcomes and compatibility changes, remove obsolete paths, and review every checklist item against current evidence. The existing release gate remains failing; no exception is assumed. |
+| V3 | Final release and scope review | Re-run applicable gates on the final implementation, account for all conformance outcomes and compatibility changes, remove obsolete paths, and review every checklist item against current evidence. Final release acceptance remains unverified; no exception is assumed. |
 
 Format-support gaps are tracked under V3. They must not silently become an
 unbounded feature program, nor be waived to claim completion. Their relationship
@@ -176,7 +176,7 @@ for the stated reservation/live-allocation invariant.
 | Decode allocation admission | Scoped numeric/boolean/dictionary-index decoders, packed PLAIN and flat delta strings/binary, admitted fallback vector arrays, decompression, owned batches, bounded nested block assembly | Remaining encodings/conversions, fallback allocations, metadata/runtime overhead and codec workspace |
 | Cache reuse within caps | Owned data and full/indexed metadata, raw-alias reservation transfer, cross-job pins, eviction-safe output; zero warm data reads on public R2 | Remaining metadata/converter workspace, all normal query paths |
 | Smart defaults | Available-headroom admission, exact-range fallback, optional prefetch decline, default pool | Measured decode/batch scheduling through the complete execution pipeline |
-| Release readiness | Unit, reference, workerd, transport and targeted benchmark evidence; changeset written | External conformance resolution, final release gates, final audit and review |
+| Release readiness | Unit, reference, workerd, transport and targeted benchmark evidence; changeset written | Final release gates, allocation audit and review |
 
 The sections below preserve the original findings and dated implementation evidence.
 A completed primitive or targeted test must not be read as completion of its wider

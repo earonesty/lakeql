@@ -51,7 +51,7 @@
     "area": "Parquet",
     "feature": "Brotli compression",
     "status": "supported+tested",
-    "notes": "Fixed-output decoder admits per-call workspace and decoder metadata through owned scopes. Oversized actual pages reject under requested limits; static dictionary tables and caller-managed public results are outside per-call accounting. Worker R2 validation and codec performance measurements remain pending.",
+    "notes": "Fixed-output decoder admits reusable workspace and decoder metadata through owned scopes. Actual oversized pages reject under requested limits. Worker R2 and HTTP 206/ignored-Range tests cover concurrent queries and cache lifetimes. Static tables and caller-managed public results are outside per-call accounting.",
     "evidence": [
       {
         "file": "packages/parquet/src/brotli-reader.test.ts",
@@ -64,6 +64,14 @@
       {
         "file": "packages/parquet/src/brotli-decoder.test.ts",
         "pattern": "charges scoped output and workspace"
+      },
+      {
+        "file": "packages/parquet/src/brotli.workerd.ts",
+        "pattern": "decodes BROTLI through concurrent Worker R2 queries"
+      },
+      {
+        "file": "packages/parquet/src/brotli-http.test.ts",
+        "pattern": "streams real Brotli fixture across concurrent HTTP reads"
       }
     ]
   },

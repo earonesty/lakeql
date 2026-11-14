@@ -39,5 +39,6 @@
     "Brotli throughput, scaling and bundle-cost measurements; no speedup is claimed.",
     "Full release gates and broader F1-F6/M1-M2/V1-V3 audit requirements remain active.",
     "Accounting is not total heap/RSS or hosted Cloudflare memory-cap certification. Public unscoped reads retain their caller-managed materialization contract."
-  ]
+  ],
+  "followupEvidence": "brotli-cloud-ring-2026-11-13.json"
 }

@@ -610,8 +610,11 @@ function decodeDistanceBlockSwitch(s: State): void {
 function maybeReallocateRingBuffer(s: State): void {
   let newSize: number = s.maxRingBufferSize;
   if (newSize > s.expectedTotalSize) {
-    const minimalNewSize: number = s.expectedTotalSize;
-    while ((newSize >> 1) > minimalNewSize) {
+    // This entry point knows the complete output extent. Size once for that
+    // extent, rather than growing after a partially filled ring has wrapped.
+    const minimalNewSize: number = s.outputLimit;
+    // Exact power-of-two output fits; separate slack covers speculative copies.
+    while (newSize > 1 && (newSize >> 1) >= minimalNewSize) {
       newSize = newSize >> 1;
     }
     if ((s.inputEnd === 0) && newSize < 16384 && s.maxRingBufferSize >= 16384) {

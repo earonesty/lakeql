@@ -1,13 +1,8 @@
 import { readFileSync } from "node:fs";
-import { brotliCompressSync } from "node:zlib";
 import { MemoryBudget, MemoryScope, memoryStore } from "lakeql-core";
 import { expect, it } from "vitest";
-import {
-  createParquetLake,
-  readParquetObjectBatches,
-  readParquetObjects,
-  writeParquet,
-} from "./index.js";
+import { brotliFixtureRows, createBrotliFixture } from "../../../fixtures/src/brotli.js";
+import { createParquetLake, readParquetObjectBatches, readParquetObjects } from "./index.js";
 
 it("rejects the actual multi-gigabyte Brotli fixture within the requested memory bound", async () => {
   const store = memoryStore();
@@ -50,20 +45,8 @@ it("rejects the actual multi-gigabyte Brotli fixture within the requested memory
 
 it("reads actual Brotli Parquet pages through public and owned readers", async () => {
   const store = memoryStore();
-  const rows = Array.from({ length: 513 }, (_, index) => ({
-    id: index,
-    text: index % 7 === 0 ? null : `dictionary text ${index % 19} 猫`,
-  }));
-  await writeParquet(store, "brotli.parquet", {
-    codec: "BROTLI",
-    compressors: { BROTLI: (input) => brotliCompressSync(input) },
-    rowGroupSize: 127,
-    pageSize: 256,
-    columnData: [
-      { name: "id", type: "INT32", data: rows.map((row) => row.id) },
-      { name: "text", type: "STRING", data: rows.map((row) => row.text) },
-    ],
-  });
+  const rows = brotliFixtureRows();
+  await store.put("brotli.parquet", createBrotliFixture());
   expect(await readParquetObjects(store, "brotli.parquet")).toEqual(rows);
   const pool = new MemoryBudget(64 * 1024 * 1024);
   const lake = createParquetLake({ store, memoryPool: pool, scanRangeCache: { maxBytes: 0 } });
