@@ -1,4 +1,5 @@
 import { expect, it, vi } from "vitest";
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import {
   predicateSelection,
   type Vector,
@@ -52,7 +53,7 @@ it("does not decode packed text at exact mask capacity, independent of text widt
         length: 3,
         valid: Uint8Array.of(1, 0, 1),
       };
-      const pool = new MemoryBudget(3);
+      const pool = new MemoryBudget(c.view + 3);
       const scope = new MemoryScope(pool);
       try {
         expect([
@@ -62,7 +63,7 @@ it("does not decode packed text at exact mask capacity, independent of text widt
             scope,
           ),
         ]).toEqual([0, 1, 0]);
-        expect(pool.peakBytes).toBe(3);
+        expect(pool.peakBytes).toBe(c.view + 3);
       } finally {
         scope.dispose();
       }
@@ -111,7 +112,7 @@ it.each([
   { type: "dict", indices: Uint32Array.of(2), dictionary: { type: "null", length: 1 } },
   { type: "union", tags: Uint8Array.of(3), offsets: Uint32Array.of(0), children: [] },
 ])("rejects invalid indirection for $type and cleans the output mask", (shape) => {
-  const pool = new MemoryBudget(1);
+  const pool = new MemoryBudget(c.view + 1);
   const scope = new MemoryScope(pool);
   try {
     expect(() =>
@@ -128,7 +129,7 @@ it.each([
 });
 
 it("rejects a one-byte-short mask without disturbing a sibling reservation", () => {
-  const pool = new MemoryBudget(39);
+  const pool = new MemoryBudget(c.view + 39);
   const sibling = pool.reserve(37, "sibling");
   const scope = new MemoryScope(pool);
   try {
@@ -157,7 +158,7 @@ it.each([
       : { type: "union", tags: Uint8Array.of(0), offsets: Uint32Array.of(0), children: [] };
   if (vector.type === "dict") vector.dictionary = vector;
   else if (vector.type === "union") vector.children.push(vector);
-  const pool = new MemoryBudget(1);
+  const pool = new MemoryBudget(c.view + 1);
   const scope = new MemoryScope(pool);
   expect(() =>
     predicateSelection({ rowCount: 1, columns: { value: vector } }, isNull("value"), scope),

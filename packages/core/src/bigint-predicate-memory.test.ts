@@ -32,15 +32,15 @@ it.each([
     left: { kind: "column", name: "value" },
     right: { kind: "literal", value: literal },
   };
-  const scope = new MemoryScope(new MemoryBudget(numbers.length + c.bigint));
+  const scope = new MemoryScope(new MemoryBudget(c.view + numbers.length + c.bigint));
   expect([...predicateSelection(batch, expression, scope)]).toEqual(
     numbers.map((value) => Number(value >= literal)),
   );
-  expect(scope.budget.peakBytes).toBe(numbers.length + c.bigint);
-  expect(scope.budget.usedBytes).toBe(numbers.length);
+  expect(scope.budget.peakBytes).toBe(c.view + numbers.length + c.bigint);
+  expect(scope.budget.usedBytes).toBe(c.view + numbers.length);
   scope.dispose();
   expect(scope.budget.usedBytes).toBe(0);
-  const tight = new MemoryScope(new MemoryBudget(numbers.length + c.bigint - 1));
+  const tight = new MemoryScope(new MemoryBudget(c.view + numbers.length + c.bigint - 1));
   expect(() => predicateSelection(batch, expression, tight)).toThrow(/budget/i);
   expect(tight.budget.usedBytes).toBe(0);
   tight.dispose();
@@ -51,7 +51,7 @@ it("needs no bigint scalar workspace for an empty vector", () => {
     rowCount: 0,
     columns: { value: { type: "u64", values: new BigUint64Array() } },
   };
-  const scope = new MemoryScope(new MemoryBudget(0));
+  const scope = new MemoryScope(new MemoryBudget(c.view));
   expect(
     predicateSelection(
       batch,
@@ -64,6 +64,6 @@ it("needs no bigint scalar workspace for an empty vector", () => {
       scope,
     ),
   ).toHaveLength(0);
-  expect(scope.budget.peakBytes).toBe(0);
+  expect(scope.budget.peakBytes).toBe(c.view);
   scope.dispose();
 });

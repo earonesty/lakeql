@@ -1,0 +1,129 @@
+{
+  "runtimeBase": "14a038e",
+  "description": "Logical predicate mask backing plus typed-view accounting; five measured samples after three warmups. Borrowed source/expression construction excluded. All rows and SQL unknown values match independent scalar truth tables.",
+  "harnessSha256": "595346f13a446733ab9c60c336f037e17f52fc4c6d88bbc25f7be23a1b4a0039",
+  "batchModuleSha256": "cddc7cee7dcfb590f3794adfe139b314a81a78bfda87aad78745356e1c8a27a3",
+  "maskModuleSha256": "ead561015251747bcea88774bb0059485cfc5f8c2e2b686a43047e21b71a2977",
+  "results": [
+    {
+      "rows": 10000,
+      "operands": 2,
+      "operation": "and",
+      "medianMs": 0.3144829999999956,
+      "samples": 5,
+      "peakMaskBytes": 20256,
+      "retainedMaskBytes": 10128,
+      "scope": "current production predicate kernel; borrowed input; typed mask backing and views only; all operands evaluated"
+    },
+    {
+      "rows": 10000,
+      "operands": 2,
+      "operation": "or",
+      "medianMs": 0.238861,
+      "samples": 5,
+      "peakMaskBytes": 20256,
+      "retainedMaskBytes": 10128,
+      "scope": "current production predicate kernel; borrowed input; typed mask backing and views only; all operands evaluated"
+    },
+    {
+      "rows": 10000,
+      "operands": 32,
+      "operation": "and",
+      "medianMs": 4.079399000000009,
+      "samples": 5,
+      "peakMaskBytes": 20256,
+      "retainedMaskBytes": 10128,
+      "scope": "current production predicate kernel; borrowed input; typed mask backing and views only; all operands evaluated"
+    },
+    {
+      "rows": 10000,
+      "operands": 32,
+      "operation": "or",
+      "medianMs": 3.8339359999999942,
+      "samples": 5,
+      "peakMaskBytes": 20256,
+      "retainedMaskBytes": 10128,
+      "scope": "current production predicate kernel; borrowed input; typed mask backing and views only; all operands evaluated"
+    },
+    {
+      "rows": 10000,
+      "operands": 128,
+      "operation": "and",
+      "medianMs": 15.809935999999993,
+      "samples": 5,
+      "peakMaskBytes": 20256,
+      "retainedMaskBytes": 10128,
+      "scope": "current production predicate kernel; borrowed input; typed mask backing and views only; all operands evaluated"
+    },
+    {
+      "rows": 10000,
+      "operands": 128,
+      "operation": "or",
+      "medianMs": 16.01236799999998,
+      "samples": 5,
+      "peakMaskBytes": 20256,
+      "retainedMaskBytes": 10128,
+      "scope": "current production predicate kernel; borrowed input; typed mask backing and views only; all operands evaluated"
+    },
+    {
+      "rows": 100000,
+      "operands": 2,
+      "operation": "and",
+      "medianMs": 2.1195600000000354,
+      "samples": 5,
+      "peakMaskBytes": 200256,
+      "retainedMaskBytes": 100128,
+      "scope": "current production predicate kernel; borrowed input; typed mask backing and views only; all operands evaluated"
+    },
+    {
+      "rows": 100000,
+      "operands": 2,
+      "operation": "or",
+      "medianMs": 2.112647000000038,
+      "samples": 5,
+      "peakMaskBytes": 200256,
+      "retainedMaskBytes": 100128,
+      "scope": "current production predicate kernel; borrowed input; typed mask backing and views only; all operands evaluated"
+    },
+    {
+      "rows": 100000,
+      "operands": 32,
+      "operation": "and",
+      "medianMs": 39.4211160000001,
+      "samples": 5,
+      "peakMaskBytes": 200256,
+      "retainedMaskBytes": 100128,
+      "scope": "current production predicate kernel; borrowed input; typed mask backing and views only; all operands evaluated"
+    },
+    {
+      "rows": 100000,
+      "operands": 32,
+      "operation": "or",
+      "medianMs": 37.730575000000044,
+      "samples": 5,
+      "peakMaskBytes": 200256,
+      "retainedMaskBytes": 100128,
+      "scope": "current production predicate kernel; borrowed input; typed mask backing and views only; all operands evaluated"
+    },
+    {
+      "rows": 100000,
+      "operands": 128,
+      "operation": "and",
+      "medianMs": 158.58814699999994,
+      "samples": 5,
+      "peakMaskBytes": 200256,
+      "retainedMaskBytes": 100128,
+      "scope": "current production predicate kernel; borrowed input; typed mask backing and views only; all operands evaluated"
+    },
+    {
+      "rows": 100000,
+      "operands": 128,
+      "operation": "or",
+      "medianMs": 155.00071500000013,
+      "samples": 5,
+      "peakMaskBytes": 200256,
+      "retainedMaskBytes": 100128,
+      "scope": "current production predicate kernel; borrowed input; typed mask backing and views only; all operands evaluated"
+    }
+  ]
+}

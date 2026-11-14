@@ -16,6 +16,7 @@ import { allocateInt96Storage, readInt96, writeInt96 } from "./int96-storage.js"
 import { MATERIALIZATION_CHARGES as c } from "./materialization-plan.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope } from "./memory-scope.js";
+import { allocatePredicateMask } from "./predicate-mask.js";
 import { setRecordValue } from "./record-value.js";
 import {
   compareTimestampValues,
@@ -306,7 +307,7 @@ export function selectedRowIndices(rowCount: number, selection?: Selection): Ite
   return selectedSelectionRowIndices(rowCount, selection);
 }
 
-/** Materialize selection indices directly into admitted u32 backing. */
+/** Materialize selection indices into admitted u32 backing and view. */
 export function selectedRowIndexBuffer(
   rowCount: number,
   selection?: Selection,
@@ -319,7 +320,7 @@ export function selectedRowIndexBuffer(
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Selection length does not match row count");
   }
   const count = selectedRowCount(rowCount, selection);
-  const indices = admitVectorBuffer(scope, count * 4, () => new Uint32Array(count));
+  const indices = admitVectorBuffer(scope, c.view + count * 4, () => new Uint32Array(count));
   let target = 0;
   for (let index = 0; index < rowCount; index += 1) {
     if (selection === undefined || selection[index] === 1) indices[target++] = index;
@@ -983,7 +984,7 @@ function optionalValidity<T extends Vector>(vector: T, valid: Uint8Array | undef
 type SqlMaskValue = 0 | 1 | 2;
 
 function allSelected(rowCount: number, scope?: MemoryScope): Selection {
-  const selection = admitVectorBuffer(scope, rowCount, () => new Uint8Array(rowCount));
+  const selection = allocatePredicateMask(rowCount, scope);
   selection.fill(1);
   return selection;
 }
@@ -1122,7 +1123,7 @@ export function batchExprValues(batch: Batch, expr: Expr, scope?: MemoryScope): 
             if (choices === undefined) {
               choices = admitVectorBuffer(
                 scope,
-                batch.rowCount * Constructor.BYTES_PER_ELEMENT,
+                c.view + batch.rowCount * Constructor.BYTES_PER_ELEMENT,
                 () => new Constructor(batch.rowCount),
               );
               choices.fill(count);
@@ -1270,7 +1271,7 @@ function literalValues(rowCount: number, value: Scalar): BatchExprValues {
 }
 
 function scalarToPredicateMask(values: BatchExprValues, scope?: MemoryScope): Uint8Array {
-  const mask = admitVectorBuffer(scope, values.rowCount, () => new Uint8Array(values.rowCount));
+  const mask = allocatePredicateMask(values.rowCount, scope);
   for (let index = 0; index < values.rowCount; index += 1) {
     const scratch = values.allocationFree ? undefined : scope?.childScope();
     try {
@@ -1301,7 +1302,7 @@ function compareMasks(
 ): Uint8Array {
   const fast = fastCompareMasks(op, left, right, scope);
   if (fast !== undefined) return fast;
-  const mask = admitVectorBuffer(scope, left.rowCount, () => new Uint8Array(left.rowCount));
+  const mask = allocatePredicateMask(left.rowCount, scope);
   const allocationFree = left.allocationFree && right.allocationFree;
   for (let index = 0; index < left.rowCount; index += 1) {
     const scratch = allocationFree ? undefined : scope?.childScope();
@@ -1378,7 +1379,7 @@ function compareDecimalLiteralMasks(
   scope?: MemoryScope,
 ): Uint8Array {
   const count = vector.values.length;
-  const mask = admitVectorBuffer(scope, count, () => new Uint8Array(count));
+  const mask = allocatePredicateMask(count, scope);
   // Empty/all-null inputs never evaluate the literal, matching row semantics.
   let first = 0;
   while (first < count && vector.valid?.[first] === 0) mask[first++] = 2;
@@ -1439,11 +1440,7 @@ function compareNumberLiteralMasks(
   literal: number,
   scope?: MemoryScope,
 ): Uint8Array {
-  const mask = admitVectorBuffer(
-    scope,
-    vector.values.length,
-    () => new Uint8Array(vector.values.length),
-  );
+  const mask = allocatePredicateMask(vector.values.length, scope);
   const valid = vector.valid;
   for (let index = 0; index < vector.values.length; index += 1) {
     if (valid !== undefined && valid[index] === 0) {
@@ -1462,11 +1459,7 @@ function compareBigIntLiteralMasks(
   literal: bigint | number,
   scope?: MemoryScope,
 ): Uint8Array {
-  const mask = admitVectorBuffer(
-    scope,
-    vector.values.length,
-    () => new Uint8Array(vector.values.length),
-  );
+  const mask = allocatePredicateMask(vector.values.length, scope);
   // Reading a bigint typed-array element creates a scalar. Only one is live
   // at a time; relational comparison also accepts safe integer number literals.
   const scratch = scope?.reserve(
@@ -1495,11 +1488,7 @@ function compareTimestampLiteralMasks(
   literal: TimestampValue,
   scope?: MemoryScope,
 ): Uint8Array {
-  const mask = admitVectorBuffer(
-    scope,
-    vector.values.length,
-    () => new Uint8Array(vector.values.length),
-  );
+  const mask = allocatePredicateMask(vector.values.length, scope);
   if (vector.values.length === 0) return mask;
   const scratch = scope?.reserve(4 * c.bigint, "timestamp comparison workspace");
   try {
@@ -1542,7 +1531,7 @@ function compareNumberMaskValue(op: CompareOp, left: number, right: number): Sql
 }
 
 function nullCompareMask(rowCount: number, scope?: MemoryScope): Uint8Array {
-  const mask = admitVectorBuffer(scope, rowCount, () => new Uint8Array(rowCount));
+  const mask = allocatePredicateMask(rowCount, scope);
   mask.fill(2);
   return mask;
 }
@@ -1569,7 +1558,7 @@ function inMask(
   negated: boolean,
   scope?: MemoryScope,
 ): Uint8Array {
-  const mask = admitVectorBuffer(scope, target.rowCount, () => new Uint8Array(target.rowCount));
+  const mask = allocatePredicateMask(target.rowCount, scope);
   if (numericLiteralInMask(target, values, negated, mask, scope)) return mask;
   const allocationFree = target.allocationFree && values.every((value) => value.allocationFree);
   for (let index = 0; index < target.rowCount; index++) {
@@ -1671,7 +1660,7 @@ function numericLiteralInMask(
 }
 
 function nullCheckMask(values: BatchExprValues, negated: boolean, scope?: MemoryScope): Uint8Array {
-  const mask = admitVectorBuffer(scope, values.rowCount, () => new Uint8Array(values.rowCount));
+  const mask = allocatePredicateMask(values.rowCount, scope);
   for (let index = 0; index < values.rowCount; index += 1) {
     const scratch = values.allocationFree ? undefined : scope?.childScope();
     try {
@@ -1724,7 +1713,7 @@ function vectorNullAt(vector: Vector, index: number): boolean {
 
 function vectorNullCheckMask(vector: Vector, negated: boolean, scope?: MemoryScope): Uint8Array {
   const rowCount = vectorLength(vector);
-  const mask = admitVectorBuffer(scope, rowCount, () => new Uint8Array(rowCount));
+  const mask = allocatePredicateMask(rowCount, scope);
   for (let index = 0; index < rowCount; index += 1) {
     const isNull = vectorNullAt(vector, index);
     mask[index] = (negated ? !isNull : isNull) ? 1 : 0;

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { MATERIALIZATION_CHARGES as c } from "../packages/core/dist/allocation-charges.js";
 import {
   and,
   batchFromColumns,
@@ -41,14 +42,14 @@ for (const rows of [10000, 100000]) {
       });
       const samples = [];
       for (let trial = 0; trial < 8; trial++) {
-        const budget = new MemoryBudget(rows * 2);
+        const budget = new MemoryBudget((c.view + rows) * 2);
         const scope = new MemoryScope(budget);
         const started = performance.now();
         const output = predicateSelection(batch, expression, scope);
         const elapsed = performance.now() - started;
         assert.deepEqual(output, expected);
-        assert.equal(budget.peakBytes, rows * 2);
-        assert.equal(budget.usedBytes, rows);
+        assert.equal(budget.peakBytes, (c.view + rows) * 2);
+        assert.equal(budget.usedBytes, c.view + rows);
         scope.dispose();
         assert.equal(budget.usedBytes, 0);
         if (trial >= 3) samples.push(elapsed);
@@ -61,10 +62,10 @@ for (const rows of [10000, 100000]) {
           operation,
           medianMs: samples[2],
           samples: samples.length,
-          peakMaskBytes: rows * 2,
-          retainedMaskBytes: rows,
+          peakMaskBytes: (c.view + rows) * 2,
+          retainedMaskBytes: c.view + rows,
           scope:
-            "current production predicate kernel; borrowed input; typed mask allocations only; all operands evaluated",
+            "current production predicate kernel; borrowed input; typed mask backing and views only; all operands evaluated",
         }),
       );
     }

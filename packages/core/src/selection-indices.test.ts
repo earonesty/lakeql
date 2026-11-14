@@ -1,17 +1,18 @@
 import { expect, it } from "vitest";
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { selectedRowIndexBuffer } from "./batch.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope } from "./memory-scope.js";
 
 it("admits only selected indices and preserves SQL unknown exclusions", () => {
-  const budget = new MemoryBudget(8);
+  const budget = new MemoryBudget(c.view + 8);
   const scope = new MemoryScope(budget);
   try {
     expect(selectedRowIndexBuffer(5, new Uint8Array([2, 1, 0, 1, 2]), scope)).toEqual(
       new Uint32Array([1, 3]),
     );
-    expect(budget.usedBytes).toBe(8);
-    expect(budget.peakBytes).toBe(8);
+    expect(budget.usedBytes).toBe(c.view + 8);
+    expect(budget.peakBytes).toBe(c.view + 8);
   } finally {
     scope.dispose();
   }
@@ -19,7 +20,7 @@ it("admits only selected indices and preserves SQL unknown exclusions", () => {
 });
 
 it("rejects one byte below the index allocation before charging or constructing output", () => {
-  const budget = new MemoryBudget(7);
+  const budget = new MemoryBudget(c.view + 7);
   const scope = new MemoryScope(budget);
   try {
     expect(() => selectedRowIndexBuffer(2, undefined, scope)).toThrow();

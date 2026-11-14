@@ -379,3 +379,5 @@ Retain columnar top-k output ownership through borrowed batch iteration. Admit p
 Bound vector projection and deferred gather inputs even when scanners return oversized batches. Preserve physical offsets and source ownership, admit slice metadata/reference arrays, and keep computed output allocations within the requested batch size.
 
 Evaluate column null predicates from validity and dictionary/union metadata without decoding text or materializing nested values. Resolve indirection iteratively while preserving invalid-index errors and bounded predicate-mask admission.
+
+Share predicate-mask allocation and admit typed-array views alongside backing bytes. Include views for wider CASE choices and selected-index buffers while preserving mask reuse, temporary cleanup and low-memory predicate fallbacks.

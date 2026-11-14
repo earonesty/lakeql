@@ -1,4 +1,5 @@
 import { expect, it, vi } from "vitest";
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { type Batch, batchFromColumns, predicateSelection } from "./batch.js";
 import { compareDecimalOperands } from "./decimal-comparison.js";
 import { decimalFromParts } from "./decimal-value.js";
@@ -167,16 +168,17 @@ it("admits one prepared literal with the output and rolls back callback failures
   const scope = new MemoryScope(new MemoryBudget(65536));
   predicateSelection(batch, expr, scope);
   const peak = scope.budget.peakBytes;
-  expect(scope.budget.usedBytes).toBe(1000);
+  expect(scope.budget.usedBytes).toBe(c.view + 1000);
   scope.dispose();
   const exact = new MemoryScope(new MemoryBudget(peak));
   expect(predicateSelection(batch, expr, exact).length).toBe(1000);
   exact.dispose();
   const tight = new MemoryScope(new MemoryBudget(peak - 1));
   expect(predicateSelection(batch, expr, tight).every((value) => value === 1)).toBe(true);
-  expect(tight.budget.usedBytes).toBe(1000);
+  expect(tight.budget.usedBytes).toBe(c.view + 1000);
   tight.dispose();
-  const minimum = 1000 + scalarComparisonPeak(decimalFromParts(1n, 1000), Number.MIN_VALUE);
+  const minimum =
+    c.view + 1000 + scalarComparisonPeak(decimalFromParts(1n, 1000), Number.MIN_VALUE);
   const fallback = new MemoryScope(new MemoryBudget(minimum));
   expect(predicateSelection(batch, expr, fallback).length).toBe(1000);
   fallback.dispose();
@@ -217,7 +219,7 @@ it("retries once after late preparation exhaustion without releasing sibling res
       .map((value) => scalarComparisonPeak(value, literal)),
   );
   const pool = new MemoryBudget(65536);
-  const siblingBytes = pool.maxBytes - (values.length + peak);
+  const siblingBytes = pool.maxBytes - (c.view + values.length + peak);
   const sibling = pool.reserve(siblingBytes, "retained sibling output");
   const scope = new MemoryScope(pool);
   const reserve = vi.spyOn(MemoryScope.prototype, "reserve");
@@ -228,7 +230,7 @@ it("retries once after late preparation exhaustion without releasing sibling res
     expect(
       reserve.mock.calls.filter(([, purpose]) => purpose === "prepared decimal comparison state"),
     ).toHaveLength(1);
-    expect(pool.usedBytes).toBe(siblingBytes + values.length);
+    expect(pool.usedBytes).toBe(siblingBytes + c.view + values.length);
     expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
   } finally {
     reserve.mockRestore();
@@ -243,11 +245,11 @@ it("keeps same-scale comparison usable with only the output-mask budget", () => 
   const batch = batchFromColumns({
     value: [decimalFromParts(1n, 2), null, decimalFromParts(3n, 2)],
   });
-  const scope = new MemoryScope(new MemoryBudget(3));
+  const scope = new MemoryScope(new MemoryBudget(c.view + 3));
   expect(
     Array.from(predicateSelection(batch, lt("value", decimalFromParts(2n, 2)), scope)),
   ).toEqual([1, 2, 0]);
-  expect(scope.budget.usedBytes).toBe(3);
+  expect(scope.budget.usedBytes).toBe(c.view + 3);
   scope.dispose();
   expect(scope.budget.usedBytes).toBe(0);
 });

@@ -1,0 +1,42 @@
+{
+  "runtimeBase": "14a038e",
+  "requirements": ["M1", "M2", "V2"],
+  "finding": "Shared predicate producers reserved only mask byte backing, omitting the modeled typed-array view. Wider CASE choices and selectedRowIndexBuffer also omitted their view.",
+  "fix": [
+    "Route 16 mask-allocation sites in batch.ts, batch-call.ts and dictionary-mask.ts through one allocator that validates extent and admits backing plus c.view before construction.",
+    "Charge the view for newly allocated wider CASE choice arrays; reused byte-mask choices keep the original view owner without double charging.",
+    "Charge the selected-index helper view and preserve temporary-index release after gather and physical output transfer."
+  ],
+  "contract": {
+    "maskBytes": "c.view + rows",
+    "selectedIndexBytes": "c.view + 4 * selectedRows",
+    "twoMaskLogicalPeak": "2 * (c.view + rows)",
+    "viewCharge": 128,
+    "emptyMask": "Still owns a typed-array view and therefore requires its view allowance."
+  },
+  "validation": {
+    "build": "pnpm exec tsc -b passed",
+    "types": "pnpm typecheck passed",
+    "regularPassed": 3882,
+    "regularSkipped": 645,
+    "workerPassed": 82,
+    "workerCommand": "pnpm test:workerd --no-file-parallelism",
+    "workerConcurrency": "Only file startup is serialized; in-test concurrent queries remain concurrent."
+  },
+  "evidence": [
+    "Exact-cap/cap-minus-one tests cover empty and nonempty masks, independent retained owners, invalid extents and zero cleanup.",
+    "SQL logical/NOT/CASE/dictionary overlap tests retain only final output; 2/100-operand tests and 2/32/128-operand benchmarks preserve bounded mask count.",
+    "Numeric, bigint, timestamp, decimal, call and CASE paths include view charges while preserving scalar scratch limits, adaptive IN/decimal fallback and sibling isolation.",
+    "Physical selection/indices and gather tests cover overlap and temporary-index release.",
+    "Existing real HTTP and native R2 predicate/pressure fixtures exercise the updated allocation paths at 64/128 MiB caps."
+  ],
+  "benchmarks": [
+    "docs/benchmarks/predicate-mask-view-scaling-2026-11-14.json",
+    "docs/benchmarks/vector-null-mask-views-2026-11-14.json"
+  ],
+  "boundaries": [
+    "This changes modeled budget requirements by one existing c.view charge per allocated mask/index view; exact test capacities are derived from live overlap, not broadly relaxed.",
+    "Legacy gather output/vector conversion views, expression-plan metadata and other unadmitted vector helpers remain separate M1/F5 gaps. selectedRowIndexBuffer admission does not imply complete gather-output accounting.",
+    "Model charges are not exact VM/GC/native heap sizes. Whole-runtime headroom and final release acceptance remain open."
+  ]
+}

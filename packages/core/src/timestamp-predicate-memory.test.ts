@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { type Batch, predicateSelection } from "./batch.js";
 import type { CompareOp, Expr } from "./expr.js";
 import { MemoryBudget } from "./memory-budget.js";
@@ -46,7 +47,7 @@ it.each([
             );
           });
           expect([...predicateSelection(batch, expression, scope)]).toEqual(expected);
-          expect(scope.budget.usedBytes).toBe(epochs.length);
+          expect(scope.budget.usedBytes).toBe(c.view + epochs.length);
           return scope.budget.peakBytes;
         } finally {
           scope.dispose();
@@ -147,7 +148,7 @@ it.each([
         : expression;
   const scope = new MemoryScope(new MemoryBudget(65536));
   expect([...predicateSelection(batch, selected, scope)]).toEqual(Array(100).fill(1));
-  expect(scope.budget.usedBytes).toBe(100);
+  expect(scope.budget.usedBytes).toBe(c.view + 100);
   const peak = scope.budget.peakBytes;
   scope.dispose();
   const tight = new MemoryScope(new MemoryBudget(peak - 1));

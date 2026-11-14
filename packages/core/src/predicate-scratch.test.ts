@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { type Batch, batchExprValues, predicateSelection } from "./batch.js";
 import type { Expr } from "./expr.js";
 import { MemoryBudget } from "./memory-budget.js";
@@ -47,7 +48,7 @@ it.each(expressions)("bounds decoded predicate scratch for $kind", (expression) 
     expect([...predicateSelection(batch, expression, scope)]).toEqual(Array(rows).fill(1));
     const peak = scope.budget.peakBytes;
     expect(peak).toBeGreaterThan(rows);
-    expect(scope.budget.usedBytes).toBe(rows);
+    expect(scope.budget.usedBytes).toBe(c.view + rows);
     scope.dispose();
     expect(scope.budget.usedBytes).toBe(0);
     const exact = new MemoryScope(new MemoryBudget(peak));
@@ -114,11 +115,11 @@ it.each([20, 256])("releases nested CASE predicate workspaces across %s WHENs", 
     else: upper,
   };
   const width = branches <= 255 ? 1 : 2;
-  const scope = new MemoryScope(new MemoryBudget(rows * (width + 2)));
+  const scope = new MemoryScope(new MemoryBudget(3 * c.view + rows * (width + 2)));
   const values = batchExprValues(fixture(rows), expression, scope);
   // Only the outer branch choices survive compilation, regardless of branch count.
-  expect(scope.budget.usedBytes).toBe(rows * width);
-  expect(scope.budget.peakBytes).toBe(rows * (width + 2));
+  expect(scope.budget.usedBytes).toBe(c.view + rows * width);
+  expect(scope.budget.peakBytes).toBe(3 * c.view + rows * (width + 2));
   expect(values.valueAt(0)).toBe("SS");
   expect(values.valueAt(rows - 1)).toBe("SS");
   scope.dispose();

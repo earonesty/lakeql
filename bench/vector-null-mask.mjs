@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
+import { MATERIALIZATION_CHARGES as c } from "../packages/core/dist/allocation-charges.js";
 import {
   isNull,
   MemoryBudget,
@@ -44,7 +45,7 @@ try {
         const samples = { materializedReference: [], metadata: [] };
         for (let round = 0; round < 8; round++) {
           for (const metadata of round % 2 ? [true, false] : [false, true]) {
-            const pool = new MemoryBudget(rows);
+            const pool = new MemoryBudget(c.view + rows);
             const scope = new MemoryScope(pool);
             calls = 0;
             decodedBytes = 0;
@@ -54,7 +55,7 @@ try {
               if (metadata) mask = predicateSelection(batch, isNull("value"), scope);
               else {
                 mask = scope.allocate(
-                  rows,
+                  c.view + rows,
                   "reference predicate mask",
                   () => new Uint8Array(rows),
                 ).value;
@@ -63,6 +64,7 @@ try {
               }
               const ms = performance.now() - start;
               assert.deepEqual([...mask], expected);
+              assert.equal(pool.peakBytes, c.view + rows);
               if (metadata) assert.equal(calls, 0);
               if (round >= 2)
                 samples[metadata ? "metadata" : "materializedReference"].push({
@@ -105,7 +107,7 @@ try {
   TextDecoder.prototype.decode = decode;
 }
 const report = {
-  runtimeBase: "145c854",
+  runtimeBase: "14a038e",
   node: process.version,
   harnessSha256: createHash("sha256")
     .update(readFileSync(import.meta.filename))
@@ -114,7 +116,7 @@ const report = {
     .update(readFileSync(new URL("../packages/core/dist/batch.js", import.meta.url)))
     .digest("hex"),
   description:
-    "Metadata-only IS NULL versus the removed value-materializing loop. Two warmups/six samples, alternating order. Independent validity oracle, exact mask-only pool and complete cleanup. Packed text and two-element lists, source construction excluded.",
+    "Metadata-only IS NULL versus the removed value-materializing loop with the current view charge applied to both. Two warmups/six samples, alternating order. Independent validity oracle, exact mask-only pool and complete cleanup. Packed text and two-element lists, source construction excluded.",
   limitations: [
     "Reference reproduces the removed loop using current vectorValue, not a historical whole-revision build.",
     "Source is borrowed and excluded from the predicate pool. The reference reports the same mask charge despite allocating untracked decoded strings/list payload; decode volume exposes that accounting gap.",
@@ -123,7 +125,7 @@ const report = {
   results,
 };
 writeFileSync(
-  "docs/benchmarks/vector-null-mask-2026-11-14.json",
+  process.env.LAKEQL_NULL_MASK_REPORT ?? "docs/benchmarks/vector-null-mask-2026-11-14.json",
   `${JSON.stringify(report, null, 2)}\n`,
 );
 console.log(

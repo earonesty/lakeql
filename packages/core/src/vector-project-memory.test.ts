@@ -42,7 +42,7 @@ it("admits projected typed outputs and releases CASE workspace before returning"
     }
   }
   const peak = run(65536);
-  expect(peak).toBe(728); // CASE condition overlaps construction, then releases.
+  expect(peak).toBe(728 + c.view); // CASE condition overlaps construction, then releases.
   expect(run(peak)).toBe(peak);
   expect(() => run(peak - 1)).toThrow();
 });

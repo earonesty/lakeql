@@ -165,7 +165,7 @@ it.each([
       expect(scope.budget.usedBytes).toBe(0);
     }
   }
-  const exact = kind === "selection" ? 4 : 12;
+  const exact = kind === "selection" ? c.view + 4 : 2 * c.view + 12;
   expect(await run(exact)).toBe(exact);
   await expect(run(exact - 1)).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
 });

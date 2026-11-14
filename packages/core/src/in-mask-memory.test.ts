@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { batchFromColumns, predicateSelection } from "./batch.js";
 import { col, isIn, not, notIn } from "./expr.js";
 import { MemoryBudget } from "./memory-budget.js";
@@ -32,21 +33,21 @@ it.each([false, true])("matches bounded linear IN fallback, with NULL=%s", (with
       const scope = new MemoryScope(budget);
       try {
         const mask = predicateSelection(batch, expr, scope);
-        expect(budget.usedBytes).toBe(input.length);
+        expect(budget.usedBytes).toBe(c.view + input.length);
         return { mask: mask.slice(), peak: budget.peakBytes };
       } finally {
         scope.dispose();
         expect(budget.usedBytes).toBe(0);
       }
     };
-    const linear = run(input.length);
-    const indexed = run(input.length + candidates.length * 8);
+    const linear = run(c.view + input.length);
+    const indexed = run(c.view + input.length + candidates.length * 8);
     expect(indexed.mask).toEqual(linear.mask);
-    expect(indexed.peak).toBe(input.length + candidates.length * 8);
-    expect(run(indexed.peak - 1).peak).toBe(input.length);
+    expect(indexed.peak).toBe(c.view + input.length + candidates.length * 8);
+    expect(run(indexed.peak - 1).peak).toBe(c.view + input.length);
     expect(indexed.mask[0]).toBe(2);
     expect(indexed.mask[3]).toBe(negated ? 0 : 1);
-    const tooSmall = new MemoryScope(new MemoryBudget(input.length - 1));
+    const tooSmall = new MemoryScope(new MemoryBudget(c.view + input.length - 1));
     expect(() => predicateSelection(batch, expr, tooSmall)).toThrow();
     expect(tooSmall.budget.usedBytes).toBe(0);
     tooSmall.dispose();
@@ -59,7 +60,7 @@ it.each([NaN, Infinity, -Infinity])("falls back for non-finite literal %s", (lit
   const scope = new MemoryScope(new MemoryBudget(10000));
   const result = predicateSelection(batch, isIn("value", [literal, ...Array(128).fill(-1)]), scope);
   expect([...result]).toEqual(Array(1000).fill(Number(Number.isNaN(literal))));
-  expect(scope.budget.peakBytes).toBe(1000);
+  expect(scope.budget.peakBytes).toBe(c.view + 1000);
   scope.dispose();
   expect(scope.budget.usedBytes).toBe(0);
 });
@@ -73,7 +74,7 @@ it("evaluates row-varying candidates without building a numeric literal lookup",
     scope,
   );
   expect([...result]).toEqual([1, 0, 2]);
-  expect(scope.budget.peakBytes).toBe(3);
+  expect(scope.budget.peakBytes).toBe(c.view + 3);
   scope.dispose();
   expect(scope.budget.usedBytes).toBe(0);
 });

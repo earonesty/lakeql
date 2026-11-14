@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { batchFromColumns, batchFromVectors, predicateSelection } from "./batch.js";
 import { and, between, col, type Expr, eq, fn, gt, isIn, isNull, lit, not, or } from "./expr.js";
 import { MemoryBudget } from "./memory-budget.js";
@@ -23,7 +24,7 @@ it.each(expressions)("admits all masks for predicate %j before allocation", (exp
     const scope = new MemoryScope(budget);
     try {
       expect(predicateSelection(batch, expr, scope)).toEqual(expected);
-      expect(budget.usedBytes).toBe(batch.rowCount);
+      expect(budget.usedBytes).toBe(c.view + batch.rowCount);
       return budget.peakBytes;
     } finally {
       scope.dispose();
@@ -41,18 +42,18 @@ it("charges dictionary and expanded masks, preserving nullable dictionary result
   const batch = batchFromVectors({
     n: { type: "dict", dictionary, indices: Uint32Array.of(2, 1, 0, 2) },
   });
-  const budget = new MemoryBudget(7);
+  const budget = new MemoryBudget(2 * c.view + 7);
   const scope = new MemoryScope(budget);
   expect(Array.from(predicateSelection(batch, gt("n", 1), scope))).toEqual([1, 2, 0, 1]);
-  expect(budget.peakBytes).toBe(7);
-  expect(budget.usedBytes).toBe(4);
+  expect(budget.peakBytes).toBe(2 * c.view + 7);
+  expect(budget.usedBytes).toBe(c.view + 4);
   scope.dispose();
   expect(budget.usedBytes).toBe(0);
 });
 
 it("releases failed predicate workspace while leaving the caller scope usable", () => {
   const batch = batchFromColumns({ n: [1, 2, 3, 4] });
-  const budget = new MemoryBudget(7);
+  const budget = new MemoryBudget(2 * c.view + 7);
   const scope = new MemoryScope(budget);
   expect(() => predicateSelection(batch, between("n", 1, 3), scope)).toThrow();
   expect(scope.disposed).toBe(false);
@@ -60,18 +61,18 @@ it("releases failed predicate workspace while leaving the caller scope usable", 
   expect(() => predicateSelection(batch, lit(3), scope)).toThrow();
   expect(budget.usedBytes).toBe(0);
   expect(Array.from(predicateSelection(batch, gt("n", 2), scope))).toEqual([0, 0, 1, 1]);
-  expect(budget.usedBytes).toBe(4);
+  expect(budget.usedBytes).toBe(c.view + 4);
   scope.dispose();
   expect(budget.usedBytes).toBe(0);
 });
 
 it("evaluates BETWEEN at two-mask capacity", () => {
   const batch = batchFromColumns({ n: [1, 2, 3, 4] });
-  const budget = new MemoryBudget(8);
+  const budget = new MemoryBudget(2 * c.view + 8);
   const scope = new MemoryScope(budget);
   expect(Array.from(predicateSelection(batch, between("n", 1, 3), scope))).toEqual([1, 1, 1, 0]);
-  expect(budget.peakBytes).toBe(8);
-  expect(budget.usedBytes).toBe(4);
+  expect(budget.peakBytes).toBe(2 * c.view + 8);
+  expect(budget.usedBytes).toBe(c.view + 4);
   scope.dispose();
   expect(budget.usedBytes).toBe(0);
 });

@@ -15,6 +15,7 @@ import {
 } from "./evaluator.js";
 import type { Expr, Scalar } from "./expr.js";
 import type { MemoryScope } from "./memory-scope.js";
+import { allocatePredicateMask } from "./predicate-mask.js";
 import { regexpMatchesValue, regexpReplaceValue } from "./regex-functions.js";
 import { scalarStringWithAdmission } from "./scalar-cast-allocation.js";
 import { replaceAllWithAdmission } from "./string-replacement-allocation.js";
@@ -459,11 +460,7 @@ function binaryVectorMask(
   predicate: (value: Uint8Array) => boolean,
   scope?: MemoryScope,
 ): Uint8Array {
-  const mask = admitVectorBuffer(
-    scope,
-    vector.values.length,
-    () => new Uint8Array(vector.values.length),
-  );
+  const mask = allocatePredicateMask(vector.values.length, scope);
   const valid = vector.valid;
   for (let index = 0; index < vector.values.length; index += 1) {
     if (valid !== undefined && valid[index] === 0) {
@@ -502,11 +499,7 @@ function utf8VectorMask(
   predicate: (value: string) => boolean,
   scope?: MemoryScope,
 ): Uint8Array {
-  const mask = admitVectorBuffer(
-    scope,
-    vector.values.length,
-    () => new Uint8Array(vector.values.length),
-  );
+  const mask = allocatePredicateMask(vector.values.length, scope);
   const valid = vector.valid;
   for (let index = 0; index < vector.values.length; index += 1) {
     if (valid !== undefined && valid[index] === 0) {
@@ -533,7 +526,7 @@ function dictStringVectorMask(
 }
 
 function nullMask(rowCount: number, scope?: MemoryScope): Uint8Array {
-  const mask = admitVectorBuffer(scope, rowCount, () => new Uint8Array(rowCount));
+  const mask = allocatePredicateMask(rowCount, scope);
   mask.fill(2);
   return mask;
 }
@@ -904,7 +897,7 @@ function packedPredicateMask(
   predicate: (value: string | Uint8Array) => boolean,
   scope?: MemoryScope,
 ): Uint8Array {
-  const mask = admitVectorBuffer(scope, vector.length, () => new Uint8Array(vector.length));
+  const mask = allocatePredicateMask(vector.length, scope);
   for (let row = 0; row < vector.length; row++) {
     const value = vectorValue(vector, row);
     mask[row] = value === null ? 2 : predicate(value as string | Uint8Array) ? 1 : 0;
