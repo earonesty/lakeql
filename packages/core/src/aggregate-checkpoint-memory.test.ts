@@ -303,3 +303,45 @@ it("admits aggregate result sorting and slicing with exact end-to-end capacity",
     expect(pool.usedBytes).toBe(0);
   }
 });
+
+it.each([
+  1e308,
+  Infinity,
+  '雪"\\\ud800',
+])("measures fixed aggregate state directly with exact serialized bytes for %s", async (value) => {
+  const store = memoryStore();
+  await store.put("table", new Uint8Array(1));
+  const spec = {
+    count: { op: "count" as const },
+    min: { op: "min" as const, column: "value" },
+    max: { op: "max" as const, column: "value" },
+    ...(typeof value === "number"
+      ? {
+          sum: { op: "sum" as const, column: "value" },
+          avg: { op: "avg" as const, column: "value" },
+          variance: { op: "var_pop" as const, column: "value" },
+        }
+      : {}),
+  };
+  const run = (maxMemoryBytes?: number) =>
+    new Lake({
+      store,
+      budget: { maxMemoryBytes, maxAllocatedMemoryBytes: 1024 * 1024 },
+      scanner: {
+        async *scan() {
+          yield [{ value }];
+        },
+      },
+    })
+      .path("table")
+      .run()
+      .aggregateWithState([], spec);
+  const baseline = await run();
+  expect((await run(baseline.operatorState.byteLength)).operatorState).toEqual(
+    baseline.operatorState,
+  );
+  await expect(run(baseline.operatorState.byteLength - 1)).rejects.toMatchObject({
+    code: "LAKEQL_BUDGET_EXCEEDED",
+    details: { metric: "operator memory bytes", actual: baseline.operatorState.byteLength },
+  });
+});

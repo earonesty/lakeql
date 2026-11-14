@@ -3545,6 +3545,7 @@ interface AggregateState {
   add(value: unknown): void;
   finish(): unknown;
   snapshot(scope?: MemoryScope): AggregateStateSnapshot;
+  serializedBytes?(): number;
   bufferedMemory?(measureBytes: boolean): { bytes: number; rows: number };
 }
 
@@ -3611,7 +3612,11 @@ class AggregateGroup {
       const state = this.states[alias] as AggregateState;
       const buffered = state.bufferedMemory?.(measureBytes);
       if (budget.maxBufferedRows !== undefined) rows += buffered?.rows ?? 0;
-      if (measureBytes) bytes += buffered?.bytes ?? estimateOperatorMemoryBytes(state.snapshot());
+      if (measureBytes)
+        bytes +=
+          buffered?.bytes ??
+          state.serializedBytes?.() ??
+          estimateOperatorMemoryBytes(state.snapshot());
     }
     return { bytes, rows };
   }
@@ -3764,6 +3769,10 @@ class CountState implements AggregateState {
     return this.count;
   }
 
+  serializedBytes(): number {
+    return '{"op":"count","count":}'.length + serializedValueBytes(this.count);
+  }
+
   snapshot(): AggregateStateSnapshot {
     return { op: "count", count: this.count };
   }
@@ -3780,6 +3789,10 @@ class SumState implements AggregateState {
 
   finish(): number {
     return this.sum;
+  }
+
+  serializedBytes(): number {
+    return '{"op":"sum","sum":}'.length + serializedValueBytes(this.sum);
   }
 
   snapshot(): AggregateStateSnapshot {
@@ -3802,6 +3815,14 @@ class AvgState implements AggregateState {
 
   finish(): number | null {
     return this.count === 0 ? null : this.sum / this.count;
+  }
+
+  serializedBytes(): number {
+    return (
+      '{"op":"avg","sum":,"count":}'.length +
+      serializedValueBytes(this.sum) +
+      serializedValueBytes(this.count)
+    );
   }
 
   snapshot(): AggregateStateSnapshot {
@@ -3837,6 +3858,16 @@ class VarianceState implements AggregateState {
       case "stddev_pop":
         return this.count === 0 ? null : Math.sqrt(this.m2 / this.count);
     }
+  }
+
+  serializedBytes(): number {
+    return (
+      '{"op":,"count":,"mean":,"m2":}'.length +
+      serializedValueBytes(this.op) +
+      serializedValueBytes(this.count) +
+      serializedValueBytes(this.mean) +
+      serializedValueBytes(this.m2)
+    );
   }
 
   snapshot(): AggregateStateSnapshot {
@@ -4035,6 +4066,12 @@ class MinMaxState implements AggregateState {
 
   finish(): string | number | boolean | null {
     return this.value;
+  }
+
+  serializedBytes(): number {
+    return (
+      '{"op":,"value":}'.length + serializedValueBytes(this.op) + serializedValueBytes(this.value)
+    );
   }
 
   snapshot(): AggregateStateSnapshot {

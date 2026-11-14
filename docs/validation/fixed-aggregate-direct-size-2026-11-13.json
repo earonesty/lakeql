@@ -1,0 +1,23 @@
+{
+  "status": "Implemented; build, default and Worker validation passed",
+  "change": "Count, sum, average, variance/stddev and min/max expose direct serialized byte measurements. Group accounting selects these after incremental growing-state accounting and before the legacy snapshot fallback. Measurements sum constant JSON syntax and existing serializedValueBytes scalar semantics, avoiding temporary fixed-state snapshot objects per row.",
+  "validation": {
+    "build": "passed",
+    "focusedTestsPassed": 111,
+    "cases": [
+      "Exact checkpoint byte cap succeeds and one byte less fails with the same actual size",
+      "Large finite and nonfinite numeric state",
+      "Escaped Unicode and lone-surrogate min/max values",
+      "Existing restored and growing aggregate serialized-size boundary tests"
+    ],
+    "defaultTestsPassed": 3080,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61
+  },
+  "remaining": [
+    "First/last/any still use snapshot fallback and can allocate scalar conversion temporaries.",
+    "Immutable group header is measured once but still uses a temporary key snapshot.",
+    "Growing-state size records and changed-value formatting still allocate runtime temporaries.",
+    "No wall-clock speedup is claimed from snapshot-object elimination alone."
+  ]
+}

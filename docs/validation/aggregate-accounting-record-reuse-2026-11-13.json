@@ -16,8 +16,9 @@
   },
   "benchmarkLimits": "Current baseline only; timings ran alongside regression suites and are not an isolated pre/post comparison. Local scanner and reservation counters do not certify total heap or remote behavior.",
   "remaining": [
-    "The initial immutable-header snapshot and fixed-state snapshot estimates still allocate temporary objects.",
+    "Count/sum/avg/variance/min/max now measure directly (linked evidence). Initial header and first/last/any snapshot estimation remain outstanding.",
     "Growing-state bookkeeping returns temporary size records and formats changed values.",
     "AggregateMemory metadata is admitted, but arbitrary expression and request-compatibility temporaries remain outside this change."
-  ]
+  ],
+  "fixedSizeEvidence": "fixed-aggregate-direct-size-2026-11-13.json"
 }
