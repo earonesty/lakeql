@@ -397,3 +397,5 @@ Share reservation method implementations and bind callbacks only when used, redu
 Detach released scope ownership graphs, drain all cleanup phases after callback failures, and release incoming allocations when snapshot invalidation fails or closes the scope. Pending I/O remains charged until settlement.
 
 Settle scheduled stages only after cleanup, release failed output before admitting queued work, and preserve scheduler progress through cleanup exceptions, cancellation and reentrant callbacks.
+
+Measure numeric decode inputs once when shared-pool admission still fails after reclamation and active-stage progress. Preserve parallel reads when the conservative plan fits, and never retry execution failures or queue-capacity errors.

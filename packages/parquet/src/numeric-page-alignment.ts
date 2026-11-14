@@ -160,29 +160,50 @@ export async function* readAlignedNumericPageGroups(
             let decoded: OwnedMemory<Vector>[] = [];
             // Queue root contention, but measure when the conservative bound
             // cannot fit this job even if other jobs finish.
-            const measured =
+            let measured =
               !scope.hasAdmission && plan.bytes > scope.budget.maxBytes - scope.budget.usedBytes
                 ? await plan.measureOwned(file, scope)
                 : undefined;
-            const executionPlan = measured ?? plan;
+            let executionPlan = measured ?? plan;
             const decodeInto = (target: MemoryScope) =>
               executionPlan.executeOwned(file, target, options.maxConcurrentReads, options.decode);
             try {
               if (options.scheduler === undefined || scope.hasAdmission) {
                 decoded = await decodeInto(scope);
               } else {
-                const completion = await options.scheduler.run({
-                  budget: scope.budget,
-                  bytes: executionPlan.bytes,
-                  purpose: "aligned numeric replacements",
-                  signal: scope.signal,
-                  async execute(stage) {
-                    // Keep per-page ownership: a composite scheduled output would
-                    // retain exhausted peers until the last aligned page retires.
-                    decoded = await decodeInto(stage);
-                  },
-                });
-                completion.release();
+                for (;;) {
+                  let started = false;
+                  try {
+                    const completion = await options.scheduler.run({
+                      budget: scope.budget,
+                      bytes: executionPlan.bytes,
+                      purpose: "aligned numeric replacements",
+                      signal: scope.signal,
+                      async execute(stage) {
+                        started = true;
+                        // Retire exhausted peers independently, rather than
+                        // pinning the complete group in a composite output.
+                        decoded = await decodeInto(stage);
+                      },
+                    });
+                    completion.release();
+                    break;
+                  } catch (error) {
+                    if (
+                      started ||
+                      measured !== undefined ||
+                      !isLakeqlError(error) ||
+                      error.code !== "LAKEQL_BUDGET_EXCEEDED" ||
+                      error.details.metric !== "allocated memory bytes"
+                    )
+                      throw error;
+                    // The scheduler first reclaims/waits for active progress.
+                    // If admission still cannot fit, inspect the bounded inputs
+                    // once before rejecting a potentially smaller working set.
+                    measured = await plan.measureOwned(file, scope);
+                    executionPlan = measured;
+                  }
+                }
               }
             } catch (error) {
               // Cancellation can win after execution creates independent owners

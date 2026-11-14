@@ -1175,3 +1175,304 @@ it("avoids dictionary header and body reads on a warm deferred string window", a
   expect(reads).toBe(0);
   expect(root.usedBytes).toBe(0);
 });
+
+it("measures a fitting ZSTD group after shared-pool admission rejects its conservative plan", async () => {
+  const { file, entries, plan, values } = await fixture(1, 1 << 20, "ZSTD");
+  const pool = new MemoryBudget(plan.bytes + 8192);
+  const pinned = pool.reserve(plan.bytes, "another job's retained output");
+  const scope = new MemoryScope(pool.child(plan.bytes));
+  const scheduler = new MemoryStageScheduler(pool);
+  let reads = 0;
+  let decodes = 0;
+  const source = {
+    ...file,
+    async sliceOwned(...args: Parameters<NonNullable<typeof file.sliceOwned>>) {
+      reads++;
+      if (!file.sliceOwned) throw new Error("Missing owned read");
+      return file.sliceOwned(...args);
+    },
+  };
+  const sources = entries.map((entry, i) => ({
+    column: i === 0 ? "a" : "b",
+    pages: (async function* () {
+      yield { ...entry, rowOffset: 0, rowCount: 1 };
+    })(),
+  }));
+  const rows = [];
+  try {
+    for await (const output of readAlignedNumericPageGroups(source, sources, scope, {
+      rowEnd: 1,
+      scheduler,
+      decode(work) {
+        decodes++;
+        return work();
+      },
+    })) {
+      rows.push(...materializeBatchRows(output.value.batch));
+      output.release();
+    }
+    expect(rows).toEqual(values.map((i) => ({ a: i, b: i % 3 ? i + 0.5 : null })));
+    expect(reads).toBe(entries.length);
+    expect(decodes).toBe(entries.length);
+    expect(pool.usedBytes).toBe(pinned.bytes);
+    expect(scope.budget.usedBytes).toBe(0);
+    expect(scheduler.activeStages).toBe(0);
+    expect(scheduler.queuedStages).toBe(0);
+  } finally {
+    scope.dispose();
+    pinned.release();
+  }
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("uses measured shared-pool fallback through the ordinary owned scanner", async () => {
+  const { file, metadata, plan, values } = await fixture(1, 1 << 20, "ZSTD");
+  const pool = new MemoryBudget(plan.bytes + 8192);
+  const pinned = pool.reserve(plan.bytes, "shared retained output");
+  const job = pool.child(plan.bytes);
+  const rows = [];
+  try {
+    for await (const output of readOwnedParquetVectorBatches(file, metadata, job, {
+      columns: ["a", "b"],
+      batchSize: 1,
+      canStopEarly: true,
+    })) {
+      rows.push(...materializeBatchRows(output.value.batch));
+      output.release();
+    }
+    expect(rows).toEqual(values.map((i) => ({ a: i, b: i % 3 ? i + 0.5 : null })));
+    expect(job.usedBytes).toBe(0);
+    expect(pool.usedBytes).toBe(pinned.bytes);
+  } finally {
+    pinned.release();
+  }
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("does not measure after decoding has started and fails its own budget", async () => {
+  const { file, entries, plan } = await fixture();
+  const pool = new MemoryBudget(plan.bytes);
+  const scope = new MemoryScope(pool.child());
+  let reads = 0;
+  const source = {
+    ...file,
+    async sliceOwned(...args: Parameters<NonNullable<typeof file.sliceOwned>>) {
+      reads++;
+      if (!file.sliceOwned) throw new Error("Missing owned read");
+      return file.sliceOwned(...args);
+    },
+  };
+  const sources = entries.map((entry, i) => ({
+    column: String(i),
+    pages: (async function* () {
+      yield { ...entry, rowOffset: 0, rowCount: 64 };
+    })(),
+  }));
+  try {
+    await expect(
+      (async () => {
+        for await (const output of readAlignedNumericPageGroups(source, sources, scope, {
+          scheduler: new MemoryStageScheduler(pool),
+          decode() {
+            new MemoryBudget(0).reserve(1, "decoder workspace");
+            throw new Error("unreachable");
+          },
+        }))
+          output.release();
+      })(),
+    ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+    expect(reads).toBe(entries.length);
+    expect(pool.usedBytes).toBe(0);
+  } finally {
+    scope.dispose();
+  }
+});
+
+it("waits for active stages before measuring remaining shared-pool pressure", async () => {
+  const { file, entries, plan } = await fixture(1, 1 << 20, "ZSTD");
+  const pool = new MemoryBudget(plan.bytes + 8192);
+  const pinned = pool.reserve(plan.bytes, "retained output");
+  const scheduler = new MemoryStageScheduler(pool);
+  let finish!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const active = scheduler.run({
+    budget: pool.child(8192),
+    bytes: 8192,
+    purpose: "active work",
+    async execute() {
+      await gate;
+    },
+  });
+  const scope = new MemoryScope(pool.child(plan.bytes));
+  let reads = 0;
+  const source = {
+    ...file,
+    async sliceOwned(...args: Parameters<NonNullable<typeof file.sliceOwned>>) {
+      reads++;
+      if (!file.sliceOwned) throw new Error("Missing owned read");
+      return file.sliceOwned(...args);
+    },
+  };
+  const sources = entries.map((entry, i) => ({
+    column: String(i),
+    pages: (async function* () {
+      yield { ...entry, rowOffset: 0, rowCount: 1 };
+    })(),
+  }));
+  const pending = (async () => {
+    for await (const output of readAlignedNumericPageGroups(source, sources, scope, { scheduler }))
+      output.release();
+  })();
+  try {
+    for (let i = 0; i < 30 && scheduler.queuedStages === 0; i++) await Promise.resolve();
+    expect(scheduler.queuedStages).toBe(1);
+    expect(reads).toBe(0);
+    finish();
+    (await active).release();
+    await pending;
+    expect(reads).toBe(entries.length);
+    expect(pool.usedBytes).toBe(pinned.bytes);
+  } finally {
+    finish();
+    scope.dispose();
+    pinned.release();
+  }
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("does not turn scheduler queue-capacity rejection into speculative body reads", async () => {
+  const { file, entries, plan } = await fixture(1, 1 << 20, "ZSTD");
+  const pool = new MemoryBudget(plan.bytes);
+  const scheduler = new MemoryStageScheduler(pool, 1);
+  let finish!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const active = scheduler.run({
+    budget: pool.child(),
+    bytes: 0,
+    purpose: "occupied slot",
+    async execute() {
+      await gate;
+    },
+  });
+  const scope = new MemoryScope(pool.child());
+  let reads = 0;
+  const source = {
+    ...file,
+    async sliceOwned(...args: Parameters<NonNullable<typeof file.sliceOwned>>) {
+      reads++;
+      if (!file.sliceOwned) throw new Error("Missing owned read");
+      return file.sliceOwned(...args);
+    },
+  };
+  const sources = entries.map((entry, i) => ({
+    column: String(i),
+    pages: (async function* () {
+      yield { ...entry, rowOffset: 0, rowCount: 1 };
+    })(),
+  }));
+  try {
+    await expect(
+      (async () => {
+        for await (const output of readAlignedNumericPageGroups(source, sources, scope, {
+          scheduler,
+        }))
+          output.release();
+      })(),
+    ).rejects.toThrow(/queue capacity/);
+    expect(reads).toBe(0);
+  } finally {
+    finish();
+    (await active).release();
+    scope.dispose();
+  }
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("honors exact measured shared headroom and rejects one byte below it", async () => {
+  const { file, entries, plan } = await fixture(1, 1 << 20, "ZSTD");
+  async function run(headroom: number) {
+    const pool = new MemoryBudget(plan.bytes + headroom);
+    const pinned = pool.reserve(plan.bytes, "retained output");
+    const scope = new MemoryScope(pool.child(plan.bytes));
+    const sources = entries.map((entry, i) => ({
+      column: String(i),
+      pages: (async function* () {
+        yield { ...entry, rowOffset: 0, rowCount: 1 };
+      })(),
+    }));
+    let rows = 0;
+    try {
+      for await (const output of readAlignedNumericPageGroups(file, sources, scope, {
+        scheduler: new MemoryStageScheduler(pool),
+      })) {
+        rows += output.value.batch.rowCount;
+        output.release();
+      }
+      return { rows, peak: pool.peakBytes - pinned.bytes };
+    } finally {
+      scope.dispose();
+      pinned.release();
+      expect(pool.usedBytes).toBe(0);
+    }
+  }
+  const measured = await run(8192);
+  expect(measured.rows).toBe(1);
+  expect(measured.peak).toBeLessThan(8192);
+  expect(await run(measured.peak)).toEqual(measured);
+  await expect(run(measured.peak - 1)).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+});
+
+it("reclaims shared capacity before measuring and preserves parallel body reads", async () => {
+  const { file, entries, plan } = await fixture(1, 1 << 20, "ZSTD");
+  const pool = new MemoryBudget(plan.bytes + 8192);
+  const cached = pool.reserve(plan.bytes, "evictable cache");
+  let evictions = 0;
+  const detach = pool.registerReclaimer(() => {
+    evictions++;
+    cached.release();
+  });
+  const scope = new MemoryScope(pool.child(plan.bytes));
+  let active = 0,
+    peak = 0,
+    reads = 0;
+  const source = {
+    ...file,
+    async sliceOwned(...args: Parameters<NonNullable<typeof file.sliceOwned>>) {
+      reads++;
+      active++;
+      peak = Math.max(peak, active);
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        if (!file.sliceOwned) throw new Error("Missing owned read");
+        return await file.sliceOwned(...args);
+      } finally {
+        active--;
+      }
+    },
+  };
+  const sources = entries.map((entry, i) => ({
+    column: String(i),
+    pages: (async function* () {
+      yield { ...entry, rowOffset: 0, rowCount: 1 };
+    })(),
+  }));
+  try {
+    for await (const output of readAlignedNumericPageGroups(source, sources, scope, {
+      scheduler: new MemoryStageScheduler(pool),
+      maxConcurrentReads: 2,
+    }))
+      output.release();
+    expect(evictions).toBe(1);
+    expect(reads).toBe(entries.length);
+    expect(peak).toBe(2);
+    expect(pool.usedBytes).toBe(0);
+  } finally {
+    detach();
+    scope.dispose();
+    cached.release();
+  }
+});

@@ -5114,3 +5114,32 @@ changeset checks. Fixture regeneration preserves all hashes and Git/LFS confirms
 no fixture changes. Thresholds and timeouts remain unchanged. This closes the
 identified scheduler failure paths, not broader operator integration or total
 runtime memory acceptance.
+
+### Measured numeric fallback under shared pressure (2026-11-14)
+
+A baseline negative control rejected a real ZSTD page group whose conservative
+decode bound fit the individual job but exceeded shared headroom pinned by
+another job. Its measured working set fits. The ordinary numeric scanner now
+lets scheduling reclaim capacity and wait for active work first, then measures
+the bounded inputs once if admission still fails before execution starts.
+Queue-capacity errors, cancellation and decoder failures do not trigger retries.
+
+Seven new tests cover direct and ordinary scanner operation, active-stage waiting,
+queue capacity, execution failure, exact measured headroom and one-byte-below
+rejection, and reclamation preserving two parallel body reads. The focused suite
+passes all 44 cases. A Node-produced ZSTD fixture also passes through the actual
+workerd R2 binding: 8,192 bytes of shared headroom succeeds and one byte rejects,
+with zero final job/pool charges. Pinned reservations model other retained work;
+this is not a whole-runtime heap measurement or a public-cloud latency benchmark.
+
+Measurement reads inputs serially and retains their admitted ownership until
+decode settles. This is the existing lower-memory tradeoff, now selected under
+shared pressure without user configuration. Failed conservative admission issues
+no body reads; the normal path retains parallel reads. Broader scheduler adoption
+and the whole-runtime 64/128 MiB acceptance gap remain open.
+
+Full release validation passes 3,943 regular/coverage tests (645 skipped), 88
+Worker tests, 520 required conformance cases (one inactive guard skipped), 120
+references, build/types, clean 66-package consumer, lint and repository checks.
+Fixture regeneration leaves data unchanged. Thresholds and timeouts are unchanged.
+Evidence: `validation/numeric-shared-pressure-2026-11-14.json`.

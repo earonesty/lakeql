@@ -1,0 +1,54 @@
+{
+  "runtimeBase": "46e3889",
+  "requirements": ["M2", "V1", "V2"],
+  "sourceSha256": "c3ab3e2d88170551bc2f595c875f0eb6f29341db27edaa8fbcc008a8265a2a35",
+  "finding": "Conservative numeric decode admission rejected shared-pool pressure even when the measured ZSTD working set fit.",
+  "negativeControl": "The new shared-pool regression failed on the baseline at scheduler admission before the runtime fix.",
+  "contract": [
+    "Reclaim and wait for active work before measuring shared pressure.",
+    "Measure once only after a pre-execution allocated-memory admission failure.",
+    "Do not retry decoder failures, cancellation or queue-capacity errors.",
+    "Preserve parallel reads when conservative admission succeeds; pressure measurement uses the existing serial bounded-input path."
+  ],
+  "tests": {
+    "focusedPassed": 44,
+    "newRegularCases": 7,
+    "coverage": [
+      "ordinary scanner and direct page groups",
+      "exact measured boundary and one byte below",
+      "active-stage queue progress",
+      "queue-capacity rejection without body reads",
+      "execution budget failure without retry",
+      "reclamation preserves two parallel body reads"
+    ],
+    "nativeR2": "Node-produced real ZSTD fixture through workerd R2 binding: 8192 bytes shared headroom succeeds, one byte rejects; zero final job and pool charges."
+  },
+  "validation": {
+    "regularPassed": 3943,
+    "regularSkipped": 645,
+    "workerPassed": 88,
+    "requiredConformancePassed": 520,
+    "requiredConformanceSkipped": 1,
+    "referencePassed": 120,
+    "coverage": {
+      "statements": 91.38,
+      "branches": 85.54,
+      "functions": 95.9,
+      "lines": 93.18
+    },
+    "build": "passed",
+    "typecheck": "passed",
+    "cleanPackageConsumer": "passed; 66 packages",
+    "lint": "passed",
+    "compatibility": "passed",
+    "largeFiles": "passed",
+    "changeset": "passed",
+    "fixtureReproducibility": "passed; no fixture data diff",
+    "thresholdsAndTimeouts": "unchanged"
+  },
+  "limits": [
+    "Pinned reservations model other retained work; this fixture does not measure whole-runtime memory.",
+    "Native R2 binding validation is not a public-cloud latency benchmark. No new throughput claim.",
+    "Broader operator scheduler integration and whole-runtime 64/128 MiB acceptance remain open."
+  ]
+}

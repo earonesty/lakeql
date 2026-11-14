@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
 import { defineConfig } from "vitest/config";
 import { createBrotliFixture } from "./fixtures/src/brotli.js";
+import { createNumericPressureFixture } from "./fixtures/src/numeric-pressure.js";
 
 const dictionaryFixture = new URL(
   "./fixtures/external/parquet-testing/data/nation.dict-malformed.parquet",
@@ -24,6 +25,7 @@ export default defineConfig({
       miniflare: {
         r2Buckets: ["MEMORY_TEST_BUCKET"],
         bindings: {
+          NUMERIC_PRESSURE_FIXTURE: Buffer.from(createNumericPressureFixture()).toString("base64"),
           BROTLI_FIXTURE: Buffer.from(createBrotliFixture()).toString("base64"),
           BSON_FIXTURE: readFileSync(
             new URL("./fixtures/external/parquet-testing/data/bson.parquet", import.meta.url),
