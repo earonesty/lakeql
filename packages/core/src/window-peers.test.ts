@@ -146,3 +146,70 @@ it("releases adaptive index allocations after normal window evaluation and error
   expect(() => applyWindowsToRows(invalid, { total: expr }, { memoryBudget: budget })).toThrow();
   expect(budget.usedBytes).toBe(0);
 });
+
+it.each([
+  "asc",
+  "desc",
+] as const)("matches an independent dynamic-frame oracle at peer-index capacity (%s)", (direction) => {
+  const groups = 40;
+  const indexBytes = (groups + 1) * 4;
+  const sign = direction === "asc" ? 1 : -1;
+  const partition: WindowRow[] = Array.from({ length: groups * 3 }, (_, index) => {
+    const group = Math.floor(index / 3);
+    const key = direction === "asc" ? group : groups - group - 1;
+    return {
+      originalIndex: index,
+      row: { key, id: index, before: index % 2 ? 0 : index % 13, after: index % 3 ? 2 : 50 },
+      orderKey: [key],
+      partitionKey: [],
+    };
+  });
+  for (const capacity of [indexBytes - 1, indexBytes]) {
+    const budget = new MemoryBudget(capacity);
+    const peers = new WindowPeers(partition, budget);
+    try {
+      // Force repeated traversal before checking both indexed and fallback paths.
+      for (let visit = 0; visit < 30; visit++) peers.group(visit % 2 ? 0 : groups - 1, "start");
+      expect(budget.usedBytes).toBe(capacity === indexBytes ? indexBytes : 0);
+      for (const mode of ["groups", "range"] as const) {
+        for (const exclude of ["no-others", "current-row", "group", "ties"] as const) {
+          const expr = expression(mode);
+          expr.over.orderBy = [{ expr: col("key"), direction }];
+          expr.over.frame = {
+            mode,
+            exclude,
+            start: { kind: "preceding", offset: col("before") },
+            end: { kind: "following", offset: col("after") },
+          };
+          for (let visit = 0; visit < partition.length; visit++) {
+            const index = visit % 2 ? Math.floor(visit / 2) : partition.length - 1 - visit / 2;
+            const current = partition[index]?.row;
+            if (current === undefined) throw Error("Missing oracle row");
+            const position = mode === "groups" ? Math.floor(index / 3) : Number(current.key) * sign;
+            const low = position - Number(current.before);
+            const high = position + Number(current.after);
+            const expected = partition
+              .filter((candidate, candidateIndex) => {
+                const value =
+                  mode === "groups"
+                    ? Math.floor(candidateIndex / 3)
+                    : Number(candidate.row.key) * sign;
+                if (value < low || value > high) return false;
+                if (exclude === "current-row") return candidateIndex !== index;
+                if (exclude === "group") return candidate.row.key !== current.key;
+                if (exclude === "ties")
+                  return candidate.row.key !== current.key || candidateIndex === index;
+                return true;
+              })
+              .map((candidate) => candidate.row);
+            expect(frameRows(partition, index, expr, peers)).toEqual(expected);
+          }
+        }
+      }
+      expect(budget.peakBytes).toBeLessThanOrEqual(capacity);
+    } finally {
+      peers.dispose();
+    }
+    expect(budget.usedBytes).toBe(0);
+  }
+});

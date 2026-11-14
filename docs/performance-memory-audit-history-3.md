@@ -4400,3 +4400,12 @@ The scheduler integration review found that direct numeric replacement execution
 Extended the real ZSTD fixture that forces measured decoding under an 8 KiB job cap: direct and scheduled execution must each invoke the decoder wrapper once per numeric column, preserve nullable values, stay within the cap and release all tracked storage. Before the fix, the scheduled case failed with zero callbacks instead of two; afterward all 37 numeric-page-group tests pass. Prior end-to-end wall-clock measurements remain wall-clock observations, but decode-time statistics from affected scheduled paths undercounted work and should not be treated as complete CPU attribution. This is a measurement correctness fix, not a claimed throughput improvement.
 
 Final verification: build/typecheck passed; 37 numeric-page tests, 3,729 regular tests (629 skipped), and 82 Worker tests passed. Evidence: `docs/validation/numeric-decode-dispatch-2026-11-14.json`.
+
+
+### F4 peer-index boundary and dynamic-frame matrix (2026-11-14)
+
+Reviewed existing RANGE binary-search, GROUPS cursor/index and frame-admission tests. Added an independent linear oracle matrix rather than comparing only cached versus uncached implementations: forty three-row peer groups, ascending/descending ordering, nonmonotone per-row preceding/following offsets, alternating access from both partition ends, RANGE/GROUPS and all four exclusions. It forces adaptive index construction at the exact 164-byte index capacity and verifies the constant-space fallback at 163 bytes, with identical expected frame rows and zero remaining index charges after disposal. The oracle computes bounds and exclusions directly without calling frameSpan or peer lookup.
+
+The focused four-suite run passes 39 tests. Existing suites additionally verify logarithmic RANGE key visits, near-linear sequential GROUPS key visits, typed invalid offsets, timestamp interval ties, independent exclusion filtering, iterator cursor snapshots and bound-expression scratch release across row/run/vector routes. This strengthens F4's local boundary correctness and lower-memory evidence; it does not by itself complete public window lifecycle, current reference comparisons, transport fixtures or full allocation accounting.
+
+Final verification: 39 focused tests and typecheck passed. Evidence: `docs/validation/window-boundary-matrix-2026-11-14.json`. No runtime implementation changed.

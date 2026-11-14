@@ -1,0 +1,27 @@
+{
+  "sourceCommit": "558e3a5",
+  "requirements": ["F4", "V2"],
+  "fixture": "packages/core/src/window-peers.test.ts",
+  "matrix": {
+    "directions": ["asc", "desc"],
+    "modes": ["range", "groups"],
+    "exclusions": ["no-others", "current-row", "group", "ties"],
+    "peerGroups": 40,
+    "rowsPerGroup": 3,
+    "capacitiesBytes": [163, 164],
+    "access": "alternating partition ends",
+    "offsets": "nonmonotone per-row preceding/following"
+  },
+  "oracle": "Independent linear bound/exclusion filter; does not call frameSpan or WindowPeers.",
+  "checks": {
+    "focusedTestsPassed": 39,
+    "typecheck": "passed",
+    "exactCapacityIndexBytes": 164,
+    "belowCapacityIndexBytes": 0,
+    "finalIndexBytes": 0
+  },
+  "limitations": [
+    "Primitive correctness and index bounds, not full window runtime memory.",
+    "Public lifecycle, current reference comparisons and broader transport evidence remain separate."
+  ]
+}
