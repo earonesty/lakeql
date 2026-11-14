@@ -138,6 +138,11 @@ it.each([
             over: { partitionBy: [], orderBy: [{ expr: col("timestamp_nanos") }] },
           });
         return query
+          .window("running_median", {
+            fn: { aggregate: "median" },
+            args: [lit(7)],
+            over: { partitionBy: [], orderBy: [{ expr: col("timestamp_nanos") }] },
+          })
           .window("running_count", {
             fn: { aggregate: "count" },
             args: [],
@@ -168,6 +173,7 @@ it.each([
             percent_rank: (rank - 1) / 5,
             cume_dist: rank / 6,
             running_count: rank,
+            running_median: 7,
             lag: sorted[rank - 4]?.timestamp_nanos ?? null,
             lead: sorted[rank + 1]?.timestamp_nanos ?? null,
             first_value: expected[5]?.timestamp_nanos,

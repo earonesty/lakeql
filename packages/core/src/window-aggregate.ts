@@ -1,19 +1,29 @@
+import { MATERIALIZATION_CHARGES as charges } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
 import { evaluate, jsonSafeValue } from "./evaluator.js";
 import type { Scalar } from "./expr.js";
+import { heapSort } from "./heap-sort.js";
+import type { MemoryReservation, MemoryReservationSource } from "./memory-budget.js";
 import type { AggregateOp } from "./query.js";
 import { compareAggregateScalars, numericAggregateValue } from "./scalar-order.js";
 import type { Row } from "./types.js";
 import type { WindowExpr } from "./window.js";
 import { filterRow, requireExactWindowAggregate } from "./window-utils.js";
 
-export function aggregateWindowValue(rows: Iterable<Row>, expr: WindowExpr): Scalar {
-  return createWindowAggregateEvaluator(expr)(rows);
+export function aggregateWindowValue(
+  rows: Iterable<Row>,
+  expr: WindowExpr,
+  budget?: MemoryReservationSource,
+): Scalar {
+  return createWindowAggregateEvaluator(expr, budget)(rows);
 }
 
 /** Operation-local evaluator for independent frames. */
-export function createWindowAggregateEvaluator(expr: WindowExpr): (rows: Iterable<Row>) => Scalar {
-  const accumulator = createWindowAggregateAccumulator(expr);
+export function createWindowAggregateEvaluator(
+  expr: WindowExpr,
+  budget?: MemoryReservationSource,
+): (rows: Iterable<Row>) => Scalar {
+  const accumulator = createWindowAggregateAccumulator(expr, budget);
   let active = false;
   return (rows) => {
     if (active) throw aggregateReentry();
@@ -29,7 +39,10 @@ export function createWindowAggregateEvaluator(expr: WindowExpr): (rows: Iterabl
 
 /** Append-only aggregate state over immutable ordered rows. Call reset when a
  * frame removes rows; no inverse arithmetic or retained per-row directory. */
-export function createWindowAggregateAccumulator(expr: WindowExpr): {
+export function createWindowAggregateAccumulator(
+  expr: WindowExpr,
+  budget?: MemoryReservationSource,
+): {
   append(rows: Iterable<Row>): Scalar;
   reset(): void;
 } {
@@ -38,7 +51,7 @@ export function createWindowAggregateAccumulator(expr: WindowExpr): {
   }
   const op = expr.fn.aggregate;
   requireExactWindowAggregate(op);
-  const state = new AggregateState(op, quantile(expr));
+  const state = new AggregateState(op, quantile(expr), budget);
   let active = false;
   return {
     append(rows) {
@@ -84,19 +97,23 @@ class AggregateState {
   private max: Scalar | undefined;
   private first: Scalar | undefined;
   private last: Scalar | undefined;
-  private values: Scalar[] | undefined;
+  private values: number[] | undefined;
+  private valuesReservation: MemoryReservation | undefined;
   private modeValues: Map<string, { value: Scalar; count: number }> | undefined;
   private seenDistinct: Set<string> | undefined;
 
   constructor(
     private readonly op: AggregateOp,
     private readonly quantile: number | undefined,
+    private readonly budget?: MemoryReservationSource,
   ) {}
 
   reset(): void {
     this.count = this.sum = this.mean = this.m2 = 0;
     this.min = this.max = this.first = this.last = undefined;
-    if (this.values !== undefined) this.values.length = 0;
+    this.values = undefined;
+    this.valuesReservation?.release();
+    this.valuesReservation = undefined;
     this.modeValues?.clear();
     this.seenDistinct?.clear();
   }
@@ -133,8 +150,7 @@ class AggregateState {
         break;
       case "median":
       case "quantile":
-        this.values ??= [];
-        this.values.push(numericValue(this.op, value));
+        this.addQuantileValue(numericValue(this.op, value));
         break;
       case "mode":
         this.addMode(value);
@@ -184,6 +200,19 @@ class AggregateState {
         requireExactWindowAggregate(this.op);
         return null;
     }
+  }
+
+  private addQuantileValue(value: number): void {
+    const reservation = this.budget?.reserve(
+      (this.values === undefined ? charges.array : 0) + charges.arraySlot,
+      "window quantile values",
+    );
+    if (reservation !== undefined) {
+      if (this.valuesReservation === undefined) this.valuesReservation = reservation;
+      else this.valuesReservation = this.valuesReservation.merge(reservation);
+    }
+    this.values ??= [];
+    this.values.push(value);
   }
 
   private addDistinct(value: Scalar, distinct: boolean): boolean {
@@ -248,8 +277,10 @@ function quantile(expr: WindowExpr): number | undefined {
   return arg.value;
 }
 
-function continuousQuantile(values: readonly Scalar[], q: number): number | null {
-  const sorted = values.map((value) => numericValue("quantile", value)).sort((a, b) => a - b);
+function continuousQuantile(sorted: number[], q: number): number | null {
+  // Numeric state has no insertion-order semantics. Reuse its admitted backing;
+  // heapsort requires constant scratch, unlike a copied/native sorted array.
+  heapSort(sorted, (a, b) => a - b);
   if (sorted.length === 0) return null;
   const position = (sorted.length - 1) * q;
   const lower = Math.floor(position);

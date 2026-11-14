@@ -213,7 +213,7 @@ function evaluatePartitionWithPeers(
     const segmentValues = segmentTreeAggregateValues(partition, expr, peers, budget);
     if (segmentValues !== undefined) return segmentValues;
     return partition.map((_item, index) =>
-      aggregateWindowValue(frameRowIterator(partition, index, expr, peers), expr),
+      aggregateWindowValue(frameRowIterator(partition, index, expr, peers), expr, budget),
     );
   }
   switch (fn) {
