@@ -1,0 +1,30 @@
+{
+  "date": "2026-11-14",
+  "changes": [
+    "Share partition batch augmentation between aggregate and column task scans.",
+    "For satisfied or absent residual predicates, reuse physical vectors and add dictionary constants under a per-yield scope instead of materializing rows and rebuilding columns.",
+    "Admit projection directories, preserve physical-column precedence, handle special names and duplicate projection names.",
+    "Fix constantVector string backing admission: vectorFromSource only charged reference slots. Constant strings now retain their backing charge once per vector."
+  ],
+  "evidence": {
+    "targeted_tests": 47,
+    "real_fixture": "256 Parquet rows with a 4096-code-unit Unicode partition value fit a 128 KiB shared reservation pool and retain dictionary representation.",
+    "edge_cases": [
+      "physical-column precedence",
+      "own __proto__ property",
+      "duplicate projection names",
+      "missing projection yields null",
+      "budget rejection cleanup"
+    ],
+    "build": "passed",
+    "typecheck": "passed",
+    "real_http_tests": 4,
+    "format": "passed"
+  },
+  "remaining": [
+    "Column tasks with unsatisfied residual predicates still have unadmitted gather/materialization fallback paths.",
+    "Task planning and complete query allocation coverage remain open.",
+    "No new throughput benchmark or production Worker heap-cap claim.",
+    "Final current-revision release gates remain open."
+  ]
+}

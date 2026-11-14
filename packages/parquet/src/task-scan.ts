@@ -31,6 +31,7 @@ import {
   taskRowWindows,
   validateTaskWorkUnitOptions,
 } from "./task.js";
+import { batchWithPartitionValues, projectTaskBatch } from "./task-batch.js";
 import { taskMetadataOwned, taskSource } from "./task-source.js";
 import type { ParquetColumnBatch, ParquetMetadata, StoreAsyncBuffer } from "./types.js";
 
@@ -103,30 +104,16 @@ export async function* scanParquetTaskColumnBatches(
         metadata,
         taskReadOptions(rowStart, rowEnd, physicalColumns, task.residualPredicate, options),
       )) {
-        if (batch.residualPredicateSatisfied === true) {
-          if (
-            Object.keys(task.partitionValues).length === 0 &&
-            task.projectedColumns?.every((column) => column in batch.batch.columns) !== false
-          ) {
-            recordRowsMatched(options.stats, batch.batch.rowCount);
-            yield batch;
-            continue;
+        if (batch.residualPredicateSatisfied === true || task.residualPredicate === undefined) {
+          const output = scope.childScope();
+          try {
+            const augmented = batchWithPartitionValues(batch.batch, task.partitionValues, output);
+            const projected = projectTaskBatch(augmented, task.projectedColumns, output);
+            recordRowsMatched(options.stats, projected.rowCount);
+            if (projected.rowCount > 0) yield { rowOffset: batch.rowOffset, batch: projected };
+          } finally {
+            output.dispose();
           }
-          const rows = materializeBatchRows(batch.batch)
-            .map((row: Row) => ({ ...task.partitionValues, ...row }))
-            .map((row: Row) => projectTaskRow(row, task.projectedColumns));
-          if (rows.length > 0) {
-            recordRowsMatched(options.stats, rows.length);
-            yield { rowOffset: batch.rowOffset, batch: batchFromRows(rows, task.projectedColumns) };
-          }
-          continue;
-        }
-        if (
-          Object.keys(task.partitionValues).length === 0 &&
-          task.residualPredicate === undefined &&
-          task.projectedColumns?.every((column) => column in batch.batch.columns) !== false
-        ) {
-          yield batch;
           continue;
         }
         const selection = tryPredicateSelection(batch.batch, task.residualPredicate);

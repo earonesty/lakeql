@@ -11,6 +11,15 @@ export function constantVector(value: Scalar, rowCount: number, parent: MemorySc
     throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Invalid constant vector row count");
   const scope = parent.childScope();
   try {
+    // vectorFromSource admits string slots but borrows their immutable backing.
+    // Constants originate outside the scanner, so retain that backing explicitly.
+    if (rowCount > 0 && typeof value === "string") {
+      scope.allocate(
+        c.string + value.length * c.stringCodeUnit,
+        "constant text backing",
+        () => value,
+      );
+    }
     const dictionary = vectorFromSource(
       { length: rowCount === 0 ? 0 : 1, get: () => value },
       scope,
