@@ -1,0 +1,23 @@
+{
+  "change": "Added admitted constantVector using the existing dictionary-vector shape: one dictionary value plus bounded zero indices. Aggregate task partition columns use it instead of repeated-value arrays. Column directory/record metadata and residual predicate evaluation use per-batch scopes released after append.",
+  "validation": {
+    "taskWorkUnitAndConstantTests": 40,
+    "finalConstantTests": 13,
+    "typescriptBuild": "passed",
+    "typecheck": "passed before final fixture-only additions",
+    "edgeCases": [
+      "null, boolean, number, bigint and Unicode constants",
+      "4096 repeated long Unicode values fit a 64 KiB allocation pool",
+      "measured peak succeeds and one-byte-short construction rolls back completely",
+      "empty vector does not allocate its unused large payload",
+      "invalid lengths reject before allocation",
+      "mutable binary input is detached",
+      "256-row real Parquet grouped task with long partition value and batchSize 8 fits 128 KiB; expected sum/count and final cleanup verified"
+    ]
+  },
+  "limits": [
+    "Constant index storage still scales with row count; it is admitted and bounded by the batch size.",
+    "This adds no new vector shape or backend-specific operator branch.",
+    "Task planning, metadata, general scan projection scratch and broader mixed-job acceptance remain open."
+  ]
+}

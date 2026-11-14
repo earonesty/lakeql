@@ -846,3 +846,37 @@ it.each([
   }
   expect(pool.usedBytes).toBe(0);
 });
+
+it("bounds long partition constants across repeated aggregate scan batches", async () => {
+  const store = memoryStore();
+  const values = Array.from({ length: 256 }, (_, index) => index);
+  await writeParquet(store, "constant-partition.parquet", {
+    rowGroupSize: [64, 64, 64, 64],
+    columnData: [{ name: "value", type: "INT32", data: values }],
+  });
+  const region = "é😀".repeat(256);
+  const pool = new MemoryBudget(128 * 1024);
+  const owner = await aggregateParquetGroupTaskOwned(
+    store,
+    {
+      path: "constant-partition.parquet",
+      rowGroupRanges: [{ start: 0, end: 4 }],
+      partitionValues: { region },
+    },
+    ["region"],
+    { total: { op: "sum", column: "value" }, n: { op: "count" } },
+    { memoryBudget: pool, batchSize: 8 },
+  );
+  try {
+    expect(owner.value.groups).toHaveLength(1);
+    expect(owner.value.groups[0]?.keyValues).toEqual([region]);
+    expect(owner.value.groups[0]?.states).toEqual({
+      total: { op: "sum", sum: 32640 },
+      n: { op: "count", count: 256 },
+    });
+    expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
+  } finally {
+    owner.release();
+  }
+  expect(pool.usedBytes).toBe(0);
+});

@@ -3,6 +3,7 @@ import {
   type Batch,
   CpuPhysicalBackend,
   MATERIALIZATION_CHARGES as c,
+  constantVector,
   detachOwnedRow,
   fanInWorkUnits,
   gatherOwnedBatch,
@@ -25,7 +26,6 @@ import {
   type VectorGroupByStateSnapshot,
   type VectorSource,
   vectorFromSource,
-  vectorFromValues,
   vectorTopKOwnedBatch,
 } from "lakeql-core";
 import { readParquetColumnBatchesFromFile } from "./column-batches.js";
@@ -127,28 +127,33 @@ async function aggregateTaskSnapshotOwned(
       );
       if (scanOptions !== undefined) readOptions.stats = scanOptions.stats;
       for await (const batch of readParquetColumnBatchesFromFile(file, metadata, readOptions)) {
-        const vectorBatch = batchWithPartitionValues(batch.batch, task.partitionValues);
-        if (batch.residualPredicateSatisfied === true) {
+        const scratch = scope.childScope();
+        try {
+          const vectorBatch = batchWithPartitionValues(batch.batch, task.partitionValues, scratch);
+          if (batch.residualPredicateSatisfied === true) {
+            if (scanOptions !== undefined) {
+              recordRowsMatched(scanOptions.stats, vectorBatch.rowCount);
+              enforceAggregateTaskBudget(scanOptions);
+            }
+            await reducer.append(vectorBatch);
+            continue;
+          }
+          const selection = tryPredicateSelection(vectorBatch, task.residualPredicate, scratch);
+          if (selection === undefined) {
+            throw new LakeqlError(
+              "LAKEQL_UNSUPPORTED_PUSHDOWN",
+              "aggregateParquetTask requires a vectorizable residual predicate",
+              { path: task.path },
+            );
+          }
           if (scanOptions !== undefined) {
-            recordRowsMatched(scanOptions.stats, vectorBatch.rowCount);
+            recordRowsMatched(scanOptions.stats, selectedRowCount(vectorBatch.rowCount, selection));
             enforceAggregateTaskBudget(scanOptions);
           }
-          await reducer.append(vectorBatch);
-          continue;
+          await reducer.append(vectorBatch, selection);
+        } finally {
+          scratch.dispose();
         }
-        const selection = tryPredicateSelection(vectorBatch, task.residualPredicate);
-        if (selection === undefined) {
-          throw new LakeqlError(
-            "LAKEQL_UNSUPPORTED_PUSHDOWN",
-            "aggregateParquetTask requires a vectorizable residual predicate",
-            { path: task.path },
-          );
-        }
-        if (scanOptions !== undefined) {
-          recordRowsMatched(scanOptions.stats, selectedRowCount(vectorBatch.rowCount, selection));
-          enforceAggregateTaskBudget(scanOptions);
-        }
-        await reducer.append(vectorBatch, selection);
       }
     }
     const checkpoint = scope.adopt(await reducer.checkpoint());
@@ -511,14 +516,46 @@ function recordMetadataCache(
   else scanOptions.stats.cacheMisses += 1;
 }
 
-function batchWithPartitionValues(batch: Batch, partitionValues: Record<string, string>): Batch {
-  const entries = Object.entries(partitionValues).filter(
-    ([column]) => batch.columns[column] === undefined,
-  );
-  if (entries.length === 0) return batch;
-  const columns: Record<string, Vector> = { ...batch.columns };
-  for (const [column, value] of entries) {
-    columns[column] = vectorFromValues(Array.from({ length: batch.rowCount }, () => value));
+function batchWithPartitionValues(
+  batch: Batch,
+  partitionValues: Record<string, string>,
+  scope: MemoryScope,
+): Batch {
+  let missing = false;
+  for (const column in partitionValues) {
+    if (Object.hasOwn(partitionValues, column) && batch.columns[column] === undefined) {
+      missing = true;
+      break;
+    }
   }
-  return { rowCount: batch.rowCount, columns };
+  if (!missing) return batch;
+  const columns = scope.allocate(
+    c.object,
+    "partition column directory",
+    () => Object.create(null) as Record<string, Vector>,
+  ).value;
+  const add = (column: string, vector: Vector) => {
+    scope.allocate(
+      c.property + c.string + column.length * c.stringCodeUnit,
+      "partition column entry",
+      () => {
+        columns[column] = vector;
+      },
+    );
+  };
+  for (const column in batch.columns) {
+    if (Object.hasOwn(batch.columns, column)) {
+      const vector = batch.columns[column];
+      if (vector !== undefined) add(column, vector);
+    }
+  }
+  for (const column in partitionValues) {
+    if (!Object.hasOwn(partitionValues, column) || columns[column] !== undefined) continue;
+    const value = partitionValues[column];
+    if (value !== undefined) add(column, constantVector(value, batch.rowCount, scope));
+  }
+  return scope.allocate(c.object + 2 * c.property, "partition batch", () => ({
+    rowCount: batch.rowCount,
+    columns,
+  })).value;
 }
