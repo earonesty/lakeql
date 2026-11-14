@@ -32,6 +32,20 @@ export function stringifyOwnedStableData(value: unknown, scope: MemoryScope): Ow
   );
 }
 
+/** Compare legacy normalized data while owning both comparison strings and
+ * normalization scratch. Temporary ownership ends on equality, mismatch or error.
+ */
+export function equalStableData(left: unknown, right: unknown, parent: MemoryScope): boolean {
+  const scope = parent.childScope();
+  try {
+    const a = scope.adopt(stringifyOwnedStableData(left, scope));
+    const b = scope.adopt(stringifyOwnedStableData(right, scope));
+    return a.value === b.value;
+  } finally {
+    scope.dispose();
+  }
+}
+
 function withStableJsonAdmission<T>(
   value: unknown,
   scope: MemoryScope,

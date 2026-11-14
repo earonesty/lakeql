@@ -1,0 +1,24 @@
+{
+  "status": "Implemented; build, default, Worker and real R2 resume validation passed",
+  "change": "Aggregate checkpoint group-column/spec comparisons use equalStableData, which owns both stable comparison strings and normalization scratch in a temporary child scope. Equality, mismatch, budget denial and formatting errors all dispose that scope. Stable serializer equality semantics remain unchanged for supported data.",
+  "validation": {
+    "build": "passed",
+    "focusedTestsPassed": 110,
+    "cases": [
+      "Normalized equality across bigint/nonfinite/undefined array values and reordered keys",
+      "Mismatch and cyclic-input cleanup",
+      "Exact comparison overlap succeeds; one byte short rejects without retained usage",
+      "Existing aggregate stale-checkpoint rejection and resume tests"
+    ],
+    "remoteEvidence": "../benchmarks/row-aggregate-cloud-restore-2026-11-13.json",
+    "remote": "Actual public R2 HTTP 206, four concurrent jobs each creating and resuming a checkpoint, cold/warm cache at 64/128 MiB pools with 8 MiB query caps. Independent doubled count/sum and invariant median/quantile/distinct assertions. Peak reservations 384519 bytes; retained cache 5481 bytes; eviction returns usage to zero.",
+    "defaultTestsPassed": 3094,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61
+  },
+  "limits": [
+    "Small remote fixture validates operation and reuse, not throughput scaling or total Worker heap.",
+    "Mutable/accessor/executable data has no immutable stable comparison contract.",
+    "Expression/evaluator allocations and additional runtime bookkeeping remain open."
+  ]
+}

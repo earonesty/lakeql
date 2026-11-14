@@ -16,7 +16,8 @@
   "remaining": [
     "Mode key formatting still occurs before Map lookup; its scratch is admitted, but avoiding formatting may need a broader key representation contract.",
     "Native numeric count formatting and runtime bookkeeping are not total-heap accounting.",
-    "Expression/evaluator and request-comparison allocations remain open.",
+    "Aggregate checkpoint request comparisons are now admitted (linked evidence); expression/evaluator allocation remains open.",
     "No measured latency improvement is claimed from this structural change alone."
-  ]
+  ],
+  "compatibilityEvidence": "aggregate-compatibility-admission-2026-11-13.json"
 }

@@ -37,7 +37,11 @@ import { isPrototypeMutationKey } from "./object-key.js";
 import { ownedAggregateExpressionBytesForColumns } from "./owned-aggregate-input.js";
 import { OwnedAggregateState } from "./owned-aggregate-state.js";
 import { OwnedBoundedTopK } from "./owned-bounded-top-k.js";
-import { encodeOwnedCheckpoint, stringifyOwnedStableData } from "./owned-checkpoint-encoding.js";
+import {
+  encodeOwnedCheckpoint,
+  equalStableData,
+  stringifyOwnedStableData,
+} from "./owned-checkpoint-encoding.js";
 import { OwnedGroupDirectory } from "./owned-group-directory.js";
 import { parseOwnedJson } from "./owned-json-parse.js";
 import { OwnedReplacementValue } from "./owned-replacement-value.js";
@@ -4696,8 +4700,8 @@ async function aggregateGroupsFromState(
           scope.adopt(detachOwnedRow(state as unknown as Row, scope.budget)).value,
         );
   if (
-    stableStringify(snapshot.groupColumns) !== stableStringify(groupColumns) ||
-    stableStringify(snapshot.spec) !== stableStringify(spec)
+    !equalStableData(snapshot.groupColumns, groupColumns, scope) ||
+    !equalStableData(snapshot.spec, spec, scope)
   ) {
     throw new LakeqlError(
       "LAKEQL_BOOKMARK_STALE",

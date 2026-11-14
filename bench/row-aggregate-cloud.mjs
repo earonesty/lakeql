@@ -51,16 +51,14 @@ for (const capMiB of [64, 128]) {
           budget: { maxAllocatedMemoryBytes: 8 * 1024 * 1024 },
           scanner: { scan: scanner.scan.bind(scanner) },
         });
-        const result = await lake
-          .path("window-events.parquet")
-          .run()
-          .aggregateWithState([], {
-            count: { op: "count" },
-            sum: { op: "sum", column: "amount" },
-            median: { op: "median", column: "amount" },
-            quantile: { op: "quantile", column: "amount", quantile: 0.5 },
-            distinct: { op: "count_distinct", column: "amount" },
-          });
+        const spec = {
+          count: { op: "count" },
+          sum: { op: "sum", column: "amount" },
+          median: { op: "median", column: "amount" },
+          quantile: { op: "quantile", column: "amount", quantile: 0.5 },
+          distinct: { op: "count_distinct", column: "amount" },
+        };
+        const result = await lake.path("window-events.parquet").run().aggregateWithState([], spec);
         assert.deepEqual(result.rows, [
           {
             count: 144,
@@ -71,6 +69,23 @@ for (const capMiB of [64, 128]) {
           },
         ]);
         assert.ok(result.operatorState.byteLength > 0);
+        if (process.env.LAKEQL_ROW_AGGREGATE_CLOUD_RESTORE === "1") {
+          const resumed = await lake
+            .path("window-events.parquet")
+            .run()
+            .aggregateWithState([], spec, {
+              operatorState: result.operatorState,
+            });
+          assert.deepEqual(resumed.rows, [
+            {
+              count: 288,
+              sum: 2 * values.reduce((a, b) => a + b, 0),
+              median,
+              quantile: median,
+              distinct: new Set(values).size,
+            },
+          ]);
+        }
       }),
     );
     assert.ok(pool.usedBytes > 0);
@@ -90,6 +105,7 @@ for (const capMiB of [64, 128]) {
   assert.equal(pool.usedBytes, 0);
 }
 const report = {
+  checkpointResume: process.env.LAKEQL_ROW_AGGREGATE_CLOUD_RESTORE === "1",
   source: `${baseUrl}window-events.parquet`,
   scope:
     "Actual public R2 HTTP 206; forced row scanner; four concurrent stateful aggregate queries; 64/128 MiB shared pools with 8 MiB per-query caps and shared range cache. Independent fixture arithmetic oracle. Small fixture operational evidence, not throughput scaling or total Worker heap certification.",
