@@ -11,7 +11,6 @@ import {
   vectorValue,
 } from "./batch.js";
 import { vectorCallExprSupported } from "./batch-call.js";
-import { BoundedTopK } from "./bounded-top-k.js";
 import { BufferMemory } from "./buffer-memory.js";
 import { readCheckpointSpill } from "./checkpoint-spill-read.js";
 import { withCheckpointSpillBatch } from "./checkpoint-spill-write-batch.js";
@@ -31,7 +30,11 @@ import {
   stableStringify,
   type TaskManifest,
 } from "./manifest.js";
-import { materializeOwnedBatchRow, materializeOwnedBatchRows } from "./materialization-plan.js";
+import {
+  materializeOwnedBatchRow,
+  materializeOwnedBatchRows,
+  planBatchRowMaterialization,
+} from "./materialization-plan.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
 import { MutableMemoryLedger } from "./mutable-memory-ledger.js";
@@ -1140,7 +1143,7 @@ export class QueryResult {
     if (
       config.orderBy !== undefined &&
       config.limit !== undefined &&
-      config.scanner.scanOwnedVectorBatches !== undefined &&
+      vectorBatchScanner(config.scanner) !== undefined &&
       config.distinct !== true &&
       config.projections === undefined &&
       config.hive !== true &&
@@ -2873,6 +2876,7 @@ export class QueryResult {
             plannedObjects,
           );
     if (lateMaterialized !== undefined) return lateMaterialized;
+    if (ownedOutput && config.scanner.scanOwnedVectorBatches === undefined) return undefined;
     if (
       config.scanner.scanColumns === undefined &&
       config.scanner.scanOwnedVectorBatches === undefined
@@ -3027,8 +3031,7 @@ export class QueryResult {
       vectorBatchScanner(config.scanner) === undefined ||
       config.select === undefined ||
       config.select.length === 0 ||
-      config.select.includes("*") ||
-      (ownedOutput && config.scanner.scanOwnedVectorBatches === undefined)
+      config.select.includes("*")
     ) {
       return undefined;
     }
@@ -3045,19 +3048,13 @@ export class QueryResult {
       this.memoryBudget,
       config.budget.signal ? [config.budget.signal] : [],
     );
-    const ownedRetained =
-      config.scanner.scanOwnedVectorBatches === undefined
-        ? undefined
-        : new OwnedBoundedTopK<RankedRowRef>(
-            scope,
-            topK,
-            (left, right) => compareRankedRefs(left, right, orderBy),
-            refMemory,
-          );
+    const ownedRetained = new OwnedBoundedTopK<RankedRowRef>(
+      scope,
+      topK,
+      (left, right) => compareRankedRefs(left, right, orderBy),
+      refMemory,
+    );
     try {
-      const retained = new BoundedTopK<RankedRowRef>(topK, (left, right) =>
-        compareRankedRefs(left, right, orderBy),
-      );
       const scanVectorBatches = vectorBatchScanner(config.scanner);
       if (scanVectorBatches === undefined) return undefined;
       const { planned: paths, skipped: skippedFiles } = plannedObjects;
@@ -3088,46 +3085,38 @@ export class QueryResult {
             if (owner) stage.adopt(owner.retain());
             const batchOwner = owner ? stage.retainAllocations(batch) : undefined;
             try {
-              const selection = predicateSelection(batch, config.where, owner ? stage : undefined);
+              const selection = predicateSelection(batch, config.where, stage);
               this.stats.rowsMatched += selectedRowCount(batch.rowCount, selection);
-              if (ownedRetained && batchOwner) {
-                for (const index of selectedRowIndices(batch.rowCount, selection)) {
-                  if (topK === 0) break;
-                  const candidate = stage.childScope();
+              for (const index of selectedRowIndices(batch.rowCount, selection)) {
+                if (topK === 0) break;
+                const candidate = stage.childScope();
+                try {
+                  const keys = candidate.adopt(
+                    batchOwner
+                      ? materializeOwnedBatchRow(batchOwner, index)
+                      : materializeDetachedBatchRow(batch, index, candidate),
+                  );
+                  const ref = candidate.allocate(
+                    allocationCharges.object + 4 * allocationCharges.property,
+                    "ranked row reference",
+                    () => ({
+                      path: object.path,
+                      object,
+                      rowIndex: rowOffset + index,
+                      keys: keys.value,
+                    }),
+                  );
+                  const ownedRef = candidate.retainAllocations(ref.value);
                   try {
-                    const keys = candidate.adopt(materializeOwnedBatchRow(batchOwner, index));
-                    const ref = candidate.allocate(
-                      allocationCharges.object + 4 * allocationCharges.property,
-                      "ranked row reference",
-                      () => ({
-                        path: object.path,
-                        object,
-                        rowIndex: rowOffset + index,
-                        keys: keys.value,
-                      }),
-                    );
-                    const ownedRef = candidate.retainAllocations(ref.value);
-                    try {
-                      ownedRetained.offer(ownedRef);
-                    } finally {
-                      ownedRef.release();
-                    }
+                    ownedRetained.offer(ownedRef);
                   } finally {
-                    candidate.dispose();
+                    ownedRef.release();
                   }
+                } finally {
+                  candidate.dispose();
                 }
-              } else
-                addRankedRefs(
-                  retained,
-                  object.path,
-                  object,
-                  rowOffset,
-                  batch,
-                  selection,
-                  rankColumns,
-                  refMemory,
-                );
-              enforceBufferedRowsBudget(config.budget, ownedRetained?.size ?? retained.size);
+              }
+              enforceBufferedRowsBudget(config.budget, ownedRetained.size);
               if (refMemory !== undefined)
                 enforceOperatorMemoryBudget(config.budget, refMemory.bytes);
               enforceBudget(config.budget, this.stats, config.now, startedAt);
@@ -3142,16 +3131,14 @@ export class QueryResult {
       const limit = config.limit;
       if (limit === undefined) return undefined;
       const offset = config.offset ?? 0;
-      const selected = ownedRetained
-        ? scope.adopt(ownedRetained.finish(offset, limit)).value
-        : retained.drainSorted().slice(offset, offset + limit);
+      const selected = scope.adopt(ownedRetained.finish(offset, limit)).value;
       const rowsByRef = await this.materializeRowRefs(
         selected,
         outputColumns,
         rankColumns,
         startedAt,
         columnarBatchSize(config.batchSize),
-        ownedRetained ? scope : undefined,
+        scope,
       );
       const buildOutput = () => {
         const rows: Row[] = [];
@@ -3165,11 +3152,6 @@ export class QueryResult {
         }
         return rows;
       };
-      if (!ownedRetained) {
-        const rows = buildOutput();
-        this.stats.elapsedMs = config.now() - startedAt;
-        return rows;
-      }
       let keyBytes: number = allocationCharges.string;
       for (const ref of selected)
         keyBytes = Math.max(
@@ -3276,11 +3258,6 @@ export class QueryResult {
           if (stage && owner) stage.adopt(owner.retain());
           const batchOwner = stage && owner ? stage.retainAllocations(batch) : undefined;
           try {
-            if (scope && !batchOwner)
-              throw new LakeqlError(
-                "LAKEQL_TYPE_ERROR",
-                "Deferred materialization lost input ownership",
-              );
             for (let index = 0; index < batch.rowCount; index += 1) {
               const scratch = stage?.reserve(
                 allocationCharges.object +
@@ -3300,8 +3277,12 @@ export class QueryResult {
                     "Deferred scan repeated a selected row",
                   );
                 completed.add(existing);
-                if (scope && batchOwner) {
-                  const row = scope.adopt(materializeOwnedBatchRow(batchOwner, index));
+                if (scope) {
+                  const row = scope.adopt(
+                    batchOwner
+                      ? materializeOwnedBatchRow(batchOwner, index)
+                      : materializeDetachedBatchRow(batch, index, scope),
+                  );
                   Object.assign(existing, row.value);
                   continue;
                 }
@@ -5888,29 +5869,19 @@ function rankReadColumns(where: Expr | undefined, orderBy: readonly OrderByTerm[
   return [...columns].sort();
 }
 
-function addRankedRefs(
-  retained: BoundedTopK<RankedRowRef>,
-  path: string,
-  object: ObjectInfo | undefined,
-  rowOffset: number,
+/** Borrowed vectors may be reused at the next yield; detach only selected rows. */
+function materializeDetachedBatchRow(
   batch: Batch,
-  selection: Uint8Array,
-  rankColumns: readonly string[],
-  memory: BufferMemory<RankedRowRef> | undefined,
-): void {
-  if (retained.limit === 0) return;
-  for (const index of selectedRowIndices(batch.rowCount, selection)) {
-    const ref: RankedRowRef = {
-      path,
-      ...(object === undefined ? {} : { object }),
-      rowIndex: rowOffset + index,
-      keys: rankKeyRow(batch, index, rankColumns),
-    };
-    const change = retained.add(ref);
-    if (change.accepted && memory !== undefined) {
-      for (const removed of change.removed) memory.remove(removed);
-      memory.add(ref);
-    }
+  index: number,
+  parent: MemoryScope,
+): OwnedMemory<Row> {
+  const scratch = parent.childScope();
+  try {
+    const plan = planBatchRowMaterialization(batch, index, scratch);
+    const rows = plan.execute(scratch);
+    return detachOwnedRow(rows.value[0] as Row, parent.budget);
+  } finally {
+    scratch.dispose();
   }
 }
 

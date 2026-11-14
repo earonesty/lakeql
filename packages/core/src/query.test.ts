@@ -3947,7 +3947,8 @@ it.each([
     const { lake } = await makeLake({
       vectorBatches: true,
       rowsByPath: { table: [{ score: 2, payload: "winner" }] },
-      budget: { maxMemoryBytes },
+      // Isolate serialized-state limits from admitted allocation workspace.
+      budget: { maxMemoryBytes, maxAllocatedMemoryBytes: 65536 },
     });
     let query = lake.path("table").select(["score", "payload"]).where(gt("score", 0)).limit(1);
     if (ordered) query = query.orderBy([{ column: "score", direction: "desc" }]);
