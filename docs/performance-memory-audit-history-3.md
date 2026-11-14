@@ -3894,3 +3894,25 @@ this change does not claim constant-time H3 membership or whole-runtime bounds.
 
 Build/typecheck passed; focused suites passed 112 tests; full suite passed 3,623
 with 629 skips. Evidence: `docs/validation/sidecar-prepared-shapes-2026-11-14.json`.
+
+### 2026-11-14 — owned planning-cache entry contract
+
+CacheAdapter now exposes optional getOwnedEntry/setOwnedEntry methods, distinct
+from existing format-specific metadata-cache methods. Discovery prefers owned
+reads and writes when a query scope exists. Returned entries must share the
+query pool; ownership lasts through the metadata copy and releases on all exit
+paths. Cache writes borrow an admitted entry and metadata until their callback
+settles, including cancellation. Persistent retention requires the adapter to
+retain ownership in its shared budget and release on eviction. Cache-entry
+wrapper allocation is admitted alongside copied metadata.
+
+Tests demonstrate retained storage across two queries after source deletion,
+release on eviction, read cancellation/foreign-pool/file-limit rejection, and
+write success/failure/cancellation with delayed callback settlement. These tests
+exercise an in-process adapter contract, not remote-cache transport behavior.
+Concrete generic memory/remote adapter integration, eviction policy and remote
+serialization admission remain open; legacy adapters remain outside retained
+allocation accounting. No whole-runtime bound is inferred from this interface.
+
+Build/typecheck passed; focused suites passed 102 tests; full suite passed 3,630
+with 629 skips. Evidence: `docs/validation/owned-planning-cache-contract-2026-11-14.json`.

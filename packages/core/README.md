@@ -61,3 +61,14 @@ input backing that the returned plan references. Return an owner using
 it on cancellation or failure. A plan returned under a different budget is
 rejected and released. Legacy `planObjects` remains supported, with adapter-owned
 workspace and retained metadata outside this ownership contract.
+
+Planning caches can implement `CacheAdapter.getOwnedEntry(key, budget)` and
+`setOwnedEntry(key, owner)` to participate in discovery allocation ownership.
+Reads return independently releasable `OwnedMemory<CacheEntry<T>>` in the supplied
+pool; discovery holds it through metadata copying and releases it on success,
+failure, or cancellation. Writes borrow the supplied owner until the callback
+settles. A cache retaining an entry must retain its owner in the shared cache
+budget before returning, and release that retained handle on eviction. Entries
+and their metadata must remain immutable while shared. Legacy `get`/`set` adapters
+remain supported, but their retained allocations are outside this ownership
+contract. The optional methods do not impose a retention policy on those adapters.

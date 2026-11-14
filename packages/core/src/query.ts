@@ -5760,13 +5760,31 @@ async function expandPaths(
 ): Promise<ObjectInfo[]> {
   throwIfAborted(budget.signal);
   const cacheKey = `object-plan:${pattern}`;
-  const cached = await planningCache?.get(cacheKey);
-  throwIfAborted(budget.signal);
-  if (cached !== undefined) {
-    if (budget.maxFiles !== undefined && cached.value.length > budget.maxFiles) {
-      throwBudget("files", budget.maxFiles, cached.value.length);
+  const usesOwnedRead = scope !== undefined && planningCache?.getOwnedEntry !== undefined;
+  const cachedOwner = usesOwnedRead
+    ? await planningCache.getOwnedEntry?.(cacheKey, scope.budget)
+    : undefined;
+  try {
+    const cached = usesOwnedRead ? cachedOwner?.value : await planningCache?.get(cacheKey);
+    throwIfAborted(budget.signal);
+    if (
+      cachedOwner !== undefined &&
+      scope !== undefined &&
+      !cachedOwner.budget.sharesPoolWith(scope.budget)
+    ) {
+      throw new LakeqlError(
+        "LAKEQL_VALIDATION_ERROR",
+        "Planning cache entry must share the query allocation pool",
+      );
     }
-    return cloneObjectInfos(cached.value, scope);
+    if (cached !== undefined) {
+      if (budget.maxFiles !== undefined && cached.value.length > budget.maxFiles) {
+        throwBudget("files", budget.maxFiles, cached.value.length);
+      }
+      return cloneObjectInfos(cached.value, scope);
+    }
+  } finally {
+    cachedOwner?.release();
   }
 
   const paths = await expandPathsUncached(store, pattern, budget, scope);
@@ -5774,7 +5792,24 @@ async function expandPaths(
     const transfer = scope?.childScope();
     try {
       const value = cloneObjectInfos(paths, transfer);
-      await planningCache.set(cacheKey, { value });
+      const entry =
+        transfer === undefined
+          ? { value }
+          : transfer.allocate(
+              allocationCharges.object + allocationCharges.property,
+              "planning cache entry",
+              () => ({ value }),
+            ).value;
+      if (transfer !== undefined && planningCache.setOwnedEntry !== undefined) {
+        const owner = transfer.retainAllocations(entry);
+        try {
+          await planningCache.setOwnedEntry(cacheKey, owner);
+        } finally {
+          owner.release();
+        }
+      } else {
+        await planningCache.set(cacheKey, entry);
+      }
     } finally {
       transfer?.dispose();
     }

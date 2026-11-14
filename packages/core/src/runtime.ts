@@ -10,6 +10,17 @@ export interface CacheEntry<T> {
 }
 
 export interface CacheAdapter<T = Uint8Array> {
+  /** Return independently owned entry storage in the requested allocation pool.
+   * The caller releases it after copying/consuming the entry, including abort.
+   */
+  getOwnedEntry?(
+    key: string,
+    budget: MemoryBudget,
+  ): Promise<OwnedMemory<CacheEntry<T>> | undefined>;
+  /** Borrow an admitted entry until this callback settles. Retain ownership in
+   * the cache's shared budget before returning if keeping it for future queries.
+   */
+  setOwnedEntry?(key: string, entry: OwnedMemory<CacheEntry<T>>): Promise<void>;
   get(key: string): Promise<CacheEntry<T> | undefined>;
   set(key: string, entry: CacheEntry<T>): Promise<void>;
   delete(key: string): Promise<void>;
