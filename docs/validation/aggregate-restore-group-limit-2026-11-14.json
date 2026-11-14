@@ -1,0 +1,26 @@
+{
+  "baseCommit": "9cb094e",
+  "acceptanceItems": ["F1", "M2", "V2"],
+  "defect": "Row aggregate checkpoint restore did not enforce maxGroups before constructing groups",
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "checkpointTests": 23,
+    "realHttpParquetTests": 2,
+    "fullSuite": {
+      "passed": 3709,
+      "skipped": 629,
+      "filesPassed": 407
+    }
+  },
+  "proof": [
+    "Inline and spilled state rejected before scanner invocation",
+    "HTTP206 and ignored-range200 real Parquet fixtures reject before new requests",
+    "Exact group limit resumes with correct accumulated totals",
+    "All tested failures/successes release pool usage"
+  ],
+  "limitations": [
+    "Not full fallback/spill lifecycle acceptance",
+    "Memory spill tests do not establish production remote spill atomicity"
+  ]
+}

@@ -376,3 +376,52 @@ it.each([
     details: { metric: "operator memory bytes", actual: baseline.operatorState.byteLength },
   });
 });
+
+it.each([
+  false,
+  true,
+])("enforces restored group limits before scanning (spilled=%s)", async (spilled) => {
+  const pool = new MemoryBudget(1024 * 1024);
+  const store = memoryStore();
+  await store.put("table", new Uint8Array(1));
+  let scans = 0;
+  const lake = new Lake({
+    store,
+    memoryPool: pool,
+    scanner: {
+      async *scan() {
+        scans++;
+        yield [
+          { key: "a", value: 2 },
+          { key: "b", value: 3 },
+        ];
+      },
+    },
+  });
+  const spill = memorySpillAdapter();
+  const spec = { total: { op: "sum" as const, column: "value" } };
+  const first = await lake
+    .path("table")
+    .run()
+    .aggregateWithState(["key"], spec, { spill, spillId: "groups" });
+  const operatorState = spilled ? { spillRef: "groups" } : first.operatorState;
+  scans = 0;
+  await expect(
+    lake
+      .path("table")
+      .run()
+      .aggregateWithState(["key"], spec, { spill, operatorState, maxGroups: 1 }),
+  ).rejects.toMatchObject({ code: "LAKEQL_GROUP_LIMIT_EXCEEDED" });
+  expect(scans).toBe(0);
+  expect(pool.usedBytes).toBe(0);
+  const resumed = await lake
+    .path("table")
+    .run()
+    .aggregateWithState(["key"], spec, { spill, operatorState, maxGroups: 2 });
+  expect(resumed.rows).toEqual([
+    { key: "a", total: 4 },
+    { key: "b", total: 6 },
+  ]);
+  expect(scans).toBe(1);
+  expect(pool.usedBytes).toBe(0);
+});

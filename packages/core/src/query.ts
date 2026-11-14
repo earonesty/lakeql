@@ -5142,6 +5142,16 @@ async function aggregateGroupsFromState(
       },
     );
   }
+  if (options.maxGroups !== undefined && snapshot.groups.length > options.maxGroups) {
+    throw new LakeqlError(
+      "LAKEQL_GROUP_LIMIT_EXCEEDED",
+      "Restored aggregate state exceeds group budget",
+      {
+        limit: options.maxGroups,
+        actual: snapshot.groups.length,
+      },
+    );
+  }
   for (const group of snapshot.groups)
     scope.allocate(aggregateGroupEntryBytes(group.key), "restored aggregate group entry", () =>
       groups.set(group.key, aggregateGroupFromSnapshot(spec, group, scope)),
