@@ -3,10 +3,11 @@
   "changes": [
     "Row, column and aggregate task scans iterate row windows lazily instead of constructing whole-file prefix and window arrays.",
     "Only the current window descriptor is admitted, and it releases when iteration advances, closes or fails.",
-    "Retain the array-returning helper as a compatibility wrapper for direct callers."
+    "Retain the array-returning helper as a compatibility wrapper for direct callers.",
+    "For backward traversal after at least a full metadata pass, build an admitted Float64 prefix index only when it fits within half available capacity and leaves room for the window descriptor. Otherwise continue rescanning."
   ],
   "validation": {
-    "targeted_tests": 47,
+    "targeted_tests": 49,
     "build": "passed",
     "structural_test": "1000 ordered disjoint windows read exactly 1000 metadata counts and retain constant descriptor reservations; first next reads only one count.",
     "edge_cases": [
@@ -15,10 +16,11 @@
       "existing invalid-span tests and real task fixtures"
     ],
     "typecheck": "passed",
-    "real_http_tests": 4
+    "real_http_tests": "4 passed before adaptive-index follow-up; not rerun for this follow-up",
+    "adaptive_index": "Twenty descending ranges across 1000 groups: 19810 metadata reads under a 1 KiB pool, 2000 reads under a 64 KiB pool, identical output; both normal completion and early return release index and descriptor reservations."
   },
   "tradeoffs": [
-    "Ordered disjoint ranges are linear; backward or overlapping ranges can rescan metadata prefixes. The execution planner normally emits ordered disjoint ranges, but arbitrary caller tasks retain correctness with a CPU cost.",
+    "Ordered disjoint ranges remain linear without an index. Backward/overlapping ranges use an index when measured work and available headroom justify it; low-headroom operation retains the rescan CPU cost.",
     "The compatibility array helper still materializes its return value; scan execution uses the admitted iterator."
   ],
   "remaining": [

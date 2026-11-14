@@ -329,3 +329,41 @@ it("streams row windows with constant live storage and lazy metadata traversal",
   ]);
   scope.dispose();
 });
+
+it.each([
+  1024,
+  64 * 1024,
+])("adapts backward row-window traversal within %i bytes", async (capacity) => {
+  const { iterateTaskRowWindows } = await import("./task.js");
+  const { MemoryBudget, MemoryScope } = await import("lakeql-core");
+  let reads = 0;
+  const metadata = {
+    row_groups: Array.from({ length: 1000 }, () => ({
+      get num_rows() {
+        reads++;
+        return 2;
+      },
+    })),
+  };
+  const task = {
+    path: "data",
+    partitionValues: {},
+    rowGroupRanges: Array.from({ length: 20 }, (_, i) => ({ start: 999 - i, end: 1000 - i })),
+  };
+  const pool = new MemoryBudget(capacity);
+  const scope = new MemoryScope(pool);
+  const windows = [...iterateTaskRowWindows(metadata, task, scope)];
+  expect(windows).toEqual(
+    task.rowGroupRanges.map(({ start, end }) => ({ rowStart: start * 2, rowEnd: end * 2 })),
+  );
+  expect(reads).toBe(capacity === 1024 ? 19810 : 2000);
+  expect(pool.peakBytes).toBeLessThanOrEqual(capacity);
+  expect(pool.usedBytes).toBe(0);
+  const iterator = iterateTaskRowWindows(metadata, task, scope);
+  iterator.next();
+  iterator.next();
+  expect(pool.usedBytes).toBeGreaterThan(0);
+  iterator.return?.();
+  expect(pool.usedBytes).toBe(0);
+  scope.dispose();
+});

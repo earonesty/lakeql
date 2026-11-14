@@ -152,40 +152,66 @@ export function taskRowWindows(
   return Array.from(iterateTaskRowWindows(metadata, task));
 }
 
-/** Ordered disjoint ranges traverse each preceding row group once. Backward or
- * overlapping ranges restart the cursor to preserve caller order without an
- * unbounded prefix array. Only the current yielded descriptor stays charged.
+/** Stream ordered ranges; index repeated backward traversal only when measured
+ * work reaches a full metadata pass and available headroom covers the index.
  */
 export function* iterateTaskRowWindows(
   metadata: ParquetMetadataLike,
   task: TaskInput,
   scope?: MemoryScope,
 ): IterableIterator<{ rowStart: number; rowEnd: number }> {
-  let groupIndex = 0;
-  let rowOffset = 0;
-  const advance = (end: number) => {
-    while (groupIndex < end) {
-      rowOffset += Number(metadata.row_groups[groupIndex]?.num_rows ?? 0);
-      groupIndex += 1;
+  const workspace = scope?.childScope();
+  try {
+    let groupIndex = 0;
+    let rowOffset = 0;
+    let visitedGroups = 0;
+    let starts: Float64Array | undefined;
+    const advance = (end: number) => {
+      while (groupIndex < end) {
+        rowOffset += Number(metadata.row_groups[groupIndex]?.num_rows ?? 0);
+        groupIndex += 1;
+        visitedGroups += 1;
+      }
+      return rowOffset;
+    };
+    for (const range of task.rowGroupRanges) {
+      const start = range.start;
+      const end = Math.min(range.end, metadata.row_groups.length);
+      if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || start >= end) continue;
+      if (starts === undefined && start < groupIndex) {
+        const indexBytes =
+          c.view + (metadata.row_groups.length + 1) * Float64Array.BYTES_PER_ELEMENT;
+        if (
+          workspace !== undefined &&
+          visitedGroups >= metadata.row_groups.length &&
+          indexBytes <= workspace.budget.availableBytes / 2 &&
+          indexBytes + c.object + 2 * c.property <= workspace.budget.availableBytes
+        ) {
+          starts = workspace.allocate(
+            indexBytes,
+            "task row prefix index",
+            () => new Float64Array(metadata.row_groups.length + 1),
+          ).value;
+          let total = 0;
+          for (let index = 0; index < metadata.row_groups.length; index += 1) {
+            total += Number(metadata.row_groups[index]?.num_rows ?? 0);
+            starts[index + 1] = total;
+          }
+        }
+        groupIndex = 0;
+        rowOffset = 0;
+      }
+      const rowStart = starts === undefined ? advance(start) : (starts[start] ?? 0);
+      const rowEnd = starts === undefined ? advance(end) : (starts[end] ?? 0);
+      const reservation = scope?.reserve(c.object + 2 * c.property, "task row window");
+      try {
+        yield { rowStart, rowEnd };
+      } finally {
+        reservation?.release();
+      }
     }
-    return rowOffset;
-  };
-  for (const range of task.rowGroupRanges) {
-    const start = range.start;
-    const end = Math.min(range.end, metadata.row_groups.length);
-    if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || start >= end) continue;
-    if (start < groupIndex) {
-      groupIndex = 0;
-      rowOffset = 0;
-    }
-    const rowStart = advance(start);
-    const rowEnd = advance(end);
-    const reservation = scope?.reserve(c.object + 2 * c.property, "task row window");
-    try {
-      yield { rowStart, rowEnd };
-    } finally {
-      reservation?.release();
-    }
+  } finally {
+    workspace?.dispose();
   }
 }
 
