@@ -9,7 +9,7 @@ it.each([
   "ndjson",
 ] as const)("completes empty and populated %s streams without retained charges", async (format) => {
   for (const values of [[], [{ value: "雪😀" }, { value: null }]]) {
-    const pool = new MemoryBudget(1024);
+    const pool = new MemoryBudget(4096);
     async function* rows() {
       yield* values;
     }
@@ -24,7 +24,7 @@ it.each([
 });
 
 it("charges a queued row until cancellation releases both output and suspended input", async () => {
-  const pool = new MemoryBudget(1024);
+  const pool = new MemoryBudget(4096);
   let released = 0;
   async function* rows() {
     const scope = new MemoryScope(pool);
@@ -109,7 +109,7 @@ it("does not encode a row arriving after cancellation", async () => {
 });
 
 it("releases handed-off output while a consumer retains its bytes", async () => {
-  const pool = new MemoryBudget(1024);
+  const pool = new MemoryBudget(4096);
   let signalNext = () => {};
   let unblock = () => {};
   const started = new Promise<void>((resolve) => {

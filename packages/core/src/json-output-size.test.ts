@@ -2,6 +2,8 @@ import { expect, it } from "vitest";
 import { jsonSafeValue } from "./evaluator.js";
 import { intervalValue } from "./interval.js";
 import { jsonOutputUtf8Bytes } from "./json-output-size.js";
+import { MemoryBudget } from "./memory-budget.js";
+import { MemoryScope } from "./memory-scope.js";
 import { timestampFromEpoch } from "./timestamp.js";
 
 const values = [
@@ -55,4 +57,25 @@ it("rejects function-valued custom serialization hooks", () => {
   const fn = Object.assign(() => undefined, { toJSON: () => "custom" });
   expect(() => jsonOutputUtf8Bytes(fn)).toThrow(/cannot be forecast/);
   expect(() => jsonOutputUtf8Bytes({ fn })).toThrow(/cannot be forecast/);
+});
+
+it("sizes deep JSON with admitted traversal and releases frames on failure", () => {
+  let value: unknown = 1;
+  for (let i = 0; i < 20000; i++) value = [value];
+  const scope = new MemoryScope(new MemoryBudget(32 * 1024 * 1024));
+  expect(jsonOutputUtf8Bytes(value, scope)).toBe(40001);
+  const peak = scope.budget.peakBytes;
+  expect(scope.budget.usedBytes).toBe(0);
+  for (const capacity of [peak - 1, peak]) {
+    const exact = new MemoryScope(new MemoryBudget(capacity));
+    if (capacity < peak) expect(() => jsonOutputUtf8Bytes(value, exact)).toThrow(/memory|budget/i);
+    else expect(jsonOutputUtf8Bytes(value, exact)).toBe(40001);
+    expect(exact.budget.usedBytes).toBe(0);
+    exact.dispose();
+  }
+  const cyclic: unknown[] = [];
+  cyclic.push(cyclic);
+  expect(() => jsonOutputUtf8Bytes(cyclic, scope)).toThrow(/Cyclic/);
+  expect(scope.budget.usedBytes).toBe(0);
+  scope.dispose();
 });

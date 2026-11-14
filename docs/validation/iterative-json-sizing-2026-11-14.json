@@ -1,0 +1,24 @@
+{
+  "baseCommit": "5e4d280",
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 55,
+    "fullSuite": {
+      "passed": 3678,
+      "skipped": 629,
+      "passedFiles": 400
+    }
+  },
+  "edgeCases": [
+    "20000 nested arrays",
+    "exact capacity",
+    "one byte below capacity",
+    "cycle cleanup"
+  ],
+  "limitations": [
+    "Output encoding still recursive",
+    "Runtime iterator and retained container capacity are not measured heap caps",
+    "Standard cache JSON write serialization remains open"
+  ]
+}

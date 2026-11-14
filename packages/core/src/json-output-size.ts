@@ -1,22 +1,48 @@
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { isDecimalValue } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
 import { isIntervalValue } from "./interval.js";
 import { jsonIntegerBytes } from "./json-integer-output.js";
 import { JsonScalarFormatter } from "./json-scalar-output.js";
 import { jsonStringUtf8Bytes } from "./json-string-size.js";
+import type { MemoryReservation } from "./memory-budget.js";
 import type { MemoryScope } from "./memory-scope.js";
 import { isTimestampValue } from "./timestamp.js";
 
 /** UTF8 extent of JSON.stringify(jsonSafeValue(value)), not stableStringify.
  * Undefined means JSON.stringify has no root output. This avoids the cloned
  * JSON tree and output string/buffer. An optional scope admits scalar formatting;
- * traversal state and runtime workspace remain outside complete heap admission.
+ * traversal frames and ancestor entries are admitted per active depth. Runtime
+ * iterator internals remain outside a portable heap measurement.
  * Inputs must remain immutable through encoding; stateful accessors are outside
  * this planning contract. Custom toJSON functions and cycles are rejected.
  */
 export function jsonOutputUtf8Bytes(value: unknown, scope?: MemoryScope): number | undefined {
   const scalar = new JsonScalarFormatter(scope);
+  let base: MemoryReservation | undefined;
   const ancestors = new Set<object>();
+  type Frame = {
+    value: object;
+    entries: Generator<{ key?: string; value: unknown }>;
+    bytes: number;
+    count: number;
+    key: string | undefined;
+    reservation: MemoryReservation | undefined;
+  };
+  const frames: Frame[] = [];
+  function* entries(value: object): Generator<{ key?: string; value: unknown }> {
+    if (Array.isArray(value)) {
+      for (let index = 0; index < value.length; index++) yield { value: value[index] };
+    } else {
+      for (const key in value) {
+        if (!Object.hasOwn(value, key)) continue;
+        const inner = (value as Record<string, unknown>)[key];
+        if (key === "toJSON" && typeof inner === "function")
+          throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Custom JSON output cannot be forecast");
+        yield { key, value: inner };
+      }
+    }
+  }
   const measure = (value: unknown): number | undefined => {
     if (value === null) return 4;
     if (isDecimalValue(value)) return scalar.consume(value, jsonStringUtf8Bytes);
@@ -47,42 +73,54 @@ export function jsonOutputUtf8Bytes(value: unknown, scope?: MemoryScope): number
       case "object": {
         if (ancestors.has(value))
           throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Cyclic JSON output");
+        base ??= scope?.reserve(2 * c.object + c.array, "JSON sizing traversal");
+        const reservation = scope?.reserve(
+          5 * c.object + 12 * c.property + c.arraySlot,
+          "JSON sizing frame",
+        );
+        frames.push({
+          value,
+          entries: entries(value),
+          bytes: 2,
+          count: 0,
+          key: undefined,
+          reservation,
+        });
         ancestors.add(value);
-        try {
-          let bytes = 2;
-          if (Array.isArray(value)) {
-            bytes += Math.max(0, value.length - 1);
-            for (let index = 0; index < value.length; index++) bytes += measure(value[index]) ?? 4;
-          } else {
-            let count = 0;
-            for (const key in value) {
-              if (!Object.hasOwn(value, key)) continue;
-              const inner = (value as Record<string, unknown>)[key];
-              if (key === "toJSON" && typeof inner === "function")
-                throw new LakeqlError(
-                  "LAKEQL_VALIDATION_ERROR",
-                  "Custom JSON output cannot be forecast",
-                );
-              const size = measure(inner);
-              if (size !== undefined)
-                bytes += (count++ ? 1 : 0) + jsonStringUtf8Bytes(key) + 1 + size;
-            }
-          }
-          if (!Number.isSafeInteger(bytes))
-            throw new LakeqlError(
-              "LAKEQL_VALIDATION_ERROR",
-              "JSON output extent exceeds safe capacity",
-            );
-          return bytes;
-        } finally {
-          ancestors.delete(value);
-        }
+        return undefined;
       }
     }
   };
+  const accumulate = (frame: Frame, size: number | undefined) => {
+    if (Array.isArray(frame.value)) frame.bytes += (frame.count++ ? 1 : 0) + (size ?? 4);
+    else if (size !== undefined)
+      frame.bytes += (frame.count++ ? 1 : 0) + jsonStringUtf8Bytes(frame.key as string) + 1 + size;
+    if (!Number.isSafeInteger(frame.bytes))
+      throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "JSON output extent exceeds safe capacity");
+  };
   try {
-    return measure(value);
+    const root = measure(value);
+    if (frames.length === 0) return root;
+    while (frames.length > 0) {
+      const frame = frames[frames.length - 1] as Frame;
+      const next = frame.entries.next();
+      if (next.done) {
+        frames.pop();
+        ancestors.delete(frame.value);
+        frame.reservation?.release();
+        if (frames.length === 0) return frame.bytes;
+        accumulate(frames[frames.length - 1] as Frame, frame.bytes);
+      } else {
+        frame.key = next.value.key;
+        const depth = frames.length;
+        const size = measure(next.value.value);
+        if (frames.length === depth) accumulate(frame, size);
+      }
+    }
+    return undefined;
   } finally {
+    for (const frame of frames) frame.reservation?.release();
+    base?.release();
     scalar.dispose();
   }
 }
