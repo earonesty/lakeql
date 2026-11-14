@@ -32,5 +32,6 @@
     "Source adapter backing, hive augmentation, borrowed references, remaining scalar internals and VM/GC memory remain separate open requirements.",
     "The eliminated reference copies are structural allocation reductions; no CPU throughput speedup or total Worker heap bound is claimed.",
     "Full final release gates and the complete audit acceptance matrix remain open."
-  ]
+  ],
+  "followupEvidence": "docs/validation/window-input-ownership-2026-11-13.json"
 }

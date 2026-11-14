@@ -781,7 +781,7 @@ describe("window backend", () => {
 
     const memoryLimited = createInMemoryLake(
       { "orders.rows": rows },
-      { budget: { maxBufferedRows: 10, maxMemoryBytes: 1 } },
+      { budget: { maxBufferedRows: 10, maxMemoryBytes: 1, maxAllocatedMemoryBytes: 65536 } },
     );
     await expect(
       memoryLimited.path("orders.rows").window("rn", overCustomerTs("row_number")).toArray(),

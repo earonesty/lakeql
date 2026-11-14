@@ -1,3 +1,4 @@
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import {
   materializeBatchRows,
   materializeSelectedBatchRows,
@@ -8,6 +9,7 @@ import { BufferMemory } from "./buffer-memory.js";
 import { matches } from "./evaluator.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope } from "./memory-scope.js";
+import { detachOwnedRow } from "./owned-row-detachment.js";
 import type {
   PathQueryInit,
   QueryBudget,
@@ -81,33 +83,40 @@ export type VectorBatchScanner = (
 ) => AsyncIterable<ScanVectorBatch>;
 
 export async function* executeWindowBatches(options: WindowRunnerOptions): AsyncIterable<Row[]> {
-  const { config, stats } = options;
-  const startedAt = config.now();
-  const taskRows = await collectWindowTaskMatches(options, startedAt);
-  if (taskRows !== undefined) {
-    yield* postWindowQueryBatches({
-      ...windowBatchOptions(options, startedAt),
-      rows: taskRows,
-    });
-    return;
-  }
+  const retainedScope = new MemoryScope(
+    options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER),
+  );
+  try {
+    const { config, stats } = options;
+    const startedAt = config.now();
+    const taskRows = await collectWindowTaskMatches(options, startedAt);
+    if (taskRows !== undefined) {
+      yield* postWindowQueryBatches({
+        ...windowBatchOptions(options, startedAt),
+        rows: taskRows,
+      });
+      return;
+    }
 
-  const vectorRows = await collectVectorWindowRows(options, startedAt);
-  if (vectorRows !== undefined) {
-    yield* postWindowQueryBatches({
-      ...windowBatchOptions(options, startedAt),
-      rows: vectorRows,
-    });
-    return;
-  }
+    const vectorRows = await collectVectorWindowRows(options, startedAt);
+    if (vectorRows !== undefined) {
+      yield* postWindowQueryBatches({
+        ...windowBatchOptions(options, startedAt),
+        rows: vectorRows,
+      });
+      return;
+    }
 
-  const matched: Row[] = [];
-  await collectWindowMatches(options, matched, startedAt);
-  yield* windowedQueryBatches({
-    ...windowBatchOptions(options, startedAt),
-    matched,
-  });
-  stats.elapsedMs = config.now() - startedAt;
+    const matched: Row[] = [];
+    await collectWindowMatches(options, matched, startedAt, retainedScope);
+    yield* windowedQueryBatches({
+      ...windowBatchOptions(options, startedAt),
+      matched,
+    });
+    stats.elapsedMs = config.now() - startedAt;
+  } finally {
+    retainedScope.dispose();
+  }
 }
 
 export async function executeWindowWithState(
@@ -115,58 +124,69 @@ export async function executeWindowWithState(
   windowOptions: WindowOptions,
   spillId: string,
 ): Promise<WindowResult> {
-  const { config } = options;
-  const windows = config.windows ?? {};
-  const previousRows = await windowRowsFromState(windows, windowOptions);
-  const runs =
-    windowOptions.spill === undefined
-      ? [previousRows]
-      : chunkRowsForRuns(previousRows, config.budget);
-  const startedAt = config.now();
-  let matched: Row[] | undefined;
-  if (windowOptions.spill === undefined) {
-    matched = runs[0] ?? [];
-    options.enforceBufferedRows(config.budget, matched.length);
-    options.enforceMemoryBytes(config.budget, options.estimateMemoryBytes(matched));
-    await collectWindowMatches(options, matched, startedAt);
-  } else {
-    await collectWindowRuns(options, runs, startedAt);
-  }
+  const retainedScope = new MemoryScope(
+    options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER),
+  );
+  try {
+    const { config } = options;
+    const windows = config.windows ?? {};
+    const previousRows = await windowRowsFromState(windows, windowOptions);
+    const runs =
+      windowOptions.spill === undefined
+        ? [previousRows]
+        : chunkRowsForRuns(previousRows, config.budget);
+    const startedAt = config.now();
+    let matched: Row[] | undefined;
+    if (windowOptions.spill === undefined) {
+      matched = runs[0] ?? [];
+      options.enforceBufferedRows(config.budget, matched.length);
+      options.enforceMemoryBytes(config.budget, options.estimateMemoryBytes(matched));
+      await collectWindowMatches(options, matched, startedAt, retainedScope);
+    } else {
+      for (const run of runs) new WindowRowBuffer(options, retainedScope, run);
+      await collectWindowRuns(options, runs, startedAt, retainedScope);
+    }
 
-  const rows: Row[] = [];
-  const batches =
-    windowOptions.spill === undefined
-      ? windowedQueryBatches({
-          ...windowBatchOptions(options, startedAt),
-          matched: matched ?? [],
-        })
-      : windowedRunQueryBatches({
-          ...windowBatchOptions(options, startedAt),
-          runs,
-        });
-  for await (const batch of batches) rows.push(...batch);
+    const rows: Row[] = [];
+    const batches =
+      windowOptions.spill === undefined
+        ? windowedQueryBatches({
+            ...windowBatchOptions(options, startedAt),
+            matched: matched ?? [],
+          })
+        : windowedRunQueryBatches({
+            ...windowBatchOptions(options, startedAt),
+            runs,
+          });
+    for await (const batch of batches) rows.push(...batch);
 
-  const state =
-    windowOptions.spill === undefined
-      ? windowOperatorState(windows, matched ?? [])
-      : await windowOperatorStateFromRuns(windows, runs, windowOptions.spill, spillId);
-  const operatorState = serializeWindowOperatorState(state);
-  const result: WindowResult = { rows, operatorState };
-  if (windowOptions.spill !== undefined) {
-    result.operatorSpill = await windowOptions.spill.write(spillId, operatorState);
+    const state =
+      windowOptions.spill === undefined
+        ? windowOperatorState(windows, matched ?? [])
+        : await windowOperatorStateFromRuns(windows, runs, windowOptions.spill, spillId);
+    const operatorState = serializeWindowOperatorState(state);
+    const result: WindowResult = { rows, operatorState };
+    if (windowOptions.spill !== undefined) {
+      result.operatorSpill = await windowOptions.spill.write(spillId, operatorState);
+    }
+    return result;
+  } finally {
+    retainedScope.dispose();
   }
-  return result;
 }
 
 export async function collectWindowMatches(
   options: WindowRunnerOptions,
   matched: Row[],
   startedAt: number,
+  retainedScope?: MemoryScope,
 ): Promise<WindowExecutionMode> {
   const { config, stats } = options;
-  const scope = new MemoryScope(options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER));
+  const scope =
+    retainedScope ??
+    new MemoryScope(options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER));
   try {
-    const buffer = new WindowRowBuffer(options, matched);
+    const buffer = new WindowRowBuffer(options, scope, matched);
     const { planned: paths, skipped: skippedFiles } = await options.planObjects();
     stats.filesSkipped = skippedFiles;
     const columns = windowReadColumns(config);
@@ -196,7 +216,7 @@ export async function collectWindowMatches(
     stats.elapsedMs = config.now() - startedAt;
     return "row-materialized";
   } finally {
-    scope.dispose();
+    if (retainedScope === undefined) scope.dispose();
   }
 }
 
@@ -204,13 +224,21 @@ export async function collectWindowRuns(
   options: WindowRunnerOptions,
   runs: Row[][],
   startedAt: number,
+  retainedScope?: MemoryScope,
 ): Promise<WindowExecutionMode> {
-  const currentRun = new WindowRowBuffer(options);
-  const execution = (await collectVectorWindowRunMatches(options, runs, currentRun, startedAt))
-    ? "vector-window"
-    : await collectRowWindowRunMatches(options, runs, currentRun, startedAt);
-  flushWindowRun(runs, currentRun);
-  return execution;
+  const scope =
+    retainedScope ??
+    new MemoryScope(options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER));
+  try {
+    const currentRun = new WindowRowBuffer(options, scope);
+    const execution = (await collectVectorWindowRunMatches(options, runs, currentRun, startedAt))
+      ? "vector-window"
+      : await collectRowWindowRunMatches(options, runs, currentRun, startedAt);
+    flushWindowRun(runs, currentRun);
+    return execution;
+  } finally {
+    if (retainedScope === undefined) scope.dispose();
+  }
 }
 
 async function collectWindowTaskMatches(
@@ -446,8 +474,14 @@ class WindowRowBuffer {
 
   constructor(
     private readonly options: WindowRunnerOptions,
-    private readonly rows: Row[] = [],
+    private readonly scope: MemoryScope,
+    private rows: Row[] = [],
   ) {
+    scope.allocate(c.array + rows.length * c.arraySlot, "window input directory", () => rows);
+    for (let index = 0; index < rows.length; index++) {
+      const row = rows[index];
+      if (row !== undefined) rows[index] = retainWindowRow(row, scope);
+    }
     this.memory =
       options.config.budget.maxMemoryBytes !== undefined &&
       options.estimateBufferItemBytes !== undefined
@@ -460,8 +494,9 @@ class WindowRowBuffer {
   }
 
   append(row: Row): void {
-    this.rows.push(row);
-    this.memory?.add(row);
+    const owned = retainWindowRow(row, this.scope);
+    this.scope.allocate(c.arraySlot, "window retained row reference", () => this.rows.push(owned));
+    this.memory?.add(owned);
     const budget = this.options.config.budget;
     this.options.enforceBufferedRows(budget, this.rows.length);
     if (budget.maxMemoryBytes !== undefined) {
@@ -474,7 +509,18 @@ class WindowRowBuffer {
 
   flush(runs: Row[][]): void {
     if (this.rows.length === 0) return;
-    runs.push(this.rows.splice(0, this.rows.length));
+    this.scope.allocate(c.arraySlot, "window retained run reference", () => runs.push(this.rows));
+    this.rows = this.scope.allocate(c.array, "window next run directory", () => [] as Row[]).value;
     this.memory?.clear();
+  }
+}
+
+function retainWindowRow(row: Row, scope: MemoryScope): Row {
+  const owner = detachOwnedRow(row, scope.budget);
+  try {
+    return scope.adopt(owner).value;
+  } catch (error) {
+    owner.release();
+    throw error;
   }
 }

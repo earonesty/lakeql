@@ -63,6 +63,7 @@ it.each(
           "distinct",
           "orderedDistinct",
           "window",
+          "windowState",
         ].map(async (route) => {
           let query = lake
             .path(path)
@@ -81,7 +82,7 @@ it.each(
           if (["ordered", "topK", "sort", "orderedDistinct"].includes(route))
             query = query.orderBy([{ column: "id" }]);
           if (route === "topK") query = query.limit(2);
-          if (route === "window")
+          if (route === "window" || route === "windowState")
             query = query
               .window("rn", {
                 fn: "row_number",
@@ -93,15 +94,17 @@ it.each(
             query = query.select(["text"]).distinct();
           const result = query.run();
           const output =
-            route === "aggregate"
-              ? result
-                  .aggregateWithState([], { count: { op: "count" } })
-                  .then((value) => value.rows)
-              : route === "topK"
-                ? result.topKWithState().then((value) => value.rows)
-                : route === "sort"
-                  ? result.sortWithState().then((value) => value.rows)
-                  : result.toArray();
+            route === "windowState"
+              ? result.windowWithState().then((value) => value.rows)
+              : route === "aggregate"
+                ? result
+                    .aggregateWithState([], { count: { op: "count" } })
+                    .then((value) => value.rows)
+                : route === "topK"
+                  ? result.topKWithState().then((value) => value.rows)
+                  : route === "sort"
+                    ? result.sortWithState().then((value) => value.rows)
+                    : result.toArray();
           if (expand)
             await expect(output).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
           else
