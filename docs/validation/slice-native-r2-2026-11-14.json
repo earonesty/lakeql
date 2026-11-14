@@ -1,0 +1,40 @@
+{
+  "runtimeSource": "14a1948",
+  "change": "Extend existing native R2 fixture test with concurrent slice/resume coverage; no production changes.",
+  "matrix": {
+    "poolMiB": [
+      64,
+      128
+    ],
+    "concurrentJobs": 4,
+    "rows": 100,
+    "rowGroups": 10,
+    "textCodeUnitsPerRow": 1024,
+    "batchRows": 7,
+    "firstSliceRows": 13,
+    "resumedSliceRows": 87
+  },
+  "assertions": [
+    "First slices cross row-group boundaries and report rowOffset 13.",
+    "Resume through lake.resume(bookmark) returns exactly rows 13 through 99 with no further bookmark.",
+    "First slice data remains unchanged after resumed jobs and shared cache eviction.",
+    "Pool usage returns to zero after each completed group and cache eviction; tracked peak stays within cap."
+  ],
+  "validation": {
+    "workerPassed": 82,
+    "workerFiles": 23,
+    "typecheck": "passed",
+    "biome": "passed"
+  },
+  "limitations": [
+    "Native R2 bindings in workerd test runtime; not a live deployed Cloudflare account.",
+    "Small fixture verifies lifecycle at configured caps, not near-cap concurrency headroom or total process heap.",
+    "Plain slice results are caller-managed after return; zero pool usage is not a claim that caller output consumes no RAM.",
+    "Explicitly owned slice output and bookmark normalization workspace remain open."
+  ],
+  "bookmarkTrace": {
+    "constructor": "manifest.ts createBookmark",
+    "normalizer": "normalizeBookmarkQuery clones select/order terms, sorts projection/window records and retains nested expression references",
+    "requiredOwnership": "Own retained expression backing and admit output/sorting metadata before construction; outer object admission alone is insufficient."
+  }
+}

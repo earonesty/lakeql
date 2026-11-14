@@ -875,6 +875,31 @@ it.each([64, 128])("owns deferred top-k over native R2 with a %s MiB shared pool
     } finally {
       for (const owner of ranked) owner.release();
     }
+    const firstSlices = await Promise.all(
+      Array.from({ length: 4 }, () => lake.path(path).batchSize(7).run().slice({ maxRows: 13 })),
+    );
+    cache.deleteWhere(() => true);
+    expect(pool.usedBytes).toBe(0);
+    for (const first of firstSlices) {
+      expect(first.rows).toEqual(text.slice(0, 13).map((value, id) => ({ id, text: value })));
+      expect(first.bookmark?.position.rowOffset).toBe(13);
+    }
+    const resumedSlices = await Promise.all(
+      firstSlices.map((first) => {
+        if (!first.bookmark) throw new Error("Expected native R2 slice continuation");
+        return lake.resume(first.bookmark).run({ slice: { maxRows: 87 } });
+      }),
+    );
+    cache.deleteWhere(() => true);
+    for (let i = 0; i < firstSlices.length; i++) {
+      expect(firstSlices[i]?.rows).toEqual(
+        text.slice(0, 13).map((value, id) => ({ id, text: value })),
+      );
+      expect(resumedSlices[i]?.rows).toEqual(
+        text.slice(13).map((value, index) => ({ id: index + 13, text: value })),
+      );
+      expect(resumedSlices[i]?.bookmark).toBeUndefined();
+    }
     expect(pool.usedBytes).toBe(0);
     expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
   } finally {
