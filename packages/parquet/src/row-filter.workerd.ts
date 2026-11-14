@@ -1,20 +1,25 @@
 /// <reference types="@cloudflare/vitest-pool-workers/types" />
 import { env } from "cloudflare:test";
-import { type Expr, Lake, MemoryBudget, SharedMemoryCache } from "lakeql-core";
+import { type Expr, Lake, MemoryBudget, memorySpillAdapter, SharedMemoryCache } from "lakeql-core";
 import { expect, it } from "vitest";
 import { type R2BucketLike, R2ObjectStore } from "../../r2/src/index.js";
 import { parquetScanner } from "./index.js";
 
 it.each(
-  [64, 128].flatMap((mib) => [false, true].map((projection) => ({ mib, projection }))),
-)("admits row expressions in Worker R2: $mib MiB, projection=$projection", async ({
+  [64, 128].flatMap((mib) =>
+    [false, true].flatMap((projection) =>
+      [false, true].map((vector) => ({ mib, projection, vector })),
+    ),
+  ),
+)("admits row expressions in Worker R2: $mib MiB, projection=$projection, vector=$vector", async ({
   mib,
   projection,
+  vector,
 }) => {
   const bindings = env as unknown as { BROTLI_FIXTURE: string; MEMORY_TEST_BUCKET: R2BucketLike };
   expect(bindings.BROTLI_FIXTURE.length).toBeGreaterThan(0);
   const store = new R2ObjectStore(bindings.MEMORY_TEST_BUCKET);
-  const path = `row-expressions-${mib}-${projection}.parquet`;
+  const path = `row-expressions-${mib}-${projection}-${vector}.parquet`;
   await store.put(
     path,
     Uint8Array.from(atob(bindings.BROTLI_FIXTURE), (c) => c.charCodeAt(0)),
@@ -32,7 +37,15 @@ it.each(
     const lake = new Lake({
       store,
       memoryPool: pool,
-      scanner: { scan: scanner.scan.bind(scanner) },
+      scanner: {
+        scan: scanner.scan.bind(scanner),
+        ...(vector && scanner.scanVectorBatches
+          ? { scanVectorBatches: scanner.scanVectorBatches.bind(scanner) }
+          : {}),
+        ...(vector && scanner.scanOwnedVectorBatches
+          ? { scanOwnedVectorBatches: scanner.scanOwnedVectorBatches.bind(scanner) }
+          : {}),
+      },
       budget: { maxAllocatedMemoryBytes: 2 * 1024 * 1024 },
     });
     for (const expand of [false, true]) {
@@ -64,64 +77,68 @@ it.each(
           "orderedDistinct",
           "window",
           "windowState",
-        ].map(async (route) => {
-          let query = lake
-            .path(path)
-            .where(
-              projection
-                ? {
-                    kind: "compare",
-                    op: "eq",
-                    left: { kind: "column", name: "text" },
-                    right: { kind: "literal", value: "dictionary text 1 猫" },
-                  }
-                : predicate,
-            )
-            .batchSize(32);
-          if (projection) query = query.project({ projected: predicate.left });
-          if (["ordered", "topK", "sort", "orderedDistinct"].includes(route))
-            query = query.orderBy([{ column: "id" }]);
-          if (route === "topK") query = query.limit(2);
-          if (route === "window" || route === "windowState")
-            query = query
-              .window("rn", {
-                fn: "row_number",
-                args: [],
-                over: { partitionBy: [], orderBy: [{ expr: { kind: "column", name: "id" } }] },
-              })
-              .select(["id", "text"]);
-          if (route === "distinct" || route === "orderedDistinct")
-            query = query.select(["text"]).distinct();
-          const result = query.run();
-          const output =
-            route === "windowState"
-              ? result.windowWithState().then((value) => value.rows)
-              : route === "aggregate"
+        ]
+          .filter((route) => !vector || route === "window" || route === "windowState")
+          .map(async (route) => {
+            let query = lake
+              .path(path)
+              .where(
+                projection
+                  ? {
+                      kind: "compare",
+                      op: "eq",
+                      left: { kind: "column", name: "text" },
+                      right: { kind: "literal", value: "dictionary text 1 猫" },
+                    }
+                  : predicate,
+              )
+              .batchSize(32);
+            if (projection) query = query.project({ projected: predicate.left });
+            if (["ordered", "topK", "sort", "orderedDistinct"].includes(route))
+              query = query.orderBy([{ column: "id" }]);
+            if (route === "topK") query = query.limit(2);
+            if (route === "window" || route === "windowState")
+              query = query
+                .window("rn", {
+                  fn: "row_number",
+                  args: [],
+                  over: { partitionBy: [], orderBy: [{ expr: { kind: "column", name: "id" } }] },
+                })
+                .select(["id", "text"]);
+            if (route === "distinct" || route === "orderedDistinct")
+              query = query.select(["text"]).distinct();
+            const result = query.run();
+            const output =
+              route === "windowState"
                 ? result
-                    .aggregateWithState([], { count: { op: "count" } })
+                    .windowWithState(vector ? { spill: memorySpillAdapter() } : {})
                     .then((value) => value.rows)
-                : route === "topK"
-                  ? result.topKWithState().then((value) => value.rows)
-                  : route === "sort"
-                    ? result.sortWithState().then((value) => value.rows)
-                    : result.toArray();
-          if (expand)
-            await expect(output).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
-          else
-            expect(await output).toEqual(
-              route === "distinct" || route === "orderedDistinct"
-                ? [
-                    projection
-                      ? { text: "dictionary text 1 猫", projected: "accepted text 1 猫" }
-                      : { text: "dictionary text 1 猫" },
-                  ]
                 : route === "aggregate"
-                  ? [{ count: selected.length }]
+                  ? result
+                      .aggregateWithState([], { count: { op: "count" } })
+                      .then((value) => value.rows)
                   : route === "topK"
-                    ? selected.slice(0, 2)
-                    : selected,
-            );
-        }),
+                    ? result.topKWithState().then((value) => value.rows)
+                    : route === "sort"
+                      ? result.sortWithState().then((value) => value.rows)
+                      : result.toArray();
+            if (expand)
+              await expect(output).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+            else
+              expect(await output).toEqual(
+                route === "distinct" || route === "orderedDistinct"
+                  ? [
+                      projection
+                        ? { text: "dictionary text 1 猫", projected: "accepted text 1 猫" }
+                        : { text: "dictionary text 1 猫" },
+                    ]
+                  : route === "aggregate"
+                    ? [{ count: selected.length }]
+                    : route === "topK"
+                      ? selected.slice(0, 2)
+                      : selected,
+              );
+          }),
       );
     }
     cache.deleteWhere(() => true);

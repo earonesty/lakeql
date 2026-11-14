@@ -37,5 +37,6 @@
     "Spill configuration does not guarantee external streaming execution: retained runs still consume admitted memory and reject on exhaustion.",
     "The established detachable-data contract excludes cycles, accessors and unsupported custom prototypes. No CPU throughput speedup or whole-runtime heap bound is claimed.",
     "Final release gates and the broader audit remain open."
-  ]
+  ],
+  "followupEvidence": "docs/validation/vector-window-ownership-2026-11-13.json"
 }

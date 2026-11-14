@@ -1,15 +1,11 @@
 import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
-import {
-  materializeBatchRows,
-  materializeSelectedBatchRows,
-  predicateSelection,
-  selectedRowCount,
-} from "./batch.js";
+import { predicateSelection, selectedRowCount } from "./batch.js";
 import { BufferMemory } from "./buffer-memory.js";
 import { matches } from "./evaluator.js";
+import { materializeOwnedBatchRows } from "./materialization-plan.js";
 import { MemoryBudget } from "./memory-budget.js";
-import { MemoryScope } from "./memory-scope.js";
-import { detachOwnedRow } from "./owned-row-detachment.js";
+import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
+import { detachOwnedBatch, detachOwnedRow } from "./owned-row-detachment.js";
 import type {
   PathQueryInit,
   QueryBudget,
@@ -98,7 +94,7 @@ export async function* executeWindowBatches(options: WindowRunnerOptions): Async
       return;
     }
 
-    const vectorRows = await collectVectorWindowRows(options, startedAt);
+    const vectorRows = await collectVectorWindowRows(options, startedAt, retainedScope);
     if (vectorRows !== undefined) {
       yield* postWindowQueryBatches({
         ...windowBatchOptions(options, startedAt),
@@ -231,7 +227,13 @@ export async function collectWindowRuns(
     new MemoryScope(options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER));
   try {
     const currentRun = new WindowRowBuffer(options, scope);
-    const execution = (await collectVectorWindowRunMatches(options, runs, currentRun, startedAt))
+    const execution = (await collectVectorWindowRunMatches(
+      options,
+      runs,
+      currentRun,
+      startedAt,
+      scope,
+    ))
       ? "vector-window"
       : await collectRowWindowRunMatches(options, runs, currentRun, startedAt);
     flushWindowRun(runs, currentRun);
@@ -273,6 +275,7 @@ async function collectWindowTaskMatches(
 async function collectVectorWindowRows(
   options: WindowRunnerOptions,
   startedAt: number,
+  retainedScope: MemoryScope,
 ): Promise<Row[] | undefined> {
   const { config, stats } = options;
   const scanVectorBatches = vectorWindowScanner(options);
@@ -281,22 +284,44 @@ async function collectVectorWindowRows(
   const { planned: paths, skipped: skippedFiles } = await options.planObjects();
   stats.filesSkipped = skippedFiles;
   const columns = windowReadColumns(config);
-  const inputs: VectorWindowBatch[] = [];
+  const inputs = retainedScope.allocate(
+    c.array,
+    "window vector inputs",
+    () => [] as VectorWindowBatch[],
+  ).value;
   for (const object of paths) {
     stats.filesPlanned += 1;
     stats.filesRead += 1;
     stats.bytesRequested += object.size;
     options.enforceBudget(config.budget, stats, config.now, startedAt);
-    const scanOptions = vectorScanOptions(options, startedAt);
+    const scanOptions = {
+      ...vectorScanOptions(options, startedAt),
+      memoryBudget: retainedScope.budget,
+    };
     if (columns !== undefined && columns.length > 0) scanOptions.columns = columns;
     if (config.where !== undefined) scanOptions.where = config.where;
-    for await (const { batch } of scanVectorBatches(config.scanner, object.path, scanOptions)) {
-      const selection = predicateSelection(batch, config.where);
-      stats.rowsMatched += selectedRowCount(batch.rowCount, selection);
-      inputs.push({ batch, selection });
-      options.enforceBufferedRows(config.budget, stats.rowsMatched);
-      options.enforceBudget(config.budget, stats, config.now, startedAt);
-      stats.elapsedMs = config.now() - startedAt;
+    for await (const input of scanVectorBatches(config.scanner, object.path, scanOptions)) {
+      const stage = retainedScope.childScope();
+      try {
+        const selection = predicateSelection(input.batch, config.where, stage);
+        const count = selectedRowCount(input.batch.rowCount, selection);
+        if (count === 0) continue;
+        const batch = retainWindowBatch(input, stage);
+        retainedScope.adopt(stage.retainAllocations(undefined));
+        stats.rowsMatched += count;
+        retainedScope.allocate(
+          c.arraySlot + c.object + 2 * c.property,
+          "window vector input",
+          () => {
+            inputs.push({ batch, selection });
+          },
+        );
+        options.enforceBufferedRows(config.budget, stats.rowsMatched);
+        options.enforceBudget(config.budget, stats, config.now, startedAt);
+        stats.elapsedMs = config.now() - startedAt;
+      } finally {
+        stage.dispose();
+      }
     }
   }
   stats.elapsedMs = config.now() - startedAt;
@@ -314,6 +339,7 @@ async function collectVectorWindowRunMatches(
   runs: Row[][],
   currentRun: WindowRowBuffer,
   startedAt: number,
+  retainedScope: MemoryScope,
 ): Promise<boolean> {
   const { config, stats } = options;
   const scanVectorBatches = vectorWindowScanner(options);
@@ -327,21 +353,38 @@ async function collectVectorWindowRunMatches(
     stats.filesRead += 1;
     stats.bytesRequested += object.size;
     options.enforceBudget(config.budget, stats, config.now, startedAt);
-    const scanOptions = vectorScanOptions(options, startedAt);
+    const scanOptions = {
+      ...vectorScanOptions(options, startedAt),
+      memoryBudget: retainedScope.budget,
+    };
     if (columns !== undefined && columns.length > 0) scanOptions.columns = columns;
     if (config.where !== undefined) scanOptions.where = config.where;
-    for await (const { batch } of scanVectorBatches(config.scanner, object.path, scanOptions)) {
-      const selection = predicateSelection(batch, config.where);
-      stats.rowsMatched += selectedRowCount(batch.rowCount, selection);
-      const rows =
-        selection === undefined
-          ? materializeBatchRows(batch)
-          : materializeSelectedBatchRows(batch, selection);
-      for (const row of rows) {
-        pushWindowRunRow(options, runs, currentRun, row);
-        options.enforceBudget(config.budget, stats, config.now, startedAt);
+    for await (const input of scanVectorBatches(config.scanner, object.path, scanOptions)) {
+      const stage = retainedScope.childScope();
+      try {
+        const selection = predicateSelection(input.batch, config.where, stage);
+        const count = selectedRowCount(input.batch.rowCount, selection);
+        stats.rowsMatched += count;
+        if (count === 0) continue;
+        const batch = retainWindowBatch(input, stage);
+        const source = stage.retainAllocations(batch);
+        try {
+          const rows = materializeOwnedBatchRows(source, selection);
+          try {
+            for (const row of rows.value) {
+              pushWindowRunRow(options, runs, currentRun, row);
+              options.enforceBudget(config.budget, stats, config.now, startedAt);
+            }
+          } finally {
+            rows.release();
+          }
+        } finally {
+          source.release();
+        }
+        stats.elapsedMs = config.now() - startedAt;
+      } finally {
+        stage.dispose();
       }
-      stats.elapsedMs = config.now() - startedAt;
     }
   }
   stats.elapsedMs = config.now() - startedAt;
@@ -390,12 +433,20 @@ async function collectRowWindowRunMatches(
   }
 }
 
-function vectorWindowScanner(options: WindowRunnerOptions): VectorBatchScanner | undefined {
+type WindowVectorScanner = (
+  scanner: ScanAdapter,
+  path: string,
+  options: ScanOptions,
+) => AsyncIterable<ScanVectorBatch & { owner?: OwnedMemory<ScanVectorBatch> }>;
+
+function vectorWindowScanner(options: WindowRunnerOptions): WindowVectorScanner | undefined {
   const { config } = options;
-  if (config.hive === true || !options.batchExecution.vectorExprSupported(config.where)) {
+  if (config.hive === true || !options.batchExecution.vectorExprSupported(config.where))
     return undefined;
-  }
-  return options.vectorBatchScanner(config.scanner);
+  const borrowed = options.vectorBatchScanner(config.scanner);
+  if (borrowed === undefined && config.scanner.scanOwnedVectorBatches === undefined)
+    return undefined;
+  return (_scanner, path, scanOptions) => windowScanInputs(options, borrowed, path, scanOptions);
 }
 
 function windowBatchOptions(
@@ -523,4 +574,51 @@ function retainWindowRow(row: Row, scope: MemoryScope): Row {
     owner.release();
     throw error;
   }
+}
+
+async function* windowScanInputs(
+  options: WindowRunnerOptions,
+  borrowed: VectorBatchScanner | undefined,
+  path: string,
+  scanOptions: ScanOptions,
+): AsyncIterable<ScanVectorBatch & { owner?: OwnedMemory<ScanVectorBatch> }> {
+  const owned = options.config.scanner.scanOwnedVectorBatches;
+  if (owned === undefined) {
+    if (borrowed !== undefined) yield* borrowed(options.config.scanner, path, scanOptions);
+    return;
+  }
+  for await (const owner of owned.call(options.config.scanner, path, {
+    ...scanOptions,
+    memoryBudget:
+      scanOptions.memoryBudget ?? options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER),
+  })) {
+    try {
+      yield { ...owner.value, owner };
+    } finally {
+      owner.release();
+    }
+  }
+}
+
+function adoptWindowInput<T>(scope: MemoryScope, owner: OwnedMemory<T>): void {
+  try {
+    scope.adopt(owner);
+  } catch (error) {
+    owner.release();
+    throw error;
+  }
+}
+
+function retainWindowBatch(
+  input: ScanVectorBatch & { owner?: OwnedMemory<ScanVectorBatch> },
+  scope: MemoryScope,
+): import("./batch.js").Batch {
+  if (input.owner !== undefined) {
+    adoptWindowInput(scope, input.owner.retainIn(scope.budget));
+    return input.batch;
+  }
+  const owner = detachOwnedBatch(input.batch, scope.budget);
+  const batch = owner.value;
+  adoptWindowInput(scope, owner);
+  return batch;
 }

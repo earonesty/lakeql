@@ -1,4 +1,5 @@
 import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
+import type { Batch } from "./batch.js";
 import { decimalValueAllocationBytes, isDecimalValue } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
 import type { MemoryBudget } from "./memory-budget.js";
@@ -17,10 +18,32 @@ export function detachOwnedRow(
   budget: MemoryBudget,
   immutableSource?: MemoryScope,
 ): OwnedMemory<Row> {
+  return detachOwnedData(row, budget, immutableSource, false);
+}
+
+/** Detach physical vector storage without lowering it to rows. Shared objects
+ * are copied once; borrowed mutable buffers never escape through dictionary views.
+ */
+export function detachOwnedBatch(batch: Batch, budget: MemoryBudget): OwnedMemory<Batch> {
+  return detachOwnedData(batch, budget, undefined, true);
+}
+
+function detachOwnedData<T>(
+  value: T,
+  budget: MemoryBudget,
+  immutableSource: MemoryScope | undefined,
+  vectors: boolean,
+): OwnedMemory<T> {
   const scope = new MemoryScope(budget);
   try {
     const ancestors = scope.allocate(c.array, "row traversal stack", () => [] as object[]).value;
-    const copy = (value: unknown): unknown => {
+    const traversal = vectors ? scope.childScope() : undefined;
+    const memo = traversal?.allocate(
+      c.object,
+      "vector copy directory",
+      () => new Map<object, unknown>(),
+    ).value;
+    const copyValue = (value: unknown): unknown => {
       if (
         value === null ||
         value === undefined ||
@@ -65,6 +88,17 @@ export function detachOwnedRow(
           "detached row bytes",
           () => new Uint8Array(value),
         ).value;
+      if (vectors && ArrayBuffer.isView(value)) {
+        const arrayType = typedConstructors.find(
+          (type) => Object.getPrototypeOf(value) === type.prototype,
+        );
+        if (arrayType === undefined) throw unsupported();
+        return scope.allocate(
+          c.view + value.byteLength,
+          "detached vector storage",
+          () => new arrayType(value as never),
+        ).value;
+      }
       if (typeof value !== "object") throw unsupported();
       const prototype = Object.getPrototypeOf(value);
       if (
@@ -113,7 +147,24 @@ export function detachOwnedRow(
         frame.release();
       }
     };
-    const output = copy(row) as Row;
+    const copy = (value: unknown): unknown => {
+      if (
+        memo !== undefined &&
+        traversal !== undefined &&
+        value !== null &&
+        typeof value === "object"
+      ) {
+        if (memo.has(value)) return memo.get(value);
+        const output = copyValue(value);
+        traversal.allocate(c.property, "vector copy reference", () => {
+          memo.set(value, output);
+        });
+        return output;
+      }
+      return copyValue(value);
+    };
+    const output = copy(value) as T;
+    traversal?.dispose();
     scope.releaseAllocation(ancestors);
     return scope.retainAllocations(output);
   } finally {
@@ -127,3 +178,16 @@ function unsupported(): LakeqlError {
     "Scanner row detachment requires plain data properties and supported scalar values",
   );
 }
+
+const typedConstructors = [
+  Int8Array,
+  Uint8ClampedArray,
+  Int16Array,
+  Uint16Array,
+  Int32Array,
+  Uint32Array,
+  Float32Array,
+  Float64Array,
+  BigInt64Array,
+  BigUint64Array,
+] as const;
