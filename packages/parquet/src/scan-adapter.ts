@@ -41,6 +41,7 @@ import { iteratePlannedRowGroups, summarizePlannedRowGroups } from "./row-group-
 import { rowGroupMayMatch } from "./row-group-pruning.js";
 import { rejectUnsupportedParquetSchema } from "./schema.js";
 import { parquetColumnShape } from "./schema-shape.js";
+import { stableSchemaSignature } from "./schema-signature.js";
 import { asyncBufferFromObjectInfo, asyncBufferFromStore } from "./store-buffer.js";
 import type { ParquetMetadata, StoreAsyncBuffer } from "./types.js";
 import { parquetValueDecoders } from "./value-decoders.js";
@@ -699,17 +700,6 @@ function parquetColumnDescriptors(
     });
   }
   return columns;
-}
-
-function stableSchemaSignature(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableSchemaSignature).join(",")}]`;
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record)
-    .sort()
-    .filter((key) => record[key] !== undefined)
-    .map((key) => `${JSON.stringify(key)}:${stableSchemaSignature(record[key])}`)
-    .join(",")}}`;
 }
 
 function parquetColumnCompatible(

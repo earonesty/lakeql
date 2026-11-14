@@ -3706,3 +3706,25 @@ planner; descriptor/signature storage and multi-file plan ownership remain open.
 
 Final build/typecheck passed; focused suites passed 28 tests; full suite passed
 3,600 with 629 skips. Evidence: `docs/validation/parquet-schema-shape-2026-11-14.json`.
+
+### 2026-11-14 — iterative admitted schema-signature serialization
+
+Replaced recursive schema-signature serialization with an explicit traversal
+stack and chunk builder. It avoids constructing a complete serialized subtree at
+each recursive level. Scoped use admits frame/key directories, key sorting,
+escaped scalar strings, chunk slots, and final joined-output overlap. Only the
+final signature is retained in the parent; failures dispose temporary traversal
+and output ownership. Ancestor tracking rejects cycles while permitting repeated
+references to an acyclic shared value.
+
+Tests compare canonical signatures against the prior implementation for nested
+schema fields, escaped keys, Unicode/surrogates, undefined fields/array entries,
+prototype-named keys, and numeric edge cases. A 20,000-level nested JSON-shaped
+schema input serializes without recursive stack overflow. Exact-capacity and
+one-byte-below tests verify rollback, including cyclic and unsupported-bigint
+failures. These checks cover serialization, not arbitrary Parquet tree creation.
+The adapter now uses the iterative serializer, but scoped descriptor construction
+and owned multi-file planning integration remain required follow-up.
+
+Build/typecheck passed; focused suites passed 28 tests; full suite passed 3,603
+with 629 skips. Evidence: `docs/validation/parquet-schema-signature-2026-11-14.json`.
