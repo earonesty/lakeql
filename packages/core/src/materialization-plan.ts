@@ -253,16 +253,31 @@ function planMaterialization(
         if (recursive) active.delete(vector);
       }
     }
-    for (
-      let index = rowIndex ?? 0;
-      index < (rowIndex === undefined ? batch.rowCount : rowIndex + 1);
-      index++
-    ) {
-      if (selection !== undefined && selection[index] !== 1) continue;
-      rows++;
-      add(cost.arraySlot + cost.object + fieldCount * cost.property);
-      for (const name in batch.columns)
-        if (Object.hasOwn(batch.columns, name)) visit(batch.columns[name] as Vector, index);
+    const start = rowIndex ?? 0;
+    const end = rowIndex === undefined ? batch.rowCount : rowIndex + 1;
+    const rowBytes = cost.arraySlot + cost.object + fieldCount * cost.property;
+    if (selection === undefined) {
+      rows = end - start;
+      add(rows * rowBytes);
+      // Immutable unmasked columns can share one enumeration cursor across rows.
+      if (rows > 0) {
+        for (const name in batch.columns) {
+          if (!Object.hasOwn(batch.columns, name)) continue;
+          const vector = batch.columns[name] as Vector;
+          for (let index = start; index < end; index++) visit(vector, index);
+        }
+      }
+    } else {
+      // Scan a selection once: column-first traversal would rescan sparse masks
+      // for every column, changing O(rows + selected * columns) to O(rows * columns).
+      for (let index = start; index < end; index++) {
+        if (selection[index] !== 1) continue;
+        rows++;
+        add(rowBytes);
+        for (const name in batch.columns) {
+          if (Object.hasOwn(batch.columns, name)) visit(batch.columns[name] as Vector, index);
+        }
+      }
     }
     return {
       rows,

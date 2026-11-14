@@ -155,3 +155,48 @@ it.each([
     scope.dispose();
   }
 });
+
+it.each([1, 32768])("enumerates the immutable column directory twice for %i rows", (rows) => {
+  let enumerations = 0;
+  const columns = new Proxy(
+    { value: { type: "i32", values: new Int32Array(rows) } satisfies Vector },
+    {
+      ownKeys(target) {
+        enumerations++;
+        return Reflect.ownKeys(target);
+      },
+    },
+  );
+  const scope = new MemoryScope(new MemoryBudget(4096));
+  try {
+    const plan = planBatchMaterialization({ rowCount: rows, columns }, undefined, scope);
+    expect(plan.rows).toBe(rows);
+    expect(enumerations).toBe(2);
+    expect(scope.budget.usedBytes).toBe(0);
+  } finally {
+    scope.dispose();
+  }
+});
+
+it("scans a sparse selection only once across wide columns", () => {
+  const rows = 4096;
+  const mask = new Uint8Array(rows);
+  mask[rows - 1] = 1;
+  let reads = 0;
+  const selection = new Proxy(mask, {
+    get(target, key) {
+      if (typeof key === "string" && /^[0-9]+$/.test(key)) reads++;
+      return Reflect.get(target, key, target);
+    },
+  });
+  const columns: Record<string, Vector> = {};
+  for (let i = 0; i < 16; i++) columns[String(i)] = { type: "i32", values: new Int32Array(rows) };
+  const scope = new MemoryScope(new MemoryBudget(4096));
+  try {
+    expect(planBatchMaterialization({ rowCount: rows, columns }, selection, scope).rows).toBe(1);
+    expect(reads).toBe(rows);
+    expect(scope.budget.usedBytes).toBe(0);
+  } finally {
+    scope.dispose();
+  }
+});

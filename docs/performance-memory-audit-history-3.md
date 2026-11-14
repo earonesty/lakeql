@@ -5315,3 +5315,43 @@ Final release gates pass 3,958 regular/coverage tests (645 skipped), all 93 Work
 tests, 520 required conformance cases (one inactive guard skipped), 120 references,
 full build/types, clean 66-package consumer and repository checks. Fixture data
 is unchanged after regeneration; thresholds and timeouts remain unchanged.
+
+### Column-first materialization planning (2026-11-14)
+
+Collected Worker allocation samples attributed roughly 0.9–1.3 MB per single-job
+round directly to materialization planning after leaf cycle-set elision. Immutable
+unmasked batches now walk columns before rows, avoiding repeated directory
+enumeration. An exact negative control falls from 32,769 enumerations to two at
+32,768 rows. Output order, recursive validation, depth admission and forecasts are
+unchanged; row construction still occurs in execution.
+
+The initial candidate rescanned selection masks per column. A 4,096-row,
+16-column sparse test exposed 69,632 mask reads instead of 4,096. The final generic
+strategy retains row-first traversal when a selection exists: one mask scan and
+O(rows + selected × columns) work, with no selected-index allocation or flag.
+Four zero-column cases cover empty/all/selected/excluded output, exact limits,
+cap-minus-one rejection and cleanup. All 28 focused cases pass.
+
+All twelve local planning cases improve in the final run with identical output
+forecasts and admitted peaks. At 32,768 rows numeric planning measures 0.752 →
+0.272 ms, packed text 0.898 → 0.452 ms and sparse-wide 0.065 → 0.052 ms. The real
+40,000-row many-page query measures 2.256 → 2.367 seconds, then 2.326 → 2.308
+seconds in an isolated repeat. These are mixed end-to-end results, not a query or
+cloud throughput improvement. Final collected-allocation profiles no longer show
+the direct planner site among top sites except one 65,588-byte estimate; absence
+from top sites does not prove zero allocation. Profiled timing is not compared
+with ordinary timing.
+
+Unprofiled native emulated R2 and real localhost HTTP pressure complete 64/80
+primary jobs, with sixteen typed budget failures, eight pinned retry failures and
+eight successful post-release retries using the same pools/caches. All final
+admission counters are zero. Including release/eviction snapshots, native R2
+samples 159,536,644 managed-heap bytes at a 64 MiB pool. GC-dependent samples do
+not prove before/after heap reduction or production runtime caps; managed-heap
+flags do not bound external storage. Whole-runtime acceptance remains open.
+
+Full release gates pass 3,965 regular/coverage tests (645 skipped), 93 Worker tests,
+520 required conformance cases (one inactive guard skipped), 120 references,
+full build/types, clean 66-package consumer, lint, compatibility, large-file,
+changeset and deterministic-fixture checks. Thresholds/timeouts are unchanged.
+Evidence: `validation/materialization-column-traversal-2026-11-14.json`.

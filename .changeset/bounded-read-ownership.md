@@ -407,3 +407,7 @@ Detach shared-cache payloads and pins from released leases. Released value acces
 Detach indexed-footer acquisition state on source disposal or parent cancellation, preserving independently acquired row-group backing across all closure paths.
 
 Avoid per-cell cycle-set mutation for leaf vector shapes during materialization planning. Preserve recursive-shape cycle checks, exact depth admission and output forecasts.
+
+Avoid repeated column-directory enumeration during unmasked materialization
+planning while preserving a single mask scan for selected batches. Traversal
+uses existing workspace, with unchanged output forecasts and admission bounds.

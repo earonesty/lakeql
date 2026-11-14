@@ -220,3 +220,32 @@ it("admits planner traversal frames and releases them on success and failure", (
   tight.dispose();
   scope.dispose();
 });
+
+it.each([
+  { name: "empty", rowCount: 0, selection: undefined, expectedRows: 0 },
+  { name: "all", rowCount: 3, selection: undefined, expectedRows: 3 },
+  { name: "selected", rowCount: 3, selection: Uint8Array.of(0, 2, 1), expectedRows: 1 },
+  { name: "excluded", rowCount: 3, selection: new Uint8Array(3), expectedRows: 0 },
+])("preserves $name rows in a zero-column materialization", ({
+  rowCount,
+  selection,
+  expectedRows,
+}) => {
+  const plan = planBatchMaterialization({ rowCount, columns: {} }, selection);
+  expect(plan.rows).toBe(expectedRows);
+  const scope = new MemoryScope(new MemoryBudget(plan.allocationBytes));
+  try {
+    expect(plan.execute(scope).value).toEqual(Array.from({ length: expectedRows }, () => ({})));
+    expect(scope.budget.usedBytes).toBe(plan.retainedBytes);
+  } finally {
+    scope.dispose();
+  }
+  expect(scope.budget.usedBytes).toBe(0);
+  const tight = new MemoryScope(new MemoryBudget(plan.allocationBytes - 1));
+  try {
+    expect(() => plan.execute(tight)).toThrow(/budget/);
+  } finally {
+    tight.dispose();
+  }
+  expect(tight.budget.usedBytes).toBe(0);
+});

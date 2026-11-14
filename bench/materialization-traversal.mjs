@@ -30,7 +30,7 @@ try {
   await writeFile(file, compiled);
   const prior = (await import(pathToFileURL(file).href)).planBatchMaterialization;
   const cases = [];
-  for (const shape of ["numeric", "nested", "packed-text"]) {
+  for (const shape of ["numeric", "nested", "packed-text", "sparse-wide"]) {
     for (const rows of [256, 4096, 32768]) {
       let vector =
         shape === "packed-text"
@@ -44,7 +44,13 @@ try {
       if (shape === "nested")
         for (let depth = 1; depth < 4; depth++)
           vector = { type: "struct", fields: { value: vector }, length: rows };
-      const batch = { rowCount: rows, columns: { value: vector } };
+      const columns = { value: vector };
+      const selection = shape === "sparse-wide" ? new Uint8Array(rows) : undefined;
+      if (selection) {
+        selection[rows - 1] = 1;
+        for (let column = 1; column < 16; column++) columns[`value${column}`] = vector;
+      }
+      const batch = { rowCount: rows, columns };
       const sample = { prior: [], current: [] };
       const measurements = {};
       for (let round = 0; round < 12; round++) {
@@ -54,11 +60,11 @@ try {
           const start = performance.now();
           const plan = (name === "prior" ? prior : planBatchMaterialization)(
             batch,
-            undefined,
+            selection,
             scope,
           );
           const elapsedMs = performance.now() - start;
-          assert.equal(plan.rows, rows);
+          assert.equal(plan.rows, selection ? 1 : rows);
           assert.equal(budget.usedBytes, 0);
           scope.dispose();
           measurements[name] = {
@@ -84,7 +90,7 @@ try {
           return reserve.apply(this, args);
         };
         try {
-          plan(batch, undefined, scope);
+          plan(batch, selection, scope);
           calls[name] = count;
         } finally {
           budget.reserve = reserve;

@@ -1,0 +1,82 @@
+{
+  "baseline": "70ce9a1",
+  "moduleName": "materialization-plan",
+  "baselineSourceSha256": "94eafd0f1c8f2f04e17829745cbda4876a4bab14c6b3a4dff9f87c66b51bdb6c",
+  "currentSourceSha256": "751466c47cced62dfffae0fe0efd20cef091729f9945a7ae1d690a2de226d923",
+  "node": "v24.18.1",
+  "warmupPairs": 1,
+  "measuredPairs": 4,
+  "scope": "Alternating fresh Node processes; only the named module is replaced by the prior implementation, with current dependencies. Local 40,000-row many-page fixture query, not cloud throughput. Source store/runtime overhead excluded from pool metrics. Value parity is covered by external conformance; benchmark checks count and release.",
+  "priorMedianMs": 2255.9091355,
+  "currentMedianMs": 2367.401987,
+  "runs": {
+    "prior": [
+      {
+        "scope": "Local memory-store query; fixture storage and runtime heap excluded; no cloud claim",
+        "node": "v24.18.1",
+        "rows": 40000,
+        "elapsedMs": 2215.875193,
+        "peakBytes": 801657,
+        "afterReleaseBytes": 0
+      },
+      {
+        "scope": "Local memory-store query; fixture storage and runtime heap excluded; no cloud claim",
+        "node": "v24.18.1",
+        "rows": 40000,
+        "elapsedMs": 2250.319164,
+        "peakBytes": 801657,
+        "afterReleaseBytes": 0
+      },
+      {
+        "scope": "Local memory-store query; fixture storage and runtime heap excluded; no cloud claim",
+        "node": "v24.18.1",
+        "rows": 40000,
+        "elapsedMs": 2269.553803,
+        "peakBytes": 801657,
+        "afterReleaseBytes": 0
+      },
+      {
+        "scope": "Local memory-store query; fixture storage and runtime heap excluded; no cloud claim",
+        "node": "v24.18.1",
+        "rows": 40000,
+        "elapsedMs": 2261.4991069999996,
+        "peakBytes": 801657,
+        "afterReleaseBytes": 0
+      }
+    ],
+    "current": [
+      {
+        "scope": "Local memory-store query; fixture storage and runtime heap excluded; no cloud claim",
+        "node": "v24.18.1",
+        "rows": 40000,
+        "elapsedMs": 2338.68345,
+        "peakBytes": 801657,
+        "afterReleaseBytes": 0
+      },
+      {
+        "scope": "Local memory-store query; fixture storage and runtime heap excluded; no cloud claim",
+        "node": "v24.18.1",
+        "rows": 40000,
+        "elapsedMs": 2353.571211,
+        "peakBytes": 801657,
+        "afterReleaseBytes": 0
+      },
+      {
+        "scope": "Local memory-store query; fixture storage and runtime heap excluded; no cloud claim",
+        "node": "v24.18.1",
+        "rows": 40000,
+        "elapsedMs": 2381.232763,
+        "peakBytes": 801657,
+        "afterReleaseBytes": 0
+      },
+      {
+        "scope": "Local memory-store query; fixture storage and runtime heap excluded; no cloud claim",
+        "node": "v24.18.1",
+        "rows": 40000,
+        "elapsedMs": 2385.635334,
+        "peakBytes": 801657,
+        "afterReleaseBytes": 0
+      }
+    ]
+  }
+}
