@@ -4154,3 +4154,9 @@ retain their existing configuration; no unrelated pool is silently replaced.
 Build/typecheck passed; initial focused suites passed 14 tests, concurrency/queue
 checks 5, enabled/disabled real HTTP checks 2; full suite passed 3,668 with 629
 skips. Evidence: `docs/validation/default-http-pool-propagation-2026-11-14.json`.
+
+### HTTP unused response cleanup (2026-11-14)
+
+All HTTP failure checks now cancel unread response bodies before returning the typed error. Missing-object reads and metadata probes cancel before returning null; successful PUT/DELETE responses are also discarded. The existing 416 fallback uses the same cleanup helper. Cancellation failures do not replace the operation's HTTP result. This closes a transport resource-lifetime gap without draining potentially unbounded error bodies into memory.
+
+Validation: `pnpm exec tsc -b` passed; `pnpm exec vitest run packages/http` passed 50 tests in 6 files, including existing localhost JSON-cache fixtures. Nine new parameterized tests exercise all public operation families, 404/503, cancellation rejection, zero remaining owned reservations, and successful write-response cleanup. These use native Response/ReadableStream cancellation hooks; they do not measure production cloud socket or isolate memory reclamation. Bounded cache-write serialization and broader runtime allocation gaps remain open.

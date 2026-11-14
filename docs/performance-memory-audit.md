@@ -1,6 +1,8 @@
 # Performance and memory budget audit
 
 Current implementation: `docs/validation/default-http-pool-propagation-2026-11-14.json`.
+
+HTTP response cleanup follow-up: [validation](validation/http-response-cleanup-2026-11-14.json); build and all 50 HTTP adapter tests passed. Full acceptance remains open.
 Current release checks (source `246b165`):
 `docs/validation/current-cache-ownership-release-gates-2026-11-14.json`.
 

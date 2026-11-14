@@ -84,8 +84,11 @@ export class HttpObjectStore implements ObjectStore {
 
   async get(path: string): Promise<Uint8Array | null> {
     const response = await this.fetchPath(path, { method: "GET" });
-    if (response.status === 404) return null;
-    assertOk(response, path);
+    if (response.status === 404) {
+      await discardResponse(response);
+      return null;
+    }
+    await assertOk(response, path);
     const bytes = await boundedResponseBody(response, this.maxResponseBytes);
     this.fullObjectCache.set(path, bytes, bytes.buffer.byteLength);
     return bytes;
@@ -112,11 +115,11 @@ export class HttpObjectStore implements ObjectStore {
       headers: { Range: `bytes=${range.offset}-${range.offset + range.length - 1}` },
     });
     if (response.status === 416) {
-      await response.body?.cancel().catch(() => undefined);
+      await discardResponse(response);
       const full = await this.fetchFullObject(path);
       return full.subarray(range.offset, range.offset + range.length);
     }
-    assertOk(response, path);
+    await assertOk(response, path);
     const bytes = await boundedResponseBody(response, this.maxResponseBytes);
     // `Range` is advisory: some servers (e.g. GitHub Pages on certain assets)
     // ignore it and return 200 with the full body. When that happens, slice the
@@ -181,10 +184,10 @@ export class HttpObjectStore implements ObjectStore {
         scope,
       );
       if (response.status === 416) {
-        await response.body?.cancel().catch(() => undefined);
+        await discardResponse(response);
         response = await this.fetchOwnedPath(path, { method: "GET" }, scope);
       }
-      assertOk(response, path);
+      await assertOk(response, path);
       return await readOwnedStreamWindow(response.body, scope, {
         offset: response.status === 206 ? 0 : range.offset,
         length: range.length,
@@ -207,14 +210,16 @@ export class HttpObjectStore implements ObjectStore {
     const headers = new Headers(this.headers);
     if (options?.contentType) headers.set("content-type", options.contentType);
     const response = await this.fetchPath(path, { method: "PUT", headers, body: bodyInit(body) });
-    assertOk(response, path);
+    await assertOk(response, path);
     this.fullObjectCache.delete(path);
+    await discardResponse(response);
   }
 
   async delete(path: string): Promise<void> {
     const response = await this.fetchPath(path, { method: "DELETE" });
-    assertOk(response, path);
+    await assertOk(response, path);
     this.fullObjectCache.delete(path);
+    await discardResponse(response);
   }
 
   async *list(prefix: string, options?: ListOptions): AsyncIterable<ObjectInfo> {
@@ -245,8 +250,11 @@ export class HttpObjectStore implements ObjectStore {
       method: "GET",
       headers: { Range: "bytes=0-1" },
     });
-    if (response.status === 404) return null;
-    assertOk(response, path);
+    if (response.status === 404) {
+      await discardResponse(response);
+      return null;
+    }
+    await assertOk(response, path);
     const probe = await boundedResponseBody(response, this.maxResponseBytes);
     const total = parseContentRangeTotal(response.headers.get("content-range"));
     const contentLength = response.headers.get("content-length");
@@ -285,10 +293,10 @@ export class HttpObjectStore implements ObjectStore {
         scratch,
       );
       if (response.status === 404) {
-        await response.body?.cancel().catch(() => undefined);
+        await discardResponse(response);
         return null;
       }
-      assertOk(response, path);
+      await assertOk(response, path);
       let probe = await readOwnedStream(response.body, scratch, {
         maxBytes: this.maxResponseBytes,
         purpose: "HTTP metadata probe",
@@ -299,7 +307,7 @@ export class HttpObjectStore implements ObjectStore {
       if (compressed) {
         probe.release();
         response = await this.fetchOwnedPath(path, { method: "GET" }, scratch);
-        assertOk(response, path);
+        await assertOk(response, path);
         probe = await readOwnedStream(response.body, scratch, {
           maxBytes: this.maxResponseBytes,
           purpose: "HTTP full metadata probe",
@@ -397,7 +405,7 @@ export class HttpObjectStore implements ObjectStore {
     const cached = this.fullObjectCache.get<Uint8Array>(path)?.value;
     if (cached !== undefined) return cached;
     const response = await this.fetchPath(path, { method: "GET" });
-    assertOk(response, path);
+    await assertOk(response, path);
     const bytes = await boundedResponseBody(response, this.maxResponseBytes);
     this.fullObjectCache.set(path, bytes, bytes.buffer.byteLength);
     return bytes;
@@ -472,8 +480,16 @@ function parseContentRangeTotal(header: string | null): number | undefined {
   return Number.isFinite(total) ? total : undefined;
 }
 
-function assertOk(response: Response, path: string): void {
+async function discardResponse(response: Response): Promise<void> {
+  // Cleanup must not replace the HTTP result if a transport rejects cancellation.
+  try {
+    await response.body?.cancel();
+  } catch {}
+}
+
+async function assertOk(response: Response, path: string): Promise<void> {
   if (response.ok || response.status === 206) return;
+  await discardResponse(response);
   if (response.status === 404) {
     throw new LakeqlError("LAKEQL_OBJECT_NOT_FOUND", `No object at ${path}`, { path });
   }

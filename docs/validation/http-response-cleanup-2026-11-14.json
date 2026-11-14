@@ -1,0 +1,16 @@
+{
+  "baseCommit": "f98a5ae",
+  "change": "Cancel unread HTTP error, missing-object, and successful write response bodies",
+  "validation": {
+    "build": "pnpm exec tsc -b passed",
+    "httpTests": {
+      "command": "pnpm exec vitest run packages/http",
+      "passed": 50,
+      "files": 6
+    }
+  },
+  "limitations": [
+    "Cancellation hooks establish adapter cleanup, not production socket or Worker heap reclamation.",
+    "Remote cache write serialization remains unbounded."
+  ]
+}
