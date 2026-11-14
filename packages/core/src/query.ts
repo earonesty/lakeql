@@ -14,6 +14,7 @@ import { vectorCallExprSupported } from "./batch-call.js";
 import { BufferMemory } from "./buffer-memory.js";
 import { readCheckpointSpill } from "./checkpoint-spill-read.js";
 import { withCheckpointSpillBatch } from "./checkpoint-spill-write-batch.js";
+import { admittedColumnNames } from "./column-names.js";
 import { csvOutputStream } from "./csv-output-stream.js";
 import { gatherDeferredColumns } from "./deferred-gather.js";
 import { LakeqlError } from "./errors.js";
@@ -3035,11 +3036,6 @@ export class QueryResult {
     ) {
       return undefined;
     }
-    const rankColumns = rankReadColumns(config.where, orderBy);
-    if (rankColumns.length === 0) return undefined;
-    const outputColumns = [...new Set([...config.select, ...orderBy.map((term) => term.column)])];
-    if (outputColumns.every((column) => rankColumns.includes(column))) return undefined;
-
     const refMemory =
       config.budget.maxMemoryBytes === undefined
         ? undefined
@@ -3048,13 +3044,29 @@ export class QueryResult {
       this.memoryBudget,
       config.budget.signal ? [config.budget.signal] : [],
     );
-    const ownedRetained = new OwnedBoundedTopK<RankedRowRef>(
-      scope,
-      topK,
-      (left, right) => compareRankedRefs(left, right, orderBy),
-      refMemory,
-    );
+    let ownedRetained: OwnedBoundedTopK<RankedRowRef> | undefined;
     try {
+      const planning = scope.childScope();
+      const rankColumns = admittedColumnNames(
+        planning,
+        (columns) => {
+          for (const term of orderBy) columns.add(term.column);
+          collectExprColumns(config.where, columns);
+        },
+        true,
+      );
+      if (rankColumns.length === 0) return undefined;
+      const outputColumns = admittedColumnNames(planning, (columns) => {
+        for (const column of config.select ?? []) columns.add(column);
+        for (const term of orderBy) columns.add(term.column);
+      });
+      if (outputColumns.every((column) => rankColumns.includes(column))) return undefined;
+      ownedRetained = new OwnedBoundedTopK<RankedRowRef>(
+        scope,
+        topK,
+        (left, right) => compareRankedRefs(left, right, orderBy),
+        refMemory,
+      );
       const scanVectorBatches = vectorBatchScanner(config.scanner);
       if (scanVectorBatches === undefined) return undefined;
       const { planned: paths, skipped: skippedFiles } = plannedObjects;
@@ -5860,13 +5872,6 @@ function aggregateMaterializationWindows(
     });
   }
   return out;
-}
-
-function rankReadColumns(where: Expr | undefined, orderBy: readonly OrderByTerm[]): string[] {
-  const columns = new Set<string>();
-  for (const term of orderBy) columns.add(term.column);
-  collectExprColumns(where, columns);
-  return [...columns].sort();
 }
 
 /** Borrowed vectors may be reused at the next yield; detach only selected rows. */
