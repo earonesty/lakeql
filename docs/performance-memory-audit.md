@@ -1,6 +1,6 @@
 # Performance and memory budget audit
 
-Latest execution evidence: `docs/validation/release-refresh-2026-11-14.json`. Full release acceptance remains open.
+Latest targeted evidence: `docs/validation/window-task-sparse-buckets-2026-11-14.json`. Last full release gates: `docs/validation/release-refresh-2026-11-14.json`. Full release acceptance remains open.
 
 LakeQL has further opportunities to remove repeated whole-state work from per-row
 execution. The highest-value work is shared incremental memory accounting, followed

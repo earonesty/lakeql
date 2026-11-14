@@ -1,0 +1,26 @@
+{
+  "change": "Delegated window partition directories allocate only occupied buckets, preserving ascending bucket order and shallow row-copy semantics. Shared validation rejects unsafe and invalid counts even for empty input. Fan-in now admits merge directories, row slots, sort workspace, evaluation directories and output ordinal records; it detaches borrowed partial payloads once under admission and retains those charges with explicit result ownership, avoiding redundant shallow row copies and argument-spread limits. Merge scratch lives in a child scope and is released before ownership returns to the caller.",
+  "validation": {
+    "typescriptBuild": "passed",
+    "coreAndParquetTaskTests": {
+      "passed": 17
+    },
+    "edgeCases": [
+      "MAX_SAFE_INTEGER logical buckets with twelve rows and two occupied buckets",
+      "zero, negative, fractional, NaN, infinite and unsafe counts with empty inputs",
+      "existing cross-task window results and Parquet task fixtures",
+      "Merge measured peak succeeds, peak minus one rejects and cleans up; explicit result scope retains output allocations until disposal.",
+      "Mutable binary partial payload is detached; source mutation does not affect results, payload charge remains until scope disposal, and oversized input rejects with zero residual reservations.",
+      "800-row real Parquet task fixture rejects 1 MiB with newly charged payload storage and succeeds at 4 MiB; all limits clean up reservations."
+    ],
+    "broaderWindowSuite": {
+      "files": 29,
+      "passed": 248
+    }
+  },
+  "limits": [
+    "Task partition storage and scan-to-partial payload lifetime are not yet admitted to MemoryBudget; evaluator detachment admits its own copies only.",
+    "Delegated task row payload ownership, partition key scratch admission and asynchronous partial-boundary ownership remain open.",
+    "No new cloud transport or whole-Worker memory guarantee is claimed."
+  ]
+}

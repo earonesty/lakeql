@@ -416,13 +416,13 @@ it("shares the caller allocation budget with window indexes after task fan-in", 
       },
     },
   } satisfies Record<string, import("lakeql-core").WindowExpr>;
-  for (const cap of [1024 * 1024, 3204, 3203]) {
+  for (const cap of [4 * 1024 * 1024, 1024 * 1024, 3204, 3203]) {
     const pool = new MemoryBudget(cap);
     const result = windowParquetTasks(store, tasks, windows, {
       memoryBudget: pool,
       maxConcurrentTasks: 2,
     });
-    if (cap < 1024 * 1024)
+    if (cap < 4 * 1024 * 1024)
       await expect(result).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
     else {
       const output = await result;
