@@ -21,7 +21,9 @@ import { recordRowsMatched } from "./read-metrics.js";
 import { rejectUnsupportedParquetSchema } from "./schema.js";
 import { asyncBufferFromStore } from "./store-buffer.js";
 import {
+  aggregateScanOptions,
   appendRowGroupRange,
+  enforceAggregateTaskBudget,
   iterateTaskRowWindows,
   type PlanParquetTaskWorkUnitsOptions,
   type ScanParquetTaskOptions,
@@ -174,6 +176,9 @@ export async function planParquetTaskWorkUnitsOwned(
   options: PlanParquetTaskWorkUnitsOptions,
 ): Promise<OwnedMemory<TaskInput[]>> {
   validateTaskWorkUnitOptions(options);
+  const scan = aggregateScanOptions(options);
+  const check = () => enforceAggregateTaskBudget(scan);
+  check();
   const scope = new MemoryScope(options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER));
   try {
     if (
@@ -184,7 +189,7 @@ export async function planParquetTaskWorkUnitsOwned(
       )
     ) {
       return scope.retainAllocations(
-        splitTaskWorkUnits(task, task.rowGroupCount, undefined, options, scope),
+        splitTaskWorkUnits(task, task.rowGroupCount, undefined, options, scope, check),
       );
     }
     const file = await taskSource(store, task.path, { ...options, memoryBudget: scope.budget });
@@ -196,6 +201,7 @@ export async function planParquetTaskWorkUnitsOwned(
       (index) => Number(metadata.row_groups[index]?.num_rows ?? 0),
       options,
       scope,
+      check,
     );
     metadataScope.dispose();
     return scope.retainAllocations(units);
@@ -210,6 +216,7 @@ function splitTaskWorkUnits(
   rowsAt: ((index: number) => number) | undefined,
   options: PlanParquetTaskWorkUnitsOptions,
   scope: MemoryScope,
+  check: () => void,
 ): TaskInput[] {
   const workUnits = scope.allocate(c.array, "planned work units", () => [] as TaskInput[]).value;
   let scratch = scope.childScope();
@@ -220,6 +227,7 @@ function splitTaskWorkUnits(
   let groups = 0;
   let rows = 0;
   const flush = () => {
+    check();
     if (groups === 0) return;
     let properties = 1;
     for (const key in task) if (Object.hasOwn(task, key)) properties++;
@@ -250,6 +258,7 @@ function splitTaskWorkUnits(
   };
   try {
     for (const range of task.rowGroupRanges) {
+      check();
       const start = Math.max(0, Math.trunc(range.start));
       const end = Math.min(rowGroupCount, Math.max(start, Math.trunc(range.end)));
       for (let index = start; index < end; index++) {

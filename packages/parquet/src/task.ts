@@ -30,8 +30,8 @@ export interface ScanParquetTaskOptions {
   startedAt?: number;
 }
 
-export interface PlanParquetTaskWorkUnitsOptions {
-  memoryBudget?: MemoryBudget;
+export interface PlanParquetTaskWorkUnitsOptions
+  extends Pick<ScanParquetTaskOptions, "memoryBudget" | "budget" | "now" | "startedAt"> {
   maxRowGroupsPerTask?: number;
   maxRowsPerTask?: number;
   metadataCache?: CacheAdapter<ParquetMetadata>;
@@ -132,6 +132,7 @@ export function aggregateVectorOptions(options: AggregateParquetTaskOptions): {
 export function enforceAggregateTaskBudget(options: ScanOptions | undefined): void {
   if (options === undefined) return;
   const budget = options.budget;
+  if (budget.signal?.aborted) throw new LakeqlError("LAKEQL_ABORTED", "Parquet task aborted");
   const stats = options.stats;
   const elapsedMs = options.now() - options.startedAt;
   if (budget.maxBytes !== undefined && stats.bytesRequested > budget.maxBytes) {

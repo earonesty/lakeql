@@ -1,0 +1,27 @@
+{
+  "date": "2026-11-14",
+  "changes": [
+    "Shared aggregate task budget enforcement now rejects an aborted signal.",
+    "Source and metadata helpers check before and after asynchronous work; returned owned metadata releases if post-read admission/cancellation validation fails.",
+    "Work-unit planning accepts query budget/clock options and checks before planning, per range and at chunk flush."
+  ],
+  "validation": {
+    "build": "passed",
+    "targeted_tests": 56,
+    "edge_cases": [
+      "already-aborted metadata-free plan",
+      "already-aborted metadata-backed plan before nonexistent file access",
+      "expired elapsed-time budget",
+      "zero retained allocations after rejection"
+    ],
+    "typecheck": "passed",
+    "http_tests": 12
+  },
+  "limits": [
+    "Synchronous loops cannot observe asynchronously delivered cancellation until control returns to the event loop.",
+    "External operations still must settle or implement cancellation; this does not forcibly terminate an arbitrary never-settling adapter."
+  ],
+  "remaining": [
+    "Broader cancellation/fairness/legacy-spill lifecycle audit and full acceptance remain open."
+  ]
+}

@@ -583,3 +583,37 @@ it.each([
   retained.release();
   expect(pool.usedBytes).toBe(0);
 });
+
+it("rejects cancelled and expired work-unit planning before retained allocation", async () => {
+  const { MemoryBudget } = await import("lakeql-core");
+  const { planParquetTaskWorkUnitsOwned } = await import("./index.js");
+  const task: TaskInput = {
+    path: "not-read.parquet",
+    rowGroupCount: 2,
+    rowGroupRanges: [{ start: 0, end: 2 }],
+    partitionValues: {},
+  };
+  const pool = new MemoryBudget(64 * 1024);
+  const controller = new AbortController();
+  controller.abort();
+  for (const metadata of [false, true]) {
+    await expect(
+      planParquetTaskWorkUnitsOwned(memoryStore(), task, {
+        ...(metadata ? { maxRowsPerTask: 2 } : { maxRowGroupsPerTask: 1 }),
+        memoryBudget: pool,
+        budget: { signal: controller.signal },
+      }),
+    ).rejects.toMatchObject({ code: "LAKEQL_ABORTED" });
+  }
+  expect(pool.peakBytes).toBe(0);
+  await expect(
+    planParquetTaskWorkUnitsOwned(memoryStore(), task, {
+      maxRowGroupsPerTask: 1,
+      memoryBudget: pool,
+      now: () => 20,
+      startedAt: 0,
+      budget: { maxElapsedMs: 10 },
+    }),
+  ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  expect(pool.usedBytes).toBe(0);
+});
