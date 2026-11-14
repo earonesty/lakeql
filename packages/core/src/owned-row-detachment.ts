@@ -12,7 +12,11 @@ import type { Row } from "./types.js";
  * Input data properties must remain stable during this synchronous traversal.
  * Cycles, accessors and custom prototypes have no scanner data-copy contract.
  */
-export function detachOwnedRow(row: Row, budget: MemoryBudget): OwnedMemory<Row> {
+export function detachOwnedRow(
+  row: Row,
+  budget: MemoryBudget,
+  immutableSource?: MemoryScope,
+): OwnedMemory<Row> {
   const scope = new MemoryScope(budget);
   try {
     const ancestors = scope.allocate(c.array, "row traversal stack", () => [] as object[]).value;
@@ -24,6 +28,19 @@ export function detachOwnedRow(row: Row, budget: MemoryBudget): OwnedMemory<Row>
         typeof value === "number"
       )
         return value;
+      // Projected immutable payload can transfer its existing charge. Mutable
+      // containers and byte views still detach before the scanner advances.
+      if (typeof value === "string" || typeof value === "bigint") {
+        const retained = immutableSource?.tryRetainAllocation(value);
+        if (retained !== undefined) {
+          try {
+            return scope.adopt(retained).value;
+          } catch (error) {
+            retained.release();
+            throw error;
+          }
+        }
+      }
       if (typeof value === "string")
         return scope.allocate(
           c.string + c.stringCodeUnit * value.length,

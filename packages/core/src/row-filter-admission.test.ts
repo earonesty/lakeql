@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import type { Expr } from "./expr.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { memoryStore } from "./memory-store.js";
@@ -93,7 +94,8 @@ it("releases filter scratch before yielding and closes the scanner on early retu
     [Symbol.asyncIterator]();
   expect((await rows.next()).value).toEqual({ key: "ß" });
   expect(pool.peakBytes).toBeGreaterThan(0);
-  expect(pool.usedBytes).toBe(0);
+  // Filter scratch has released; the suspended output directory remains live.
+  expect(pool.usedBytes).toBe(c.array + c.arraySlot);
   await rows.return?.();
   expect(closed).toBe(true);
   expect(pool.usedBytes).toBe(0);

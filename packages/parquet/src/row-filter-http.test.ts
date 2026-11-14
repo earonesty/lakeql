@@ -88,7 +88,7 @@ it.each(
           .map((row) => (projection ? { ...row, projected: "accepted text 1 猫" } : row));
         await Promise.all(
           (projection
-            ? ["aggregate", "topK", "sort"]
+            ? ["batches", "aggregate", "topK", "sort"]
             : ["batches", "aggregate", "ordered", "topK", "sort"]
           ).map(async (route) => {
             let query = lake

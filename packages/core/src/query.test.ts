@@ -317,7 +317,7 @@ describe("Lake query runtime", () => {
         rowsByPath: { table: [...rows, ...rows] },
         vectorBatches: false,
         columnBatches: false,
-        budget: { maxMemoryBytes: bytes },
+        budget: { maxMemoryBytes: bytes, maxAllocatedMemoryBytes: 65536 },
       });
     const { lake } = await create(maxMemoryBytes);
     await expect(lake.path("table").distinct().toArray()).resolves.toEqual(rows);

@@ -361,3 +361,5 @@ Admit scalar filter temporaries across ordinary row batches, row aggregates, ord
 Admit projected values and result directories in checkpointed top-k/sort and per-row aggregate projection. Avoid intermediate selected-row copies and preserve ownership during spill.
 
 Omit unsafe truncated writer statistics and dependent column indexes instead of pruning matching long strings. Preserve null counts/offset indexes and bundle the patched writer for npm consumers.
+
+Bound ordinary row projection by output batch size and collect fallback rows with explicit ownership. Preserve selected mutable values across scanner reuse, retain known immutable projection backing without duplicate payload charges, and release failed collected output before asynchronous cleanup.

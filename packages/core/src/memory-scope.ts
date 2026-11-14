@@ -187,11 +187,16 @@ export class MemoryScope {
     }
   }
 
+  /** Retain exact known backing when present; borrowed values have no owner here. */
+  tryRetainAllocation<T>(value: T): OwnedMemory<T> | undefined {
+    this.requireOpen();
+    return this.exactAllocation(value)?.retain() as OwnedMemory<T> | undefined;
+  }
+
   /** Retain one exact allocated value. Views/aliases require explicit backing ownership. */
   retainAllocation<T>(value: T): OwnedMemory<T> {
-    this.requireOpen();
-    const allocation = this.exactAllocation(value);
-    if (allocation !== undefined) return allocation.retain() as OwnedMemory<T>;
+    const retained = this.tryRetainAllocation(value);
+    if (retained !== undefined) return retained;
     throw new LakeqlError(
       "LAKEQL_VALIDATION_ERROR",
       "Value is not an allocation owned by this scope",

@@ -891,6 +891,19 @@ export class QueryResult {
       yield* columnarBatches;
       return;
     }
+    for await (const output of this.rowProjectedOutputs(false)) {
+      if (!Array.isArray(output)) {
+        output.release();
+        throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Unexpected owned row output");
+      }
+      yield output;
+    }
+  }
+
+  private async *rowProjectedOutputs(
+    ownedOutput: boolean,
+    fail?: (error: unknown) => never,
+  ): AsyncIterable<Row[] | OwnedMemory<Row[]>> {
     this.requirePhysicalPath("query");
     const predicateScope = new MemoryScope(this.memoryBudget);
     try {
@@ -930,30 +943,71 @@ export class QueryResult {
         }
         if (config.where !== undefined) scanOptions.where = config.where;
         for await (const rawBatch of config.scanner.scan(object.path, scanOptions)) {
-          const out: Row[] = [];
-          for (const rawRow of rawBatch) {
-            const row = config.hive ? { ...partitionValues, ...rawRow } : rawRow;
-            stats.rowsDecoded += 1;
-            enforceBudget(config.budget, stats, config.now, startedAt);
-            if (!matches(config.where, row, predicateScope)) continue;
-            stats.rowsMatched += 1;
-            const projected = project(row, config.select, config.projections);
-            if (distinct !== undefined && !addDistinctRow(distinct, projected, config.budget)) {
-              continue;
+          const outputBatchSize = config.batchSize ?? 4096;
+          for (let start = 0; start < rawBatch.length; start += outputBatchSize) {
+            const batchScope = predicateScope.childScope();
+            try {
+              const out = batchScope.allocate(
+                allocationCharges.array,
+                "row output directory",
+                () => [] as Row[],
+              ).value;
+              for (
+                let index = start;
+                index < Math.min(rawBatch.length, start + outputBatchSize);
+                index++
+              ) {
+                const rawRow = rawBatch[index];
+                if (rawRow === undefined) continue;
+                const row = config.hive ? { ...partitionValues, ...rawRow } : rawRow;
+                stats.rowsDecoded += 1;
+                enforceBudget(config.budget, stats, config.now, startedAt);
+                if (!matches(config.where, row, predicateScope)) continue;
+                stats.rowsMatched += 1;
+                const projection = batchScope.childScope();
+                try {
+                  const projected = project(row, config.select, config.projections, projection);
+                  if (distinct !== undefined && !addDistinctRow(distinct, projected, config.budget))
+                    continue;
+                  if (offsetSkipped < (config.offset ?? 0)) {
+                    offsetSkipped += 1;
+                    continue;
+                  }
+                  if (config.limit !== undefined && returned >= config.limit) break;
+                  const value = ownedOutput
+                    ? batchScope.adopt(detachOwnedRow(projected, this.memoryBudget, projection))
+                        .value
+                    : projected;
+                  if (!ownedOutput) batchScope.adopt(projection.retainAllocations(undefined));
+                  batchScope.allocate(allocationCharges.arraySlot, "row output slot", () =>
+                    out.push(value),
+                  );
+                  returned += 1;
+                  stats.rowsReturned += 1;
+                  enforceBudget(config.budget, stats, config.now, startedAt);
+                } finally {
+                  projection.dispose();
+                }
+              }
+              stats.elapsedMs = config.now() - startedAt;
+              if (out.length > 0) {
+                if (ownedOutput) {
+                  const owner = batchScope.retainAllocations(out);
+                  try {
+                    yield owner;
+                  } finally {
+                    owner.release();
+                  }
+                } else yield out;
+              }
+              if (config.limit !== undefined && returned >= config.limit) return;
+            } catch (error) {
+              if (fail !== undefined) fail(error);
+              throw error;
+            } finally {
+              batchScope.dispose();
             }
-            if (offsetSkipped < (config.offset ?? 0)) {
-              offsetSkipped += 1;
-              continue;
-            }
-            if (config.limit !== undefined && returned >= config.limit) break;
-            out.push(projected);
-            returned += 1;
-            stats.rowsReturned += 1;
-            enforceBudget(config.budget, stats, config.now, startedAt);
           }
-          stats.elapsedMs = config.now() - startedAt;
-          if (out.length > 0) yield out;
-          if (config.limit !== undefined && returned >= config.limit) return;
         }
       }
       stats.elapsedMs = config.now() - startedAt;
@@ -1028,8 +1082,21 @@ export class QueryResult {
     );
   }
 
+  private canOwnRowProjectedOutput(): boolean {
+    const config = this.config;
+    return (
+      config.orderBy === undefined &&
+      config.distinct !== true &&
+      config.hive !== true &&
+      (config.windows === undefined || Object.keys(config.windows).length === 0) &&
+      config.qualify === undefined &&
+      this.tryColumnarProjectedBatches() === undefined
+    );
+  }
+
   /** Materialize and collect with explicit lifetime ownership. Unsupported
-   * execution paths reject before scanning rather than claim untracked output.
+   * operators reject before scanning; borrowed rows validate their detachable
+   * data shape during materialization rather than claim untracked output.
    */
   async toOwnedArray(): Promise<OwnedMemory<Row[]>> {
     const config = this.config;
@@ -1046,6 +1113,19 @@ export class QueryResult {
     ) {
       const output = await this.tryColumnarTopKRows(true);
       if (output !== undefined) return output;
+    }
+    if (this.canOwnRowProjectedOutput()) {
+      const query = this;
+      async function* ownedRows(
+        fail: (error: unknown) => never,
+      ): AsyncIterable<OwnedMemory<Row[]>> {
+        for await (const output of query.rowProjectedOutputs(true, fail)) {
+          if (Array.isArray(output))
+            throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Expected owned rows");
+          yield output;
+        }
+      }
+      return collectOwnedRows(ownedRows, this.memoryBudget, config.budget.signal);
     }
     if (!this.canOwnProjectedOutput())
       throw new LakeqlError(
@@ -1614,7 +1694,7 @@ export class QueryResult {
   }
 
   async toArray(): Promise<Row[]> {
-    if (this.canOwnProjectedOutput()) {
+    if (this.canOwnProjectedOutput() || this.canOwnRowProjectedOutput()) {
       const owner = await this.toOwnedArray();
       // Plain rows transfer to caller management. Use toOwnedArray to keep their
       // reservation live across jobs and release deterministically after use.

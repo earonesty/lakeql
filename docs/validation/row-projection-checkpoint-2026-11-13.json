@@ -40,5 +40,6 @@
     "Streaming ordinary/ordered projection needs batch-to-consumer ownership transfer; a query-long scope would retain every projected batch and is not the intended contract.",
     "Borrowed reference-selection projection, DISTINCT keys, partition merging and remaining evaluator internals still require allocation integration.",
     "Complete F1-F6/M1-M2/V1-V3 acceptance and refreshed coverage/reference gates remain open."
-  ]
+  ],
+  "followupEvidence": "row-stream-projection-2026-11-13.json"
 }

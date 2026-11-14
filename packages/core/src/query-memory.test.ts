@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { batchFromColumns } from "./batch.js";
 import { gt } from "./expr.js";
 import { MemoryBudget } from "./memory-budget.js";
@@ -37,8 +38,9 @@ async function fixture(pool: MemoryBudget, cap: number) {
 }
 
 it("shares physical headroom across query children and cleans up an early consumer exit", async () => {
-  const pool = new MemoryBudget(8);
-  const { lake, seen } = await fixture(pool, 4);
+  const perQuery = 4 + c.array + c.arraySlot;
+  const pool = new MemoryBudget(2 * perQuery);
+  const { lake, seen } = await fixture(pool, perQuery);
   const first = lake.path("table").run();
   const second = lake.path("table").run();
   expect(first.memoryBudget).not.toBe(second.memoryBudget);
@@ -47,23 +49,27 @@ it("shares physical headroom across query children and cleans up an early consum
   try {
     await a.next();
     await b.next();
-    expect(pool.usedBytes).toBe(8);
-    expect(first.memoryBudget.usedBytes).toBe(4);
-    expect(second.memoryBudget.usedBytes).toBe(4);
+    expect(pool.usedBytes).toBe(2 * perQuery);
+    expect(first.memoryBudget.usedBytes).toBe(perQuery);
+    expect(second.memoryBudget.usedBytes).toBe(perQuery);
     expect(seen.map((options) => options.memoryBudget)).toEqual([
       first.memoryBudget,
       second.memoryBudget,
     ]);
-    await expect(lake.path("table").toArray()).rejects.toMatchObject({
+    await expect(
+      lake.path("table").run().batches()[Symbol.asyncIterator]().next(),
+    ).rejects.toMatchObject({
       code: "LAKEQL_BUDGET_EXCEEDED",
     });
-    expect(pool.usedBytes).toBe(8);
+    expect(pool.usedBytes).toBe(2 * perQuery);
   } finally {
     await a.return?.();
     await b.return?.();
   }
   expect(pool.usedBytes).toBe(0);
-  expect(await lake.path("table").toArray()).toEqual([{ value: 1 }, { value: 2 }]);
+  const rows = [];
+  for await (const row of lake.path("table").run().rows()) rows.push(row);
+  expect(rows).toEqual([{ value: 1 }, { value: 2 }]);
   expect(pool.usedBytes).toBe(0);
 });
 
