@@ -48,6 +48,7 @@ const report = {
   sources: Object.fromEntries(
     [
       "packages/parquet/src/parsers.ts",
+      "packages/parquet/src/schema.ts",
       "packages/parquet/src/decoded-rows.ts",
       "packages/parquet/src/object-batches.ts",
       "packages/parquet/src/column-batches.ts",

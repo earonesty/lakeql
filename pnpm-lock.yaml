@@ -6,7 +6,7 @@ settings:
 
 patchedDependencies:
   hyparquet@1.26.0:
-    hash: c9f1941aaf66d1ed0ebc252fa6f08eb496ec3d46fae27e66b5b13d3e620d73a9
+    hash: 51c1cba11e35f20beb49170e741e6fee4cd22bc651ef9907d6c98065e7466600
     path: patches/hyparquet@1.26.0.patch
 
 importers:
@@ -167,7 +167,7 @@ importers:
         version: 4.4.0
       hyparquet:
         specifier: ^1.26.0
-        version: 1.26.0(patch_hash=c9f1941aaf66d1ed0ebc252fa6f08eb496ec3d46fae27e66b5b13d3e620d73a9)
+        version: 1.26.0(patch_hash=51c1cba11e35f20beb49170e741e6fee4cd22bc651ef9907d6c98065e7466600)
       hyparquet-writer:
         specifier: ^0.15.6
         version: 0.15.6
@@ -238,7 +238,7 @@ importers:
         version: 0.1.1
       hyparquet:
         specifier: ^1.26.0
-        version: 1.26.0(patch_hash=c9f1941aaf66d1ed0ebc252fa6f08eb496ec3d46fae27e66b5b13d3e620d73a9)
+        version: 1.26.0(patch_hash=51c1cba11e35f20beb49170e741e6fee4cd22bc651ef9907d6c98065e7466600)
       hyparquet-writer:
         specifier: ^0.15.6
         version: 0.15.6
@@ -4158,9 +4158,9 @@ snapshots:
 
   hyparquet-writer@0.15.6:
     dependencies:
-      hyparquet: 1.26.0(patch_hash=c9f1941aaf66d1ed0ebc252fa6f08eb496ec3d46fae27e66b5b13d3e620d73a9)
+      hyparquet: 1.26.0(patch_hash=51c1cba11e35f20beb49170e741e6fee4cd22bc651ef9907d6c98065e7466600)
 
-  hyparquet@1.26.0(patch_hash=c9f1941aaf66d1ed0ebc252fa6f08eb496ec3d46fae27e66b5b13d3e620d73a9): {}
+  hyparquet@1.26.0(patch_hash=51c1cba11e35f20beb49170e741e6fee4cd22bc651ef9907d6c98065e7466600): {}
 
   iconv-lite@0.7.2:
     dependencies:

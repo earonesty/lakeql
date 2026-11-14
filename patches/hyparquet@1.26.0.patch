@@ -51,7 +51,31 @@ diff --git a/src/assemble.js b/src/assemble.js
 diff --git a/src/convert.js b/src/convert.js
 --- a/src/convert.js
 +++ b/src/convert.js
-@@ -95,6 +95,7 @@
+@@ -78,15 +78,19 @@
+ 
+   // Skip utf8 conversion for plain BYTE_ARRAY inside VARIANT
+   const isVariant = schemaPath?.some(s => s.element.logical_type?.type === 'VARIANT')
+-  if (isVariant && type === 'BYTE_ARRAY' && ctype !== 'UTF8' && ltype?.type !== 'STRING') {
++  if (isVariant && type === 'BYTE_ARRAY' && ctype !== 'UTF8' && ltype?.type !== 'STRING' && ctype !== 'DECIMAL' && ltype?.type !== 'DECIMAL') {
+     return data
+   }
+-  if (ctype === 'DECIMAL') {
+-    const scale = element.scale || 0
++  if (ctype === 'DECIMAL' || ltype?.type === 'DECIMAL') {
++    const scale = element.scale ?? ltype?.scale ?? 0
+     const factor = 10 ** -scale
+     const arr = new Array(data.length)
+     for (let i = 0; i < arr.length; i++) {
+-      if (data[i] instanceof Uint8Array) {
++      if (data[i] == null) {
++        arr[i] = data[i]
++      } else if (isVariant && parsers.variantDecimal) {
++        arr[i] = parsers.variantDecimal(data[i], scale)
++      } else if (data[i] instanceof Uint8Array) {
+         arr[i] = parseDecimal(data[i]) * factor
+       } else {
+         arr[i] = Number(data[i]) * factor
+@@ -95,6 +99,7 @@
      return arr
    }
    if (!ctype && type === 'INT96') {
@@ -108,10 +132,14 @@ diff --git a/src/schema.js b/src/schema.js
 diff --git a/src/types.d.ts b/src/types.d.ts
 --- a/src/types.d.ts
 +++ b/src/types.d.ts
-@@ -3,6 +3,10 @@
+@@ -3,6 +3,14 @@
   * Custom parsers for columns
   */
  export interface ParquetParsers {
++  /** Already-decoded scalar classes must not be traversed as shredded objects. */
++  isScalarValue?(value: unknown): boolean
++  /** Physical decimal leaf inside a VARIANT logical container. */
++  variantDecimal?(value: bigint | number | Uint8Array, scale: number): any
 +  /** Exact signed decimal carrier; binary variant coefficients are at most 128 bits. */
 +  decimalFromUnscaled?(coefficient: bigint, scale: number): any
 +  /** Signed 96-bit physical carrier before Julian-day interpretation. */
@@ -122,6 +150,15 @@ diff --git a/src/types.d.ts b/src/types.d.ts
 diff --git a/src/variant.js b/src/variant.js
 --- a/src/variant.js
 +++ b/src/variant.js
+@@ -49,7 +49,7 @@
+  * @returns {any}
+  */
+ function decodeTypedValue(typedValue, metadata, parsers) {
+-  if (typedValue instanceof Date) return typedValue
++  if (typedValue instanceof Date || parsers.isScalarValue?.(typedValue)) return typedValue
+ 
+   // Handle {typed_value, value} wrapper - unwrap and recurse
+   if (typedValue && typeof typedValue === 'object' && !Array.isArray(typedValue) && !(typedValue instanceof Uint8Array)) {
 @@ -73,9 +73,10 @@
      return result
    }

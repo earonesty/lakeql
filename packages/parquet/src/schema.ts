@@ -60,8 +60,10 @@ function validateSchema(
   const remaining = [schemaChildCount(schema[0])];
   const path: string[] = [];
   let index = 1;
+  let variantDepth: number | undefined;
   while (remaining.length > 0 && index < schema.length) {
     const depth = remaining.length - 1;
+    if (variantDepth !== undefined && depth <= variantDepth) variantDepth = undefined;
     const children = remaining[depth] ?? 0;
     if (children === 0) {
       remaining.pop();
@@ -78,7 +80,9 @@ function validateSchema(
     reserveDepth(depth + 1);
     path.length = depth;
     path.push(name);
-    rejectUnsupportedParquetLeaf(element, path, options);
+    if (variantDepth === undefined && parquetLogicalTypeName(element.logical_type) === "VARIANT")
+      variantDepth = depth;
+    rejectUnsupportedParquetLeaf(element, path, options, variantDepth !== undefined);
     index++;
     const count = schemaChildCount(element);
     if (count > 0) {
@@ -112,6 +116,7 @@ function rejectUnsupportedParquetLeaf(
   element: ParquetSchemaElement,
   path: string[],
   options: RejectUnsupportedParquetSchemaOptions,
+  insideVariant: boolean,
 ): void {
   const convertedType = String(element.converted_type ?? "").toUpperCase();
   const logicalType = logicalTypeRecord(element.logical_type);
@@ -127,8 +132,8 @@ function rejectUnsupportedParquetLeaf(
     decimalPrecision !== undefined &&
     decimalPrecision > 15 &&
     !(
-      options.allowValueCheckedScalarDecimals === true &&
-      path.length === 1 &&
+      ((options.allowValueCheckedScalarDecimals === true && path.length === 1) ||
+        (insideVariant && decimalPrecision <= 38)) &&
       (element.type === "INT32" ||
         element.type === "INT64" ||
         element.type === "BYTE_ARRAY" ||

@@ -31,23 +31,19 @@ under verified 64/128 MiB V8 heap settings; this distinguishes runtime GC policy
 from a persistent leak, but does not cap external backing or prove production
 Cloudflare total-memory safety. See the constrained-runtime section below.
 
-Current stream-admission checkpoint (November 13, 2026) passes
-**2,907 default tests** (621 skipped), **59 Worker tests**, and **104 reference
-tests**, plus TypeScript build, typecheck and lint. These counts are recorded in
-`docs/validation/stream-lifetime-2026-11-13.json`. Distribution build,
-expanded clean npm install smoke checks, compatibility and tracked-file size checks
-also pass. Coverage and fixture reproducibility remain earlier checkpoints that
-require final-revision reruns.
+Latest decimal checkpoint (November 13, 2026): **2,921 default tests**
+(629 skipped), **61 Worker tests**, plus two subsequently added nullable/logical
+annotation tests pass. Build, typecheck, lint, clean package installation and
+compatibility checks pass. Binary and shredded decimal variants preserve exact
+fixture digits with bounded conversion workspace. Decimal error diagnostics avoid
+retaining input backing or formatting unbounded integers. Detailed evidence:
+`docs/validation/conformance-value-parity-2026-11-13.json`.
 
-The latest full external conformance checkpoint reports **495 passed, 14 failed,
-one skipped**. It checks both reader paths and compares owned values with public
-output, in addition to cardinality and cleanup. Eleven additional differential
-findings were fixed or independently validated as representation differences;
-bounded dictionary-extent recovery fixes two original failures. Decimal rejection
-diagnostics now avoid retaining input backing or formatting unbounded integers. See
-`docs/validation/conformance-value-parity-2026-11-13.json` for the chronological
-results and independent INT96/Date evidence. No release-readiness or whole-runtime
-memory claim follows from the passing suites.
+External conformance now reports **511 passed, 6 failed, one skipped**; the six
+remaining failures are ALP, BSON and BROTLI through both readers. No assertions
+were waived. Generic decimal operators, ordinary high-precision vectors, broader
+allocation coverage and final coverage/reproducibility gates remain unfinished.
+These checks do not establish whole-runtime memory safety or release readiness.
 
 Supported public owned nested reads now use admitted schema planning, bounded
 column blocks, batch-level assembly and shared decoded-page/dictionary caches.

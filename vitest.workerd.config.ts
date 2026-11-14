@@ -12,12 +12,20 @@ const decimalFixture = new URL(
   import.meta.url,
 );
 
+const shreddedDecimalFixture = new URL(
+  "./fixtures/external/parquet-testing/shredded_variant/case-028.parquet",
+  import.meta.url,
+);
+
 export default defineConfig({
   plugins: [
     cloudflareTest({
       miniflare: {
         r2Buckets: ["MEMORY_TEST_BUCKET"],
         bindings: {
+          SHREDDED_DECIMAL_VARIANT_FIXTURE: existsSync(shreddedDecimalFixture)
+            ? readFileSync(shreddedDecimalFixture).toString("base64")
+            : "",
           DECIMAL_VARIANT_FIXTURE: existsSync(decimalFixture)
             ? readFileSync(decimalFixture).toString("base64")
             : "",

@@ -114,6 +114,10 @@ describeExternal("apache/parquet-testing conformance", () => {
   // These exact decimal spellings come from shredded_variant/cases.json.
   for (const mode of ["public", "owned"] as const) {
     it.each([
+      [26, "123456789.987654321"],
+      [27, "-123456789.987654321"],
+      [28, "9876543210.123456789"],
+      [29, "-9876543210.123456789"],
       [70, "123456789.987654321"],
       [71, "-123456789.987654321"],
       [72, "9876543210.123456789"],

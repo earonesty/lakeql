@@ -2,6 +2,8 @@ import { DEFAULT_PARSERS } from "hyparquet/src/convert.js";
 import {
   MATERIALIZATION_CHARGES as c,
   decimalFromParts,
+  isDecimalValue,
+  isTimestampValue,
   LakeqlError,
   type MemoryScope,
   timestampFromEpoch,
@@ -15,6 +17,8 @@ const stringDecoder = new TextDecoder("utf-8", { ignoreBOM: true });
 export const lakeqlParquetParsers = {
   ...DEFAULT_PARSERS,
   decimalFromUnscaled,
+  variantDecimal,
+  isScalarValue: (value: unknown) => isDecimalValue(value) || isTimestampValue(value),
   timestampFromInt96(value: bigint) {
     return timestampFromEpoch(int96EpochNanos(value, "julian-nanos"), "nanos");
   },
@@ -75,11 +79,56 @@ export function parquetParsersForMetadata(
     return parsers;
   let properties = 0;
   for (const key in parsers) if (Object.hasOwn(parsers, key)) properties++;
-  return scope.allocate(2 * c.object + properties * c.property, "variant parser table", () => ({
+  return scope.allocate(3 * c.object + properties * c.property, "variant parser table", () => ({
     ...parsers,
     decimalFromUnscaled: (coefficient: bigint, scale: number) =>
       decimalFromUnscaled(coefficient, scale, scope),
+    variantDecimal: (value: bigint | number | Uint8Array, scale: number) =>
+      variantDecimal(value, scale, scope),
   })).value;
+}
+
+/** VARIANT decimal leaves use at most 38 digits. Strip sign extension without
+ * copying, then bound the integer workspace before constructing a coefficient. */
+function variantDecimal(value: bigint | number | Uint8Array, scale: number, scope?: MemoryScope) {
+  if (!Number.isSafeInteger(scale) || scale < 0 || scale > 38)
+    throw new LakeqlError("LAKEQL_PARQUET_READ_ERROR", "Invalid variant decimal scale", { scale });
+  if (!(value instanceof Uint8Array)) {
+    if (typeof value === "number" && !Number.isSafeInteger(value))
+      throw new LakeqlError("LAKEQL_PARQUET_READ_ERROR", "Invalid variant decimal integer");
+    if (typeof value === "bigint") {
+      if (value < -(1n << 127n) || value >= 1n << 127n)
+        throw new LakeqlError("LAKEQL_PARQUET_READ_ERROR", "Invalid variant decimal integer");
+      return decimalFromUnscaled(value, scale, scope);
+    }
+    const scratch = scope?.reserve(c.bigint + 8, "variant decimal integer workspace");
+    try {
+      return decimalFromUnscaled(BigInt(value), scale, scope);
+    } finally {
+      scratch?.release();
+    }
+  }
+  let start = 0;
+  while (start + 1 < value.length) {
+    const first = value[start];
+    const next = value[start + 1] ?? 0;
+    if ((first === 0 && next < 128) || (first === 255 && next >= 128)) start++;
+    else break;
+  }
+  const width = value.length - start;
+  if (width === 0 || width > 16)
+    throw new LakeqlError("LAKEQL_PARQUET_READ_ERROR", "Invalid variant decimal byte width", {
+      width,
+    });
+  const scratch = scope?.reserve(4 * (c.bigint + 16), "variant decimal coefficient workspace");
+  try {
+    let coefficient = (value[start] ?? 0) >= 128 ? -1n : 0n;
+    for (; start < value.length; start++)
+      coefficient = (coefficient << 8n) | BigInt(value[start] ?? 0);
+    return decimalFromUnscaled(coefficient, scale, scope);
+  } finally {
+    scratch?.release();
+  }
 }
 
 function decimalFromUnscaled(coefficient: bigint, scale: number, scope?: MemoryScope) {

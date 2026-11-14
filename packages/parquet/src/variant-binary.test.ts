@@ -66,6 +66,42 @@ for (const [name, path, expectedValue, json] of [
     decimalFromParts(123456789987654321n, 9),
     '[{"id":1,"var":"123456789.987654321"}]',
   ],
+  [
+    "shredded decimal 26",
+    new URL(
+      "../../../fixtures/external/parquet-testing/shredded_variant/case-026.parquet",
+      import.meta.url,
+    ),
+    decimalFromParts(123456789987654321n, 9),
+    '[{"id":1,"var":"123456789.987654321"}]',
+  ],
+  [
+    "shredded decimal 27",
+    new URL(
+      "../../../fixtures/external/parquet-testing/shredded_variant/case-027.parquet",
+      import.meta.url,
+    ),
+    decimalFromParts(-123456789987654321n, 9),
+    '[{"id":1,"var":"-123456789.987654321"}]',
+  ],
+  [
+    "shredded decimal 28",
+    new URL(
+      "../../../fixtures/external/parquet-testing/shredded_variant/case-028.parquet",
+      import.meta.url,
+    ),
+    decimalFromParts(9876543210123456789n, 9),
+    '[{"id":1,"var":"9876543210.123456789"}]',
+  ],
+  [
+    "shredded decimal 29",
+    new URL(
+      "../../../fixtures/external/parquet-testing/shredded_variant/case-029.parquet",
+      import.meta.url,
+    ),
+    decimalFromParts(-9876543210123456789n, 9),
+    '[{"id":1,"var":"-9876543210.123456789"}]',
+  ],
 ] as const) {
   it.skipIf(!existsSync(path)).each([false, true])(
     `reads ${name} variant over HTTP with ignored ranges=%s`,

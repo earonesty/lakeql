@@ -2,6 +2,30 @@ import type { SchemaElement } from "hyparquet";
 import { expect, it } from "vitest";
 import { rejectUnsupportedParquetSchema } from "./schema.js";
 
+it("confines exact shredded decimal capability to its logical container", () => {
+  const schema: SchemaElement[] = [
+    { name: "root", num_children: 2 },
+    { name: "variant", num_children: 1, logical_type: { type: "VARIANT" } },
+    { name: "typed_value", type: "BYTE_ARRAY", converted_type: "DECIMAL", precision: 38, scale: 9 },
+    { name: "ordinary", num_children: 1 },
+    { name: "value", type: "INT64", converted_type: "DECIMAL", precision: 18, scale: 9 },
+  ];
+  expect(() => rejectUnsupportedParquetSchema({ schema }, { columns: ["variant"] })).not.toThrow();
+  expect(() => rejectUnsupportedParquetSchema({ schema })).toThrowError(
+    expect.objectContaining({ details: expect.objectContaining({ column: "ordinary.value" }) }),
+  );
+  schema[2] = {
+    name: "typed_value",
+    type: "BYTE_ARRAY",
+    converted_type: "DECIMAL",
+    precision: 39,
+    scale: 9,
+  };
+  expect(() => rejectUnsupportedParquetSchema({ schema }, { columns: ["variant"] })).toThrow(
+    /precision/,
+  );
+});
+
 function deepSchema(depth: number, precision = 9): SchemaElement[] {
   return [
     { name: "root", num_children: 1 },

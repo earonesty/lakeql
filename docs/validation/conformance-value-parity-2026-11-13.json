@@ -408,5 +408,38 @@
       "Failed scoped scalar conversion releases its reservation."
     ],
     "limits": "This bounds input-dependent diagnostic payloads, not Error stack/runtime allocation. Shredded decimal integration and the remaining audit requirements are still open."
+  },
+  "shreddedVariantDecimals": {
+    "change": "Shared scoped decimal conversion now accepts physical integer and signed big-endian byte leaves inside VARIANT. Pinned hyparquet bypasses binary UTF-8 handling for decimal annotations, preserves nulls, recognizes logical-only DECIMAL annotations, and exposes a scalar predicate so DecimalValue and TimestampValue survive shredded-object assembly.",
+    "contract": "Schema traversal tracks the outermost VARIANT ancestor in constant additional state. Precision through 38 is admitted for supported physical decimal carriers inside that logical container. Ordinary high-precision nested decimal vectors retain their guard until their numeric execution shape supports exact scalars. Byte carriers strip redundant sign extension without copying, reject empty or more than 16 significant bytes, and admit fixed coefficient workspace before BigInt construction. Scales must be nonnegative safe integers through 38. Scoped result backing is admitted through the same factory as binary variants.",
+    "evidence": "../benchmarks/variant-decimal-shredded-2026-11-13.json",
+    "validation": {
+      "defaultPassed": 2921,
+      "defaultSkipped": 629,
+      "additionalLogicalOnlyAndNullableTestsPassed": 2,
+      "focusedParserHttpSchemaPassed": 42,
+      "workerPassed": 61,
+      "build": "passed",
+      "typecheck": "passed",
+      "lint": "passed",
+      "cleanNpmInstall": "passed",
+      "compatibility": "passed",
+      "referencePassed": 104,
+      "conformancePassed": 511,
+      "conformanceFailed": 6,
+      "conformanceSkipped": 1,
+      "trackedFileSizes": "passed"
+    },
+    "edgeCases": [
+      "Both signs and signed 128-bit extremes; sign-extended carriers of 16 and 65536 bytes.",
+      "Empty and oversized byte carriers, noninteger numbers and invalid scale reject.",
+      "Exact capacity succeeds and one-byte-short capacity rejects while releasing coefficient workspace.",
+      "Logical-only and converted DECIMAL annotations preserve nullable values.",
+      "Decoded decimal and timestamp objects remain scalar through direct and nested shredded wrappers.",
+      "A VARIANT sibling cannot relax the ordinary nested decimal schema guard.",
+      "All twelve independent documented decimal fixtures preserve exact spelling through public and owned readers; eight additional independent assertions cover formerly rejected fixtures."
+    ],
+    "cloudEvidence": "Cases 026\u2013029 pass public/owned/exact-JSON checks over HTTP 206 and ignored-range 200 responses. Case 028 also passes local workerd native R2 reads with 64/128 MiB shared pools, three concurrent owned queries and a cancelled peer, per-query pool/4 limits, no range cache and zero final reservations. Case 070 binary coverage remains. Clean npm install checks both binary and shredded real fixtures.",
+    "limits": "The fixture oracle measures tracked reservations and exact output, not CPU speed or production Cloudflare total heap. Native BigInt scratch/GC and broader allocation accounting remain open. Generic decimal expression/order/group/aggregate integration and ordinary high-precision vector integration remain unfinished. No unsupported-codec tests were waived."
   }
 }
