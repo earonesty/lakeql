@@ -7,6 +7,7 @@ import {
   type Vector,
   vectorLength,
 } from "./batch.js";
+import { decimalFormatAllocationBytes, requireDecimalValue } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
 import type { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
@@ -115,6 +116,9 @@ function planMaterialization(
         case "timestamp96":
           add(cost.timestamp + cost.bigint);
           return 64;
+        case "decimal":
+          retainsInput = true;
+          return decimalFormatAllocationBytes(requireDecimalValue(vector.values[index]));
         case "utf8":
           // Legacy JS string vectors may not carry payload allocation charges.
           // The output owns immutable text; retaining the producer would also

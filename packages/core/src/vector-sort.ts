@@ -33,7 +33,7 @@ import { compareTimestampValues, isTimestampValue, type TimestampValue } from ".
 import { compactOwnedUnionBatch, needsUnionCompaction } from "./union-compaction.js";
 import { hasUnionLeaf, planUnionConcat } from "./union-concat.js";
 import { admitVectorBuffer } from "./vector-buffer.js";
-import { selectVector } from "./vector-selection.js";
+import { selectVector, selectVectorIndices } from "./vector-selection.js";
 
 export interface VectorTopKOptions {
   offset?: number;
@@ -282,11 +282,19 @@ function gatherBatchStorage(
       columns[name] = compactPackedGather(vector, indices, scope);
       continue;
     }
+    if (compact && scope !== undefined && selectVector(vector).leaf.type === "decimal") {
+      const plan = planSelectedConcat([selectVectorIndices(vector, indices)]);
+      if (plan === undefined)
+        throw new LakeqlError("LAKEQL_TYPE_ERROR", "Unsupported decimal selection");
+      columns[name] = plan.execute(scope);
+      continue;
+    }
     if (compact && scope !== undefined && vector.type === "dict") {
       columns[name] = compactScalarDictionary(vector, indices, scope);
       continue;
     }
     if (
+      vector.type === "decimal" ||
       vector.type === "union" ||
       vector.type === "list" ||
       vector.type === "map" ||
@@ -324,7 +332,7 @@ export function gatherOwnedBatch(
       compactBytes <= budget.availableBytes;
     const plan =
       compact && compactBytes !== undefined
-        ? { typedBytes: compactBytes, retainsInput: false, createsJavaScriptArrays: false }
+        ? { typedBytes: compactBytes, retainsInput: false }
         : sharedGatherPlan(input.value, indices);
     scope.admit(plan.typedBytes, "gather typed output");
     const batch = gatherBatchStorage(input.value, indices, scope, compact);
@@ -749,6 +757,7 @@ function gatherVector(
         { type: vector.type, values: Array.from(indices, (index) => vector.values[index] ?? "") },
         valid,
       );
+    case "decimal":
     case "binary-view":
     case "utf8-view":
       return {
@@ -921,6 +930,12 @@ function concatVectors(
       ? undefined
       : concatValid(vectors, scope);
   switch (first.type) {
+    case "decimal": {
+      const plan = planSelectedConcat(vectors.map(selectVector));
+      if (plan === undefined)
+        throw new LakeqlError("LAKEQL_TYPE_ERROR", "Incompatible decimal shapes");
+      return plan.execute(scope);
+    }
     case "union":
       throw new LakeqlError(
         "LAKEQL_TYPE_ERROR",

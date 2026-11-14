@@ -2,8 +2,10 @@ import { type Batch, type PackedByteVector, type Vector, vectorLength } from "./
 import { LakeqlError } from "./errors.js";
 import type { MemoryReservation } from "./memory-budget.js";
 import type { MemoryScope, OwnedMemory } from "./memory-scope.js";
+import { planSelectedConcat } from "./selected-concat.js";
 import { losslessUtf8Bytes } from "./utf8-size.js";
 import { admitVectorBuffer } from "./vector-buffer.js";
+import { selectVectorIndices } from "./vector-selection.js";
 
 const textEncoder = new TextEncoder();
 
@@ -439,6 +441,10 @@ export function compactGatherBytes(
       const payload = payloadBytes(vector, leaf, indices);
       if (!Number.isSafeInteger(payload) || payload > 0xffffffff) return undefined;
       bytes += payload + indices.length * 8 + validity;
+    } else if (scalarLeaf.type === "decimal") {
+      const plan = planSelectedConcat([selectVectorIndices(vector, indices)]);
+      if (plan === undefined) return undefined;
+      bytes += plan.bytes;
     } else if (scalarLeaf.type === "null") {
     } else if ("values" in scalarLeaf && ArrayBuffer.isView(scalarLeaf.values)) {
       bytes += indices.length * scalarLeaf.values.BYTES_PER_ELEMENT + validity;

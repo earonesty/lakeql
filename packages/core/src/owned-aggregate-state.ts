@@ -7,6 +7,7 @@ import {
   selectedRowCount,
   type Vector,
 } from "./batch.js";
+import { isDecimalValue } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
 import { isIntervalValue } from "./interval.js";
 import type { MemoryScope, OwnedMemory } from "./memory-scope.js";
@@ -108,7 +109,7 @@ export class OwnedAggregateState {
             const scratch = compiled.childScope();
             try {
               const value = values.valueAt(index, scratch);
-              if (value instanceof Uint8Array || isIntervalValue(value))
+              if (value instanceof Uint8Array || isIntervalValue(value) || isDecimalValue(value))
                 throw new LakeqlError("LAKEQL_TYPE_ERROR", "Expression is not an aggregate scalar");
               this.updateValue(alias, value);
             } finally {
@@ -131,7 +132,7 @@ export class OwnedAggregateState {
     const scratch = this.scope.childScope();
     try {
       const value = scalarVectorValue(vector, index, scratch);
-      if (value instanceof Uint8Array || isIntervalValue(value))
+      if (value instanceof Uint8Array || isIntervalValue(value) || isDecimalValue(value))
         throw new LakeqlError("LAKEQL_TYPE_ERROR", "Vector value is not an aggregate scalar");
       this.updateValue(alias, value);
     } finally {

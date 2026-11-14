@@ -73,6 +73,20 @@ export function selectVector(vector: Vector): VectorSelection {
   });
 }
 
+export function selectVectorIndices(
+  vector: Vector,
+  indices: readonly number[] | Uint32Array,
+): VectorSelection {
+  return selection(vector, indices.length, (visit) => {
+    for (let row = 0; row < indices.length; row++) {
+      const index = indices[row];
+      if (index === undefined || !Number.isSafeInteger(index) || index < 0)
+        throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Selected vector index out of bounds");
+      visit(index, row);
+    }
+  });
+}
+
 export function selectStructField(parent: VectorSelection, name: string): VectorSelection {
   if (parent.leaf.type !== "struct")
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Expected selected struct");

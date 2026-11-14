@@ -1,4 +1,6 @@
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import type { Vector } from "./batch.js";
+import { DecimalValue, decimalValueAllocationBytes, requireDecimalValue } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
 import { allocateInt96Storage, readInt96, writeInt96 } from "./int96-storage.js";
 import type { MemoryScope } from "./memory-scope.js";
@@ -13,10 +15,12 @@ import {
   type VectorSelection,
 } from "./vector-selection.js";
 
+const decimalNull = new DecimalValue(0n, 0);
+
 const MIN_TIMESTAMP_EPOCH = -(1n << 63n);
 const MAX_TIMESTAMP_EPOCH = (1n << 63n) - 1n;
 
-/** Complete detached typed-output plan over replayable selections. Unsupported
+/** Complete detached allocation plan over replayable selections. Unsupported
  * leaf representations return undefined before allocating output backing.
  */
 export interface SelectedConcatPlan {
@@ -79,6 +83,35 @@ export function planSelectedConcat(
       );
     return { bytes, execute };
   };
+  if (first.type === "decimal") {
+    let storageBytes = c.array + rows * c.arraySlot;
+    for (const input of inputs) {
+      input.forEach((index) => {
+        if (index >= 0 && input.leaf.type === "decimal")
+          storageBytes += decimalValueAllocationBytes(
+            requireDecimalValue(input.leaf.values[index]).coefficient,
+          );
+      });
+    }
+    return checked(storageBytes + validityBytes, (scope) => {
+      const valid = validity(scope);
+      const values = admitVectorBuffer(scope, storageBytes, () => {
+        const values = new Array<DecimalValue>(rows);
+        let offset = 0;
+        for (const input of inputs) {
+          input.forEach((index, row) => {
+            const value =
+              index >= 0 && input.leaf.type === "decimal" ? input.leaf.values[index] : undefined;
+            values[offset + row] =
+              value === undefined ? decimalNull : new DecimalValue(value.coefficient, value.scale);
+          });
+          offset += input.length;
+        }
+        return values;
+      });
+      return withValid({ type: "decimal", values }, valid);
+    });
+  }
   if (first.type === "struct") {
     const names = Object.keys(first.fields);
     if (

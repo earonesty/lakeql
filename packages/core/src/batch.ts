@@ -1,5 +1,11 @@
 import { batchCallExprValues, batchCallPredicateMask } from "./batch-call.js";
 import { registerCompactionMetadata } from "./compaction-metadata.js";
+import {
+  DecimalValue,
+  decimalValueAllocationBytes,
+  isDecimalValue,
+  requireDecimalValue,
+} from "./decimal-value.js";
 import { expandDictionaryMask } from "./dictionary-mask.js";
 import { LakeqlError } from "./errors.js";
 import type { CompareOp, Expr, Scalar } from "./expr.js";
@@ -21,6 +27,8 @@ import type { Row } from "./types.js";
 import { buildUnionChildren } from "./union-construction.js";
 import { admitVectorBuffer } from "./vector-buffer.js";
 
+const decimalZero = new DecimalValue(0n, 0);
+
 const UNION_DOMAINS = [
   "null",
   "f64",
@@ -32,6 +40,7 @@ const UNION_DOMAINS = [
   "list",
   "struct",
   "map",
+  "decimal",
 ] as const;
 
 const MIN_TIMESTAMP_VECTOR_EPOCH = -(1n << 63n);
@@ -60,6 +69,7 @@ function packedByteValue(vector: PackedByteVector, index: number): Uint8Array {
 }
 
 export type Vector =
+  | { type: "decimal"; values: DecimalValue[]; valid?: Uint8Array }
   | { type: "union"; tags: Uint8Array; offsets: Uint32Array; children: readonly Vector[] }
   | PackedByteVector
   | { type: "null"; length: number }
@@ -203,6 +213,22 @@ export function vectorFromSource(values: VectorSource, scope?: MemoryScope): Vec
       return optionalValidity({ type, values: i64Values(values, scope) }, valid);
     case "u64":
       return optionalValidity({ type, values: u64Values(values, scope) }, valid);
+    case "decimal": {
+      let bytes = c.array + values.length * c.arraySlot;
+      for (let i = 0; i < values.length; i++) {
+        const value = values.get(i);
+        if (isDecimalValue(value)) bytes += decimalValueAllocationBytes(value.coefficient);
+      }
+      const output = admitVectorBuffer(scope, bytes, () =>
+        Array.from({ length: values.length }, (_, i) => {
+          const value = values.get(i);
+          return isDecimalValue(value)
+            ? new DecimalValue(value.coefficient, value.scale)
+            : decimalZero;
+        }),
+      );
+      return optionalValidity({ type, values: output }, valid);
+    }
     case "timestamp": {
       const timestamp = timestampValues(values, scope);
       return optionalValidity(timestamp, valid);
@@ -357,6 +383,7 @@ export function vectorValue(
   | boolean
   | Uint8Array
   | TimestampValue
+  | DecimalValue
   | unknown[]
   | Record<string, unknown>
   | null {
@@ -398,6 +425,8 @@ export function vectorValue(
         vector.unit,
         vector.isAdjustedToUTC,
       );
+    case "decimal":
+      return requireDecimalValue(vector.values[index]);
     case "bool":
       return vector.values[index] === 1;
     case "utf8":
@@ -464,6 +493,7 @@ export function vectorLength(vector: Vector): number {
     case "bool":
     case "utf8":
     case "binary":
+    case "decimal":
       return vector.values.length;
     case "timestamp96":
       return vector.low.length;
@@ -570,6 +600,7 @@ function vectorShapeForValue(value: Exclude<VectorValue, null | undefined>): Vec
     case "bigint":
       return "i64";
     case "object":
+      if (isDecimalValue(value)) return "decimal";
       if (value instanceof Date) return "timestamp";
       if (isTimestampValue(value)) return "timestamp";
       return "struct";
@@ -1180,6 +1211,8 @@ export function scalarVectorValue(vector: Vector, index: number, scope?: MemoryS
             vector.isAdjustedToUTC,
           ),
       );
+    case "decimal":
+      return requireDecimalValue(vector.values[index]);
     case "bool":
       return vector.values[index] === 1;
     case "utf8":

@@ -1,5 +1,5 @@
 import { tableFromArrays, tableFromIPC } from "apache-arrow";
-import { batchFromColumns, createInMemoryLake, gt } from "lakeql-core";
+import { batchFromColumns, createInMemoryLake, decimalFromParts, gt } from "lakeql-core";
 import { describe, expect, it } from "vitest";
 import {
   arrowTableToRows,
@@ -217,3 +217,13 @@ async function streamBytes(stream: ReadableStream<Uint8Array>): Promise<Uint8Arr
   }
   return out;
 }
+
+it("exports exact decimal vectors and scalar rows as lossless Arrow text", () => {
+  const value = decimalFromParts(123456789987654321n, 9);
+  const rows = [{ value }, { value: null }];
+  const expected = [{ value: "123456789.987654321" }, { value: null }];
+  expect(arrowTableToRows(rowsToArrowTable(rows))).toEqual(expected);
+  expect(arrowTableToRows(batchToArrowTable(batchFromColumns({ value: [value, null] })))).toEqual(
+    expected,
+  );
+});

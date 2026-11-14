@@ -33,6 +33,12 @@ export function isDecimalValue(value: unknown): value is DecimalValue {
   return value instanceof DecimalValue;
 }
 
+export function requireDecimalValue(value: unknown): DecimalValue {
+  if (!isDecimalValue(value))
+    throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Missing or invalid decimal vector value");
+  return value;
+}
+
 export function decimalFromParts(
   coefficient: bigint,
   scale: number,

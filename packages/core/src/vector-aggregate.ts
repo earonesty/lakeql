@@ -13,6 +13,7 @@ import {
   selectedRowCount,
   type Vector,
 } from "./batch.js";
+import { isDecimalValue } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
 import type { Scalar } from "./expr.js";
 import { isIntervalValue } from "./interval.js";
@@ -387,8 +388,11 @@ function aggregateScalarValue(value: Scalar): VectorAggregateValue {
   if (value instanceof Uint8Array) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Binary values are not aggregate values");
   }
-  if (isIntervalValue(value)) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Interval values are not aggregate values");
+  if (isIntervalValue(value) || isDecimalValue(value)) {
+    throw new LakeqlError(
+      "LAKEQL_TYPE_ERROR",
+      "Scalar shape is not supported by aggregate execution",
+    );
   }
   return value;
 }

@@ -10,6 +10,7 @@ import {
   type Vector,
   vectorLength,
 } from "./batch.js";
+import { isDecimalValue } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
 import type { Scalar } from "./expr.js";
 import { groupKey, scalarGroupKeyPart } from "./group-key.js";
@@ -175,6 +176,7 @@ function createGroupKeyEncoder(keys: readonly string[], batch: Batch): GroupKeyE
 
 function canEncodeScalarVector(vector: Vector): boolean {
   switch (vector.type) {
+    case "decimal":
     case "union":
       return false;
     case "null":
@@ -358,10 +360,11 @@ function vectorGroupKeyPart(vector: Vector, index: number): string {
     return scalarGroupKeyPart(null);
   }
   switch (vector.type) {
+    case "decimal":
     case "union":
       throw new LakeqlError(
         "LAKEQL_TYPE_ERROR",
-        "Union group keys require an explicit domain comparison capability",
+        "Group key shape requires an explicit comparison capability",
       );
     case "null":
       return scalarGroupKeyPart(null);
@@ -658,8 +661,11 @@ function aggregateScalarValue(value: Scalar): VectorAggregateValue {
   if (value instanceof Uint8Array) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Binary values are not aggregate values");
   }
-  if (isIntervalValue(value)) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Interval values are not aggregate values");
+  if (isIntervalValue(value) || isDecimalValue(value)) {
+    throw new LakeqlError(
+      "LAKEQL_TYPE_ERROR",
+      "Scalar shape is not supported by aggregate execution",
+    );
   }
   return value;
 }
@@ -668,8 +674,11 @@ export function snapshotGroupValue(value: Scalar, scope?: MemoryScope): VectorGr
   if (value instanceof Uint8Array) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Binary values are not group keys");
   }
-  if (isIntervalValue(value)) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Interval values are not group keys");
+  if (isIntervalValue(value) || isDecimalValue(value)) {
+    throw new LakeqlError(
+      "LAKEQL_TYPE_ERROR",
+      "Scalar shape is not supported by group checkpoints",
+    );
   }
   if (scope) {
     const bytes = isTimestampValue(value)

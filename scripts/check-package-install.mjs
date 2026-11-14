@@ -48,6 +48,11 @@ import {
   readParquetObjects,
   timestampEpochForUnit,
   batchFromVectors,
+  batchFromColumns,
+  decimalFromParts,
+  materializeBatchRows,
+  MemoryScope,
+  materializeOwnedBatchRows,
   gt,
   physicalInputFromBatch,
 } from "lakeql";
@@ -95,6 +100,18 @@ assert.equal(pool.usedBytes, 0);
 const cancelled = lake.path("nation.parquet").batchSize(1).streamNdjson().getReader();
 assert.equal((await cancelled.read()).done, false);
 await cancelled.cancel();
+assert.equal(pool.usedBytes, 0);
+const exactDecimal = decimalFromParts(123456789987654321n, 9);
+const decimalRows = materializeBatchRows(batchFromColumns({ amount: [exactDecimal, null] }));
+assert.deepEqual(decimalRows, [{ amount: exactDecimal }, { amount: null }]);
+assert.equal(JSON.stringify(decimalRows), '[{"amount":"123456789.987654321"},{"amount":null}]');
+const decimalScope = new MemoryScope(pool);
+const decimalInput = decimalScope.retainAllocations(batchFromColumns({ amount: [exactDecimal, null] }, decimalScope));
+decimalScope.dispose();
+const decimalOwned = materializeOwnedBatchRows(decimalInput);
+decimalInput.release();
+assert.equal(String(decimalOwned.value[0].amount), "123456789.987654321");
+decimalOwned.release();
 assert.equal(pool.usedBytes, 0);
 const batch = batchFromVectors({
   score: { type: "f32", values: Float32Array.of(0.25, 0.75) },

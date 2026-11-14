@@ -8,6 +8,7 @@ import {
   scalarVectorValue,
   type Vector,
 } from "./batch.js";
+import { isDecimalValue } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
 import type { Scalar } from "./expr.js";
 import { groupKey } from "./group-key.js";
@@ -160,7 +161,7 @@ export class OwnedGroupDirectory {
                 : input.vector
                   ? scalarVectorValue(input.vector, index, scratch)
                   : true;
-              if (value instanceof Uint8Array || isIntervalValue(value))
+              if (value instanceof Uint8Array || isIntervalValue(value) || isDecimalValue(value))
                 throw new LakeqlError("LAKEQL_TYPE_ERROR", "Expression is not an aggregate scalar");
               this.update(group, input.alias, value);
             } finally {

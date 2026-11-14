@@ -1,6 +1,7 @@
 export * from "./batch.js";
 export { closeAsyncIterators } from "./close-iterators.js";
 export { mapConcurrent } from "./concurrent-map.js";
+export { DecimalValue, decimalFromParts, isDecimalValue } from "./decimal-value.js";
 export * from "./errors.js";
 export * from "./evaluator.js";
 export * from "./expr.js";

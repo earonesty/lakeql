@@ -18,6 +18,7 @@ export function sharedGatherPlan(
   let retainsInput = false;
   for (const vector of Object.values(batch.columns)) {
     switch (vector.type) {
+      case "decimal":
       case "union":
       case "list":
       case "map":

@@ -221,5 +221,41 @@
       "../benchmarks/csv-output-decimal-2026-11-13.json"
     ],
     "timing": "Synthetic 1000-decimal arrays: owned JSON median 0.451ms versus unaccounted legacy 0.118ms; nested CSV 0.513ms versus 0.173ms. Formatting admission and two-pass output have a CPU cost. Fractional medians remain 0.202ms JSON and 0.209ms CSV; other cases vary. No whole-query or cloud throughput claim."
+  },
+  "decimalVectorStorage": {
+    "change": "Distinct decimal vector and Scalar type; public DecimalValue/factory/type guard. Batch construction preserves scale and immutable class semantics instead of inferring structs. Owned materialization pins source backing. Generic replayable selection drives detached decimal gather and concat. Shared gather uses one index buffer across columns when detached output cannot fit. Scalar string casts admit decimal formatting. Arrow exports exact decimal text.",
+    "validation": {
+      "defaultPassed": 2890,
+      "defaultSkipped": 621,
+      "defaultScope": "Full suite before the two additional gather-fallback/union-concat cases; final focused suite includes both.",
+      "finalCoreAndArrowFocusedPassed": 22,
+      "workerPassed": 57,
+      "referencePassed": 104,
+      "build": "passed",
+      "typecheck": "passed",
+      "lint": "passed",
+      "cleanPackageInstall": "passed",
+      "conformancePassed": 479,
+      "conformanceFailed": 30,
+      "conformanceSkipped": 1
+    },
+    "edgeCases": [
+      "Nullable and nested decimals",
+      "Mixed-domain union vectors preserve existing domain tag ordering",
+      "Missing decimal values and invalid indices reject",
+      "Producer closure preserves materialized class values",
+      "Detached gather reduces retained backing",
+      "Tight-budget shared gather charges one indices buffer across columns and preserves nulls",
+      "Concat handles null-only inputs and decimal unions",
+      "Exact construction capacity and one-byte-short rejection",
+      "Normal in-memory query projection preserves values",
+      "Arrow batch/row conversion emits exact text",
+      "Installed package public exports and owned vector materialization preserve exact values and release pool reservations"
+    ],
+    "benchmark": "../benchmarks/decimal-vector-compaction-2026-11-13.json",
+    "measurement": "100-row input reserves 25260 bytes; 10000-row input reserves 2543160 bytes. Three selected rows retain 827 bytes in both cases after source release. These are reservation units, not VM heap measurements.",
+    "capabilities": "Decimal scalar arithmetic kernels, comparison and output exist, but generic expression/order/group/aggregate execution and Parquet decoder hooks remain unintegrated. CPU vector capability declarations do not yet advertise decimal execution; aggregate scalar adapters reject the unsupported shape instead of coercing it. Existing 30 conformance failures remain.",
+    "discoveredBoundary": "The in-memory row scanner has no owned-vector scan capability: toOwnedArray rejects for ordinary numeric rows as well as decimals. Verified explicitly. Normal query projection and the owned vector/materialization APIs are validated separately; no claim of owned in-memory query support.",
+    "remaining": "Integrate exact decimal reader conversion and generic operator capabilities with independent fixture, cloud/R2, checkpoint and allocation tests. Array/descriptor and native BigInt/GC accounting still do not constitute a portable whole-heap cap."
   }
 }

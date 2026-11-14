@@ -1,4 +1,5 @@
 import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
+import { decimalFormatAllocationBytes, isDecimalValue } from "./decimal-value.js";
 import type { Scalar } from "./expr.js";
 import type { MemoryScope } from "./memory-scope.js";
 import { decimalStringAllocationBytes } from "./scalar-allocation.js";
@@ -17,6 +18,7 @@ export function scalarStringWithAdmission(value: Scalar, scope?: MemoryScope): s
 /** Conservative storage for standard scalar string formatting, before conversion. */
 export function scalarStringAllocationBytes(value: Scalar): number {
   let bytes: number = c.string + 64;
+  if (isDecimalValue(value)) return decimalFormatAllocationBytes(value);
   if (typeof value === "bigint") bytes = decimalStringAllocationBytes(value);
   else if (value instanceof Uint8Array)
     bytes = c.string + 8 * value.length + c.array + c.arraySlot * value.length;

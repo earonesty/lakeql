@@ -7,6 +7,7 @@ import {
   type Vector,
 } from "./batch.js";
 import { CpuReductionContinuation } from "./cpu-reduction-continuation.js";
+import { decimalValueAllocationBytes } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
 import type { Expr } from "./expr.js";
 import type { MemoryScope, OwnedMemory } from "./memory-scope.js";
@@ -1374,6 +1375,9 @@ function estimateVectorBytes(vector: Vector): number {
       return bytes + vector.values.byteLength;
     case "timestamp96":
       return bytes + vector.low.byteLength + vector.high.byteLength;
+    case "decimal":
+      for (const value of vector.values) bytes += decimalValueAllocationBytes(value.coefficient);
+      return bytes;
     case "utf8":
       for (const value of vector.values) bytes += value.length * 2;
       return bytes;

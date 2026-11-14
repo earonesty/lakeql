@@ -1,4 +1,5 @@
 import type { Batch, Vector } from "./batch.js";
+import { decimalValueAllocationBytes } from "./decimal-value.js";
 
 /** Payload retained by a batch, including entire backing buffers of views.
  * JS object/array headers and allocator overhead are not measured here.
@@ -45,6 +46,9 @@ function retainedMeasure(): (vector: Vector) => number {
         return bytes + backing(vector.values);
       case "timestamp96":
         return bytes + backing(vector.low) + backing(vector.high);
+      case "decimal":
+        for (const value of vector.values) bytes += decimalValueAllocationBytes(value.coefficient);
+        return bytes;
       case "utf8":
         for (const value of vector.values) bytes += value.length * 2;
         return bytes;

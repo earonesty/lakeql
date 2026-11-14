@@ -1,8 +1,10 @@
+import type { DecimalValue } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
 import type { IntervalValue } from "./interval.js";
 import type { TimestampValue } from "./timestamp.js";
 
 export type Scalar =
+  | DecimalValue
   | string
   | number
   | boolean

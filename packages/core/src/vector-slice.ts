@@ -97,6 +97,11 @@ export function sliceVector(vector: Vector, start: number, end: number): Vector 
         { type: "bool", values: vector.values.subarray(start, end) },
         valid,
       );
+    case "decimal":
+      return optionalVectorValidity(
+        { type: "decimal", values: vector.values.slice(start, end) },
+        valid,
+      );
     case "utf8":
       return optionalVectorValidity(
         { type: "utf8", values: vector.values.slice(start, end) },

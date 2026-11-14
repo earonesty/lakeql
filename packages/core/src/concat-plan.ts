@@ -11,7 +11,7 @@ import { structConcatInputs } from "./struct-concat.js";
 import { hasUnionLeaf, planUnionConcat } from "./union-concat.js";
 import { selectVector } from "./vector-selection.js";
 
-/** Exact new typed allocation extent for supported fixed-width, packed and dictionary concat. Inputs must remain
+/** Exact new allocation extent for fixed-width, packed, decimal and dictionary concat. Inputs must remain
  * charged separately through construction. Undefined means the physical shapes
  * require a different planner; it is not permission to await individual buffers.
  */
@@ -188,7 +188,7 @@ export function planConcat(batches: readonly Batch[]): ConcatPlan | undefined {
         for (const input of inputs) bytes = checkedAdd(bytes, input.rowCount);
       continue;
     }
-    if (initial.type === "timestamp96") {
+    if (initial.type === "timestamp96" || initial.type === "decimal") {
       const inputs = batches.map((batch) => batch.columns[name]);
       if (inputs.some((vector) => vector === undefined)) return undefined;
       const selected = planSelectedConcat((inputs as Vector[]).map(selectVector));
