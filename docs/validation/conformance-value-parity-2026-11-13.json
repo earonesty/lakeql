@@ -330,5 +330,29 @@
     "benchmark": "../benchmarks/decimal-scale-workspace-2026-11-13.json",
     "measurement": "For fixed coefficients at scales 4, 1000 and MAX_SAFE_INTEGER, comparison peak is 136 reservation bytes and formatting retains 1036 reservation bytes in every case. Microbenchmark medians are approximately 0.00016-0.00017ms; this is a kernel check, not query/cloud performance.",
     "remaining": "Connect exact decimal capabilities to vectors, readers, generic comparison/hash/sort, arithmetic/aggregates and owned output. Preserve existing low-precision number behavior where required by compatibility. The 30 conformance failures remain unresolved at this checkpoint."
+  },
+  "exactDecimalArithmetic": {
+    "status": "Internal add/subtract/multiply kernel implemented; generic vector/operator and reader integration remain outstanding.",
+    "source": "packages/core/src/decimal-arithmetic.ts",
+    "contract": "Caller must supply MemoryScope. Scale alignment, powers, aligned coefficients, result coefficient and scalar storage are admitted as one stage before arithmetic. Only retained result backing survives stage cleanup. Zero operands avoid needless alignment. Result scale must fit a nonnegative safe integer.",
+    "validation": {
+      "focusedPassed": 40,
+      "randomOperationChecks": 3000,
+      "build": "passed",
+      "typecheck": "passed",
+      "lint": "passed"
+    },
+    "edgeCases": [
+      "Exact documented 18/19-digit decimal values",
+      "Signed addition/subtraction/multiplication with unequal scales",
+      "Exact-cap success and one-byte-short rejection",
+      "Billion-digit and MAX_SAFE_INTEGER alignment gaps reject with zero peak admission",
+      "Same MAX_SAFE_INTEGER scales compute without rounding the size forecast",
+      "Zero addition, subtraction/negation and multiplication do not expand scale gaps",
+      "Scale overflow preserves existing live reservations",
+      "Shared-pool sibling arithmetic rejects while a previous result is retained, then succeeds after release"
+    ],
+    "discoveredDuringTesting": "Compute digit growth as coefficientDigits + (resultScale - inputScale); adding the scale before subtracting can round the size forecast near MAX_SAFE_INTEGER. Tests cover equal extreme scales.",
+    "remaining": "The explicit backing forecast is not a portable bound on native BigInt implementation scratch or delayed GC. Division/rounding semantics, generic decimal vector capabilities, comparisons/hash/sort/aggregates, readers and cloud fixture integration remain. The 30 conformance failures are unchanged."
   }
 }

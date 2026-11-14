@@ -42,11 +42,12 @@ export function decimalFromParts(
   const allocate = () => new DecimalValue(coefficient, scale);
   return scope === undefined
     ? allocate()
-    : scope.allocate(
-        c.object + 2 * c.property + c.bigint + decimalStringAllocationBytes(coefficient),
-        "decimal scalar backing",
-        allocate,
-      ).value;
+    : scope.allocate(decimalValueAllocationBytes(coefficient), "decimal scalar backing", allocate)
+        .value;
+}
+
+export function decimalValueAllocationBytes(coefficient: bigint): number {
+  return c.object + 2 * c.property + c.bigint + decimalStringAllocationBytes(coefficient);
 }
 
 function validateParts(coefficient: bigint, scale: number): void {
