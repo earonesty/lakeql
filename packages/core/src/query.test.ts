@@ -4003,7 +4003,12 @@ it("matches full aggregate snapshots at exact byte and buffered-value boundaries
       .aggregateWithState(spec);
     const exact = baseline.operatorState.byteLength;
     const run = async (maxMemoryBytes: number) =>
-      (await makeLake({ rowsByPath: { table: prefix }, budget: { maxMemoryBytes } })).lake
+      (
+        await makeLake({
+          rowsByPath: { table: prefix },
+          budget: { maxMemoryBytes, maxAllocatedMemoryBytes: 1024 * 1024 },
+        })
+      ).lake
         .path("table")
         .groupBy(["key"])
         .aggregateWithState(spec);
@@ -4024,7 +4029,11 @@ it("matches full aggregate snapshots at exact byte and buffered-value boundaries
   const resumed = await (
     await makeLake({
       rowsByPath: { table: rows.slice(2) },
-      budget: { maxMemoryBytes: all.operatorState.byteLength, maxBufferedRows: 9 },
+      budget: {
+        maxMemoryBytes: all.operatorState.byteLength,
+        maxBufferedRows: 9,
+        maxAllocatedMemoryBytes: 1024 * 1024,
+      },
     })
   ).lake
     .path("table")
@@ -4058,7 +4067,12 @@ it("accounts growing row aggregate states exactly across Unicode, duplicates, an
     mode: { op: "mode", column: "label" },
   } satisfies AggregateSpec;
   const run = async (input: typeof rows, maxMemoryBytes?: number, operatorState?: Uint8Array) =>
-    (await makeLake({ rowsByPath: { table: input }, budget: { maxMemoryBytes } })).lake
+    (
+      await makeLake({
+        rowsByPath: { table: input },
+        budget: { maxMemoryBytes, maxAllocatedMemoryBytes: 1024 * 1024 },
+      })
+    ).lake
       .path("table")
       .groupBy([])
       .aggregateWithState(spec, { operatorState });

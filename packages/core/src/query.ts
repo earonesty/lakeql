@@ -2448,66 +2448,78 @@ export class QueryResult {
       ...Object.values(spec).map((aggregate) => aggregate.expr),
       options.having,
     ]);
-    const groups = await aggregateGroupsFromState(groupColumns, spec, options);
-    const aggregateMemory =
-      this.config.budget.maxMemoryBytes === undefined &&
-      this.config.budget.maxBufferedRows === undefined
-        ? undefined
-        : new AggregateMemory(groupColumns, spec, groups, this.config.budget);
-    const startedAt = this.config.now();
-    const readColumns = aggregateReadColumns(
-      groupColumns,
-      spec,
-      this.config.where,
-      this.config.projections,
+    const checkpointScope = new MemoryScope(
+      this.memoryBudget,
+      this.config.budget.signal ? [this.config.budget.signal] : [],
     );
-    for await (const row of this.matchedRows(startedAt, readColumns)) {
-      const aggregateRow =
-        this.config.projections === undefined ? row : project(row, ["*"], this.config.projections);
-      const keyValues = groupColumns.map((column) => valueForColumn(aggregateRow, column));
-      const key = stableStringify(keyValues);
-      let group = groups.get(key);
-      if (!group) {
-        if (options.maxGroups !== undefined && groups.size >= options.maxGroups) {
-          throw new LakeqlError(
-            "LAKEQL_GROUP_LIMIT_EXCEEDED",
-            `Query exceeded group budget (${groups.size + 1} > ${options.maxGroups})`,
-            { limit: options.maxGroups, actual: groups.size + 1 },
-          );
-        }
-        group = createAggregateGroup(groupColumns, keyValues, spec);
-        groups.set(key, group);
-      }
-      group.add(aggregateRow);
-      aggregateMemory?.update(key, group);
-      if (aggregateMemory !== undefined) {
-        enforceBufferedRowsBudget(this.config.budget, aggregateMemory.rows);
-        enforceOperatorMemoryBudget(this.config.budget, aggregateMemory.bytes);
-      }
-    }
-    const rows = applyAggregateResultOptions(
-      [...groups.values()].map((group) => group.finish()),
-      options,
-    );
-    for (const _row of rows) {
-      this.stats.rowsReturned += 1;
-      enforceBudget(this.config.budget, this.stats, this.config.now, startedAt);
-    }
-    const state = aggregateOperatorState(groupColumns, spec, groups);
-    const operatorState = serializeAggregateOperatorState(state);
-    const result: AggregateResult = {
-      rows,
-      operatorState,
-    };
-    if (options.spill !== undefined) {
-      result.operatorSpill = await options.spill.write(
-        options.spillId ?? `aggregate-${this.stats.queryId}`,
-        operatorState,
+    try {
+      const groups = await aggregateGroupsFromState(groupColumns, spec, options, checkpointScope);
+      const aggregateMemory =
+        this.config.budget.maxMemoryBytes === undefined &&
+        this.config.budget.maxBufferedRows === undefined
+          ? undefined
+          : new AggregateMemory(groupColumns, spec, groups, this.config.budget);
+      const startedAt = this.config.now();
+      const readColumns = aggregateReadColumns(
+        groupColumns,
+        spec,
+        this.config.where,
+        this.config.projections,
       );
+      for await (const row of this.matchedRows(startedAt, readColumns)) {
+        const aggregateRow =
+          this.config.projections === undefined
+            ? row
+            : project(row, ["*"], this.config.projections);
+        const keyValues = groupColumns.map((column) => valueForColumn(aggregateRow, column));
+        const key = stableStringify(keyValues);
+        let group = groups.get(key);
+        if (!group) {
+          if (options.maxGroups !== undefined && groups.size >= options.maxGroups) {
+            throw new LakeqlError(
+              "LAKEQL_GROUP_LIMIT_EXCEEDED",
+              `Query exceeded group budget (${groups.size + 1} > ${options.maxGroups})`,
+              { limit: options.maxGroups, actual: groups.size + 1 },
+            );
+          }
+          group = createAggregateGroup(groupColumns, keyValues, spec);
+          groups.set(key, group);
+        }
+        group.add(aggregateRow);
+        aggregateMemory?.update(key, group);
+        if (aggregateMemory !== undefined) {
+          enforceBufferedRowsBudget(this.config.budget, aggregateMemory.rows);
+          enforceOperatorMemoryBudget(this.config.budget, aggregateMemory.bytes);
+        }
+      }
+      const rows = applyAggregateResultOptions(
+        [...groups.values()].map((group) => group.finish()),
+        options,
+      );
+      for (const _row of rows) {
+        this.stats.rowsReturned += 1;
+        enforceBudget(this.config.budget, this.stats, this.config.now, startedAt);
+      }
+      const state = aggregateOperatorState(groupColumns, spec, groups);
+      const checkpoint = checkpointScope.adopt(encodeOwnedCheckpoint(state, checkpointScope));
+      const operatorState = checkpoint.value;
+      const result: AggregateResult = {
+        rows,
+        operatorState,
+      };
+      if (options.spill !== undefined) {
+        result.operatorSpill = await writeOwnedCheckpoint(
+          options.spill,
+          options.spillId ?? `aggregate-${this.stats.queryId}`,
+          checkpoint,
+        );
+      }
+      if (checkpointScope.disposed)
+        throw new LakeqlError("LAKEQL_ABORTED", "Aggregate checkpoint scope disposed during spill");
+      return result;
+    } finally {
+      checkpointScope.dispose();
     }
-    return {
-      ...result,
-    };
   }
 
   private async *orderedBatches(): AsyncIterable<Row[]> {
@@ -4261,11 +4273,12 @@ async function aggregateGroupsFromState(
   groupColumns: string[],
   spec: AggregateSpec,
   options: AggregateOptions,
+  scope: MemoryScope,
 ): Promise<Map<string, AggregateGroup>> {
   if (options.operatorState === undefined) return new Map();
   const state =
     isSpilledOperatorState(options.operatorState) && options.spill !== undefined
-      ? await options.spill.read(options.operatorState.spillRef)
+      ? await readCheckpointSpill(options.spill, options.operatorState.spillRef, scope)
       : options.operatorState;
   if (isSpilledOperatorState(state)) {
     throw new LakeqlError(
@@ -4276,7 +4289,12 @@ async function aggregateGroupsFromState(
       },
     );
   }
-  const snapshot = deserializeAggregateOperatorState(state);
+  const snapshot =
+    state instanceof Uint8Array
+      ? validateAggregateOperatorState(scope.adopt(parseOwnedJson(state, scope)).value)
+      : validateAggregateOperatorState(
+          scope.adopt(detachOwnedRow(state as unknown as Row, scope.budget)).value,
+        );
   if (
     stableStringify(snapshot.groupColumns) !== stableStringify(groupColumns) ||
     stableStringify(snapshot.spec) !== stableStringify(spec)

@@ -19,6 +19,7 @@
     "Legacy custom adapters without readOwned use their existing read contract; pre-allocation admission is not guaranteed for those adapters.",
     "Memory adapter backing storage/write copies are governed by its maxBytes limit, not by read ownership.",
     "Remote adapters must implement pre-allocation admission themselves; an in-memory read test does not establish remote transport buffering bounds.",
-    "Legacy aggregate restore has not yet adopted this capability."
-  ]
+    "Aggregate restore now selects this capability (linked evidence); group and snapshot construction remain separate."
+  ],
+  "aggregateEvidence": "aggregate-checkpoint-io-admission-2026-11-13.json"
 }
