@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope } from "./memory-scope.js";
-import { flushSortRun, mergeSortRuns } from "./query-sort.js";
+import { flushSortRun, mergeSortRuns, normalizeOrderBy } from "./query-sort.js";
 
 it("admits merge scratch and output overlap exactly, before reading sort keys", () => {
   const runs = [[{ key: 1 }, { key: 3 }], [], [{ key: 2 }]];
@@ -48,4 +48,23 @@ it("denies run output before mutation and releases scratch after comparator fail
   );
   expect(failureBudget.usedBytes).toBe(0);
   failureScope.dispose();
+});
+
+it("admits normalized ordering metadata at exact capacity", () => {
+  const terms = [{ column: "雪".repeat(100) }, { column: "second", direction: "desc" as const }];
+  const measured = new MemoryBudget(65536);
+  const scope = new MemoryScope(measured);
+  expect(normalizeOrderBy(terms, scope)).toEqual(normalizeOrderBy(terms));
+  const required = measured.peakBytes;
+  scope.dispose();
+  for (const cap of [required - 1, required]) {
+    const pool = new MemoryBudget(cap + 17);
+    const sibling = pool.reserve(17, "sibling");
+    const target = new MemoryScope(pool.child(cap));
+    if (cap < required) expect(() => normalizeOrderBy(terms, target)).toThrow(/budget/i);
+    else expect(normalizeOrderBy(terms, target)).toEqual(normalizeOrderBy(terms));
+    target.dispose();
+    expect(pool.usedBytes).toBe(17);
+    sibling.release();
+  }
 });

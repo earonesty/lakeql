@@ -15,8 +15,9 @@
   },
   "remaining": [
     "Owned source trees remain retained through query completion; shortening this lifetime requires transferring or detaching rows before releasing source owners.",
-    "Checkpoint construction envelope/order/run metadata still needs admission.",
+    "Checkpoint envelope/order/run metadata is now admitted (linked evidence); spill ID formatting and runtime metadata remain separate.",
     "Spill read adapter buffers remain outside pre-read admission.",
     "No new wall-clock benchmark claim is made; eliminated row copies are established by the implementation and functional tests."
-  ]
+  ],
+  "metadataEvidence": "checkpoint-metadata-admission-2026-11-13.json"
 }

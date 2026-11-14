@@ -1,0 +1,24 @@
+{
+  "status": "Implemented; corrected build, default and Worker validation passed",
+  "change": "Stateful top-k/sort normalize ordering inside their query memory scope. Directory, term records and string backing are admitted before normalization. Checkpoint envelopes and run directories/descriptors are admitted before construction. Checkpoints reuse normalized terms instead of allocating a second normalized array.",
+  "validation": {
+    "build": "passed",
+    "focusedTestsPassed": 101,
+    "cases": [
+      "Exact ordering-metadata capacity and one-byte-short rejection",
+      "Sibling reservation preserved after cleanup",
+      "Existing checkpoint error, spill rejection and cancellation cleanup assertions",
+      "Existing object and encoded checkpoint resume tests"
+    ],
+    "defaultTestsPassed": 3054,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61
+  },
+  "developmentFinding": "Initial use of raw scope.reserve leaked metadata charges; boundary and lifecycle tests caught it. Replaced persistent charges with scope.allocate so scope disposal releases them. Only corrected-run evidence establishes validation.",
+  "remaining": [
+    "Spill run ID formatting and runtime iterator metadata are not covered by these envelope charges.",
+    "Source restore trees remain retained through completion.",
+    "Spill read buffers and adapter-internal copies require a separate pre-read contract.",
+    "This does not establish a total VM heap cap."
+  ]
+}

@@ -1633,7 +1633,6 @@ export class QueryResult {
     if (config.distinct === true) {
       throw new LakeqlError("LAKEQL_TYPE_ERROR", "topKWithState does not support distinct queries");
     }
-    const orderBy = normalizeOrderBy(config.orderBy);
     const topK = (config.offset ?? 0) + config.limit;
     const startedAt = config.now();
     const retainedScope = new MemoryScope(
@@ -1641,6 +1640,7 @@ export class QueryResult {
       config.budget.signal ? [config.budget.signal] : [],
     );
     try {
+      const orderBy = normalizeOrderBy(config.orderBy, retainedScope);
       const matched = await topKRowsFromState(
         orderBy,
         config.offset ?? 0,
@@ -1694,13 +1694,13 @@ export class QueryResult {
     if (config.distinct === true) {
       throw new LakeqlError("LAKEQL_TYPE_ERROR", "sortWithState does not support distinct queries");
     }
-    const orderBy = normalizeOrderBy(config.orderBy);
     const startedAt = config.now();
     const retainedScope = new MemoryScope(
       this.memoryBudget,
       config.budget.signal ? [config.budget.signal] : [],
     );
     try {
+      const orderBy = normalizeOrderBy(config.orderBy, retainedScope);
       const runs = await sortRunsFromState(orderBy, options, retainedScope);
       retainedScope.allocate(
         allocationCharges.array + runs.length * allocationCharges.arraySlot,
@@ -4109,13 +4109,17 @@ function topKOperatorState(
   rows: Row[],
   scope: MemoryScope,
 ): TopKOperatorState {
-  return {
-    version: 1,
-    orderBy: normalizeOrderBy(orderBy),
-    offset,
-    limit,
-    rows: scope.adopt(snapshotOwnedRows(rows, scope)).value,
-  };
+  return scope.allocate(
+    allocationCharges.object + 5 * allocationCharges.property,
+    "top-k checkpoint envelope",
+    () => ({
+      version: 1 as const,
+      orderBy,
+      offset,
+      limit,
+      rows: scope.adopt(snapshotOwnedRows(rows, scope)).value,
+    }),
+  ).value;
 }
 
 async function sortOperatorState(
@@ -4125,11 +4129,24 @@ async function sortOperatorState(
   spillId: string,
   scope: MemoryScope,
 ): Promise<SortOperatorState> {
-  const runStates: SortRunState[] = [];
+  scope.allocate(
+    allocationCharges.object + 3 * allocationCharges.property,
+    "sort checkpoint envelope",
+    () => undefined,
+  );
+  const runStates = scope.allocate(
+    allocationCharges.array + runs.length * allocationCharges.arraySlot,
+    "checkpoint run directory",
+    () => [] as SortRunState[],
+  ).value;
   for (const [index, run] of runs.entries()) {
     if (spill === undefined) {
       const rows = scope.adopt(snapshotOwnedRows(run, scope)).value;
-      runStates.push({ rows });
+      scope.allocate(
+        allocationCharges.object + allocationCharges.property,
+        "inline checkpoint run",
+        () => runStates.push({ rows }),
+      );
       continue;
     }
     const encoding = scope.childScope();
@@ -4143,14 +4160,21 @@ async function sortOperatorState(
       );
       if (scope.disposed)
         throw new LakeqlError("LAKEQL_ABORTED", "Sort checkpoint scope disposed during spill");
-      runStates.push({ spillRef: ref.id, rowCount: rows.length, byteSize: ref.byteSize });
+      scope.allocate(
+        allocationCharges.object +
+          3 * allocationCharges.property +
+          allocationCharges.string +
+          ref.id.length * allocationCharges.stringCodeUnit,
+        "spilled checkpoint run",
+        () => runStates.push({ spillRef: ref.id, rowCount: rows.length, byteSize: ref.byteSize }),
+      );
     } finally {
       encoding.dispose();
     }
   }
   return {
     version: 1,
-    orderBy: normalizeOrderBy(orderBy),
+    orderBy,
     runs: runStates,
   };
 }

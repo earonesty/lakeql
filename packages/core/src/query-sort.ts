@@ -5,10 +5,15 @@ import type { OrderByTerm } from "./query.js";
 import { compareOrderedScalars, isSortableScalar } from "./scalar-order.js";
 import type { Row } from "./types.js";
 
-export function normalizeOrderBy(terms: OrderByTerm[]): OrderByTerm[] {
+export function normalizeOrderBy(terms: OrderByTerm[], scope?: MemoryScope): OrderByTerm[] {
   if (!Array.isArray(terms) || terms.length === 0) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy must contain at least one term");
   }
+  scope?.allocate(
+    c.array + terms.length * c.arraySlot,
+    "normalized order directory",
+    () => undefined,
+  );
   return terms.map((term) => {
     if (typeof term.column !== "string" || term.column.length === 0) {
       throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy columns must be non-empty strings");
@@ -21,6 +26,14 @@ export function normalizeOrderBy(terms: OrderByTerm[]): OrderByTerm[] {
     if (nulls !== "first" && nulls !== "last") {
       throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy nulls must be first or last", { term });
     }
+    scope?.allocate(
+      c.object +
+        3 * c.property +
+        3 * c.string +
+        c.stringCodeUnit * (term.column.length + direction.length + nulls.length),
+      "normalized order term",
+      () => undefined,
+    );
     return { column: term.column, direction, nulls };
   });
 }
