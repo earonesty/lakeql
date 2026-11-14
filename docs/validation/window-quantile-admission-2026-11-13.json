@@ -33,6 +33,8 @@
   "limitations": [
     "Reservation units are not a portable VM heap ceiling.",
     "Expression payload ownership and output arrays are not covered by this buffer reservation.",
-    "No latency benchmark or production Cloudflare total-memory claim at this checkpoint."
-  ]
+    "No production Cloudflare total-memory claim. Local admission-overhead benchmark is recorded separately."
+  ],
+  "benchmark": "docs/benchmarks/window-buffered-aggregate-2026-11-13.json",
+  "performanceFinding": "At 16384 unique numeric values, same-implementation admission diagnostic measured ~8.01ms admitted versus ~1.03ms unadmitted; explicit retained/peak buffer charge was 262208 bytes. Per-value reservation overhead needs amortization; no before/after or cloud-latency conclusion."
 }
