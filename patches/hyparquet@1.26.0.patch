@@ -122,3 +122,19 @@ index e374278e193f7c73d18d20481eeb0d3b83eccf87..436640b4efb77de0ba10fcc250a6df00
    timestampFromMilliseconds(millis: bigint): any
    timestampFromMicroseconds(micros: bigint): any
    timestampFromNanoseconds(nanos: bigint): any
+diff --git a/src/variant.js b/src/variant.js
+--- a/src/variant.js
++++ b/src/variant.js
+@@ -73,9 +73,10 @@ function decodeTypedValue(typedValue, metadata, parsers) {
+     return result
+   }
+ 
+-  // Uint8Array: decode as binary variant
++  // typed_value is already decoded physical binary. Only the wrapper's
++  // value field carries an encoded variant payload.
+   if (typedValue instanceof Uint8Array) {
+-    return readVariant(makeReader(typedValue), metadata, parsers)
++    return typedValue
+   }
+ 
+   // Arrays

@@ -243,5 +243,42 @@
       "Changed package-check script passes biome"
     ],
     "limits": "Conformance still has sixteen known failures. This refresh does not replace final coverage/fixture reproducibility checks, resolve outstanding allocation categories, or prove total Worker heap caps."
+  },
+  "typedBinaryVariant": {
+    "fixture": "shredded_variant/case-030.parquet",
+    "fixtureSha256": "621dc23161852e39b3cb9ef74c31b3ed2538ca90a626aa8725695fd3bc8b75dd",
+    "oracle": "Vendored cases.json specifies BINARY 0A0B0C0D. Tests assert those bytes independently of public/owned parity.",
+    "cause": "The upstream variant decoder treated Uint8Array in typed_value as an encoded variant payload, reading its data bytes as headers. typed_value is already decoded physical binary; encoded payloads belong to value wrappers.",
+    "change": "Pinned hyparquet patch preserves typed binary backing without copying or reparsing. The same rule applies to nested array elements. value wrappers continue to parse encoded variant payloads.",
+    "validation": {
+      "focusedPassed": 8,
+      "httpModes": ["206 range responses", "200 ignored ranges"],
+      "defaultPassed": 2841,
+      "defaultSkipped": 605,
+      "defaultScope": "Full suite before adding two HTTP tests; the final focused run includes both HTTP tests.",
+      "workerPassed": 57,
+      "build": "passed",
+      "typecheck": "passed",
+      "cleanPackageInstall": "passed",
+      "conformancePassed": 479,
+      "conformanceFailed": 14,
+      "conformanceSkipped": 1,
+      "referencePassed": 104,
+      "lint": "passed",
+      "compatibility": "passed",
+      "trackedFileSize": "passed"
+    },
+    "cases": [
+      "Empty binary",
+      "Zero byte",
+      "Bytes that resemble variant headers",
+      "Arbitrary high bytes",
+      "Nested arrays",
+      "Encoded value wrappers",
+      "Real fixture public/owned readers",
+      "HTTP modes with zero final pool usage",
+      "Clean installed package public/owned fixture reads"
+    ],
+    "remaining": "Four decimal variant fixtures require exact high-precision scalar representation; relaxing schema rejection would silently round values. Other remaining failures are ALP, BSON and BROTLI, each through both readers. No exclusions or assertion waivers added. HTTP tests do not establish production Cloudflare heap safety."
   }
 }

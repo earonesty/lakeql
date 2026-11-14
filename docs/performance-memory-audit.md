@@ -1,6 +1,6 @@
 # Performance and memory budget audit
 
-Latest corpus value-parity findings: `docs/validation/conformance-value-parity-2026-11-13.json` (16 failures; release gate remains open).
+Latest corpus value-parity findings: `docs/validation/conformance-value-parity-2026-11-13.json` (14 failures; release gate remains open).
 
 LakeQL has further opportunities to remove repeated whole-state work from per-row
 execution. The highest-value work is shared incremental memory accounting, followed
@@ -39,7 +39,7 @@ expanded clean npm install smoke checks, compatibility and tracked-file size che
 also pass. Coverage and fixture reproducibility remain earlier checkpoints that
 require final-revision reruns.
 
-The latest full external conformance checkpoint reports **477 passed, 16 failed,
+The latest full external conformance checkpoint reports **479 passed, 14 failed,
 one skipped**. It checks both reader paths and compares owned values with public
 output, in addition to cardinality and cleanup. Eleven additional differential
 findings were fixed or independently validated as representation differences;

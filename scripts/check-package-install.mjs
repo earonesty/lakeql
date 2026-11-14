@@ -34,6 +34,10 @@ try {
       readFileSync(join(root, "fixtures/external/parquet-testing/data", name)),
     );
   writeFileSync(
+    join(consumerDirectory, "variant-binary.parquet"),
+    readFileSync(join(root, "fixtures/external/parquet-testing/shredded_variant/case-030.parquet")),
+  );
+  writeFileSync(
     join(consumerDirectory, "smoke.mjs"),
     `import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
@@ -74,6 +78,13 @@ assert.equal(new TextDecoder().decode(recovered[0].name), "ALGERIA");
 assert.equal(new TextDecoder().decode(recovered[24].name), "UNITED STATES");
 const pool = new MemoryBudget(64 * 1024 * 1024);
 const lake = createParquetLake({ store, memoryPool: pool, scanRangeCache: { maxBytes: 0 } });
+await store.put("variant-binary.parquet", readFileSync(new URL("variant-binary.parquet", import.meta.url)));
+const binaryExpected = [{ id: 1, var: new Uint8Array([10, 11, 12, 13]) }];
+assert.deepEqual(await readParquetObjects(store, "variant-binary.parquet"), binaryExpected);
+const binaryOwned = await lake.path("variant-binary.parquet").batchSize(1).run().toOwnedArray();
+assert.deepEqual(binaryOwned.value, binaryExpected);
+binaryOwned.release();
+assert.equal(pool.usedBytes, 0);
 const json = await new Response(lake.path("nation.parquet").select(["nation_key"]).batchSize(1).streamJson()).text();
 assert.equal(json, JSON.stringify(expectedKeys));
 const ndjson = await new Response(lake.path("nation.parquet").select(["nation_key"]).batchSize(3).streamNdjson()).text();
