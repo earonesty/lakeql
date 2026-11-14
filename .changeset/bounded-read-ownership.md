@@ -375,3 +375,5 @@ Add `QueryResult.ownedSlice()` to retain both rows and continuation metadata in 
 Share row aggregate execution between row-only and checkpoint finalization. Ordinary `aggregate()` avoids constructing and serializing discarded continuation state, while `aggregateWithState()` and explicit spill requests preserve checkpoint behavior and restored-state limits.
 
 Retain columnar top-k output ownership through borrowed batch iteration. Admit per-batch reference arrays, reuse a complete single batch, and release input/output charges on completion, early close, cancellation or admission failure. Suspended streams now compete correctly with other jobs in the shared pool.
+
+Bound vector projection and deferred gather inputs even when scanners return oversized batches. Preserve physical offsets and source ownership, admit slice metadata/reference arrays, and keep computed output allocations within the requested batch size.

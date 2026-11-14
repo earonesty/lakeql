@@ -1,0 +1,36 @@
+{
+  "base": "213974d",
+  "requirements": ["F3", "M1", "M2", "V1", "V2"],
+  "regression": {
+    "before": "A vector scanner returning two rows for batchSize(1) caused a two-row projected yield. Both abort and early-close cases failed the new public-API matrix before the runtime change.",
+    "mechanism": "Projection and materialization operated on the entire scanner batch before enforcing an output boundary."
+  },
+  "fix": [
+    "Generic positioned vector batching slices oversized inputs before projected execution and deferred gather consumers, preserving physical row offsets.",
+    "Scoped vector slicing admits records, typed views, nested struct directories and copied legacy reference arrays before construction; payload and list/map/dictionary children remain borrowed.",
+    "Owned slices retain both input backing and slice metadata; borrowed slices detach selected output before scanner advancement.",
+    "Projection offset/limit slices also use scoped admission. Complete batches reuse input identity without additional slice allocation."
+  ],
+  "evidence": [
+    "Ten public stream cases cover row projection, row ordering, row windows, vector projection and vector windows, each with abort or early closure; paused expanded strings remain charged.",
+    "A 1000-row borrowed vector input expands each row to 10000 characters while yielding one row at a time under a 128 KiB shared pool; completion releases all charges.",
+    "Helper cases cover short final batches, physical offsets, independent retained owners, exact capacity/cap-minus-one, sibling preservation, abort before/during iteration, empty inputs and whole-batch reuse.",
+    "Scoped slice exact-cap tests cover numeric, nullable boolean, legacy text/binary arrays, nested lists/structs, packed text and signed 96-bit timestamps.",
+    "Real Parquet HTTP 206/200 fixtures deliberately return larger scanner batches for both borrowed and owned routes; filtered offset/limit output matches an independent row oracle and stays within batchSize(3). Cache eviction releases remaining charges."
+  ],
+  "validation": {
+    "build": "pnpm exec tsc -b passed",
+    "types": "pnpm typecheck passed",
+    "focusedTests": 48,
+    "regularPassed": 3856,
+    "regularSkipped": 645,
+    "workerPassed": 82,
+    "workerRetry": "Concurrent run had entrypoint import (15s) and NDJSON (5s) timeouts; complete isolated rerun passed with original timeouts unchanged."
+  },
+  "boundaries": [
+    "Third-party scanners remain responsible for allocations made before yielding; downstream slicing cannot retroactively bound those allocations.",
+    "Slices retain source backing while exposed; this avoids copying payload but does not shrink the source allocation.",
+    "HTTP fixture checks are local network transport tests, not live R2 or whole-isolate heap measurements.",
+    "Whole-runtime headroom, remaining audit findings and final complete release-gate refresh remain open."
+  ]
+}

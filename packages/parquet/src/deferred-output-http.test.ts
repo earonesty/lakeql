@@ -106,6 +106,65 @@ it.each(
           },
         })
       : createParquetLake({ store, memoryPool: pool, scanRangeCache });
+    if (!ranked) {
+      // A scanner's batch size is a hint, while the query output boundary must
+      // still hold if a remote row group is returned in a larger vector batch.
+      let largestInput = 0;
+      const oversizedLake = new Lake({
+        store,
+        memoryPool: pool,
+        scanner: {
+          scan: adapter.scan.bind(adapter),
+          ...(borrowed
+            ? {
+                async *scanVectorBatches(path, options) {
+                  for await (const input of adapter.scanVectorBatches(path, {
+                    ...options,
+                    batchSize: 32,
+                  })) {
+                    largestInput = Math.max(largestInput, input.batch.rowCount);
+                    yield input;
+                  }
+                },
+              }
+            : {
+                async *scanOwnedVectorBatches(path, options) {
+                  for await (const owner of adapter.scanOwnedVectorBatches(path, {
+                    ...options,
+                    batchSize: 32,
+                  })) {
+                    largestInput = Math.max(largestInput, owner.value.batch.rowCount);
+                    yield owner;
+                  }
+                },
+              }),
+        },
+      });
+      const actual = [];
+      for await (const batch of oversizedLake
+        .path("rows.parquet")
+        .where(eq(mod(col("id"), 2), 0))
+        .project({ copy: col("text") })
+        .offset(5)
+        .limit(17)
+        .batchSize(3)
+        .run()
+        .batches()) {
+        expect(batch.length).toBeLessThanOrEqual(3);
+        actual.push(...batch);
+      }
+      expect(largestInput).toBeGreaterThan(3);
+      expect(actual).toEqual(
+        rows
+          .filter((row) => row.id % 2 === 0)
+          .slice(5, 22)
+          .map((row) => ({ ...row, copy: row.text })),
+      );
+      cache.deleteWhere(() => true);
+      expect(pool.usedBytes).toBe(0);
+      transferred = 0;
+      ranges.length = 0;
+    }
     const query = (select: string[]) => {
       const base = lake
         .path("rows.parquet")

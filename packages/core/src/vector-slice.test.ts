@@ -1,5 +1,7 @@
 import { expect, it } from "vitest";
 import { type Vector, vectorFromValues, vectorLength, vectorValue } from "./batch.js";
+import { MemoryBudget } from "./memory-budget.js";
+import { MemoryScope } from "./memory-scope.js";
 import { retainedVectorBytes } from "./vector-retained-bytes.js";
 import { sliceBatch, sliceVector } from "./vector-slice.js";
 
@@ -88,4 +90,39 @@ it("slices batches without gather indices, including empty projections", () => {
   expect(sliceBatch(batch, 0, 4)).toBe(batch);
   expect(sliceBatch({ rowCount: 4, columns: {} }, 1, 3)).toEqual({ rowCount: 2, columns: {} });
   expect(() => sliceBatch({ rowCount: 4, columns: {} }, 0, 5)).toThrow(/out of bounds/);
+});
+
+it.each([
+  vectorFromValues([1, 2, 3]),
+  vectorFromValues([true, null, false]),
+  { type: "utf8", values: ["a", "b", "c"] } as Vector,
+  { type: "binary", values: [Uint8Array.of(1), Uint8Array.of(2), Uint8Array.of(3)] } as Vector,
+  vectorFromValues([[1], null, [2, 3]]),
+  vectorFromValues([{ a: 1 }, { a: 2 }, { a: 3 }]),
+  { type: "utf8-view", data: new TextEncoder().encode("abc"), fixedLength: 1, length: 3 } as Vector,
+  {
+    type: "timestamp96",
+    low: BigUint64Array.of(1n, 2n, 3n),
+    high: Int32Array.of(0, 0, 0),
+    unit: "ns",
+    isAdjustedToUTC: true,
+  } as Vector,
+])("admits slice metadata at its exact cap for $type", (input) => {
+  const run = (cap: number) => {
+    const budget = new MemoryBudget(cap);
+    const scope = new MemoryScope(budget);
+    try {
+      const sliced = sliceVector(input, 1, 3, scope);
+      expect(sliced).toEqual(sliceVector(input, 1, 3));
+      expect(sliceVector(input, 0, 3, scope)).toBe(input);
+      return budget.peakBytes;
+    } finally {
+      scope.dispose();
+      expect(budget.usedBytes).toBe(0);
+    }
+  };
+  const peak = run(16384);
+  expect(peak).toBeGreaterThan(0);
+  expect(run(peak)).toBe(peak);
+  expect(() => run(peak - 1)).toThrow(expect.objectContaining({ code: "LAKEQL_BUDGET_EXCEEDED" }));
 });

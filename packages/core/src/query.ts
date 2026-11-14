@@ -10,6 +10,7 @@ import {
   vectorValue,
 } from "./batch.js";
 import { vectorCallExprSupported } from "./batch-call.js";
+import { boundedVectorBatches } from "./bounded-vector-batches.js";
 import { BufferMemory } from "./buffer-memory.js";
 import { checkedAsyncIterable } from "./checked-async-iterable.js";
 import { readCheckpointSpill } from "./checkpoint-spill-read.js";
@@ -1358,7 +1359,7 @@ export class QueryResult {
               config.limit === undefined ? Infinity : Math.max(0, config.limit - returned),
             );
             if (count > 0) {
-              const selected = sliceBatch(projectedBatch, skipped, skipped + count);
+              const selected = sliceBatch(projectedBatch, skipped, skipped + count, stage);
               for (let index = 0; index < count; index++) {
                 returned++;
                 stats.rowsReturned++;
@@ -1399,6 +1400,19 @@ export class QueryResult {
   }
 
   private async *projectedScanInputs(
+    path: string,
+    options: ScanOptions,
+  ): AsyncIterable<ScanVectorBatch & { owner?: OwnedMemory<ScanVectorBatch> }> {
+    for await (const input of this.rawProjectedScanInputs(path, options))
+      yield* boundedVectorBatches(
+        input,
+        options.batchSize,
+        this.memoryBudget,
+        options.budget.signal,
+      );
+  }
+
+  private async *rawProjectedScanInputs(
     path: string,
     options: ScanOptions,
   ): AsyncIterable<ScanVectorBatch & { owner?: OwnedMemory<ScanVectorBatch> }> {
