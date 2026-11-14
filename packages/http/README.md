@@ -32,3 +32,10 @@ and fallback caching. They do not bound the sum of concurrent reads or total run
 memory. Buffer growth and final compaction can temporarily hold two buffers, and
 the Fetch implementation owns its incoming chunks. Shared query allocation
 accounting must also cover those lifetimes to provide an engine-wide cap.
+
+`HttpObjectStore.headOwned(path, scope)` admits range-probe buffers, full-response
+fallback buffers, metadata records and retained header strings in the supplied
+scope. Compressed range probes use an admitted full-response fallback. Returned
+metadata is releasable ownership. Probe bodies are released after metadata
+construction; they are not inserted into the legacy full-response cache. Runtime
+network chunks remain external to these engine allocation reservations.

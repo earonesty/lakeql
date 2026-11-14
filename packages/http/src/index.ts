@@ -1,4 +1,5 @@
 import {
+  MATERIALIZATION_CHARGES as c,
   LakeqlError,
   type ListOptions,
   type MemoryScope,
@@ -7,6 +8,7 @@ import {
   type ObjectStore,
   type OwnedMemory,
   type PutOptions,
+  readOwnedStream,
   readOwnedStreamWindow,
   SharedMemoryCache,
 } from "lakeql-core";
@@ -232,6 +234,67 @@ export class HttpObjectStore implements ObjectStore {
     if (lastModified !== null) head.lastModified = new Date(lastModified);
     if (contentType !== null) head.contentType = contentType;
     return head;
+  }
+
+  async headOwned(path: string, scope: MemoryScope): Promise<OwnedMemory<ObjectHead> | null> {
+    const scratch = scope.childScope();
+    try {
+      let response = await this.fetchOwnedPath(
+        path,
+        { method: "GET", headers: { Range: "bytes=0-1" } },
+        scratch,
+      );
+      if (response.status === 404) {
+        await response.body?.cancel().catch(() => undefined);
+        return null;
+      }
+      assertOk(response, path);
+      let probe = await readOwnedStream(response.body, scratch, {
+        maxBytes: this.maxResponseBytes,
+        purpose: "HTTP metadata probe",
+      });
+      const compressed =
+        response.status === 206 && isCompressedRangeProbe(probe.value, response.headers);
+      let size = parseContentRangeTotal(response.headers.get("content-range"));
+      if (compressed) {
+        probe.release();
+        response = await this.fetchOwnedPath(path, { method: "GET" }, scratch);
+        assertOk(response, path);
+        probe = await readOwnedStream(response.body, scratch, {
+          maxBytes: this.maxResponseBytes,
+          purpose: "HTTP full metadata probe",
+        });
+        size = probe.value.byteLength;
+      } else if (response.status !== 206) {
+        size = probe.value.byteLength;
+      } else if (size === undefined) {
+        const length = response.headers.get("content-length");
+        size = length === null ? Number.NaN : Number(length);
+      }
+      if (!Number.isSafeInteger(size) || size < 0) {
+        throw new LakeqlError("LAKEQL_OBJECT_NOT_FOUND", `Missing size for ${path}`, { path });
+      }
+      const etag = response.headers.get("etag");
+      const modified = response.headers.get("last-modified");
+      const contentType = response.headers.get("content-type");
+      const charge =
+        c.object +
+        5 * c.property +
+        (etag === null ? 0 : c.string + etag.length * c.stringCodeUnit) +
+        (modified === null ? 0 : c.timestamp) +
+        (contentType === null ? 0 : c.string + contentType.length * c.stringCodeUnit);
+      return scope
+        .allocate<ObjectHead>(charge, "HTTP object metadata", () => ({
+          size,
+          rangeReadMode: response.status === 206 && !compressed ? "native" : "emulated",
+          ...(etag === null ? {} : { etag }),
+          ...(modified === null ? {} : { lastModified: new Date(modified) }),
+          ...(contentType === null ? {} : { contentType }),
+        }))
+        .retain();
+    } finally {
+      scratch.dispose();
+    }
   }
 
   private async fetchOwnedPath(

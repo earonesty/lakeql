@@ -3982,3 +3982,23 @@ close the full-response probe allocation gap or add owned HEAD cache retention.
 
 Build/typecheck passed; focused suites passed 16 tests; full suite passed 3,646
 with 629 skips. Evidence: `docs/validation/owned-head-contract-2026-11-14.json`.
+
+### 2026-11-14 — admitted HTTP metadata probes
+
+HttpObjectStore implements headOwned using the shared admitted stream reader.
+Tiny range probes, ignored-range full responses and compressed-range full-response
+fallback all keep their backing in scratch until metadata construction finishes.
+Object metadata, retained header strings and dates are admitted separately and
+returned with ownership. Missing responses cancel their body; oversized streams
+cancel and release reservations. The owned path never inserts probe backing into
+the legacy unaccounted full-response cache.
+
+Tests cover 206/200 exact-capacity boundaries, one-byte-below rejection, compressed
+probe fallback and oversized stream cancellation. The existing real HTTP JSON
+cache fixtures now exercise this owned preliminary probe as well as owned payload
+reads. Probe buffers are released after metadata construction; shared-budget probe
+cache retention/reuse still needs implementation and performance review. Legacy
+HEAD remains unchanged, and runtime-provided network chunks are external storage.
+
+Build/typecheck passed; focused suites passed 15 tests; full suite passed 3,650
+with 629 skips. Evidence: `docs/validation/http-owned-head-2026-11-14.json`.

@@ -1,0 +1,27 @@
+{
+  "sourceBase": "b956de5",
+  "scope": "HTTP owned metadata probe and compressed/full response fallback admission",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 15,
+    "fullSuite": {
+      "passed": 3650,
+      "skipped": 629,
+      "log": "/tmp/http-owned-head-full.log"
+    }
+  },
+  "evidence": [
+    "Native 206 and full 200 exact-capacity metadata overlap",
+    "One-byte-below rejection and final zero reservations",
+    "Compressed range probe uses admitted full response",
+    "Oversized body cancellation",
+    "Real localhost HTTP JSON cache read fixtures now include owned metadata probing"
+  ],
+  "remaining": [
+    "Owned full-response probe cache retention and reuse",
+    "Network runtime chunks and request workspace",
+    "Other store owned metadata adapters",
+    "Full audit and refreshed runtime acceptance"
+  ]
+}
