@@ -15,9 +15,10 @@
     "workerTestsPassed": 61
   },
   "remaining": [
-    "First/last/any still use snapshot fallback and can allocate scalar conversion temporaries.",
-    "Immutable group header is measured once but still uses a temporary key snapshot.",
+    "First/last/any now measure normalized scalar sizes directly with conversion scratch admission (linked evidence).",
+    "Immutable group headers now measure keys directly without snapshot records (linked evidence).",
     "Growing-state size records and changed-value formatting still allocate runtime temporaries.",
     "No wall-clock speedup is claimed from snapshot-object elimination alone."
-  ]
+  ],
+  "scalarSizeEvidence": "aggregate-scalar-size-admission-2026-11-13.json"
 }

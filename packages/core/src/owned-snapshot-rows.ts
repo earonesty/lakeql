@@ -5,6 +5,7 @@ import { jsonSafeValue } from "./evaluator.js";
 import { intervalStringAllocationBytes, isIntervalValue } from "./interval.js";
 import type { MemoryScope, OwnedMemory } from "./memory-scope.js";
 import { scalarStringAllocationBytes } from "./scalar-cast-allocation.js";
+import { serializedValueBytes } from "./serialized-size.js";
 import { isTimestampValue } from "./timestamp.js";
 import type { Row } from "./types.js";
 
@@ -52,7 +53,7 @@ export function snapshotOwnedRows(
   }
 }
 
-export function snapshotScalarWithAdmission(value: unknown, scope: MemoryScope): SnapshotScalar {
+function snapshotScalarAllocationBytes(value: unknown): number {
   let bytes = 0;
   if (typeof value === "string") bytes = c.string + value.length * c.stringCodeUnit;
   else if (isIntervalValue(value)) bytes = intervalStringAllocationBytes(value);
@@ -68,9 +69,33 @@ export function snapshotScalarWithAdmission(value: unknown, scope: MemoryScope):
       "LAKEQL_TYPE_ERROR",
       "Aggregate operator state values must be JSON scalars",
     );
+  return bytes;
+}
+
+export function snapshotScalarWithAdmission(value: unknown, scope: MemoryScope): SnapshotScalar {
   return scope.allocate(
-    bytes,
+    snapshotScalarAllocationBytes(value),
     "snapshot scalar conversion",
     () => jsonSafeValue(value) as SnapshotScalar,
   ).value;
+}
+
+/** Match scalar snapshot serialization without building a normalized record.
+ * Bytes and text can be measured directly; native scalar formatting is admitted.
+ */
+export function snapshotScalarSerializedBytes(value: unknown, scope: MemoryScope): number {
+  const bytes = snapshotScalarAllocationBytes(value);
+  if (
+    value === null ||
+    typeof value === "boolean" ||
+    typeof value === "string" ||
+    value instanceof Uint8Array
+  )
+    return serializedValueBytes(value);
+  const scratch = scope.reserve(Math.max(bytes, c.string + 64), "snapshot scalar size scratch");
+  try {
+    return serializedValueBytes(value);
+  } finally {
+    scratch.release();
+  }
 }

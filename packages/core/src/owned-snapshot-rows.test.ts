@@ -1,8 +1,13 @@
 import { expect, it } from "vitest";
 import { jsonSafeValue } from "./evaluator.js";
+import { stableStringify } from "./manifest.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope } from "./memory-scope.js";
-import { snapshotOwnedRows, snapshotScalarWithAdmission } from "./owned-snapshot-rows.js";
+import {
+  snapshotOwnedRows,
+  snapshotScalarSerializedBytes,
+  snapshotScalarWithAdmission,
+} from "./owned-snapshot-rows.js";
 
 it("owns snapshot scalar conversions and safely preserves own prototype keys", () => {
   const row = {
@@ -72,4 +77,21 @@ it("admits scalar byte conversion at exact capacity before constructing text", (
     target.dispose();
     expect(target.budget.usedBytes).toBe(0);
   }
+});
+
+it.each([
+  null,
+  true,
+  1e308,
+  Infinity,
+  123n,
+  9007199254740993n,
+  new Uint8Array([0, 255]),
+  "雪\ud800",
+])("measures normalized snapshot scalar bytes without retaining scratch: %s", (value) => {
+  const scope = new MemoryScope(new MemoryBudget(65536));
+  const expected = new TextEncoder().encode(stableStringify(jsonSafeValue(value))).byteLength;
+  expect(snapshotScalarSerializedBytes(value, scope)).toBe(expected);
+  expect(scope.budget.usedBytes).toBe(0);
+  scope.dispose();
 });

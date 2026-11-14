@@ -43,7 +43,11 @@ import { parseOwnedJson } from "./owned-json-parse.js";
 import { OwnedReplacementValue } from "./owned-replacement-value.js";
 import { collectOwnedRows } from "./owned-row-collector.js";
 import { detachOwnedRow } from "./owned-row-detachment.js";
-import { snapshotOwnedRows, snapshotScalarWithAdmission } from "./owned-snapshot-rows.js";
+import {
+  snapshotOwnedRows,
+  snapshotScalarSerializedBytes,
+  snapshotScalarWithAdmission,
+} from "./owned-snapshot-rows.js";
 import {
   type AcceleratorPolicy,
   CpuPhysicalBackend,
@@ -3554,7 +3558,11 @@ class AggregateGroup {
   private readonly keys: Record<string, unknown>;
   private readonly states: Record<string, AggregateState>;
 
-  constructor(keys: Record<string, unknown>, states: Record<string, AggregateState>) {
+  constructor(
+    keys: Record<string, unknown>,
+    states: Record<string, AggregateState>,
+    private readonly scope: MemoryScope,
+  ) {
     this.keys = keys;
     this.states = states;
   }
@@ -3593,11 +3601,15 @@ class AggregateGroup {
   memory(key: string, budget: QueryBudget): { bytes: number; rows: number } {
     const measureBytes = budget.maxMemoryBytes !== undefined;
     if (measureBytes && this.serializedHeaderBytes === undefined) {
-      let header = estimateOperatorMemoryBytes({
-        key,
-        keys: snapshotRecord(this.keys),
-        states: {},
-      });
+      let keyBytes = 2;
+      let fields = 0;
+      for (const column in this.keys) {
+        if (!Object.hasOwn(this.keys, column)) continue;
+        const valueBytes = snapshotScalarSerializedBytes(this.keys[column], this.scope);
+        if (column === "__proto__") continue;
+        keyBytes += (fields++ > 0 ? 1 : 0) + serializedValueBytes(column) + 1 + valueBytes;
+      }
+      let header = '{"key":,"keys":,"states":{}}'.length + serializedValueBytes(key) + keyBytes;
       let count = 0;
       for (const alias in this.states) {
         if (!Object.hasOwn(this.states, alias)) continue;
@@ -3715,7 +3727,7 @@ function createAggregateGroup(
         states[alias] = state;
       });
     }
-    return new AggregateGroup(keys, states);
+    return new AggregateGroup(keys, states, scope);
   } finally {
     input.dispose();
   }
@@ -4269,7 +4281,7 @@ class FirstState implements AggregateState {
   constructor(
     protected value: unknown,
     protected seen: boolean,
-    scope: MemoryScope,
+    protected readonly scope: MemoryScope,
   ) {
     this.retained = new OwnedReplacementValue(scope);
     if (seen) this.value = this.retained.replace(value);
@@ -4286,6 +4298,14 @@ class FirstState implements AggregateState {
     return this.seen ? this.value : null;
   }
 
+  serializedBytes(): number {
+    return (
+      '{"op":"first","seen":,"value":}'.length +
+      (this.seen ? 4 : 5) +
+      snapshotScalarSerializedBytes(this.seen ? this.value : null, this.scope)
+    );
+  }
+
   snapshot(scope?: MemoryScope): AggregateStateSnapshot {
     return {
       op: "first",
@@ -4299,7 +4319,7 @@ class LastState implements AggregateState {
   constructor(
     private value: unknown,
     private seen: boolean,
-    scope: MemoryScope,
+    private readonly scope: MemoryScope,
   ) {
     this.retained = new OwnedReplacementValue(scope);
     if (seen) this.value = this.retained.replace(value);
@@ -4315,6 +4335,14 @@ class LastState implements AggregateState {
     return this.seen ? this.value : null;
   }
 
+  serializedBytes(): number {
+    return (
+      '{"op":"last","seen":,"value":}'.length +
+      (this.seen ? 4 : 5) +
+      snapshotScalarSerializedBytes(this.seen ? this.value : null, this.scope)
+    );
+  }
+
   snapshot(scope?: MemoryScope): AggregateStateSnapshot {
     return {
       op: "last",
@@ -4325,6 +4353,10 @@ class LastState implements AggregateState {
 }
 
 class AnyState extends FirstState {
+  override serializedBytes(): number {
+    return super.serializedBytes() - 2;
+  }
+
   override snapshot(scope?: MemoryScope): AggregateStateSnapshot {
     return {
       op: "any",
@@ -4701,7 +4733,7 @@ function aggregateGroupFromSnapshot(
       stateSpecs.set(states[alias], aggregate);
     });
   }
-  return new AggregateGroup(snapshot.keys, states);
+  return new AggregateGroup(snapshot.keys, states, scope);
 }
 
 function aggregateStateFromSnapshot(
