@@ -3,6 +3,7 @@ import { parquetWriteBuffer } from "hyparquet-writer";
 import {
   col,
   eq,
+  Lake,
   MemoryBudget,
   mod,
   SharedMemoryCache,
@@ -10,14 +11,24 @@ import {
 } from "lakeql-core";
 import { expect, it } from "vitest";
 import { HttpObjectStore } from "../../http/src/index.js";
-import { createParquetLake } from "./index.js";
+import { createParquetLake, ParquetScanAdapter } from "./index.js";
 
-it.each([
-  { ignoreRange: false, ranked: false },
-  { ignoreRange: true, ranked: false },
-  { ignoreRange: false, ranked: true },
-  { ignoreRange: true, ranked: true },
-])("defers sparse output columns over HTTP: %j", async ({ ignoreRange, ranked }) => {
+it.each(
+  [
+    { ignoreRange: false, ranked: false },
+    { ignoreRange: true, ranked: false },
+    { ignoreRange: false, ranked: true },
+    { ignoreRange: true, ranked: true },
+  ].flatMap((config) => [
+    { ...config, borrowed: false, poolMiB: 64 },
+    ...(config.ranked ? [64, 128].map((poolMiB) => ({ ...config, borrowed: true, poolMiB })) : []),
+  ]),
+)("defers sparse output columns over HTTP: %j", async ({
+  ignoreRange,
+  ranked,
+  borrowed,
+  poolMiB,
+}) => {
   let seed = 12345;
   const rows = Array.from({ length: 512 }, (_, id) => ({
     id,
@@ -65,7 +76,7 @@ it.each([
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
   });
-  const pool = new MemoryBudget(64 * 1024 * 1024);
+  const pool = new MemoryBudget(poolMiB * 1024 * 1024);
   const cache = new SharedMemoryCache({ maxBytes: 8 * 1024 * 1024, memoryBudget: pool });
   try {
     const address = server.address();
@@ -74,11 +85,22 @@ it.each([
       new HttpObjectStore({ baseUrl: `http://127.0.0.1:${address.port}/` }),
       { maxConcurrentReads: 2 },
     );
-    const lake = createParquetLake({
-      store,
-      memoryPool: pool,
-      scanRangeCache: { maxBytes: 8 * 1024 * 1024, coalesceBytes: 0, sharedCache: cache },
-    });
+    const scanRangeCache = { maxBytes: 8 * 1024 * 1024, coalesceBytes: 0, sharedCache: cache };
+    const adapter = new ParquetScanAdapter(store, { scanRangeCache });
+    const borrowedReads: { columns: string[] | undefined; rowStart: number | undefined }[] = [];
+    const lake = borrowed
+      ? new Lake({
+          store,
+          memoryPool: pool,
+          scanner: {
+            scan: adapter.scan.bind(adapter),
+            async *scanVectorBatches(path, options) {
+              borrowedReads.push({ columns: options.columns, rowStart: options.rowStart });
+              yield* adapter.scanVectorBatches(path, options);
+            },
+          },
+        })
+      : createParquetLake({ store, memoryPool: pool, scanRangeCache });
     const query = (select: string[]) => {
       const base = lake
         .path("rows.parquet")
@@ -97,9 +119,16 @@ it.each([
     cache.deleteWhere(() => true);
     transferred = 0;
     ranges.length = 0;
+    borrowedReads.length = 0;
     const deferred = await query(["id", "text"]).toOwnedArray();
     expect(deferred.value).toEqual([rows[256]]);
     deferred.release();
+    if (borrowed && !ignoreRange) {
+      expect(borrowedReads.some((read) => read.columns?.join() === "id")).toBe(true);
+      expect(
+        borrowedReads.some((read) => read.columns?.join() === "text" && read.rowStart === 256),
+      ).toBe(true);
+    }
     if (!ignoreRange) expect(transferred).toBeLessThan(eagerBytes / 2);
     else
       expect(transferred, JSON.stringify({ eagerRanges, ranges })).toBeLessThanOrEqual(eagerBytes);
@@ -128,6 +157,8 @@ it.each([
         `${JSON.stringify({
           ignoreRange,
           ranked,
+          borrowed,
+          poolMiB,
           fixtureBytes: bytes.length,
           eagerBytes,
           deferredBytes,

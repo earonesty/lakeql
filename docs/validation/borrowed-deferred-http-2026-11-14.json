@@ -1,0 +1,116 @@
+{
+  "date": "2026-11-14",
+  "requirements": ["F3", "F6", "V1", "V2"],
+  "fixture": "Actual 269115-byte encoded Parquet fixture, 512 rows, 16 row groups, deterministic string payloads, localhost HTTP server with delayed responses.",
+  "matrix": {
+    "tests_passed": 8,
+    "borrowed_top_k_pool_MiB": [64, 128],
+    "transport": ["HTTP 206 honoring ranges", "HTTP 200 ignoring ranges"],
+    "concurrency": 4,
+    "read_cap": 2
+  },
+  "assertions": [
+    "Correct eager and deferred output for the selected row.",
+    "Borrowed HTTP 206 execution explicitly requests rank-only id then text-only selected-row window at row 256.",
+    "Four concurrent cold queries and four warm queries return independent owned outputs.",
+    "Warm cache needs no data reads beyond size probes.",
+    "Peak active reads respects cap two, all reservations release after cache eviction."
+  ],
+  "metrics": [
+    {
+      "ignoreRange": false,
+      "ranked": false,
+      "borrowed": false,
+      "poolMiB": 64,
+      "fixtureBytes": 269115,
+      "eagerBytes": 219157,
+      "deferredBytes": 84933,
+      "peakReads": 2,
+      "peakAllocatedBytes": 901387
+    },
+    {
+      "ignoreRange": true,
+      "ranked": false,
+      "borrowed": false,
+      "poolMiB": 64,
+      "fixtureBytes": 269115,
+      "eagerBytes": 5382300,
+      "deferredBytes": 5382300,
+      "peakReads": 2,
+      "peakAllocatedBytes": 694186
+    },
+    {
+      "ignoreRange": false,
+      "ranked": true,
+      "borrowed": false,
+      "poolMiB": 64,
+      "fixtureBytes": 269115,
+      "eagerBytes": 332786,
+      "deferredBytes": 101371,
+      "peakReads": 2,
+      "peakAllocatedBytes": 580859
+    },
+    {
+      "ignoreRange": false,
+      "ranked": true,
+      "borrowed": true,
+      "poolMiB": 64,
+      "fixtureBytes": 269115,
+      "eagerBytes": 332788,
+      "deferredBytes": 84826,
+      "peakReads": 2,
+      "peakAllocatedBytes": 336376
+    },
+    {
+      "ignoreRange": false,
+      "ranked": true,
+      "borrowed": true,
+      "poolMiB": 128,
+      "fixtureBytes": 269115,
+      "eagerBytes": 332788,
+      "deferredBytes": 84826,
+      "peakReads": 2,
+      "peakAllocatedBytes": 336376
+    },
+    {
+      "ignoreRange": true,
+      "ranked": true,
+      "borrowed": false,
+      "poolMiB": 64,
+      "fixtureBytes": 269115,
+      "eagerBytes": 9149910,
+      "deferredBytes": 9149910,
+      "peakReads": 2,
+      "peakAllocatedBytes": 846424
+    },
+    {
+      "ignoreRange": true,
+      "ranked": true,
+      "borrowed": true,
+      "poolMiB": 64,
+      "fixtureBytes": 269115,
+      "eagerBytes": 538230,
+      "deferredBytes": 538230,
+      "peakReads": 2,
+      "peakAllocatedBytes": 342856
+    },
+    {
+      "ignoreRange": true,
+      "ranked": true,
+      "borrowed": true,
+      "poolMiB": 128,
+      "fixtureBytes": 269115,
+      "eagerBytes": 538230,
+      "deferredBytes": 538230,
+      "peakReads": 2,
+      "peakAllocatedBytes": 342856
+    }
+  ],
+  "limits": [
+    "HTTP 200 uses emulated range fallback, not the same deferred operator path.",
+    "Transport fixture is localhost HTTP, not production cloud or local-file I/O.",
+    "Small fixture and 64/128 MiB reservation caps do not prove near-capacity heap behavior.",
+    "PeakAllocatedBytes is library reservation accounting, not RSS or JS heap.",
+    "The borrowed adapter exposes Parquet scanner APIs without the owned capability; underlying Parquet reads still perform their own supported admission."
+  ]
+}
