@@ -3829,15 +3829,35 @@ export class QueryResult {
         planned = hivePlanned;
       }
       if (config.sidecarIndex && config.where) {
-        const indexedByPath = new Map(config.sidecarIndex.map((index) => [index.path, index]));
-        const indexedObjects = planned.map((object) => ({
-          ...object,
-          ...indexedByPath.get(object.path),
-          path: object.path,
-        }));
-        const pruned = pruneFilesWithIndex(indexedObjects, config.where);
-        planned = pruned.planned;
-        skipped += pruned.skipped.length;
+        const indexing = discovery.childScope();
+        try {
+          const indexedByPath = indexing.allocate(
+            allocationCharges.object,
+            "sidecar index directory",
+            () => new Map<string, SidecarFileIndex | undefined>(),
+          ).value;
+          for (const object of planned) {
+            if (indexedByPath.has(object.path)) continue;
+            indexing.allocate(allocationCharges.property, "sidecar index entry", () => undefined);
+            indexedByPath.set(object.path, undefined);
+          }
+          for (const index of config.sidecarIndex) {
+            if (indexedByPath.has(index.path)) indexedByPath.set(index.path, index);
+          }
+          const pruningOptions = indexing.allocate(
+            allocationCharges.object + 2 * allocationCharges.property,
+            "sidecar pruning arguments",
+            () => ({
+              scope: discovery,
+              indexForFile: (object: ObjectInfo) => indexedByPath.get(object.path),
+            }),
+          ).value;
+          const pruned = pruneFilesWithIndex(planned, config.where, pruningOptions);
+          planned = pruned.planned;
+          skipped += pruned.skipped.length;
+        } finally {
+          indexing.dispose();
+        }
       }
       if (
         config.scanner.planObjects !== undefined ||

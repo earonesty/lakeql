@@ -1,5 +1,7 @@
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
 import type { Expr } from "./expr.js";
+import type { MemoryScope } from "./memory-scope.js";
 
 export type IndexValue = string | number | bigint | boolean;
 
@@ -28,17 +30,80 @@ export interface IndexPruneResult<T extends SidecarFileIndex = SidecarFileIndex>
   skipped: T[];
 }
 
+export interface IndexPruneOptions<T extends SidecarFileIndex> {
+  /** Own result containers; the caller retains the referenced file metadata. */
+  scope?: MemoryScope;
+  /** Resolve index metadata separately without copying it onto each file. */
+  indexForFile?: (file: T) => SidecarFileIndex | undefined;
+}
+
 export function pruneFilesWithIndex<T extends SidecarFileIndex>(
   files: T[],
   where: Expr | undefined,
+  options: IndexPruneOptions<T> = {},
 ): IndexPruneResult<T> {
-  const planned: T[] = [];
-  const skipped: T[] = [];
-  for (const file of [...files].sort((a, b) => a.path.localeCompare(b.path))) {
-    if (fileMayMatch(file, where)) planned.push(file);
-    else skipped.push(file);
+  const output = options.scope?.childScope();
+  const scratch = output?.childScope();
+  const allocate = <V>(
+    scope: MemoryScope | undefined,
+    bytes: number,
+    purpose: string,
+    create: () => V,
+  ): V => (scope === undefined ? create() : scope.allocate(bytes, purpose, create).value);
+  try {
+    let ordered = files;
+    for (let index = 1; index < files.length; index++) {
+      const previous = files[index - 1],
+        current = files[index];
+      if (
+        previous !== undefined &&
+        current !== undefined &&
+        previous.path.localeCompare(current.path) > 0
+      ) {
+        ordered = allocate(
+          scratch,
+          c.array + files.length * c.arraySlot,
+          "sidecar ordering input",
+          () => [...files],
+        );
+        const ordering = scratch?.reserve(
+          c.array + files.length * 2 * c.arraySlot,
+          "sidecar sorting workspace",
+        );
+        try {
+          ordered.sort((a, b) => a.path.localeCompare(b.path));
+        } finally {
+          ordering?.release();
+        }
+        break;
+      }
+    }
+    const planned = allocate(output, c.array, "sidecar planned list", () => [] as T[]);
+    const skipped = allocate(output, c.array, "sidecar skipped list", () => [] as T[]);
+    for (const file of ordered) {
+      const index = options.indexForFile === undefined ? file : options.indexForFile(file);
+      const target = index === undefined || fileMayMatch(index, where) ? planned : skipped;
+      output?.allocate(c.arraySlot, "sidecar result slot", () => undefined);
+      target.push(file);
+    }
+    const result = allocate(output, c.object + 2 * c.property, "sidecar result", () => ({
+      planned,
+      skipped,
+    }));
+    if (output !== undefined && options.scope !== undefined) {
+      const owner = output.retainAllocations(result);
+      try {
+        return options.scope.adopt(owner).value;
+      } catch (error) {
+        owner.release();
+        throw error;
+      }
+    }
+    return result;
+  } finally {
+    scratch?.dispose();
+    output?.dispose();
   }
-  return { planned, skipped };
 }
 
 export function bboxMayIntersect(index: BBoxIndex, query: BBoxIndex): boolean {

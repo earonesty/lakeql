@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { and, between, col, eq, fn, gt, gte, isIn, lit, lt, lte, ne, not, or } from "./expr.js";
+import { MemoryBudget } from "./memory-budget.js";
+import { MemoryScope } from "./memory-scope.js";
 import {
   bboxMayIntersect,
   buildBBoxIndex,
@@ -311,4 +313,68 @@ describe("sidecar bbox and h3 indexes", () => {
       ).planned,
     ).toHaveLength(1);
   });
+});
+
+it("resolves sidecars separately while preserving file identity and conservative missing indexes", () => {
+  const a = { path: "a", size: 3, rangeReadMode: "emulated" };
+  const b = { path: "b", size: 4, rangeReadMode: "native" };
+  const input = [b, a];
+  const result = pruneFilesWithIndex(input, gt("amount", 10), {
+    indexForFile: (file) =>
+      file.path === "a" ? { path: "a", columns: { amount: { min: 0, max: 5 } } } : undefined,
+  });
+  expect(result.planned).toEqual([b]);
+  expect(result.planned[0]).toBe(b);
+  expect(result.skipped[0]).toBe(a);
+  expect(input).toEqual([b, a]);
+});
+
+it("admits result lists and only sorts unsorted inputs, with exact-capacity rollback", () => {
+  const run = (capacity: number, sorted: boolean) => {
+    const budget = new MemoryBudget(capacity);
+    const scope = new MemoryScope(budget);
+    scope.allocate(8, "sibling", () => undefined);
+    const input = sorted ? [files[1], files[0], files[2]] : [...files];
+    const valid = input.filter((file): file is SidecarFileIndex => file !== undefined);
+    try {
+      const result = pruneFilesWithIndex(valid, gt("amount", 150), { scope });
+      expect(result.planned.map((file) => file.path)).toEqual(["lake/b.parquet", "lake/c.parquet"]);
+      return budget.peakBytes;
+    } catch (error) {
+      expect(budget.usedBytes).toBe(8);
+      throw error;
+    } finally {
+      scope.dispose();
+      expect(budget.usedBytes).toBe(0);
+    }
+  };
+  const sortedPeak = run(65536, true),
+    unsortedPeak = run(65536, false);
+  expect(unsortedPeak).toBeGreaterThan(sortedPeak);
+  for (const sorted of [false, true]) {
+    const peak = sorted ? sortedPeak : unsortedPeak;
+    expect(run(peak, sorted)).toBe(peak);
+    expect(() => run(peak - 1, sorted)).toThrowError(
+      expect.objectContaining({ code: "LAKEQL_BUDGET_EXCEEDED" }),
+    );
+  }
+});
+
+it("rolls back partial pruning when index lookup fails", () => {
+  const pool = new MemoryBudget(65536);
+  const scope = new MemoryScope(pool);
+  scope.allocate(8, "sibling", () => undefined);
+  let calls = 0;
+  expect(() =>
+    pruneFilesWithIndex(files, undefined, {
+      scope,
+      indexForFile: (file) => {
+        if (++calls === 2) throw Error("lookup failed");
+        return file;
+      },
+    }),
+  ).toThrow("lookup failed");
+  expect(pool.usedBytes).toBe(8);
+  scope.dispose();
+  expect(pool.usedBytes).toBe(0);
 });

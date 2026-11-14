@@ -3758,3 +3758,29 @@ allocations, output APIs and final constrained-runtime acceptance remain open.
 Build/typecheck passed; targeted suites passed 33 tests; full suite passed 3,611
 with 629 skips. Evidence:
 `docs/validation/owned-parquet-object-planning-2026-11-14.json`.
+
+### 2026-11-14 — sidecar pruning without copied file metadata
+
+The shared pruning helper now accepts a separate index resolver and optional
+container-admission scope. Query planning no longer spreads sidecar fields onto
+new object records. Original object identity and transport/version metadata are
+preserved, while missing indexes remain conservative. An already ordered input
+avoids the previous sorting copy; unordered inputs retain deterministic sorted
+results without mutating the caller's array. Sorting workspace, result lists and
+records, query lookup entries and pruning arguments are admitted.
+
+The query lookup directory is seeded only with discovered paths, then filled from
+matching sidecars. Duplicate index paths preserve last-entry semantics. Unrelated
+sidecars no longer create lookup entries: a 10,000-unrelated-index test has the
+same measured query peak as the zero-unrelated-index case. Caller-supplied index
+storage is external; the test concerns internally allocated lookup storage.
+
+Tests cover sorted/unsorted exact-capacity boundaries, one-byte-below rollback,
+lookup failure cleanup, original file identity, missing-index conservatism and
+query integration. Spatial literal parsing and expression workspace remain open;
+this closes sidecar container construction, not every sidecar allocation or the
+whole runtime-memory contract.
+
+Build/typecheck passed; targeted suites passed 105 tests; full suite passed 3,615
+with 629 skips. Evidence:
+`docs/validation/sidecar-planning-admission-2026-11-14.json`.

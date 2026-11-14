@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { eq } from "./expr.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope } from "./memory-scope.js";
 import { memoryStore } from "./memory-store.js";
@@ -240,4 +241,35 @@ it("releases a plan returned under an incompatible budget", async () => {
   });
   expect(pool.usedBytes).toBe(0);
   expect(foreign.usedBytes).toBe(0);
+});
+
+it("bounds sidecar lookup storage by discovered paths rather than unrelated indexes", async () => {
+  const store = memoryStore();
+  await store.put("table", new Uint8Array(1));
+  const run = async (extra: number) => {
+    const pool = new MemoryBudget(65536);
+    let planned = false;
+    const lake = new Lake({
+      store,
+      memoryPool: pool,
+      sidecarIndex: Array.from({ length: extra }, (_, index) => ({
+        path: `other-${index}`,
+        columns: { id: { min: 0, max: 1 } },
+      })),
+      scanner: {
+        async planObjects(objects) {
+          planned = true;
+          return objects;
+        },
+        scan() {
+          throw Error("unexpected scan");
+        },
+      },
+    });
+    expect(await lake.path("table").where(eq("id", 1)).planTasks()).toHaveLength(1);
+    expect(planned).toBe(true);
+    expect(pool.usedBytes).toBe(0);
+    return pool.peakBytes;
+  };
+  expect(await run(10000)).toBe(await run(0));
 });
