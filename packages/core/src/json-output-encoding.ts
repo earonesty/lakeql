@@ -1,27 +1,31 @@
 import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
-import { intervalToString, isIntervalValue } from "./interval.js";
+import { isIntervalValue } from "./interval.js";
+import { writeJsonInteger } from "./json-integer-output.js";
 import { jsonOutputUtf8Bytes } from "./json-output-size.js";
+import { JsonScalarFormatter } from "./json-scalar-output.js";
 import { isPlainJsonAscii } from "./json-string-size.js";
 import type { MemoryScope, OwnedMemory } from "./memory-scope.js";
 import { isTimestampValue } from "./timestamp.js";
 
 /** Encode immutable JSON-safe values directly into one admitted output buffer.
  * No cloned value tree, complete JSON string, or per-string escaped copy.
- * Scalar formatting and traversal workspace remain separate from output backing.
+ * Scalar formatting reuses one admitted workspace per traversal. Traversal and runtime
+ * workspace remain separate from output backing.
  */
 export function encodeOwnedJsonOutput(
   value: unknown,
   scope: MemoryScope,
   framing: { prefix?: "" | "," | "["; suffix?: "" | "\n" | "]" } = {},
 ): OwnedMemory<Uint8Array> {
-  const size = jsonOutputUtf8Bytes(value);
+  const size = jsonOutputUtf8Bytes(value, scope);
   if (size === undefined)
     throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Missing JSON root output");
   const prefix = framing.prefix ?? "";
   const suffix = framing.suffix ?? "";
   const bytes = size + prefix.length + suffix.length;
   const construction = scope.childScope();
+  const scalar = new JsonScalarFormatter(construction);
   try {
     const output = construction.allocate(
       bytes + c.view,
@@ -90,11 +94,11 @@ export function encodeOwnedJsonOutput(
         return;
       }
       if (isTimestampValue(value)) {
-        string(value.toJSON());
+        scalar.consume(value, string);
         return;
       }
       if (isIntervalValue(value)) {
-        string(intervalToString(value));
+        scalar.consume(value, string);
         return;
       }
       if (value instanceof Uint8Array) {
@@ -114,12 +118,14 @@ export function encodeOwnedJsonOutput(
           ascii(value ? "true" : "false");
           return;
         case "number":
-          ascii(Number.isFinite(value) ? String(value) : "null");
+          if (Number.isSafeInteger(value)) offset = writeJsonInteger(value, buffer, offset);
+          else if (Number.isFinite(value)) scalar.consume(value, ascii);
+          else ascii("null");
           return;
         case "bigint": {
           const number = Number(value);
-          if (Number.isSafeInteger(number)) ascii(String(number));
-          else string(String(value));
+          if (Number.isSafeInteger(number)) offset = writeJsonInteger(number, buffer, offset);
+          else scalar.consume(value, string);
           return;
         }
         case "object": {
@@ -155,6 +161,7 @@ export function encodeOwnedJsonOutput(
       throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "JSON value changed during encoding");
     return output.retain();
   } finally {
+    scalar.dispose();
     construction.dispose();
   }
 }

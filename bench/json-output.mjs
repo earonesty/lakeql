@@ -9,6 +9,7 @@ import { MemoryScope } from "../packages/core/dist/memory-scope.js";
 const encoder = new TextEncoder();
 const cases = {
   small: { id: 42, name: "example", active: true },
+  fractional: { values: Array.from({ length: 1000 }, (_, i) => i + 0.25) },
   ascii: { text: "abcdefghij".repeat(10000) },
   unicode: { text: '雪😀\n"'.repeat(20000) },
   binary: { data: Uint8Array.from({ length: 100000 }, (_, i) => i & 255) },
@@ -48,14 +49,23 @@ for (const [name, value] of Object.entries(cases)) {
     ),
   });
 }
-const sources = ["json-output-encoding", "json-output-size", "json-string-size", "evaluator"].map(
-  (name) => [
-    `${name}.ts`,
-    createHash("sha256")
-      .update(readFileSync(new URL(`../packages/core/src/${name}.ts`, import.meta.url)))
-      .digest("hex"),
-  ],
-);
+const sources = [
+  "json-output-encoding",
+  "json-scalar-output",
+  "json-integer-output",
+  "json-output-size",
+  "json-string-size",
+  "evaluator",
+  "scalar-cast-allocation",
+  "scalar-allocation",
+  "interval",
+  "timestamp",
+].map((name) => [
+  `${name}.ts`,
+  createHash("sha256")
+    .update(readFileSync(new URL(`../packages/core/src/${name}.ts`, import.meta.url)))
+    .digest("hex"),
+]);
 const report = {
   node: process.version,
   description:

@@ -9,7 +9,7 @@ parallel range reads and respect configured memory limits, including allocations
 made to accelerate execution.
 
 Schema traversal findings: `docs/validation/schema-validation-2026-11-13.json`.
-Stream cleanup: `docs/validation/stream-lifetime-2026-11-13.json`.
+Stream/output admission and scalar-workspace benchmarks: `docs/validation/stream-lifetime-2026-11-13.json`.
 The original findings describe upstream `main` snapshot `b54d4ed`, retrieved
 November 12, 2026. Implementation on `perf/memory-bounded-execution` now includes
 measured kernel improvements, owned read/cache primitives, and local-HTTP/public-R2
@@ -32,7 +32,7 @@ from a persistent leak, but does not cap external backing or prove production
 Cloudflare total-memory safety. See the constrained-runtime section below.
 
 Current stream-admission checkpoint (November 13, 2026) passes
-**2,829 default tests** (605 skipped), **57 Worker tests**, and **104 reference
+**2,835 default tests** (605 skipped), **57 Worker tests**, and **104 reference
 tests**, plus TypeScript build, typecheck and lint. These counts are recorded in
 `docs/validation/stream-lifetime-2026-11-13.json`. Distribution build,
 expanded clean npm install smoke checks, compatibility and tracked-file size checks

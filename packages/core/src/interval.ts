@@ -93,17 +93,9 @@ export function isNonNegativeInterval(value: IntervalValue): boolean {
 
 export function intervalToString(value: IntervalValue, scope?: MemoryScope): string {
   if (scope !== undefined) {
-    // Bound component strings, joined output, the three-slot parts array and
-    // parsed bigint backing before conversion. VM arithmetic/GC workspace is
-    // separate from these explicit reservation units.
-    const bytes =
-      c.array +
-      3 * c.arraySlot +
-      8 * c.string +
-      3 * c.stringCodeUnit * (value.nanoseconds.length + 128) +
-      c.bigint +
-      2 * value.nanoseconds.length;
-    return scope.allocate(bytes, "interval string conversion", () => intervalToString(value)).value;
+    return scope.allocate(intervalStringAllocationBytes(value), "interval string conversion", () =>
+      intervalToString(value),
+    ).value;
   }
   const parts: string[] = [];
   if (value.months !== 0) parts.push(`${value.months} months`);
@@ -190,4 +182,18 @@ function throwInterval(input: string): never {
   throw new LakeqlError("LAKEQL_TYPE_ERROR", `Invalid interval literal ${input}`, {
     interval: input,
   });
+}
+
+/** Bound component strings, joined output, parts array and parsed bigint backing.
+ * VM arithmetic/GC workspace is separate from these reservation units.
+ */
+export function intervalStringAllocationBytes(value: IntervalValue): number {
+  return (
+    c.array +
+    3 * c.arraySlot +
+    8 * c.string +
+    3 * c.stringCodeUnit * (value.nanoseconds.length + 128) +
+    c.bigint +
+    2 * value.nanoseconds.length
+  );
 }

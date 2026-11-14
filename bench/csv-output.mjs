@@ -9,6 +9,7 @@ import { MemoryScope } from "../packages/core/dist/memory-scope.js";
 const encoder = new TextEncoder();
 const cases = {
   small: { id: 42, name: "example", active: true },
+  fractional: { values: Array.from({ length: 1000 }, (_, i) => i + 0.25) },
   ascii: { text: "abcdefghij".repeat(10000) },
   unicode: { text: '雪😀\n"'.repeat(20000) },
   binary: { data: Uint8Array.from({ length: 100000 }, (_, i) => i & 255) },
@@ -71,6 +72,8 @@ const sources = [
   "timestamp",
   "utf8-size",
   "json-output-encoding",
+  "json-scalar-output",
+  "json-integer-output",
   "json-output-size",
   "json-string-size",
   "evaluator",

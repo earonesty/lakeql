@@ -151,5 +151,46 @@
       "tradeoff": "Small synthetic rows reserve 1472 bytes, versus 1216 before primitive string accounting. Their median is ~0.0127ms, versus ~0.00727ms in the prior separate run and ~0.000632ms for the unaccounted legacy encoder in this run. Wide-text peaks stay 100529 bytes (ASCII) and 200531 bytes (quoted Unicode). The extra bookkeeping is not presented as a speedup.",
       "remaining": "This admits top-level CSV formatted storage, not all serializer workspace. Nested JSON scalar formatting and recursive traversal still need integration. BigInt forecast arithmetic, native formatting/GC internals, accounting metadata and consumer-retained output are not a portable total-heap bound."
     }
+  },
+  "jsonScalarWorkspace": {
+    "change": "JSON sizing and writing admit scalar formatting before conversion. Each synchronous traversal reuses one reservation sized to its largest formatted scalar; growth replaces capacity only after the prior string last use. Safe integers write directly without formatted strings. CSV nested JSON uses the same encoder. Interval allocation estimates are shared with scoped interval conversion.",
+    "validation": {
+      "focusedPassed": 85,
+      "defaultPassed": 2835,
+      "defaultSkipped": 605,
+      "typescriptBuild": "passed",
+      "lint": "passed",
+      "workerPassed": 57,
+      "referencePassed": 104,
+      "distributionBuild": "passed",
+      "typecheck": "passed",
+      "cleanNpmInstall": "passed",
+      "compatibility": "passed",
+      "trackedFileSize": "passed"
+    },
+    "edgeCases": [
+      "Exact peak and one-byte-short caps for representative scalar/nested output",
+      "1000 and 10000 fractional values retain constant scalar workspace",
+      "1000 repeated floats reserve once; larger bigint grows at exact capacity without double charging",
+      "Failed growth skips consumption and releases old capacity",
+      "Thousands of safe integer boundary/random values match native JSON bytes, including negative zero",
+      "Timestamp admission rejects before formatting; write-pass formatter failure releases output and workspace"
+    ],
+    "benchmarks": {
+      "beforeJson": "../benchmarks/json-output-scalar-admitted-2026-11-13.json",
+      "beforeCsv": "../benchmarks/csv-output-nested-scalar-admitted-2026-11-13.json",
+      "afterJson": "../benchmarks/json-output-reused-scalar-2026-11-13.json",
+      "afterCsv": "../benchmarks/csv-output-reused-nested-scalar-2026-11-13.json",
+      "fractional1000MedianMilliseconds": {
+        "jsonBefore": 4.638071,
+        "jsonAfter": 0.23018975,
+        "jsonLegacyAfter": 0.06606665,
+        "csvBefore": 4.374242,
+        "csvAfter": 0.30631235,
+        "csvLegacyAfter": 0.07618475
+      },
+      "interpretation": "Separate synthetic encoder runs, two warmup and seven alternating-order measured rounds, byte parity checked. Final run after full suite terminated. These show reduced per-value accounting overhead, not whole-query or cloud speedups; native unaccounted fractional output remains faster."
+    },
+    "remaining": "Traversal directories/recursion, BigInt forecast arithmetic, native formatter/GC workspace, accounting metadata and consumer-retained output remain outside complete heap admission. Reusing live capacity does not establish a physical GC or whole-Worker heap limit."
   }
 }
