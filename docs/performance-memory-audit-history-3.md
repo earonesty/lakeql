@@ -4452,3 +4452,12 @@ Evidence: `docs/validation/top-k-scalar-widths-2026-11-14.json` and raw `docs/be
 This corrects the demonstrated candidate backing/view gap. Temporary subarray selection views and normalized order metadata still require separate review; no complete top-k allocation claim follows from this change. The preceding scalar-width report is historical and excludes the new candidate view charge.
 
 Final verification: build/typecheck, 3,731 regular tests (645 skipped) and 82 Worker tests passed. Refreshed width benchmark keeps workspace constant across row counts, with the expected 128-byte increment per shape. Evidence: `docs/validation/top-k-candidate-view-2026-11-14.json`; raw benchmark `docs/benchmarks/top-k-candidate-view-2026-11-14.json`.
+
+
+### F5/M1 top-k final selection view reuse (2026-11-14)
+
+Removed the mixed-input path's redundant `heap.subarray(0, size)` view. Candidate capacity is already bounded by actual selected rows and offset+limit, so completed selection fills that capacity. Both monotone and heap paths now share one final gather helper: whole-array selections reuse the admitted heap; sliced selections reserve `MATERIALIZATION_CHARGES.view` before constructing their subarray. Scalar comparison workspace still releases before gather, and input/heap/output overlap remains charged.
+
+Extended exact-capacity/cap-minus-one replay to offsets zero, one and beyond all rows. All thirteen focused top-k tests pass, including existing null/tie/selection/order/limit comparisons. This removes an allocation while accounting for required slices; normalized ordering metadata and broader gather/operator bookkeeping remain separate M1 work. No cloud throughput or complete heap-bound claim is made.
+
+Final verification: build/typecheck, 3,733 regular tests (645 skipped) and 82 Worker tests passed. Evidence: `docs/validation/top-k-selection-view-2026-11-14.json`.

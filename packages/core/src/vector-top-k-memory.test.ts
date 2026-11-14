@@ -126,7 +126,9 @@ it("matches reference top-k across selection, nulls, ties, offsets, and limits",
   expect(budget.usedBytes).toBe(0);
 });
 
-it("admits heap and output overlap at the exact cap and cleans up on failure", () => {
+it.each([
+  0, 1, 10,
+])("admits heap, offset view and output overlap at exact capacity (offset=%s)", (offset) => {
   function run(maxBytes: number) {
     const budget = new MemoryBudget(maxBytes);
     const scope = new MemoryScope(budget);
@@ -134,9 +136,11 @@ it("admits heap and output overlap at the exact cap and cleans up on failure", (
     const input = scope.retainAllocations(batch);
     scope.dispose();
     try {
-      const output = vectorTopKOwnedBatch(input, [{ column: "id" }], { limit: 2 });
+      const output = vectorTopKOwnedBatch(input, [{ column: "id" }], { limit: 2, offset });
       input.release();
-      expect(materializeBatchRows(output.value)).toEqual([{ id: 1 }, { id: 2 }]);
+      expect(materializeBatchRows(output.value)).toEqual(
+        [1, 2, 7, 9].slice(offset, offset + 2).map((id) => ({ id })),
+      );
       output.release();
       return budget.peakBytes;
     } finally {

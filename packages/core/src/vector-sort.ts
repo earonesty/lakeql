@@ -110,6 +110,15 @@ export function vectorTopKOwnedBatch(
       "top-k candidate indices",
       () => new Uint32Array(capacity),
     ).value;
+    const gather = () => {
+      const indices =
+        offset === 0 && options.limit >= heap.length
+          ? heap
+          : scope.allocate(c.view, "top-k selection view", () =>
+              heap.subarray(offset, offset + options.limit),
+            ).value;
+      return gatherOwnedBatch(input, indices);
+    };
     const compare = (left: number, right: number) =>
       compareBatchRows(batch, left, right, normalized, scope, reader);
     // Detect monotonic selected input without allocating sort keys. Stop as soon
@@ -143,7 +152,7 @@ export function vectorTopKOwnedBatch(
         }
       }
       reader.dispose();
-      return gatherOwnedBatch(input, heap.subarray(offset, offset + options.limit));
+      return gather();
     }
     let size = 0;
     for (let row = 0; capacity > 0 && row < batch.rowCount; row++) {
@@ -171,7 +180,6 @@ export function vectorTopKOwnedBatch(
         heap[index] = row;
       }
     }
-    const selected = heap.subarray(0, size);
     // In-place heap sort keeps ordering workspace inside the admitted buffer.
     for (let end = size - 1; end > 0; end--) {
       const value = heap[end] as number;
@@ -189,7 +197,7 @@ export function vectorTopKOwnedBatch(
       heap[index] = value;
     }
     reader.dispose();
-    return gatherOwnedBatch(input, selected.subarray(offset, offset + options.limit));
+    return gather();
   } finally {
     reader.dispose();
     scope.dispose();
