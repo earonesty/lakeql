@@ -3500,3 +3500,28 @@ runtime memory measurements; the removed encoded buffer extent reaches 589,824
 bytes in this matrix. Evidence: `docs/benchmarks/utf8-fingerprint-2026-11-14.json`.
 Manifest construction still needs scoped normalization and ownership integration;
 the optional fingerprint scope alone does not close that boundary.
+
+### 2026-11-14 — admitted manifest construction and retained task inputs
+
+Added query `ownedTaskManifest()` and `createOwnedTaskManifest()` for lower-level
+owned task lists. A manifest retains its input owner independently, admits sorted
+range/column/partition containers, window descriptors, task identifiers, snapshot
+and plan fingerprints, temporary serialization and sorting, and the manifest
+records. Input backing is shared under an explicit no-mutation lifetime contract.
+The plain query manifest method uses the same admitted path and transfers output
+out of accounting at return. Direct legacy `createTaskManifest()` remains an
+unscoped utility for caller-controlled inputs.
+
+Manifest construction reuses the normalized task list for plan fingerprinting
+instead of allocating another full list, and normalization removes the redundant
+range spread before mapping. Prototype-named partition keys remain own data
+properties. Tests verify identifier equality with legacy construction, range
+ordering, binary predicate lifetime after the original task handle is released,
+exact peak capacity and one-byte-below rollback, caller handle preservation on
+failure, and plain-result transfer. Object discovery and explain ownership remain
+open, as do final runtime and release gates.
+
+Build/typecheck and the full suite passed: 3,563 tests, 629 skips. The existing
+real-Parquet serialized golden manifest passes unchanged. Evidence:
+`docs/validation/owned-task-manifest-2026-11-14.json`. Internal `slice()` still
+uses a plain manifest while scanning and needs a retained lifetime in follow-up.

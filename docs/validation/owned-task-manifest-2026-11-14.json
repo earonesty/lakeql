@@ -1,0 +1,28 @@
+{
+  "baseCommit": "adefea4",
+  "scope": "Owned manifest construction and public query integration",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focused": 103,
+    "fullSuite": {
+      "passed": 3563,
+      "skipped": 629,
+      "log": "/tmp/owned-manifest-full.log"
+    }
+  },
+  "evidence": [
+    "Exact capacity succeeds; one byte below rejects without releasing caller task ownership",
+    "Manifest retains binary predicate backing after the original task owner is released",
+    "Plain query manifests transfer accounting at return",
+    "Normalized range ordering and identifiers match legacy construction",
+    "Existing real Parquet fixture serialized golden manifest passes unchanged",
+    "Prototype-named partition keys survive normalization"
+  ],
+  "remaining": [
+    "Internal slice manifest lifetime",
+    "Object discovery and explain output ownership",
+    "Unscoped low-level createTaskManifest remains caller-controlled",
+    "Final runtime memory and release gates"
+  ]
+}

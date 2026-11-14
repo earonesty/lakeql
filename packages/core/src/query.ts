@@ -25,7 +25,7 @@ import { jsonStringUtf8Bytes } from "./json-string-size.js";
 import {
   assertBookmarkMatches,
   createBookmark,
-  createTaskManifest,
+  createOwnedTaskManifest,
   fingerprint,
   stableStringify,
   type TaskManifest,
@@ -710,6 +710,10 @@ export class QueryBuilder {
   /** Retain queued task storage until the returned owner is released. */
   planOwnedTasks(): Promise<OwnedMemory<TaskInput[]>> {
     return this.run().planOwnedTasks();
+  }
+
+  ownedTaskManifest(jobId?: string): Promise<OwnedMemory<TaskManifest>> {
+    return this.run().ownedTaskManifest(jobId);
   }
 
   taskManifest(jobId?: string): Promise<TaskManifest> {
@@ -1960,8 +1964,22 @@ export class QueryResult {
     return this.tasksFromObjects(objects);
   }
 
+  async ownedTaskManifest(jobId = this.config.queryId): Promise<OwnedMemory<TaskManifest>> {
+    const tasks = await this.planOwnedTasks();
+    try {
+      return createOwnedTaskManifest({ jobId, tasks });
+    } finally {
+      tasks.release();
+    }
+  }
+
   async taskManifest(jobId = this.config.queryId): Promise<TaskManifest> {
-    return createTaskManifest({ jobId, tasks: await this.planTasks() });
+    const manifest = await this.ownedTaskManifest(jobId);
+    try {
+      return manifest.value;
+    } finally {
+      manifest.release();
+    }
   }
 
   async slice(options: SliceOptions): Promise<SliceResult> {

@@ -42,3 +42,13 @@ Adapter planning callbacks borrow arguments until their promises settle; adapter
 must account for their own workspace and retained results. This ownership contract
 does not account for every allocation made during object discovery or by external
 adapters and is not a total process-memory cap.
+
+Use `query.ownedTaskManifest(jobId)` to retain both task inputs and the normalized
+manifest under the query budget. Release the returned owner when finished. The
+lower-level `createOwnedTaskManifest({ jobId, tasks })` accepts an owned task list
+and retains it independently; release your original task handle separately.
+Manifest input backing is shared and must not be mutated while either owner is
+live. `taskManifest()` admits construction, then transfers the plain result out of
+accounting. Sorting, stable serialization and fingerprint overlap count during
+construction; this does not bound later caller-controlled serialization of a plain
+manifest.
