@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { MemoryBudget, ObjectStoreJsonCache } from "lakeql-core";
+import { MemoryBudget, MemoryScope, ObjectStoreJsonCache } from "lakeql-core";
 import { expect, it } from "vitest";
 import { HttpObjectStore } from "./index.js";
 
@@ -50,6 +50,49 @@ it.each([
     store.clearFullObjectCache();
     expect(pool.usedBytes).toBe(0);
     expect(ranges.length).toBeGreaterThan(0);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
+
+it("writes owned standard JSON through real HTTP and reads it back", async () => {
+  let stored = Buffer.alloc(0);
+  const server = createServer(async (request, response) => {
+    if (request.method === "PUT") {
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) chunks.push(Buffer.from(chunk));
+      stored = Buffer.concat(chunks);
+      response.writeHead(204).end();
+    } else response.writeHead(200, { "content-length": stored.length }).end(stored);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    if (address === null || typeof address === "string") throw Error("No server port");
+    const pool = new MemoryBudget(65536);
+    const scope = new MemoryScope(pool);
+    const value = {
+      date: new Date("2026-11-14T00:00:00Z"),
+      bytes: new Uint8Array([0, 255]),
+      text: "雪😀",
+    };
+    const input = scope.allocate(1024, "test input", () => ({ value }));
+    const store = new HttpObjectStore({
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      maxFullObjectCacheBytes: 0,
+    });
+    const cache = new ObjectStoreJsonCache({ store, prefix: "cache" });
+    await cache.setOwnedEntry("key", input);
+    expect(stored.toString()).toBe(JSON.stringify({ value }));
+    scope.dispose();
+    expect(pool.usedBytes).toBe(0);
+    const result = await cache.getOwnedEntry("key", pool);
+    expect(result?.value).toEqual(JSON.parse(JSON.stringify({ value })));
+    result?.release();
+    expect(pool.usedBytes).toBe(0);
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) =>

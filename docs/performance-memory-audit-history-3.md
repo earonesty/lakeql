@@ -4216,3 +4216,15 @@ The established benchmark (`json-cursor-benchmark-2026-11-14.json`, source base 
 The focused sizing/encoding/stream/decimal suites passed 74 tests before the final frame-charge adjustment. Existing byte-level fixtures cover sparse arrays, repeated aliases, empty/numeric keys, inherited/non-enumerable properties, special scalars and Unicode, and 20,000-level exact-capacity boundaries.
 
 Final verification after the frame-charge adjustment: build/typecheck/formatting passed; full suite 3,683 passed / 629 skipped; workerd 78 passed in 22 files.
+
+### Owned standard-JSON cache writes (2026-11-14)
+
+Added explicit standard JSON scalar semantics to the existing iterative sizing/writing implementation. Query formatting remains the default; the standard mode preserves Date ISO/null behavior, native boxed scalars, typed-array numeric properties, omitted object fields, sparse array nulls, and non-finite number nulls. Date formatting has a reusable admitted workspace. BigInt (primitive or boxed) and arbitrary conversion callbacks are rejected before invocation. This is a durable allocation boundary: opaque callback allocations cannot be forecast. Inputs must remain immutable; legacy plain cache `set` retains native JSON.stringify behavior.
+
+`ObjectStoreJsonCache.setOwnedEntry` now retains its borrowed input, admits wrapper/path/options and output backing, and keeps them live through asynchronous `put` settlement. It applies the same explicit-expiry/default-TTL rules as plain writes. Serialization no longer constructs a complete JSON string followed by a complete UTF-8 copy. Scope disposal releases every serialization owner on success, budget rejection, or transport failure. Transport adapter internal buffering/copies remain external and are NOT claimed bounded by this serialization change.
+
+Validation includes byte-for-byte comparison with native JSON.stringify for ordinary/extended/invalid dates, typed arrays, boxed scalars, omitted fields, non-finite values, and exact/one-byte-below allocation peaks. Callback rejection tests assert zero callback invocations. Cache tests prove pre-transport budget rejection, TTL/key encoding, input/output retention through delayed successful and failed writes, and cleanup after caller-scope disposal. A real localhost HTTP PUT followed by owned GET verifies stored bytes and parsed values, explicitly distinct from in-memory-store tests.
+
+The query kernel benchmark remains similar after adding the standard mode: medians small-row 0.0102 ms vs recursive 0.0102; wide-numbers 2.07 vs 2.17; row-array 0.57 vs 0.34; deep iterative 21.53 ms while recursion fails. Raw evidence `json-standard-mode-benchmark-2026-11-14.json` records base ff4f0c4 and built-module hashes. The shallow row-array performance gap remains open.
+
+Final verification: build/typecheck/formatting passed; full suite 3,693 passed / 629 skipped (402 files), workerd 78 passed (22 files). Evidence: `owned-standard-json-cache-write-2026-11-14.json`.

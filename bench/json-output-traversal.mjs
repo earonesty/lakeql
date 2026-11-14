@@ -102,6 +102,7 @@ try {
           "json-output-encoding",
           "json-traversal-budget",
           "json-container-entries",
+          "json-standard-scalars",
         ].map(async (name) => [
           name,
           createHash("sha256")

@@ -1,5 +1,6 @@
 import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
+import { encodeOwnedJsonOutput } from "./json-output-encoding.js";
 import type { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
 import { parseOwnedJson } from "./owned-json-parse.js";
@@ -127,6 +128,37 @@ export class ObjectStoreJsonCache<T> implements CacheAdapter<T> {
       parsed?.release();
       scratch.dispose();
       output.dispose();
+    }
+  }
+
+  async setOwnedEntry(key: string, entry: OwnedMemory<CacheEntry<T>>): Promise<void> {
+    const scope = new MemoryScope(entry.budget);
+    try {
+      const input = scope.adopt(entry.retain()).value;
+      if (input.value === undefined)
+        throw new LakeqlError("LAKEQL_TYPE_ERROR", "JSON cache value is not JSON serializable", {
+          key,
+        });
+      const stored = scope.allocate(c.object + 2 * c.property, "JSON cache entry", () => {
+        const result: StoredJsonCacheEntry<T> = { value: input.value };
+        if (input.expiresAt !== undefined) result.expiresAt = input.expiresAt;
+        else if (this.ttlMs !== undefined) result.expiresAt = this.now() + this.ttlMs;
+        return result;
+      }).value;
+      const path = scope.allocate(
+        c.string + (this.prefix.length + key.length * 9 + 6) * c.stringCodeUnit,
+        "JSON cache path",
+        () => this.pathFor(key),
+      ).value;
+      const options = scope.allocate(c.object + c.property, "JSON cache write options", () => ({
+        contentType: "application/json",
+      })).value;
+      const bytes = scope.adopt(encodeOwnedJsonOutput(stored, scope, {}, "standard"));
+      // The serialized backing remains owned through asynchronous transport.
+      // Adapter-internal write buffering remains an external allocation boundary.
+      await this.store.put(path, bytes.value, options);
+    } finally {
+      scope.dispose();
     }
   }
 

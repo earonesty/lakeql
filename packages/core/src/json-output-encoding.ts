@@ -6,6 +6,7 @@ import { JsonContainerCursor } from "./json-container-entries.js";
 import { writeJsonInteger } from "./json-integer-output.js";
 import { jsonOutputUtf8Bytes } from "./json-output-size.js";
 import { JsonScalarFormatter } from "./json-scalar-output.js";
+import { JsonStandardScalars } from "./json-standard-scalars.js";
 import { isPlainJsonAscii } from "./json-string-size.js";
 import { JsonTraversalBudget } from "./json-traversal-budget.js";
 import type { MemoryScope, OwnedMemory } from "./memory-scope.js";
@@ -21,8 +22,9 @@ export function encodeOwnedJsonOutput(
   value: unknown,
   scope: MemoryScope,
   framing: { prefix?: "" | "," | "["; suffix?: "" | "\n" | "]" } = {},
+  semantics: "query" | "standard" = "query",
 ): OwnedMemory<Uint8Array> {
-  const size = jsonOutputUtf8Bytes(value, scope);
+  const size = jsonOutputUtf8Bytes(value, scope, semantics);
   if (size === undefined)
     throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Missing JSON root output");
   const prefix = framing.prefix ?? "";
@@ -30,6 +32,7 @@ export function encodeOwnedJsonOutput(
   const bytes = size + prefix.length + suffix.length;
   const construction = scope.childScope();
   const scalar = new JsonScalarFormatter(construction);
+  const standard = semantics === "standard" ? new JsonStandardScalars(construction) : undefined;
   type Frame = { iterator: JsonContainerCursor; closing: number; first: boolean };
   const frames: Frame[] = [];
   const traversal = new JsonTraversalBudget(
@@ -100,23 +103,24 @@ export function encodeOwnedJsonOutput(
     const absent = (value: unknown) =>
       value === undefined || typeof value === "function" || typeof value === "symbol";
     const write = (value: unknown): void => {
+      if (standard !== undefined) value = standard.normalize(value);
       if (value === null || absent(value)) {
         ascii("null");
         return;
       }
-      if (isDecimalValue(value)) {
+      if (standard === undefined && isDecimalValue(value)) {
         scalar.consume(value, string);
         return;
       }
-      if (isTimestampValue(value)) {
+      if (standard === undefined && isTimestampValue(value)) {
         scalar.consume(value, string);
         return;
       }
-      if (isIntervalValue(value)) {
+      if (standard === undefined && isIntervalValue(value)) {
         scalar.consume(value, string);
         return;
       }
-      if (value instanceof Uint8Array) {
+      if (standard === undefined && value instanceof Uint8Array) {
         byte(34);
         for (const item of value) {
           byte(hex(item >> 4));
@@ -181,6 +185,7 @@ export function encodeOwnedJsonOutput(
   } finally {
     traversal.dispose();
     scalar.dispose();
+    standard?.dispose();
     construction.dispose();
   }
 }

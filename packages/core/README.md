@@ -92,7 +92,7 @@ be declined under pressure without failing an owned write.
 the requested budget and returns releasable parsed entries. It uses the store's
 owned-range capability when available. Stores with `headOwned` also admit preliminary probe metadata. Legacy `head`
 metadata/probe storage and legacy adapter internals remain outside that query scope; this is not a total
-transport-memory guarantee. Remote writes still use the legacy serialization path.
+transport-memory guarantee. Owned writes use the standard JSON serialization path described below.
 
 Stores may implement `headOwned(path, scope)` to admit metadata and any probe
 buffers before allocation. Return owned metadata in the supplied scope, or null
@@ -110,3 +110,12 @@ Valid cache replacements invalidate an older entry even when the new entry is
 too large to retain; existing reader pins remain valid until release. An owned
 entry-cache lookup that cannot pin the whole entry within the requesting child
 budget returns a miss, allowing the caller's normal read path to apply its limits.
+
+`ObjectStoreJsonCache.setOwnedEntry` retains the supplied input and admits the cache
+entry wrapper, path, UTF-8 output, and serialization workspace until `put` settles.
+It preserves standard JSON data semantics for dates, typed arrays, native boxed
+scalars, omitted fields, and non-finite numbers. BigInt and custom conversion
+callbacks are rejected; arbitrary callback allocations cannot be forecast. Inputs
+must remain immutable during serialization. Plain `set` retains its legacy native
+JSON behavior. Adapter-internal write buffering and copies remain external to the
+owned serialization budget.

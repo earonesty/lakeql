@@ -4,7 +4,7 @@ Current implementation: `docs/validation/default-http-pool-propagation-2026-11-1
 
 HTTP response cleanup follow-up: [validation](validation/http-response-cleanup-2026-11-14.json); build and all 50 HTTP adapter tests passed. Full acceptance remains open.
 
-JSON sizing follow-up: [validation](validation/iterative-json-sizing-2026-11-14.json); iterative admitted traversal, build/typecheck and 3,678 tests passed (629 skipped). Output writing is also iterative in the follow-up below; cache-write serialization remains open.
+JSON sizing follow-up: [validation](validation/iterative-json-sizing-2026-11-14.json); iterative admitted traversal, build/typecheck and 3,678 tests passed (629 skipped). Output writing is also iterative in the follow-up below; cache-write serialization was open at that revision; see the owned cache-write follow-up below.
 
 JSON writing follow-up: [validation](validation/iterative-json-writing-2026-11-14.json); iterative admitted output writing, build/typecheck and 3,680 tests passed (629 skipped).
 
@@ -15,6 +15,8 @@ Shared JSON enumeration follow-up: [benchmark](validation/json-shared-enumeratio
 Current JSON runtime checks: [Worker and coverage evidence](validation/json-worker-coverage-2026-11-14.json), 78 Worker tests passed; coverage thresholds passed unchanged. Deep NDJSON exact-capacity tests exercise workerd directly; total isolate heap bounds remain unproven.
 
 Direct JSON cursor follow-up: [benchmark](validation/json-cursor-benchmark-2026-11-14.json). Array traversal avoids iterator-result allocation; row-array median is 0.54 ms versus 0.35 ms recursively (about 1.55×, still open). Build/typecheck, 3,683 regular tests (629 skipped), and 78 Worker tests passed.
+
+Owned cache-write follow-up: [validation](validation/owned-standard-json-cache-write-2026-11-14.json), [query benchmark](validation/json-standard-mode-benchmark-2026-11-14.json). Standard JSON serialization is now admitted through write settlement for immutable data values; custom conversion callbacks are rejected. Adapter-internal write buffering remains external. Build/typecheck, 3,693 tests (629 skipped), and 78 Worker tests passed.
 Current release checks (source `246b165`):
 `docs/validation/current-cache-ownership-release-gates-2026-11-14.json`.
 

@@ -5,6 +5,7 @@ import { isIntervalValue } from "./interval.js";
 import { JsonContainerCursor } from "./json-container-entries.js";
 import { jsonIntegerBytes } from "./json-integer-output.js";
 import { JsonScalarFormatter } from "./json-scalar-output.js";
+import { JsonStandardScalars } from "./json-standard-scalars.js";
 import { jsonStringUtf8Bytes } from "./json-string-size.js";
 import { JsonTraversalBudget } from "./json-traversal-budget.js";
 import type { MemoryScope } from "./memory-scope.js";
@@ -18,8 +19,13 @@ import { isTimestampValue } from "./timestamp.js";
  * Inputs must remain immutable through encoding; stateful accessors are outside
  * this planning contract. Custom toJSON functions and cycles are rejected.
  */
-export function jsonOutputUtf8Bytes(value: unknown, scope?: MemoryScope): number | undefined {
+export function jsonOutputUtf8Bytes(
+  value: unknown,
+  scope?: MemoryScope,
+  semantics: "query" | "standard" = "query",
+): number | undefined {
   const scalar = new JsonScalarFormatter(scope);
+  const standard = semantics === "standard" ? new JsonStandardScalars(scope) : undefined;
   const traversal = new JsonTraversalBudget(
     scope,
     5 * c.object + 12 * c.property + c.arraySlot,
@@ -35,11 +41,15 @@ export function jsonOutputUtf8Bytes(value: unknown, scope?: MemoryScope): number
   };
   const frames: Frame[] = [];
   const measure = (value: unknown): number | undefined => {
+    if (standard !== undefined) value = standard.normalize(value);
     if (value === null) return 4;
-    if (isDecimalValue(value)) return scalar.consume(value, jsonStringUtf8Bytes);
-    if (isTimestampValue(value)) return scalar.consume(value, jsonStringUtf8Bytes);
-    if (isIntervalValue(value)) return scalar.consume(value, jsonStringUtf8Bytes);
-    if (value instanceof Uint8Array) return 2 + 2 * value.byteLength;
+    if (standard === undefined && isDecimalValue(value))
+      return scalar.consume(value, jsonStringUtf8Bytes);
+    if (standard === undefined && isTimestampValue(value))
+      return scalar.consume(value, jsonStringUtf8Bytes);
+    if (standard === undefined && isIntervalValue(value))
+      return scalar.consume(value, jsonStringUtf8Bytes);
+    if (standard === undefined && value instanceof Uint8Array) return 2 + 2 * value.byteLength;
     switch (typeof value) {
       case "string":
         return jsonStringUtf8Bytes(value);
@@ -105,5 +115,6 @@ export function jsonOutputUtf8Bytes(value: unknown, scope?: MemoryScope): number
   } finally {
     traversal.dispose();
     scalar.dispose();
+    standard?.dispose();
   }
 }

@@ -1,0 +1,122 @@
+{
+  "reference": "5e4d280",
+  "current": "ff4f0c492a01790c30801f25309f2e4b7a56bebc",
+  "node": "v24.18.1",
+  "builtModuleHashes": {
+    "json-output-size": "080887c66db3f57340c7ea5ed53152b57b84076f78beab09fdfdc6b13b3a1bd4",
+    "json-output-encoding": "df6599c006cf83565723fbb168daaf4829cacff1b4455ba917c1408fd45d346d",
+    "json-traversal-budget": "55f9ccd5f1d4d8a47c1c012211a86423191b319f11b2722ce76b3c8bf100b9a3",
+    "json-container-entries": "c7fb72ee7d2bc3a0ad66bf220ad7d85b0cf50eef4f46968c0a01fe3d67fb824e",
+    "json-standard-scalars": "971c66727c5b3c02d9878cd714820477d0fe03c86e61025a8a2cdcce7cd3801f"
+  },
+  "results": [
+    {
+      "name": "small-row",
+      "iterations": 1000,
+      "outputBytes": 39,
+      "variants": {
+        "recursive": {
+          "samplesMs": [
+            0.010332211999999999,
+            0.010187329999999974,
+            0.010172361000000024,
+            0.010153494999999964,
+            0.00459857599999998
+          ],
+          "peakTrackedBytes": 295
+        },
+        "iterative": {
+          "samplesMs": [
+            0.01019184800000005,
+            0.013723642999999982,
+            0.006200314999999989,
+            0.020570527000000026,
+            0.006452470000000005
+          ],
+          "peakTrackedBytes": 1504
+        }
+      }
+    },
+    {
+      "name": "wide-numbers",
+      "iterations": 20,
+      "outputBytes": 78891,
+      "variants": {
+        "recursive": {
+          "samplesMs": [
+            2.1486673499999993,
+            2.1557116500000006,
+            2.181492750000001,
+            2.3952174999999953,
+            2.172378600000002
+          ],
+          "peakTrackedBytes": 79147
+        },
+        "iterative": {
+          "samplesMs": [
+            2.04874155,
+            2.0440151500000012,
+            2.1626166500000013,
+            2.12324395,
+            2.0653613500000008
+          ],
+          "peakTrackedBytes": 80267
+        }
+      }
+    },
+    {
+      "name": "row-array",
+      "iterations": 20,
+      "outputBytes": 39891,
+      "variants": {
+        "recursive": {
+          "samplesMs": [
+            0.33972425000000045,
+            0.3422255000000007,
+            0.3411564499999997,
+            0.3736938000000009,
+            0.39531299999999875
+          ],
+          "peakTrackedBytes": 40019
+        },
+        "iterative": {
+          "samplesMs": [
+            0.5691846499999997,
+            0.5285936500000048,
+            0.6020080500000006,
+            0.5657426999999984,
+            0.5267271499999993
+          ],
+          "peakTrackedBytes": 42067
+        }
+      }
+    },
+    {
+      "name": "deep-20000",
+      "iterations": 2,
+      "outputBytes": 40009,
+      "variants": {
+        "recursive": {
+          "samplesMs": [],
+          "peakTrackedBytes": 0,
+          "failure": "RangeError: Maximum call stack size exceeded"
+        },
+        "iterative": {
+          "samplesMs": [
+            21.53242549999993,
+            21.530120499999953,
+            21.18172900000002,
+            25.705374499999948,
+            21.1532555
+          ],
+          "peakTrackedBytes": 22400256
+        }
+      }
+    }
+  ],
+  "limitations": [
+    "Kernel benchmark; not query or cloud throughput",
+    "Tracked reservation units are not heap measurements",
+    "Variants run sequentially; five measured rounds after warmup"
+  ]
+}
