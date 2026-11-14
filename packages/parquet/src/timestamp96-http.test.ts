@@ -200,6 +200,12 @@ it.each([
       memoryPool: pool,
       budget: { maxAllocatedMemoryBytes: 512 * 1024 },
     });
+    const statefulLake = new Lake({
+      store,
+      scanner: { scan: rowScanner.scan.bind(rowScanner) },
+      memoryPool: pool,
+      budget: { maxAllocatedMemoryBytes: 512 * 1024, maxBufferedRows: 2 },
+    });
     cache.deleteWhere(() => true);
     for (let round = 0; round < 2; round++) {
       const selected = await Promise.all(
@@ -224,6 +230,19 @@ it.each([
         ),
       );
       for (const output of fullyOrdered) expect(output).toEqual(sorted);
+      const checkpointed = await Promise.all(
+        Array.from({ length: 4 }, () =>
+          statefulLake
+            .path("timestamps.parquet")
+            .batchSize(2)
+            .orderBy([{ column: "timestamp_nanos" }])
+            .sortWithState(),
+        ),
+      );
+      for (const output of checkpointed) {
+        expect(output.rows).toEqual(sorted);
+        expect(output.operatorState.byteLength).toBeGreaterThan(0);
+      }
       expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
     }
     expect(peak).toBeLessThanOrEqual(2);

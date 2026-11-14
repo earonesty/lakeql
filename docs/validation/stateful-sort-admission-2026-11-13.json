@@ -1,0 +1,28 @@
+{
+  "status": "Implemented; default, Worker and explicit HTTP stateful-sort validation passed",
+  "change": "sortWithState owns detached restored and newly scanned rows through checkpoint processing. Run construction admits copied directories and native-sort scratch. Merge admits cursor/heap storage sized by run count and its output directory sized by total rows. Temporary current-run directories are disposed after each flush; parent ownership is released on every exit.",
+  "validation": {
+    "existingQueryTestsPassed": 94,
+    "boundaryAndLifecycleTestsPassed": 11,
+    "build": "passed",
+    "cases": [
+      "exact merge peak admission",
+      "one-byte-short rejection before comparator/key reads",
+      "run admission failure before mutation",
+      "comparator failure scratch cleanup",
+      "scanner object reuse across one-row runs",
+      "stable checkpoint resume",
+      "scope cleanup after successful return"
+    ],
+    "defaultTestsPassed": 3040,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61,
+    "followup": "Twelve focused stateful-sort tests passed after adding asynchronous spill rejection: row ownership stays live while write is pending and cleanup preserves sibling ownership.",
+    "remoteEvidence": "Real wide-timestamp Parquet over HTTP 206 and ignored-range 200, row-only scanner, four concurrent sortWithState queries with maxBufferedRows=2. Result parity, nonempty checkpoints, bounded pool peak and final zero usage verified. Timestamp checkpoint restoration is not claimed by this fixture."
+  },
+  "limits": [
+    "Checkpoint decoding currently allocates before restored rows are detached. JSON snapshot/serialization, spill payload and output projection allocations still require independent admission.",
+    "Run payloads remain retained across in-memory runs; maxBufferedRows controls run construction, while the shared allocation cap bounds the retained collection.",
+    "Scratch charges are conservative accounting units, not a portable native-sort or total-heap measurement."
+  ]
+}

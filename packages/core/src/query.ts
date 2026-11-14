@@ -1678,33 +1678,58 @@ export class QueryResult {
     const orderBy = normalizeOrderBy(config.orderBy);
     const runs = await sortRunsFromState(orderBy, options);
     const startedAt = config.now();
-    await this.collectSortRuns(runs, orderBy, startedAt);
-    const matched = mergeSortRuns(runs, orderBy);
-    const start = config.offset ?? 0;
-    const end = config.limit === undefined ? matched.length : start + config.limit;
-    const rows = matched
-      .slice(start, end)
-      .map((row) => project(row, config.select, config.projections));
-    for (const _row of rows) {
-      this.stats.rowsReturned += 1;
-      enforceBudget(config.budget, this.stats, config.now, startedAt);
-    }
-    this.stats.elapsedMs = config.now() - startedAt;
-    const state = await sortOperatorState(
-      orderBy,
-      runs,
-      options.spill,
-      options.spillId ?? `sort-${this.stats.queryId}`,
+    const retainedScope = new MemoryScope(
+      this.memoryBudget,
+      config.budget.signal ? [config.budget.signal] : [],
     );
-    const operatorState = serializeSortOperatorState(state);
-    const result: SortResult = { rows, operatorState };
-    if (options.spill !== undefined) {
-      result.operatorSpill = await options.spill.write(
-        options.spillId ?? `sort-${this.stats.queryId}`,
-        operatorState,
+    try {
+      retainedScope.allocate(
+        allocationCharges.array + runs.length * allocationCharges.arraySlot,
+        "restored sort run directory",
+        () => {
+          for (let index = 0; index < runs.length; index++) {
+            const run = runs[index] as Row[];
+            runs[index] = retainedScope.allocate(
+              allocationCharges.array + run.length * allocationCharges.arraySlot,
+              "restored sort rows",
+              () =>
+                run.map(
+                  (row) => retainedScope.adopt(detachOwnedRow(row, retainedScope.budget)).value,
+                ),
+            ).value;
+          }
+        },
       );
+      await this.collectSortRuns(runs, orderBy, startedAt, retainedScope);
+      const matched = mergeSortRuns(runs, orderBy, retainedScope);
+      const start = config.offset ?? 0;
+      const end = config.limit === undefined ? matched.length : start + config.limit;
+      const rows = matched
+        .slice(start, end)
+        .map((row) => project(row, config.select, config.projections));
+      for (const _row of rows) {
+        this.stats.rowsReturned += 1;
+        enforceBudget(config.budget, this.stats, config.now, startedAt);
+      }
+      this.stats.elapsedMs = config.now() - startedAt;
+      const state = await sortOperatorState(
+        orderBy,
+        runs,
+        options.spill,
+        options.spillId ?? `sort-${this.stats.queryId}`,
+      );
+      const operatorState = serializeSortOperatorState(state);
+      const result: SortResult = { rows, operatorState };
+      if (options.spill !== undefined) {
+        result.operatorSpill = await options.spill.write(
+          options.spillId ?? `sort-${this.stats.queryId}`,
+          operatorState,
+        );
+      }
+      return result;
+    } finally {
+      retainedScope.dispose();
     }
-    return result;
   }
 
   async windowWithState(options: WindowOptions = {}): Promise<WindowResult> {
@@ -3175,6 +3200,7 @@ export class QueryResult {
     runs: Row[][],
     orderBy: OrderByTerm[],
     startedAt: number,
+    allocationScope: MemoryScope,
   ): Promise<void> {
     const config = this.config;
     const { stats } = this;
@@ -3182,7 +3208,14 @@ export class QueryResult {
     stats.filesSkipped = skippedFiles;
     const columns = projectedReadColumns(config.select, config.where, orderBy, config.projections);
     const runCapacity = config.budget.maxBufferedRows ?? Number.POSITIVE_INFINITY;
-    const currentRun: Row[] = [];
+    let currentRun: Row[] = [];
+    let directory = allocationScope.childScope();
+    const flush = () => {
+      flushSortRun(runs, currentRun, orderBy, allocationScope);
+      currentRun = [];
+      directory.dispose();
+      directory = allocationScope.childScope();
+    };
     const memory =
       config.budget.maxMemoryBytes === undefined
         ? undefined
@@ -3215,18 +3248,26 @@ export class QueryResult {
           if (!matches(config.where, row)) continue;
           stats.rowsMatched += 1;
           validateSortRow(row, orderBy);
-          currentRun.push(row);
-          memory?.add(row);
+          const owner = allocationScope.adopt(detachOwnedRow(row, allocationScope.budget));
+          directory.allocate(
+            (currentRun.length === 0 ? allocationCharges.array : 0) + allocationCharges.arraySlot,
+            "current sort run directory",
+            () => {
+              currentRun.push(owner.value);
+            },
+          );
+          memory?.add(owner.value);
           enforceBufferedRowsBudget(config.budget, currentRun.length);
           if (memory !== undefined) enforceOperatorMemoryBudget(config.budget, memory.bytes);
           if (currentRun.length >= runCapacity) {
-            flushSortRun(runs, currentRun, orderBy);
+            flush();
             memory?.clear();
           }
         }
       }
     }
-    flushSortRun(runs, currentRun, orderBy);
+    flush();
+    directory.dispose();
     stats.elapsedMs = config.now() - startedAt;
   }
 

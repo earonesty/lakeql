@@ -1,4 +1,6 @@
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
+import type { MemoryScope } from "./memory-scope.js";
 import type { OrderByTerm } from "./query.js";
 import { compareOrderedScalars, isSortableScalar } from "./scalar-order.js";
 import type { Row } from "./types.js";
@@ -35,10 +37,32 @@ export function compareRows(left: Row, right: Row, orderBy: readonly OrderByTerm
   return 0;
 }
 
-export function flushSortRun(runs: Row[][], currentRun: Row[], orderBy: OrderByTerm[]): void {
+export function flushSortRun(
+  runs: Row[][],
+  currentRun: Row[],
+  orderBy: OrderByTerm[],
+  scope?: MemoryScope,
+): void {
   if (currentRun.length === 0) return;
-  currentRun.sort((left, right) => compareRows(left, right, orderBy));
-  runs.push(currentRun.splice(0, currentRun.length));
+  const scratch = scope?.reserve(
+    c.array + currentRun.length * (c.arraySlot + c.object),
+    "sort run ordering workspace",
+  );
+  try {
+    const flush = () => {
+      currentRun.sort((left, right) => compareRows(left, right, orderBy));
+      runs.push(currentRun.splice(0, currentRun.length));
+    };
+    if (scope)
+      scope.allocate(
+        c.array + (currentRun.length + 1) * c.arraySlot,
+        "sorted run directory",
+        flush,
+      );
+    else flush();
+  } finally {
+    scratch?.release();
+  }
 }
 
 interface SortRunEntry {
@@ -54,7 +78,28 @@ function compareRunEntries(
   return compareRows(left.row, right.row, orderBy) || left.runIndex - right.runIndex;
 }
 
-export function mergeSortRuns(runs: Row[][], orderBy: OrderByTerm[]): Row[] {
+export function mergeSortRuns(runs: Row[][], orderBy: OrderByTerm[], scope?: MemoryScope): Row[] {
+  if (scope === undefined) return mergeRuns(runs, orderBy);
+  let rows = 0;
+  let nonempty = 0;
+  for (const run of runs) {
+    rows += run.length;
+    if (run.length > 0) nonempty++;
+  }
+  const scratch = scope.reserve(
+    2 * c.array + runs.length * c.arraySlot + nonempty * (c.arraySlot + c.object + 2 * c.property),
+    "sort run merge workspace",
+  );
+  try {
+    return scope.allocate(c.array + rows * c.arraySlot, "merged sort directory", () =>
+      mergeRuns(runs, orderBy),
+    ).value;
+  } finally {
+    scratch.release();
+  }
+}
+
+function mergeRuns(runs: Row[][], orderBy: OrderByTerm[]): Row[] {
   const cursors = runs.map(() => 0);
   const heap: SortRunEntry[] = [];
   const out: Row[] = [];

@@ -20,5 +20,6 @@
     "referenceTestsPassed": 104,
     "followup": "Ten focused sort/row tests passed after extending public sortWithState coverage to restore a checkpoint and merge new equal-key runs."
   },
-  "remaining": "Stateful sort row ownership, run/sort/merge allocation admission, checkpoint serialization and spill lifetimes remain open. This change establishes deterministic stable merging and reduces transient entry allocations; it does not claim complete sort memory bounds."
+  "remaining": "Run ownership and sort/merge admission are integrated in the linked followup. Checkpoint deserialize/serialize, spill payload and projection admission remain open.",
+  "ownershipFollowup": "docs/validation/stateful-sort-admission-2026-11-13.json"
 }

@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import { MemoryBudget } from "./memory-budget.js";
 import { memoryStore } from "./memory-store.js";
 import { Lake } from "./query.js";
+import { memorySpillAdapter } from "./runtime.js";
 
 async function fixture(pool: MemoryBudget, cap = pool.maxBytes) {
   const store = memoryStore();
@@ -211,4 +212,66 @@ it("preserves tied encounter order across stateful sort run boundaries", async (
     .orderBy([{ column: "key" }])
     .sortWithState({ operatorState: result.operatorState });
   expect(resumed.rows.map((row) => row.id)).toEqual(Array.from({ length: 14 }, (_, id) => id));
+});
+
+it("detaches reused rows across stateful run flushes and releases on return", async () => {
+  const pool = new MemoryBudget(65536);
+  const store = memoryStore();
+  await store.put("table", new Uint8Array(1));
+  const lake = new Lake({
+    store,
+    memoryPool: pool,
+    budget: { maxBufferedRows: 1 },
+    scanner: {
+      async *scan() {
+        const row = { score: 0 };
+        for (const score of [3, 1, 2]) {
+          row.score = score;
+          yield [row];
+        }
+        row.score = 99;
+      },
+    },
+  });
+  const result = await lake
+    .path("table")
+    .orderBy([{ column: "score" }])
+    .sortWithState();
+  expect(result.rows).toEqual([{ score: 1 }, { score: 2 }, { score: 3 }]);
+  expect(pool.peakBytes).toBeGreaterThan(0);
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("keeps sort rows owned during asynchronous spill and releases them on rejection", async () => {
+  const pool = new MemoryBudget(65536);
+  const sibling = pool.reserve(37, "sibling");
+  const store = memoryStore();
+  await store.put("table", new Uint8Array(1));
+  const lake = new Lake({
+    store,
+    memoryPool: pool,
+    budget: { maxBufferedRows: 1 },
+    scanner: {
+      async *scan() {
+        yield [{ id: 2 }, { id: 1 }];
+      },
+    },
+  });
+  const spill = memorySpillAdapter();
+  let writes = 0;
+  spill.write = async () => {
+    writes++;
+    await Promise.resolve();
+    expect(pool.usedBytes).toBeGreaterThan(37);
+    throw Error("spill failed");
+  };
+  await expect(
+    lake
+      .path("table")
+      .orderBy([{ column: "id" }])
+      .sortWithState({ spill }),
+  ).rejects.toThrow("spill failed");
+  expect(writes).toBe(1);
+  expect(pool.usedBytes).toBe(37);
+  sibling.release();
 });
