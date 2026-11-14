@@ -4366,3 +4366,10 @@ Controlled owned metadata now uses a signal-bound child scope, retains/transfers
 This closes the demonstrated metadata cancellation gap, not general job fairness or whole-pipeline scheduling acceptance.
 
 Final verification: build/typecheck passed; 30 focused tests, 3,725 regular tests (629 skipped), and 81 Worker tests passed. Evidence: `owned-head-read-controls-2026-11-14.json`.
+
+
+### F6/M2 actual HTTP metadata cancellation and slot recovery (2026-11-14)
+
+Added real localhost HTTP fixtures for cancellation before response headers and during a partial two-byte range response. The body case waits for tracked response storage before cancelling, preventing a header-only cancellation from passing that case. Both queue a second metadata read behind the active request, verify that it has not reached the server, dispose the first scope, observe the server response close, and require the second read to return correct object size. Final shared-pool usage is zero.
+
+Both fixtures pass; typecheck and formatting pass. Runtime source remains `9224149`; only test/evidence files changed. Evidence: `docs/validation/owned-head-http-cancellation-2026-11-14.json`. This verifies native Fetch/socket cancellation and slot recovery together on localhost, without establishing production latency, native R2 cancellation, general fairness or whole-runtime memory limits.
