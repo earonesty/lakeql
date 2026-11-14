@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope } from "./memory-scope.js";
 import { OwnedBoundedTopK } from "./owned-bounded-top-k.js";
@@ -114,4 +115,42 @@ it("transfers only requested winner payloads and releases offset candidates", ()
   expect(output.bytes).toBeLessThan(3 * 1024);
   output.release();
   expect(pool.usedBytes).toBe(0);
+});
+
+it("admits replacement overlap at the exact cap and rejects one byte below without losing caller ownership", () => {
+  const payloadBytes = 256;
+  const directoryBytes = c.object + c.array + 4 * c.property;
+  const candidateBytes = 2 * c.object + 4 * c.property + c.arraySlot;
+  const scratchBytes = c.array + c.arraySlot;
+  const required = directoryBytes + 2 * (candidateBytes + payloadBytes) + scratchBytes;
+  for (const cap of [required - 1, required]) {
+    const pool = new MemoryBudget(cap + 37);
+    const sibling = pool.reserve(37, "sibling output");
+    const budget = pool.child(cap);
+    const parent = new MemoryScope(budget);
+    const heap = new OwnedBoundedTopK<number>(parent, 1, (a, b) => a - b);
+    const first = new MemoryScope(budget);
+    heap.offer(first.allocate(payloadBytes, "first candidate", () => 9));
+    first.dispose();
+    const second = new MemoryScope(budget);
+    const input = second.allocate(payloadBytes, "replacement candidate", () => 1);
+    if (cap < required) {
+      expect(() => heap.offer(input)).toThrow(/budget/i);
+      expect(input.value).toBe(1);
+      expect(budget.usedBytes).toBe(payloadBytes);
+      expect(() => heap.finish()).toThrow(/disposed/);
+    } else {
+      expect(heap.offer(input)).toBe(true);
+      expect(budget.peakBytes).toBe(required);
+      expect(budget.usedBytes).toBe(directoryBytes + candidateBytes + payloadBytes);
+      const output = heap.finish();
+      expect(output.value).toEqual([1]);
+      output.release();
+    }
+    parent.dispose();
+    second.dispose();
+    expect(pool.usedBytes).toBe(37);
+    sibling.release();
+    expect(pool.usedBytes).toBe(0);
+  }
 });
