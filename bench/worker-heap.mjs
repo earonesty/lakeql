@@ -5,6 +5,7 @@ import { parquetWriteBuffer } from "../packages/parquet/node_modules/hyparquet-w
 
 const require = createRequire(import.meta.resolve("@cloudflare/vitest-pool-workers"));
 
+import { summarizeHeapProfile } from "./heap-profile-summary.mjs";
 import { createWorkerHeapRuntime } from "./worker-heap-runtime.mjs";
 
 const { build } = require("esbuild");
@@ -22,6 +23,9 @@ assert.ok(Number.isSafeInteger(rows) && rows > 0 && rows <= 131072);
 const mode = process.env.LAKEQL_HEAP_MODE ?? "materialized";
 assert.ok(mode === "materialized" || mode === "stream" || mode === "owned");
 const recoveryProbe = process.env.LAKEQL_HEAP_RECOVERY_PROBE === "1";
+const profileAllocations = process.env.LAKEQL_HEAP_PROFILE_ALLOCATIONS === "1";
+const profileCollected = process.env.LAKEQL_HEAP_PROFILE_COLLECTED === "1";
+assert.ok(!profileCollected || profileAllocations);
 assert.ok(!recoveryProbe || mode === "owned");
 const roundCount = Number(process.env.LAKEQL_HEAP_ROUNDS ?? 2);
 assert.ok(Number.isSafeInteger(roundCount) && roundCount >= 2 && roundCount <= 32);
@@ -88,7 +92,7 @@ for (const mib of [64, 128])
             : waiter.resolve(message.result);
         }
       };
-      const call = (method, timeoutMs = 30000) =>
+      const call = (method, timeoutMs = 30000, params) =>
         new Promise((resolve, reject) => {
           const id = ++nextId;
           const timer = setTimeout(() => {
@@ -96,7 +100,7 @@ for (const mib of [64, 128])
             reject(new Error(`Inspector request timed out: ${method}`));
           }, timeoutMs);
           pending.set(id, { resolve, reject, timer });
-          socket.send(JSON.stringify({ id, method }));
+          socket.send(JSON.stringify({ id, method, params }));
         });
       const sample = async () => ({
         atMs: performance.now(),
@@ -114,6 +118,12 @@ for (const mib of [64, 128])
         const round = roundIndex === 0 ? "cold" : roundIndex === 1 ? "warm" : `warm-${roundIndex}`;
         const samples = [];
         let done = false;
+        if (profileAllocations)
+          await call("HeapProfiler.startSampling", 30000, {
+            samplingInterval: 32768,
+            includeObjectsCollectedByMajorGC: profileCollected,
+            includeObjectsCollectedByMinorGC: profileCollected,
+          });
         const start = performance.now();
         const operation = request(`/run?jobs=${jobs}&mode=${mode}`).then(
           (value) => {
@@ -171,6 +181,11 @@ for (const mib of [64, 128])
           Array(mode === "stream" ? 0 : successes + recovered).fill(rows - 1),
         );
         const retainedOutput = await sample();
+        const allocationProfile = profileAllocations
+          ? summarizeHeapProfile((await call("HeapProfiler.stopSampling")).profile, script, {
+              includeCollected: profileCollected,
+            })
+          : undefined;
         await request("/release");
         const afterRelease = await sample();
         // A rejected job must not poison later admission. Reuse the same lake,
@@ -199,6 +214,7 @@ for (const mib of [64, 128])
           samples,
           retainedOutput,
           afterRelease,
+          ...(allocationProfile === undefined ? {} : { allocationProfile }),
         });
       }
       const evicted = await request("/evict");
@@ -246,6 +262,8 @@ console.log(
       node: process.version,
       mode,
       diagnosticGc,
+      profileAllocations,
+      profileCollected,
       recoveryProbe,
       roundCount,
       runtimeHeapMiB: runtimeHeapMiB ?? null,

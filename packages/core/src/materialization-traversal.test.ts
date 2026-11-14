@@ -87,3 +87,71 @@ it("does not admit frames for excluded rows or null payloads", () => {
     expect(scope.budget.usedBytes).toBe(0);
   }
 });
+
+it.each([1, 32768])("avoids cycle-set churn for %i leaf cells", (rows) => {
+  const vector: Vector = { type: "i32", values: new Int32Array(rows) };
+  const batch: Batch = { rowCount: rows, columns: { value: vector } };
+  const remove = Set.prototype.delete;
+  let leafDeletes = 0;
+  const spy = vi.spyOn(Set.prototype, "delete").mockImplementation(function (value) {
+    if (value === vector) leafDeletes++;
+    return remove.call(this, value);
+  });
+  const scope = new MemoryScope(new MemoryBudget(c.object + c.property));
+  try {
+    expect(planBatchMaterialization(batch, undefined, scope).rows).toBe(rows);
+    expect(leafDeletes).toBe(0);
+    expect(scope.budget.peakBytes).toBe(c.object + c.property);
+    expect(scope.budget.usedBytes).toBe(0);
+  } finally {
+    spy.mockRestore();
+    scope.dispose();
+  }
+});
+
+it.each([
+  "struct",
+  "dict",
+  "list",
+  "map",
+  "union",
+] as const)("still rejects cycles through %s vectors", (type) => {
+  const leaf: Vector = { type: "i32", values: Int32Array.of(1) };
+  const children: Vector[] = [leaf];
+  const vector: Vector =
+    type === "struct"
+      ? { type, fields: {}, length: 1 }
+      : type === "dict"
+        ? { type, dictionary: leaf, indices: Uint32Array.of(0) }
+        : type === "list"
+          ? { type, child: leaf, offsets: Int32Array.of(0, 1) }
+          : type === "map"
+            ? { type, keys: leaf, values: leaf, offsets: Int32Array.of(0, 1) }
+            : { type, children, tags: Uint8Array.of(0), offsets: Uint32Array.of(0) };
+  switch (vector.type) {
+    case "struct":
+      vector.fields.self = vector;
+      break;
+    case "dict":
+      vector.dictionary = vector;
+      break;
+    case "list":
+      vector.child = vector;
+      break;
+    case "map":
+      vector.values = vector;
+      break;
+    case "union":
+      children[0] = vector;
+      break;
+  }
+  const scope = new MemoryScope(new MemoryBudget(4096));
+  try {
+    expect(() =>
+      planBatchMaterialization({ rowCount: 1, columns: { value: vector } }, undefined, scope),
+    ).toThrow(/Cyclic/);
+    expect(scope.budget.usedBytes).toBe(0);
+  } finally {
+    scope.dispose();
+  }
+});

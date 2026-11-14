@@ -109,7 +109,13 @@ function planMaterialization(
           "LAKEQL_VALIDATION_ERROR",
           "Materialization vector index out of bounds",
         );
-      if (active.has(vector))
+      const recursive =
+        vector.type === "union" ||
+        vector.type === "dict" ||
+        vector.type === "list" ||
+        vector.type === "map" ||
+        vector.type === "struct";
+      if (recursive && active.has(vector))
         throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Cyclic materialization vector");
       if ("valid" in vector && vector.valid?.[index] === 0) return 4;
       // Set/stack capacity survives sibling visits. Admit each depth once rather
@@ -125,7 +131,9 @@ function planMaterialization(
         depthCapacity++;
       }
       try {
-        active.add(vector);
+        // Leaf shapes cannot point back to an ancestor. Avoid cycling the Set's
+        // hash storage for every scalar cell; retain the same depth admission.
+        if (recursive) active.add(vector);
         switch (vector.type) {
           case "union": {
             const child = vector.children[vector.tags[index] ?? -1];
@@ -242,7 +250,7 @@ function planMaterialization(
             throw new LakeqlError("LAKEQL_TYPE_ERROR", "Unsupported materialization vector shape");
         }
       } finally {
-        active.delete(vector);
+        if (recursive) active.delete(vector);
       }
     }
     for (

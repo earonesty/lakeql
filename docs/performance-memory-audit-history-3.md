@@ -5280,3 +5280,38 @@ statistical before/after improvements from the retention fixes.
 
 Evidence: `validation/retention-runtime-refresh-2026-11-14.json`. This checkpoint
 changes evidence only; runtime and release gates remain those of `fe2b5ec`.
+
+### Profile-guided leaf materialization traversal (2026-11-14)
+
+Default Worker heap sampling mostly identifies retained output strings and rows.
+Enabling the [protocol's collected-object flags](https://raw.githubusercontent.com/ChromeDevTools/devtools-protocol/master/json/js_protocol.json) and retaining caller attribution
+reveals a different temporary site: materialization's cycle-set deletion accounts
+for roughly 4 MB of estimated allocation per single-job round, and 14–16 MB in
+four-job rounds. These are allocation-sampling estimates, not live/peak bytes.
+The optional benchmark profiler now records the distinction, top sites, callers
+and omitted sample totals. Two synthetic aggregation checks pass.
+
+Leaf vector shapes cannot refer to an ancestor. They now avoid cycle-set mutation,
+while recursive union/dictionary/list/map/struct vectors retain cycle checks.
+Depth admission and output forecasts remain unchanged. Negative controls observe
+one and 32,768 baseline leaf deletions; final tests observe zero. All five recursive
+cycle cases reject and clean up. All 21 focused materialization cases pass.
+
+The large deletion site disappears from the sampled top sites after the change.
+At 32,768 rows, local planning medians improve from 1.697 to 0.670 ms for numeric
+and 1.941 to 0.900 ms for packed text; the depth-four nested case is 5.142 to
+4.752 ms. All nine forecasts/peaks are identical. The real many-page query is
+2.263 to 2.284 seconds (about 0.9% slower in this run), so no end-to-end speedup
+is claimed. Profiled latency is not compared against ordinary execution.
+
+Separate unprofiled native R2 and managed-heap-constrained HTTP pressure matrices
+retain 64/80 primary successes, sixteen typed failures, eight pinned retry failures
+and eight successful post-release retries. Final admission is zero everywhere.
+Native R2 still samples 85,693,032 managed-heap bytes at a 64 MiB pool; whole-runtime
+headroom remains open. Sparse samples are not statistical proof of heap reduction.
+Evidence: `validation/materialization-leaf-traversal-2026-11-14.json`.
+
+Final release gates pass 3,958 regular/coverage tests (645 skipped), all 93 Worker
+tests, 520 required conformance cases (one inactive guard skipped), 120 references,
+full build/types, clean 66-package consumer and repository checks. Fixture data
+is unchanged after regeneration; thresholds and timeouts remain unchanged.

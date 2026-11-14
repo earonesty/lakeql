@@ -405,3 +405,5 @@ Detach compressed-input decoder closures when measured numeric plans are dispose
 Detach shared-cache payloads and pins from released leases. Released value access now rejects; live sibling leases, byte snapshots and detached/idempotent release callbacks remain supported.
 
 Detach indexed-footer acquisition state on source disposal or parent cancellation, preserving independently acquired row-group backing across all closure paths.
+
+Avoid per-cell cycle-set mutation for leaf vector shapes during materialization planning. Preserve recursive-shape cycle checks, exact depth admission and output forecasts.
