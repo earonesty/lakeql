@@ -4346,3 +4346,12 @@ The comparison harness now labels variants reference/current, since its selectab
 Raw evidence: `docs/validation/json-object-dispatch-benchmark-2026-11-14.json`. Its current commit field records the working-tree base; built module hashes identify the measured modification. Build and 58 focused sizing/encoding tests passed before broader verification.
 
 Final verification: build/typecheck passed; 3,723 regular tests passed / 629 skipped, and all 81 Worker tests passed. Evidence: `json-object-dispatch-2026-11-14.json`.
+
+
+### M2/V1 same-pool recovery after repeated pressure (2026-11-14)
+
+Extended the Worker recovery probe to require successful owned collection after releasing pinned output, without replacing the lake/pool, clearing caches or forcing GC. Previously it only attempted another query while successful outputs remained pinned, accepting either a typed rejection or success. The new phase verifies complete row counts, ID/character checksums and held output contents before release.
+
+Native workerd R2 and localhost HTTP under a verified 64 MiB managed-heap flag each ran four rounds across one/four jobs and 64/128 MiB reservation pools. All eight scenarios completed: 64 primary jobs succeeded and 16 returned typed budget failures. Eight additional retries while prior outputs remained pinned also returned typed budget failures. All eight post-release retries succeeded on the same pool/cache and returned the full 32,768-row fixture; final tracked usage was zero in every scenario. This provides concrete repeated-failure recovery evidence, without proving fairness, cancellation or every operator's self-held-capacity behavior.
+
+Runtime source `717b121`; harness hash and raw reports are recorded in `docs/validation/worker-pressure-recovery-2026-11-14.json`. Recovery requests affect later cache state and elapsed times, so these rounds are not baseline latency comparisons. Local R2 and HTTP remain distinct from production cloud operation, and managed heap does not cover total Worker/native memory. Only the benchmark harness and evidence changed; formatting and executable fixture assertions passed.

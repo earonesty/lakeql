@@ -173,11 +173,29 @@ for (const mib of [64, 128])
         const retainedOutput = await sample();
         await request("/release");
         const afterRelease = await sample();
+        // A rejected job must not poison later admission. Reuse the same lake,
+        // pool and cache after releasing output; do not evict or reconfigure.
+        let recoveryAfterRelease;
+        if (recoveryProbe && !complete) {
+          recoveryAfterRelease = await request("/run?jobs=1&mode=owned");
+          assert.ok(recoveryAfterRelease.peakBytes <= mib * 1024 * 1024);
+          const report = recoveryAfterRelease.reports[0];
+          assert.equal(report.status, "ok");
+          assert.equal(report.rows, rows);
+          assert.equal(report.ids, (rows * (rows - 1)) / 2);
+          assert.equal(report.characters, rows * payloadLength);
+          const heldRecovery = await request("/held");
+          assert.equal(heldRecovery.jobs, 1);
+          assert.equal(heldRecovery.rows, rows);
+          assert.deepEqual(heldRecovery.lastIds, [rows - 1]);
+          await request("/release");
+        }
         rounds.push({
           round,
           elapsedMs: performance.now() - start,
           result,
           ...(recovery === undefined ? {} : { recovery }),
+          ...(recoveryAfterRelease === undefined ? {} : { recoveryAfterRelease }),
           samples,
           retainedOutput,
           afterRelease,
