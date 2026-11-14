@@ -366,7 +366,29 @@ for (const scenario of ["aggregate", "top-k", "projection", "one-row-batches", "
               ? ["top-k", "aggregate", "projection", "one-row-batches"][index % 4]
               : scenario,
           );
-          const results = await Promise.all(kinds.map(query));
+          const results = await Promise.all(
+            kinds.map(async (kind) => {
+              try {
+                return await query(kind);
+              } catch (error) {
+                console.error(
+                  JSON.stringify({
+                    scenario,
+                    kind,
+                    memoryMiB,
+                    concurrency,
+                    temperature,
+                    queryHeadroomBytes: headroom,
+                    poolUsedBytes: root.usedBytes,
+                    poolPeakBytes: root.peakBytes,
+                    code: error?.code,
+                    details: error?.details,
+                  }),
+                );
+                throw error;
+              }
+            }),
+          );
           for (const [index, rows] of results.entries()) {
             assert.deepEqual(rows, expectedRows(kinds[index]));
           }

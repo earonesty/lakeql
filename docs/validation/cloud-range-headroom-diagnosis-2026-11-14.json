@@ -1,0 +1,99 @@
+{
+  "requirements": ["M1", "M2", "V1", "V2"],
+  "runtimeSourceCommit": "42f5842",
+  "harnessSha256": "cb4a5dc486b012585945f98286453c7d077c4586f4340672b18f8cac3c8fc9e7",
+  "failureDiagnostics": [
+    {
+      "scenario": "aggregate",
+      "kind": "aggregate",
+      "memoryMiB": 64,
+      "concurrency": 4,
+      "temperature": "cold",
+      "queryHeadroomBytes": 131072,
+      "poolUsedBytes": 66977792,
+      "poolPeakBytes": 67099494,
+      "code": "LAKEQL_BUDGET_EXCEEDED",
+      "details": {
+        "metric": "allocated memory bytes",
+        "limit": 67108864,
+        "actual": 67134270,
+        "purpose": "raw compact metadata"
+      }
+    },
+    {
+      "scenario": "aggregate",
+      "kind": "aggregate",
+      "memoryMiB": 64,
+      "concurrency": 4,
+      "temperature": "cold",
+      "queryHeadroomBytes": 131072,
+      "poolUsedBytes": 66977792,
+      "poolPeakBytes": 67099494,
+      "code": "LAKEQL_BUDGET_EXCEEDED",
+      "details": {
+        "metric": "allocated memory bytes",
+        "limit": 67108864,
+        "actual": 67134270,
+        "purpose": "raw compact metadata"
+      }
+    },
+    {
+      "scenario": "aggregate",
+      "kind": "aggregate",
+      "memoryMiB": 64,
+      "concurrency": 4,
+      "temperature": "cold",
+      "queryHeadroomBytes": 131072,
+      "poolUsedBytes": 66977792,
+      "poolPeakBytes": 67099494,
+      "code": "LAKEQL_BUDGET_EXCEEDED",
+      "details": {
+        "metric": "allocated memory bytes",
+        "limit": 67108864,
+        "actual": 67134270,
+        "purpose": "raw compact metadata"
+      }
+    },
+    {
+      "scenario": "aggregate",
+      "kind": "aggregate",
+      "memoryMiB": 64,
+      "concurrency": 4,
+      "temperature": "cold",
+      "queryHeadroomBytes": 131072,
+      "poolUsedBytes": 66977792,
+      "poolPeakBytes": 67099494,
+      "code": "LAKEQL_BUDGET_EXCEEDED",
+      "details": {
+        "metric": "allocated memory bytes",
+        "limit": 67108864,
+        "actual": 67134270,
+        "purpose": "raw compact metadata"
+      }
+    }
+  ],
+  "successfulRun": {
+    "headroomBytes": 524288,
+    "reportCount": 52,
+    "ordinaryQueryCases": 40,
+    "maximumIncrementalCharge": 397512,
+    "warmOrdinaryDataReads": 0,
+    "report": "docs/benchmarks/cloud-range-headroom512k-2026-11-14.json"
+  },
+  "sourceReview": {
+    "path": [
+      "owned-vector-batches.ts:rowGroups",
+      "indexed-row-group-plan.ts:iterateIndexedGroups",
+      "indexed-source.ts:acquireRowGroup",
+      "row-group-metadata.ts:decodeRowGroupMetadata"
+    ],
+    "observation": "Row-group owner remains live through iterator yield. Raw selected compact tree is admitted before conversion, while converted column output is separately admitted. Concurrent job lifetimes can overlap.",
+    "nextInvestigation": "Measure per-column raw visitor scratch versus retained aliases and inspect metadata/output overlap before changing scheduling or admission."
+  },
+  "limits": [
+    "512 KiB success is measured for this fixture, not a minimum or general recommendation",
+    "The 128 KiB failure is concurrent cold aggregate metadata admission; it does not establish an indivisible lower bound",
+    "No production query policy changed",
+    "Diagnostics observe pool used bytes after exception unwinding; they do not reconstruct all allocations at the instant of failure"
+  ]
+}

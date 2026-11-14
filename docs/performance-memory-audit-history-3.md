@@ -4626,3 +4626,27 @@ these network timings are descriptive, not a before/after speed claim.
 See `benchmarks/cloud-range-headroom4m-2026-11-14.json` and
 `validation/range-prefetch-current-2026-11-14.json`. This does not establish the
 minimum safe headroom, total VM memory, or a fix for the 128 KiB scenario.
+
+### M1/M2 live R2 low-headroom diagnosis
+
+Per-query benchmark diagnostics localize the 128 KiB failure to four concurrent
+cold aggregate queries at the 64 MiB pool cap. Each rejects `raw compact metadata`
+admission; diagnostics after unwind show 66,977,792 bytes, exactly the pre-existing
+pinned-cache allocation. Peak admitted bytes are 67,099,494, below the pool limit.
+The failed admission attempts 67,134,270 against a 67,108,864-byte limit.
+
+The full 52-scenario live R2 matrix also passes with only 512 KiB shared query
+headroom, including all 40 ordinary-query cases. Maximum incremental charge is
+397,512 bytes and warm ordinary queries make zero data reads. This narrows the
+measured successful allowance from 4 MiB without asserting a minimum or changing
+production defaults.
+
+Source tracing shows `iterateIndexedGroups` retains the acquired group across its
+yield, while `decodeRowGroupMetadata` admits the selected raw compact tree before
+converting columns into separately admitted output. The next investigation is
+per-column visitor scratch versus retained aliases and overlapping group/output
+lifetimes. The evidence does not prove that the failure is an indivisible lower
+bound or that serializing parser calls alone would resolve it.
+
+See `validation/cloud-range-headroom-diagnosis-2026-11-14.json` and
+`benchmarks/cloud-range-headroom512k-2026-11-14.json`.
