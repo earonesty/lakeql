@@ -41,6 +41,7 @@ import {
   type CompiledWebGpuGroupedReduction,
   compileWebGpuGroupedReduction,
 } from "./grouped-reduction.js";
+import { PipelineCache } from "./pipeline-cache.js";
 import {
   type CompiledWebGpuPredicate,
   compileWebGpuPredicate,
@@ -68,6 +69,10 @@ export interface WebGpuBackendOptions extends WebGpuDeviceOptions {
   maxStorageBufferBytes?: number;
   workgroupSize?: number;
   maxResidentBytes?: number;
+  /** Maximum retained compiled pipeline references; defaults to 64. Zero disables reuse. */
+  maxPipelineCacheEntries?: number;
+  /** Modeled source/key metadata capacity; defaults to 1 MiB, excluding opaque driver code. */
+  maxPipelineCacheBytes?: number;
   cost?: Partial<WebGpuCostModel>;
 }
 
@@ -158,7 +163,7 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
   readonly #workgroupSize: number;
   readonly #maxResidentBytes: number;
   readonly #cost: WebGpuCostModel;
-  readonly #pipelines = new Map<string, Promise<GPUComputePipeline>>();
+  readonly #pipelines: PipelineCache<GPUComputePipeline>;
   readonly #residentVectors = new Map<string, ResidentVectorEntry>();
   readonly #residentOpenings = new Map<string, ResidentVectorOpening>();
   #residentBytes = 0;
@@ -168,6 +173,10 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
 
   constructor(provider: WebGpuRuntimeProvider, options: WebGpuBackendOptions = {}) {
     this.id = options.id ?? "webgpu";
+    this.#pipelines = new PipelineCache(
+      options.maxPipelineCacheEntries ?? 64,
+      options.maxPipelineCacheBytes ?? 1024 * 1024,
+    );
     this.#maxInputRows = options.maxInputRows ?? 16_777_216;
     this.#maxStorageBufferBytes = options.maxStorageBufferBytes ?? 128 * 1024 * 1024;
     this.#workgroupSize = options.workgroupSize ?? 256;
@@ -1377,8 +1386,7 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
           entryPoint: "main",
         },
       });
-      this.#pipelines.set(key, pipeline);
-      pipeline.catch(() => this.#pipelines.delete(key));
+      this.#pipelines.set(key, predicate.wgsl, pipeline);
     }
     return pipeline;
   }

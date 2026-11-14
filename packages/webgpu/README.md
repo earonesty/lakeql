@@ -48,6 +48,15 @@ export async function queryScores() {
 }
 ```
 
+Compiled pipeline reuse is bounded by two backend options:
+`maxPipelineCacheEntries` (default 64) and `maxPipelineCacheBytes` (default
+1 MiB of modeled source/key metadata). The cache evicts the least recently
+used entries; an oversized pipeline executes without being retained. Setting
+either limit to zero disables retention. Device invalidation and `close()`
+clear the cache. These limits bound retained references and modeled metadata,
+not opaque GPU-driver compiled-code memory, and are separate from query memory
+reservations.
+
 Repeated vector queries can keep an immutable candidate block on the device.
 The cache has an explicit byte capacity, uses reference-counted leases and LRU
 eviction, and binds every descriptor to both an immutable source identity and

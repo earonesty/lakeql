@@ -30,6 +30,7 @@ import type { WebGpuRuntime } from "./runtime.js";
 describe.runIf(await dawnAdapterAvailable())("WebGpuPhysicalBackend with Dawn", () => {
   let backend: WebGpuPhysicalBackend;
   let gpu: GPU;
+  let runtime: WebGpuRuntime;
 
   beforeAll(() => {
     gpu = create([]);
@@ -37,7 +38,7 @@ describe.runIf(await dawnAdapterAvailable())("WebGpuPhysicalBackend with Dawn", 
       GPUBufferUsage: typeof GPUBufferUsage;
       GPUMapMode: typeof GPUMapMode;
     };
-    const runtime: WebGpuRuntime = {
+    runtime = {
       gpu,
       constants: {
         bufferUsage: constants.GPUBufferUsage,
@@ -161,6 +162,35 @@ describe.runIf(await dawnAdapterAvailable())("WebGpuPhysicalBackend with Dawn", 
     expect(await run(peak)).toBe(peak);
     expect(await run(peak, true)).toBe(peak);
     await expect(run(peak - 1)).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  });
+
+  it("evicts and recompiles real pipelines without changing selection", async () => {
+    const local = new WebGpuPhysicalBackend(() => runtime, { maxPipelineCacheEntries: 2 });
+    try {
+      const batch = batchFromVectors({
+        value: { type: "u32", values: Uint32Array.of(1, 2, 3, 4) },
+      });
+      const targets = [
+        fragment(batch, gt("value", 1)),
+        fragment(batch, gt("value", 2)),
+        fragment(batch, gt("value", 3)),
+      ] as const;
+      for (const target of targets) {
+        const result = await local.execute(await local.compile(target), { kind: "batch", batch });
+        expect(result.output.kind).toBe("selection");
+      }
+      expect(local.assess(targets[0], {}).compiledResident).toBe(false);
+      expect(local.assess(targets[1], {}).compiledResident).toBe(true);
+      const result = await local.execute(await local.compile(targets[0]), {
+        kind: "batch",
+        batch,
+      });
+      expect(result.output).toEqual({ kind: "selection", selection: Uint8Array.of(0, 1, 1, 1) });
+      expect(local.assess(targets[1], {}).compiledResident).toBe(false);
+      expect(local.assess(targets[0], {}).compiledResident).toBe(true);
+    } finally {
+      local.close();
+    }
   });
 
   it("dispatches more than one workgroup and reuses the compiled pipeline", async () => {
