@@ -1,3 +1,4 @@
+import { isAggregateCount } from "./aggregate-count.js";
 import { unmeasuredMemoryBytes } from "./aggregate-memory.js";
 import { LakeqlError } from "./errors.js";
 import { isTimestampValue, TimestampValue } from "./timestamp.js";
@@ -51,6 +52,8 @@ export function snapshotVectorAggregateState(
 export function vectorAggregateStateFromSnapshot(
   snapshot: VectorAggregateStateSnapshot,
 ): VectorAggregateState {
+  if ("count" in snapshot && !isAggregateCount(snapshot.count))
+    throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Invalid aggregate checkpoint count");
   switch (snapshot.op) {
     case "count":
       return { op: "count", count: snapshot.count };
@@ -83,6 +86,8 @@ export function vectorAggregateStateFromSnapshot(
     case "mode": {
       const values: Extract<VectorAggregateState, { op: "mode" }>["values"] = new Map();
       for (const entry of snapshot.values) {
+        if (!isAggregateCount(entry.count))
+          throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Invalid aggregate checkpoint count");
         values.set(entry.key, {
           value: restoreValue(entry.value) as Exclude<VectorAggregateValue, null>,
           count: entry.count,

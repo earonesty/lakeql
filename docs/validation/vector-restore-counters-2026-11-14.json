@@ -1,0 +1,24 @@
+{
+  "baseCommit": "9b0e993",
+  "requirements": ["F1", "V2"],
+  "change": "Share nonnegative safe-integer counter validation between row and vector restore.",
+  "fixture": "packages/core/src/vector-aggregate-snapshot.test.ts",
+  "matrix": {
+    "operations": 7,
+    "invalidClasses": ["negative", "fractional", "unsafe", "NaN", "Infinity"],
+    "routes": ["direct", "scoped"],
+    "validBoundaries": [0, 1, 9007199254740991]
+  },
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 40,
+    "regularPassed": 3743,
+    "regularSkipped": 645,
+    "workerPassed": 82
+  },
+  "limitations": [
+    "Not complete snapshot-shape or aggregate lifecycle validation.",
+    "Native runtime memory and cloud transport remain separate acceptance evidence."
+  ]
+}

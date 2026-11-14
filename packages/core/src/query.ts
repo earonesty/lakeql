@@ -1,3 +1,4 @@
+import { isAggregateCount } from "./aggregate-count.js";
 import { continuousQuantile, requiredQuantile } from "./aggregate-quantile.js";
 import { MATERIALIZATION_CHARGES as allocationCharges } from "./allocation-charges.js";
 import {
@@ -5440,10 +5441,6 @@ function isAggregateStateSnapshot(value: unknown): value is AggregateStateSnapsh
     default:
       return false;
   }
-}
-
-function isAggregateCount(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
 function isAggregateSnapshotValue(value: unknown): value is AggregateSnapshotValue {

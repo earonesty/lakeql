@@ -4506,3 +4506,12 @@ Checkpoint validation previously accepted any numeric count for count/average/va
 Added inline and owned-spill regression matrices covering count, average, variance and mode with each invalid counter class. All twenty-four malformed restore combinations reject with `LAKEQL_BOOKMARK_INVALID`, never invoke the scanner and leave zero tracked storage. All 31 checkpoint tests pass, including valid continuation and ownership cases. These are memory-adapter malformed-state fixtures; actual transport operation remains covered by separate HTTP/R2 continuation suites. Broader aggregate lifecycle and allocation acceptance remains open.
 
 Final verification: build/typecheck, 3,736 regular tests (645 skipped) and 82 Worker tests passed. Evidence: `docs/validation/aggregate-restore-counters-2026-11-14.json`.
+
+
+### F1/V2 shared row/vector restored-counter validation (2026-11-14)
+
+The analogous vector restore path also accepted arbitrary numeric counters. Extracted the nonnegative safe-integer predicate into `aggregate-count.ts` and reused it from row checkpoint validation and vector state restoration. Counter-bearing vector states validate before construction; mode entry counts validate in the existing restoration loop, with no added whole-snapshot pass. Public vector errors use the existing validation-error family; row checkpoint errors remain bookmark-invalid.
+
+Seven operation cases cover count, average, all four variance/stddev variants and mode. Each rejects negative, fractional, unsafe, NaN and infinite counters through direct and scoped restore; valid zero/one/maximum-safe counters round-trip. Scoped failures dispose cleanly. The two focused row/vector suites pass 40 tests. This aligns counter invariants without changing valid accumulator arithmetic or claiming full restore-shape validation.
+
+Final verification: build/typecheck, 3,743 regular tests (645 skipped) and 82 Worker tests passed. Evidence: `docs/validation/vector-restore-counters-2026-11-14.json`.
