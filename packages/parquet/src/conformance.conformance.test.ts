@@ -110,6 +110,37 @@ describeExternal("apache/parquet-testing conformance", () => {
       expect(pool.usedBytes).toBe(0);
     }
   });
+  // The ordinary parity checks cannot detect identical rounding in both readers.
+  // These exact decimal spellings come from shredded_variant/cases.json.
+  for (const mode of ["public", "owned"] as const) {
+    it.each([
+      [70, "123456789.987654321"],
+      [71, "-123456789.987654321"],
+      [72, "9876543210.123456789"],
+      [73, "-9876543210.123456789"],
+      [112, "123456789.987654321"],
+      [113, "-123456789.987654321"],
+      [114, "9876543210.123456789"],
+      [115, "-9876543210.123456789"],
+    ] as const)(`preserves documented decimal case %i through ${mode}`, async (number, expected) => {
+      const file = `shredded_variant/case-${String(number).padStart(3, "0")}.parquet`;
+      const store = memoryStore();
+      await store.put(file, readFileSync(join(parquetTestingDir, file)));
+      const pool = new MemoryBudget(64 * 1024 * 1024);
+      const lake = createParquetLake({ store, memoryPool: pool, scanRangeCache: { maxBytes: 0 } });
+      const owner =
+        mode === "owned" ? await lake.path(file).batchSize(1).run().toOwnedArray() : undefined;
+      try {
+        const rows = owner?.value ?? (await readParquetObjects(store, file));
+        expect(rows).toHaveLength(1);
+        // Never coerce the expected digits to binary64: doing so erases this error.
+        expect(String(rows[0]?.var)).toBe(expected);
+      } finally {
+        owner?.release();
+        expect(pool.usedBytes).toBe(0);
+      }
+    });
+  }
   it.each(malformedFiles)("rejects documented malformed %s in both readers", async (file) => {
     const store = memoryStore();
     const objectPath = relative(parquetTestingDir, file);

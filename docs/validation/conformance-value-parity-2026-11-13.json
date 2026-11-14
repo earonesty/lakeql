@@ -280,5 +280,27 @@
       "Clean installed package public/owned fixture reads"
     ],
     "remaining": "Four decimal variant fixtures require exact high-precision scalar representation; relaxing schema rejection would silently round values. Other remaining failures are ALP, BSON and BROTLI, each through both readers. No exclusions or assertion waivers added. HTTP tests do not establish production Cloudflare heap safety."
+  },
+  "independentDecimalOracle": {
+    "evidence": "../benchmarks/variant-decimal-oracle-2026-11-13.json",
+    "reproducer": "node bench/variant-decimal-oracle.mjs",
+    "cause": "The binary variant decimal decoder converts signed coefficients to Number and multiplies by 10**-scale. Both readers share this path, so parity does not detect lost digits. Shredded high-precision decimals reject earlier, while equivalent binary variants silently round.",
+    "observed": "123456789.987654321 becomes 123456789.98765433 in both readers. Cases 70-73 and 112-115 lose documented digits; cases 26-29 reject.",
+    "validation": {
+      "conformancePassed": 479,
+      "conformanceFailed": 30,
+      "conformanceSkipped": 1,
+      "newFailures": 16,
+      "runtimeChanged": false
+    },
+    "gateChange": "Sixteen independent decimal assertions compare documented exact spellings without converting expected values to Number. Existing corpus assertions and unsupported-format failures remain. This exposes existing loss; no expected-failure waiver or skip added.",
+    "requiredContract": [
+      "An exact decimal scalar must preserve a signed coefficient and scale across both shredded leaves and binary variants, with shared conversion hooks.",
+      "Generic vectors, literals, comparisons, grouping/hash keys, sorting, arithmetic and aggregates need explicit decimal capabilities and consistent numeric coercion; a generic object fallback must not silently change semantics.",
+      "Coefficient backing, scale alignment, arithmetic scratch, serialized text and vector directories must be admitted before allocation; huge scales must not trigger unbounded zero padding or powers of ten.",
+      "JSON/CSV output must preserve exact digits under a documented representation, without silently converting back to binary64.",
+      "Validate primitive and nested values, signed boundaries, scale normalization, null/empty values, budget caps, cancellation, real HTTP/R2 fixtures and clean package distribution."
+    ],
+    "scope": "Oracle uses memoryStore and vendored fixture documentation. No cloud performance or total-memory claim. Exact-decimal support remains unimplemented; removing the schema precision guard alone is not an acceptable fix."
   }
 }
