@@ -1,0 +1,31 @@
+{
+  "date": "2026-11-14",
+  "changes": [
+    "Replace separate count-only and metadata-backed work-unit split loops with one shared implementation.",
+    "Admit work-unit result arrays and slots, mutable range scratch, descriptor construction and detached task payloads.",
+    "Preserve complete task fields, including window plans, while detaching mutable predicate, projection, partition and range state.",
+    "Plain planning transfers output ownership to the caller at return; in-flight reservations release on success and failure."
+  ],
+  "validation": {
+    "build": "passed",
+    "targeted_tests": 45,
+    "edge_cases": [
+      "metadata-free split on a nonexistent path proves no file access",
+      "peak-minus-one budget rejects and returns to zero",
+      "mutable caller projection/partition changes do not affect output",
+      "window plan preservation and independent ownership",
+      "real Parquet row-limit planning and indivisible-group rejection"
+    ],
+    "typecheck": "passed before final window-plan test assertions; production code unchanged",
+    "final_work_unit_tests": 11
+  },
+  "tradeoffs": [
+    "Deep detachment adds copy work and conservatively charges repeated immutable task payloads per output; no new throughput claim."
+  ],
+  "remaining": [
+    "Generic aggregate-task grouping still uses separate unadmitted topology helpers.",
+    "Borrowed-store metadata can allocate externally before retained-copy admission.",
+    "Returned plain task arrays leave library accounting at return; there is not yet an owned planning result API.",
+    "Full current-revision release gates and broader mixed-job acceptance remain open."
+  ]
+}

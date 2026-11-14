@@ -501,3 +501,50 @@ it("budgets work-unit metadata and releases it after row-limit planning", async 
   ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
   expect(tight.usedBytes).toBe(0);
 });
+
+it("admits metadata-free work-unit descriptors and detaches their mutable task state", async () => {
+  const { MemoryBudget } = await import("lakeql-core");
+  const task: TaskInput = {
+    window: {
+      topology: "window-partition-fanout",
+      available: true,
+      bucketCount: 4,
+      partitionBy: [],
+    },
+    path: "not-read.parquet",
+    rowGroupCount: 4,
+    rowGroupRanges: [{ start: 0, end: 4 }],
+    partitionValues: { region: "west" },
+    projectedColumns: ["id"],
+    residualPredicate: gte("id", 1),
+  };
+  const pool = new MemoryBudget(64 * 1024);
+  const units = await planParquetTaskWorkUnits(memoryStore(), task, {
+    maxRowGroupsPerTask: 1,
+    memoryBudget: pool,
+  });
+  expect(units).toHaveLength(4);
+  expect(units[0]?.window).toEqual(task.window);
+  expect(units[0]?.window).not.toBe(task.window);
+  expect(pool.peakBytes).toBeGreaterThan(0);
+  expect(pool.usedBytes).toBe(0);
+  expect(units[0]?.residualPredicate).toEqual(task.residualPredicate);
+  expect(units[0]?.residualPredicate).not.toBe(task.residualPredicate);
+  const boundary = new MemoryBudget(pool.peakBytes - 1);
+  await expect(
+    planParquetTaskWorkUnits(memoryStore(), task, {
+      maxRowGroupsPerTask: 1,
+      memoryBudget: boundary,
+    }),
+  ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  expect(boundary.usedBytes).toBe(0);
+  task.projectedColumns?.push("changed");
+  task.partitionValues.region = "east";
+  expect(units[0]?.projectedColumns).toEqual(["id"]);
+  expect(units[0]?.partitionValues).toEqual({ region: "west" });
+  const tight = new MemoryBudget(1);
+  await expect(
+    planParquetTaskWorkUnits(memoryStore(), task, { maxRowGroupsPerTask: 1, memoryBudget: tight }),
+  ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  expect(tight.usedBytes).toBe(0);
+});

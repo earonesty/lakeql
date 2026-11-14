@@ -21,7 +21,6 @@ import { rejectUnsupportedParquetSchema } from "./schema.js";
 import { asyncBufferFromStore } from "./store-buffer.js";
 import {
   appendRowGroupRange,
-  cloneTaskWithRanges,
   iterateTaskRowWindows,
   type PlanParquetTaskWorkUnitsOptions,
   type ScanParquetTaskOptions,
@@ -163,100 +162,113 @@ export async function planParquetTaskWorkUnits(
   options: PlanParquetTaskWorkUnitsOptions,
 ): Promise<TaskInput[]> {
   validateTaskWorkUnitOptions(options);
-  if (
-    options.maxRowsPerTask === undefined &&
-    options.maxRowGroupsPerTask !== undefined &&
-    task.rowGroupCount !== undefined &&
-    task.rowGroupRanges.every((range) => Number.isFinite(range.start) && Number.isFinite(range.end))
-  ) {
-    return splitTaskByRowGroupCount(task, options.maxRowGroupsPerTask, task.rowGroupCount);
-  }
   const scope = new MemoryScope(options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER));
   try {
+    if (
+      options.maxRowsPerTask === undefined &&
+      task.rowGroupCount !== undefined &&
+      task.rowGroupRanges.every(
+        (range) => Number.isFinite(range.start) && Number.isFinite(range.end),
+      )
+    ) {
+      return splitTaskWorkUnits(task, task.rowGroupCount, undefined, options, scope);
+    }
     const file = await taskSource(store, task.path, { ...options, memoryBudget: scope.budget });
     const { metadata } = await taskMetadataOwned(task.path, file, scope, options);
-    const taskWithRowGroupCount =
-      task.rowGroupCount === undefined
-        ? { ...task, rowGroupCount: metadata.row_groups.length }
-        : task;
-    const workUnits: TaskInput[] = [];
-    let currentRanges: { start: number; end: number }[] = [];
-    let currentGroups = 0;
-    let currentRows = 0;
+    return splitTaskWorkUnits(
+      task,
+      metadata.row_groups.length,
+      (index) => Number(metadata.row_groups[index]?.num_rows ?? 0),
+      options,
+      scope,
+    );
+  } finally {
+    scope.dispose();
+  }
+}
 
-    const flush = () => {
-      if (currentGroups === 0) return;
-      workUnits.push(cloneTaskWithRanges(taskWithRowGroupCount, currentRanges));
-      currentRanges = [];
-      currentGroups = 0;
-      currentRows = 0;
-    };
-
+function splitTaskWorkUnits(
+  task: TaskInput,
+  rowGroupCount: number,
+  rowsAt: ((index: number) => number) | undefined,
+  options: PlanParquetTaskWorkUnitsOptions,
+  scope: MemoryScope,
+): TaskInput[] {
+  const workUnits = scope.allocate(c.array, "planned work units", () => [] as TaskInput[]).value;
+  let scratch = scope.childScope();
+  const newRanges = () =>
+    scratch.allocate(c.array, "work unit ranges", () => [] as { start: number; end: number }[])
+      .value;
+  let ranges = newRanges();
+  let groups = 0;
+  let rows = 0;
+  const flush = () => {
+    if (groups === 0) return;
+    let properties = 1;
+    for (const key in task) if (Object.hasOwn(task, key)) properties++;
+    const candidate = scratch.allocate(
+      c.object + properties * c.property,
+      "work unit descriptor",
+      () => ({
+        ...task,
+        rowGroupRanges: ranges,
+        rowGroupCount: task.rowGroupCount ?? rowGroupCount,
+      }),
+    ).value;
+    const owner = detachOwnedRow(candidate, scope.budget);
+    try {
+      scope.adopt(owner);
+    } catch (error) {
+      owner.release();
+      throw error;
+    }
+    scope.allocate(c.arraySlot, "planned work unit slot", () => {
+      workUnits.push(owner.value as unknown as TaskInput);
+    });
+    scratch.dispose();
+    scratch = scope.childScope();
+    ranges = newRanges();
+    groups = 0;
+    rows = 0;
+  };
+  try {
     for (const range of task.rowGroupRanges) {
-      const start = Math.max(0, range.start);
-      const end = Math.min(range.end, metadata.row_groups.length);
-      for (let index = start; index < end; index += 1) {
-        const rows = Number(metadata.row_groups[index]?.num_rows ?? 0);
-        if (options.maxRowsPerTask !== undefined && rows > options.maxRowsPerTask) {
+      const start = Math.max(0, Math.trunc(range.start));
+      const end = Math.min(rowGroupCount, Math.max(start, Math.trunc(range.end)));
+      for (let index = start; index < end; index++) {
+        const count = rowsAt?.(index) ?? 0;
+        if (options.maxRowsPerTask !== undefined && count > options.maxRowsPerTask)
           throw new LakeqlError(
             "LAKEQL_TYPE_ERROR",
             "maxRowsPerTask is smaller than a planned Parquet row group",
             {
               path: task.path,
               rowGroup: index,
-              rowGroupRows: rows,
+              rowGroupRows: count,
               maxRowsPerTask: options.maxRowsPerTask,
             },
           );
-        }
-        const wouldExceedGroups =
-          options.maxRowGroupsPerTask !== undefined &&
-          currentGroups > 0 &&
-          currentGroups + 1 > options.maxRowGroupsPerTask;
-        const wouldExceedRows =
-          options.maxRowsPerTask !== undefined &&
-          currentRows > 0 &&
-          currentRows + rows > options.maxRowsPerTask;
-        if (wouldExceedGroups || wouldExceedRows) flush();
-        appendRowGroupRange(currentRanges, index);
-        currentGroups += 1;
-        currentRows += rows;
+        if (
+          groups > 0 &&
+          ((options.maxRowGroupsPerTask !== undefined &&
+            groups + 1 > options.maxRowGroupsPerTask) ||
+            (options.maxRowsPerTask !== undefined && rows + count > options.maxRowsPerTask))
+        )
+          flush();
+        if (ranges.at(-1)?.end !== index)
+          scratch.allocate(c.arraySlot + c.object + 2 * c.property, "work unit range", () =>
+            appendRowGroupRange(ranges, index),
+          );
+        else appendRowGroupRange(ranges, index);
+        groups++;
+        rows += count;
       }
     }
     flush();
     return workUnits;
   } finally {
-    scope.dispose();
+    scratch.dispose();
   }
-}
-
-function splitTaskByRowGroupCount(
-  task: TaskInput,
-  maxRowGroupsPerTask: number,
-  rowGroupCount: number,
-): TaskInput[] {
-  const workUnits: TaskInput[] = [];
-  let currentRanges: { start: number; end: number }[] = [];
-  let currentGroups = 0;
-
-  const flush = () => {
-    if (currentGroups === 0) return;
-    workUnits.push(cloneTaskWithRanges(task, currentRanges));
-    currentRanges = [];
-    currentGroups = 0;
-  };
-
-  for (const range of task.rowGroupRanges) {
-    const start = Math.max(0, Math.trunc(range.start));
-    const end = Math.min(rowGroupCount, Math.max(start, Math.trunc(range.end)));
-    for (let index = start; index < end; index += 1) {
-      if (currentGroups > 0 && currentGroups + 1 > maxRowGroupsPerTask) flush();
-      appendRowGroupRange(currentRanges, index);
-      currentGroups += 1;
-    }
-  }
-  flush();
-  return workUnits;
 }
 
 /** Read Parquet footer metadata (row groups, schema, stats). */
