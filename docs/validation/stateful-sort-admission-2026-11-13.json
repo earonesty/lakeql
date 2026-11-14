@@ -21,8 +21,9 @@
     "remoteEvidence": "Real wide-timestamp Parquet over HTTP 206 and ignored-range 200, row-only scanner, four concurrent sortWithState queries with maxBufferedRows=2. Result parity, nonempty checkpoints, bounded pool peak and final zero usage verified. Timestamp checkpoint restoration is not claimed by this fixture."
   },
   "limits": [
-    "Checkpoint decoding currently allocates before restored rows are detached. JSON snapshot/serialization, spill payload and output projection allocations still require independent admission.",
+    "Checkpoint decoding currently allocates before restored rows are detached. Snapshot construction and output projection still require independent admission; checkpoint serialization and spill-write pins are now admitted (see linked evidence).",
     "Run payloads remain retained across in-memory runs; maxBufferedRows controls run construction, while the shared allocation cap bounds the retained collection.",
     "Scratch charges are conservative accounting units, not a portable native-sort or total-heap measurement."
-  ]
+  ],
+  "checkpointEncodingEvidence": "checkpoint-encoding-admission-2026-11-13.json"
 }

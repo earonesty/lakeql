@@ -35,6 +35,7 @@ import { isPrototypeMutationKey } from "./object-key.js";
 import { ownedAggregateExpressionBytesForColumns } from "./owned-aggregate-input.js";
 import { OwnedAggregateState } from "./owned-aggregate-state.js";
 import { OwnedBoundedTopK } from "./owned-bounded-top-k.js";
+import { encodeOwnedCheckpoint } from "./owned-checkpoint-encoding.js";
 import { OwnedGroupDirectory } from "./owned-group-directory.js";
 import { collectOwnedRows } from "./owned-row-collector.js";
 import { detachOwnedRow } from "./owned-row-detachment.js";
@@ -1653,14 +1654,18 @@ export class QueryResult {
       }
       this.stats.elapsedMs = config.now() - startedAt;
       const state = topKOperatorState(orderBy, config.offset ?? 0, config.limit, matched);
-      const operatorState = serializeTopKOperatorState(state);
+      const checkpoint = retainedScope.adopt(encodeOwnedCheckpoint(state, retainedScope));
+      const operatorState = checkpoint.value;
       const result: TopKResult = { rows, operatorState };
       if (options.spill !== undefined) {
-        result.operatorSpill = await options.spill.write(
+        result.operatorSpill = await writeOwnedCheckpoint(
+          options.spill,
           options.spillId ?? `topk-${this.stats.queryId}`,
-          operatorState,
+          checkpoint,
         );
       }
+      if (retainedScope.disposed)
+        throw new LakeqlError("LAKEQL_ABORTED", "Checkpoint scope disposed during spill");
       return result;
     } finally {
       retainedScope.dispose();
@@ -1717,15 +1722,20 @@ export class QueryResult {
         runs,
         options.spill,
         options.spillId ?? `sort-${this.stats.queryId}`,
+        retainedScope,
       );
-      const operatorState = serializeSortOperatorState(state);
+      const checkpoint = retainedScope.adopt(encodeOwnedCheckpoint(state, retainedScope));
+      const operatorState = checkpoint.value;
       const result: SortResult = { rows, operatorState };
       if (options.spill !== undefined) {
-        result.operatorSpill = await options.spill.write(
+        result.operatorSpill = await writeOwnedCheckpoint(
+          options.spill,
           options.spillId ?? `sort-${this.stats.queryId}`,
-          operatorState,
+          checkpoint,
         );
       }
+      if (retainedScope.disposed)
+        throw new LakeqlError("LAKEQL_ABORTED", "Checkpoint scope disposed during spill");
       return result;
     } finally {
       retainedScope.dispose();
@@ -3960,8 +3970,17 @@ export function deserializeSortOperatorState(
   return validateSortOperatorState(JSON.parse(new TextDecoder().decode(bytes)));
 }
 
-function serializeSortRunRows(rows: Record<string, OperatorSnapshotValue>[]): Uint8Array {
-  return new TextEncoder().encode(stableStringify(rows));
+async function writeOwnedCheckpoint(
+  spill: SpillAdapter,
+  id: string,
+  output: OwnedMemory<Uint8Array>,
+) {
+  const pin = output.retain();
+  try {
+    return await spill.write(id, pin.value);
+  } finally {
+    pin.release();
+  }
 }
 
 function deserializeSortRunRows(bytes: Uint8Array): Row[] {
@@ -4064,6 +4083,7 @@ async function sortOperatorState(
   runs: Row[][],
   spill: SpillAdapter | undefined,
   spillId: string,
+  scope: MemoryScope,
 ): Promise<SortOperatorState> {
   const runStates: SortRunState[] = [];
   for (const [index, run] of runs.entries()) {
@@ -4072,9 +4092,20 @@ async function sortOperatorState(
       runStates.push({ rows });
       continue;
     }
-    const bytes = serializeSortRunRows(rows);
-    const ref = await spill.write(`${spillId}-run-${String(index).padStart(6, "0")}`, bytes);
-    runStates.push({ spillRef: ref.id, rowCount: rows.length, byteSize: ref.byteSize });
+    const encoding = scope.childScope();
+    try {
+      const output = encoding.adopt(encodeOwnedCheckpoint(rows, encoding));
+      const ref = await writeOwnedCheckpoint(
+        spill,
+        `${spillId}-run-${String(index).padStart(6, "0")}`,
+        output,
+      );
+      if (scope.disposed)
+        throw new LakeqlError("LAKEQL_ABORTED", "Sort checkpoint scope disposed during spill");
+      runStates.push({ spillRef: ref.id, rowCount: rows.length, byteSize: ref.byteSize });
+    } finally {
+      encoding.dispose();
+    }
   }
   return {
     version: 1,

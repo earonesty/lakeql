@@ -1,0 +1,29 @@
+{
+  "status": "Implemented; build, default and Worker validation passed",
+  "contract": "Preserve stableStringify checkpoint bytes while admitting normalization containers, sorted-entry metadata, JSON text and encoded output overlap before serialization. Inputs are immutable JSON-shaped checkpoints. Output has an independent ownership handle.",
+  "integration": "Final topKWithState/sortWithState checkpoints and individual sort-run spill bytes use admitted encoding. Every asynchronous spill write independently pins encoded bytes until settlement, even if parent cancellation disposes the scope. Completion after cancellation rejects with LAKEQL_ABORTED.",
+  "validation": {
+    "encoderTestsPassed": 3,
+    "cases": [
+      "stable key order including numeric keys",
+      "escaped Unicode and lone surrogate",
+      "NaN/Infinity legacy string normalization",
+      "undefined property omission",
+      "exact simultaneous cap",
+      "one-byte-short cleanup",
+      "scope disposal with retained output",
+      "cyclic and unsupported-input rejection",
+      "Cancellation while top-k/final or sort-run spill is pending preserves encoded bytes until adapter completion and then releases all usage."
+    ],
+    "queryAndEncoderTestsPassed": 97,
+    "cancellationAndEncoderTestsPassed": 15,
+    "build": "passed",
+    "defaultTestsPassed": 3046,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61
+  },
+  "remaining": [
+    "Checkpoint snapshot object construction and decoding remain unadmitted.",
+    "Traversal and normalization charges are conservative accounting units, not a total VM heap guarantee."
+  ]
+}

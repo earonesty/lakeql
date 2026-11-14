@@ -275,3 +275,51 @@ it("keeps sort rows owned during asynchronous spill and releases them on rejecti
   expect(pool.usedBytes).toBe(37);
   sibling.release();
 });
+
+it.each([
+  "topKWithState",
+  "sortWithState",
+] as const)("pins %s spill bytes until a canceled write settles", async (method) => {
+  const pool = new MemoryBudget(65536);
+  const controller = new AbortController();
+  const store = memoryStore();
+  await store.put("table", new Uint8Array(1));
+  const lake = new Lake({
+    store,
+    memoryPool: pool,
+    budget: { signal: controller.signal },
+    scanner: {
+      async *scan() {
+        yield [{ id: 2 }, { id: 1 }];
+      },
+    },
+  });
+  let started!: () => void;
+  let settle!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const pending = new Promise<void>((resolve) => {
+    settle = resolve;
+  });
+  const spill = memorySpillAdapter();
+  spill.write = async (id, bytes) => {
+    started();
+    await pending;
+    expect(bytes.byteLength).toBeGreaterThan(0);
+    expect(pool.usedBytes).toBeGreaterThanOrEqual(bytes.byteLength);
+    return { id, byteSize: bytes.byteLength };
+  };
+  const result = lake
+    .path("table")
+    .orderBy([{ column: "id" }])
+    .limit(1)
+    [method]({ spill });
+  const rejected = expect(result).rejects.toMatchObject({ code: "LAKEQL_ABORTED" });
+  await ready;
+  controller.abort();
+  expect(pool.usedBytes).toBeGreaterThan(0);
+  settle();
+  await rejected;
+  expect(pool.usedBytes).toBe(0);
+});
