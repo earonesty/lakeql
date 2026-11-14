@@ -2136,7 +2136,9 @@ export class QueryResult {
     const columnarRows = await this.tryColumnarAggregateRows(groupColumns, spec, options);
     if (columnarRows !== undefined) return columnarRows;
     this.requirePhysicalPath("aggregate");
-    return (await this.aggregateWithState(groupColumns, spec, options)).rows;
+    if (options.spill !== undefined)
+      return (await this.aggregateWithState(groupColumns, spec, options)).rows;
+    return this.runRowAggregate(groupColumns, spec, options, (_groups, rows) => rows);
   }
 
   private async tryColumnarAggregateRows(
@@ -2606,6 +2608,34 @@ export class QueryResult {
     spec: AggregateSpec,
     options: AggregateOptions = {},
   ): Promise<AggregateResult> {
+    return this.runRowAggregate(groupColumns, spec, options, async (groups, rows, scope) => {
+      const state = aggregateOperatorState(groupColumns, spec, groups, scope);
+      const checkpoint = scope.adopt(encodeOwnedCheckpoint(state, scope));
+      const result: AggregateResult = { rows, operatorState: checkpoint.value };
+      if (options.spill !== undefined) {
+        result.operatorSpill = await writeOwnedCheckpoint(
+          options.spill,
+          options.spillId ?? `aggregate-${this.stats.queryId}`,
+          checkpoint,
+          scope,
+        );
+      }
+      if (scope.disposed)
+        throw new LakeqlError("LAKEQL_ABORTED", "Aggregate checkpoint scope disposed during spill");
+      return result;
+    });
+  }
+
+  private async runRowAggregate<T>(
+    groupColumns: string[],
+    spec: AggregateSpec,
+    options: AggregateOptions,
+    finish: (
+      groups: Map<string, AggregateGroup>,
+      rows: Row[],
+      scope: MemoryScope,
+    ) => T | Promise<T>,
+  ): Promise<T> {
     validateAggregateRequest(groupColumns, spec, options);
     // Aggregate spec expressions and HAVING live outside config; planObjects()
     // only sees where/projections, so cover the aggregate exprs here too.
@@ -2691,24 +2721,7 @@ export class QueryResult {
         this.stats.rowsReturned += 1;
         enforceBudget(this.config.budget, this.stats, this.config.now, startedAt);
       }
-      const state = aggregateOperatorState(groupColumns, spec, groups, checkpointScope);
-      const checkpoint = checkpointScope.adopt(encodeOwnedCheckpoint(state, checkpointScope));
-      const operatorState = checkpoint.value;
-      const result: AggregateResult = {
-        rows,
-        operatorState,
-      };
-      if (options.spill !== undefined) {
-        result.operatorSpill = await writeOwnedCheckpoint(
-          options.spill,
-          options.spillId ?? `aggregate-${this.stats.queryId}`,
-          checkpoint,
-          checkpointScope,
-        );
-      }
-      if (checkpointScope.disposed)
-        throw new LakeqlError("LAKEQL_ABORTED", "Aggregate checkpoint scope disposed during spill");
-      return result;
+      return await finish(groups, rows, checkpointScope);
     } finally {
       checkpointScope.dispose();
     }

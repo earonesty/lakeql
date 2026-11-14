@@ -1,9 +1,9 @@
 import { createServer } from "node:http";
 import { parquetWriteBuffer } from "hyparquet-writer";
-import { MemoryBudget, memorySpillAdapter } from "lakeql-core";
+import { Lake, MemoryBudget, memorySpillAdapter } from "lakeql-core";
 import { expect, it } from "vitest";
 import { HttpObjectStore } from "../../http/src/index.js";
-import { createParquetLake } from "./index.js";
+import { createParquetLake, ParquetScanAdapter } from "./index.js";
 
 it.each([
   206, 200,
@@ -100,6 +100,102 @@ it.each([
     expect(requests).toBe(0);
     expect(pool.usedBytes).toBe(0);
     const spill = memorySpillAdapter();
+    const continuationSpec = {
+      n: { op: "count" as const },
+      total: { op: "sum" as const, column: "value" },
+      median: { op: "median" as const, column: "value" },
+      quantile: { op: "quantile" as const, column: "value", quantile: 0.5 },
+      distinct: { op: "count_distinct" as const, column: "value" },
+      approximate: { op: "approx_count_distinct" as const, column: "value" },
+      mode: { op: "mode" as const, column: "value" },
+    };
+    let previousSpill: string | undefined;
+    for (let copies = 1; copies <= 3; copies++) {
+      const spillId = `aggregate-continuation-${copies}`;
+      const continued = await lake
+        .path("fixture.parquet")
+        .batchSize(1)
+        .run()
+        .aggregateWithState(["key"], continuationSpec, {
+          spill,
+          spillId,
+          ...(previousSpill ? { operatorState: { spillRef: previousSpill } } : {}),
+        });
+      expect(continued.rows).toEqual([
+        {
+          key: 1,
+          n: 2 * copies,
+          total: 6 * copies,
+          median: 3,
+          quantile: 3,
+          distinct: 2,
+          approximate: 2,
+          mode: 2,
+        },
+        {
+          key: 2,
+          n: copies,
+          total: 3 * copies,
+          median: 3,
+          quantile: 3,
+          distinct: 1,
+          approximate: 1,
+          mode: 3,
+        },
+      ]);
+      expect(continued.operatorSpill?.id).toBe(spillId);
+      expect(await spill.read(spillId)).toEqual(continued.operatorState);
+      expect(pool.usedBytes).toBe(0);
+      previousSpill = spillId;
+    }
+    const restoreLimited = createParquetLake({
+      memoryPool: pool,
+      budget: { maxBufferedRows: 1 },
+      store: new HttpObjectStore({
+        baseUrl: `http://127.0.0.1:${address.port}`,
+        maxFullObjectCacheBytes: 0,
+      }),
+    });
+    if (!previousSpill) throw new Error("Missing aggregate checkpoint");
+    requests = 0;
+    await expect(
+      restoreLimited
+        .path("fixture.parquet")
+        .run()
+        .aggregateWithState(["key"], continuationSpec, {
+          spill,
+          operatorState: { spillRef: previousSpill },
+        }),
+    ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+    expect(requests).toBe(0);
+    expect(pool.usedBytes).toBe(0);
+    // A fresh run on the same pool must not inherit restored counters or charges.
+    const fresh = await lake.path("fixture.parquet").run().aggregateWithState(["key"], spec);
+    expect(fresh.rows).toEqual([
+      { key: 1, total: 6 },
+      { key: 2, total: 3 },
+    ]);
+    expect(pool.usedBytes).toBe(0);
+    const rowStore = new HttpObjectStore({
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      maxFullObjectCacheBytes: 0,
+    });
+    const rowAdapter = new ParquetScanAdapter(rowStore, { scanRangeCache: { maxBytes: 0 } });
+    const rowLake = new Lake({
+      store: rowStore,
+      memoryPool: pool,
+      scanner: { scan: rowAdapter.scan.bind(rowAdapter) },
+    });
+    const rowOnly = await rowLake
+      .path("fixture.parquet")
+      .batchSize(1)
+      .run()
+      .aggregate(["key"], continuationSpec);
+    expect(rowOnly).toEqual([
+      { key: 1, n: 2, total: 6, median: 3, quantile: 3, distinct: 2, approximate: 2, mode: 2 },
+      { key: 2, n: 1, total: 3, median: 3, quantile: 3, distinct: 1, approximate: 1, mode: 3 },
+    ]);
+    expect(pool.usedBytes).toBe(0);
     const sorted = await lake
       .path("fixture.parquet")
       .orderBy([{ column: "value" }])

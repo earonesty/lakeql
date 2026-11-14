@@ -159,6 +159,12 @@ work, or distinct hashing. Treat Node DuckDB as a strong local CPU baseline, not
 the DuckDB-WASM product comparison: browser WASM needs a separate lane for
 download/compile/init time, HTTP range behavior, warm queries, and browser memory.
 
+Row-fallback `aggregate()` finalizes only the requested rows. It does not build
+and serialize a checkpoint that the caller would discard. Use
+`aggregateWithState()` when continuation bytes are needed; supplying a spill
+adapter explicitly still writes the checkpoint. Both routes share the same
+accumulation, restore, limits and cleanup logic.
+
 For bounded top-k sorts, use `orderBy(...).limit(...).topKWithState()` to
 serialize or spill the retained heap state between slices. For full global sorts,
 `sortWithState()` builds sorted runs capped by `maxBufferedRows`, merges those runs
