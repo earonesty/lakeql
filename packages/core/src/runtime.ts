@@ -135,6 +135,7 @@ export interface MemorySpillAdapterOptions {
 
 export class MemorySpillAdapter implements SpillAdapter {
   private readonly entries = new Map<string, Uint8Array>();
+  private byteSize = 0;
   private readonly maxBytes: number | undefined;
 
   constructor(options: MemorySpillAdapterOptions = {}) {
@@ -145,8 +146,7 @@ export class MemorySpillAdapter implements SpillAdapter {
     if (!id) {
       throw new LakeqlError("LAKEQL_TYPE_ERROR", "spill id must be non-empty");
     }
-    const nextBytes =
-      this.currentBytes() - (this.entries.get(id)?.byteLength ?? 0) + data.byteLength;
+    const nextBytes = this.byteSize - (this.entries.get(id)?.byteLength ?? 0) + data.byteLength;
     if (this.maxBytes !== undefined && nextBytes > this.maxBytes) {
       throw new LakeqlError(
         "LAKEQL_BUDGET_EXCEEDED",
@@ -156,6 +156,7 @@ export class MemorySpillAdapter implements SpillAdapter {
     }
     const copy = copyBytes(data);
     this.entries.set(id, copy);
+    this.byteSize = nextBytes;
     return { id, byteSize: copy.byteLength };
   }
 
@@ -185,17 +186,13 @@ export class MemorySpillAdapter implements SpillAdapter {
   }
 
   async delete(ref: SpillRef | string): Promise<void> {
-    this.entries.delete(spillId(ref));
+    const id = spillId(ref);
+    const previous = this.entries.get(id);
+    if (this.entries.delete(id)) this.byteSize -= previous?.byteLength ?? 0;
   }
 
   async usage(): Promise<SpillUsage> {
-    return { entries: this.entries.size, byteSize: this.currentBytes() };
-  }
-
-  private currentBytes(): number {
-    let total = 0;
-    for (const data of this.entries.values()) total += data.byteLength;
-    return total;
+    return { entries: this.entries.size, byteSize: this.byteSize };
   }
 }
 

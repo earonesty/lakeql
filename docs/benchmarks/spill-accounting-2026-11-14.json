@@ -1,0 +1,27 @@
+{
+  "warmups": 1,
+  "samples": 3,
+  "scope": "Local 8-byte in-memory spill writes; modeled previous full-map byte accounting baseline; no disk/cloud or heap-cap measurement.",
+  "results": [
+    {
+      "entries": 1000,
+      "mode": "scan-baseline",
+      "medianMs": 5.46007800000001
+    },
+    {
+      "entries": 1000,
+      "mode": "incremental",
+      "medianMs": 0.3787439999999975
+    },
+    {
+      "entries": 10000,
+      "mode": "scan-baseline",
+      "medianMs": 216.30800099999993
+    },
+    {
+      "entries": 10000,
+      "mode": "incremental",
+      "medianMs": 2.9298410000000104
+    }
+  ]
+}

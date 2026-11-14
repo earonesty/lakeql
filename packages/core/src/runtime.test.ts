@@ -138,3 +138,25 @@ describe("runtime substrate helpers", () => {
     );
   });
 });
+
+it("keeps spill usage exact across replacement, rejection and repeated deletion", async () => {
+  const spill = memorySpillAdapter({ maxBytes: 10 });
+  await spill.write("a", Uint8Array.of(1, 2, 3));
+  await spill.write("b", new Uint8Array(7));
+  expect(await spill.usage()).toEqual({ entries: 2, byteSize: 10 });
+  await expect(spill.write("a", new Uint8Array(4))).rejects.toMatchObject({
+    code: "LAKEQL_BUDGET_EXCEEDED",
+  });
+  expect(await spill.read("a")).toEqual(Uint8Array.of(1, 2, 3));
+  expect(await spill.usage()).toEqual({ entries: 2, byteSize: 10 });
+  await spill.write("a", new Uint8Array(1));
+  expect(await spill.usage()).toEqual({ entries: 2, byteSize: 8 });
+  await spill.write("a", new Uint8Array(3));
+  await spill.delete("b");
+  await spill.delete("b");
+  expect(await spill.usage()).toEqual({ entries: 1, byteSize: 3 });
+  await spill.write("a", new Uint8Array(0));
+  expect(await spill.usage()).toEqual({ entries: 1, byteSize: 0 });
+  await spill.delete("a");
+  expect(await spill.usage()).toEqual({ entries: 0, byteSize: 0 });
+});
