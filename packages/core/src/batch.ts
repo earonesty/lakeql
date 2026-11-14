@@ -1,6 +1,7 @@
 import { batchCallExprValues, batchCallPredicateMask } from "./batch-call.js";
 import { registerCompactionMetadata } from "./compaction-metadata.js";
 import {
+  compareDecimalOperands,
   DecimalValue,
   decimalValueAllocationBytes,
   isDecimalValue,
@@ -1244,6 +1245,7 @@ export function scalarVectorValue(vector: Vector, index: number, scope?: MemoryS
 
 function scalarReadAllocationFree(vector: Vector): boolean {
   switch (vector.type) {
+    case "decimal":
     case "null":
     case "f32":
     case "f64":
@@ -1689,6 +1691,8 @@ function compareValue(
   scope?: MemoryScope,
 ): boolean | null {
   if (left === null || right === null) return null;
+  if (isDecimalValue(left) || isDecimalValue(right))
+    return compareOrder(op, compareDecimalOperands(left, right, scope));
   if (left instanceof Uint8Array || right instanceof Uint8Array) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Cannot compare binary values", {
       leftType: scalarType(left),

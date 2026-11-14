@@ -139,3 +139,11 @@ export function compareDecimalValues(
     admission?.release();
   }
 }
+
+/** Shared expression boundary: never coerce an exact decimal through Number or
+ * an object's primitive conversion. Cross-domain coercion must be explicit. */
+export function compareDecimalOperands(left: unknown, right: unknown, scope?: MemoryScope): number {
+  if (!isDecimalValue(left) || !isDecimalValue(right))
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", "Decimal comparisons require decimal operands");
+  return compareDecimalValues(left, right, scope);
+}

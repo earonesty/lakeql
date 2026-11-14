@@ -31,13 +31,13 @@ under verified 64/128 MiB V8 heap settings; this distinguishes runtime GC policy
 from a persistent leak, but does not cap external backing or prove production
 Cloudflare total-memory safety. See the constrained-runtime section below.
 
-Latest decimal checkpoint (November 13, 2026): **2,921 default tests**
-(629 skipped), **61 Worker tests**, plus two subsequently added nullable/logical
-annotation tests pass. Build, typecheck, lint, clean package installation and
-compatibility checks pass. Binary and shredded decimal variants preserve exact
-fixture digits with bounded conversion workspace. Decimal error diagnostics avoid
-retaining input backing or formatting unbounded integers. Detailed evidence:
-`docs/validation/conformance-value-parity-2026-11-13.json`.
+Latest decimal checkpoint (November 13, 2026): **2,926 default tests**
+(629 skipped) and **61 Worker tests** pass, with build, typecheck and clean package
+installation checks. Binary/shredded decimals preserve exact fixture digits;
+row/vector predicates now share admitted exact comparisons. Decimal vector reads
+avoid per-row child scopes. The local 10,000-row predicate benchmark measured
+1.7–1.9 ms with 142 bytes of scratch beyond its mask (not whole-heap accounting).
+See `docs/validation/conformance-value-parity-2026-11-13.json` for evidence and gaps.
 
 External conformance now reports **511 passed, 6 failed, one skipped**; the six
 remaining failures are ALP, BSON and BROTLI through both readers. No assertions

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { decodeVariantColumn } from "hyparquet/src/variant.js";
-import { decimalFromParts, MemoryBudget, memoryStore } from "lakeql-core";
+import { decimalFromParts, eq, isDecimalValue, MemoryBudget, memoryStore } from "lakeql-core";
 import { expect, it } from "vitest";
 import { HttpObjectStore } from "../../http/src/index.js";
 import { createParquetLake, readParquetObjects } from "./index.js";
@@ -143,6 +143,23 @@ for (const [name, path, expectedValue, json] of [
           output.release();
         }
         expect(await new Response(lake.path("binary.parquet").streamJson()).text()).toBe(json);
+        if (isDecimalValue(expectedValue)) {
+          for (const [literal, matches] of [
+            [decimalFromParts(expectedValue.coefficient * 10n, expectedValue.scale + 1), true],
+            [decimalFromParts(0n, 0), false],
+          ] as const) {
+            const filtered = await lake
+              .path("binary.parquet")
+              .where(eq("var", literal))
+              .run()
+              .toOwnedArray();
+            try {
+              expect(filtered.value).toEqual(matches ? expected : []);
+            } finally {
+              filtered.release();
+            }
+          }
+        }
         expect(reads).toBeGreaterThan(0);
         expect(pool.usedBytes).toBe(0);
       } finally {

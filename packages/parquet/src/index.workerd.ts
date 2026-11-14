@@ -919,7 +919,14 @@ for (const [kind, fixture, coefficient, spelling] of [
         };
         const [outputs] = await Promise.all([
           Promise.all(
-            [1, 3, 32].map((size) => lake.path(path).batchSize(size).run().toOwnedArray()),
+            [1, 3, 32].map((size) =>
+              lake
+                .path(path)
+                .where(eq("var", decimalFromParts(coefficient * 10n, 10)))
+                .batchSize(size)
+                .run()
+                .toOwnedArray(),
+            ),
           ),
           cancel(),
         ]);

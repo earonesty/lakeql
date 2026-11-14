@@ -441,5 +441,36 @@
     ],
     "cloudEvidence": "Cases 026\u2013029 pass public/owned/exact-JSON checks over HTTP 206 and ignored-range 200 responses. Case 028 also passes local workerd native R2 reads with 64/128 MiB shared pools, three concurrent owned queries and a cancelled peer, per-query pool/4 limits, no range cache and zero final reservations. Case 070 binary coverage remains. Clean npm install checks both binary and shredded real fixtures.",
     "limits": "The fixture oracle measures tracked reservations and exact output, not CPU speed or production Cloudflare total heap. Native BigInt scratch/GC and broader allocation accounting remain open. Generic decimal expression/order/group/aggregate integration and ordinary high-precision vector integration remain unfinished. No unsupported-codec tests were waived."
+  },
+  "decimalPredicateIntegration": {
+    "change": "Row and vector expression comparisons share the exact decimal comparison boundary. Decimal columns are recognized as scalar values in row evaluation. Nullable comparisons, IN and BETWEEN use the same kernel; decimal vector reads borrow immutable scalar objects and are classified allocation-free, avoiding per-row child scopes. Cross-scale digit workspace is admitted and released for each comparison.",
+    "validation": {
+      "defaultPassed": 2926,
+      "defaultSkipped": 629,
+      "workerPassed": 61,
+      "focusedHttpPassed": 18,
+      "build": "passed",
+      "typecheck": "passed",
+      "cleanNpmInstall": "passed",
+      "referencePassed": 104,
+      "conformancePassed": 511,
+      "conformanceFailed": 6,
+      "conformanceSkipped": 1,
+      "lint": "passed",
+      "compatibility": "passed",
+      "trackedFileSizes": "passed"
+    },
+    "evidence": "../benchmarks/decimal-predicate-2026-11-13.json",
+    "edgeCases": [
+      "All six comparison operators agree between row and vector evaluation, including nulls and equal values with different scales.",
+      "IN and BETWEEN retain SQL three-valued semantics.",
+      "Scales 3, 1000 and MAX_SAFE_INTEGER use the same workspace for 1 and 10000 rows.",
+      "Exact peak capacity succeeds; one-byte-short capacity rejects and scope cleanup leaves zero reservations.",
+      "Decimal vector comparisons create no per-row child scopes.",
+      "Decimal-versus-number/bigint/string/boolean comparisons reject explicitly rather than invoking implicit numeric coercion."
+    ],
+    "cloudEvidence": "All five binary/shredded decimal fixture cases pass matching and nonmatching owned predicates over HTTP 206 and ignored-range 200. Local workerd R2 checks use three concurrent matching queries with differently scaled decimal literals plus a cancelled peer at 64/128 MiB. Clean npm-install smoke compares a real shredded value against a threshold one coefficient unit smaller, which would be lost by Number coercion.",
+    "measurement": "Local 10000-row vector comparisons measured about 1.7\u20131.9 ms median, with 142 bytes of tracked scratch beyond the output mask. Input vectors are constructed before timing and excluded from predicate reservations. No before/after speedup, cloud throughput or whole-heap claim.",
+    "remaining": "Mixed decimal/numeric coercion, general order/group/aggregate/arithmetic operator integration, ordinary high-precision decimal vectors and broad allocation coverage remain unfinished. CPU-wide decimal vector capability is not advertised merely because predicate selection now works."
   }
 }

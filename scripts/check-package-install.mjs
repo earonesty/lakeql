@@ -119,7 +119,8 @@ decimalFixtureOwned.release();
 await store.put("shredded-decimal.parquet", readFileSync(new URL("shredded-decimal.parquet", import.meta.url)));
 const shreddedDecimalFixtureRows = await readParquetObjects(store, "shredded-decimal.parquet");
 assert.equal(String(shreddedDecimalFixtureRows[0].var), "9876543210.123456789");
-const shreddedDecimalFixtureOwned = await lake.path("shredded-decimal.parquet").run().toOwnedArray();
+const shreddedDecimalFixtureOwned = await lake.path("shredded-decimal.parquet")
+  .where(gt("var", decimalFromParts(9876543210123456788n, 9))).run().toOwnedArray();
 assert.equal(String(shreddedDecimalFixtureOwned.value[0].var), "9876543210.123456789");
 shreddedDecimalFixtureOwned.release();
 assert.equal(pool.usedBytes, 0);

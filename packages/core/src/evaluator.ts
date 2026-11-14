@@ -1,4 +1,4 @@
-import { decimalToString, isDecimalValue } from "./decimal-value.js";
+import { compareDecimalOperands, decimalToString, isDecimalValue } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
 import type { Expr, Scalar } from "./expr.js";
 import { intervalToString, isIntervalValue } from "./interval.js";
@@ -227,6 +227,7 @@ function rowValue(row: Row, name: string): EvalValue {
     typeof value === "bigint" ||
     value instanceof Uint8Array ||
     isTimestampValue(value) ||
+    isDecimalValue(value) ||
     isIntervalValue(value)
   ) {
     return value;
@@ -247,6 +248,8 @@ function toSqlBoolean(value: EvalValue): SqlBoolean {
 
 function compare(op: "eq" | "ne" | "lt" | "lte" | "gt" | "gte", left: EvalValue, right: EvalValue) {
   if (left === null || right === null) return null;
+  if (isDecimalValue(left) || isDecimalValue(right))
+    return compareOrder(op, compareDecimalOperands(left, right));
   if (left instanceof Uint8Array || right instanceof Uint8Array) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Cannot compare binary values", {
       leftType: evalValueType(left),

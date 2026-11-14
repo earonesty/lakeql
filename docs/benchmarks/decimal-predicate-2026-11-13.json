@@ -1,0 +1,83 @@
+{
+  "description": "Exact cross-scale decimal vector predicates. Input vectors are constructed before timing and use a separate unaccounted input lifetime. Reported reservations cover predicate output and comparison scratch only. Seven measured samples after two warmups; no cloud, whole-heap or speedup claim.",
+  "node": "v24.18.1",
+  "sources": {
+    "packages/core/src/decimal-value.ts": "795a875bf6951447e1bec1f753dfe423014c42160813321cded924309d676886",
+    "packages/core/src/batch.ts": "78d53d0603b579d4de9064784eb699f333120ca5e78cfc56784ca55b92520e81",
+    "packages/core/src/evaluator.ts": "ad1a6e5d87582d617a607cbc482b24cc42e05b324696473bed356d96eeded8f0"
+  },
+  "results": [
+    {
+      "rows": 100,
+      "scale": 9,
+      "peakBytes": 242,
+      "retainedBytes": 100,
+      "scratchBytes": 142,
+      "medianMilliseconds": 0.2785550000000008,
+      "samples": [
+        0.2949160000000006, 0.2785550000000008, 0.38512599999999964, 0.5669989999999956,
+        0.15127500000000538, 0.1621759999999952, 0.16203500000000304
+      ]
+    },
+    {
+      "rows": 100,
+      "scale": 1000,
+      "peakBytes": 242,
+      "retainedBytes": 100,
+      "scratchBytes": 142,
+      "medianMilliseconds": 0.14795900000000017,
+      "samples": [
+        0.1606430000000003, 0.15703599999999796, 0.14795900000000017, 0.33953900000000203,
+        0.06945999999999941, 0.07338899999999882, 0.06637500000000074
+      ]
+    },
+    {
+      "rows": 100,
+      "scale": 9007199254740991,
+      "peakBytes": 242,
+      "retainedBytes": 100,
+      "scratchBytes": 142,
+      "medianMilliseconds": 0.06103500000000395,
+      "samples": [
+        0.06452200000000374, 0.05904199999999804, 0.05958200000000602, 0.057848999999997375,
+        0.06103500000000395, 0.2188820000000007, 0.06420099999999707
+      ]
+    },
+    {
+      "rows": 10000,
+      "scale": 9,
+      "peakBytes": 10142,
+      "retainedBytes": 10000,
+      "scratchBytes": 142,
+      "medianMilliseconds": 1.8001639999999952,
+      "samples": [
+        2.5989689999999968, 2.2028530000000046, 1.9511789999999962, 1.7085709999999992,
+        1.7470829999999964, 1.720283000000002, 1.8001639999999952
+      ]
+    },
+    {
+      "rows": 10000,
+      "scale": 1000,
+      "peakBytes": 10142,
+      "retainedBytes": 10000,
+      "scratchBytes": 142,
+      "medianMilliseconds": 1.8494469999999978,
+      "samples": [
+        1.7936310000000049, 2.0772660000000087, 1.9178950000000015, 1.8494469999999978,
+        1.7972680000000025, 1.7629330000000039, 1.8532529999999952
+      ]
+    },
+    {
+      "rows": 10000,
+      "scale": 9007199254740991,
+      "peakBytes": 10142,
+      "retainedBytes": 10000,
+      "scratchBytes": 142,
+      "medianMilliseconds": 1.7317440000000062,
+      "samples": [
+        1.7648169999999936, 1.7854459999999932, 1.7211050000000085, 1.7317440000000062,
+        1.7196419999999932, 1.6937620000000067, 1.823646999999994
+      ]
+    }
+  ]
+}
