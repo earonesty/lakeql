@@ -213,3 +213,112 @@ it("closes grouped failures and honors final output enforcement policy", async (
   await expect(canceled.checkpoint()).rejects.toThrow();
   parent.dispose();
 });
+
+it.each([
+  false,
+  true,
+])("merges checkpoints into a live owned continuation (grouped=%s)", async (grouped) => {
+  const pool = new MemoryBudget(1024 * 1024);
+  const scope = new MemoryScope(pool);
+  const backend = new CpuPhysicalBackend();
+  const aggregates = {
+    n: { op: "count" as const },
+    total: { op: "sum" as const, column: "value" },
+    middle: { op: "median" as const, column: "value" },
+  };
+  const operator = grouped
+    ? { kind: "grouped-reduce" as const, keys: ["g"], aggregates }
+    : { kind: "reduce" as const, aggregates };
+  const source = backend.openReduction(operator, { allocationScope: scope });
+  const target = backend.openReduction(operator, { allocationScope: scope });
+  try {
+    await source.append(batchFromColumns({ g: ["a", "a"], value: [1, 3] }));
+    const checkpoint = await source.checkpoint();
+    source.dispose();
+    const before = JSON.stringify(checkpoint.value);
+    try {
+      await target.append(batchFromColumns({ g: ["a"], value: [5] }));
+      expect(target.mergeCheckpoint).toBeTypeOf("function");
+      await target.mergeCheckpoint?.(checkpoint.value);
+      expect(JSON.stringify(checkpoint.value)).toBe(before);
+    } finally {
+      checkpoint.release();
+    }
+    await target.append(batchFromColumns({ g: ["a"], value: [7] }));
+    const output = await target.finish();
+    try {
+      expect(output.value).toEqual([
+        { ...(grouped ? { g: "a" } : {}), n: 4, total: 16, middle: 4 },
+      ]);
+    } finally {
+      output.release();
+    }
+  } finally {
+    source.dispose();
+    target.dispose();
+    scope.dispose();
+  }
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("closes a continuation after checkpoint admission failure", async () => {
+  const pool = new MemoryBudget(16384);
+  const scope = new MemoryScope(pool);
+  const target = new CpuPhysicalBackend().openReduction(
+    { kind: "reduce", aggregates: { value: { op: "median", column: "value" } } },
+    { allocationScope: scope },
+  );
+  await expect(
+    target.mergeCheckpoint?.({
+      kind: "aggregate-snapshot",
+      snapshot: { value: { op: "median", values: Array(4096).fill(1) } },
+    }),
+  ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  expect(pool.usedBytes).toBe(0);
+  await expect(target.append(batchFromColumns({ value: [1] }))).rejects.toBeDefined();
+  scope.dispose();
+});
+
+it("rejects mismatched checkpoint kinds and closes the merge target", async () => {
+  const pool = new MemoryBudget(65536);
+  const scope = new MemoryScope(pool);
+  const target = new CpuPhysicalBackend().openReduction(
+    { kind: "grouped-reduce", keys: ["g"], aggregates: { n: { op: "count" } } },
+    { allocationScope: scope },
+  );
+  await expect(
+    target.mergeCheckpoint?.({
+      kind: "aggregate-snapshot",
+      snapshot: { n: { op: "count", count: 1 } },
+    }),
+  ).rejects.toMatchObject({ code: "LAKEQL_TYPE_ERROR" });
+  expect(pool.usedBytes).toBe(0);
+  scope.dispose();
+});
+
+it.each(["abort", "elapsed"] as const)("checks %s before merging a checkpoint", async (failure) => {
+  const pool = new MemoryBudget(65536);
+  const scope = new MemoryScope(pool);
+  const controller = new AbortController();
+  let now = 0;
+  const target = new CpuPhysicalBackend().openReduction(
+    { kind: "reduce", aggregates: { n: { op: "count" } } },
+    {
+      allocationScope: scope,
+      now: () => now,
+      budget: { signal: controller.signal, maxElapsedMs: 1 },
+    },
+  );
+  if (failure === "abort") controller.abort();
+  else now = 2;
+  await expect(
+    target.mergeCheckpoint?.({
+      kind: "aggregate-snapshot",
+      snapshot: { n: { op: "count", count: 1 } },
+    }),
+  ).rejects.toMatchObject({
+    code: failure === "abort" ? "LAKEQL_ABORTED" : "LAKEQL_BUDGET_EXCEEDED",
+  });
+  expect(pool.usedBytes).toBe(0);
+  scope.dispose();
+});

@@ -46,26 +46,12 @@ export class CpuReductionContinuation implements PhysicalReductionContinuation {
             : { ...options, maxGroups: operator.maxGroups },
         );
         this.owner = owner;
-        if (context.priorOutput !== undefined) {
-          if (context.priorOutput.kind !== "grouped-aggregate-snapshot")
-            throw new LakeqlError(
-              "LAKEQL_TYPE_ERROR",
-              "Grouped continuation requires a grouped checkpoint",
-            );
-          owner.merge(context.priorOutput.snapshot);
-        }
       } else {
         const owner = new OwnedAggregateState(this.scope, operator.aggregates, options);
         this.owner = owner;
-        if (context.priorOutput !== undefined) {
-          if (context.priorOutput.kind !== "aggregate-snapshot")
-            throw new LakeqlError(
-              "LAKEQL_TYPE_ERROR",
-              "Reduction continuation requires an aggregate checkpoint",
-            );
-          owner.merge(context.priorOutput.snapshot);
-        }
       }
+      if (context.priorOutput !== undefined) this.mergeSnapshot(context.priorOutput);
+      this.check();
     } catch (error) {
       this.scope.dispose();
       throw error;
@@ -89,6 +75,35 @@ export class CpuReductionContinuation implements PhysicalReductionContinuation {
     } catch (error) {
       this.dispose();
       throw error;
+    }
+  }
+
+  async mergeCheckpoint(checkpoint: PhysicalOutputValue): Promise<void> {
+    try {
+      this.check();
+      this.mergeSnapshot(checkpoint);
+      this.check();
+    } catch (error) {
+      this.dispose();
+      throw error;
+    }
+  }
+
+  private mergeSnapshot(checkpoint: PhysicalOutputValue): void {
+    if (this.owner instanceof OwnedGroupDirectory) {
+      if (checkpoint.kind !== "grouped-aggregate-snapshot")
+        throw new LakeqlError(
+          "LAKEQL_TYPE_ERROR",
+          "Grouped continuation requires a grouped checkpoint",
+        );
+      this.owner.merge(checkpoint.snapshot);
+    } else {
+      if (checkpoint.kind !== "aggregate-snapshot")
+        throw new LakeqlError(
+          "LAKEQL_TYPE_ERROR",
+          "Reduction continuation requires an aggregate checkpoint",
+        );
+      this.owner.merge(checkpoint.snapshot);
     }
   }
 

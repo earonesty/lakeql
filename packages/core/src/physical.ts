@@ -363,6 +363,9 @@ export interface PhysicalReductionContinuation {
     batch: Batch,
     selection?: Selection,
   ): Promise<{ inputRows: number; selectedRows: number; elapsedMs: number }>;
+  /** Optional checkpoint fan-in capability. Source stays borrowed until settled;
+   * failed merges close the continuation because a prefix may have committed. */
+  mergeCheckpoint?(checkpoint: PhysicalOutputValue): Promise<void>;
   checkpoint(): Promise<OwnedMemory<PhysicalOutputValue>>;
   finish(): Promise<OwnedMemory<Row[]>>;
   dispose(): void;
