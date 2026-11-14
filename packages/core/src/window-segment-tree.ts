@@ -7,7 +7,7 @@ import type { AggregateOp } from "./query.js";
 import { compareAggregateScalars, numericAggregateValue } from "./scalar-order.js";
 import type { Row } from "./types.js";
 import type { WindowExpr } from "./window.js";
-import { aggregateWindowValue } from "./window-aggregate.js";
+import { createWindowAggregateEvaluator } from "./window-aggregate.js";
 import { frameSpan } from "./window-frame.js";
 import { WindowPeers } from "./window-peers.js";
 import { filterRow, type WindowRow } from "./window-utils.js";
@@ -44,9 +44,10 @@ export function segmentTreeAggregateValues(
   const bytes = segmentTreeWorkspaceBytes(partition.length);
   const reservation = budget?.tryReserve(bytes, "window segment tree workspace");
   if (budget !== undefined && reservation === undefined) {
+    const evaluateFrame = createWindowAggregateEvaluator(expr);
     return partition.map((_row, index) => {
       const span = frameSpan(partition, index, expr, peers);
-      return aggregateWindowValue(spanRows(partition, span.start, span.end), expr);
+      return evaluateFrame(spanRows(partition, span.start, span.end));
     });
   }
   try {

@@ -25,5 +25,25 @@
     "compatibility": "passed",
     "fileSizeGate": "passed"
   },
-  "limits": "The explicit reservation is a conservative allocation model, not a portable VM-heap measurement. Scalar expression payload ownership, returned arrays, input row materialization and fixed recomputation metadata remain separate coverage work. Low-budget span recomputation can be quadratic for growing/wide frames. Whole-window and Cloudflare total-memory safety remain unproven. Exact decimal operators and the six ALP/BSON/BROTLI conformance failures remain open."
+  "limits": "The explicit reservation is a conservative allocation model, not a portable VM-heap measurement. Scalar expression payload ownership, returned arrays, input row materialization and fixed recomputation metadata remain separate coverage work. Low-budget span recomputation can be quadratic for growing/wide frames. Whole-window and Cloudflare total-memory safety remain unproven. Exact decimal operators and the six ALP/BSON/BROTLI conformance failures remain open.",
+  "reusedState": {
+    "change": "Span recomputation creates one operation-local evaluator and resets its scalar state after each frame, including exceptions. Aggregate value arrays, mode maps and distinct sets are lazy, so the supported fixed-state fallback never creates those collections. The evaluator rejects reentry and clears references before returning.",
+    "evidence": "../benchmarks/window-segment-reused-state-2026-11-13.json",
+    "measurement": "No clear latency improvement: 2048-row span recomputation measured 63.3 ms versus 59.4 ms previously; tree execution 0.59 ms versus 0.65 ms. Three timed local samples are insufficient for a regression conclusion. Repeated row visits dominate; this change reduces state construction and collection churn without changing the quadratic worst case.",
+    "edgeCases": "Repeated populated/empty/singleton frames across twelve aggregate operations; distinct sum and variance; iterator exceptions followed by successful reuse; reentry rejection; constructor instrumentation proves zero Map/Set instances over 100 fixed-state frames.",
+    "validation": {
+      "defaultPassed": 2984,
+      "defaultSkipped": 629,
+      "workerPassed": 61,
+      "referencePassed": 104,
+      "additionalAllocationProof": "passed; focused aggregate-state suite 15 tests",
+      "build": "passed",
+      "typecheck": "passed",
+      "lint": "passed",
+      "cleanPackageInstall": "passed",
+      "compatibility": "passed",
+      "fileSizeGate": "passed"
+    },
+    "next": "Investigate generic incremental accumulation for frames whose start is unchanged and end grows. Moving or shrinking frames still require reset/recomputation or another admitted structure. Output arrays, scalar expression payloads and whole-runtime limits remain unproven."
+  }
 }

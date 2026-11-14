@@ -70,7 +70,8 @@ const report = {
   results,
 };
 writeFileSync(
-  "docs/benchmarks/window-segment-budget-2026-11-13.json",
+  process.env.LAKEQL_WINDOW_SEGMENT_REPORT ??
+    "docs/benchmarks/window-segment-budget-2026-11-13.json",
   `${JSON.stringify(report, null, 2)}\n`,
 );
 console.log(JSON.stringify(results));

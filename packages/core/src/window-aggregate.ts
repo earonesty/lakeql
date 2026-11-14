@@ -8,18 +8,38 @@ import type { WindowExpr } from "./window.js";
 import { filterRow, requireExactWindowAggregate } from "./window-utils.js";
 
 export function aggregateWindowValue(rows: Iterable<Row>, expr: WindowExpr): Scalar {
+  return createWindowAggregateEvaluator(expr)(rows);
+}
+
+/** Operation-local evaluator. Reuse fixed state across frames and allocate
+ * collection state only for aggregate capabilities that require it. */
+export function createWindowAggregateEvaluator(expr: WindowExpr): (rows: Iterable<Row>) => Scalar {
   if (typeof expr.fn !== "object") {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "Window expression is not an aggregate");
   }
   const op = expr.fn.aggregate;
   requireExactWindowAggregate(op);
   const state = new AggregateState(op, quantile(expr));
-  for (const row of rows) {
-    if (!filterRow(expr, row)) continue;
-    const value = aggregateInputValue(expr, row);
-    state.add(value, expr.distinct === true);
-  }
-  return state.value();
+  let active = false;
+  return (rows) => {
+    if (active)
+      throw new LakeqlError(
+        "LAKEQL_VALIDATION_ERROR",
+        "Window aggregate evaluation cannot reenter",
+      );
+    active = true;
+    try {
+      for (const row of rows) {
+        if (!filterRow(expr, row)) continue;
+        const value = aggregateInputValue(expr, row);
+        state.add(value, expr.distinct === true);
+      }
+      return state.value();
+    } finally {
+      active = false;
+      state.reset();
+    }
+  };
 }
 
 function aggregateInputValue(expr: WindowExpr, row: Row): Scalar {
@@ -38,14 +58,22 @@ class AggregateState {
   private max: Scalar | undefined;
   private first: Scalar | undefined;
   private last: Scalar | undefined;
-  private values: Scalar[] = [];
-  private modeValues = new Map<string, { value: Scalar; count: number }>();
-  private seenDistinct = new Set<string>();
+  private values: Scalar[] | undefined;
+  private modeValues: Map<string, { value: Scalar; count: number }> | undefined;
+  private seenDistinct: Set<string> | undefined;
 
   constructor(
     private readonly op: AggregateOp,
     private readonly quantile: number | undefined,
   ) {}
+
+  reset(): void {
+    this.count = this.sum = this.mean = this.m2 = 0;
+    this.min = this.max = this.first = this.last = undefined;
+    if (this.values !== undefined) this.values.length = 0;
+    this.modeValues?.clear();
+    this.seenDistinct?.clear();
+  }
 
   add(value: Scalar, distinct: boolean): void {
     if (this.op === "count") {
@@ -79,6 +107,7 @@ class AggregateState {
         break;
       case "median":
       case "quantile":
+        this.values ??= [];
         this.values.push(numericValue(this.op, value));
         break;
       case "mode":
@@ -120,9 +149,9 @@ class AggregateState {
       case "last":
         return this.last ?? null;
       case "median":
-        return continuousQuantile(this.values, 0.5);
+        return continuousQuantile(this.values ?? [], 0.5);
       case "quantile":
-        return continuousQuantile(this.values, this.quantile ?? 0.5);
+        return continuousQuantile(this.values ?? [], this.quantile ?? 0.5);
       case "mode":
         return this.mode();
       case "approx_count_distinct":
@@ -134,6 +163,7 @@ class AggregateState {
   private addDistinct(value: Scalar, distinct: boolean): boolean {
     if (!distinct && this.op !== "count_distinct") return true;
     const key = JSON.stringify(jsonSafeValue(value));
+    this.seenDistinct ??= new Set();
     if (this.seenDistinct.has(key)) return false;
     this.seenDistinct.add(key);
     return true;
@@ -155,6 +185,7 @@ class AggregateState {
 
   private addMode(value: Scalar): void {
     const key = JSON.stringify(jsonSafeValue(value));
+    this.modeValues ??= new Map();
     const current = this.modeValues.get(key);
     if (current === undefined) {
       this.modeValues.set(key, { value, count: 1 });
@@ -164,6 +195,7 @@ class AggregateState {
   }
 
   private mode(): Scalar {
+    if (this.modeValues === undefined) return null;
     let best: { value: Scalar; count: number } | undefined;
     for (const entry of this.modeValues.values()) {
       if (

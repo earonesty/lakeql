@@ -1,0 +1,58 @@
+{
+  "description": "Running sum over presorted numeric input, two warmups and three timed rounds. Construction and independent triangular-number validation excluded. Tree workspace admission only; row storage, expression results, output arrays and total VM heap are not measured. Local execution, not cloud latency.",
+  "sourceHashes": {
+    "window-segment-tree": "cc7afd219c02649b0e3291eec8c80243a3053950b8024e22d826f75b9e1d9f7d",
+    "window-aggregate": "06d391c988c8d01946f8ffb60ece016bed4851c37816a040444a6a52a43ff517",
+    "window-backend": "08049c6bd3cff75f0a9040fe0d3fb7de4be1554cdbfd0e2d75081431f69ff5f0"
+  },
+  "results": [
+    {
+      "rows": 256,
+      "budgetBytes": 238719,
+      "mode": "span",
+      "peakBytes": 0,
+      "medianMilliseconds": 1.090603999999999,
+      "samples": [1.2334850000000017, 1.090603999999999, 0.9616219999999984]
+    },
+    {
+      "rows": 256,
+      "budgetBytes": 238720,
+      "mode": "tree",
+      "peakBytes": 238720,
+      "medianMilliseconds": 0.12323200000000156,
+      "samples": [0.16244600000000275, 0.12323200000000156, 0.11343300000000056]
+    },
+    {
+      "rows": 1024,
+      "budgetBytes": 951423,
+      "mode": "span",
+      "peakBytes": 0,
+      "medianMilliseconds": 14.660982000000004,
+      "samples": [15.892432, 14.660982000000004, 14.620987]
+    },
+    {
+      "rows": 1024,
+      "budgetBytes": 951424,
+      "mode": "tree",
+      "peakBytes": 951424,
+      "medianMilliseconds": 0.2717320000000001,
+      "samples": [0.2717320000000001, 0.39811000000000263, 0.2574249999999978]
+    },
+    {
+      "rows": 2048,
+      "budgetBytes": 1901695,
+      "mode": "span",
+      "peakBytes": 0,
+      "medianMilliseconds": 63.30615300000002,
+      "samples": [63.30615300000002, 64.52312599999999, 61.74111399999998]
+    },
+    {
+      "rows": 2048,
+      "budgetBytes": 1901696,
+      "mode": "tree",
+      "peakBytes": 1901696,
+      "medianMilliseconds": 0.5871960000000058,
+      "samples": [0.7856200000000513, 0.5203000000000202, 0.5871960000000058]
+    }
+  ]
+}
