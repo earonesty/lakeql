@@ -33,6 +33,8 @@ F1/F2 buffer-restore follow-up: [validation](validation/aggregate-restore-buffer
 F1 malformed-restore follow-up: [validation](validation/aggregate-duplicate-restore-2026-11-14.json). Row/vector restore now rejects duplicate groups instead of silently replacing state, using the existing directory. Build/typecheck and 3,714 tests passed (629 skipped), including real HTTP checkpoint fixtures.
 
 F1 restore-lifetime follow-up: [validation](validation/aggregate-restore-scratch-lifetime-2026-11-14.json). Parsed checkpoint/spill buffers now release before scanning; restored keys have independent ownership. Inline/spill tests show unchanged scanner-entry memory despite 64 KiB extra checkpoint data. Build/typecheck and 3,716 tests passed (629 skipped).
+
+F3 discovery-lifetime follow-up: [validation](validation/topk-restore-before-discovery-2026-11-14.json). Top-k now releases checkpoint scratch before metadata discovery; sort already releases it before planning. Build/typecheck and 3,718 tests passed (629 skipped).
 Current release checks (source `246b165`):
 `docs/validation/current-cache-ownership-release-gates-2026-11-14.json`.
 

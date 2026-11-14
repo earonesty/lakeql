@@ -4293,3 +4293,11 @@ Row aggregate restore previously kept parsed checkpoint objects and owned spill-
 The new lifetime test compares an ordinary checkpoint with the same checkpoint plus 64 KiB of unused JSON data, for both inline and owned spill reads. The padded input produces a higher restore peak but identical live tracked memory at scanner entry. Sum, median, mode, first, last, any and count-distinct results remain unchanged, and final pool usage returns to zero. The checkpoint suite passes 29 tests; existing exact-capacity, cancellation, malformed restore and real HTTP continuation tests are included in full regression validation. Restore-time old/new overlap remains admitted; this change shortens lifetime rather than claiming that overlap or runtime GC disappears.
 
 Final verification: build/typecheck passed; full suite 3,716 passed / 629 skipped (407 files). Evidence: `aggregate-restore-scratch-lifetime-2026-11-14.json`.
+
+### F3 top-k restore scratch before discovery (2026-11-14)
+
+The analogous continuation review found that sort already detaches restored rows and disposes checkpoint scratch before planning. Top-k seeded its bounded owned selector and disposed scratch before scanning, but performed object discovery first. Discovery now follows selector seeding/scratch disposal, so metadata requests do not overlap unused parsed checkpoint and spill-read storage. The existing selector, ownership transfer and comparison behavior are unchanged; no extra row copy or key index was introduced.
+
+Twenty row top-k memory tests pass, including new inline/spilled continuation fixtures. A checkpoint with 64 KiB of extra unused data has a larger restore peak but the same live pool usage at the metadata `head` callback as an ordinary checkpoint. Both continuations return the same selected row and release all reservations. This is a deterministic ownership-boundary check, not a production cloud memory measurement; real transport regressions remain part of the full suite.
+
+Final verification: build/typecheck/formatting passed; full suite 3,718 passed / 629 skipped (407 files). Evidence: `topk-restore-before-discovery-2026-11-14.json`.

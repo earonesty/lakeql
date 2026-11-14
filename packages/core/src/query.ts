@@ -3352,8 +3352,6 @@ export class QueryResult {
     const discovery = new MemoryScope(this.memoryBudget);
     try {
       const { stats } = this;
-      const { planned: paths, skipped: skippedFiles } = await this.planObjects(discovery);
-      stats.filesSkipped = skippedFiles;
       const orderBy = config.orderBy ?? [];
       const memory =
         config.budget.maxMemoryBytes === undefined
@@ -3385,6 +3383,8 @@ export class QueryResult {
         matched.length = 0;
         initialRowsScope?.dispose();
       }
+      const { planned: paths, skipped: skippedFiles } = await this.planObjects(discovery);
+      stats.filesSkipped = skippedFiles;
       const columns = projectedReadColumns(
         config.select,
         config.where,

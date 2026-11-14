@@ -1,0 +1,25 @@
+{
+  "baseCommit": "bde1780",
+  "acceptanceItems": ["F3", "M1", "M2", "V2"],
+  "change": "Seed owned top-k selection and release checkpoint scratch before metadata discovery",
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 20,
+    "fullSuite": {
+      "passed": 3718,
+      "skipped": 629,
+      "filesPassed": 407
+    }
+  },
+  "proof": [
+    "Inline/spilled continuation results unchanged",
+    "65536 bytes of unused checkpoint data does not increase live charge at metadata callback",
+    "Restore peak still accounts for input",
+    "Pool usage returns to zero"
+  ],
+  "limitations": [
+    "Deterministic lifetime evidence, not production cloud heap measurement",
+    "Broader F3 and mixed-runtime acceptance remain open"
+  ]
+}

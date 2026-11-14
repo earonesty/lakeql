@@ -452,3 +452,68 @@ it.each([
   await rejected;
   expect(pool.usedBytes).toBe(0);
 });
+
+it.each([
+  false,
+  true,
+])("releases top-k restore scratch before metadata discovery (spilled=%s)", async (spilled) => {
+  const backing = memoryStore();
+  await backing.put("table", new Uint8Array(1));
+  const firstLake = new Lake({
+    store: backing,
+    scanner: {
+      async *scan() {
+        yield [{ score: 2 }, { score: 1 }];
+      },
+    },
+  });
+  const first = await firstLake
+    .path("table")
+    .orderBy([{ column: "score" }])
+    .limit(1)
+    .topKWithState();
+  const snapshot = JSON.parse(new TextDecoder().decode(first.operatorState as Uint8Array));
+  const observations = [];
+  for (const padding of ["", "x".repeat(65536)]) {
+    const pool = new MemoryBudget(4 * 1024 * 1024);
+    const bytes = new TextEncoder().encode(JSON.stringify({ ...snapshot, padding }));
+    const spill = memorySpillAdapter();
+    await spill.write("top-k", bytes);
+    const head = backing.head.bind(backing);
+    let liveAtHead = -1;
+    const store = {
+      get: backing.get.bind(backing),
+      getRange: backing.getRange.bind(backing),
+      put: backing.put.bind(backing),
+      delete: backing.delete.bind(backing),
+      list: backing.list.bind(backing),
+      head: async (path: string) => {
+        liveAtHead = pool.usedBytes;
+        return head(path);
+      },
+    };
+    const lake = new Lake({
+      store,
+      memoryPool: pool,
+      scanner: {
+        async *scan() {
+          yield [];
+        },
+      },
+    });
+    const result = await lake
+      .path("table")
+      .orderBy([{ column: "score" }])
+      .limit(1)
+      .topKWithState({
+        spill,
+        operatorState: spilled ? { spillRef: "top-k" } : bytes,
+      });
+    expect(result.rows).toEqual([{ score: 1 }]);
+    expect(pool.usedBytes).toBe(0);
+    observations.push({ liveAtHead, peak: pool.peakBytes });
+  }
+  expect(observations[0]?.liveAtHead).toBeGreaterThan(0);
+  expect(observations[1]?.liveAtHead).toBe(observations[0]?.liveAtHead);
+  expect(observations[1]?.peak).toBeGreaterThan((observations[0]?.peak ?? 0) + 65536);
+});
