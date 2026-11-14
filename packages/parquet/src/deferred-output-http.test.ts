@@ -88,12 +88,17 @@ it.each(
     const scanRangeCache = { maxBytes: 8 * 1024 * 1024, coalesceBytes: 0, sharedCache: cache };
     const adapter = new ParquetScanAdapter(store, { scanRangeCache });
     const borrowedReads: { columns: string[] | undefined; rowStart: number | undefined }[] = [];
+    let borrowedColumnReads = 0;
     const lake = borrowed
       ? new Lake({
           store,
           memoryPool: pool,
           scanner: {
             scan: adapter.scan.bind(adapter),
+            async *scanColumns(path, options) {
+              borrowedColumnReads++;
+              yield* adapter.scanColumns(path, options);
+            },
             async *scanVectorBatches(path, options) {
               borrowedReads.push({ columns: options.columns, rowStart: options.rowStart });
               yield* adapter.scanVectorBatches(path, options);
@@ -113,6 +118,7 @@ it.each(
     };
     const baseline = await query(["*"]).toOwnedArray();
     expect(baseline.value).toEqual([rows[256]]);
+    if (borrowed) expect(borrowedColumnReads).toBeGreaterThan(0);
     baseline.release();
     const eagerBytes = transferred;
     const eagerRanges = [...ranges];

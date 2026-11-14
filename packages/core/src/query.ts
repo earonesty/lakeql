@@ -52,7 +52,7 @@ import { OwnedGroupDirectory } from "./owned-group-directory.js";
 import { parseOwnedJson } from "./owned-json-parse.js";
 import { OwnedReplacementValue } from "./owned-replacement-value.js";
 import { collectOwnedRows } from "./owned-row-collector.js";
-import { detachOwnedRow } from "./owned-row-detachment.js";
+import { detachOwnedBatch, detachOwnedRow } from "./owned-row-detachment.js";
 import {
   snapshotOwnedRows,
   snapshotScalarSerializedBytes,
@@ -111,13 +111,7 @@ import {
 } from "./vector-group-by.js";
 import { vectorProjectBatch } from "./vector-project.js";
 import { sliceBatch } from "./vector-slice.js";
-import {
-  concatBatches,
-  concatOwnedBatches,
-  gatherSelectedBatch,
-  vectorTopKBatch,
-  vectorTopKOwnedBatch,
-} from "./vector-sort.js";
+import { concatOwnedBatches, gatherSelectedBatch, vectorTopKOwnedBatch } from "./vector-sort.js";
 import type { WindowExpr } from "./window.js";
 import {
   collectWindowColumns,
@@ -1144,7 +1138,8 @@ export class QueryResult {
     if (
       config.orderBy !== undefined &&
       config.limit !== undefined &&
-      vectorBatchScanner(config.scanner) !== undefined &&
+      (vectorBatchScanner(config.scanner) !== undefined ||
+        config.scanner.scanColumns !== undefined) &&
       config.distinct !== true &&
       config.projections === undefined &&
       config.hive !== true &&
@@ -2862,161 +2857,157 @@ export class QueryResult {
       vectorBatchScanner(config.scanner) === undefined
     )
       return undefined;
-    const orderBy = normalizeOrderBy(config.orderBy);
-    const topK = (config.offset ?? 0) + config.limit;
-    const startedAt = config.now();
-    const plannedObjects = await this.planObjects();
-    const lateMaterialized =
-      config.physicalExecution.acceleratorPolicy === "required"
-        ? undefined
-        : await this.tryLateMaterializedTopKRows(
-            orderBy,
-            topK,
-            startedAt,
-            ownedOutput,
-            plannedObjects,
-          );
-    if (lateMaterialized !== undefined) return lateMaterialized;
-    if (ownedOutput && config.scanner.scanOwnedVectorBatches === undefined) return undefined;
-    if (
-      config.scanner.scanColumns === undefined &&
-      config.scanner.scanOwnedVectorBatches === undefined
-    )
-      return undefined;
-    let retained: Batch | undefined;
-    let retainedOwner: OwnedMemory<Batch> | undefined;
+    const planning = new MemoryScope(this.memoryBudget);
     try {
-      for await (const { batch, sourceIdentity, owner } of this.columnBatches(
-        projectedReadColumns(config.select, config.where, orderBy, config.projections),
-        startedAt,
-        columnarBatchSize(config.batchSize),
-        "iteration",
-        plannedObjects,
-      )) {
-        const stage = owner === undefined ? undefined : new MemoryScope(this.memoryBudget);
-        try {
-          if (owner !== undefined) stage?.adopt(owner.retain());
-          const operators: PhysicalOperator[] = [];
-          if (config.where !== undefined) {
-            operators.push({ kind: "select", predicate: config.where });
-          }
-          operators.push({ kind: "top-k", orderBy, limit: topK });
-          const physical = await this.executePhysicalBatch(
-            batch,
-            operators,
-            { kind: "batch" },
-            sourceIdentity,
-            startedAt,
-            undefined,
-            stage,
-          );
-          if (physical.output.kind !== "batch") {
-            throw new LakeqlError(
-              "LAKEQL_PHYSICAL_BACKEND_FAILURE",
-              "Top-k physical fragment did not return a batch",
-              { actual: physical.output.kind },
-            );
-          }
-          this.stats.rowsMatched += physical.metrics.selectedRows ?? batch.rowCount;
-          const candidates = physical.output.batch;
-          if (stage !== undefined) {
-            const candidateOwner = stage.retainAllocations(candidates);
-            if (retainedOwner === undefined) {
-              retainedOwner = candidateOwner;
-            } else {
-              try {
-                const joined = concatOwnedBatches([retainedOwner, candidateOwner]);
-                try {
-                  const next = vectorTopKOwnedBatch(joined, orderBy, { limit: topK });
-                  retainedOwner.release();
-                  retainedOwner = next;
-                } finally {
-                  joined.release();
-                }
-              } finally {
-                candidateOwner.release();
-              }
-            }
-            retained = retainedOwner.value;
-          } else {
-            retained =
-              retained === undefined
-                ? candidates
-                : vectorTopKBatch(concatBatches([retained, candidates]), orderBy, { limit: topK });
-          }
-          enforceBufferedRowsBudget(config.budget, retained.rowCount);
-          const sizing = new MemoryScope(this.memoryBudget);
-          try {
-            enforceOperatorMemoryBudget(config.budget, serializedBatchBytes(retained, sizing));
-          } finally {
-            sizing.dispose();
-          }
-        } finally {
-          stage?.dispose();
-        }
-      }
-      if (retained === undefined) {
-        if (!ownedOutput) return [];
-        const empty = new MemoryScope(this.memoryBudget);
-        try {
-          const rows = empty.allocate(
-            allocationCharges.array,
-            "empty top-k output",
-            () => [] as Row[],
-          );
-          return rows.retain();
-        } finally {
-          empty.dispose();
-        }
-      }
-      const resultOptions = { offset: config.offset ?? 0, limit: config.limit };
-      const resultOwner =
-        retainedOwner === undefined
+      const orderBy = normalizeOrderBy(config.orderBy, planning);
+      const topK = (config.offset ?? 0) + config.limit;
+      const startedAt = config.now();
+      const plannedObjects = await this.planObjects();
+      const lateMaterialized =
+        config.physicalExecution.acceleratorPolicy === "required"
           ? undefined
-          : vectorTopKOwnedBatch(retainedOwner, orderBy, resultOptions);
+          : await this.tryLateMaterializedTopKRows(
+              orderBy,
+              topK,
+              startedAt,
+              ownedOutput,
+              plannedObjects,
+            );
+      if (lateMaterialized !== undefined) return lateMaterialized;
+      if (
+        config.scanner.scanColumns === undefined &&
+        config.scanner.scanOwnedVectorBatches === undefined
+      )
+        return undefined;
+      let retained: Batch | undefined;
+      let retainedOwner: OwnedMemory<Batch> | undefined;
       try {
-        const result = resultOwner?.value ?? vectorTopKBatch(retained, orderBy, resultOptions);
-        const outputScope = new MemoryScope(this.memoryBudget);
-        try {
-          let columns = config.select?.length ?? 0;
-          for (const name in result.columns) if (Object.hasOwn(result.columns, name)) columns++;
-          const projected = outputScope.allocate(
-            2 * allocationCharges.object +
-              (columns + 2) * allocationCharges.property +
-              2 * allocationCharges.array +
-              4 * columns * allocationCharges.arraySlot,
-            "top-k output projection descriptors",
-            () => vectorProjectBatch(result, config.select),
-          ).value;
-          this.stats.rowsReturned += projected.rowCount;
-          enforceBudget(config.budget, this.stats, config.now, startedAt);
-          this.stats.elapsedMs = config.now() - startedAt;
-          if (resultOwner === undefined) {
-            if (ownedOutput)
-              throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Top-k output lost input ownership");
-            return materializeBatchRows(projected);
-          }
-          outputScope.adopt(resultOwner.retain());
-          const projectedOwner = outputScope.retainAllocations(projected);
+        for await (const { batch, sourceIdentity, owner } of this.columnBatches(
+          projectedReadColumns(config.select, config.where, orderBy, config.projections),
+          startedAt,
+          columnarBatchSize(config.batchSize),
+          "iteration",
+          plannedObjects,
+        )) {
+          const stage = new MemoryScope(this.memoryBudget);
           try {
-            const rows = materializeOwnedBatchRows(projectedOwner);
-            if (ownedOutput) return rows;
+            const input = owner !== undefined ? stage.adopt(owner.retain()).value.batch : batch;
+            const operators: PhysicalOperator[] = [];
+            if (config.where !== undefined) {
+              operators.push({ kind: "select", predicate: config.where });
+            }
+            operators.push({ kind: "top-k", orderBy, limit: topK });
+            const physical = await this.executePhysicalBatch(
+              input,
+              operators,
+              { kind: "batch" },
+              sourceIdentity,
+              startedAt,
+              undefined,
+              stage,
+            );
+            if (physical.output.kind !== "batch") {
+              throw new LakeqlError(
+                "LAKEQL_PHYSICAL_BACKEND_FAILURE",
+                "Top-k physical fragment did not return a batch",
+                { actual: physical.output.kind },
+              );
+            }
+            this.stats.rowsMatched += physical.metrics.selectedRows ?? batch.rowCount;
+            const candidates = physical.output.batch;
+            {
+              // Borrowed input stays valid until the next iterator advance.
+              // Detach the selected physical batch, not the entire scan input.
+              const candidateOwner =
+                owner === undefined
+                  ? detachOwnedBatch(candidates, this.memoryBudget)
+                  : stage.retainAllocations(candidates);
+              if (retainedOwner === undefined) {
+                retainedOwner = candidateOwner;
+              } else {
+                try {
+                  const joined = concatOwnedBatches([retainedOwner, candidateOwner]);
+                  try {
+                    const next = vectorTopKOwnedBatch(joined, orderBy, { limit: topK });
+                    retainedOwner.release();
+                    retainedOwner = next;
+                  } finally {
+                    joined.release();
+                  }
+                } finally {
+                  candidateOwner.release();
+                }
+              }
+              retained = retainedOwner.value;
+            }
+            enforceBufferedRowsBudget(config.budget, retained.rowCount);
+            const sizing = new MemoryScope(this.memoryBudget);
             try {
-              return rows.value;
+              enforceOperatorMemoryBudget(config.budget, serializedBatchBytes(retained, sizing));
             } finally {
-              rows.release();
+              sizing.dispose();
             }
           } finally {
-            projectedOwner.release();
+            stage.dispose();
+          }
+        }
+        if (retainedOwner === undefined) {
+          if (!ownedOutput) return [];
+          const empty = new MemoryScope(this.memoryBudget);
+          try {
+            const rows = empty.allocate(
+              allocationCharges.array,
+              "empty top-k output",
+              () => [] as Row[],
+            );
+            return rows.retain();
+          } finally {
+            empty.dispose();
+          }
+        }
+        const resultOptions = { offset: config.offset ?? 0, limit: config.limit };
+        const resultOwner = vectorTopKOwnedBatch(retainedOwner, orderBy, resultOptions);
+        try {
+          const result = resultOwner.value;
+          const outputScope = new MemoryScope(this.memoryBudget);
+          try {
+            let columns = config.select?.length ?? 0;
+            for (const name in result.columns) if (Object.hasOwn(result.columns, name)) columns++;
+            const projected = outputScope.allocate(
+              2 * allocationCharges.object +
+                (columns + 2) * allocationCharges.property +
+                2 * allocationCharges.array +
+                4 * columns * allocationCharges.arraySlot,
+              "top-k output projection descriptors",
+              () => vectorProjectBatch(result, config.select),
+            ).value;
+            this.stats.rowsReturned += projected.rowCount;
+            enforceBudget(config.budget, this.stats, config.now, startedAt);
+            this.stats.elapsedMs = config.now() - startedAt;
+            outputScope.adopt(resultOwner.retain());
+            const projectedOwner = outputScope.retainAllocations(projected);
+            try {
+              const rows = materializeOwnedBatchRows(projectedOwner);
+              if (ownedOutput) return rows;
+              try {
+                return rows.value;
+              } finally {
+                rows.release();
+              }
+            } finally {
+              projectedOwner.release();
+            }
+          } finally {
+            outputScope.dispose();
           }
         } finally {
-          outputScope.dispose();
+          resultOwner.release();
         }
       } finally {
-        resultOwner?.release();
+        retainedOwner?.release();
       }
     } finally {
-      retainedOwner?.release();
+      planning.dispose();
     }
   }
 
