@@ -1,0 +1,35 @@
+{
+  "date": "2026-11-14",
+  "source_revision": "e18cf4af33ebaf135bf3b1fabdc63cbea82b3198",
+  "checks": {
+    "default_suite": {
+      "passed": 3399,
+      "skipped": 629,
+      "evidence": "materialization-planner-workspace-2026-11-14.json"
+    },
+    "worker": {
+      "passed": 75,
+      "files": 21
+    },
+    "reference": {
+      "passed": 104,
+      "files": 4
+    },
+    "conformance": {
+      "passed": 517,
+      "skipped": 1,
+      "skip": "Conditional missing-external-Iceberg-fixtures failure guard; no claim of required-external matrix mode in this run."
+    },
+    "lint": "passed",
+    "compatibility": "passed",
+    "large_files": "passed after sandbox denied child-process Git; rerun with escalation",
+    "changeset": "passed"
+  },
+  "not_refreshed": [
+    "coverage",
+    "package installation smoke check",
+    "fixture regeneration/checksums",
+    "required-external Iceberg matrix mode"
+  ],
+  "scope": "Runtime and correctness gate refresh after shared task and materialization changes; not final acceptance of F1-F6/M1-M2/V1-V3."
+}
