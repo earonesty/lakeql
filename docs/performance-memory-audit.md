@@ -26,7 +26,7 @@ Owned R2 transport follow-up: [validation](validation/owned-r2-write-2026-11-14.
 
 Owned R2 metadata follow-up: [validation](validation/owned-r2-metadata-2026-11-14.json). Retained metadata and cloned dates are now admitted; late results are rejected. Build/typecheck, 14 focused tests, and 79 Worker tests passed. Binding response allocations remain external.
 
-Current release checks: [gate refresh](validation/current-window-release-gates-2026-11-14.json), runtime source `9206579`. Coverage runs 3,731 tests (645 skipped); thresholds pass unchanged. Build, clean consumer, required conformance and repository checks pass; same-implementation typecheck, 120 reference tests and 82 Worker tests pass. Full finite acceptance remains open.
+Current release checks: [gate refresh](validation/current-metadata-release-gates-2026-11-14.json), runtime source `4bfbe7d`. Coverage runs 3,748 tests (645 skipped); thresholds pass unchanged. Build, clean consumer, required conformance and repository checks pass; same-implementation typecheck, 120 reference tests and 82 Worker tests pass. Full finite acceptance remains open.
 
 F1 restore follow-up: [group-limit validation](validation/aggregate-restore-group-limit-2026-11-14.json). Restored row aggregates now honor `maxGroups` before accumulator construction or new reads. Build/typecheck and 3,709 tests passed (629 skipped); full acceptance remains open.
 
@@ -260,7 +260,7 @@ Scheduled numeric decode instrumentation follow-up: direct and scheduled replace
 | Decode allocation admission | Scoped numeric/boolean/dictionary-index decoders, packed PLAIN and flat delta strings/binary, admitted fallback vector arrays, decompression, owned batches, bounded nested block assembly | Remaining encodings/conversions, fallback allocations, metadata/runtime overhead and codec workspace |
 | Cache reuse within caps | Owned data and full/indexed metadata, raw-alias reservation transfer, cross-job pins, eviction-safe output; zero warm data reads on public R2 | Remaining metadata/converter workspace, all normal query paths |
 | Smart defaults | Available-headroom admission, exact-range fallback, optional prefetch decline, default pool | Measured decode/batch scheduling through the complete execution pipeline |
-| Release readiness | Refreshed gates pass on runtime source `9206579`: build, types, clean consumer, 82 Worker tests, 120 reference tests, 520 required conformance tests (one inactive missing-fixture guard), unchanged coverage thresholds, lint, deterministic fixtures and repository checks; see `current-window-release-gates-2026-11-14.json` | Complete allocation/scope audit remains open; refresh gates after further implementation changes |
+| Release readiness | Refreshed gates pass on runtime source `4bfbe7d`: build, types, clean consumer, 82 Worker tests, 120 reference tests, 520 required conformance tests (one inactive missing-fixture guard), unchanged coverage thresholds, lint, deterministic fixtures and repository checks; see `current-metadata-release-gates-2026-11-14.json` | Complete allocation/scope audit remains open; refresh gates after further implementation changes |
 
 The sections below preserve the original findings and dated implementation evidence.
 A completed primitive or targeted test must not be read as completion of its wider

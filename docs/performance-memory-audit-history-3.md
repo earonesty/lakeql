@@ -4714,3 +4714,20 @@ a larger relative CPU cost. Keep the simpler per-column admission contract: the
 data does not justify introducing an offset directory or another parser callback
 contract merely to remove a traversal. Production behavior is unchanged by this
 measurement. See `validation/column-metadata-balanced-2026-11-14.json`.
+
+### V3 release-command refresh after metadata lifetime changes
+
+Runtime source `4bfbe7d` passes lint (1,567 files), package build/declarations,
+types, a clean consumer installation (66 packages), compatibility, tracked-file
+size and changeset checks, deterministic fixture regeneration, and all 120
+reference comparisons. Coverage executes 3,748 tests (645 skipped), with 91.29%
+statements, 85.43% branches, 95.83% functions and 93.10% lines; thresholds are
+unchanged. The identical runtime already passed 82 Worker and 520 required
+external conformance tests; subsequent changes were benchmarks and docs only.
+The one conformance skip is the inactive missing-fixture guard.
+
+Fixture regeneration leaves the worktree clean. Git-dependent checks initially
+encountered sandbox subprocess/LFS restrictions and passed when rerun with normal
+repository access; these were execution restrictions, not test failures.
+See `validation/current-metadata-release-gates-2026-11-14.json`. Passing these
+commands does not close the remaining scope/ownership/headroom requirements.
