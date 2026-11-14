@@ -14,7 +14,7 @@
   },
   "remainingGap": {
     "source": "packages/core/src/query.ts collectOrderedMatches",
-    "finding": "Bounded collectOrderedMatches now detaches rows into OwnedBoundedTopK and holds result ownership through its consumers. Evidence: docs/validation/borrowed-row-detachment-2026-11-13.json. Unlimited sort buffering, serialization/deserialization and projection scratch still require admission.",
+    "finding": "Bounded and ordinary unlimited collectOrderedMatches now detach retained rows and hold ownership through consumers. See borrowed-row-detachment and unlimited-row-ordering evidence. Stateful sort runs, serialization/deserialization and projection scratch remain open.",
     "relatedRoute": "Projected rank-reference selection uses OwnedBoundedTopK when scanOwnedVectorBatches is available, but retains a borrowed BoundedTopK branch otherwise.",
     "nextAction": "Review rejected-candidate copy overhead, restore/serialization admission and complete fallback output lifetimes without claiming whole-query allocation coverage."
   },

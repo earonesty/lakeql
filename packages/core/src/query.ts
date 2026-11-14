@@ -1642,7 +1642,6 @@ export class QueryResult {
     );
     try {
       await this.collectOrderedMatches(matched, topK, startedAt, retainedScope);
-      matched.sort((left, right) => compareRows(left, right, orderBy));
       const start = config.offset ?? 0;
       const end = start + config.limit;
       const rows = matched
@@ -2474,7 +2473,18 @@ export class QueryResult {
     );
     try {
       await this.collectOrderedMatches(matched, topK, startedAt, retainedScope);
-      matched.sort((left, right) => compareRows(left, right, config.orderBy ?? []));
+      if (topK === undefined) {
+        const scratch = retainedScope.reserve(
+          allocationCharges.array +
+            matched.length * (allocationCharges.arraySlot + allocationCharges.object),
+          "ordered row sort workspace",
+        );
+        try {
+          matched.sort((left, right) => compareRows(left, right, config.orderBy ?? []));
+        } finally {
+          scratch.release();
+        }
+      }
       const batchSize = config.batchSize ?? 4096;
       let batch: Row[] = [];
       let offsetSkipped = 0;
@@ -3130,8 +3140,15 @@ export class QueryResult {
           stats.rowsMatched += 1;
           validateSortRow(row, orderBy);
           if (selection === undefined) {
-            matched.push(row);
-            memory?.add(row);
+            const owner = allocationScope.adopt(detachOwnedRow(row, allocationScope.budget));
+            allocationScope.allocate(
+              (matched.length === 0 ? allocationCharges.array : 0) + allocationCharges.arraySlot,
+              "ordered row directory growth",
+              () => {
+                matched.push(owner.value);
+              },
+            );
+            memory?.add(owner.value);
           } else {
             offer(row);
           }

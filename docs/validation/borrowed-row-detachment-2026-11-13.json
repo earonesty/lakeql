@@ -31,11 +31,12 @@
     "remoteEvidence": "Real wide-timestamp Parquet through a row-only parquetScanner adapter, four concurrent ordered/offset queries over HTTP 206 and ignored-range 200 responses, repeated after cache reuse. Shared pool peak bounded and final eviction returns usage to zero. Worker suite passed, but the new borrowed-row adapter is HTTP-only."
   },
   "limits": [
-    "Bounded collectOrderedMatches now uses OwnedBoundedTopK and holds winners through projection/checkpoint work. Unlimited sorting, checkpoint deserialize/serialize allocations, hive merge scratch and result projection/output directories still require ownership review.",
+    "Bounded and ordinary unlimited collectOrderedMatches now own detached rows through their consumers. Stateful sort runs, checkpoint deserialize/serialize allocations, hive merge scratch and result projection/output admission remain open.",
     "Input data properties must remain stable during synchronous traversal; proxies and arbitrary object behavior have no detachment guarantee.",
     "Charge units and traversal admission do not establish total VM heap bounds or expose hidden immutable-string backing size.",
     "Supported scanner value shapes must be reconciled with public compatibility before query integration; unsupported prototypes are not silently flattened.",
     "Rejected-candidate copy avoidance and benchmark evidence: docs/validation/row-top-k-precheck-2026-11-13.json."
   ],
-  "testContractClarification": "Existing exact serialized-size tests now specify a separate 65536-byte allocation allowance. Their serialized boundaries and expected errors are unchanged; production allocation/serialized limits were not relaxed."
+  "testContractClarification": "Existing exact serialized-size tests now specify a separate 65536-byte allocation allowance. Their serialized boundaries and expected errors are unchanged; production allocation/serialized limits were not relaxed.",
+  "unlimitedOrderingFollowup": "docs/validation/unlimited-row-ordering-2026-11-13.json"
 }

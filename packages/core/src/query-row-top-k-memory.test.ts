@@ -136,3 +136,44 @@ it("skips detaching oversized rejected payloads but admits better replacements",
   ).toEqual([{ score: 0, payload: new Uint8Array([0]) }]);
   expect(pool.usedBytes).toBe(0);
 });
+
+it("owns unlimited ordered rows across scanner reuse and releases on completion", async () => {
+  const pool = new MemoryBudget(65536);
+  const { lake } = await fixture(pool);
+  const rows = await lake
+    .path("table")
+    .orderBy([{ column: "score" }])
+    .batchSize(1)
+    .toArray();
+  expect(rows.map((row) => row.score)).toEqual([1, 2, 3]);
+  expect(rows.map((row) => row.nested)).toEqual([
+    { text: "row-1" },
+    { text: "row-2" },
+    { text: "row-3" },
+  ]);
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("enforces the measured unlimited-ordering peak at exact and one-byte-short caps", async () => {
+  const measured = new MemoryBudget(65536);
+  const baseline = await fixture(measured);
+  await baseline.lake
+    .path("table")
+    .orderBy([{ column: "score" }])
+    .toArray();
+  const required = measured.peakBytes;
+  for (const cap of [required - 1, required]) {
+    const pool = new MemoryBudget(cap + 37);
+    const sibling = pool.reserve(37, "sibling");
+    const candidate = await fixture(pool, cap);
+    const run = candidate.lake
+      .path("table")
+      .orderBy([{ column: "score" }])
+      .toArray();
+    if (cap < required) await expect(run).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+    else expect((await run).map((row) => row.score)).toEqual([1, 2, 3]);
+    expect(candidate.closed()).toBe(true);
+    expect(pool.usedBytes).toBe(37);
+    sibling.release();
+  }
+});

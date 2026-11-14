@@ -214,6 +214,16 @@ it.each([
         ),
       );
       for (const output of selected) expect(output).toEqual([expected[2], expected[0]]);
+      const fullyOrdered = await Promise.all(
+        Array.from({ length: 4 }, () =>
+          rowLake
+            .path("timestamps.parquet")
+            .batchSize(2)
+            .orderBy([{ column: "timestamp_nanos" }])
+            .toArray(),
+        ),
+      );
+      for (const output of fullyOrdered) expect(output).toEqual(sorted);
       expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
     }
     expect(peak).toBeLessThanOrEqual(2);
