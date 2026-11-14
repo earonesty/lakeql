@@ -339,10 +339,15 @@ function evaluatePartitionWithPeers(
 ): unknown[] {
   const fn = normalizedWindowName(expr.fn);
   if (isAggregateWindow(expr.fn)) {
-    const segmentValues = segmentTreeAggregateValues(partition, expr, peers, budget);
+    const segmentValues = segmentTreeAggregateValues(partition, expr, peers, budget, resultScope);
     if (segmentValues !== undefined) return segmentValues;
     return partition.map((_item, index) =>
-      aggregateWindowValue(frameRowIterator(partition, index, expr, peers), expr, budget),
+      aggregateWindowValue(
+        frameRowIterator(partition, index, expr, peers),
+        expr,
+        budget,
+        resultScope,
+      ),
     );
   }
   switch (fn) {

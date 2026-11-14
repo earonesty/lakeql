@@ -42,7 +42,9 @@ it.each([
     jsonScalarKeyAllocationBytes(value) +
     c.property +
     c.object +
-    (aggregate === "mode" ? c.object + 2 * c.property : 0);
+    (aggregate === "mode"
+      ? c.object + 2 * c.property + c.string + value.length * c.stringCodeUnit
+      : 0);
   for (const cap of [bytes - 1, bytes]) {
     const budget = new MemoryBudget(cap);
     const scope = new MemoryScope(budget);

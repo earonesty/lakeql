@@ -16,21 +16,24 @@ import { compareAggregateScalars, numericAggregateValue } from "./scalar-order.j
 import type { Row } from "./types.js";
 import type { WindowExpr } from "./window.js";
 import { filterRow, requireExactWindowAggregate } from "./window-utils.js";
+import { retainWindowValue } from "./window-value-ownership.js";
 
 export function aggregateWindowValue(
   rows: Iterable<Row>,
   expr: WindowExpr,
   budget?: MemoryReservationSource,
+  resultScope?: MemoryScope,
 ): Scalar {
-  return createWindowAggregateEvaluator(expr, budget)(rows);
+  return createWindowAggregateEvaluator(expr, budget, resultScope)(rows);
 }
 
 /** Operation-local evaluator for independent frames. */
 export function createWindowAggregateEvaluator(
   expr: WindowExpr,
   budget?: MemoryReservationSource,
+  resultScope?: MemoryScope,
 ): (rows: Iterable<Row>) => Scalar {
-  const accumulator = createWindowAggregateAccumulator(expr, budget);
+  const accumulator = createWindowAggregateAccumulator(expr, budget, resultScope);
   let active = false;
   return (rows) => {
     if (active) throw aggregateReentry();
@@ -49,6 +52,7 @@ export function createWindowAggregateEvaluator(
 export function createWindowAggregateAccumulator(
   expr: WindowExpr,
   budget?: MemoryReservationSource,
+  resultScope?: MemoryScope,
 ): {
   append(rows: Iterable<Row>): Scalar;
   reset(): void;
@@ -73,10 +77,20 @@ export function createWindowAggregateAccumulator(
       active = true;
       try {
         for (const row of rows) {
-          if (!filterRow(expr, row)) continue;
-          state.add(aggregateInputValue(expr, row), expr.distinct === true);
+          const temporary =
+            budget instanceof MemoryScope
+              ? budget.childScope()
+              : budget instanceof MemoryBudget
+                ? new MemoryScope(budget)
+                : undefined;
+          try {
+            if (!filterRow(expr, row, temporary)) continue;
+            state.add(aggregateInputValue(expr, row, temporary), expr.distinct === true, temporary);
+          } finally {
+            temporary?.dispose();
+          }
         }
-        return state.value();
+        return state.result(resultScope);
       } catch (error) {
         state.reset();
         throw error;
@@ -95,14 +109,15 @@ function aggregateReentry(): LakeqlError {
   return new LakeqlError("LAKEQL_VALIDATION_ERROR", "Window aggregate evaluation cannot reenter");
 }
 
-function aggregateInputValue(expr: WindowExpr, row: Row): Scalar {
+function aggregateInputValue(expr: WindowExpr, row: Row, scope?: MemoryScope): Scalar {
   if (expr.args.length === 0) return 1;
   const arg = expr.args[0];
   if (arg === undefined) return 1;
-  return evaluate(arg, row);
+  return evaluate(arg, row, scope);
 }
 
 class AggregateState {
+  private payloadScope: MemoryScope | undefined;
   private count = 0;
   private sum = 0;
   private mean = 0;
@@ -129,6 +144,8 @@ class AggregateState {
     this.count = this.sum = this.mean = this.m2 = 0;
     this.min = this.max = this.first = this.last = undefined;
     this.values = undefined;
+    this.payloadScope?.dispose();
+    this.payloadScope = undefined;
     this.bufferScope?.dispose();
     this.bufferScope = undefined;
     this.bufferLedger = undefined;
@@ -140,7 +157,7 @@ class AggregateState {
     this.keyReservation = undefined;
   }
 
-  add(value: Scalar, distinct: boolean): void {
+  add(value: Scalar, distinct: boolean, temporary?: MemoryScope): void {
     if (this.op === "count") {
       if (value !== null && this.addDistinct(value, distinct)) this.count += 1;
       return;
@@ -158,24 +175,26 @@ class AggregateState {
         this.addVariance(value);
         break;
       case "min":
-        if (this.min === undefined || compareScalar(value, this.min) < 0) this.min = value;
+        if (this.min === undefined || compareScalar(value, this.min) < 0)
+          this.min = this.capture(value, temporary);
         break;
       case "max":
-        if (this.max === undefined || compareScalar(value, this.max) > 0) this.max = value;
+        if (this.max === undefined || compareScalar(value, this.max) > 0)
+          this.max = this.capture(value, temporary);
         break;
       case "first":
       case "any":
-        if (this.first === undefined) this.first = value;
+        if (this.first === undefined) this.first = this.capture(value, temporary);
         break;
       case "last":
-        this.last = value;
+        this.last = this.capture(value, temporary);
         break;
       case "median":
       case "quantile":
         this.addQuantileValue(numericValue(this.op, value));
         break;
       case "mode":
-        this.addMode(value);
+        this.addMode(value, temporary);
         break;
       case "count_distinct":
         this.count += 1;
@@ -183,6 +202,37 @@ class AggregateState {
       case "approx_count_distinct":
         requireExactWindowAggregate(this.op);
         break;
+    }
+  }
+
+  result(scope?: MemoryScope): Scalar {
+    return retainWindowValue(this.value(), scope, this.payloadScope) as Scalar;
+  }
+
+  private capture(value: Scalar, temporary?: MemoryScope, append = false): Scalar {
+    if (!(this.budget instanceof MemoryBudget || this.budget instanceof MemoryScope)) return value;
+    const previous = this.payloadScope;
+    if (value === null || typeof value === "number" || typeof value === "boolean") {
+      if (!append) {
+        previous?.dispose();
+        this.payloadScope = undefined;
+      }
+      return value;
+    }
+    const scope =
+      append && previous !== undefined
+        ? previous
+        : this.budget instanceof MemoryScope
+          ? this.budget.childScope()
+          : new MemoryScope(this.budget);
+    try {
+      const retained = retainWindowValue(value, scope, temporary) as Scalar;
+      this.payloadScope = scope;
+      if (previous !== scope) previous?.dispose();
+      return retained;
+    } catch (error) {
+      if (previous !== scope) scope.dispose();
+      throw error;
     }
   }
 
@@ -296,7 +346,7 @@ class AggregateState {
     this.m2 += delta * (numeric - this.mean);
   }
 
-  private addMode(value: Scalar): void {
+  private addMode(value: Scalar, temporary?: MemoryScope): void {
     this.withKey(value, this.modeValues === undefined, true, (key) => {
       this.modeValues ??= new Map();
       const current = this.modeValues.get(key);
@@ -304,7 +354,7 @@ class AggregateState {
         current.count += 1;
         return false;
       }
-      this.modeValues.set(key, { value, count: 1 });
+      this.modeValues.set(key, { value: this.capture(value, temporary, true), count: 1 });
       return true;
     });
   }

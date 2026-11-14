@@ -146,8 +146,8 @@ export function partitionSpans(
   return spans;
 }
 
-export function filterRow(expr: WindowExpr, row: Row): boolean {
-  return expr.filter === undefined || matches(expr.filter, row);
+export function filterRow(expr: WindowExpr, row: Row, scope?: MemoryScope): boolean {
+  return expr.filter === undefined || matches(expr.filter, row, scope);
 }
 
 export function stableKey(values: readonly unknown[]): string {

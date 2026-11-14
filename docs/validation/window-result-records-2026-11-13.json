@@ -33,5 +33,6 @@
     "build": "pnpm exec tsc -b passed before runtime tests",
     "typecheck": "pnpm typecheck passed",
     "limitations": "Coverage, external conformance, packaging and kernel benchmarks were not rerun for this change; prior revision evidence is linked separately."
-  }
+  },
+  "followupEvidence": "docs/validation/window-aggregate-ownership-2026-11-13.json"
 }

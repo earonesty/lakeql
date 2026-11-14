@@ -3,6 +3,7 @@ import { LakeqlError } from "./errors.js";
 import { evaluate } from "./evaluator.js";
 import type { Scalar } from "./expr.js";
 import type { MemoryBudget, MemoryReservation } from "./memory-budget.js";
+import { MemoryScope } from "./memory-scope.js";
 import type { AggregateOp } from "./query.js";
 import { compareAggregateScalars, numericAggregateValue } from "./scalar-order.js";
 import type { Row } from "./types.js";
@@ -11,6 +12,7 @@ import { createWindowAggregateAccumulator } from "./window-aggregate.js";
 import { frameSpan } from "./window-frame.js";
 import { WindowPeers } from "./window-peers.js";
 import { filterRow, type WindowRow } from "./window-utils.js";
+import { retainWindowValue } from "./window-value-ownership.js";
 
 interface SegmentNode {
   count: number;
@@ -35,13 +37,15 @@ export function segmentTreeAggregateValues(
   expr: WindowExpr,
   peers = new WindowPeers(partition),
   budget?: MemoryBudget,
+  resultScope?: MemoryScope,
 ): Scalar[] | undefined {
   if (typeof expr.fn !== "object" || expr.distinct === true) return undefined;
   if ((expr.over.frame?.exclude ?? "no-others") !== "no-others") return undefined;
   const op = expr.fn.aggregate;
   if (!isSegmentAggregate(op)) return undefined;
   if (partition.length === 0) return [];
-  const accumulator = createWindowAggregateAccumulator(expr);
+  const accumulator = createWindowAggregateAccumulator(expr, budget, resultScope);
+  let treeScope = budget === undefined ? undefined : new MemoryScope(budget);
   let previousStart = -1;
   let previousEnd = 0;
   let visits = 0;
@@ -51,7 +55,12 @@ export function segmentTreeAggregateValues(
   try {
     return partition.map((_row, index) => {
       const span = frameSpan(partition, index, expr, peers);
-      if (tree !== undefined) return aggregateValue(op, tree.query(span));
+      if (tree !== undefined)
+        return retainWindowValue(
+          aggregateValue(op, tree.query(span)),
+          resultScope,
+          treeScope,
+        ) as Scalar;
       if (span.start !== previousStart || span.end < previousEnd) {
         accumulator.reset();
         previousEnd = span.start;
@@ -67,8 +76,24 @@ export function segmentTreeAggregateValues(
         );
         if (budget === undefined || reservation !== undefined) {
           accumulator.reset();
-          tree = new SegmentTree(partition, expr, op);
-          return aggregateValue(op, tree.query(span));
+          previousEnd = span.start;
+          try {
+            tree = new SegmentTree(partition, expr, op, treeScope);
+          } catch (error) {
+            if (!(error instanceof LakeqlError) || error.code !== "LAKEQL_BUDGET_EXCEEDED")
+              throw error;
+            // Optional indexing must not consume the headroom needed by the scan.
+            treeScope?.dispose();
+            treeScope = undefined;
+            reservation?.release();
+            reservation = undefined;
+          }
+          if (tree !== undefined)
+            return retainWindowValue(
+              aggregateValue(op, tree.query(span)),
+              resultScope,
+              treeScope,
+            ) as Scalar;
         }
       }
       const value = accumulator.append(spanRows(partition, previousEnd, span.end));
@@ -78,6 +103,7 @@ export function segmentTreeAggregateValues(
     });
   } finally {
     accumulator.reset();
+    treeScope?.dispose();
     reservation?.release();
   }
 }
@@ -122,20 +148,28 @@ function isSegmentAggregate(op: AggregateOp): boolean {
   }
 }
 
-function leafNode(windowRow: WindowRow, expr: WindowExpr, op: AggregateOp): SegmentNode {
-  if (!filterRow(expr, windowRow.row)) return EMPTY_NODE;
-  const value = aggregateInputValue(expr, windowRow);
-  if (op === "count") return value === null ? EMPTY_NODE : { ...EMPTY_NODE, count: 1 };
-  if (value === null) return EMPTY_NODE;
-  if (op === "min" || op === "max") return { ...EMPTY_NODE, count: 1, min: value, max: value };
-  const numeric = numericValue(op, value);
-  return { count: 1, sum: numeric, mean: numeric, m2: 0, min: undefined, max: undefined };
-}
-
-function aggregateInputValue(expr: WindowExpr, windowRow: WindowRow): Scalar {
-  const arg = expr.args[0];
-  if (arg === undefined) return 1;
-  return evaluate(arg, windowRow.row);
+function leafNode(
+  windowRow: WindowRow,
+  expr: WindowExpr,
+  op: AggregateOp,
+  scope?: MemoryScope,
+): SegmentNode {
+  const temporary = scope?.childScope();
+  try {
+    if (!filterRow(expr, windowRow.row, temporary)) return EMPTY_NODE;
+    const arg = expr.args[0];
+    const value = arg === undefined ? 1 : evaluate(arg, windowRow.row, temporary);
+    if (op === "count") return value === null ? EMPTY_NODE : { ...EMPTY_NODE, count: 1 };
+    if (value === null) return EMPTY_NODE;
+    if (op === "min" || op === "max") {
+      const retained = retainWindowValue(value, scope, temporary) as Scalar;
+      return { ...EMPTY_NODE, count: 1, min: retained, max: retained };
+    }
+    const numeric = numericValue(op, value);
+    return { count: 1, sum: numeric, mean: numeric, m2: 0, min: undefined, max: undefined };
+  } finally {
+    temporary?.dispose();
+  }
 }
 
 function aggregateValue(op: AggregateOp, node: SegmentNode): Scalar {
@@ -175,14 +209,19 @@ class SegmentTree {
   private readonly size: number;
   private readonly nodes: SegmentNode[];
 
-  constructor(partition: readonly WindowRow[], expr: WindowExpr, op: AggregateOp) {
+  constructor(
+    partition: readonly WindowRow[],
+    expr: WindowExpr,
+    op: AggregateOp,
+    scope?: MemoryScope,
+  ) {
     let size = 1;
     while (size < partition.length) size *= 2;
     this.size = size;
     this.nodes = Array.from({ length: size * 2 }, () => EMPTY_NODE);
     for (let index = 0; index < partition.length; index += 1) {
       const row = partition[index];
-      this.nodes[size + index] = row === undefined ? EMPTY_NODE : leafNode(row, expr, op);
+      this.nodes[size + index] = row === undefined ? EMPTY_NODE : leafNode(row, expr, op, scope);
     }
     for (let index = size - 1; index > 0; index -= 1) {
       this.nodes[index] = mergeNodes(

@@ -80,6 +80,7 @@ it.each(
           "windowKeys",
           "windowPartitionKeys",
           "windowValues",
+          "windowAggregateValues",
           "windowStateValues",
         ]
           .filter((route) => !vector || route.startsWith("window"))
@@ -104,7 +105,7 @@ it.each(
             if (route.endsWith("Values"))
               query = query
                 .window("value", {
-                  fn: "first_value",
+                  fn: route === "windowAggregateValues" ? { aggregate: "min" } : "first_value",
                   args: [predicate.left],
                   over: { partitionBy: [], orderBy: [{ expr: { kind: "column", name: "id" } }] },
                 })
