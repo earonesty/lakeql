@@ -391,3 +391,5 @@ Reuse physical input batches for identity CPU projections instead of rebuilding 
 Reuse materialization-planning ancestry capacity across sibling rows, merging exclusive reservations instead of allocating per-cell frame reservations. Preserve depth bounds and output forecasts while allowing exact fixed-stage planning allowances to succeed.
 
 Grow reusable JSON scalar and traversal workspace through shared incremental admission, preserving exact fixed-stage limits and cleanup without re-admitting existing capacity.
+
+Share reservation method implementations and bind callbacks only when used, reducing ownership bookkeeping while preserving detached callbacks and allocation-transfer semantics.

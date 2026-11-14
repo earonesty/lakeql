@@ -5006,3 +5006,38 @@ that accidentally shares the modified implementation between variants.
 Evidence and current validation: `validation/shared-workspace-capacity-2026-11-14.json`.
 
 Final validation: 3,920 regular/coverage tests (645 skipped), 85 Worker tests, 520 required conformance cases (one inactive guard skipped), build/types/lint. Coverage thresholds and test timeouts are unchanged. Native Worker sizing now tests growing scalar siblings at exact fixed-stage capacity and one byte below. Existing real HTTP and R2 fixtures remain in the full suites; no new live-cloud throughput claim is made.
+
+### Shared reservation implementations (2026-11-14)
+
+Each reservation previously constructed method closures capturing its budget,
+allocation and release state. The shared implementation holds private allocation
+and release state and snapshots byte size as before. Public methods bind lazily
+so detached callbacks remain attached to their handle; frozen handle retain/release
+and direct method overrides are tested. An unbound prototype was rejected after
+a negative-control callback regression. Its raw results remain separate from
+final evidence. Merge still consumes both original handles, partition preserves
+old byte snapshots, and failed transfer/admission leaves ownership intact.
+
+Final fresh-process diagnostics at 32,768 retained handles measure about 31.0 MB
+versus 10.0 MB retained managed heap at identical 524,288 admitted bytes. Forced
+GC occurs only before or after timed operations. Incremental-growth median is
+32.960 → 18.833 ms; deep JSON is 28.951 → 15.886 ms. Ordinary JSON shapes are mixed.
+The real many-page Parquet query measures 2.731 → 2.627 seconds in alternating
+fresh processes. These are scoped measurements, not whole historical builds.
+
+Native R2 pressure completes 32 primary jobs and eight expected typed failures;
+all four retries after release succeed and final admission is zero. The largest
+64 MiB/four-job managed-heap sample is 89,782,672 bytes, still above the pool.
+Sparse GC-dependent samples do not establish exact peaks or statistical heap
+reduction, and this does not close whole-runtime headroom.
+
+Evidence: `validation/shared-reservation-handles-2026-11-14.json`.
+
+The final implementation passes 3,923 regular/coverage tests (645 skipped), 85
+Worker tests, 520 required conformance cases (one inactive guard skipped), and
+120 references. Full build/types, the clean 66-package consumer, lint, compatibility,
+large-file/changeset checks and deterministic fixture regeneration pass. Coverage
+thresholds and conformance timeouts remain unchanged. Git/LFS initially needed
+permission for temporary comparison metadata; the subsequent diff confirms no
+fixture changes. These checks supersede the earlier complete release gate on
+`beebd97` without closing the broader audit acceptance items.

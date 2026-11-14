@@ -1,0 +1,122 @@
+{
+  "runtimeBase": "995120b",
+  "requirements": ["M1", "M2", "V1", "V2"],
+  "change": "Reservation implementations are shared on a private class; methods bind lazily on use to preserve detached callbacks. Allocation/released state remains private. Frozen-handle retain/release and writable method overrides are covered. Byte snapshots and admission/transfer/release rules remain unchanged.",
+  "validation": {
+    "focusedOwnershipTests": 75,
+    "regularPassed": 3923,
+    "regularSkipped": 645,
+    "coverage": {
+      "statements": 91.36,
+      "branches": 85.52,
+      "functions": 95.9,
+      "lines": 93.17,
+      "thresholds": "unchanged"
+    },
+    "workerPassed": 85,
+    "requiredConformancePassed": 520,
+    "requiredConformanceSkipped": 1,
+    "timeouts": "unchanged",
+    "fullReleaseChecks": {
+      "build": "pnpm build passed (published bundles, declarations, fixture TypeScript)",
+      "typecheck": "passed",
+      "cleanPackageConsumer": {
+        "passed": true,
+        "installedPackages": 66
+      },
+      "referencePassed": 120,
+      "lint": "passed",
+      "compatibility": "passed",
+      "largeFiles": "passed",
+      "changeset": "passed",
+      "fixtureReproducibility": "passed; regenerated hashes identical and escalated Git/LFS diff confirms no fixture changes"
+    }
+  },
+  "heapBenchmark": {
+    "artifact": "docs/benchmarks/reservation-handles-2026-11-14.json",
+    "conditions": "Four alternating fresh-process pairs per case. Timings include admission and sparse heap sampling. Diagnostic forced GC occurs before timing and after measured operations, never during them. Node kernel only; sampled heap is not an exact peak or Worker guarantee. Prior budget module uses current error dependency.",
+    "medians": {
+      "retained": {
+        "reference": {
+          "elapsedMs": 54.147461500000006,
+          "retainedHeapDelta": 31014808.0,
+          "sampledHeapDelta": 31467124.0,
+          "admittedPeak": 524288.0
+        },
+        "current": {
+          "elapsedMs": 13.961227000000008,
+          "retainedHeapDelta": 10035328.0,
+          "sampledHeapDelta": 10578028.0,
+          "admittedPeak": 524288.0
+        }
+      },
+      "growth": {
+        "reference": {
+          "elapsedMs": 32.959636500000016,
+          "retainedHeapDelta": 91240.0,
+          "sampledHeapDelta": 4306648.0,
+          "admittedPeak": 524288.0
+        },
+        "current": {
+          "elapsedMs": 18.833463499999993,
+          "retainedHeapDelta": 87460.0,
+          "sampledHeapDelta": 4264728.0,
+          "admittedPeak": 524288.0
+        }
+      }
+    }
+  },
+  "jsonBenchmark": {
+    "artifact": "docs/benchmarks/reservation-handles-json-bound-2026-11-14.json",
+    "medians": {
+      "small-row": {
+        "reference": 0.007638519000000002,
+        "current": 0.00935814350000004
+      },
+      "wide-numbers": {
+        "reference": 1.9400430500000028,
+        "current": 2.0155244499999982
+      },
+      "row-array": {
+        "reference": 0.6175417000000039,
+        "current": 0.5944356000000027
+      },
+      "mixed-siblings": {
+        "reference": 0.4274581250000097,
+        "current": 0.4194808250000051
+      },
+      "deep-20000": {
+        "reference": 28.950603750000028,
+        "current": 15.886195749999956
+      }
+    },
+    "boundary": "Ordinary shapes are mixed; this is not a universal speedup. Prior size/encoding and budget modules run with current unchanged helper dependencies."
+  },
+  "realFixture": {
+    "artifact": "docs/benchmarks/reservation-handles-page-count-2026-11-14.json",
+    "priorMedianMs": 2731.369081,
+    "currentMedianMs": 2626.997141,
+    "scope": "Alternating fresh Node processes; only the named module is replaced by the prior implementation, with current dependencies. Local 40,000-row many-page fixture query, not cloud throughput. Source store/runtime overhead excluded from pool metrics. Value parity is covered by external conformance; benchmark checks count and release."
+  },
+  "nativeR2": {
+    "artifact": "docs/benchmarks/reservation-handles-worker-r2-2026-11-14.json",
+    "primarySucceeded": 32,
+    "primaryTypedFailures": 8,
+    "postReleaseRetriesSucceeded": 4,
+    "pinnedRetryTypedFailures": 4,
+    "allEvictedAdmissionZero": true,
+    "maxManagedHeapAt64MiBFourJobs": 89782672,
+    "boundary": "Sparse GC-dependent samples are not exact peaks, statistical before/after heap proof, or a production Cloudflare cap."
+  },
+  "experiments": [
+    "reservation-handles-json-2026-11-14.json",
+    "reservation-handles-json-private-2026-11-14.json",
+    "reservation-handles-unbound-experiment-2026-11-14.json"
+  ],
+  "rejectedPrototype": "Unbound prototype methods improved timing but failed a detached-callback regression. Final lazy binding preserves that existing behavior. Earlier prototype measurements are not final-implementation evidence.",
+  "remaining": [
+    "Whole-runtime headroom and other allocation categories remain open.",
+    "Handle metadata still has runtime cost; this reduces it rather than treating admitted bytes as total heap."
+  ],
+  "sourceSha256": "de70db3fc5cd7206cf3164703dd4bd7f64b5b2e773025c056e8f0afa76adf5c8"
+}

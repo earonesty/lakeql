@@ -1,0 +1,128 @@
+{
+  "reference": "995120b",
+  "referenceModules": ["json-output-size", "json-output-encoding", "memory-budget"],
+  "current": "995120b61ba8451659a399d5c6fd342a93944b01",
+  "node": "v24.18.1",
+  "builtModuleHashes": {
+    "json-output-size": "7ca48d3b05484a856f3e4a68354d07026cf2efa53ff4f03dde2ce09c0e58e2da",
+    "json-output-encoding": "1ee8755d82849be50e678a2b1cfa96e61aa4a9a9f7cf1aaade456c1a311a48b1",
+    "json-traversal-budget": "1c7f14508543f6dc25325ecc475a70fef2184a477a2336b826ad859ea635f597",
+    "json-container-entries": "c7fb72ee7d2bc3a0ad66bf220ad7d85b0cf50eef4f46968c0a01fe3d67fb824e",
+    "json-standard-scalars": "971c66727c5b3c02d9878cd714820477d0fe03c86e61025a8a2cdcce7cd3801f",
+    "json-scalar-output": "3b54f14ecaa6d44ef02d58523914bad9fde841c373bd1dc8977b58736bbf15b2",
+    "memory-capacity": "896229388e684013f78808fb2dd50de32f38cdfe7d743e2ca53d42a3c627ca99",
+    "memory-budget": "e23c0a2b6000498e7959cf93117cc37c31463ee548c193d65b2006baf5a3cd7b"
+  },
+  "results": [
+    {
+      "name": "small-row",
+      "iterations": 1000,
+      "outputBytes": 39,
+      "variants": {
+        "reference": {
+          "samplesMs": [
+            0.005325257000000022, 0.00563589300000001, 0.012999716000000034, 0.01782262499999996,
+            0.00532776199999995, 0.005256226000000026, 0.009332957999999962, 0.012129693999999972
+          ],
+          "peakTrackedBytes": 1424
+        },
+        "current": {
+          "samplesMs": [
+            0.003939081999999985, 0.010731537000000003, 0.008239575000000002, 0.008937891999999977,
+            0.005203016999999989, 0.005291071999999985, 0.00460376500000001, 0.008465300999999955
+          ],
+          "peakTrackedBytes": 1424
+        }
+      }
+    },
+    {
+      "name": "wide-numbers",
+      "iterations": 20,
+      "outputBytes": 78891,
+      "variants": {
+        "reference": {
+          "samplesMs": [
+            2.169196499999998, 2.429616300000009, 1.9533302499999992, 1.932466850000003,
+            1.921408550000001, 1.9684027000000015, 1.891992999999991, 1.9150154499999985
+          ],
+          "peakTrackedBytes": 80187
+        },
+        "current": {
+          "samplesMs": [
+            2.1791573000000026, 2.101786299999998, 2.265737149999995, 1.9842560999999932,
+            1.890836349999995, 1.9703908999999953, 1.9981873999999948, 1.8886382000000026
+          ],
+          "peakTrackedBytes": 80187
+        }
+      }
+    },
+    {
+      "name": "row-array",
+      "iterations": 20,
+      "outputBytes": 39891,
+      "variants": {
+        "reference": {
+          "samplesMs": [
+            0.6446246500000029, 0.6576953000000003, 0.6437605500000018, 1.1219742499999938,
+            0.6720885000000066, 0.7023886500000003, 0.6964444500000013, 0.7035789000000022
+          ],
+          "peakTrackedBytes": 41971
+        },
+        "current": {
+          "samplesMs": [
+            0.6300802500000031, 0.6472151000000054, 0.6363801500000023, 0.7912607999999978,
+            0.7275060499999995, 0.9647661999999968, 0.679647250000005, 0.6485906500000056
+          ],
+          "peakTrackedBytes": 41971
+        }
+      }
+    },
+    {
+      "name": "mixed-siblings",
+      "iterations": 20,
+      "outputBytes": 15266,
+      "variants": {
+        "reference": {
+          "samplesMs": [
+            0.4470438999999942, 0.42960299999999735, 0.44279439999999115, 0.43895820000000185,
+            0.4756919499999867, 0.47533680000001366, 0.48324569999999767, 0.4323096000000078
+          ],
+          "peakTrackedBytes": 18258
+        },
+        "current": {
+          "samplesMs": [
+            0.4392802500000016, 0.45977044999999633, 0.47357544999999845, 0.42132184999999256,
+            0.586719949999997, 0.46741134999999756, 0.4473309499999914, 0.5130364000000099
+          ],
+          "peakTrackedBytes": 18258
+        }
+      }
+    },
+    {
+      "name": "deep-20000",
+      "iterations": 2,
+      "outputBytes": 40009,
+      "variants": {
+        "reference": {
+          "samplesMs": [
+            30.423282499999914, 29.507029000000102, 30.79568100000006, 31.994292000000087,
+            29.78411700000015, 28.750090999999884, 31.440291500000058, 31.999992499999962
+          ],
+          "peakTrackedBytes": 22080192
+        },
+        "current": {
+          "samplesMs": [
+            9.845159499999909, 10.048984000000019, 9.713084999999865, 9.114956500000062,
+            9.884549000000106, 8.934256000000005, 9.60215049999988, 9.547072000000071
+          ],
+          "peakTrackedBytes": 22080192
+        }
+      }
+    }
+  ],
+  "limitations": [
+    "Kernel benchmark; not query or cloud throughput",
+    "Tracked reservation units are not heap measurements",
+    "Alternating variant order; eight measured rounds after four warmup rounds"
+  ]
+}

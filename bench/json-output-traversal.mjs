@@ -20,6 +20,7 @@ const referenceModules = [
 ];
 if (referenceModules.some((name) => !/^[a-z-]+$/.test(name)))
   throw new Error("Invalid reference module name");
+if (process.env.LAKEQL_JSON_REFERENCE_BUDGET === "1") referenceModules.push("memory-budget");
 const scratch = await mkdtemp(join(tmpdir(), "lakeql-json-traversal-"));
 const dist = pathToFileURL(`${resolve("packages/core/dist")}/`).href;
 try {
@@ -40,6 +41,9 @@ try {
   }
   const old = (await import(pathToFileURL(join(scratch, "json-output-encoding.js")).href))
     .encodeOwnedJsonOutput;
+  const ReferenceBudget = referenceModules.includes("memory-budget")
+    ? (await import(pathToFileURL(join(scratch, "memory-budget.js")).href)).MemoryBudget
+    : MemoryBudget;
   let deep = "雪😀";
   for (let i = 0; i < 20000; i++) deep = [deep];
   const cases = [
@@ -67,21 +71,23 @@ try {
         : JSON.stringify(value),
     );
     const encoders = [
-      ["reference", old],
-      ["current", encodeOwnedJsonOutput],
+      ["reference", old, ReferenceBudget],
+      ["current", encodeOwnedJsonOutput, MemoryBudget],
     ];
     const variants = Object.fromEntries(
       encoders.map(([variant]) => [variant, { samplesMs: [], peakTrackedBytes: 0 }]),
     );
     // Alternate first runner to reduce systematic JIT/GC ordering bias.
     for (let round = 0; round < 12; round++) {
-      for (const [variant, encode] of round % 2 === 0 ? encoders : [...encoders].reverse()) {
+      for (const [variant, encode, Budget] of round % 2 === 0
+        ? encoders
+        : [...encoders].reverse()) {
         const result = variants[variant];
         if (result.failure) continue;
         const start = performance.now();
         try {
           for (let i = 0; i < iterations; i++) {
-            const budget = new MemoryBudget(64 * 1024 * 1024);
+            const budget = new Budget(64 * 1024 * 1024);
             const scope = new MemoryScope(budget);
             let output;
             try {
@@ -118,6 +124,7 @@ try {
           "json-standard-scalars",
           "json-scalar-output",
           "memory-capacity",
+          "memory-budget",
         ].map(async (name) => [
           name,
           createHash("sha256")

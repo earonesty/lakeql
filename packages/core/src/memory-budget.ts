@@ -116,149 +116,185 @@ export class MemoryBudget {
 
   /** Construct ownership for charges already installed in every ancestor. */
   private handle(allocation: Allocation): MemoryReservation {
-    const chain = this.chain;
-    let released = false;
-    const requireLive = () => {
-      if (released)
+    return new MemoryBudget.Reservation(this, allocation);
+  }
+
+  /** Share method implementations instead of allocating closures per handle. */
+  private static readonly Reservation = class implements MemoryReservation {
+    #released = false;
+    readonly #allocation: Allocation;
+    bytes: number;
+
+    constructor(
+      readonly budget: MemoryBudget,
+      allocation: Allocation,
+    ) {
+      this.#allocation = allocation;
+      this.bytes = allocation.bytes;
+    }
+
+    private requireLive(): void {
+      if (this.#released)
         throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Cannot retain released memory");
-    };
-    const result: MemoryReservation & { [reservationState](consume?: boolean): Allocation } = {
-      [reservationState]: (consume = false) => {
-        requireLive();
-        if (consume) released = true;
-        return allocation;
-      },
-      merge: (other) => {
-        requireLive();
-        const state = (
-          other as MemoryReservation & { [reservationState]?: (consume?: boolean) => Allocation }
-        )[reservationState];
-        if (state === undefined || other.budget !== this)
-          throw new LakeqlError(
-            "LAKEQL_VALIDATION_ERROR",
-            "Merging requires reservations from one budget",
-          );
-        const second = state();
-        if (second === allocation)
-          throw new LakeqlError(
-            "LAKEQL_VALIDATION_ERROR",
-            "Cannot merge a reservation with itself",
-          );
-        for (const ledger of [allocation, second]) {
-          if (
-            ledger.holders.size !== chain.length ||
-            chain.some((budget) => ledger.holders.get(budget) !== 1)
-          )
-            throw new LakeqlError(
-              "LAKEQL_VALIDATION_ERROR",
-              "Merging requires exclusive reservation ownership",
-            );
-        }
-        const total = allocation.bytes + second.bytes;
-        validateBytes(total);
-        // Transfer installed charges. No pool release, readmission, or reclamation.
-        state(true);
-        released = true;
-        allocation.bytes = total;
-        return this.handle(allocation);
-      },
-      shrink: (bytes) => {
-        requireLive();
-        validateBytes(bytes);
-        if (bytes > allocation.bytes)
-          throw new LakeqlError(
-            "LAKEQL_VALIDATION_ERROR",
-            "Cannot grow a reservation by shrinking",
-          );
+    }
+
+    [reservationState](consume = false): Allocation {
+      this.requireLive();
+      if (consume) this.#released = true;
+      return this.#allocation;
+    }
+    merge(other: MemoryReservation): MemoryReservation {
+      this.requireLive();
+      const state = (
+        other as MemoryReservation & { [reservationState]?: (consume?: boolean) => Allocation }
+      )[reservationState];
+      if (state === undefined || other.budget !== this.budget)
+        throw new LakeqlError(
+          "LAKEQL_VALIDATION_ERROR",
+          "Merging requires reservations from one budget",
+        );
+      const second = state.call(other);
+      if (second === this.#allocation)
+        throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Cannot merge a reservation with itself");
+      for (const ledger of [this.#allocation, second]) {
         if (
-          allocation.holders.size !== chain.length ||
-          chain.some((budget) => allocation.holders.get(budget) !== 1)
+          ledger.holders.size !== this.budget.chain.length ||
+          this.budget.chain.some((budget) => ledger.holders.get(budget) !== 1)
         )
           throw new LakeqlError(
             "LAKEQL_VALIDATION_ERROR",
-            "Shrinking requires exclusive reservation ownership",
+            "Merging requires exclusive reservation ownership",
           );
-        const releasedBytes = allocation.bytes - bytes;
-        allocation.bytes = bytes;
-        (result as { bytes: number }).bytes = bytes;
-        for (const budget of chain) budget.used -= releasedBytes;
-      },
-      bytes: allocation.bytes,
-      budget: this,
-      retain: () => {
-        requireLive();
-        return this.pin(allocation);
-      },
-      retainIn: (budget) => {
-        requireLive();
-        // This budget already holds the allocation: no admission or reclaimer
-        // can run, so an additional temporary source guard is unnecessary.
-        if (budget === this) return this.pin(allocation);
-        // Reclaimers may release the source handle during target admission.
-        // Keep the physical allocation charged until admission has settled.
-        const guard = this.pin(allocation);
-        try {
-          return budget.pin(allocation);
-        } finally {
-          guard.release();
+      }
+      const total = this.#allocation.bytes + second.bytes;
+      validateBytes(total);
+      // Transfer installed charges. No pool release, readmission, or reclamation.
+      state.call(other, true);
+      this.#released = true;
+      this.#allocation.bytes = total;
+      return this.budget.handle(this.#allocation);
+    }
+    shrink(bytes: number): void {
+      this.requireLive();
+      validateBytes(bytes);
+      if (bytes > this.#allocation.bytes)
+        throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Cannot grow a reservation by shrinking");
+      if (
+        this.#allocation.holders.size !== this.budget.chain.length ||
+        this.budget.chain.some((budget) => this.#allocation.holders.get(budget) !== 1)
+      )
+        throw new LakeqlError(
+          "LAKEQL_VALIDATION_ERROR",
+          "Shrinking requires exclusive reservation ownership",
+        );
+      const releasedBytes = this.#allocation.bytes - bytes;
+      this.#allocation.bytes = bytes;
+      this.bytes = bytes;
+      for (const budget of this.budget.chain) budget.used -= releasedBytes;
+    }
+    retain(): MemoryReservation {
+      this.requireLive();
+      return this.budget.pin(this.#allocation);
+    }
+    retainIn(budget: MemoryBudget): MemoryReservation {
+      this.requireLive();
+      // This budget already holds the allocation: no admission or reclaimer
+      // can run, so an additional temporary source guard is unnecessary.
+      if (budget === this.budget) return this.budget.pin(this.#allocation);
+      // Reclaimers may release the source handle during target admission.
+      // Keep the physical allocation charged until admission has settled.
+      const guard = this.budget.pin(this.#allocation);
+      try {
+        return budget.pin(this.#allocation);
+      } finally {
+        guard.release();
+      }
+    }
+    partition(parts: readonly number[]): MemoryReservation[] {
+      this.requireLive();
+      let total = 0;
+      for (const bytes of parts) {
+        validateBytes(bytes);
+        total += bytes;
+        validateBytes(total);
+      }
+      if (total !== this.#allocation.bytes) {
+        throw new LakeqlError(
+          "LAKEQL_VALIDATION_ERROR",
+          "Reservation partitions must cover the complete reservation",
+        );
+      }
+      if (
+        this.#allocation.holders.size !== this.budget.chain.length ||
+        this.budget.chain.some((budget) => this.#allocation.holders.get(budget) !== 1)
+      ) {
+        throw new LakeqlError(
+          "LAKEQL_VALIDATION_ERROR",
+          "Partitioning requires exclusive reservation ownership",
+        );
+      }
+      // Transfer existing charges, without releasing/re-admitting capacity or
+      // invoking cache reclamation. Shared physical allocations cannot split:
+      // another holder would otherwise retain an obsolete extent.
+      const result = parts.map((bytes, index) => {
+        // Exclusive transfer can reuse the source ledger for the final extent.
+        // Earlier extents receive independent ledgers before it is resized.
+        if (index === parts.length - 1) {
+          this.#allocation.bytes = bytes;
+          return this.budget.handle(this.#allocation);
         }
-      },
-      partition: (parts) => {
-        requireLive();
-        let total = 0;
-        for (const bytes of parts) {
-          validateBytes(bytes);
-          total += bytes;
-          validateBytes(total);
-        }
-        if (total !== allocation.bytes) {
-          throw new LakeqlError(
-            "LAKEQL_VALIDATION_ERROR",
-            "Reservation partitions must cover the complete reservation",
-          );
-        }
-        if (
-          allocation.holders.size !== chain.length ||
-          chain.some((budget) => allocation.holders.get(budget) !== 1)
-        ) {
-          throw new LakeqlError(
-            "LAKEQL_VALIDATION_ERROR",
-            "Partitioning requires exclusive reservation ownership",
-          );
-        }
-        // Transfer existing charges, without releasing/re-admitting capacity or
-        // invoking cache reclamation. Shared physical allocations cannot split:
-        // another holder would otherwise retain an obsolete extent.
-        const result = parts.map((bytes, index) => {
-          // Exclusive transfer can reuse the source ledger for the final extent.
-          // Earlier extents receive independent ledgers before it is resized.
-          if (index === parts.length - 1) {
-            allocation.bytes = bytes;
-            return this.handle(allocation);
-          }
-          return this.handle({
-            bytes,
-            purpose: allocation.purpose,
-            root: allocation.root,
-            holders: new Map(allocation.holders),
-          });
+        return this.budget.handle({
+          bytes,
+          purpose: this.#allocation.purpose,
+          root: this.#allocation.root,
+          holders: new Map(this.#allocation.holders),
         });
-        released = true;
-        return result;
-      },
-      release: () => {
-        if (released) return;
-        released = true;
-        for (const budget of chain) {
-          const remaining = (allocation.holders.get(budget) ?? 1) - 1;
-          if (remaining === 0) {
-            allocation.holders.delete(budget);
-            budget.used -= allocation.bytes;
-          } else allocation.holders.set(budget, remaining);
-        }
-      },
-    };
-    return result;
+      });
+      this.#released = true;
+      return result;
+    }
+    release(): void {
+      if (this.#released) return;
+      this.#released = true;
+      for (const budget of this.budget.chain) {
+        const remaining = (this.#allocation.holders.get(budget) ?? 1) - 1;
+        if (remaining === 0) {
+          this.#allocation.holders.delete(budget);
+          budget.used -= this.#allocation.bytes;
+        } else this.#allocation.holders.set(budget, remaining);
+      }
+    }
+  };
+
+  static {
+    // Preserve detachable callback semantics while allocating bound functions
+    // only for methods actually used by a handle. Implementations remain shared.
+    const prototype = MemoryBudget.Reservation.prototype;
+    for (const name of ["retain", "retainIn", "partition", "merge", "shrink", "release"] as const) {
+      const method = prototype[name];
+      Object.defineProperty(prototype, name, {
+        configurable: true,
+        get(this: InstanceType<typeof MemoryBudget.Reservation>) {
+          const bound = method.bind(this);
+          if (Object.isExtensible(this))
+            Object.defineProperty(this, name, {
+              value: bound,
+              configurable: true,
+              writable: true,
+              enumerable: true,
+            });
+          return bound;
+        },
+        set(this: InstanceType<typeof MemoryBudget.Reservation>, value: unknown) {
+          Object.defineProperty(this, name, {
+            value,
+            configurable: true,
+            writable: true,
+            enumerable: true,
+          });
+        },
+      });
+    }
   }
 
   private reclaimLocal(bytes: number): void {
