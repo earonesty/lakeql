@@ -1,10 +1,11 @@
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { isLakeqlError, LakeqlError } from "./errors.js";
 import type { MemoryBudget, MemoryReservation } from "./memory-budget.js";
 import type { MemoryScope, OwnedMemory } from "./memory-scope.js";
 import type { ListOptions, ObjectHead, ObjectInfo, ObjectStore } from "./store.js";
 
 export interface ObjectStoreCacheOptions {
-  /** Maximum cached object/range bytes retained in memory. Defaults to 64 MiB. */
+  /** Maximum cached payload and HEAD metadata bytes. Defaults to 64 MiB. */
   maxBytes?: number;
   /** Optional time-to-live for cache entries. Entries do not expire by default. */
   ttlMs?: number;
@@ -399,7 +400,22 @@ function headKey(path: string): string {
 function valueBytes(value: CacheValue): number {
   if (value.kind === "object") return value.value?.byteLength ?? 0;
   if (value.kind === "range") return value.value.byteLength;
-  return 0;
+  const head = value.value;
+  return (
+    2 * c.object +
+    8 * c.property +
+    2 * c.string +
+    (value.path.length * 2 + 5) * c.stringCodeUnit +
+    (head === null
+      ? 0
+      : c.object +
+        5 * c.property +
+        (head.etag === undefined ? 0 : c.string + head.etag.length * c.stringCodeUnit) +
+        (head.contentType === undefined
+          ? 0
+          : c.string + head.contentType.length * c.stringCodeUnit) +
+        (head.lastModified === undefined ? 0 : c.timestamp))
+  );
 }
 
 function cloneValue(value: CacheValue): CacheValue {
@@ -422,5 +438,6 @@ function cloneHead(head: ObjectHead | null): ObjectHead | null {
   if (head.etag !== undefined) copy.etag = head.etag;
   if (head.lastModified !== undefined) copy.lastModified = new Date(head.lastModified);
   if (head.contentType !== undefined) copy.contentType = head.contentType;
+  if (head.rangeReadMode !== undefined) copy.rangeReadMode = head.rangeReadMode;
   return copy;
 }

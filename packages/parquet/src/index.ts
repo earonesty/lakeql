@@ -11,8 +11,7 @@ import {
   type LakeConfig,
   LakeqlError,
   MemoryBudget,
-  memoryCache,
-  type ObjectInfo,
+  memoryPlanningCache,
   type ObjectStore,
   type ObjectStoreCacheOptions,
   type OutputManifest,
@@ -1131,7 +1130,14 @@ export function createParquetLake(config: ParquetLakeConfig): Lake {
       ? config.store
       : cachedObjectStore(config.store, config.cache, sharedCache);
   const planningCache =
-    config.planningCache ?? (config.cache === undefined ? undefined : memoryCache<ObjectInfo[]>());
+    config.planningCache ??
+    (config.cache === undefined
+      ? undefined
+      : memoryPlanningCache({
+          memoryBudget: memoryPool,
+          ...(config.cache.maxBytes === undefined ? {} : { maxBytes: config.cache.maxBytes }),
+          ...(config.cache.ttlMs === undefined ? {} : { ttlMs: config.cache.ttlMs }),
+        }));
   return new Lake({
     ...config,
     memoryPool,

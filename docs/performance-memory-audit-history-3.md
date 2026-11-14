@@ -4031,3 +4031,23 @@ retain the larger backing.
 Build/typecheck passed; initial focused suites passed 19 tests, final owned-HEAD
 suite passed 9; full suite passed 3,655 with 629 skips. Evidence:
 `docs/validation/http-owned-probe-cache-2026-11-14.json`.
+
+### 2026-11-14 — bounded Parquet discovery cache defaults
+
+createParquetLake now uses memoryPlanningCache when caching is enabled and no
+custom planning cache is supplied. It inherits the existing shared query pool,
+cache capacity and TTL; callers do not configure a second budget. Existing custom
+cache overrides remain intact. Real Parquet fixture tests verify warm discovery
+reuse, eviction under sibling pool pressure, rediscovery after eviction, zero
+capacity and immediate expiry.
+
+The disabled-cache test exposed zero-cost legacy HEAD entries in cachedObjectStore.
+HEAD records now include positive key, metadata, date and retained string charges,
+including negative lookups. Cached HEAD copies also preserve rangeReadMode, which
+was previously dropped. Tests verify exact capacity versus one byte below, zero
+capacity, negative-entry charges, defensive transport hints and final cleanup.
+This closes default discovery retention gaps; positive-size legacy raw payload
+entry overhead and automatic HTTP pool propagation remain separate audit items.
+
+Build/typecheck passed; focused suites passed 120 tests; full suite passed 3,659
+with 629 skips. Evidence: `docs/validation/default-planning-cache-2026-11-14.json`.

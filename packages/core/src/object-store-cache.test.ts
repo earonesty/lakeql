@@ -561,3 +561,31 @@ it("forecasts cold cache copies and preserves exact-buffer layout", async () => 
   expect(pool.usedBytes).toBe(0);
   expect(pool.peakBytes).toBe(8);
 });
+
+it("bounds cached HEAD metadata including negative results and transport hints", async () => {
+  const backing = memoryStore();
+  let heads = 0;
+  backing.head = async (path) => {
+    heads++;
+    return path === "missing" ? null : { size: 10, rangeReadMode: "emulated" };
+  };
+  const pool = new MemoryBudget(65536);
+  const shared = new SharedMemoryCache({ memoryBudget: pool });
+  const store = cachedObjectStore(backing, {}, shared);
+  expect(await store.head("file")).toMatchObject({ rangeReadMode: "emulated" });
+  const charged = pool.usedBytes;
+  expect(charged).toBeGreaterThan(0);
+  expect(await store.head("file")).toMatchObject({ rangeReadMode: "emulated" });
+  expect(heads).toBe(1);
+  await store.head("missing");
+  expect(pool.usedBytes).toBeGreaterThan(charged);
+  shared.deleteWhere(() => true);
+  expect(pool.usedBytes).toBe(0);
+  for (const maxBytes of [0, charged - 1, charged]) {
+    heads = 0;
+    const limited = cachedObjectStore(backing, { maxBytes });
+    await limited.head("file");
+    await limited.head("file");
+    expect(heads).toBe(maxBytes === charged ? 1 : 2);
+  }
+});

@@ -34,3 +34,9 @@ The returned plan retains its input owner; release it after its objects are no
 longer used. Direct legacy `planObjects` calls still return caller-managed metadata.
 Object planning observes `options.signal` between files and after metadata reads
 settle. These reservations do not represent a total runtime heap limit.
+
+When `cache` is enabled, the default planning cache shares the lake's memory pool
+and inherits `cache.maxBytes` and `cache.ttlMs`. Discovery entries are reclaimable
+under shared-pool pressure; zero capacity disables retention. An explicit
+`planningCache` continues to override the default. No second pool configuration is
+needed for default discovery caching.

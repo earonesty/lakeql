@@ -2209,6 +2209,57 @@ describe("createParquetLake", () => {
     expect(second.stats.cacheMisses).toBe(0);
   });
 
+  it("reclaims default planning cache storage and rediscovers real fixtures under pressure", async () => {
+    const taskStore = countingObjectStore(store);
+    let heads = 0;
+    const head = taskStore.head.bind(taskStore);
+    taskStore.head = async (path) => {
+      heads++;
+      return head(path);
+    };
+    const lake = createParquetLake({ store: taskStore, cache: { maxBytes: 1024 * 1024 } });
+    const run = () => lake.path(`data/${STATS.file}`).where(lt("metric", 0)).count();
+    expect(await run()).toBe(0);
+    expect(lake.memoryPool.usedBytes).toBeGreaterThan(0);
+    taskStore.resetCounters();
+    heads = 0;
+    expect(await run()).toBe(0);
+    expect(heads).toBe(0);
+    const sibling = lake.memoryPool.reserve(lake.memoryPool.maxBytes, "sibling pressure");
+    sibling.release();
+    expect(lake.memoryPool.usedBytes).toBe(0);
+    taskStore.resetCounters();
+    heads = 0;
+    expect(await run()).toBe(0);
+    expect(heads).toBeGreaterThan(0);
+    const cleanup = lake.memoryPool.reserve(lake.memoryPool.maxBytes, "cache cleanup");
+    cleanup.release();
+    expect(lake.memoryPool.usedBytes).toBe(0);
+  });
+
+  it.each([
+    { maxBytes: 0 },
+    { maxBytes: 1024 * 1024, ttlMs: 0 },
+  ])("applies disabled or expired cache configuration to discovery: %j", async (cache) => {
+    const taskStore = countingObjectStore(store);
+    let heads = 0;
+    const head = taskStore.head.bind(taskStore);
+    taskStore.head = async (path) => {
+      heads++;
+      return head(path);
+    };
+    const lake = createParquetLake({ store: taskStore, cache });
+    const run = () => lake.path(`data/${STATS.file}`).where(lt("metric", 0)).count();
+    expect(await run()).toBe(0);
+    taskStore.resetCounters();
+    heads = 0;
+    expect(await run()).toBe(0);
+    expect(heads).toBeGreaterThan(0);
+    const cleanup = lake.memoryPool.reserve(lake.memoryPool.maxBytes, "cache cleanup");
+    cleanup.release();
+    expect(lake.memoryPool.usedBytes).toBe(0);
+  });
+
   it("reuses decoded column batches from the shared cache budget", async () => {
     const lake = createParquetLake({
       store,

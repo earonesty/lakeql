@@ -1,0 +1,27 @@
+{
+  "sourceBase": "573e540",
+  "scope": "Bounded Parquet default planning cache and retained HEAD metadata accounting",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 120,
+    "fullSuite": {
+      "passed": 3659,
+      "skipped": 629,
+      "log": "/tmp/default-planning-cache-full.log"
+    }
+  },
+  "evidence": [
+    "Real Parquet fixture warm discovery reuse without extra configuration",
+    "Sibling allocation reclaims cached discovery and later query rediscovers",
+    "Disabled capacity and immediate expiry affect discovery retention",
+    "HEAD metadata and negative entries receive positive charges",
+    "Exact HEAD capacity succeeds; one byte below does not retain",
+    "Cached native/emulated range hint is preserved"
+  ],
+  "remaining": [
+    "Automatic HTTP shared-pool propagation",
+    "Legacy raw payload entry/key overhead including empty entries",
+    "Broader allocation and runtime acceptance"
+  ]
+}
