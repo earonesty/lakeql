@@ -283,6 +283,31 @@ export class R2ObjectStore implements ObjectStore {
     } while (cursor !== undefined && (options?.limit === undefined || emitted < options.limit));
   }
 
+  async headOwned(path: string, scope: MemoryScope): Promise<OwnedMemory<ObjectHead> | null> {
+    throwIfAborted(scope.signal);
+    const object = await this.bucket.head(path);
+    throwIfAborted(scope.signal);
+    if (object === null) return null;
+    const contentType = object.httpMetadata?.contentType;
+    const charge =
+      c.object +
+      5 * c.property +
+      (object.etag === undefined ? 0 : c.string + object.etag.length * c.stringCodeUnit) +
+      (object.uploaded === undefined ? 0 : c.timestamp) +
+      (contentType === undefined ? 0 : c.string + contentType.length * c.stringCodeUnit);
+    return scope
+      .allocate<ObjectHead>(charge, "R2 object metadata", () => ({
+        size: object.size,
+        rangeReadMode: "native",
+        ...(object.etag === undefined ? {} : { etag: object.etag }),
+        ...(object.uploaded === undefined
+          ? {}
+          : { lastModified: new Date(object.uploaded.getTime()) }),
+        ...(contentType === undefined ? {} : { contentType }),
+      }))
+      .retain();
+  }
+
   async head(path: string): Promise<ObjectHead | null> {
     const object = await this.bucket.head(path);
     if (!object) return null;

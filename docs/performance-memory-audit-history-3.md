@@ -4246,3 +4246,11 @@ Final verification: build/typecheck/formatting passed; full suite 3,699 passed /
 Unit tests verify reference identity for the supplied subarray (no backing copy), content/custom metadata forwarding, exact and one-byte-below admission before binding invocation, and input lifetime after caller-scope disposal during delayed success/failure. All 14 R2 unit tests pass. A new workerd fixture writes a standard-JSON cache entry containing a date, Unicode path, and typed array through the actual R2 binding, checks stored bytes against native JSON.stringify, reads it back through owned cache parsing, and checks cleanup.
 
 Final verification: build/typecheck/formatting passed; all 14 R2 unit tests and 79 workerd tests (22 files) passed. Evidence: `owned-r2-write-2026-11-14.json`.
+
+### R2 owned metadata lifetime (2026-11-14)
+
+Added R2 `headOwned`: retained metadata records, etag/content-type strings, and upload dates are admitted through the caller scope before constructing the result. Dates are cloned so changes to binding-provided metadata cannot mutate the retained result. Owned metadata reports native range support. Pre/post-binding abort checks reject results arriving after disposal; missing objects return null without a result charge. Binding response allocation itself remains external.
+
+The focused R2 metadata/adapter suites pass 14 tests, including exact capacity/one byte below, owner survival after scope disposal, date isolation, zero-budget missing objects, and late-result rejection. The real R2 JSON cache fixture now makes legacy `head` throw before reading, proving that the cache routes metadata through the new owned capability.
+
+Final verification: build/typecheck/formatting passed; 14 focused R2 tests and all 79 workerd tests passed. Evidence: `owned-r2-metadata-2026-11-14.json`.

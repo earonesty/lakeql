@@ -32,3 +32,8 @@ passes the existing view directly to the R2 binding without an adapter payload
 copy. Metadata strings/maps are borrowed from the immutable caller options;
 R2 runtime upload buffering remains outside the adapter's accounting. Owned JSON
 cache writes automatically use this capability.
+
+`headOwned(path, scope)` admits the retained metadata record, strings, and date
+before constructing the result. It clones the upload date, reports native range
+support, and rejects late results after scope disposal. The R2 binding's response
+allocation remains external; callers release the returned owner after use.

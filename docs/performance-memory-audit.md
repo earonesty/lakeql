@@ -21,6 +21,8 @@ Owned cache-write follow-up: [validation](validation/owned-standard-json-cache-w
 Owned HTTP transport follow-up: [validation](validation/owned-http-write-2026-11-14.json). `putOwned` now admits HTTP payload copies and survives URI/cache/control composition. Build/typecheck, 3,699 tests (629 skipped), and 78 Worker tests passed. Native Fetch/request-header allocations and legacy adapters remain external.
 
 Owned R2 transport follow-up: [validation](validation/owned-r2-write-2026-11-14.json). R2 retains the supplied byte owner without adding a payload copy and admits write-option records. Build/typecheck, all 14 R2 unit tests, and 79 Worker tests passed, including a real-binding JSON cache round trip. Native upload buffering remains external.
+
+Owned R2 metadata follow-up: [validation](validation/owned-r2-metadata-2026-11-14.json). Retained metadata and cloned dates are now admitted; late results are rejected. Build/typecheck, 14 focused tests, and 79 Worker tests passed. Binding response allocations remain external.
 Current release checks (source `246b165`):
 `docs/validation/current-cache-ownership-release-gates-2026-11-14.json`.
 

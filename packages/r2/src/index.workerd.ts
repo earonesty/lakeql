@@ -64,6 +64,9 @@ it("writes owned JSON cache entries through a real R2 binding", async () => {
     expect(pool.usedBytes).toBe(2048);
     const stored = await bucket.get("owned-write-cache/key.json");
     expect(new TextDecoder().decode(await stored?.arrayBuffer())).toBe(JSON.stringify({ value }));
+    store.head = async () => {
+      throw new Error("legacy metadata path");
+    };
     const read = await cache.getOwnedEntry("key", pool);
     expect(read?.value).toEqual(JSON.parse(JSON.stringify({ value })));
     read?.release();
