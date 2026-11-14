@@ -125,6 +125,7 @@ export async function aggregateParquetTasks(
   const aggregateOptions = aggregateVectorOptions(options);
   const merged = createVectorAggregateStates(spec, aggregateOptions);
   await fanInWorkUnits({
+    ...(options.memoryBudget === undefined ? {} : { memoryBudget: options.memoryBudget }),
     inputs: taskInputs,
     initial: merged,
     maxConcurrentTasks,
@@ -243,6 +244,7 @@ export async function aggregateParquetGroupTasksBatch(
       : { ...aggregateOptions, maxGroups: options.maxGroups };
   const merged = createVectorGroupByState(groupColumns, spec);
   await fanInWorkUnits({
+    ...(options.memoryBudget === undefined ? {} : { memoryBudget: options.memoryBudget }),
     inputs: taskInputs,
     initial: merged,
     maxConcurrentTasks,

@@ -1,0 +1,37 @@
+{
+  "change": "Shared fan-in accepts an optional allocation budget for scheduler directory and per-task bookkeeping. Task slots are admitted before launch, remain charged through asynchronous boundary/reduction, and release after reduction or drained failure. Window and aggregate Parquet task paths forward caller budgets. Generic undefined inputs/partials are processed instead of hanging or silently disappearing.",
+  "validation": {
+    "typescriptBuild": "passed",
+    "runnerAndCoreParquetTaskTests": 37,
+    "edgeCases": [
+      "exact scheduler peak success and peak minus one rejection",
+      "admission failure drains a blocked sibling while its charge remains live",
+      "undefined input and partial reach reducer",
+      "run, boundary and reducer failures preserve first error and drain siblings"
+    ],
+    "concurrentOwnedWindowFixture": {
+      "testsPassed": 2,
+      "poolsMiB": [64, 128],
+      "jobsPerPool": 4,
+      "rowsPerJob": 256,
+      "payloadCharactersPerRow": 4096,
+      "scanBatchSize": 32,
+      "transport": "memoryStore-backed real Parquet; not remote HTTP or Cloudflare",
+      "assertions": [
+        "all four jobs hold partials concurrently at an async boundary",
+        "pool rejects a competing request above available capacity",
+        "all final window ordinals and representative payload match",
+        "releasing one result lowers reservations while siblings remain charged",
+        "releasing all outputs returns shared reservations to zero",
+        "peak reservations never exceed pool cap"
+      ]
+    }
+  },
+  "limits": [
+    "Scheduler charges are explicit accounting units, not measurements of VM promise or closure heap size.",
+    "Task output and accumulator payloads retain their independent ownership requirements.",
+    "SQL metadata fan-in has no forwarded allocation budget yet.",
+    "Concurrent 64/128 MiB acceptance and production Worker total-memory bounds remain open.",
+    "Aggregate accumulator lifecycle audit: createVectorAggregateStates accepts an optional creation scope only, but Parquet aggregate-task calls do not supply it; update/restore/merge state mainly uses QueryBudget logical limits rather than shared allocation ownership. Scheduler admission does not establish aggregate accumulator bounds."
+  ]
+}

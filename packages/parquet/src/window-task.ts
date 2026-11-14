@@ -123,6 +123,7 @@ export async function windowParquetTasksOwned(
   try {
     const bucketCount = options.bucketCount ?? plannedWindowBucketCount(tasks);
     const partials = await fanInWorkUnits({
+      memoryBudget: scope.budget,
       inputs: tasks,
       initial: inputs.allocate(
         c.array,

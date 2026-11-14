@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MemoryBudget } from "./memory-budget.js";
 import { fanInWorkUnits, jsonWorkUnitBoundary } from "./work-unit.js";
 
 describe("work-unit fan-in executor", () => {
@@ -188,6 +189,91 @@ describe("work-unit fan-in executor", () => {
         reduce() {},
       }),
     ).rejects.toBeUndefined();
+  });
+
+  it("admits scheduler metadata at the exact peak and releases it on rejection", async () => {
+    const execute = (pool: MemoryBudget) =>
+      fanInWorkUnits({
+        inputs: [1, 2, 3],
+        initial: [] as number[],
+        memoryBudget: pool,
+        maxConcurrentTasks: 3,
+        async run(input) {
+          return input;
+        },
+        reduce(out, partial) {
+          out.push(partial);
+        },
+      });
+    const measured = new MemoryBudget(65536);
+    expect(await execute(measured)).toEqual([1, 2, 3]);
+    expect(measured.usedBytes).toBe(0);
+    const exact = new MemoryBudget(measured.peakBytes);
+    expect(await execute(exact)).toEqual([1, 2, 3]);
+    expect(exact.usedBytes).toBe(0);
+    const short = new MemoryBudget(measured.peakBytes - 1);
+    await expect(execute(short)).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+    expect(short.usedBytes).toBe(0);
+  });
+
+  it("keeps admitted siblings charged while draining a scheduler admission failure", async () => {
+    const measured = new MemoryBudget(65536);
+    await fanInWorkUnits({
+      inputs: [1],
+      initial: [],
+      memoryBudget: measured,
+      async run() {
+        return 1;
+      },
+      reduce() {},
+    });
+    const pool = new MemoryBudget(measured.peakBytes);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const started: number[] = [];
+    let settled = false;
+    const pending = fanInWorkUnits({
+      inputs: [1, 2],
+      initial: [],
+      memoryBudget: pool,
+      maxConcurrentTasks: 2,
+      async run(input) {
+        started.push(input);
+        await gate;
+        return input;
+      },
+      reduce() {},
+    });
+    const observed = pending.catch((error: unknown) => {
+      settled = true;
+      return error;
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(started).toEqual([1]);
+    expect(settled).toBe(false);
+    expect(pool.usedBytes).toBe(measured.peakBytes);
+    release();
+    expect(await observed).toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+    expect(pool.usedBytes).toBe(0);
+  });
+
+  it("reduces undefined generic inputs and partials without skipping or hanging", async () => {
+    const pool = new MemoryBudget(65536);
+    const result = await fanInWorkUnits({
+      inputs: [undefined, 1],
+      initial: [] as unknown[],
+      memoryBudget: pool,
+      async run(input) {
+        return input;
+      },
+      reduce(out, partial) {
+        out.push(partial);
+      },
+    });
+    expect(result).toEqual([undefined, 1]);
+    expect(pool.usedBytes).toBe(0);
   });
 
   it("rejects invalid concurrency limits with a typed error", async () => {

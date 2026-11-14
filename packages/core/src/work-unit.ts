@@ -1,8 +1,12 @@
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
+import type { MemoryBudget, MemoryReservation } from "./memory-budget.js";
 
 export interface WorkUnitFanInOptions<Input, Partial, Accumulator> {
   inputs: readonly Input[];
   initial: Accumulator;
+  /** Scheduler metadata only; task and accumulator payloads need their own owners. */
+  memoryBudget?: MemoryBudget;
   maxConcurrentTasks?: number;
   maxBufferedPartials?: number;
   run(input: Input, index: number): Promise<Partial>;
@@ -22,7 +26,11 @@ export async function fanInWorkUnits<Input, Partial, Accumulator>(
   validateMaxConcurrentTasks(maxConcurrentTasks);
   const maxBufferedPartials = options.maxBufferedPartials ?? maxConcurrentTasks;
   validateMaxBufferedPartials(maxBufferedPartials);
-  const partials = new Map<number, Partial>();
+  const directory = options.memoryBudget?.reserve(
+    c.object + 10 * c.property,
+    "work-unit scheduler",
+  );
+  const partials = new Map<number, { value: Partial; slot: MemoryReservation | undefined }>();
   let nextInput = 0;
   let nextReduce = 0;
   let active = 0;
@@ -49,25 +57,31 @@ export async function fanInWorkUnits<Input, Partial, Accumulator>(
     ) {
       const index = nextInput;
       nextInput += 1;
-      const input = options.inputs[index];
-      if (input === undefined) continue;
+      const input = options.inputs[index] as Input;
+      // Admit bookkeeping before invoking user code or constructing its promise.
+      const slot = options.memoryBudget?.reserve(
+        4 * c.object + 8 * c.property,
+        "work-unit pending task",
+      );
       active += 1;
-      void runInput(input, index);
+      void runInput(input, index, slot);
     }
   };
-  const runInput = async (input: Input, index: number) => {
+  const runInput = async (input: Input, index: number, slot: MemoryReservation | undefined) => {
+    let transferred = false;
     try {
       const partial = await options.run(input, index);
-      partials.set(
-        index,
-        options.boundary === undefined ? partial : await options.boundary(partial, input, index),
-      );
+      const value =
+        options.boundary === undefined ? partial : await options.boundary(partial, input, index);
+      partials.set(index, { value, slot });
+      transferred = true;
     } catch (error) {
       if (!failed) {
         failed = true;
         failure = error;
       }
     } finally {
+      if (!transferred) slot?.release();
       active -= 1;
       wake();
     }
@@ -78,11 +92,15 @@ export async function fanInWorkUnits<Input, Partial, Accumulator>(
     while (nextReduce < options.inputs.length) {
       if (failed) throw failure;
       while (!failed && partials.has(nextReduce)) {
-        const input = options.inputs[nextReduce];
+        const input = options.inputs[nextReduce] as Input;
         const partial = partials.get(nextReduce);
         partials.delete(nextReduce);
-        if (input !== undefined && partial !== undefined) {
-          await options.reduce(options.initial, partial, input, nextReduce);
+        try {
+          if (partial !== undefined) {
+            await options.reduce(options.initial, partial.value, input, nextReduce);
+          }
+        } finally {
+          partial?.slot?.release();
         }
         nextReduce += 1;
       }
@@ -103,7 +121,9 @@ export async function fanInWorkUnits<Input, Partial, Accumulator>(
     // that boundary after all started reads and transport callbacks finish.
     stopped = true;
     while (active > 0) await wait();
+    for (const partial of partials.values()) partial.slot?.release();
     partials.clear();
+    directory?.release();
   }
 }
 

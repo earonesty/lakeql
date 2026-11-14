@@ -495,3 +495,77 @@ it.each([
   }
   expect(pool.usedBytes).toBe(0);
 });
+
+it.each([64, 128])("shares a %s MiB pool across concurrent owned window jobs", async (mib) => {
+  const store = memoryStore();
+  const count = 256;
+  await writeParquet(store, "concurrent-owned-window.parquet", {
+    rowGroupSize: [64, 64, 64, 64],
+    columnData: [
+      { name: "key", data: Array.from({ length: count }, (_, index) => index) },
+      {
+        name: "payload",
+        data: Array.from({ length: count }, (_, index) => `${index}:${"x".repeat(4096)}`),
+      },
+    ],
+  });
+  const tasks: TaskInput[] = [
+    {
+      path: "concurrent-owned-window.parquet",
+      rowGroupRanges: [{ start: 0, end: 4 }],
+      projectedColumns: ["key", "payload"],
+      partitionValues: {},
+    },
+  ];
+  const windows = {
+    rn: { fn: "row_number", args: [], over: { partitionBy: [], orderBy: [{ expr: col("key") }] } },
+  } satisfies Record<string, import("lakeql-core").WindowExpr>;
+  const pool = new MemoryBudget(mib * 1024 * 1024);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let arrived!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    arrived = resolve;
+  });
+  let waiting = 0;
+  const jobs = Array.from({ length: 4 }, () =>
+    windowParquetTasksOwned(store, tasks, windows, {
+      memoryBudget: pool,
+      batchSize: 32,
+      async partialBoundary(partial) {
+        if (++waiting === 4) arrived();
+        await gate;
+        return partial;
+      },
+    }),
+  );
+  // A failing job must unblock this barrier so test failures cannot hang peers.
+  const all = Promise.all(jobs);
+  const failure = all.catch((error: unknown) => {
+    release();
+    throw error;
+  });
+  await Promise.race([ready, failure]);
+  expect(pool.usedBytes).toBeGreaterThan(4 * count * 4096);
+  expect(() => pool.reserve(pool.availableBytes + 1, "competing allocation")).toThrow(/budget/i);
+  release();
+  const outputs = await failure;
+  try {
+    for (const output of outputs) {
+      expect(output.value).toHaveLength(count);
+      expect(output.value[255]?.rn).toBe(256);
+      expect(output.value[255]?.payload).toBe(`255:${"x".repeat(4096)}`);
+    }
+    const held = pool.usedBytes;
+    expect(held).toBeGreaterThan(0);
+    outputs[0]?.release();
+    expect(pool.usedBytes).toBeLessThan(held);
+    expect(pool.usedBytes).toBeGreaterThan(0);
+    expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
+  } finally {
+    for (const output of outputs) output.release();
+  }
+  expect(pool.usedBytes).toBe(0);
+});
