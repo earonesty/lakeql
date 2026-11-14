@@ -5376,3 +5376,30 @@ outputs surviving cache eviction (32 unrelated tests filtered out).
 This is lifecycle evidence, not a new performance result or runtime-cap proof.
 Full public window lifecycle and broader scaling remain open. Evidence:
 `validation/window-planning-lifecycle-2026-11-14.json`.
+
+### Confirmed row-directory retention gap (2026-11-14)
+
+The output boundary exposes a shared ownership issue in materialization,
+collection and vector windows. `MaterializationPlan.execute` owns each batch's
+row array together with its payload. `OwnedRowCollector.finish` builds a final
+array but retains those indivisible chunk owners. Vector windows also retain
+per-batch materialized arrays after copying their row references.
+
+A standalone probe holds 1,024 identical numeric rows across 1/4/64 batches.
+Collector retained admission is 163,972 / 180,816 / 188,736 bytes. All 1/4/64
+original arrays remain reachable while output is held; all collect after final
+release. One-chunk collection legitimately returns its input directory. Vector
+window retained admission is 180,420 / 180,816 / 188,736 bytes. All routes release
+to zero, and a second isolated run reproduces every measurement exactly.
+
+This confirms avoidable retained containers rather than a post-release leak.
+The durable fix must separate trusted container-only and payload ownership,
+retain borrowed aliases, preserve siblings without mutation, conservatively pin
+opaque owners, and admit replacement overlap before constructing output. Both
+consumers should share the transfer mechanism. Existing generic selection cannot
+safely discard an array-shaped atomic allocation that also accounts for payload.
+
+No runtime code changed. `bench/row-directory-retention.mjs` is a forced-GC
+reachability diagnostic, not a production memory or throughput benchmark. The
+implementation and local/HTTP/native-R2 validation remain required under F3/F4/M1.
+Evidence: `validation/row-directory-retention-2026-11-14.json`.

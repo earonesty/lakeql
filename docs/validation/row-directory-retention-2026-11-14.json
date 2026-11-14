@@ -1,0 +1,33 @@
+{
+  "runtimeRevision": "ab51e63",
+  "status": "confirmed allocation/retention gap; implementation remains required",
+  "artifact": "docs/benchmarks/row-directory-retention-2026-11-14.json",
+  "reproducibility": "Two isolated --expose-gc runs produce identical values in all six cases.",
+  "mechanism": [
+    "Materialization charges and owns each row array together with all row payload.",
+    "OwnedRowCollector builds a new final array but must retain complete chunk owners.",
+    "Vector-window execution similarly retains materialized per-batch arrays after copying row references into its final directory."
+  ],
+  "requiredContract": [
+    "Separate container-only ownership from payload ownership in trusted internal allocation provenance.",
+    "After constructing a replacement directory, retain every payload and borrowed-buffer pin while releasing only obsolete container storage.",
+    "Do not mutate source arrays: independent sibling owners must retain valid original values and charges.",
+    "Opaque external ownership must remain pinned conservatively; do not infer separability from an array-shaped value.",
+    "Preserve admission before allocation, replacement overlap, exact limits and cleanup on partial construction failure.",
+    "Share the ownership transfer mechanism between collection and vector-window output, rather than introducing route-specific accounting exceptions."
+  ],
+  "requiredValidation": [
+    "Current reachability probe must show obsolete multi-chunk arrays collect while final output remains pinned; one-chunk fast path legitimately returns the original directory.",
+    "Test sibling owners, same-root child budgets, opaque producers, nested payload, borrowed binary backing and failure cleanup.",
+    "Verify source/final directory overlap at exact cap and cap-minus-one.",
+    "Measure allocation and operation-count scaling with batch fragmentation.",
+    "Validate ordinary collection and window routes using local, real HTTP and native R2 fixtures; retain cloud read quality.",
+    "Benchmark the ownership change before accepting it; additional owner bookkeeping can offset savings."
+  ],
+  "boundaries": [
+    "No production code changed and no speedup or fixed memory-cap claim.",
+    "Forced GC is a diagnostic reachability tool only; production cannot rely on it.",
+    "Borrowed fixture construction is excluded; admission units are not measured total heap.",
+    "This remains open under F3/F4/M1 and does not close broader runtime acceptance."
+  ]
+}

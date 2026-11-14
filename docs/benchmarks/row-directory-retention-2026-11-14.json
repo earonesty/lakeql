@@ -1,0 +1,60 @@
+{
+  "node": "v24.18.1",
+  "scope": "Local output-ownership diagnostic on identical numeric rows at different batch fragmentation. Borrowed input construction excluded. Forced GC tests reachability only, not production reclamation or total-runtime caps. Collector source directories are weakly observed while final output is pinned and after release; one-chunk collection returns the original directory legitimately. Vector-window values and admission are measured without a reachability claim. No wall-clock performance claim.",
+  "cases": [
+    {
+      "route": "collector",
+      "chunks": 1,
+      "totalRows": 1024,
+      "retainedDirectories": 1,
+      "afterReleaseDirectories": 0,
+      "retainedBytes": 163972,
+      "peakBytes": 164164,
+      "finalBytes": 0
+    },
+    {
+      "route": "collector",
+      "chunks": 4,
+      "totalRows": 1024,
+      "retainedDirectories": 4,
+      "afterReleaseDirectories": 0,
+      "retainedBytes": 180816,
+      "peakBytes": 181584,
+      "finalBytes": 0
+    },
+    {
+      "route": "collector",
+      "chunks": 64,
+      "totalRows": 1024,
+      "retainedDirectories": 64,
+      "afterReleaseDirectories": 0,
+      "retainedBytes": 188736,
+      "peakBytes": 201024,
+      "finalBytes": 0
+    },
+    {
+      "route": "vector-window",
+      "chunks": 1,
+      "totalRows": 1024,
+      "retainedBytes": 180420,
+      "peakBytes": 524724,
+      "finalBytes": 0
+    },
+    {
+      "route": "vector-window",
+      "chunks": 4,
+      "totalRows": 1024,
+      "retainedBytes": 180816,
+      "peakBytes": 525120,
+      "finalBytes": 0
+    },
+    {
+      "route": "vector-window",
+      "chunks": 64,
+      "totalRows": 1024,
+      "retainedBytes": 188736,
+      "peakBytes": 533040,
+      "finalBytes": 0
+    }
+  ]
+}
