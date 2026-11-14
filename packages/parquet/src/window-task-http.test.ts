@@ -12,10 +12,11 @@ it.each(
     { ignoreRange: false, mib: 128 },
     { ignoreRange: true, mib: 128 },
   ].flatMap((config) => [
-    { ...config, mixed: false },
-    { ...config, mixed: true },
+    { ...config, mixed: false, pressure: false },
+    { ...config, mixed: true, pressure: false },
+    { ...config, mixed: true, pressure: true },
   ]),
-)("owns concurrent tasks over HTTP: %j", async ({ ignoreRange, mib, mixed }) => {
+)("owns concurrent tasks over HTTP: %j", async ({ ignoreRange, mib, mixed, pressure }) => {
   const records = Array.from({ length: 256 }, (_, id) => ({
     id,
     region: id % 4,
@@ -62,6 +63,9 @@ it.each(
   });
   const pool = new MemoryBudget(mib * 1024 * 1024);
   const cache = new SharedMemoryCache({ maxBytes: 4 * 1024 * 1024, memoryBudget: pool });
+  const competing = pressure
+    ? pool.reserve(pool.maxBytes - 8 * 1024 * 1024, "retained competing job")
+    : undefined;
   try {
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("Missing listener");
@@ -147,6 +151,7 @@ it.each(
     expect(peak).toBeLessThanOrEqual(2);
   } finally {
     cache.deleteWhere(() => true);
+    competing?.release();
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
