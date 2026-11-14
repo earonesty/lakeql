@@ -1,0 +1,356 @@
+{
+  "baseline": "93eceab",
+  "runtimeChanged": false,
+  "method": "Four rounds per native workerd capacity/concurrency scenario; allocation sampling includes collected objects. Diagnostic GC only after all measured rounds and cache eviction.",
+  "scope": "Allocation samples are estimates of volume, not exact live bytes or peaks. Profile overhead changes behavior. Counter categories are not summed. This does not establish production Cloudflare total-memory caps.",
+  "raw": "docs/benchmarks/incremental-collector-allocation-profile-2026-11-14.json",
+  "cases": [
+    {
+      "poolMiB": 64,
+      "jobs": 1,
+      "status": "complete",
+      "afterEviction": {
+        "atMs": 1152.613529,
+        "usedSize": 15133384,
+        "totalSize": 44675072,
+        "embedderHeapUsedSize": 91752,
+        "backingStorageSize": 10761148
+      },
+      "diagnosticGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 1161.557444,
+          "usedSize": 5093692,
+          "totalSize": 6520832,
+          "embedderHeapUsedSize": 1304,
+          "backingStorageSize": 366064
+        }
+      },
+      "finalAdmittedBytes": 0,
+      "leadingAllocationSites": [
+        {
+          "source": "packages/core/dist/batch.js",
+          "function": "vectorValue",
+          "caller": "materializeSelectedBatchRows",
+          "estimatedBytesAcrossRounds": 35764868
+        },
+        {
+          "source": "packages/core/dist/batch.js",
+          "function": "materializeSelectedBatchRows",
+          "caller": "",
+          "estimatedBytesAcrossRounds": 7248556
+        },
+        {
+          "source": null,
+          "function": "subarray",
+          "caller": "packedByteValue",
+          "estimatedBytesAcrossRounds": 6922004
+        },
+        {
+          "source": null,
+          "function": "subarray",
+          "caller": "vectorValue",
+          "estimatedBytesAcrossRounds": 3346204
+        },
+        {
+          "source": null,
+          "function": "next",
+          "caller": "",
+          "estimatedBytesAcrossRounds": 2786160
+        },
+        {
+          "source": "packages/core/dist/utf8-fingerprint.js",
+          "function": "fnv1a64Utf8",
+          "caller": "fingerprintText",
+          "estimatedBytesAcrossRounds": 2261680
+        },
+        {
+          "source": "packages/core/dist/query.js",
+          "function": "enforceBudget",
+          "caller": "columnarProjectedOutputs",
+          "estimatedBytesAcrossRounds": 1704252
+        },
+        {
+          "source": null,
+          "function": "push",
+          "caller": "materializeSelectedBatchRows",
+          "estimatedBytesAcrossRounds": 1673340
+        },
+        {
+          "source": "packages/core/dist/owned-row-collector.js",
+          "function": "appendInput",
+          "caller": "append",
+          "estimatedBytesAcrossRounds": 1484544
+        },
+        {
+          "source": "packages/core/dist/memory-scope.js",
+          "function": "trackOwner",
+          "caller": "allocateWithReservation",
+          "estimatedBytesAcrossRounds": 1182372
+        }
+      ]
+    },
+    {
+      "poolMiB": 64,
+      "jobs": 4,
+      "status": "complete",
+      "afterEviction": {
+        "atMs": 2432.090998,
+        "usedSize": 43880008,
+        "totalSize": 115216384,
+        "embedderHeapUsedSize": 77944,
+        "backingStorageSize": 14850994
+      },
+      "diagnosticGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 2449.817876,
+          "usedSize": 5415804,
+          "totalSize": 6258688,
+          "embedderHeapUsedSize": 1304,
+          "backingStorageSize": 366064
+        }
+      },
+      "finalAdmittedBytes": 0,
+      "leadingAllocationSites": [
+        {
+          "source": "packages/core/dist/batch.js",
+          "function": "vectorValue",
+          "caller": "materializeSelectedBatchRows",
+          "estimatedBytesAcrossRounds": 127071884
+        },
+        {
+          "source": null,
+          "function": "subarray",
+          "caller": "vectorValue",
+          "estimatedBytesAcrossRounds": 29886316
+        },
+        {
+          "source": "packages/core/dist/batch.js",
+          "function": "materializeSelectedBatchRows",
+          "caller": "",
+          "estimatedBytesAcrossRounds": 16226740
+        },
+        {
+          "source": null,
+          "function": "push",
+          "caller": "materializeSelectedBatchRows",
+          "estimatedBytesAcrossRounds": 6831096
+        },
+        {
+          "source": "packages/core/dist/owned-row-collector.js",
+          "function": "appendInput",
+          "caller": "append",
+          "estimatedBytesAcrossRounds": 6612312
+        },
+        {
+          "source": null,
+          "function": "subarray",
+          "caller": "packedByteValue",
+          "estimatedBytesAcrossRounds": 5708284
+        },
+        {
+          "source": "packages/core/dist/query.js",
+          "function": "enforceBudget",
+          "caller": "columnarProjectedOutputs",
+          "estimatedBytesAcrossRounds": 5703300
+        },
+        {
+          "source": null,
+          "function": "next",
+          "caller": "",
+          "estimatedBytesAcrossRounds": 5637820
+        },
+        {
+          "source": "packages/core/dist/memory-scope.js",
+          "function": "trackOwner",
+          "caller": "adopt",
+          "estimatedBytesAcrossRounds": 4501024
+        },
+        {
+          "source": "packages/core/dist/memory-scope.js",
+          "function": "trackOwner",
+          "caller": "allocateWithReservation",
+          "estimatedBytesAcrossRounds": 3878824
+        }
+      ]
+    },
+    {
+      "poolMiB": 128,
+      "jobs": 1,
+      "status": "complete",
+      "afterEviction": {
+        "atMs": 3113.816653,
+        "usedSize": 15134136,
+        "totalSize": 44937216,
+        "embedderHeapUsedSize": 91752,
+        "backingStorageSize": 10761148
+      },
+      "diagnosticGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 3122.725854,
+          "usedSize": 5093516,
+          "totalSize": 6520832,
+          "embedderHeapUsedSize": 1304,
+          "backingStorageSize": 366064
+        }
+      },
+      "finalAdmittedBytes": 0,
+      "leadingAllocationSites": [
+        {
+          "source": "packages/core/dist/batch.js",
+          "function": "vectorValue",
+          "caller": "materializeSelectedBatchRows",
+          "estimatedBytesAcrossRounds": 34218508
+        },
+        {
+          "source": null,
+          "function": "subarray",
+          "caller": "packedByteValue",
+          "estimatedBytesAcrossRounds": 6954988
+        },
+        {
+          "source": "packages/core/dist/batch.js",
+          "function": "materializeSelectedBatchRows",
+          "caller": "",
+          "estimatedBytesAcrossRounds": 5576284
+        },
+        {
+          "source": null,
+          "function": "subarray",
+          "caller": "vectorValue",
+          "estimatedBytesAcrossRounds": 2722852
+        },
+        {
+          "source": null,
+          "function": "next",
+          "caller": "",
+          "estimatedBytesAcrossRounds": 2491420
+        },
+        {
+          "source": "packages/core/dist/utf8-fingerprint.js",
+          "function": "fnv1a64Utf8",
+          "caller": "fingerprintText",
+          "estimatedBytesAcrossRounds": 2032200
+        },
+        {
+          "source": "packages/core/dist/query.js",
+          "function": "enforceBudget",
+          "caller": "columnarProjectedOutputs",
+          "estimatedBytesAcrossRounds": 1802580
+        },
+        {
+          "source": null,
+          "function": "push",
+          "caller": "materializeSelectedBatchRows",
+          "estimatedBytesAcrossRounds": 1756644
+        },
+        {
+          "source": "packages/core/dist/owned-row-collector.js",
+          "function": "appendInput",
+          "caller": "append",
+          "estimatedBytesAcrossRounds": 1548776
+        },
+        {
+          "source": "packages/core/dist/memory-budget.js",
+          "function": "pin",
+          "caller": "reserve",
+          "estimatedBytesAcrossRounds": 852444
+        }
+      ]
+    },
+    {
+      "poolMiB": 128,
+      "jobs": 4,
+      "status": "complete",
+      "afterEviction": {
+        "atMs": 4168.367899,
+        "usedSize": 45226352,
+        "totalSize": 140001280,
+        "embedderHeapUsedSize": 89472,
+        "backingStorageSize": 1091478
+      },
+      "diagnosticGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 4187.20471,
+          "usedSize": 5376504,
+          "totalSize": 6782976,
+          "embedderHeapUsedSize": 1304,
+          "backingStorageSize": 366064
+        }
+      },
+      "finalAdmittedBytes": 0,
+      "leadingAllocationSites": [
+        {
+          "source": "packages/core/dist/batch.js",
+          "function": "vectorValue",
+          "caller": "materializeSelectedBatchRows",
+          "estimatedBytesAcrossRounds": 139538220
+        },
+        {
+          "source": null,
+          "function": "subarray",
+          "caller": "vectorValue",
+          "estimatedBytesAcrossRounds": 29951828
+        },
+        {
+          "source": "packages/core/dist/batch.js",
+          "function": "materializeSelectedBatchRows",
+          "caller": "",
+          "estimatedBytesAcrossRounds": 17801788
+        },
+        {
+          "source": null,
+          "function": "subarray",
+          "caller": "packedByteValue",
+          "estimatedBytesAcrossRounds": 9940268
+        },
+        {
+          "source": null,
+          "function": "next",
+          "caller": "",
+          "estimatedBytesAcrossRounds": 7833940
+        },
+        {
+          "source": null,
+          "function": "push",
+          "caller": "materializeSelectedBatchRows",
+          "estimatedBytesAcrossRounds": 7753976
+        },
+        {
+          "source": "packages/core/dist/owned-row-collector.js",
+          "function": "appendInput",
+          "caller": "append",
+          "estimatedBytesAcrossRounds": 6374168
+        },
+        {
+          "source": "packages/core/dist/query.js",
+          "function": "enforceBudget",
+          "caller": "columnarProjectedOutputs",
+          "estimatedBytesAcrossRounds": 6164448
+        },
+        {
+          "source": "packages/core/dist/memory-scope.js",
+          "function": "trackOwner",
+          "caller": "allocateWithReservation",
+          "estimatedBytesAcrossRounds": 5061296
+        },
+        {
+          "source": "packages/core/dist/memory-scope.js",
+          "function": "trackOwner",
+          "caller": "adopt",
+          "estimatedBytesAcrossRounds": 4437060
+        }
+      ]
+    }
+  ],
+  "findings": [
+    "String decoding during row materialization dominates sampled allocation volume in every scenario.",
+    "Temporary typed-array subviews are another leading allocation site; both packedByteValue and vectorValue callers appear.",
+    "After release/eviction and diagnostic GC, all scenarios return to approximately 5.1\u20135.4 MB managed heap and 366064 backing-storage bytes; tracked allocations are zero.",
+    "The remaining runtime gap includes pending reclamation; production cannot force GC. These samples do not rule out leaks on other operators or lifetimes."
+  ],
+  "nextInvestigation": "Measure bounded decode/materialization reuse and avoidable view creation, preserving UTF-8 replacement/BOM semantics, binary alias ownership, sparse selection traversal and admission before allocation. Do not introduce an unbounded decoded-string cache or silently reinterpret allocation-pool limits as total heap limits."
+}
