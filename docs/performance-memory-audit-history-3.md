@@ -4488,3 +4488,12 @@ Added an experimental benchmark using the same owned top-k operator over either 
 Cached keys have lower observed medians in eleven of twelve cases. For 10,000 rows and top-3, direct/cached medians are 2.396/1.233 ms at width 16, 2.577/1.821 ms at width 128, and 4.463/5.190 ms at width 1024. The memory tradeoff is substantial: cache incremental tracked peaks are approximately 1.1/3.4/21.3 MB by width, while direct reads use roughly 1–5 KB. Top-100 can benefit more from decoded reuse, but sequential short kernel timings are not a production performance guarantee.
 
 No production policy changed. These measurements support investigating a bounded headroom/workload-aware choice, not unconditional whole-batch caching. Nulls, dictionary encodings, multiple keys, reuse across jobs, concurrency and Worker-native costs remain unmeasured here. Evidence: `docs/validation/top-k-key-cache-2026-11-14.json`, with raw samples and harness hash in `docs/benchmarks/top-k-key-cache-2026-11-14.json`. Runtime source `a8ba6db`; benchmark assertions and formatting passed.
+
+
+### F5 nullable decoded-key cache tradeoff matrix (2026-11-14)
+
+Extended the experimental key-cache benchmark to no-null, nulls-first and nulls-last cases with every seventh row null, yielding 36 scenarios/two variants. Expected results come from an independent nullable string sort; top-100 on 100 rows also verifies null outputs. Cached construction skips null payload decoding and explicitly admits/copies validity storage. Every iteration verifies exact values and zero final reservations.
+
+Cached medians were lower in 35/36 scenarios in this run; 10,000-row, 1024-byte, nulls-first top-3 was slightly slower (2.793 versus 2.642 ms). The earlier non-null wide top-3 result reversed in this run, demonstrating that these sequential microbenchmarks cannot select a stable production threshold. Memory conclusions are more deterministic: nullable wide caches retain roughly 18.3 MB versus about 5 KB of direct workspace. No production default changed. Dictionary/multiple-key/Unicode payload/reuse/concurrency evidence remains open.
+
+Evidence: `docs/validation/top-k-key-cache-nullable-2026-11-14.json` and raw `docs/benchmarks/top-k-key-cache-nullable-2026-11-14.json`, including the executed harness hash. Runtime source remains `a8ba6db`; all benchmark assertions and formatting pass.
