@@ -136,15 +136,16 @@ describe.runIf(await dawnAdapterAvailable())("WebGpuPhysicalBackend with Dawn", 
   });
 
   it("admits selection backing and transfers only its mask", async () => {
+    const local = new WebGpuPhysicalBackend(() => runtime, { maxPipelineCacheEntries: 0 });
     const batch = batchFromVectors({ value: { type: "u32", values: Uint32Array.of(1, 2, 3, 4) } });
     const target = fragment(batch, gt("value", 2));
-    const compiled = await backend.compile(target);
+    const compiled = await local.compile(target);
     const run = async (capacity: number, preadmit = false) => {
       const pool = new MemoryBudget(capacity);
       const scope = new MemoryScope(pool);
       if (preadmit) scope.admit(capacity, "selection stage");
       try {
-        const result = await backend.execute(
+        const result = await local.execute(
           compiled,
           { kind: "batch", batch },
           { allocationScope: scope },
@@ -157,11 +158,43 @@ describe.runIf(await dawnAdapterAvailable())("WebGpuPhysicalBackend with Dawn", 
         expect(pool.usedBytes).toBe(0);
       }
     };
-    const peak = await run(65536);
-    expect(peak).toBe(100);
-    expect(await run(peak)).toBe(peak);
-    expect(await run(peak, true)).toBe(peak);
-    await expect(run(peak - 1)).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+    try {
+      const peak = await run(65536);
+      expect(peak).toBe(100);
+      expect(await run(peak)).toBe(peak);
+      expect(await run(peak, true)).toBe(peak);
+      await expect(run(peak - 1)).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+    } finally {
+      local.close();
+    }
+  });
+
+  it("reclaims real scoped pipeline metadata for sibling work", async () => {
+    const local = new WebGpuPhysicalBackend(() => runtime);
+    const pool = new MemoryBudget(65536);
+    const job = pool.child(65536);
+    const scope = new MemoryScope(job);
+    try {
+      const batch = batchFromVectors({ value: { type: "u32", values: Uint32Array.of(1, 2) } });
+      const target = fragment(batch, gt("value", 1));
+      await local.execute(
+        await local.compile(target),
+        { kind: "batch", batch },
+        { allocationScope: scope },
+      );
+      expect(job.usedBytes).toBe(2);
+      expect(pool.usedBytes).toBeGreaterThan(2);
+      scope.dispose();
+      expect(job.usedBytes).toBe(0);
+      expect(pool.usedBytes).toBeGreaterThan(0);
+      const sibling = pool.child(65536).reserve(65536, "sibling work");
+      expect(local.assess(target, {}).compiledResident).toBe(false);
+      sibling.release();
+      expect(pool.usedBytes).toBe(0);
+    } finally {
+      scope.dispose();
+      local.close();
+    }
   });
 
   it("evicts and recompiles real pipelines without changing selection", async () => {
@@ -522,9 +555,10 @@ it("pins selection backing until pending device work settles after scope disposa
     const work = backend.execute(compiled, { kind: "batch", batch }, { allocationScope: scope });
     const rejected = expect(work).rejects.toThrow();
     await ready;
-    expect(pool.usedBytes).toBe(100);
+    const held = pool.usedBytes;
+    expect(held).toBeGreaterThan(100);
     scope.dispose();
-    expect(pool.usedBytes).toBe(100);
+    expect(pool.usedBytes).toBe(held);
     expect(destroyed).toEqual([]);
     settle();
     await rejected;

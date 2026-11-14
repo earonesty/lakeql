@@ -1,3 +1,4 @@
+import { MemoryBudget } from "lakeql";
 import { expect, it } from "vitest";
 import { PipelineCache } from "./pipeline-cache.js";
 
@@ -72,4 +73,74 @@ it.each([
 ])("rejects invalid limits (%s)", (value) => {
   expect(() => new PipelineCache(value, 1024)).toThrow();
   expect(() => new PipelineCache(1, value)).toThrow();
+});
+
+it("charges the shared pool, reclaims entries for sibling jobs and detaches on clear", () => {
+  const pool = new MemoryBudget(1024);
+  const job = pool.child(512);
+  const cache = new PipelineCache<number>(2, 1024);
+  const value = Promise.resolve(1);
+  cache.set("a", "b", value, job);
+  expect(job.usedBytes).toBe(0);
+  expect(pool.usedBytes).toBe(388);
+  expect(cache.get("a", job)).toBe(value);
+  expect(cache.get("a", new MemoryBudget(1024))).toBeUndefined();
+  const sibling = pool.child(1024).reserve(1024, "sibling work");
+  expect(cache.has("a")).toBe(false);
+  expect(pool.usedBytes).toBe(1024);
+  sibling.release();
+  cache.set("a", "b", value, job);
+  cache.clear();
+  expect(pool.usedBytes).toBe(0);
+  const all = pool.reserve(1024, "after cache clear");
+  all.release();
+});
+
+it("declines optional retention when pinned work consumes the pool", () => {
+  const pool = new MemoryBudget(388);
+  const pinned = pool.reserve(1, "work");
+  const cache = new PipelineCache<number>(2, 1024);
+  cache.set("a", "b", Promise.resolve(1), pool);
+  expect(cache.has("a")).toBe(false);
+  expect(pool.usedBytes).toBe(1);
+  pinned.release();
+});
+
+it("releases shared charges on replacement and compilation failure", async () => {
+  const pool = new MemoryBudget(1024);
+  const cache = new PipelineCache<number>(2, 1024);
+  cache.set("a", "b", Promise.resolve(1), pool);
+  cache.set("a", "b", Promise.reject(new Error("failed")), pool);
+  expect(pool.usedBytes).toBe(388);
+  await Promise.resolve();
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("keeps evicted in-flight metadata charged until its pin releases", () => {
+  const pool = new MemoryBudget(1024);
+  const job = pool.child(1024);
+  const cache = new PipelineCache<number>(2, 1024);
+  cache.set("a", "b", Promise.resolve(1), job);
+  const pin = cache.pin("a", job);
+  expect(job.usedBytes).toBe(388);
+  cache.clear();
+  expect(pool.usedBytes).toBe(388);
+  expect(cache.has("a")).toBe(false);
+  pin?.release();
+  expect(pool.usedBytes).toBe(0);
+  expect(job.usedBytes).toBe(0);
+});
+
+it("reclaims the least recently used entry in the requesting pool", () => {
+  const pool = new MemoryBudget(1024);
+  const cache = new PipelineCache<number>(3, 2048);
+  cache.set("a", "b", Promise.resolve(1), pool);
+  cache.set("c", "d", Promise.resolve(2), pool);
+  cache.get("a", pool);
+  const work = pool.reserve(300, "pressure");
+  expect(cache.has("a")).toBe(true);
+  expect(cache.has("c")).toBe(false);
+  work.release();
+  cache.clear();
+  expect(pool.usedBytes).toBe(0);
 });

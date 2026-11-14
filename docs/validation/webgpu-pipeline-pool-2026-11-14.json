@@ -1,0 +1,33 @@
+{
+  "date": "2026-11-14",
+  "requirements": [
+    "M1",
+    "M2"
+  ],
+  "changes": [
+    "Scoped selection pipeline cache entries reserve modeled metadata from the caller shared root pool, rather than retaining a completed child query budget.",
+    "Memory pressure reclaims least-recently-used entries in the requesting pool; optional retention is declined when pinned work leaves insufficient room.",
+    "Compilation pins cached metadata in the active query budget until its promise settles; clearing or evicting an entry does not release a live pin.",
+    "Cache hits from a different root pool are not reused as if already charged; replacement, failure and close release reservations and detach reclaimers."
+  ],
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "targeted_tests": 45,
+    "coverage": [
+      "Shared root charge, child cleanup, sibling eviction, recency under pressure, insufficient optional capacity, foreign-pool miss and failure/replacement cleanup.",
+      "Evicted in-flight metadata remains charged until its pin releases.",
+      "Real Dawn scoped selection retains only result mask in query budget, retains cache metadata in root pool, then releases cache metadata for sibling work."
+    ],
+    "full_default_suite": {
+      "passed": 3515,
+      "skipped": 629
+    }
+  },
+  "remaining": [
+    "Selection descriptor/runtime metadata and uncached compilation workspace admission remain incomplete.",
+    "Planner scoped WebGPU selection remains disabled until the complete allocation contract is supported.",
+    "Cached metadata is pinned through compilation; lifetime accounting for runtime pipeline descriptors through dispatch still needs completion.",
+    "No driver-memory or whole-runtime cap is inferred from modeled metadata charges."
+  ]
+}

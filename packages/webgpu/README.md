@@ -54,8 +54,11 @@ Compiled pipeline reuse is bounded by two backend options:
 used entries; an oversized pipeline executes without being retained. Setting
 either limit to zero disables retention. Device invalidation and `close()`
 clear the cache. These limits bound retained references and modeled metadata,
-not opaque GPU-driver compiled-code memory, and are separate from query memory
-reservations.
+not opaque GPU-driver compiled-code memory. For allocation-scoped selection,
+retained cache metadata also charges the query's shared root memory pool and can
+be reclaimed for sibling work. Active compilation pins that charge to the query
+until compilation settles. Calls without an allocation scope use the cache's
+configured limits without joining a query pool.
 
 Repeated vector queries can keep an immutable candidate block on the device.
 The cache has an explicit byte capacity, uses reference-counted leases and LRU

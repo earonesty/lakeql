@@ -10,6 +10,7 @@ import {
   estimateBatchBytes,
   getOrCreateVectorGroupByValues,
   LakeqlError,
+  type MemoryBudget,
   MemoryScope,
   mergePhysicalScoredCandidates,
   PhysicalBackendExecutionError,
@@ -715,7 +716,12 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
 
             entries.push({ binding: predicate.outputBinding, resource: { buffer: output } });
 
-            const pipeline = await this.#pipeline(lease.device, lease.generation, predicate);
+            const pipeline = await this.#pipeline(
+              lease.device,
+              lease.generation,
+              predicate,
+              context.allocationScope?.budget,
+            );
             throwIfAborted(signal);
             const bindGroup = lease.device.createBindGroup({
               layout: pipeline.getBindGroupLayout(0),
@@ -1371,9 +1377,10 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
     device: GPUDevice,
     generation: number,
     predicate: WebGpuKernel,
+    pool?: MemoryBudget,
   ): Promise<GPUComputePipeline> {
     const key = this.#pipelineKey(predicate, generation);
-    let pipeline = this.#pipelines.get(key);
+    let pipeline = this.#pipelines.get(key, pool);
     if (pipeline === undefined) {
       pipeline = device.createComputePipelineAsync({
         label: `lakeql:${predicate.kind}`,
@@ -1386,9 +1393,14 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
           entryPoint: "main",
         },
       });
-      this.#pipelines.set(key, predicate.wgsl, pipeline);
+      this.#pipelines.set(key, predicate.wgsl, pipeline, pool);
     }
-    return pipeline;
+    const pin = pool === undefined ? undefined : this.#pipelines.pin(key, pool);
+    try {
+      return await pipeline;
+    } finally {
+      pin?.release();
+    }
   }
 
   #pipelineKey(predicate: WebGpuKernel, generation = this.#devices.generation): string {
