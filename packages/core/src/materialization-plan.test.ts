@@ -195,3 +195,28 @@ it("plans one packed row independently of batch size and validates its index", a
   }
   expect(tight.budget.usedBytes).toBe(0);
 });
+
+it("admits planner traversal frames and releases them on success and failure", () => {
+  const batch = batchFromColumns({ value: [1, 2] });
+  const pool = new MemoryBudget(4096);
+  const scope = new MemoryScope(pool);
+  const plan = planBatchMaterialization(batch, undefined, scope);
+  expect(plan.rows).toBe(2);
+  expect(pool.peakBytes).toBeGreaterThan(0);
+  expect(pool.usedBytes).toBe(0);
+  const tight = new MemoryScope(new MemoryBudget(pool.peakBytes - 1));
+  expect(() => planBatchMaterialization(batch, undefined, tight)).toThrow(/budget/);
+  expect(tight.budget.usedBytes).toBe(0);
+  const vector = {
+    type: "dict" as const,
+    indices: Uint32Array.of(0),
+    dictionary: batch.columns.value ?? { type: "null" as const, length: 1 },
+  };
+  vector.dictionary = vector;
+  expect(() =>
+    planBatchMaterialization({ rowCount: 1, columns: { cycle: vector } }, undefined, scope),
+  ).toThrow(/Cyclic/);
+  expect(pool.usedBytes).toBe(0);
+  tight.dispose();
+  scope.dispose();
+});

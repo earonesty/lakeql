@@ -113,7 +113,7 @@ export async function* scanParquetTaskColumnBatches(
                 "task residual selection",
                 () => new Uint8Array(augmented.rowCount),
               ).value;
-              const batchPlan = planBatchMaterialization(augmented);
+              const batchPlan = planBatchMaterialization(augmented, undefined, output);
               // Use the cheaper batch traversal only when it leaves equal headroom
               // for concurrent work; otherwise keep scalar workspace to one row.
               const useBatch = batchPlan.allocationBytes <= output.budget.availableBytes / 2;
@@ -125,7 +125,7 @@ export async function* scanParquetTaskColumnBatches(
                 const scratch = output.childScope();
                 try {
                   const rows = (
-                    useBatch ? batchPlan : planBatchRowMaterialization(augmented, index)
+                    useBatch ? batchPlan : planBatchRowMaterialization(augmented, index, scratch)
                   ).execute(scratch);
                   try {
                     for (let offset = 0; offset < rows.value.length; offset += 1) {

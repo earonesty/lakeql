@@ -44,9 +44,11 @@ export async function applyWindowsToVectorBatches(
       ).value;
       let position = 0;
       for (const input of inputs) {
-        const materialized = planBatchMaterialization(input.batch, input.selection).execute(
+        const materialized = planBatchMaterialization(
+          input.batch,
+          input.selection,
           resultScope,
-        );
+        ).execute(resultScope);
         for (const row of materialized.value) {
           const entry = entries[position] as VectorWindowEntry;
           entry.row = row;

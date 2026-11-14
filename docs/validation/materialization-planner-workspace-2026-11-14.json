@@ -1,0 +1,29 @@
+{
+  "date": "2026-11-14",
+  "changes": [
+    "Materialization planners accept an optional scope and admit traversal directories and active recursion entries.",
+    "Traversal reservations release on normal completion, capacity rejection, malformed shape and cyclic vector errors.",
+    "Owned batch/row materialization builds its plan inside the owner scope; window-vector and task fallback callers pass their existing scopes.",
+    "Preserve standalone planning without a supplied budget for compatibility."
+  ],
+  "validation": {
+    "targeted_tests": 39,
+    "build": "passed",
+    "edge_cases": [
+      "planner capacity minus one rejects before output",
+      "cycle detection releases active frames",
+      "normal traversal leaves no live scratch reservations"
+    ],
+    "typecheck": "passed",
+    "full_default_suite": {
+      "passed": 3399,
+      "skipped": 629
+    },
+    "format": "passed"
+  },
+  "remaining": [
+    "Standalone calls without a scope have no planning admission guarantee.",
+    "Planner result records, JS call-stack overhead and runtime container capacity are not an exact heap accounting model.",
+    "Complete allocation coverage, current release gates and mixed-job resource validation remain open."
+  ]
+}
