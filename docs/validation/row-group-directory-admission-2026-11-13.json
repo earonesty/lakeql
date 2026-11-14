@@ -1,0 +1,23 @@
+{
+  "status": "Implemented; build, default and Worker validation passed",
+  "change": "Legacy aggregate group directories, retained serialized keys and group/state metadata are admitted before insertion for fresh and restored groups. Per-row key arrays and shared stable key formatting use a temporary child scope. New group keys are detached into owned rows before scanner reuse. Initial key records and alias/state directories are admitted before construction; state metadata uses conservative fixed charges separate from retained payload accounting.",
+  "validation": {
+    "build": "passed",
+    "focusedTestsPassed": 106,
+    "cases": [
+      "16384-byte cap stops high-cardinality grouping before all 1000 rows are scanned; final pool usage zero",
+      "Scanner reuses one byte buffer across keys 1,2,1; retained result keys remain 1,2 with counts 2,1",
+      "Existing grouping limits, restore and aggregate parity tests",
+      "Serialized-size metric test explicitly separates allocation allowance from maxMemoryBytes"
+    ],
+    "defaultTestsPassed": 3072,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61
+  },
+  "remaining": [
+    "Fixed scalar aggregate states can still retain string/value payloads without replacement accounting.",
+    "Outer group snapshots, result projection, request compatibility formatting and bookkeeping temporaries remain outside admission.",
+    "Restored group keys borrow the admitted source tree, which remains live through query completion.",
+    "Metadata charges are conservative reservation units; no new throughput or total-heap claim."
+  ]
+}

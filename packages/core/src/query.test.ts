@@ -3128,7 +3128,12 @@ describe("Lake query runtime", () => {
     ).rejects.toMatchObject({ code: "LAKEQL_GROUP_LIMIT_EXCEEDED" });
 
     await expect(
-      (await makeLake({ rowsByPath, budget: { maxMemoryBytes: 1 } })).lake
+      (
+        await makeLake({
+          rowsByPath,
+          budget: { maxMemoryBytes: 1, maxAllocatedMemoryBytes: 65536 },
+        })
+      ).lake
         .path("table")
         .groupBy(["region"])
         .aggregate({ rows: { op: "count" } }),

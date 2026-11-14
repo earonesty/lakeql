@@ -171,3 +171,59 @@ it("does not grow retained mode storage for repeated escaped Unicode keys", asyn
   expect(new Set(observations).size).toBe(1);
   expect(pool.usedBytes).toBe(0);
 });
+
+it("bounds high-cardinality group directories before scanning all rows", async () => {
+  const pool = new MemoryBudget(16384);
+  const store = memoryStore();
+  await store.put("table", new Uint8Array(1));
+  let scanned = 0;
+  const lake = new Lake({
+    store,
+    memoryPool: pool,
+    scanner: {
+      async *scan() {
+        for (let key = 0; key < 1000; key++) {
+          scanned++;
+          yield [{ key }];
+        }
+      },
+    },
+  });
+  await expect(
+    lake
+      .path("table")
+      .run()
+      .aggregateWithState(["key"], { count: { op: "count" } }),
+  ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  expect(scanned).toBeLessThan(1000);
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("detaches group key bytes before the scanner reuses their backing", async () => {
+  const pool = new MemoryBudget(65536);
+  const store = memoryStore();
+  await store.put("table", new Uint8Array(1));
+  const lake = new Lake({
+    store,
+    memoryPool: pool,
+    scanner: {
+      async *scan() {
+        const key = new Uint8Array(1);
+        for (const value of [1, 2, 1]) {
+          key[0] = value;
+          yield [{ key }];
+        }
+        key[0] = 99;
+      },
+    },
+  });
+  const result = await lake
+    .path("table")
+    .run()
+    .aggregateWithState(["key"], { count: { op: "count" } });
+  expect(result.rows).toEqual([
+    { key: new Uint8Array([1]), count: 2 },
+    { key: new Uint8Array([2]), count: 1 },
+  ]);
+  expect(pool.usedBytes).toBe(0);
+});

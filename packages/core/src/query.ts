@@ -2473,25 +2473,46 @@ export class QueryResult {
           this.config.projections === undefined
             ? row
             : project(row, ["*"], this.config.projections);
-        const keyValues = groupColumns.map((column) => valueForColumn(aggregateRow, column));
-        const key = stableStringify(keyValues);
-        let group = groups.get(key);
-        if (!group) {
-          if (options.maxGroups !== undefined && groups.size >= options.maxGroups) {
-            throw new LakeqlError(
-              "LAKEQL_GROUP_LIMIT_EXCEEDED",
-              `Query exceeded group budget (${groups.size + 1} > ${options.maxGroups})`,
-              { limit: options.maxGroups, actual: groups.size + 1 },
-            );
+        const keyScope = checkpointScope.childScope();
+        try {
+          const keyValues = keyScope.allocate(
+            allocationCharges.array + groupColumns.length * allocationCharges.arraySlot,
+            "aggregate key values",
+            () => groupColumns.map((column) => valueForColumn(aggregateRow, column)),
+          ).value;
+          const key = keyScope.adopt(stringifyOwnedStableData(keyValues, keyScope)).value;
+          let group = groups.get(key);
+          if (!group) {
+            if (options.maxGroups !== undefined && groups.size >= options.maxGroups) {
+              throw new LakeqlError(
+                "LAKEQL_GROUP_LIMIT_EXCEEDED",
+                `Query exceeded group budget (${groups.size + 1} > ${options.maxGroups})`,
+                { limit: options.maxGroups, actual: groups.size + 1 },
+              );
+            }
+            group = checkpointScope.allocate(
+              aggregateGroupEntryBytes(key),
+              "aggregate group entry",
+              () => {
+                const created = createAggregateGroup(
+                  groupColumns,
+                  keyValues,
+                  spec,
+                  checkpointScope,
+                );
+                groups.set(key, created);
+                return created;
+              },
+            ).value;
           }
-          group = createAggregateGroup(groupColumns, keyValues, spec, checkpointScope);
-          groups.set(key, group);
-        }
-        group.add(aggregateRow);
-        aggregateMemory?.update(key, group);
-        if (aggregateMemory !== undefined) {
-          enforceBufferedRowsBudget(this.config.budget, aggregateMemory.rows);
-          enforceOperatorMemoryBudget(this.config.budget, aggregateMemory.bytes);
+          group.add(aggregateRow);
+          aggregateMemory?.update(key, group);
+          if (aggregateMemory !== undefined) {
+            enforceBufferedRowsBudget(this.config.budget, aggregateMemory.rows);
+            enforceOperatorMemoryBudget(this.config.budget, aggregateMemory.bytes);
+          }
+        } finally {
+          keyScope.dispose();
         }
       }
       const rows = applyAggregateResultOptions(
@@ -3570,24 +3591,69 @@ class AggregateGroup {
 
 const stateSpecs = new WeakMap<AggregateState, AggregateExpr>();
 
+function aggregateGroupEntryBytes(key: string): number {
+  return (
+    allocationCharges.object +
+    3 * allocationCharges.property +
+    allocationCharges.string +
+    key.length * allocationCharges.stringCodeUnit
+  );
+}
+
+function aggregateStateEntryBytes(alias: string): number {
+  return (
+    8 * allocationCharges.object +
+    16 * allocationCharges.property +
+    allocationCharges.string +
+    alias.length * allocationCharges.stringCodeUnit
+  );
+}
+
 function createAggregateGroup(
   groupColumns: string[],
   keyValues: unknown[],
   spec: AggregateSpec,
   scope: MemoryScope,
 ): AggregateGroup {
-  const keys: Record<string, unknown> = {};
-  for (let index = 0; index < groupColumns.length; index += 1) {
-    const column = groupColumns[index];
-    if (column !== undefined) keys[column] = keyValues[index];
+  const input = scope.childScope();
+  try {
+    const borrowed = input.allocate(
+      allocationCharges.object,
+      "aggregate key record",
+      () => Object.create(null) as Record<string, unknown>,
+    ).value;
+    for (let index = 0; index < groupColumns.length; index++) {
+      const column = groupColumns[index];
+      if (column !== undefined)
+        input.allocate(
+          allocationCharges.property +
+            allocationCharges.string +
+            column.length * allocationCharges.stringCodeUnit,
+          "aggregate key property",
+          () => {
+            borrowed[column] = keyValues[index];
+          },
+        );
+    }
+    const keys = scope.adopt(detachOwnedRow(borrowed, scope.budget)).value;
+    const states = scope.allocate(
+      allocationCharges.object,
+      "aggregate states",
+      () => Object.create(null) as Record<string, AggregateState>,
+    ).value;
+    for (const alias in spec) {
+      if (!Object.hasOwn(spec, alias)) continue;
+      const aggregate = spec[alias] as AggregateExpr;
+      scope.allocate(aggregateStateEntryBytes(alias), "aggregate state entry", () => {
+        const state = createAggregateState(aggregate, scope);
+        stateSpecs.set(state, aggregate);
+        states[alias] = state;
+      });
+    }
+    return new AggregateGroup(keys, states);
+  } finally {
+    input.dispose();
   }
-  const states: Record<string, AggregateState> = {};
-  for (const [alias, aggregate] of Object.entries(spec)) {
-    const state = createAggregateState(aggregate, scope);
-    stateSpecs.set(state, aggregate);
-    states[alias] = state;
-  }
-  return new AggregateGroup(keys, states);
 }
 
 function createAggregateState(aggregate: AggregateExpr, scope: MemoryScope): AggregateState {
@@ -4441,7 +4507,12 @@ async function aggregateGroupsFromState(
   options: AggregateOptions,
   scope: MemoryScope,
 ): Promise<Map<string, AggregateGroup>> {
-  if (options.operatorState === undefined) return new Map();
+  const groups = scope.allocate(
+    allocationCharges.object,
+    "aggregate group directory",
+    () => new Map<string, AggregateGroup>(),
+  ).value;
+  if (options.operatorState === undefined) return groups;
   const state =
     isSpilledOperatorState(options.operatorState) && options.spill !== undefined
       ? await readCheckpointSpill(options.spill, options.operatorState.spillRef, scope)
@@ -4474,9 +4545,10 @@ async function aggregateGroupsFromState(
       },
     );
   }
-  const groups = new Map<string, AggregateGroup>();
   for (const group of snapshot.groups)
-    groups.set(group.key, aggregateGroupFromSnapshot(spec, group, scope));
+    scope.allocate(aggregateGroupEntryBytes(group.key), "restored aggregate group entry", () =>
+      groups.set(group.key, aggregateGroupFromSnapshot(spec, group, scope)),
+    );
   return groups;
 }
 
@@ -4489,14 +4561,20 @@ function aggregateGroupFromSnapshot(
   snapshot: AggregateGroupSnapshot,
   scope: MemoryScope,
 ): AggregateGroup {
-  const states: Record<string, AggregateState> = {};
+  const states = scope.allocate(
+    allocationCharges.object,
+    "restored aggregate states",
+    () => Object.create(null) as Record<string, AggregateState>,
+  ).value;
   for (const [alias, aggregate] of Object.entries(spec)) {
     const state = snapshot.states[alias];
     if (state === undefined) {
       throw new LakeqlError("LAKEQL_BOOKMARK_INVALID", `Missing aggregate state ${alias}`);
     }
-    states[alias] = aggregateStateFromSnapshot(aggregate, state, scope);
-    stateSpecs.set(states[alias], aggregate);
+    scope.allocate(aggregateStateEntryBytes(alias), "restored aggregate state entry", () => {
+      states[alias] = aggregateStateFromSnapshot(aggregate, state, scope);
+      stateSpecs.set(states[alias], aggregate);
+    });
   }
   return new AggregateGroup(snapshot.keys, states);
 }

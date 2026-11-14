@@ -18,6 +18,7 @@
     "Forecast/formatting requires immutable data during synchronous traversal. Cycles reject explicitly; executable function values have no bounded data-key contract and reject.",
     "Checkpoint encoding retains its stricter JSON-shaped input contract; extended key handling does not widen it.",
     "Byte/base64 scratch accounting is conservative; runtime rope and GC internals are not total-heap guarantees.",
-    "Group keys/directories, fixed scalar states, outer snapshots and runtime metadata still need admission."
-  ]
+    "Group directories/key detachment and state metadata are now admitted (linked evidence); fixed scalar payloads, outer snapshots and runtime metadata remain outstanding."
+  ],
+  "groupEvidence": "row-group-directory-admission-2026-11-13.json"
 }
