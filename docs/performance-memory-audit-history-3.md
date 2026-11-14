@@ -4427,3 +4427,10 @@ The allocation review found that `WindowPeers` admitted only `(groups + 1) * 4` 
 Updated the existing adaptive-index exact/cap-minus-one tests and independent dynamic-frame matrix to use backing plus view: forty groups now require 292 reservation bytes (164 backing plus 128 view), with a 291-byte capacity exercising the fallback. The earlier 164/163-byte evidence is historical and predates this correction. Results, exclusions and traversal behavior are unchanged; only optional-index admission reflects the full modeled typed-array charge.
 
 Final verification: build/typecheck passed; 3,731 regular tests (645 skipped), 120 reference tests and 82 Worker tests passed. The sixteen added regular skips are opt-in reference cases that run successfully in the reference command. Evidence: `docs/validation/window-peer-view-admission-2026-11-14.json`.
+
+
+### V3 current release-gate refresh after window/read-control changes (2026-11-14)
+
+Source `9206579` passes coverage with 3,731 tests / 645 skipped and unchanged thresholds: statements 91.29%, branches 85.42%, functions 95.82%, lines 93.09%. Build, clean package consumer (66 installed packages), required external conformance (520 passed / one inactive missing-fixture guard), lint, compatibility, large-file, changeset and deterministic fixture-regeneration checks pass. Fixture hashes remain identical and git status is clean after regeneration. Typecheck, 120 reference tests and 82 Worker tests passed on the identical implementation immediately before that commit.
+
+Updated conflicting current-release pointers while retaining historical evidence. Evidence: `docs/validation/current-window-release-gates-2026-11-14.json`. Green release checks do not close the full allocation, lifecycle, runtime headroom, scaling and performance acceptance checklist.

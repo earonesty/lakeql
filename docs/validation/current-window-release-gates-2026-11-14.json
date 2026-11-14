@@ -1,0 +1,52 @@
+{
+  "runtimeSourceCommit": "9206579fb0028f5b34a49987def3e73e5be2d6d4",
+  "gates": {
+    "coverage": {
+      "passed": true,
+      "testsPassed": 3731,
+      "testsSkipped": 645,
+      "filesPassed": 409,
+      "statements": 91.29,
+      "branches": 85.42,
+      "functions": 95.82,
+      "lines": 93.09,
+      "thresholdsUnchanged": true
+    },
+    "build": "passed",
+    "cleanPackageConsumer": {
+      "passed": true,
+      "installedPackages": 66
+    },
+    "requiredExternalConformance": {
+      "passed": 520,
+      "skipped": 1,
+      "skipReason": "Missing-required-fixtures guard inactive when fixtures exist; required Spark/PyIceberg matrix checks executed."
+    },
+    "lint": "passed; 1532 files",
+    "compatibility": "passed",
+    "largeFiles": "passed",
+    "changeset": "passed",
+    "fixtureReproducibility": "passed; regenerated hashes identical and worktree clean",
+    "typecheck": {
+      "passed": true,
+      "evidence": "/tmp/peer-view-types.log; identical implementation before commit"
+    },
+    "reference": {
+      "passed": 120,
+      "evidence": "/tmp/peer-view-reference.log; identical implementation before commit"
+    },
+    "workerd": {
+      "passed": 82,
+      "files": 23,
+      "evidence": "/tmp/peer-view-worker.log; identical implementation before commit"
+    }
+  },
+  "regularSkipAccounting": "Includes opt-in reference tests; the sixteen recent dynamic-frame cases pass in the reference run.",
+  "acceptance": "Release checks pass; full F1-F6/M1-M2/V1-V3 acceptance remains open.",
+  "remainingExamples": [
+    "Complete ownership/lifecycle and decode/conversion workspace audit",
+    "Whole-runtime headroom and broader concurrent scheduling evidence",
+    "JSON row-array regression against recursive reference",
+    "Current broader scaling and final scope review"
+  ]
+}
