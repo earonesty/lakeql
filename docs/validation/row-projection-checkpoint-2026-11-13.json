@@ -1,0 +1,51 @@
+{
+  "requirements": [
+    "F2",
+    "F3",
+    "M1",
+    "V1",
+    "V2",
+    "V3"
+  ],
+  "status": "Checkpoint and aggregate projection admission implemented; streaming projection ownership remains open",
+  "projectionContract": [
+    "TopKWithState and sortWithState admit result directories, records, fields and expression output in a separate projection scope. One ownership capture preserves source aliases until the checkpoint operation settles, including cancellation while a spill write is pending. This avoids repeated full-state captures per spilled run. A range loop replaces slice().map(); ordinary result ownership transfers to the caller at return.",
+    "Aggregate projection uses the per-row key scope. Group state copies retained scalar values; transient projection releases after group.add. Repeated rows do not accumulate projection workspace.",
+    "Projection enumerates own expression fields without Object.entries and writes own output properties, including special property names. Unscoped caller paths retain existing lifetime semantics; they are not claimed bounded by this change."
+  ],
+  "validation": {
+    "focusedCoreTestsPassed": 105,
+    "build": "passed",
+    "typecheck": "passed",
+    "cleanNpmInstall": "passed",
+    "fixtureRegeneration": "passed, two successive generations identical",
+    "default": {
+      "passed": 3169,
+      "skipped": 629
+    },
+    "fullWorker": {
+      "passed": 71
+    },
+    "fullConformance": {
+      "passed": 517,
+      "skipped": 1
+    },
+    "fixtures": "Existing expression HTTP/Worker fixtures now parameterize filters and projections. Three projection routes (aggregate, checkpoint top-k and checkpoint sort) run concurrently under 64/128 MiB shared pools and 2 MiB query caps. Actual serialized Parquet via HTTP 206/ignored-Range 200 and native local R2 verifies output parity, oversized expansion rejection and cleanup.",
+    "cancellationAndSpecialFieldTests": "Final focused set: 24 tests pass across projection and existing row top-k ownership. Deferred spill cancellation preserves at least the 4,000-byte projected payload until settlement, then releases to zero. Own special source fields remain data properties and frozen input is unchanged; unsafe explicit aliases retain existing validation rejection.",
+    "lintSizeChangesetCompatibility": "passed"
+  },
+  "discoveredWriterBug": {
+    "symptom": "Direct equality on dictionary text 1 \u732b returned zero rows despite matching decoded pages. All five groups were pruned; both generated extrema were dictionary text followed by a space, a 16-code-unit prefix.",
+    "cause": "hyparquet-writer unconvertMinMax truncates both minima and maxima. A truncated maximum is not a safe upper bound.",
+    "fix": "Pinned writer patch omits optional extrema beyond its bounded 16-code-unit representation, and surrogate-containing strings whose UTF-8 ordering is not proven by its JS comparator. Null counts remain. Non-null pages missing valid bounds disable the optional column index instead of emitting empty bounds. Offset indexes and short representable extrema remain.",
+    "tradeoff": "Some string columns lose optional pruning metadata rather than incur unbounded statistic encoding or publish incorrect bounds. This is a correctness condition, not an unsafe opt-in mode.",
+    "coverage": "Actual plain Parquet pages at 16/17 code units, longer shared prefixes and astral/BMP values; metadata assertions and equality result parity. A clean npm consumer repeats long-string equality after writing with the bundled patched writer.",
+    "distribution": "Writer is bundled alongside the patched reader. Writer and Brotli licenses are included in third-party notices. Regenerated geo and Iceberg delete/manifest fixtures reflect corrected metadata.",
+    "limit": "This writer change does not repair already-written files containing invalid bounds; historical metadata trust requires separate review."
+  },
+  "remaining": [
+    "Streaming ordinary/ordered projection needs batch-to-consumer ownership transfer; a query-long scope would retain every projected batch and is not the intended contract.",
+    "Borrowed reference-selection projection, DISTINCT keys, partition merging and remaining evaluator internals still require allocation integration.",
+    "Complete F1-F6/M1-M2/V1-V3 acceptance and refreshed coverage/reference gates remain open."
+  ]
+}

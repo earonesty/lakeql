@@ -5,13 +5,16 @@ import { expect, it } from "vitest";
 import { type R2BucketLike, R2ObjectStore } from "../../r2/src/index.js";
 import { parquetScanner } from "./index.js";
 
-it.each([
-  64, 128,
-])("admits row fallback filters in concurrent Worker R2 queries at %i MiB", async (mib) => {
+it.each(
+  [64, 128].flatMap((mib) => [false, true].map((projection) => ({ mib, projection }))),
+)("admits row expressions in Worker R2: $mib MiB, projection=$projection", async ({
+  mib,
+  projection,
+}) => {
   const bindings = env as unknown as { BROTLI_FIXTURE: string; MEMORY_TEST_BUCKET: R2BucketLike };
   expect(bindings.BROTLI_FIXTURE.length).toBeGreaterThan(0);
   const store = new R2ObjectStore(bindings.MEMORY_TEST_BUCKET);
-  const path = `brotli-${mib}.parquet`;
+  const path = `row-expressions-${mib}-${projection}.parquet`;
   await store.put(
     path,
     Uint8Array.from(atob(bindings.BROTLI_FIXTURE), (c) => c.charCodeAt(0)),
@@ -47,10 +50,28 @@ it.each([
         },
         right: { kind: "literal", value: "accepted text 1 猫" },
       };
-      const selected = expected.filter((row) => row.text === "dictionary text 1 猫");
+      const selected = expected
+        .filter((row) => row.text === "dictionary text 1 猫")
+        .map((row) => (projection ? { ...row, projected: "accepted text 1 猫" } : row));
       await Promise.all(
-        ["batches", "aggregate", "ordered", "topK", "sort"].map(async (route) => {
-          let query = lake.path(path).where(predicate).batchSize(32);
+        (projection
+          ? ["aggregate", "topK", "sort"]
+          : ["batches", "aggregate", "ordered", "topK", "sort"]
+        ).map(async (route) => {
+          let query = lake
+            .path(path)
+            .where(
+              projection
+                ? {
+                    kind: "compare",
+                    op: "eq",
+                    left: { kind: "column", name: "text" },
+                    right: { kind: "literal", value: "dictionary text 1 猫" },
+                  }
+                : predicate,
+            )
+            .batchSize(32);
+          if (projection) query = query.project({ projected: predicate.left });
           if (["ordered", "topK", "sort"].includes(route))
             query = query.orderBy([{ column: "id" }]);
           if (route === "topK") query = query.limit(2);

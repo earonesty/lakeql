@@ -30,5 +30,6 @@
     "Scalar evaluator functions without admission remain a separate gap; scope propagation alone does not cover their internal work.",
     "Borrowed scanner input and caller-managed output lifetimes are unchanged. Tracked reservations are not complete VM heap accounting.",
     "Full F1-F6/M1-M2/V1-V3 acceptance remains active."
-  ]
+  ],
+  "followupEvidence": "row-projection-checkpoint-2026-11-13.json"
 }

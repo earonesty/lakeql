@@ -357,3 +357,7 @@ Decode BSON logical columns with admitted nonrecursive framing and value constru
 Decode Brotli pages into fixed output with admitted reusable workspace and decoder metadata. Reject oversized pages before output allocation, validate full input consumption, and release scratch allocations on success and failure.
 
 Admit scalar filter temporaries across ordinary row batches, row aggregates, ordered selection and checkpointed sorting; release predicate scratch before yielding and on failure or cancellation.
+
+Admit projected values and result directories in checkpointed top-k/sort and per-row aggregate projection. Avoid intermediate selected-row copies and preserve ownership during spill.
+
+Omit unsafe truncated writer statistics and dependent column indexes instead of pruning matching long strings. Preserve null counts/offset indexes and bundle the patched writer for npm consumers.

@@ -11,10 +11,14 @@ import { brotliFixtureRows, createBrotliFixture } from "../../../fixtures/src/br
 import { HttpObjectStore } from "../../http/src/index.js";
 import { parquetScanner } from "./index.js";
 
-it.each([
-  false,
-  true,
-])("admits row fallback filters over real HTTP fixture reads, ignored=%s", async (ignoreRange) => {
+it.each(
+  [false, true].flatMap((ignoreRange) =>
+    [false, true].map((projection) => ({ ignoreRange, projection })),
+  ),
+)("admits row expressions over HTTP: ignored=$ignoreRange, projection=$projection", async ({
+  ignoreRange,
+  projection,
+}) => {
   const bytes = createBrotliFixture();
   const expected = brotliFixtureRows();
   let active = 0;
@@ -79,10 +83,28 @@ it.each([
           },
           right: { kind: "literal", value: "accepted text 1 猫" },
         };
-        const selected = expected.filter((row) => row.text === "dictionary text 1 猫");
+        const selected = expected
+          .filter((row) => row.text === "dictionary text 1 猫")
+          .map((row) => (projection ? { ...row, projected: "accepted text 1 猫" } : row));
         await Promise.all(
-          ["batches", "aggregate", "ordered", "topK", "sort"].map(async (route) => {
-            let query = lake.path("brotli.parquet").where(predicate).batchSize(32);
+          (projection
+            ? ["aggregate", "topK", "sort"]
+            : ["batches", "aggregate", "ordered", "topK", "sort"]
+          ).map(async (route) => {
+            let query = lake
+              .path("brotli.parquet")
+              .where(
+                projection
+                  ? {
+                      kind: "compare",
+                      op: "eq",
+                      left: { kind: "column", name: "text" },
+                      right: { kind: "literal", value: "dictionary text 1 猫" },
+                    }
+                  : predicate,
+              )
+              .batchSize(32);
+            if (projection) query = query.project({ projected: predicate.left });
             if (["ordered", "topK", "sort"].includes(route))
               query = query.orderBy([{ column: "id" }]);
             if (route === "topK") query = query.limit(2);

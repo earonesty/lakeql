@@ -1656,6 +1656,8 @@ export class QueryResult {
       this.memoryBudget,
       config.budget.signal ? [config.budget.signal] : [],
     );
+    // Pending spill still holds these rows after cancellation closes retainedScope.
+    const projectionScope = new MemoryScope(this.memoryBudget);
     try {
       const orderBy = normalizeOrderBy(config.orderBy, retainedScope);
       const restoreScope = retainedScope.childScope();
@@ -1677,9 +1679,15 @@ export class QueryResult {
       }
       const start = config.offset ?? 0;
       const end = start + config.limit;
-      const rows = matched
-        .slice(start, end)
-        .map((row) => project(row, config.select, config.projections));
+      projectionScope.adopt(retainedScope.retainAllocations(undefined));
+      const rows = projectRowRange(
+        matched,
+        start,
+        end,
+        config.select,
+        config.projections,
+        projectionScope,
+      );
       for (const _row of rows) {
         this.stats.rowsReturned += 1;
         enforceBudget(config.budget, this.stats, config.now, startedAt);
@@ -1707,6 +1715,7 @@ export class QueryResult {
       return result;
     } finally {
       retainedScope.dispose();
+      projectionScope.dispose();
     }
   }
 
@@ -1723,6 +1732,8 @@ export class QueryResult {
       this.memoryBudget,
       config.budget.signal ? [config.budget.signal] : [],
     );
+    // Pending spill still holds these rows after cancellation closes retainedScope.
+    const projectionScope = new MemoryScope(this.memoryBudget);
     try {
       const orderBy = normalizeOrderBy(config.orderBy, retainedScope);
       const restoreScope = retainedScope.childScope();
@@ -1752,9 +1763,15 @@ export class QueryResult {
       const matched = mergeSortRuns(runs, orderBy, retainedScope);
       const start = config.offset ?? 0;
       const end = config.limit === undefined ? matched.length : start + config.limit;
-      const rows = matched
-        .slice(start, end)
-        .map((row) => project(row, config.select, config.projections));
+      projectionScope.adopt(retainedScope.retainAllocations(undefined));
+      const rows = projectRowRange(
+        matched,
+        start,
+        end,
+        config.select,
+        config.projections,
+        projectionScope,
+      );
       for (const _row of rows) {
         this.stats.rowsReturned += 1;
         enforceBudget(config.budget, this.stats, config.now, startedAt);
@@ -1782,6 +1799,7 @@ export class QueryResult {
       return result;
     } finally {
       retainedScope.dispose();
+      projectionScope.dispose();
     }
   }
 
@@ -2484,12 +2502,12 @@ export class QueryResult {
         this.config.projections,
       );
       for await (const row of this.matchedRows(startedAt, readColumns, checkpointScope)) {
-        const aggregateRow =
-          this.config.projections === undefined
-            ? row
-            : project(row, ["*"], this.config.projections);
         const keyScope = checkpointScope.childScope();
         try {
+          const aggregateRow =
+            this.config.projections === undefined
+              ? row
+              : project(row, ["*"], this.config.projections, keyScope);
           const keyValues = keyScope.allocate(
             allocationCharges.array + groupColumns.length * allocationCharges.arraySlot,
             "aggregate key values",
@@ -5855,23 +5873,75 @@ function project(
   row: Row,
   select: string[] | undefined,
   projections: Record<string, Expr> | undefined,
+  scope?: MemoryScope,
 ): Row {
   if (!select && !projections) return row;
   if (select?.includes("*") && !projections) return row;
-  const out: Row = {};
-  if (select === undefined || select.length === 0) Object.assign(out, row);
+  const out: Row =
+    scope === undefined
+      ? {}
+      : scope.allocate(allocationCharges.object, "projected row", () => ({}) as Row).value;
+  if (select === undefined || select.length === 0) copyProjectedFields(out, row, scope);
   for (const column of select ?? []) {
     if (column === "*") {
-      Object.assign(out, row);
+      copyProjectedFields(out, row, scope);
       continue;
     }
     if (!(column in row)) {
       throw new LakeqlError("LAKEQL_UNKNOWN_COLUMN", `Unknown column ${column}`, { column });
     }
-    out[column] = row[column];
+    assignProjectedField(out, column, row[column], scope);
   }
-  for (const [alias, expr] of Object.entries(projections ?? {})) out[alias] = evaluate(expr, row);
+  for (const alias in projections) {
+    if (Object.hasOwn(projections, alias)) {
+      const expr = projections[alias];
+      if (expr !== undefined) assignProjectedField(out, alias, evaluate(expr, row, scope), scope);
+    }
+  }
   return out;
+}
+
+function assignProjectedField(out: Row, key: string, value: unknown, scope?: MemoryScope): void {
+  const write = () => {
+    Object.defineProperty(out, key, {
+      value,
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+  };
+  if (scope === undefined) write();
+  else
+    scope.allocate(allocationCharges.property + allocationCharges.object, "projected field", write);
+}
+
+function copyProjectedFields(out: Row, row: Row, scope?: MemoryScope): void {
+  for (const key in row)
+    if (Object.hasOwn(row, key)) assignProjectedField(out, key, row[key], scope);
+}
+
+function projectRowRange(
+  rows: Row[],
+  start: number,
+  end: number,
+  select: string[] | undefined,
+  projections: Record<string, Expr> | undefined,
+  scope: MemoryScope,
+): Row[] {
+  const stop = Math.min(end, rows.length);
+  const count = Math.max(0, stop - start);
+  return scope.allocate(
+    allocationCharges.array + count * allocationCharges.arraySlot,
+    "projected result directory",
+    () => {
+      const output: Row[] = [];
+      for (let index = start; index < stop; index++) {
+        const row = rows[index];
+        if (row !== undefined) output.push(project(row, select, projections, scope));
+      }
+      return output;
+    },
+  ).value;
 }
 
 const distinctBufferMemory = new WeakMap<Set<string>, BufferMemory<string>>();
