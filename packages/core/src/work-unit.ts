@@ -27,6 +27,8 @@ export async function fanInWorkUnits<Input, Partial, Accumulator>(
   let nextReduce = 0;
   let active = 0;
   let failure: unknown;
+  let failed = false;
+  let stopped = false;
   let notify: (() => void) | undefined;
 
   const wake = () => {
@@ -39,7 +41,8 @@ export async function fanInWorkUnits<Input, Partial, Accumulator>(
     });
   const launchReadyInputs = () => {
     while (
-      failure === undefined &&
+      !failed &&
+      !stopped &&
       active < maxConcurrentTasks &&
       nextInput < options.inputs.length &&
       active + partials.size < maxBufferedPartials
@@ -60,30 +63,48 @@ export async function fanInWorkUnits<Input, Partial, Accumulator>(
         options.boundary === undefined ? partial : await options.boundary(partial, input, index),
       );
     } catch (error) {
-      failure = error;
+      if (!failed) {
+        failed = true;
+        failure = error;
+      }
     } finally {
       active -= 1;
       wake();
     }
   };
 
-  launchReadyInputs();
-  while (nextReduce < options.inputs.length) {
-    while (partials.has(nextReduce)) {
-      const input = options.inputs[nextReduce];
-      const partial = partials.get(nextReduce);
-      partials.delete(nextReduce);
-      if (input !== undefined && partial !== undefined) {
-        await options.reduce(options.initial, partial, input, nextReduce);
-      }
-      nextReduce += 1;
-    }
-    if (failure !== undefined) throw failure;
+  try {
     launchReadyInputs();
-    if (nextReduce >= options.inputs.length) break;
-    await wait();
+    while (nextReduce < options.inputs.length) {
+      if (failed) throw failure;
+      while (!failed && partials.has(nextReduce)) {
+        const input = options.inputs[nextReduce];
+        const partial = partials.get(nextReduce);
+        partials.delete(nextReduce);
+        if (input !== undefined && partial !== undefined) {
+          await options.reduce(options.initial, partial, input, nextReduce);
+        }
+        nextReduce += 1;
+      }
+      if (failed) throw failure;
+      launchReadyInputs();
+      if (nextReduce >= options.inputs.length) break;
+      await wait();
+    }
+    return options.initial;
+  } catch (error) {
+    if (!failed) {
+      failed = true;
+      failure = error;
+    }
+    throw failure;
+  } finally {
+    // Callers may dispose shared task storage once this promise settles. Keep
+    // that boundary after all started reads and transport callbacks finish.
+    stopped = true;
+    while (active > 0) await wait();
+    partials.clear();
   }
-  return options.initial;
 }
 
 export function jsonWorkUnitBoundary<T>(value: T): T {

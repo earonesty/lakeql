@@ -111,6 +111,85 @@ describe("work-unit fan-in executor", () => {
     });
   });
 
+  it.each([
+    "run",
+    "boundary",
+    "reduce",
+  ] as const)("drains active siblings after %s failure and preserves the first error", async (phase) => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let failed!: () => void;
+    const failureReached = new Promise<void>((resolve) => {
+      failed = resolve;
+    });
+    const original = new Error("original failure");
+    const started: number[] = [];
+    let settled = false;
+    let siblingFinished = false;
+    const result = fanInWorkUnits({
+      inputs: [0, 1, 2],
+      initial: [],
+      maxConcurrentTasks: 2,
+      async run(input) {
+        started.push(input);
+        if (input === 1) {
+          await gate;
+          siblingFinished = true;
+          throw new Error("later sibling failure");
+        }
+        if (phase === "run") {
+          failed();
+          throw original;
+        }
+        return input;
+      },
+      boundary(partial) {
+        if (phase === "boundary") {
+          failed();
+          throw original;
+        }
+        return partial;
+      },
+      reduce() {
+        failed();
+        throw original;
+      },
+    });
+    const observed = result.then(
+      () => {
+        settled = true;
+        return undefined;
+      },
+      (error: unknown) => {
+        settled = true;
+        return error;
+      },
+    );
+    await failureReached;
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+    expect(started).toEqual([0, 1]);
+    release();
+    expect(await observed).toBe(original);
+    expect(siblingFinished).toBe(true);
+    expect(started).toEqual([0, 1]);
+  });
+
+  it("propagates an undefined rejection instead of waiting forever", async () => {
+    await expect(
+      fanInWorkUnits({
+        inputs: [1],
+        initial: [],
+        async run() {
+          throw undefined;
+        },
+        reduce() {},
+      }),
+    ).rejects.toBeUndefined();
+  });
+
   it("rejects invalid concurrency limits with a typed error", async () => {
     await expect(
       fanInWorkUnits({

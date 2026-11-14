@@ -1,0 +1,23 @@
+{
+  "change": "Shared work-unit fan-in stops launching and reducing after failure, preserves the first error even if a later task fails, and drains every started task and boundary callback before settling. This permits enclosing owners to dispose only after asynchronous users finish. A separate failed flag handles rejection with undefined.",
+  "validation": {
+    "coreTests": 9,
+    "typescriptBuild": "passed",
+    "edgeCases": [
+      "run failure with delayed rejecting sibling",
+      "boundary failure with delayed rejecting sibling",
+      "reduce failure with delayed rejecting sibling",
+      "no third task starts after failure",
+      "undefined rejection terminates instead of hanging",
+      "ordered reduction and bounded concurrency remain covered"
+    ],
+    "coreAndParquetWorkUnitAndTaskTests": {
+      "files": 3,
+      "passed": 24
+    }
+  },
+  "limitations": [
+    "Draining cannot force completion of an external task that never settles; adapter cancellation must settle its operations.",
+    "This establishes a lifetime prerequisite; window task inputs and boundary replacement allocations still need ownership admission."
+  ]
+}
