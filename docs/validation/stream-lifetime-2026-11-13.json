@@ -129,6 +129,27 @@
       },
       "timing": "Final alternating-order medians in milliseconds: small owned 0.00727 / legacy 0.000789; ASCII 0.363 / 0.132; Unicode 0.758 / 1.104; binary 1.086 / 2.555; nested 0.444 / 0.461. Prior small-row owned median was 0.0157 in a separate run. Timing variation prevents causal whole-query claims; tiny rows remain slower than unaccounted legacy output.",
       "remaining": "Native scalar formatting still creates strings before admission; existing scalarStringWithAdmission and decimalStringAllocationBytes provide reusable machinery for the next integration. BigInt arithmetic/traversal/runtime overhead and consumer-retained output remain separate gaps."
+    },
+    "scalarFormattingAdmission": {
+      "change": "CSV reuses scalarStringWithAdmission for number/boolean/bigint conversion, while borrowed strings stay allocation-free. Timestamp toJSON formatting reserves the shared scalarStringAllocationBytes estimate first. intervalToString accepts an optional scope and reserves component/joined strings, the parts directory and parsed bigint backing before conversion. Existing unscoped interval behavior is unchanged.",
+      "validation": {
+        "defaultPassed": 2829,
+        "defaultSkipped": 605,
+        "workerPassed": 57,
+        "referencePassed": 104,
+        "buildLintTypecheck": "passed",
+        "cleanNpmInstall": "passed"
+      },
+      "edgeCases": [
+        "Insufficient timestamp capacity rejects before its formatter is called",
+        "A 4097-digit signed bigint is charged concurrently with final CSV output; one-byte-short admission rolls back",
+        "Interval formatting at exact/one-byte-short caps, large components and canonicalized leading zeros",
+        "Invalid interval nanoseconds release formatting admission after conversion failure",
+        "Existing real HTTP/native-R2 CSV fixture cases and package output/cleanup smoke assertions pass"
+      ],
+      "benchmark": "../benchmarks/csv-output-scalar-admitted-2026-11-13.json",
+      "tradeoff": "Small synthetic rows reserve 1472 bytes, versus 1216 before primitive string accounting. Their median is ~0.0127ms, versus ~0.00727ms in the prior separate run and ~0.000632ms for the unaccounted legacy encoder in this run. Wide-text peaks stay 100529 bytes (ASCII) and 200531 bytes (quoted Unicode). The extra bookkeeping is not presented as a speedup.",
+      "remaining": "This admits top-level CSV formatted storage, not all serializer workspace. Nested JSON scalar formatting and recursive traversal still need integration. BigInt forecast arithmetic, native formatting/GC internals, accounting metadata and consumer-retained output are not a portable total-heap bound."
     }
   }
 }

@@ -3,6 +3,10 @@ import { intervalToString, isIntervalValue } from "./interval.js";
 import { encodeOwnedJsonOutput } from "./json-output-encoding.js";
 import { isPlainJsonAscii } from "./json-string-size.js";
 import type { MemoryScope, OwnedMemory } from "./memory-scope.js";
+import {
+  scalarStringAllocationBytes,
+  scalarStringWithAdmission,
+} from "./scalar-cast-allocation.js";
 import { isTimestampValue } from "./timestamp.js";
 import type { Row } from "./types.js";
 import { utf8Bytes } from "./utf8-size.js";
@@ -43,8 +47,14 @@ export function encodeOwnedCsvOutput(
         let prepared: string | Uint8Array = empty;
         let start = 0;
         let end = 0;
-        if (isTimestampValue(value)) value = value.toJSON();
-        else if (isIntervalValue(value)) value = intervalToString(value);
+        if (isTimestampValue(value)) {
+          const timestamp = value;
+          value = stage.allocate(
+            scalarStringAllocationBytes(timestamp),
+            "CSV timestamp formatting",
+            () => timestamp.toJSON(),
+          ).value;
+        } else if (isIntervalValue(value)) value = intervalToString(value, stage);
         if (
           value !== null &&
           value !== undefined &&
@@ -55,8 +65,13 @@ export function encodeOwnedCsvOutput(
             prepared = stage.adopt(encodeOwnedJsonOutput(value, stage)).value;
             start = value instanceof Uint8Array ? 1 : 0;
             end = prepared.length - start;
-          } else {
-            prepared = String(value);
+          } else if (
+            typeof value === "string" ||
+            typeof value === "number" ||
+            typeof value === "boolean" ||
+            typeof value === "bigint"
+          ) {
+            prepared = scalarStringWithAdmission(value, stage);
             end = utf8Bytes(prepared);
           }
         }

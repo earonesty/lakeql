@@ -65,6 +65,10 @@ for (const [name, value] of Object.entries(cases)) {
 }
 const sources = [
   "csv-output-encoding",
+  "scalar-cast-allocation",
+  "scalar-allocation",
+  "interval",
+  "timestamp",
   "utf8-size",
   "json-output-encoding",
   "json-output-size",

@@ -128,3 +128,39 @@ it("matches native CSV UTF8 encoding across every UTF16 code unit", () => {
   scope.dispose();
   expect(scope.budget.usedBytes).toBe(0);
 });
+
+it("admits timestamp formatting before invoking its formatter", () => {
+  const timestamp = timestampFromEpoch(123456789n, "nanos");
+  const original = timestamp.toJSON.bind(timestamp);
+  let calls = 0;
+  timestamp.toJSON = () => {
+    calls++;
+    return original();
+  };
+  const scope = new MemoryScope(new MemoryBudget(512));
+  expect(() => encodeOwnedCsvOutput({ value: timestamp }, ["value"], false, scope)).toThrowError(
+    expect.objectContaining({ code: "LAKEQL_BUDGET_EXCEEDED" }),
+  );
+  expect(calls).toBe(0);
+  expect(scope.budget.usedBytes).toBe(0);
+  scope.dispose();
+});
+
+it("charges large bigint formatting together with the final output", () => {
+  const value = -(10n ** 4096n);
+  const expected = new TextEncoder().encode(`${value}\n`);
+  const pool = new MemoryBudget(65536);
+  const scope = new MemoryScope(pool);
+  const output = encodeOwnedCsvOutput({ value }, ["value"], false, scope);
+  expect(output.value).toEqual(expected);
+  const peak = pool.peakBytes;
+  expect(peak).toBeGreaterThan(output.bytes + 2 * String(value).length);
+  output.release();
+  scope.dispose();
+  const tight = new MemoryScope(new MemoryBudget(peak - 1));
+  expect(() => encodeOwnedCsvOutput({ value }, ["value"], false, tight)).toThrowError(
+    expect.objectContaining({ code: "LAKEQL_BUDGET_EXCEEDED" }),
+  );
+  expect(tight.budget.usedBytes).toBe(0);
+  tight.dispose();
+});

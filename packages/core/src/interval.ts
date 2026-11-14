@@ -1,4 +1,6 @@
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
+import type { MemoryScope } from "./memory-scope.js";
 import { TimestampValue } from "./timestamp.js";
 
 export interface IntervalValue {
@@ -89,7 +91,20 @@ export function isNonNegativeInterval(value: IntervalValue): boolean {
   return value.months >= 0 && value.days >= 0 && BigInt(value.nanoseconds) >= 0n;
 }
 
-export function intervalToString(value: IntervalValue): string {
+export function intervalToString(value: IntervalValue, scope?: MemoryScope): string {
+  if (scope !== undefined) {
+    // Bound component strings, joined output, the three-slot parts array and
+    // parsed bigint backing before conversion. VM arithmetic/GC workspace is
+    // separate from these explicit reservation units.
+    const bytes =
+      c.array +
+      3 * c.arraySlot +
+      8 * c.string +
+      3 * c.stringCodeUnit * (value.nanoseconds.length + 128) +
+      c.bigint +
+      2 * value.nanoseconds.length;
+    return scope.allocate(bytes, "interval string conversion", () => intervalToString(value)).value;
+  }
   const parts: string[] = [];
   if (value.months !== 0) parts.push(`${value.months} months`);
   if (value.days !== 0) parts.push(`${value.days} days`);
