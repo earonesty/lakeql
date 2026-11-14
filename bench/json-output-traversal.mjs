@@ -43,6 +43,13 @@ try {
       Array.from({ length: 1000 }, (_, i) => ({ id: i, text: "雪😀", flag: true })),
       20,
     ],
+    [
+      "mixed-siblings",
+      Array.from({ length: 1000 }, (_, i) =>
+        i % 3 === 0 ? [i, null, "雪😀"] : i % 3 === 1 ? { nested: { id: i } } : {},
+      ),
+      20,
+    ],
     ["deep-20000", deep, 2],
   ];
   const results = [];
@@ -52,15 +59,18 @@ try {
         ? `${"[".repeat(20000)}"雪😀"${"]".repeat(20000)}`
         : JSON.stringify(value),
     );
-    const variants = {};
-    for (const [variant, encode] of [
+    const encoders = [
       ["reference", old],
       ["current", encodeOwnedJsonOutput],
-    ]) {
-      const samples = [];
-      let peak = 0;
-      let failure;
-      for (let round = 0; round < 6; round++) {
+    ];
+    const variants = Object.fromEntries(
+      encoders.map(([variant]) => [variant, { samplesMs: [], peakTrackedBytes: 0 }]),
+    );
+    // Alternate first runner to reduce systematic JIT/GC ordering bias.
+    for (let round = 0; round < 12; round++) {
+      for (const [variant, encode] of round % 2 === 0 ? encoders : [...encoders].reverse()) {
+        const result = variants[variant];
+        if (result.failure) continue;
         const start = performance.now();
         try {
           for (let i = 0; i < iterations; i++) {
@@ -70,7 +80,7 @@ try {
             try {
               output = encode(value, scope);
               if (i === 0) assert.deepEqual(output.value, expected);
-              peak = Math.max(peak, budget.peakBytes);
+              result.peakTrackedBytes = Math.max(result.peakTrackedBytes, budget.peakBytes);
             } finally {
               output?.release();
               scope.dispose();
@@ -78,16 +88,11 @@ try {
             }
           }
         } catch (error) {
-          failure = `${error.name}: ${error.message}`;
-          break;
+          result.failure = `${error.name}: ${error.message}`;
+          continue;
         }
-        if (round > 0) samples.push((performance.now() - start) / iterations);
+        if (round >= 4) result.samplesMs.push((performance.now() - start) / iterations);
       }
-      variants[variant] = {
-        samplesMs: samples,
-        peakTrackedBytes: peak,
-        ...(failure ? { failure } : {}),
-      };
     }
     results.push({ name, iterations, outputBytes: expected.length, variants });
   }
@@ -115,7 +120,7 @@ try {
     limitations: [
       "Kernel benchmark; not query or cloud throughput",
       "Tracked reservation units are not heap measurements",
-      "Variants run sequentially; five measured rounds after warmup",
+      "Alternating variant order; eight measured rounds after four warmup rounds",
     ],
   };
   const json = `${JSON.stringify(report, null, 2)}\n`;

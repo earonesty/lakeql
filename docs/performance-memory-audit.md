@@ -1,5 +1,7 @@
 # Performance and memory budget audit
 
+JSON traversal measurement refresh: [balanced baseline](validation/json-balanced-baseline-2026-11-14.json) and [frame-reuse decision](validation/json-frame-reuse-decision-2026-11-14.json). The harness now alternates variant order across four warmup/eight measured rounds and includes mixed sibling shapes. Current row-array median is 0.542 ms versus 0.337 ms recursively; depth 20,000 succeeds only with iterative traversal. A depth-frame/cursor reuse experiment improved mixed siblings but regressed ordinary row arrays in two runs, so it was removed. Production runtime remains unchanged; JSON performance acceptance remains open. Profile the ordinary row path before adding further reset/pooling complexity.
+
 Current implementation: `docs/validation/default-http-pool-propagation-2026-11-14.json`.
 
 HTTP response cleanup follow-up: [validation](validation/http-response-cleanup-2026-11-14.json); build and all 50 HTTP adapter tests passed. Full acceptance remains open.
