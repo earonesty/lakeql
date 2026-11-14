@@ -514,3 +514,35 @@ it("owns slice rows and bookmarks across query completion, resumption and indepe
   }
   expect(pool.usedBytes).toBe(0);
 });
+
+it("keeps columnar top-k charged while its borrowed batch iterator is suspended", async () => {
+  const { store, rows } = await fixture();
+  const pool = new MemoryBudget(1024 * 1024);
+  const lake = createParquetLake({ store, memoryPool: pool, scanRangeCache: { maxBytes: 0 } });
+  const iterator = lake
+    .path("rows.parquet")
+    .orderBy([{ column: "id", direction: "desc" }])
+    .limit(17)
+    .batchSize(7)
+    .run()
+    .batches()
+    [Symbol.asyncIterator]();
+  try {
+    const first = await iterator.next();
+    expect(first.value).toEqual([...rows].reverse().slice(0, 7));
+    expect(pool.usedBytes).toBeGreaterThan(0);
+    const pressure = pool.reserve(pool.maxBytes - pool.usedBytes, "other jobs");
+    try {
+      await expect(lake.path("rows.parquet").limit(1).run().toOwnedArray()).rejects.toMatchObject({
+        code: "LAKEQL_BUDGET_EXCEEDED",
+      });
+      expect((await iterator.next()).value).toEqual([...rows].reverse().slice(7, 14));
+      expect(pool.usedBytes).toBe(pool.maxBytes);
+    } finally {
+      pressure.release();
+    }
+  } finally {
+    await iterator.return?.();
+  }
+  expect(pool.usedBytes).toBe(0);
+});

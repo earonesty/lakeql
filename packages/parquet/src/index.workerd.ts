@@ -875,6 +875,41 @@ it.each([64, 128])("owns deferred top-k over native R2 with a %s MiB shared pool
     } finally {
       for (const owner of ranked) owner.release();
     }
+    const streams = Array.from({ length: 4 }, () =>
+      lake
+        .path(path)
+        .select(["text"])
+        .orderBy([{ column: "id", direction: "desc" }])
+        .limit(17)
+        .batchSize(7)
+        .run()
+        .batches()
+        [Symbol.asyncIterator](),
+    );
+    try {
+      const first = await Promise.all(streams.map((stream) => stream.next()));
+      cache.deleteWhere(() => true);
+      expect(pool.usedBytes).toBeGreaterThan(0);
+      for (const batch of first)
+        expect(batch.value).toEqual(
+          text
+            .slice(93, 100)
+            .reverse()
+            .map((text) => ({ text })),
+        );
+      const second = await Promise.all(streams.map((stream) => stream.next()));
+      for (const batch of second)
+        expect(batch.value).toEqual(
+          text
+            .slice(86, 93)
+            .reverse()
+            .map((text) => ({ text })),
+        );
+    } finally {
+      await Promise.all(streams.map((stream) => stream.return?.()));
+    }
+    expect(pool.usedBytes).toBe(0);
+
     const firstSlices = await Promise.all(
       Array.from({ length: 4 }, () =>
         lake.path(path).batchSize(7).run().ownedSlice({ maxRows: 13 }),

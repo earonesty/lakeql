@@ -373,3 +373,5 @@ Bound slice accumulation using the shared owned row collector. Detach selected r
 Add `QueryResult.ownedSlice()` to retain both rows and continuation metadata in the shared pool until release. Admit bookmark normalization and sorting scratch, then detach nested expression literals and operator bytes into the returned owner. Plain `slice()` reuses this path and transfers completed output to caller management.
 
 Share row aggregate execution between row-only and checkpoint finalization. Ordinary `aggregate()` avoids constructing and serializing discarded continuation state, while `aggregateWithState()` and explicit spill requests preserve checkpoint behavior and restored-state limits.
+
+Retain columnar top-k output ownership through borrowed batch iteration. Admit per-batch reference arrays, reuse a complete single batch, and release input/output charges on completion, early close, cancellation or admission failure. Suspended streams now compete correctly with other jobs in the shared pool.

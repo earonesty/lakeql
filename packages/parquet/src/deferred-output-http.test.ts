@@ -172,6 +172,20 @@ it.each(
       ).toBe(true);
     }
 
+    if (ranked) {
+      const stream = query(["id", "text"]).batches()[Symbol.asyncIterator]();
+      try {
+        const first = await stream.next();
+        expect(first.value).toEqual([rows[256]]);
+        cache.deleteWhere(() => true);
+        expect(pool.usedBytes).toBeGreaterThan(0);
+        expect(first.value).toEqual([rows[256]]);
+      } finally {
+        await stream.return?.();
+      }
+      expect(pool.usedBytes).toBe(0);
+    }
+
     // Exercise the same retained slice contract through real HTTP 206 and 200
     // fallback responses, including borrowed scanner adapters and cache eviction.
     const sliceQuery = lake

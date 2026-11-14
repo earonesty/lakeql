@@ -58,6 +58,7 @@ import {
 import { OwnedGroupDirectory } from "./owned-group-directory.js";
 import { parseOwnedJson } from "./owned-json-parse.js";
 import { OwnedReplacementValue } from "./owned-replacement-value.js";
+import { borrowOwnedRowBatches } from "./owned-row-batches.js";
 import { collectOwnedRows } from "./owned-row-collector.js";
 import { detachOwnedBatch, detachOwnedRow } from "./owned-row-detachment.js";
 import { collectOwnedRowSlice } from "./owned-row-slice.js";
@@ -2729,12 +2730,9 @@ export class QueryResult {
 
   private async *orderedBatches(): AsyncIterable<Row[]> {
     const config = this.config;
-    const columnarRows = await this.tryColumnarTopKRows();
+    const columnarRows = await this.tryColumnarTopKRows(true);
     if (columnarRows !== undefined) {
-      const batchSize = config.batchSize ?? 4096;
-      for (let index = 0; index < columnarRows.length; index += batchSize) {
-        yield columnarRows.slice(index, index + batchSize);
-      }
+      yield* borrowOwnedRowBatches(columnarRows, config.batchSize ?? 4096, config.budget.signal);
       return;
     }
     for await (const output of this.orderedRowOutputs(false)) {

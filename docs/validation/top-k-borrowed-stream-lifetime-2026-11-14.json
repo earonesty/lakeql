@@ -1,0 +1,39 @@
+{
+  "base": "1c06e62",
+  "requirements": ["F3", "M1", "M2", "V1", "V2"],
+  "regression": {
+    "path": "QueryResult.orderedBatches columnar top-k branch",
+    "before": "tryColumnarTopKRows returned a plain collection after releasing its owner; suspended iterator retained rows but pool.usedBytes was 0.",
+    "negativeControl": "New real-Parquet regression failed on the previous runtime at expect(pool.usedBytes).toBeGreaterThan(0)."
+  },
+  "fix": [
+    "Use the owned columnar top-k result for borrowed stream execution.",
+    "Generic borrowOwnedRowBatches consumes the owner, retains payload through yields, and admits each sliced reference array.",
+    "Reuse the complete array when only one batch is needed.",
+    "Dispose input and temporary arrays on exhaustion, close, abort and invalid/admission-failure paths."
+  ],
+  "validation": {
+    "build": "pnpm exec tsc -b passed",
+    "types": "pnpm typecheck passed",
+    "regularPassed": 3831,
+    "regularSkipped": 645,
+    "workerPassed": 82,
+    "focusedCoreTests": 95,
+    "focusedParquetTests": 27
+  },
+  "edgeCases": [
+    "Single complete batch reuses identity and succeeds with exactly the input charge.",
+    "Insufficient batch-directory capacity releases the input handle.",
+    "Abort before first yield and while suspended releases charges and rejects with LAKEQL_ABORTED.",
+    "Independent retained input survives early consumer close.",
+    "Invalid batch capacities reject and release input.",
+    "Paused real Parquet stream prevents a competing allocation at a full shared pool while reusing its own next-batch capacity.",
+    "Real HTTP 206/200 ranked streams remain charged after cache eviction, then release on return.",
+    "Four concurrent native R2 top-k streams at 64/128 MiB caps preserve rows through two batches and release after early close/cache eviction."
+  ],
+  "boundaries": [
+    "Borrowed batches are lent until iterator advancement/closure; callers needing longer tracked ownership use owned collection APIs.",
+    "Whole-runtime heap and other operator/configuration allocation coverage remain open.",
+    "Complete release-gate refresh predates the latest runtime changes; regular/Worker/build/type checks are current."
+  ]
+}
