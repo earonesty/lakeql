@@ -3804,3 +3804,22 @@ work; these checks do not prove whole-runtime memory bounds.
 
 Build/typecheck passed; focused tests passed 26; full suite passed 3,618 with 629
 skips. Evidence: `docs/validation/sidecar-literal-preparation-2026-11-14.json`.
+
+### 2026-11-14 — allocation-free sidecar comparisons and safe index names
+
+Comparison pruning now passes borrowed column names and scalar values directly
+to a shared comparator, eliminating one temporary pair object per file and
+comparison. This inspection exposed a correctness bug: literal-left inequalities
+were evaluated in the column-left direction. Reversing lt/lte/gt/gte preserves
+matching files and handles exact boundaries; eq/ne remain symmetric.
+
+All sidecar column directories now resolve own properties only. Inherited
+constructor/toString/__proto__ values are absent metadata and conservatively
+retain files. Min/max index construction uses a null-prototype directory so
+explicit columns with these names are preserved. Tests cover all six reversed
+comparisons, ordered equality boundaries, missing prototype-named indexes across
+min/max, bbox and H3, and explicitly indexed prototype-named scalar columns.
+Expression traversal workspace and repeated spatial shape validation remain open.
+
+Build/typecheck passed; focused suites passed 98 tests; full suite passed 3,620
+with 629 skips. Evidence: `docs/validation/sidecar-comparison-correctness-2026-11-14.json`.

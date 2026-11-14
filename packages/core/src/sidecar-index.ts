@@ -142,7 +142,7 @@ export function buildMinMaxIndex<T extends Record<string, unknown>>(
   rows: T[],
   columns: string[],
 ): Record<string, MinMaxColumnIndex> {
-  const out: Record<string, MinMaxColumnIndex> = {};
+  const out: Record<string, MinMaxColumnIndex> = Object.create(null);
   for (const column of columns) {
     let min: IndexValue | undefined;
     let max: IndexValue | undefined;
@@ -228,32 +228,63 @@ function compareMayMatch(
   file: SidecarFileIndex,
   expr: Extract<Expr, { kind: "compare" }>,
 ): boolean {
-  const pair = columnLiteralPair(expr.left, expr.right);
-  if (!pair) return true;
-  const stats = file.columns?.[pair.column];
-  if (!stats) return true;
-  if (!sameComparableType(stats.min, pair.value) || !sameComparableType(stats.max, pair.value)) {
-    return true;
+  if (
+    expr.left.kind === "column" &&
+    expr.right.kind === "literal" &&
+    isIndexValue(expr.right.value)
+  ) {
+    return compareColumn(file, expr.left.name, expr.right.value, expr.op);
   }
-  switch (expr.op) {
+  if (
+    expr.right.kind === "column" &&
+    expr.left.kind === "literal" &&
+    isIndexValue(expr.left.value)
+  ) {
+    const op =
+      expr.op === "lt"
+        ? "gt"
+        : expr.op === "lte"
+          ? "gte"
+          : expr.op === "gt"
+            ? "lt"
+            : expr.op === "gte"
+              ? "lte"
+              : expr.op;
+    return compareColumn(file, expr.right.name, expr.left.value, op);
+  }
+  return true;
+}
+
+function ownIndex<T>(directory: Record<string, T> | undefined, column: string): T | undefined {
+  return directory !== undefined && Object.hasOwn(directory, column)
+    ? directory[column]
+    : undefined;
+}
+
+function compareColumn(
+  file: SidecarFileIndex,
+  column: string,
+  value: IndexValue,
+  op: Extract<Expr, { kind: "compare" }>["op"],
+): boolean {
+  const stats = ownIndex(file.columns, column);
+  if (!stats || !sameComparableType(stats.min, value) || !sameComparableType(stats.max, value))
+    return true;
+  switch (op) {
     case "eq":
-      return (
-        compareIndexValues(pair.value, stats.min) >= 0 &&
-        compareIndexValues(pair.value, stats.max) <= 0
-      );
+      return compareIndexValues(value, stats.min) >= 0 && compareIndexValues(value, stats.max) <= 0;
     case "ne":
       return !(
-        compareIndexValues(stats.min, pair.value) === 0 &&
-        compareIndexValues(stats.max, pair.value) === 0
+        compareIndexValues(stats.min, value) === 0 && compareIndexValues(stats.max, value) === 0
       );
     case "lt":
-      return compareIndexValues(stats.min, pair.value) < 0;
+      return compareIndexValues(stats.min, value) < 0;
     case "lte":
-      return compareIndexValues(stats.min, pair.value) <= 0;
+      return compareIndexValues(stats.min, value) <= 0;
     case "gt":
-      return compareIndexValues(stats.max, pair.value) > 0;
+      return compareIndexValues(stats.max, value) > 0;
     case "gte":
-      return compareIndexValues(stats.max, pair.value) >= 0;
+      return compareIndexValues(stats.max, value) >= 0;
   }
 }
 
@@ -270,7 +301,7 @@ function betweenMayMatch(
   ) {
     return true;
   }
-  const stats = file.columns?.[expr.target.name];
+  const stats = ownIndex(file.columns, expr.target.name);
   if (!stats) return true;
   if (
     !sameComparableType(stats.min, expr.low.value) ||
@@ -286,7 +317,7 @@ function betweenMayMatch(
 
 function inMayMatch(file: SidecarFileIndex, expr: Extract<Expr, { kind: "in" }>): boolean {
   if (expr.negated || expr.target.kind !== "column") return true;
-  const stats = file.columns?.[expr.target.name];
+  const stats = ownIndex(file.columns, expr.target.name);
   if (!stats) return true;
   return expr.values.some((valueExpr) => {
     if (valueExpr.kind !== "literal" || !isIndexValue(valueExpr.value)) return true;
@@ -323,7 +354,7 @@ function stIntersectsMayMatch(
   const [target, query] = expr.args;
   if (target?.kind !== "column" || query?.kind !== "literal" || typeof query.value !== "string")
     return true;
-  const index = file.bbox?.[target.name];
+  const index = ownIndex(file.bbox, target.name);
   if (!index) return true;
   const parsed = parseBBoxLiteral(parseLiteral(query.value));
   return parsed ? bboxMayIntersect(index, parsed) : true;
@@ -337,7 +368,7 @@ function h3InMayMatch(
   const [target, cells] = expr.args;
   if (target?.kind !== "column" || cells?.kind !== "literal" || typeof cells.value !== "string")
     return true;
-  const indexed = file.h3?.[target.name];
+  const indexed = ownIndex(file.h3, target.name);
   if (!indexed) return true;
   const wanted = parseStringArray(parseLiteral(cells.value));
   return wanted ? wanted.some((cell) => indexed.includes(cell)) : true;
@@ -356,7 +387,7 @@ function h3WithinMayMatch(file: SidecarFileIndex, expr: Extract<Expr, { kind: "c
   ) {
     return true;
   }
-  const indexed = file.h3?.[target.name];
+  const indexed = ownIndex(file.h3, target.name);
   if (!indexed) return true;
   if (k.value > 0) return true;
   return indexed.includes(origin.value);
@@ -388,19 +419,6 @@ function parseStringArray(parsed: unknown): string[] | undefined {
   return Array.isArray(parsed) && parsed.every((item) => typeof item === "string")
     ? parsed
     : undefined;
-}
-
-function columnLiteralPair(
-  left: Expr,
-  right: Expr,
-): { column: string; value: IndexValue } | undefined {
-  if (left.kind === "column" && right.kind === "literal" && isIndexValue(right.value)) {
-    return { column: left.name, value: right.value };
-  }
-  if (right.kind === "column" && left.kind === "literal" && isIndexValue(left.value)) {
-    return { column: right.name, value: left.value };
-  }
-  return undefined;
 }
 
 function rowBBox(

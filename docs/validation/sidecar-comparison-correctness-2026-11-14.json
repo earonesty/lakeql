@@ -1,0 +1,24 @@
+{
+  "baseCommit": "1a5002f",
+  "scope": "Allocation-free sidecar comparison operands, reversed inequalities and own-property metadata",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 98,
+    "fullSuite": {
+      "passed": 3620,
+      "skipped": 629,
+      "log": "/tmp/sidecar-comparison-full.log"
+    }
+  },
+  "evidence": [
+    "All six literal-left comparisons and equality boundaries",
+    "Inherited column names conservatively retain files across scalar, bbox and H3 indexes",
+    "Explicit prototype-named min/max columns survive index construction and prune correctly"
+  ],
+  "remaining": [
+    "Expression traversal workspace",
+    "Repeated spatial validation",
+    "Broader allocation coverage and final runtime/release acceptance"
+  ]
+}

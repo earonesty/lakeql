@@ -421,3 +421,54 @@ it("keeps malformed spatial literals lazy and rolls back on reached parse failur
   expect(scope.budget.usedBytes).toBe(baseline);
   scope.dispose();
 });
+
+it("reverses ordered comparisons when the literal is on the left", () => {
+  const input = [{ path: "a", columns: { x: { min: 10, max: 20 } } }];
+  for (const [op, expected] of [
+    ["lt", true],
+    ["lte", true],
+    ["gt", false],
+    ["gte", false],
+    ["eq", false],
+    ["ne", true],
+  ] as const) {
+    const result = pruneFilesWithIndex(input, {
+      kind: "compare",
+      op,
+      left: lit(5),
+      right: col("x"),
+    });
+    expect(result.planned.length, op).toBe(expected ? 1 : 0);
+  }
+  for (const [op, expected] of [
+    ["lt", false],
+    ["lte", true],
+    ["gt", false],
+    ["gte", true],
+  ] as const) {
+    const result = pruneFilesWithIndex([{ path: "a", columns: { x: { min: 10, max: 10 } } }], {
+      kind: "compare",
+      op,
+      left: lit(10),
+      right: col("x"),
+    });
+    expect(result.planned.length, op).toBe(expected ? 1 : 0);
+  }
+});
+it("treats inherited index names as absent and preserves explicit prototype-named columns", () => {
+  for (const name of ["constructor", "toString", "__proto__"]) {
+    const file = { path: "a", columns: {}, bbox: {}, h3: {} };
+    for (const predicate of [
+      eq(col(name), 1),
+      fn("h3_in", col(name), '["a"]'),
+      fn("h3_within", col(name), "a", 0),
+      fn("st_intersects", col(name), '{"minx":0,"miny":0,"maxx":1,"maxy":1}'),
+    ]) {
+      expect(pruneFilesWithIndex([file], predicate).planned).toEqual([file]);
+    }
+    const row = { [name]: 10 };
+    const columns = buildMinMaxIndex([row], [name]);
+    expect(Object.hasOwn(columns, name)).toBe(true);
+    expect(pruneFilesWithIndex([{ path: "a", columns }], eq(col(name), 1)).skipped).toHaveLength(1);
+  }
+});
