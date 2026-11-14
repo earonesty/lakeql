@@ -1,0 +1,21 @@
+{
+  "change": "Grouped and ungrouped Parquet task checkpoint construction share a single scan loop driven by generic physical reduction operators. Both use owned mutable accumulators and owned checkpoint snapshots. Grouped tasks expose aggregateParquetGroupTaskOwned; plain callers transfer results at return. Partition-column augmentation now runs consistently in the shared loop.",
+  "validation": {
+    "taskAndWorkUnitTests": 25,
+    "typescriptBuild": "passed",
+    "typecheck": "passed",
+    "formatting": "passed",
+    "realFixture": [
+      "null and string group keys across multiple row groups",
+      "Hive-style partition key included with group values",
+      "sum/count snapshots match explicit expected groups",
+      "checkpoint stays charged after task return until release",
+      "maxGroups rejection preserves LAKEQL_GROUP_LIMIT_EXCEEDED and releases reservations"
+    ]
+  },
+  "remaining": [
+    "Grouped multi-task fan-in still calls plain checkpoints and legacy merge/finalization functions.",
+    "Grouped order/limit shaping and batch construction need owned output integration.",
+    "Partition vector construction, predicate scratch, metadata and topology admission still need review."
+  ]
+}

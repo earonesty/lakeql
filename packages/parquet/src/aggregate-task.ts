@@ -14,15 +14,15 @@ import {
   mergeVectorGroupByStates,
   type ObjectStore,
   type OwnedMemory,
+  type PhysicalGroupedReduce,
+  type PhysicalReduce,
   type PhysicalReductionContinuation,
   type Row,
   restoreVectorGroupByState,
   selectedRowCount,
   sliceBatch as sliceBatchRows,
-  snapshotVectorGroupByState,
   type TaskInput,
   tryPredicateSelection,
-  updateVectorGroupByState,
   type Vector,
   type VectorAggregateStateSnapshots,
   type VectorGroupByStateSnapshot,
@@ -69,6 +69,28 @@ export async function aggregateParquetTaskOwned(
   spec: AggregateSpec,
   options: AggregateParquetTaskOptions = {},
 ): Promise<OwnedMemory<VectorAggregateStateSnapshots>> {
+  return aggregateTaskSnapshotOwned(store, task, { kind: "reduce", aggregates: spec }, options);
+}
+
+async function aggregateTaskSnapshotOwned(
+  store: ObjectStore,
+  task: TaskInput,
+  operator: PhysicalReduce,
+  options: AggregateParquetTaskOptions,
+): Promise<OwnedMemory<VectorAggregateStateSnapshots>>;
+async function aggregateTaskSnapshotOwned(
+  store: ObjectStore,
+  task: TaskInput,
+  operator: PhysicalGroupedReduce,
+  options: AggregateParquetGroupTaskOptions,
+): Promise<OwnedMemory<VectorGroupByStateSnapshot>>;
+async function aggregateTaskSnapshotOwned(
+  store: ObjectStore,
+  task: TaskInput,
+  operator: PhysicalReduce | PhysicalGroupedReduce,
+  options: AggregateParquetGroupTaskOptions,
+): Promise<OwnedMemory<VectorAggregateStateSnapshots | VectorGroupByStateSnapshot>> {
+  const spec = operator.aggregates;
   const scope = new MemoryScope(options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER));
   options = { ...options, memoryBudget: scope.budget };
   let reducer: PhysicalReductionContinuation | undefined;
@@ -87,16 +109,17 @@ export async function aggregateParquetTaskOwned(
       memoryBudget: options.memoryBudget,
     });
     enforceAggregateTaskBudget(scanOptions);
-    const physicalColumns = aggregateTaskReadColumns(task, spec);
-    reducer = new CpuPhysicalBackend().openReduction(
-      { kind: "reduce", aggregates: spec },
-      {
-        allocationScope: scope,
-        ...(options.budget === undefined ? {} : { budget: options.budget }),
-        ...(options.now === undefined ? {} : { now: options.now }),
-        ...(options.startedAt === undefined ? {} : { queryStartedAt: options.startedAt }),
-      },
+    const physicalColumns = aggregateTaskReadColumns(
+      task,
+      spec,
+      operator.kind === "grouped-reduce" ? operator.keys : undefined,
     );
+    reducer = new CpuPhysicalBackend().openReduction(operator, {
+      allocationScope: scope,
+      ...(options.budget === undefined ? {} : { budget: options.budget }),
+      ...(options.now === undefined ? {} : { now: options.now }),
+      ...(options.startedAt === undefined ? {} : { queryStartedAt: options.startedAt }),
+    });
     for (const { rowStart, rowEnd } of taskRowWindows(metadata, task)) {
       const readOptions = taskReadOptions(
         rowStart,
@@ -107,15 +130,16 @@ export async function aggregateParquetTaskOwned(
       );
       if (scanOptions !== undefined) readOptions.stats = scanOptions.stats;
       for await (const batch of readParquetColumnBatchesFromFile(file, metadata, readOptions)) {
+        const vectorBatch = batchWithPartitionValues(batch.batch, task.partitionValues);
         if (batch.residualPredicateSatisfied === true) {
           if (scanOptions !== undefined) {
-            recordRowsMatched(scanOptions.stats, batch.batch.rowCount);
+            recordRowsMatched(scanOptions.stats, vectorBatch.rowCount);
             enforceAggregateTaskBudget(scanOptions);
           }
-          await reducer.append(batch.batch);
+          await reducer.append(vectorBatch);
           continue;
         }
-        const selection = tryPredicateSelection(batch.batch, task.residualPredicate);
+        const selection = tryPredicateSelection(vectorBatch, task.residualPredicate);
         if (selection === undefined) {
           throw new LakeqlError(
             "LAKEQL_UNSUPPORTED_PUSHDOWN",
@@ -124,15 +148,23 @@ export async function aggregateParquetTaskOwned(
           );
         }
         if (scanOptions !== undefined) {
-          recordRowsMatched(scanOptions.stats, selectedRowCount(batch.batch.rowCount, selection));
+          recordRowsMatched(scanOptions.stats, selectedRowCount(vectorBatch.rowCount, selection));
           enforceAggregateTaskBudget(scanOptions);
         }
-        await reducer.append(batch.batch, selection);
+        await reducer.append(vectorBatch, selection);
       }
     }
     const checkpoint = scope.adopt(await reducer.checkpoint());
-    if (checkpoint.value.kind !== "aggregate-snapshot")
+    if (
+      checkpoint.value.kind !== "aggregate-snapshot" &&
+      checkpoint.value.kind !== "grouped-aggregate-snapshot"
+    )
       throw new LakeqlError("LAKEQL_TYPE_ERROR", "Expected aggregate task checkpoint");
+    if (
+      (operator.kind === "grouped-reduce") !==
+      (checkpoint.value.kind === "grouped-aggregate-snapshot")
+    )
+      throw new LakeqlError("LAKEQL_TYPE_ERROR", "Aggregate task checkpoint kind mismatch");
     return scope.retainAllocations(checkpoint.value.snapshot);
   } catch (cause) {
     if (cause instanceof LakeqlError) throw cause;
@@ -253,70 +285,32 @@ export async function aggregateParquetGroupTask(
   spec: AggregateSpec,
   options: AggregateParquetGroupTaskOptions = {},
 ): Promise<VectorGroupByStateSnapshot> {
+  const owner = await aggregateParquetGroupTaskOwned(store, task, groupColumns, spec, options);
   try {
-    const scanOptions = aggregateScanOptions(options);
-    const file = await taskSource(store, task.path, options);
-    enforceAggregateTaskBudget(scanOptions);
-    const { metadata, cached } = await readCachedParquetMetadata(
-      task.path,
-      file,
-      options.metadataCache,
-    );
-    recordMetadataCache(scanOptions, cached);
-    rejectUnsupportedParquetSchema(metadata, {
-      allowValueCheckedScalarDecimals: true,
-      memoryBudget: options.memoryBudget,
-    });
-    enforceAggregateTaskBudget(scanOptions);
-    const physicalColumns = aggregateTaskReadColumns(task, spec, groupColumns);
-    const aggregateOptions = aggregateVectorOptions(options);
-    const groupOptions =
-      options.maxGroups === undefined
-        ? aggregateOptions
-        : { ...aggregateOptions, maxGroups: options.maxGroups };
-    const state = createVectorGroupByState(groupColumns, spec);
-    for (const { rowStart, rowEnd } of taskRowWindows(metadata, task)) {
-      const readOptions = taskReadOptions(
-        rowStart,
-        rowEnd,
-        physicalColumns,
-        task.residualPredicate,
-        options,
-      );
-      if (scanOptions !== undefined) readOptions.stats = scanOptions.stats;
-      for await (const batch of readParquetColumnBatchesFromFile(file, metadata, readOptions)) {
-        const vectorBatch = batchWithPartitionValues(batch.batch, task.partitionValues);
-        if (batch.residualPredicateSatisfied === true) {
-          if (scanOptions !== undefined) {
-            recordRowsMatched(scanOptions.stats, vectorBatch.rowCount);
-            enforceAggregateTaskBudget(scanOptions);
-          }
-          updateVectorGroupByState(state, vectorBatch, undefined, groupOptions);
-          continue;
-        }
-        const selection = tryPredicateSelection(vectorBatch, task.residualPredicate);
-        if (selection === undefined) {
-          throw new LakeqlError(
-            "LAKEQL_UNSUPPORTED_PUSHDOWN",
-            "aggregateParquetGroupTask requires a vectorizable residual predicate",
-            { path: task.path },
-          );
-        }
-        if (scanOptions !== undefined) {
-          recordRowsMatched(scanOptions.stats, selectedRowCount(vectorBatch.rowCount, selection));
-          enforceAggregateTaskBudget(scanOptions);
-        }
-        updateVectorGroupByState(state, vectorBatch, selection, groupOptions);
-      }
-    }
-    return snapshotVectorGroupByState(state);
-  } catch (cause) {
-    if (cause instanceof LakeqlError) throw cause;
-    throw new LakeqlError("LAKEQL_PARQUET_READ_ERROR", `Failed to read ${task.path}`, {
-      path: task.path,
-      cause,
-    });
+    return owner.value;
+  } finally {
+    owner.release();
   }
+}
+
+export async function aggregateParquetGroupTaskOwned(
+  store: ObjectStore,
+  task: TaskInput,
+  groupColumns: readonly string[],
+  spec: AggregateSpec,
+  options: AggregateParquetGroupTaskOptions = {},
+): Promise<OwnedMemory<VectorGroupByStateSnapshot>> {
+  return aggregateTaskSnapshotOwned(
+    store,
+    task,
+    {
+      kind: "grouped-reduce",
+      keys: [...groupColumns],
+      aggregates: spec,
+      ...(options.maxGroups === undefined ? {} : { maxGroups: options.maxGroups }),
+    },
+    options,
+  );
 }
 
 export async function aggregateParquetGroupTasks(

@@ -42,6 +42,7 @@ import type {
 
 export {
   aggregateParquetGroupTask,
+  aggregateParquetGroupTaskOwned,
   aggregateParquetGroupTasks,
   aggregateParquetGroupTasksBatch,
   aggregateParquetTask,

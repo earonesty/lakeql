@@ -12,6 +12,7 @@ import {
 import { describe, expect, it } from "vitest";
 import {
   aggregateParquetGroupTask,
+  aggregateParquetGroupTaskOwned,
   aggregateParquetGroupTasks,
   aggregateParquetGroupTasksBatch,
   aggregateParquetTask,
@@ -722,5 +723,53 @@ it.each([
           },
         );
   await expect(pending).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("retains grouped task checkpoints and cleans up group-limit rejection", async () => {
+  const store = memoryStore();
+  await writeParquet(store, "owned-group-task.parquet", {
+    rowGroupSize: [2, 2],
+    columnData: [
+      { name: "g", type: "STRING", data: ["a", null, "a", "b"] },
+      { name: "value", type: "DOUBLE", data: [1, 2, 3, 4] },
+    ],
+  });
+  const task: TaskInput = {
+    path: "owned-group-task.parquet",
+    rowGroupRanges: [{ start: 0, end: 2 }],
+    partitionValues: { region: "west" },
+  };
+  const spec = { total: { op: "sum" as const, column: "value" }, n: { op: "count" as const } };
+  const pool = new MemoryBudget(1024 * 1024);
+  const owner = await aggregateParquetGroupTaskOwned(store, task, ["g", "region"], spec, {
+    memoryBudget: pool,
+    batchSize: 1,
+  });
+  try {
+    expect(
+      owner.value.groups.map((group) => ({ keys: group.keyValues, states: group.states })),
+    ).toEqual([
+      {
+        keys: ["a", "west"],
+        states: { total: { op: "sum", sum: 4 }, n: { op: "count", count: 2 } },
+      },
+      {
+        keys: [null, "west"],
+        states: { total: { op: "sum", sum: 2 }, n: { op: "count", count: 1 } },
+      },
+      {
+        keys: ["b", "west"],
+        states: { total: { op: "sum", sum: 4 }, n: { op: "count", count: 1 } },
+      },
+    ]);
+    expect(pool.usedBytes).toBeGreaterThan(0);
+  } finally {
+    owner.release();
+  }
+  expect(pool.usedBytes).toBe(0);
+  await expect(
+    aggregateParquetGroupTaskOwned(store, task, ["g"], spec, { memoryBudget: pool, maxGroups: 2 }),
+  ).rejects.toMatchObject({ code: "LAKEQL_GROUP_LIMIT_EXCEEDED" });
   expect(pool.usedBytes).toBe(0);
 });
