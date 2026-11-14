@@ -920,6 +920,7 @@ export class QueryResult {
         config.where,
         undefined,
         config.projections,
+        predicateScope.childScope(),
       );
       for (const object of paths) {
         stats.filesPlanned += 1;
@@ -2795,7 +2796,7 @@ export class QueryResult {
       let retainedOwner: OwnedMemory<Batch> | undefined;
       try {
         for await (const { batch, sourceIdentity, owner } of this.columnBatches(
-          projectedReadColumns(config.select, config.where, orderBy, config.projections),
+          projectedReadColumns(config.select, config.where, orderBy, config.projections, planning),
           startedAt,
           columnarBatchSize(config.batchSize),
           "iteration",
@@ -2883,16 +2884,7 @@ export class QueryResult {
           const result = resultOwner.value;
           const outputScope = new MemoryScope(this.memoryBudget);
           try {
-            let columns = config.select?.length ?? 0;
-            for (const name in result.columns) if (Object.hasOwn(result.columns, name)) columns++;
-            const projected = outputScope.allocate(
-              2 * allocationCharges.object +
-                (columns + 2) * allocationCharges.property +
-                2 * allocationCharges.array +
-                4 * columns * allocationCharges.arraySlot,
-              "top-k output projection descriptors",
-              () => vectorProjectBatch(result, config.select),
-            ).value;
+            const projected = vectorProjectBatch(result, config.select, undefined, outputScope);
             this.stats.rowsReturned += projected.rowCount;
             enforceBudget(config.budget, this.stats, config.now, startedAt);
             this.stats.elapsedMs = config.now() - startedAt;
@@ -3329,7 +3321,13 @@ export class QueryResult {
       matched.length = 0;
       initialRowsScope?.dispose();
     }
-    const columns = projectedReadColumns(config.select, config.where, orderBy, config.projections);
+    const columns = projectedReadColumns(
+      config.select,
+      config.where,
+      orderBy,
+      config.projections,
+      allocationScope.childScope(),
+    );
     for (const object of paths) {
       stats.filesPlanned += 1;
       stats.filesRead += 1;
@@ -3400,7 +3398,13 @@ export class QueryResult {
     const { stats } = this;
     const { planned: paths, skipped: skippedFiles } = await this.planObjects();
     stats.filesSkipped = skippedFiles;
-    const columns = projectedReadColumns(config.select, config.where, orderBy, config.projections);
+    const columns = projectedReadColumns(
+      config.select,
+      config.where,
+      orderBy,
+      config.projections,
+      allocationScope.childScope(),
+    );
     const runCapacity = config.budget.maxBufferedRows ?? Number.POSITIVE_INFINITY;
     let currentRun: Row[] = [];
     let directory = allocationScope.childScope();
@@ -5589,15 +5593,22 @@ function projectedReadColumns(
   where: Expr | undefined,
   orderBy: OrderByTerm[] | undefined = undefined,
   projections: Record<string, Expr> | undefined = undefined,
+  scope?: MemoryScope,
 ): string[] | undefined {
   if (select === undefined || select.length === 0 || select.includes("*")) return undefined;
+  const collect = (columns: { add(name: string): unknown }) => {
+    for (const column of select) columns.add(column);
+    for (const term of orderBy ?? []) columns.add(term.column);
+    if (projections !== undefined) {
+      for (const name in projections) {
+        if (Object.hasOwn(projections, name)) collectExprColumns(projections[name], columns);
+      }
+    }
+    collectExprColumns(where, columns);
+  };
+  if (scope) return admittedColumnNames(scope, collect, true);
   const columns = new Set<string>();
-  for (const column of select ?? []) {
-    if (column !== "*") columns.add(column);
-  }
-  for (const term of orderBy ?? []) columns.add(term.column);
-  for (const expr of Object.values(projections ?? {})) collectExprColumns(expr, columns);
-  collectExprColumns(where, columns);
+  collect(columns);
   return columns.size === 0 ? undefined : [...columns].sort();
 }
 

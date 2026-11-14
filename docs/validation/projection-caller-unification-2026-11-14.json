@@ -1,0 +1,30 @@
+{
+  "date": "2026-11-14",
+  "requirements": ["F2", "F3", "M1"],
+  "changes": [
+    "Replace top-k output projection descriptor estimates with the shared scoped vectorProjectBatch contract.",
+    "Use admitted read-column collection in row projection, ordered row collection, sort runs and columnar top-k.",
+    "Keep read planning in child scopes so returned owner handles do not retain temporary column lists.",
+    "Share one column visitor between scoped and legacy callers, eliminating Object.values allocation in this helper."
+  ],
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "targeted_tests": 34,
+    "coverage": [
+      "Borrowed/owned columnar and deferred top-k boundary tests",
+      "Row projection admission and spill lifetime tests",
+      "Row top-k checkpoint memory tests",
+      "Query shared/per-query budget tests"
+    ],
+    "full_default_suite": {
+      "passed": 3478,
+      "skipped": 629
+    }
+  },
+  "remaining": [
+    "Legacy callers of the optional-scope helper, including other projected scan/planning routes, still need scope integration.",
+    "Physical metadata, vector wrappers and runtime scratch remain separate audit items.",
+    "No whole-Worker memory guarantee is inferred from these library accounting changes."
+  ]
+}
