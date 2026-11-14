@@ -42,6 +42,7 @@ import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
 import { MutableMemoryLedger } from "./mutable-memory-ledger.js";
 import { cloneObjectInfo, cloneObjectInfos } from "./object-info.js";
 import { readObjectHead } from "./read-object-head.js";
+import { validateRowLimits } from "./row-limits.js";
 
 export { parseHivePartitions } from "./hive-partitions.js";
 
@@ -5542,17 +5543,12 @@ function validateAggregateRequest(
   }
   if (
     options.maxGroups !== undefined &&
-    (!Number.isInteger(options.maxGroups) || options.maxGroups < 1)
+    (!Number.isSafeInteger(options.maxGroups) || options.maxGroups < 1)
   ) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "maxGroups must be a positive integer");
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", "maxGroups must be a positive safe integer");
   }
   if (options.orderBy !== undefined) normalizeOrderBy(options.orderBy);
-  if (options.limit !== undefined && (!Number.isInteger(options.limit) || options.limit < 0)) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "aggregate limit must be a non-negative integer");
-  }
-  if (options.offset !== undefined && (!Number.isInteger(options.offset) || options.offset < 0)) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "aggregate offset must be a non-negative integer");
-  }
+  validateRowLimits(options, "aggregate ");
   for (const aggregate of Object.values(spec)) validateAggregateExpr(aggregate);
 }
 
@@ -5642,14 +5638,12 @@ function throwAggregateType(op: string): never {
 }
 
 function validateQueryInit(init: PathQueryInit): void {
-  if (init.limit !== undefined && (!Number.isInteger(init.limit) || init.limit < 0)) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "limit must be a non-negative integer");
-  }
-  if (init.offset !== undefined && (!Number.isInteger(init.offset) || init.offset < 0)) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "offset must be a non-negative integer");
-  }
-  if (init.batchSize !== undefined && (!Number.isInteger(init.batchSize) || init.batchSize <= 0)) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "batchSize must be a positive integer");
+  validateRowLimits(init);
+  if (
+    init.batchSize !== undefined &&
+    (!Number.isSafeInteger(init.batchSize) || init.batchSize <= 0)
+  ) {
+    throw new LakeqlError("LAKEQL_TYPE_ERROR", "batchSize must be a positive safe integer");
   }
   if (init.orderBy !== undefined) normalizeOrderBy(init.orderBy);
   if (init.distinct !== undefined && typeof init.distinct !== "boolean") {

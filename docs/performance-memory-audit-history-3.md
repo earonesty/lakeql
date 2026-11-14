@@ -4839,3 +4839,26 @@ Full validation passes: 3,757 regular tests (645 skipped), 82 Worker tests, buil
 and types. Three additional exact-capacity fixtures initially omitted the view
 charge; they now use the shared forecast while retaining their pruning/lifetime
 assertions. Evidence: `validation/footer-directory-view-2026-11-14.json`.
+
+### F3/M1 shared safe row-limit validation
+
+Query and vector top-k validators previously accepted integer values above
+`Number.MAX_SAFE_INTEGER`, and independently valid offset/limit values could
+overflow their combined selection extent. `validateRowLimits` now centralizes
+nonnegative safe-integer bounds and combined-end validation for query execution,
+aggregate-result slicing, and borrowed/owned vector top-k. Vector top-k keeps its
+mandatory-limit contract for JavaScript callers. Query batch sizes and aggregate
+group limits now require positive safe integers too.
+
+Twenty focused cases verify invalid values and overflowing sums reject with
+`LAKEQL_TYPE_ERROR` before query I/O or additional vector allocation. They cover
+NaN, infinity, negative/fractional/unsafe values, missing vector limits and zero
+batch/group capacity. The valid boundary remains supported: a safe-maximum limit
+over three rows allocates by actual input size and returns the sorted rows; zero
+limit at safe-maximum offset returns empty output. All owner charges release.
+
+The changeset records this stricter input contract. This closes the identified
+configuration arithmetic gap, not the entire top-k/output ownership review.
+
+Validation: all 3,777 regular tests (645 skipped), 82 Worker tests, build and
+typechecking pass. Evidence: `validation/safe-row-limits-2026-11-14.json`.

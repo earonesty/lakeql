@@ -30,6 +30,7 @@ import {
 } from "./packed-gather.js";
 import type { OrderByTerm } from "./query.js";
 import { setRecordValue } from "./record-value.js";
+import { validateRowLimits } from "./row-limits.js";
 import { compareOrderedScalars } from "./scalar-order.js";
 import { ScalarReadWorkspace } from "./scalar-read-workspace.js";
 import { planSelectedConcat } from "./selected-concat.js";
@@ -58,7 +59,7 @@ export function vectorTopKBatch(
   options: VectorTopKOptions,
   selection?: Selection,
 ): Batch {
-  validateTopKOptions(options);
+  validateRowLimits(options, "", true);
   const offset = options.offset ?? 0;
   const topK = offset + options.limit;
   if (topK === 0) return gatherBatch(batch, []);
@@ -85,7 +86,7 @@ export function vectorTopKOwnedBatch(
   options: VectorTopKOptions,
   selection?: Selection,
 ): OwnedMemory<Batch> {
-  validateTopKOptions(options);
+  validateRowLimits(options, "", true);
   const batch = input.value;
   if (!Number.isSafeInteger(batch.rowCount) || batch.rowCount < 0 || batch.rowCount > 0x100000000) {
     throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Top-k indices exceed Uint32 capacity");
@@ -1318,17 +1319,4 @@ function gatherValid(
 function optionalValidity<T extends Vector>(vector: T, valid: Uint8Array | undefined): T {
   if (valid === undefined) return vector;
   return { ...vector, valid };
-}
-
-function validateTopKOptions(options: VectorTopKOptions): void {
-  if (!Number.isInteger(options.limit) || options.limit < 0) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "limit must be a non-negative integer", {
-      limit: options.limit,
-    });
-  }
-  if (options.offset !== undefined && (!Number.isInteger(options.offset) || options.offset < 0)) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "offset must be a non-negative integer", {
-      offset: options.offset,
-    });
-  }
 }
