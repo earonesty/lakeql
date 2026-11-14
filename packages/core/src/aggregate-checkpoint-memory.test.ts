@@ -518,3 +518,65 @@ it.each([
   expect(scans).toBe(0);
   expect(pool.usedBytes).toBe(0);
 });
+
+it.each([
+  false,
+  true,
+])("releases parsed checkpoint storage before scanning (spilled=%s)", async (spilled) => {
+  const store = memoryStore();
+  await store.put("table", new Uint8Array(1));
+  const spec = {
+    total: { op: "sum", column: "value" },
+    median: { op: "median", column: "value" },
+    mode: { op: "mode", column: "value" },
+    first: { op: "first", column: "value" },
+    last: { op: "last", column: "value" },
+    any: { op: "any", column: "value" },
+    distinct: { op: "count_distinct", column: "value" },
+  } as const;
+  const initial = new Lake({
+    store,
+    scanner: {
+      async *scan() {
+        yield [
+          { key: "雪", value: 2 },
+          { key: "雪", value: 3 },
+          { key: "雪", value: 2 },
+        ];
+      },
+    },
+  });
+  const first = await initial.path("table").run().aggregateWithState(["key"], spec);
+  const original = JSON.parse(new TextDecoder().decode(first.operatorState as Uint8Array));
+  const observations = [];
+  for (const padding of ["", "x".repeat(65536)]) {
+    const pool = new MemoryBudget(4 * 1024 * 1024);
+    const bytes = new TextEncoder().encode(JSON.stringify({ ...original, padding }));
+    const spill = memorySpillAdapter();
+    await spill.write("restore", bytes);
+    let liveAtScan = -1;
+    const lake = new Lake({
+      store,
+      memoryPool: pool,
+      scanner: {
+        async *scan() {
+          liveAtScan = pool.usedBytes;
+          yield [];
+        },
+      },
+    });
+    const result = await lake
+      .path("table")
+      .run()
+      .aggregateWithState(["key"], spec, {
+        spill,
+        operatorState: spilled ? { spillRef: "restore" } : bytes,
+      });
+    expect(result.rows).toEqual(first.rows);
+    expect(pool.usedBytes).toBe(0);
+    observations.push({ liveAtScan, peak: pool.peakBytes });
+  }
+  expect(observations[0]?.liveAtScan).toBeGreaterThan(0);
+  expect(observations[1]?.liveAtScan).toBe(observations[0]?.liveAtScan);
+  expect(observations[1]?.peak).toBeGreaterThan((observations[0]?.peak ?? 0) + 65536);
+});

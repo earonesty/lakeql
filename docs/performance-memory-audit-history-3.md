@@ -4285,3 +4285,11 @@ Restore previously accepted repeated group keys and silently replaced the earlie
 Focused aggregate/checkpoint tests pass 32 cases. New cases cover inline and spilled corrupt checkpoints, scanner non-invocation, zero remaining scope charges, and duplicate vector group snapshots. The real HTTP Parquet fixture now also rejects duplicate checkpoint groups without a new request for either 206 or ignored-range 200 transport. This is a malformed-state correctness/retention fix under F1/V2; it does not close the remaining generic lifecycle and spill-atomicity acceptance work.
 
 Final verification: build/typecheck/formatting passed; full suite 3,714 passed / 629 skipped (407 files). Evidence: `aggregate-duplicate-restore-2026-11-14.json`.
+
+### F1 restored checkpoint scratch lifetime (2026-11-14)
+
+Row aggregate restore previously kept parsed checkpoint objects and owned spill-read buffers in the query-long checkpoint scope. Accumulators already admitted their retained scalar/collection state, but group key records still borrowed the parsed tree. Restore now reads, parses, and compares input state in a child scratch scope; restored group keys are independently detached into the retained scope. Scratch releases before the next scan begins, including failure paths. Unseen first/last accumulator constructors normalize their unused value to null rather than retaining an irrelevant checkpoint reference.
+
+The new lifetime test compares an ordinary checkpoint with the same checkpoint plus 64 KiB of unused JSON data, for both inline and owned spill reads. The padded input produces a higher restore peak but identical live tracked memory at scanner entry. Sum, median, mode, first, last, any and count-distinct results remain unchanged, and final pool usage returns to zero. The checkpoint suite passes 29 tests; existing exact-capacity, cancellation, malformed restore and real HTTP continuation tests are included in full regression validation. Restore-time old/new overlap remains admitted; this change shortens lifetime rather than claiming that overlap or runtime GC disappears.
+
+Final verification: build/typecheck passed; full suite 3,716 passed / 629 skipped (407 files). Evidence: `aggregate-restore-scratch-lifetime-2026-11-14.json`.

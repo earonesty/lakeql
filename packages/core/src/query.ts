@@ -4713,7 +4713,7 @@ class FirstState implements AggregateState {
     protected readonly scope: MemoryScope,
   ) {
     this.retained = new OwnedReplacementValue(scope);
-    if (seen) this.value = this.retained.replace(value);
+    this.value = seen ? this.retained.replace(value) : null;
   }
   private readonly retained: OwnedReplacementValue;
 
@@ -4751,7 +4751,7 @@ class LastState implements AggregateState {
     private readonly scope: MemoryScope,
   ) {
     this.retained = new OwnedReplacementValue(scope);
-    if (seen) this.value = this.retained.replace(value);
+    this.value = seen ? this.retained.replace(value) : null;
   }
   private readonly retained: OwnedReplacementValue;
 
@@ -5108,58 +5108,65 @@ async function aggregateGroupsFromState(
     () => new Map<string, AggregateGroup>(),
   ).value;
   if (options.operatorState === undefined) return groups;
-  const state =
-    isSpilledOperatorState(options.operatorState) && options.spill !== undefined
-      ? await readCheckpointSpill(options.spill, options.operatorState.spillRef, scope)
-      : options.operatorState;
-  if (isSpilledOperatorState(state)) {
-    throw new LakeqlError(
-      "LAKEQL_BOOKMARK_INVALID",
-      "Aggregate spill state requires a spill adapter",
-      {
-        spillRef: state.spillRef,
-      },
-    );
+  const restoreScope = scope.childScope();
+  try {
+    const state =
+      isSpilledOperatorState(options.operatorState) && options.spill !== undefined
+        ? await readCheckpointSpill(options.spill, options.operatorState.spillRef, restoreScope)
+        : options.operatorState;
+    if (isSpilledOperatorState(state)) {
+      throw new LakeqlError(
+        "LAKEQL_BOOKMARK_INVALID",
+        "Aggregate spill state requires a spill adapter",
+        {
+          spillRef: state.spillRef,
+        },
+      );
+    }
+    const snapshot =
+      state instanceof Uint8Array
+        ? validateAggregateOperatorState(
+            restoreScope.adopt(parseOwnedJson(state, restoreScope)).value,
+          )
+        : validateAggregateOperatorState(
+            restoreScope.adopt(detachOwnedRow(state as unknown as Row, restoreScope.budget)).value,
+          );
+    if (
+      !equalStableData(snapshot.groupColumns, groupColumns, restoreScope) ||
+      !equalStableData(snapshot.spec, spec, restoreScope)
+    ) {
+      throw new LakeqlError(
+        "LAKEQL_BOOKMARK_STALE",
+        "Aggregate operator state does not match request",
+        {
+          stateGroupColumns: snapshot.groupColumns,
+          groupColumns,
+        },
+      );
+    }
+    if (options.maxGroups !== undefined && snapshot.groups.length > options.maxGroups) {
+      throw new LakeqlError(
+        "LAKEQL_GROUP_LIMIT_EXCEEDED",
+        "Restored aggregate state exceeds group budget",
+        {
+          limit: options.maxGroups,
+          actual: snapshot.groups.length,
+        },
+      );
+    }
+    for (const group of snapshot.groups) {
+      if (groups.has(group.key))
+        throw new LakeqlError("LAKEQL_BOOKMARK_INVALID", "Duplicate aggregate checkpoint group", {
+          key: group.key,
+        });
+      scope.allocate(aggregateGroupEntryBytes(group.key), "restored aggregate group entry", () =>
+        groups.set(group.key, aggregateGroupFromSnapshot(spec, group, scope)),
+      );
+    }
+    return groups;
+  } finally {
+    restoreScope.dispose();
   }
-  const snapshot =
-    state instanceof Uint8Array
-      ? validateAggregateOperatorState(scope.adopt(parseOwnedJson(state, scope)).value)
-      : validateAggregateOperatorState(
-          scope.adopt(detachOwnedRow(state as unknown as Row, scope.budget)).value,
-        );
-  if (
-    !equalStableData(snapshot.groupColumns, groupColumns, scope) ||
-    !equalStableData(snapshot.spec, spec, scope)
-  ) {
-    throw new LakeqlError(
-      "LAKEQL_BOOKMARK_STALE",
-      "Aggregate operator state does not match request",
-      {
-        stateGroupColumns: snapshot.groupColumns,
-        groupColumns,
-      },
-    );
-  }
-  if (options.maxGroups !== undefined && snapshot.groups.length > options.maxGroups) {
-    throw new LakeqlError(
-      "LAKEQL_GROUP_LIMIT_EXCEEDED",
-      "Restored aggregate state exceeds group budget",
-      {
-        limit: options.maxGroups,
-        actual: snapshot.groups.length,
-      },
-    );
-  }
-  for (const group of snapshot.groups) {
-    if (groups.has(group.key))
-      throw new LakeqlError("LAKEQL_BOOKMARK_INVALID", "Duplicate aggregate checkpoint group", {
-        key: group.key,
-      });
-    scope.allocate(aggregateGroupEntryBytes(group.key), "restored aggregate group entry", () =>
-      groups.set(group.key, aggregateGroupFromSnapshot(spec, group, scope)),
-    );
-  }
-  return groups;
 }
 
 function isSpilledOperatorState(value: unknown): value is { spillRef: string } {
@@ -5186,7 +5193,8 @@ function aggregateGroupFromSnapshot(
       stateSpecs.set(states[alias], aggregate);
     });
   }
-  return new AggregateGroup(snapshot.keys, states, scope);
+  const keys = scope.adopt(detachOwnedRow(snapshot.keys, scope.budget)).value;
+  return new AggregateGroup(keys, states, scope);
 }
 
 function aggregateStateFromSnapshot(
