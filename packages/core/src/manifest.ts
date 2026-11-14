@@ -1,8 +1,12 @@
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
+import type { MemoryScope } from "./memory-scope.js";
 import { isPrototypeMutationKey } from "./object-key.js";
+import { stringifyOwnedStableData } from "./owned-checkpoint-encoding.js";
 import type { TaskInput } from "./query.js";
 import type { ObjectStore } from "./store.js";
 import type { Bookmark, BookmarkQuery } from "./types.js";
+import { fnv1a64Utf8 } from "./utf8-fingerprint.js";
 import { isWindowExprSnapshot } from "./window-snapshot.js";
 
 export interface TaskManifestTask {
@@ -345,8 +349,36 @@ export function stableStringify(value: unknown): string {
   return JSON.stringify(toStableJson(value));
 }
 
-export function fingerprint(value: unknown): string {
-  return `fp_${fnv1a64(stableStringify(value)).toString(16).padStart(16, "0")}`;
+export function fingerprint(value: unknown, parent?: MemoryScope): string {
+  if (parent === undefined) return fingerprintText(stableStringify(value));
+  const output = parent.childScope();
+  const scratch = output.childScope();
+  try {
+    const text = scratch.adopt(stringifyOwnedStableData(value, scratch)).value;
+    // Hash arithmetic and hexadecimal formatting have constant live extent.
+    scratch.allocate(
+      8 * c.bigint + 2 * c.string + 32 * c.stringCodeUnit,
+      "fingerprint workspace",
+      () => undefined,
+    );
+    const result = output.allocate(c.string + 19 * c.stringCodeUnit, "fingerprint", () =>
+      fingerprintText(text),
+    );
+    const owner = output.retainAllocations(result.value);
+    try {
+      return parent.adopt(owner).value;
+    } catch (error) {
+      owner.release();
+      throw error;
+    }
+  } finally {
+    scratch.dispose();
+    output.dispose();
+  }
+}
+
+function fingerprintText(text: string): string {
+  return `fp_${fnv1a64Utf8(text).toString(16).padStart(16, "0")}`;
 }
 
 function normalizeTaskInput(task: TaskInput): TaskInput {
@@ -569,16 +601,6 @@ function assertSafeRecordKey(key: string, message: string): void {
 
 function isStringRecord(value: unknown): value is Record<string, string> {
   return isRecord(value) && Object.values(value).every((inner) => typeof inner === "string");
-}
-
-function fnv1a64(input: string): bigint {
-  let hash = 0xcbf29ce484222325n;
-  const prime = 0x100000001b3n;
-  for (const byte of new TextEncoder().encode(input)) {
-    hash ^= BigInt(byte);
-    hash = BigInt.asUintN(64, hash * prime);
-  }
-  return hash;
 }
 
 async function hmac(payload: string, secret: string | Uint8Array): Promise<string> {

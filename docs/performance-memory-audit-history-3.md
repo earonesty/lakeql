@@ -3479,3 +3479,24 @@ Verification after integration: build and typecheck passed; the full default sui
 passed 3,550 tests with 629 skips. Focused task-lifetime tests passed 7 and the
 Parquet adapter suite passed 25. Evidence:
 `docs/validation/queued-task-ownership-2026-11-14.json`.
+
+### 2026-11-14 — fingerprint encoding and admitted serialization
+
+Fingerprint hashing now emits UTF-8 bytes directly into the existing FNV-1a hash,
+avoiding the full TextEncoder byte-array copy. Compatibility tests compare against
+TextEncoder across every UTF-16 code unit, supplementary pairs, lone surrogates,
+empty strings, embedded nulls and large Unicode inputs. Existing manifest tests
+preserve identifiers and fingerprint semantics. `fingerprint(value, scope)` adds
+transactional stable-serialization admission and constant live hash workspace;
+only the 19-character digest remains charged in the parent. Exact-capacity and
+one-byte-below tests verify cleanup and sibling preservation.
+
+Build/typecheck passed; focused tests passed 28; full suite passed 3,561 with 629
+skips. `bench/utf8-fingerprint.mjs` compares both kernels after warmup, alternating
+execution order. Recorded large ASCII medians were 9.07 ms encoded / 3.83 ms
+incremental, and large Unicode 7.55 / 0.75 ms. The small Unicode case regressed
+from 0.013 to 0.064 ms. These are kernel samples, excluding serialization and
+runtime memory measurements; the removed encoded buffer extent reaches 589,824
+bytes in this matrix. Evidence: `docs/benchmarks/utf8-fingerprint-2026-11-14.json`.
+Manifest construction still needs scoped normalization and ownership integration;
+the optional fingerprint scope alone does not close that boundary.
