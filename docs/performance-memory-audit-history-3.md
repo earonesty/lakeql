@@ -4188,3 +4188,13 @@ The benchmark exposed a significant shallow row-array regression. Initial iterat
 An isolated rerun measured row-array medians of 1.83 ms iterative versus 0.34 ms recursive, wide-numbers 2.39 versus 2.09 ms, and small-row 0.0134 versus 0.0106 ms. Deep iterative encoding took 46.15 ms; recursion could not complete. The shallow-row regression remains OPEN: generator/frame overhead needs further investigation. These sequential kernel measurements do not establish query/cloud performance or whole-heap bounds. Tests cover sibling reuse, high-water retention, failure during depth growth, and idempotent disposal, alongside existing deep/Unicode/exact-capacity suites.
 
 Final validation: build/typecheck passed; full suite 3,682 passed / 629 skipped, 401 passing files.
+
+### Shared JSON container enumeration (2026-11-14)
+
+Sizing and writing now share one module-level container iterator. It preserves array holes and own enumerable object keys without constructing a key array, and borrows one reusable entry record per iterator. Consumers finish using the entry before advancing. This removes the writer's per-container generator-function creation, eliminates per-element sizing entry allocation, and centralizes custom-JSON rejection and enumeration semantics. Existing depth admission covers the iterator/entry workspace; high-water reservations remain until traversal completion.
+
+An isolated rerun of the same kernel benchmark measured median row-array encoding at 0.85 ms (previously 1.83 ms), deep encoding at 21.87 ms (previously 46.15 ms), small-row 0.0106 ms versus recursive 0.0109 ms, and wide-numbers 2.41 ms versus recursive 2.19 ms. The row-array remains about 2.5× slower than recursion (0.34 ms); this regression remains OPEN. Raw samples and built-module hashes are in `json-shared-enumeration-benchmark-2026-11-14.json`. Sequential kernel measurements are not production throughput or heap-cap evidence.
+
+Focused suites passed 73 tests before the final full run. Added byte-level comparison with native JSON.stringify for numeric/empty property keys, inherited and non-enumerable properties, symbols, undefined values, sparse arrays, and repeated aliases. Existing deep/Unicode/cycle/exact-budget tests continue to exercise both passes.
+
+Final verification: build/typecheck and formatting passed; full suite 3,683 passed / 629 skipped in 401 passing files. No claim of completed performance acceptance: the shallow row-array kernel regression remains measurable.

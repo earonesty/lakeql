@@ -97,7 +97,12 @@ try {
     node: process.version,
     builtModuleHashes: Object.fromEntries(
       await Promise.all(
-        ["json-output-size", "json-output-encoding", "json-traversal-budget"].map(async (name) => [
+        [
+          "json-output-size",
+          "json-output-encoding",
+          "json-traversal-budget",
+          "json-container-entries",
+        ].map(async (name) => [
           name,
           createHash("sha256")
             .update(await readFile(`packages/core/dist/${name}.js`))

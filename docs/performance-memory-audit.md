@@ -8,7 +8,9 @@ JSON sizing follow-up: [validation](validation/iterative-json-sizing-2026-11-14.
 
 JSON writing follow-up: [validation](validation/iterative-json-writing-2026-11-14.json); iterative admitted output writing, build/typecheck and 3,680 tests passed (629 skipped).
 
-JSON traversal performance follow-up: [initial measurement](validation/json-traversal-benchmark-2026-11-14.json), [reservation-reuse measurement](validation/json-traversal-reuse-benchmark-2026-11-14.json). Shared high-water admission reduces churn, but the 1,000-row encoding kernel remains about 5.5× slower than recursion; optimization remains open. Build/typecheck and 3,682 tests passed (629 skipped).
+JSON traversal performance follow-up: [initial measurement](validation/json-traversal-benchmark-2026-11-14.json), [reservation-reuse measurement](validation/json-traversal-reuse-benchmark-2026-11-14.json). Shared high-water admission reduces churn, the 1,000-row encoding kernel was about 5.5× slower than recursion at that revision. The shared-enumeration follow-up below improves this further. Build/typecheck and 3,682 tests passed (629 skipped).
+
+Shared JSON enumeration follow-up: [benchmark](validation/json-shared-enumeration-benchmark-2026-11-14.json). One iterator implementation now serves sizing and writing; row-array median improves to 0.85 ms but remains about 2.5× slower than the recursive reference, so the regression remains open.
 Current release checks (source `246b165`):
 `docs/validation/current-cache-ownership-release-gates-2026-11-14.json`.
 

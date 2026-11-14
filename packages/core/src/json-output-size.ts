@@ -2,6 +2,7 @@ import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { isDecimalValue } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
 import { isIntervalValue } from "./interval.js";
+import { type JsonContainerEntry, jsonContainerEntries } from "./json-container-entries.js";
 import { jsonIntegerBytes } from "./json-integer-output.js";
 import { JsonScalarFormatter } from "./json-scalar-output.js";
 import { jsonStringUtf8Bytes } from "./json-string-size.js";
@@ -27,25 +28,12 @@ export function jsonOutputUtf8Bytes(value: unknown, scope?: MemoryScope): number
   const ancestors = new Set<object>();
   type Frame = {
     value: object;
-    entries: Generator<{ key?: string; value: unknown }>;
+    entries: Generator<JsonContainerEntry>;
     bytes: number;
     count: number;
     key: string | undefined;
   };
   const frames: Frame[] = [];
-  function* entries(value: object): Generator<{ key?: string; value: unknown }> {
-    if (Array.isArray(value)) {
-      for (let index = 0; index < value.length; index++) yield { value: value[index] };
-    } else {
-      for (const key in value) {
-        if (!Object.hasOwn(value, key)) continue;
-        const inner = (value as Record<string, unknown>)[key];
-        if (key === "toJSON" && typeof inner === "function")
-          throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Custom JSON output cannot be forecast");
-        yield { key, value: inner };
-      }
-    }
-  }
   const measure = (value: unknown): number | undefined => {
     if (value === null) return 4;
     if (isDecimalValue(value)) return scalar.consume(value, jsonStringUtf8Bytes);
@@ -79,7 +67,7 @@ export function jsonOutputUtf8Bytes(value: unknown, scope?: MemoryScope): number
         traversal.admit(frames.length + 1);
         frames.push({
           value,
-          entries: entries(value),
+          entries: jsonContainerEntries(value),
           bytes: 2,
           count: 0,
           key: undefined,

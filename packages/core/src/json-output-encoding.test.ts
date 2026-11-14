@@ -210,3 +210,25 @@ it("admits traversal while the output backing is live and unwinds writer failure
     expect(scope.budget.usedBytes).toBe(0);
   }
 });
+
+it("preserves own-key order, empty keys, holes, and repeated aliases across traversal", () => {
+  const shared = { text: "雪😀" };
+  const row = Object.assign(Object.create({ inherited: "excluded" }), {
+    "": shared,
+    10: "ten",
+    2: "two",
+    omitted: undefined,
+    again: shared,
+  });
+  Object.defineProperty(row, "hidden", { value: "excluded", enumerable: false });
+  row[Symbol("excluded")] = true;
+  // biome-ignore lint/suspicious/noSparseArray: verify JSON array-hole semantics.
+  const value = [row, , undefined, shared];
+  const expected = new TextEncoder().encode(JSON.stringify(value));
+  const scope = new MemoryScope(new MemoryBudget(65536));
+  const output = encodeOwnedJsonOutput(value, scope);
+  expect(output.value).toEqual(expected);
+  output.release();
+  scope.dispose();
+  expect(scope.budget.usedBytes).toBe(0);
+});

@@ -2,6 +2,7 @@ import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { isDecimalValue } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
 import { isIntervalValue } from "./interval.js";
+import { type JsonContainerEntry, jsonContainerEntries } from "./json-container-entries.js";
 import { writeJsonInteger } from "./json-integer-output.js";
 import { jsonOutputUtf8Bytes } from "./json-output-size.js";
 import { JsonScalarFormatter } from "./json-scalar-output.js";
@@ -29,7 +30,7 @@ export function encodeOwnedJsonOutput(
   const bytes = size + prefix.length + suffix.length;
   const construction = scope.childScope();
   const scalar = new JsonScalarFormatter(construction);
-  type Frame = { iterator: Generator<unknown>; closing: number };
+  type Frame = { iterator: Generator<JsonContainerEntry>; closing: number; first: boolean };
   const frames: Frame[] = [];
   const traversal = new JsonTraversalBudget(
     construction,
@@ -145,27 +146,11 @@ export function encodeOwnedJsonOutput(
         case "object": {
           traversal.admit(frames.length + 1);
           const array = Array.isArray(value);
-          function* children(): Generator<unknown> {
-            if (Array.isArray(value)) {
-              for (let i = 0; i < value.length; i++) {
-                if (i) byte(44);
-                yield value[i];
-              }
-            } else {
-              let first = true;
-              for (const key in value as object) {
-                if (!Object.hasOwn(value as object, key)) continue;
-                const item = (value as Record<string, unknown>)[key];
-                if (absent(item)) continue;
-                if (!first) byte(44);
-                first = false;
-                string(key);
-                byte(58);
-                yield item;
-              }
-            }
-          }
-          frames.push({ iterator: children(), closing: array ? 93 : 125 });
+          frames.push({
+            iterator: jsonContainerEntries(value),
+            closing: array ? 93 : 125,
+            first: true,
+          });
           byte(array ? 91 : 123);
         }
       }
@@ -178,7 +163,17 @@ export function encodeOwnedJsonOutput(
       if (next.done) {
         byte(frame.closing);
         frames.pop();
-      } else write(next.value);
+      } else {
+        const entry = next.value;
+        if (entry.key !== undefined && absent(entry.value)) continue;
+        if (!frame.first) byte(44);
+        frame.first = false;
+        if (entry.key !== undefined) {
+          string(entry.key);
+          byte(58);
+        }
+        write(entry.value);
+      }
     }
     ascii(suffix);
     if (offset !== bytes)
