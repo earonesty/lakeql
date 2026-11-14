@@ -79,13 +79,15 @@ it.each(
           "windowState",
           "windowKeys",
           "windowPartitionKeys",
+          "windowValues",
+          "windowStateValues",
         ]
           .filter((route) => !vector || route.startsWith("window"))
           .map(async (route) => {
             let query = lake
               .path(path)
               .where(
-                projection || route.endsWith("Keys")
+                projection || route.endsWith("Keys") || route.endsWith("Values")
                   ? {
                       kind: "compare",
                       op: "eq",
@@ -99,6 +101,14 @@ it.each(
             if (["ordered", "topK", "sort", "orderedDistinct"].includes(route))
               query = query.orderBy([{ column: "id" }]);
             if (route === "topK") query = query.limit(2);
+            if (route.endsWith("Values"))
+              query = query
+                .window("value", {
+                  fn: "first_value",
+                  args: [predicate.left],
+                  over: { partitionBy: [], orderBy: [{ expr: { kind: "column", name: "id" } }] },
+                })
+                .select(["id", "text", "value"]);
             if (route.startsWith("window"))
               query = query
                 .window("rn", {
@@ -115,11 +125,12 @@ it.each(
                   },
                 })
                 .select(["id", "text"]);
+            if (route.endsWith("Values")) query = query.select(["id", "text", "value"]);
             if (route === "distinct" || route === "orderedDistinct")
               query = query.select(["text"]).distinct();
             const result = query.run();
             const output =
-              route === "windowState"
+              route === "windowState" || route === "windowStateValues"
                 ? result
                     .windowWithState(vector ? { spill: memorySpillAdapter() } : {})
                     .then((value) => value.rows)
@@ -136,17 +147,19 @@ it.each(
               await expect(output).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
             else
               expect(await output).toEqual(
-                route === "distinct" || route === "orderedDistinct"
-                  ? [
-                      projection
-                        ? { text: "dictionary text 1 猫", projected: "accepted text 1 猫" }
-                        : { text: "dictionary text 1 猫" },
-                    ]
-                  : route === "aggregate"
-                    ? [{ count: selected.length }]
-                    : route === "topK"
-                      ? selected.slice(0, 2)
-                      : selected,
+                route.endsWith("Values")
+                  ? selected.map((row) => ({ ...row, value: "accepted text 1 猫" }))
+                  : route === "distinct" || route === "orderedDistinct"
+                    ? [
+                        projection
+                          ? { text: "dictionary text 1 猫", projected: "accepted text 1 猫" }
+                          : { text: "dictionary text 1 猫" },
+                      ]
+                    : route === "aggregate"
+                      ? [{ count: selected.length }]
+                      : route === "topK"
+                        ? selected.slice(0, 2)
+                        : selected,
               );
           }),
       );

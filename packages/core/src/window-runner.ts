@@ -88,7 +88,7 @@ export async function* executeWindowBatches(options: WindowRunnerOptions): Async
     const taskRows = await collectWindowTaskMatches(options, startedAt);
     if (taskRows !== undefined) {
       yield* postWindowQueryBatches({
-        ...windowBatchOptions(options, startedAt),
+        ...windowBatchOptions(options, startedAt, retainedScope),
         rows: taskRows,
       });
       return;
@@ -97,7 +97,7 @@ export async function* executeWindowBatches(options: WindowRunnerOptions): Async
     const vectorRows = await collectVectorWindowRows(options, startedAt, retainedScope);
     if (vectorRows !== undefined) {
       yield* postWindowQueryBatches({
-        ...windowBatchOptions(options, startedAt),
+        ...windowBatchOptions(options, startedAt, retainedScope),
         rows: vectorRows,
       });
       return;
@@ -106,7 +106,7 @@ export async function* executeWindowBatches(options: WindowRunnerOptions): Async
     const matched: Row[] = [];
     await collectWindowMatches(options, matched, startedAt, retainedScope);
     yield* windowedQueryBatches({
-      ...windowBatchOptions(options, startedAt),
+      ...windowBatchOptions(options, startedAt, retainedScope),
       matched,
     });
     stats.elapsedMs = config.now() - startedAt;
@@ -147,11 +147,11 @@ export async function executeWindowWithState(
     const batches =
       windowOptions.spill === undefined
         ? windowedQueryBatches({
-            ...windowBatchOptions(options, startedAt),
+            ...windowBatchOptions(options, startedAt, retainedScope),
             matched: matched ?? [],
           })
         : windowedRunQueryBatches({
-            ...windowBatchOptions(options, startedAt),
+            ...windowBatchOptions(options, startedAt, retainedScope),
             runs,
           });
     for await (const batch of batches) rows.push(...batch);
@@ -326,7 +326,8 @@ async function collectVectorWindowRows(
   }
   stats.elapsedMs = config.now() - startedAt;
   return applyWindowsToVectorBatches(inputs, config.windows ?? {}, {
-    ...(options.memoryBudget === undefined ? {} : { memoryBudget: options.memoryBudget }),
+    memoryBudget: retainedScope.budget,
+    resultScope: retainedScope,
     estimateMemoryBytes: options.estimateMemoryBytes,
     enforceBufferedRows: (rows) => options.enforceBufferedRows(config.budget, rows),
     enforceWindowPartitionRows: (rows) => options.enforceWindowPartitionRows(config.budget, rows),
@@ -452,6 +453,7 @@ function vectorWindowScanner(options: WindowRunnerOptions): WindowVectorScanner 
 function windowBatchOptions(
   options: WindowRunnerOptions,
   startedAt: number,
+  resultScope: MemoryScope,
 ): Omit<WindowBatchExecutionOptions, "matched"> {
   return {
     config: options.config,
@@ -459,6 +461,7 @@ function windowBatchOptions(
     stats: options.stats,
     startedAt,
     ...options.batchExecution,
+    resultScope,
     enforceBudget: options.enforceBudget,
     enforceBufferedRows: options.enforceBufferedRows,
     enforceWindowPartitionRows: options.enforceWindowPartitionRows,

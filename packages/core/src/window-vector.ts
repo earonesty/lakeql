@@ -12,6 +12,7 @@ import type { Row } from "./types.js";
 import type { WindowExpr } from "./window.js";
 import type { WindowExecutionOptions } from "./window-backend.js";
 import { partitionSpans, sortWindowRows, type WindowRow } from "./window-utils.js";
+import { withWindowResultScope } from "./window-value-ownership.js";
 
 export interface VectorWindowBatch {
   batch: Batch;
@@ -33,45 +34,48 @@ export async function applyWindowsToVectorBatches(
   const { evaluateWindowRows, windowRowsForExpr, windowSortGroups } = await import(
     "./window-backend.js"
   );
-  const indexScope = new MemoryScope(
-    options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER),
-  );
-  try {
-    const entries = vectorEntries(inputs, indexScope);
-    options.enforceBufferedRows?.(entries.length);
-    const rows = entries.map((entry) => rowForEntry(entry, inputs));
-    if (options.estimateMemoryBytes !== undefined)
-      options.enforceMemoryBytes?.(options.estimateMemoryBytes(rows));
-    for (const group of windowSortGroups(windows)) {
-      const groupScope = indexScope.childScope();
-      try {
-        const sorted = vectorWindowRows(inputs, entries, group.sortExpr, groupScope);
-        sortWindowRows(sorted, group.sortExpr.over.orderBy, groupScope);
-        for (const { alias, expr } of group.items) {
-          const expressionScope = groupScope.childScope();
-          try {
-            const windowRows = windowRowsForExpr(sorted, expr, group.sortExpr, expressionScope);
-            const spans = partitionSpans(windowRows, expressionScope);
-            const values = evaluateWindowRows(rows.length, windowRows, spans, expr, {
-              ...options,
-              allocationScope: expressionScope,
-            });
-            for (let index = 0; index < rows.length; index++) {
-              const row = rows[index] as Row;
-              row[alias] = values[index] ?? null;
+  return withWindowResultScope(options, (resultScope) => {
+    options = { ...options, memoryBudget: resultScope.budget, resultScope };
+    const indexScope = new MemoryScope(
+      options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER),
+    );
+    try {
+      const entries = vectorEntries(inputs, indexScope);
+      options.enforceBufferedRows?.(entries.length);
+      const rows = entries.map((entry) => rowForEntry(entry, inputs));
+      if (options.estimateMemoryBytes !== undefined)
+        options.enforceMemoryBytes?.(options.estimateMemoryBytes(rows));
+      for (const group of windowSortGroups(windows)) {
+        const groupScope = indexScope.childScope();
+        try {
+          const sorted = vectorWindowRows(inputs, entries, group.sortExpr, groupScope);
+          sortWindowRows(sorted, group.sortExpr.over.orderBy, groupScope);
+          for (const { alias, expr } of group.items) {
+            const expressionScope = groupScope.childScope();
+            try {
+              const windowRows = windowRowsForExpr(sorted, expr, group.sortExpr, expressionScope);
+              const spans = partitionSpans(windowRows, expressionScope);
+              const values = evaluateWindowRows(rows.length, windowRows, spans, expr, {
+                ...options,
+                allocationScope: expressionScope,
+              });
+              for (let index = 0; index < rows.length; index++) {
+                const row = rows[index] as Row;
+                row[alias] = values[index] ?? null;
+              }
+            } finally {
+              expressionScope.dispose();
             }
-          } finally {
-            expressionScope.dispose();
           }
+        } finally {
+          groupScope.dispose();
         }
-      } finally {
-        groupScope.dispose();
       }
+      return rows;
+    } finally {
+      indexScope.dispose();
     }
-    return rows;
-  } finally {
-    indexScope.dispose();
-  }
+  });
 }
 
 function vectorEntries(

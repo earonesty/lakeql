@@ -8,6 +8,7 @@ import type { QueryStats, Row } from "./types.js";
 
 export interface WindowBatchExecutionOptions {
   memoryBudget?: MemoryBudget;
+  resultScope?: MemoryScope;
   config: PathQueryInit & {
     budget: QueryBudget;
     now: () => number;
@@ -41,31 +42,47 @@ export interface WindowBatchExecutionOptions {
 export async function* windowedQueryBatches(
   options: WindowBatchExecutionOptions,
 ): AsyncIterable<Row[]> {
-  const { config } = options;
-  const { applyWindowsToRows } = await import("./window-backend.js");
-  const rows = applyWindowsToRows(options.matched, config.windows ?? {}, {
-    ...(options.memoryBudget === undefined ? {} : { memoryBudget: options.memoryBudget }),
-    estimateMemoryBytes: options.estimateMemoryBytes,
-    enforceBufferedRows: (rows) => options.enforceBufferedRows(config.budget, rows),
-    enforceWindowPartitionRows: (rows) => options.enforceWindowPartitionRows(config.budget, rows),
-    enforceMemoryBytes: (bytes) => options.enforceMemoryBytes(config.budget, bytes),
-  });
-  yield* postWindowQueryBatches({ ...options, rows });
+  const resultScope =
+    options.resultScope ??
+    new MemoryScope(options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER));
+  try {
+    const { config } = options;
+    const { applyWindowsToRows } = await import("./window-backend.js");
+    const rows = applyWindowsToRows(options.matched, config.windows ?? {}, {
+      memoryBudget: resultScope.budget,
+      resultScope,
+      estimateMemoryBytes: options.estimateMemoryBytes,
+      enforceBufferedRows: (rows) => options.enforceBufferedRows(config.budget, rows),
+      enforceWindowPartitionRows: (rows) => options.enforceWindowPartitionRows(config.budget, rows),
+      enforceMemoryBytes: (bytes) => options.enforceMemoryBytes(config.budget, bytes),
+    });
+    yield* postWindowQueryBatches({ ...options, rows });
+  } finally {
+    if (options.resultScope === undefined) resultScope.dispose();
+  }
 }
 
 export async function* windowedRunQueryBatches(
   options: Omit<WindowBatchExecutionOptions, "matched"> & { runs: readonly (readonly Row[])[] },
 ): AsyncIterable<Row[]> {
-  const { config } = options;
-  const { applyWindowsToRuns } = await import("./window-backend.js");
-  const runs = applyWindowsToRuns(options.runs, config.windows ?? {}, {
-    ...(options.memoryBudget === undefined ? {} : { memoryBudget: options.memoryBudget }),
-    estimateMemoryBytes: options.estimateMemoryBytes,
-    enforceBufferedRows: (rows) => options.enforceBufferedRows(config.budget, rows),
-    enforceWindowPartitionRows: (rows) => options.enforceWindowPartitionRows(config.budget, rows),
-    enforceMemoryBytes: (bytes) => options.enforceMemoryBytes(config.budget, bytes),
-  });
-  yield* postWindowQueryBatches({ ...options, rows: rowsFromRuns(runs) });
+  const resultScope =
+    options.resultScope ??
+    new MemoryScope(options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER));
+  try {
+    const { config } = options;
+    const { applyWindowsToRuns } = await import("./window-backend.js");
+    const runs = applyWindowsToRuns(options.runs, config.windows ?? {}, {
+      memoryBudget: resultScope.budget,
+      resultScope,
+      estimateMemoryBytes: options.estimateMemoryBytes,
+      enforceBufferedRows: (rows) => options.enforceBufferedRows(config.budget, rows),
+      enforceWindowPartitionRows: (rows) => options.enforceWindowPartitionRows(config.budget, rows),
+      enforceMemoryBytes: (bytes) => options.enforceMemoryBytes(config.budget, bytes),
+    });
+    yield* postWindowQueryBatches({ ...options, rows: rowsFromRuns(runs) });
+  } finally {
+    if (options.resultScope === undefined) resultScope.dispose();
+  }
 }
 
 export async function* postWindowQueryBatches(

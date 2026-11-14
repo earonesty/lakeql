@@ -1,6 +1,5 @@
 import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
-import { evaluate } from "./evaluator.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope } from "./memory-scope.js";
 import type { Row } from "./types.js";
@@ -21,10 +20,17 @@ import {
   sortWindowRows,
   type WindowRow,
 } from "./window-utils.js";
+import {
+  evaluateWindowValue,
+  retainWindowValue,
+  withWindowResultScope,
+  withWindowValue,
+} from "./window-value-ownership.js";
 
 export interface WindowExecutionOptions {
   memoryBudget?: MemoryBudget;
   allocationScope?: MemoryScope;
+  resultScope?: MemoryScope;
   estimateMemoryBytes?: (value: unknown) => number;
   enforceBufferedRows?: (rows: number) => void;
   enforceWindowPartitionRows?: (rows: number) => void;
@@ -36,40 +42,43 @@ export function applyWindowsToRows(
   windows: Record<string, WindowExpr>,
   options: WindowExecutionOptions = {},
 ): Row[] {
-  const rows = inputRows.map((row) => ({ ...row }));
-  options.enforceBufferedRows?.(rows.length);
-  if (options.estimateMemoryBytes !== undefined) {
-    options.enforceMemoryBytes?.(options.estimateMemoryBytes(rows));
-  }
-  for (const group of windowSortGroups(windows)) {
-    const groupScope = new MemoryScope(
-      options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER),
-    );
-    try {
-      const sorted = partitionRows(rows, group.sortExpr, groupScope);
-      sortWindowRows(sorted, group.sortExpr.over.orderBy, groupScope);
-      for (const { alias, expr } of group.items) {
-        const expressionScope = groupScope.childScope();
-        try {
-          const windowRows = windowRowsForExpr(sorted, expr, group.sortExpr, expressionScope);
-          const spans = partitionSpans(windowRows, expressionScope);
-          const values = evaluateWindowRows(rows.length, windowRows, spans, expr, {
-            ...options,
-            allocationScope: expressionScope,
-          });
-          for (let index = 0; index < rows.length; index += 1) {
-            const row = rows[index];
-            if (row !== undefined) row[alias] = values[index] ?? null;
-          }
-        } finally {
-          expressionScope.dispose();
-        }
-      }
-    } finally {
-      groupScope.dispose();
+  return withWindowResultScope(options, (resultScope) => {
+    options = { ...options, memoryBudget: resultScope.budget, resultScope };
+    const rows = inputRows.map((row) => ({ ...row }));
+    options.enforceBufferedRows?.(rows.length);
+    if (options.estimateMemoryBytes !== undefined) {
+      options.enforceMemoryBytes?.(options.estimateMemoryBytes(rows));
     }
-  }
-  return rows;
+    for (const group of windowSortGroups(windows)) {
+      const groupScope = new MemoryScope(
+        options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER),
+      );
+      try {
+        const sorted = partitionRows(rows, group.sortExpr, groupScope);
+        sortWindowRows(sorted, group.sortExpr.over.orderBy, groupScope);
+        for (const { alias, expr } of group.items) {
+          const expressionScope = groupScope.childScope();
+          try {
+            const windowRows = windowRowsForExpr(sorted, expr, group.sortExpr, expressionScope);
+            const spans = partitionSpans(windowRows, expressionScope);
+            const values = evaluateWindowRows(rows.length, windowRows, spans, expr, {
+              ...options,
+              allocationScope: expressionScope,
+            });
+            for (let index = 0; index < rows.length; index += 1) {
+              const row = rows[index];
+              if (row !== undefined) row[alias] = values[index] ?? null;
+            }
+          } finally {
+            expressionScope.dispose();
+          }
+        }
+      } finally {
+        groupScope.dispose();
+      }
+    }
+    return rows;
+  });
 }
 
 export function applyWindowsToRuns(
@@ -77,70 +86,78 @@ export function applyWindowsToRuns(
   windows: Record<string, WindowExpr>,
   options: WindowExecutionOptions = {},
 ): Row[][] {
-  const outputRuns = inputRuns.map((run) => run.map((row) => ({ ...row })));
-  for (const group of windowSortGroups(windows)) {
-    const groupScope = new MemoryScope(
-      options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER),
-    );
-    try {
-      const sortedRuns = groupScope.allocate(
-        c.array + outputRuns.length * c.arraySlot,
-        "window sorted runs",
-        () =>
-          outputRuns.map((run, runIndex) => {
-            const indexed = partitionRows(run, group.sortExpr, groupScope) as RunWindowRow[];
-            for (let rowIndex = 0; rowIndex < indexed.length; rowIndex++) {
-              const item = indexed[rowIndex];
-              if (item)
-                groupScope.allocate(2 * c.property, "window run position", () => {
-                  item.runIndex = runIndex;
-                  item.rowIndex = rowIndex;
-                });
-            }
-            return indexed;
-          }),
-      ).value;
-      for (const run of sortedRuns) sortWindowRows(run, group.sortExpr.over.orderBy, groupScope);
-      for (const partition of mergeWindowPartitions(sortedRuns, group.sortExpr, groupScope)) {
-        options.enforceWindowPartitionRows?.(partition.length);
-        if (options.estimateMemoryBytes !== undefined) {
-          const scratch = groupScope.reserve(
-            c.array + partition.length * c.arraySlot,
-            "window partition measurement references",
-          );
-          try {
-            options.enforceMemoryBytes?.(
-              options.estimateMemoryBytes(partition.map((item) => item.row)),
+  return withWindowResultScope(options, (resultScope) => {
+    options = { ...options, memoryBudget: resultScope.budget, resultScope };
+    const outputRuns = inputRuns.map((run) => run.map((row) => ({ ...row })));
+    for (const group of windowSortGroups(windows)) {
+      const groupScope = new MemoryScope(
+        options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER),
+      );
+      try {
+        const sortedRuns = groupScope.allocate(
+          c.array + outputRuns.length * c.arraySlot,
+          "window sorted runs",
+          () =>
+            outputRuns.map((run, runIndex) => {
+              const indexed = partitionRows(run, group.sortExpr, groupScope) as RunWindowRow[];
+              for (let rowIndex = 0; rowIndex < indexed.length; rowIndex++) {
+                const item = indexed[rowIndex];
+                if (item)
+                  groupScope.allocate(2 * c.property, "window run position", () => {
+                    item.runIndex = runIndex;
+                    item.rowIndex = rowIndex;
+                  });
+              }
+              return indexed;
+            }),
+        ).value;
+        for (const run of sortedRuns) sortWindowRows(run, group.sortExpr.over.orderBy, groupScope);
+        for (const partition of mergeWindowPartitions(sortedRuns, group.sortExpr, groupScope)) {
+          options.enforceWindowPartitionRows?.(partition.length);
+          if (options.estimateMemoryBytes !== undefined) {
+            const scratch = groupScope.reserve(
+              c.array + partition.length * c.arraySlot,
+              "window partition measurement references",
             );
-          } finally {
-            scratch.release();
-          }
-        }
-        for (const { alias, expr } of group.items) {
-          const expressionScope = groupScope.childScope();
-          try {
-            const windowRows = windowRowsForExpr(partition, expr, group.sortExpr, expressionScope);
-            const values = expressionScope.allocate(
-              c.array + windowRows.length * c.arraySlot,
-              "window partition output",
-              () => evaluatePartition(windowRows, expr, options),
-            ).value;
-            for (let index = 0; index < windowRows.length; index++) {
-              const item = windowRows[index];
-              if (item === undefined) continue;
-              const row = outputRuns[item.runIndex]?.[item.rowIndex];
-              if (row !== undefined) row[alias] = values[index] ?? null;
+            try {
+              options.enforceMemoryBytes?.(
+                options.estimateMemoryBytes(partition.map((item) => item.row)),
+              );
+            } finally {
+              scratch.release();
             }
-          } finally {
-            expressionScope.dispose();
+          }
+          for (const { alias, expr } of group.items) {
+            const expressionScope = groupScope.childScope();
+            try {
+              const windowRows = windowRowsForExpr(
+                partition,
+                expr,
+                group.sortExpr,
+                expressionScope,
+              );
+              const values = expressionScope.allocate(
+                c.array + windowRows.length * c.arraySlot,
+                "window partition output",
+                () => evaluatePartition(windowRows, expr, options),
+              ).value;
+              for (let index = 0; index < windowRows.length; index++) {
+                const item = windowRows[index];
+                if (item === undefined) continue;
+                const row = outputRuns[item.runIndex]?.[item.rowIndex];
+                if (row !== undefined) row[alias] = values[index] ?? null;
+              }
+            } finally {
+              expressionScope.dispose();
+            }
           }
         }
+      } finally {
+        groupScope.dispose();
       }
-    } finally {
-      groupScope.dispose();
     }
-  }
-  return outputRuns;
+    return outputRuns;
+  });
 }
 
 export function windowSortGroups(windows: Record<string, WindowExpr>) {
@@ -293,7 +310,13 @@ function evaluatePartition(
 ): unknown[] {
   const peers = new WindowPeers(partition, options.memoryBudget);
   try {
-    return evaluatePartitionWithPeers(partition, expr, peers, options.memoryBudget);
+    return evaluatePartitionWithPeers(
+      partition,
+      expr,
+      peers,
+      options.memoryBudget,
+      options.resultScope,
+    );
   } finally {
     peers.dispose();
   }
@@ -304,6 +327,7 @@ function evaluatePartitionWithPeers(
   expr: WindowExpr,
   peers: WindowPeers,
   budget?: MemoryBudget,
+  resultScope?: MemoryScope,
 ): unknown[] {
   const fn = normalizedWindowName(expr.fn);
   if (isAggregateWindow(expr.fn)) {
@@ -332,19 +356,24 @@ function evaluatePartitionWithPeers(
     case "ntile":
       return ntileValues(partition.length, expr);
     case "lag":
-      return offsetValues(partition, expr, -1);
+      return offsetValues(partition, expr, -1, resultScope);
     case "lead":
-      return offsetValues(partition, expr, 1);
+      return offsetValues(partition, expr, 1, resultScope);
     case "first_value":
       return partition.map((_item, index) => {
-        return frameValueAt(frameRowIterator(partition, index, expr, peers), expr, 1);
+        return frameValueAt(frameRowIterator(partition, index, expr, peers), expr, 1, resultScope);
       });
     case "last_value":
       return partition.map((_item, index) => {
-        return frameValueAt(frameRowIterator(partition, index, expr, peers, true), expr, 1);
+        return frameValueAt(
+          frameRowIterator(partition, index, expr, peers, true),
+          expr,
+          1,
+          resultScope,
+        );
       });
     case "nth_value":
-      return nthValue(partition, expr, peers);
+      return nthValue(partition, expr, peers, resultScope);
     default:
       throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", `Unsupported window function ${fn}`, {
         function: fn,
@@ -383,17 +412,22 @@ function ntileValues(length: number, expr: WindowExpr): number[] {
   );
 }
 
-function offsetValues(rows: readonly WindowRow[], expr: WindowExpr, direction: -1 | 1): unknown[] {
+function offsetValues(
+  rows: readonly WindowRow[],
+  expr: WindowExpr,
+  direction: -1 | 1,
+  scope?: MemoryScope,
+): unknown[] {
   const offset = expr.args.length >= 2 ? numericArg(expr, 1, 1) : 1;
   if (!Number.isInteger(offset) || offset < 0) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "lag/lead offset must be a non-negative integer");
   }
-  if (expr.ignoreNulls === true) return offsetIgnoringNulls(rows, expr, direction, offset);
+  if (expr.ignoreNulls === true) return offsetIgnoringNulls(rows, expr, direction, offset, scope);
   return rows.map((row, index) => {
     const target = rows[index + direction * offset];
     if (target === undefined)
-      return expr.args[2] === undefined ? null : evaluate(expr.args[2], row.row);
-    return evaluate(valueArg(expr), target.row);
+      return expr.args[2] === undefined ? null : evaluateWindowValue(expr.args[2], row.row, scope);
+    return evaluateWindowValue(valueArg(expr), target.row, scope);
   });
 }
 
@@ -404,9 +438,10 @@ function offsetIgnoringNulls(
   expr: WindowExpr,
   direction: -1 | 1,
   offset: number,
+  scope?: MemoryScope,
 ): unknown[] {
   const arg = valueArg(expr);
-  if (offset === 0) return rows.map((item) => evaluate(arg, item.row));
+  if (offset === 0) return rows.map((item) => evaluateWindowValue(arg, item.row, scope));
   const output = new Array<unknown>(rows.length);
   const start = direction === 1 ? 0 : rows.length - 1;
   let target = start;
@@ -419,11 +454,12 @@ function offsetIgnoringNulls(
       target = next;
       const item = rows[target];
       if (item === undefined) continue;
-      const value = evaluate(arg, item.row);
-      if (value !== null) {
-        count++;
-        targetValue = value;
-      }
+      withWindowValue(arg, item.row, scope, (value, temporary) => {
+        if (value !== null) {
+          count++;
+          targetValue = count === offset ? retainWindowValue(value, scope, temporary) : null;
+        }
+      });
     }
     const item = rows[index];
     output[index] =
@@ -431,7 +467,7 @@ function offsetIgnoringNulls(
         ? targetValue
         : expr.args[2] === undefined || item === undefined
           ? null
-          : evaluate(expr.args[2], item.row);
+          : evaluateWindowValue(expr.args[2], item.row, scope);
     const nextIndex = index + direction;
     if (
       nextIndex >= 0 &&
@@ -439,7 +475,11 @@ function offsetIgnoringNulls(
       (direction === 1 ? nextIndex <= target : nextIndex >= target)
     ) {
       const departing = rows[nextIndex];
-      if (departing !== undefined && evaluate(arg, departing.row) !== null) count--;
+      if (
+        departing !== undefined &&
+        withWindowValue(arg, departing.row, scope, (value) => value !== null)
+      )
+        count--;
     }
   }
   return output;
@@ -449,13 +489,14 @@ function nthValue(
   partition: readonly WindowRow[],
   expr: WindowExpr,
   peers: WindowPeers,
+  scope?: MemoryScope,
 ): unknown[] {
   const nth = numericArg(expr, 1, 1);
   if (!Number.isInteger(nth) || nth <= 0) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "nth_value requires a positive integer position");
   }
   return partition.map((_item, index) => {
-    return frameValueAt(frameRowIterator(partition, index, expr, peers), expr, nth);
+    return frameValueAt(frameRowIterator(partition, index, expr, peers), expr, nth, scope);
   });
 }
 
@@ -482,11 +523,20 @@ function numericArg(expr: WindowExpr, index: number, fallback: number): number {
   return arg.value;
 }
 
-function frameValueAt(rows: Iterable<Row>, expr: WindowExpr, ordinal: number): unknown {
+function frameValueAt(
+  rows: Iterable<Row>,
+  expr: WindowExpr,
+  ordinal: number,
+  scope?: MemoryScope,
+): unknown {
   for (const row of rows) {
-    const value = evaluate(valueArg(expr), row);
-    if (expr.ignoreNulls === true && value === null) continue;
-    if (--ordinal === 0) return value;
+    let selected = false;
+    const value = withWindowValue(valueArg(expr), row, scope, (candidate, temporary) => {
+      if (expr.ignoreNulls === true && candidate === null) return null;
+      selected = --ordinal === 0;
+      return selected ? retainWindowValue(candidate, scope, temporary) : null;
+    });
+    if (selected) return value;
   }
   return null;
 }

@@ -74,5 +74,6 @@
     "Delegated task output ownership and other documented source/operator integration gaps remain open.",
     "Local HTTP and local workerd/R2 evidence is distinct from production Cloudflare total-memory enforcement. Shared reservation caps do not certify total VM heap.",
     "These gates must be refreshed again as required after subsequent implementation changes."
-  ]
+  ],
+  "followupEvidence": "docs/validation/window-value-ownership-2026-11-13.json"
 }
