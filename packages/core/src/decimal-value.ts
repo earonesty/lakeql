@@ -1,6 +1,6 @@
 import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
-import type { MemoryReservation } from "./memory-budget.js";
+import type { MemoryReservation, MemoryReservationSource } from "./memory-budget.js";
 import type { MemoryScope } from "./memory-scope.js";
 import { decimalStringAllocationBytes } from "./scalar-allocation.js";
 
@@ -106,7 +106,7 @@ export function decimalToString(value: DecimalValue, scope?: MemoryScope): strin
 export function compareDecimalValues(
   left: DecimalValue,
   right: DecimalValue,
-  scope?: MemoryScope,
+  scope?: MemoryReservationSource,
 ): -1 | 0 | 1 {
   const direct = directDecimalOrder(left, right);
   if (direct !== undefined) return direct;
@@ -162,7 +162,7 @@ function compareDecimalDigits(
  * the comparator nor its scalar can escape through the callback result. */
 export function withPreparedDecimalComparison<T extends number | Uint8Array>(
   right: DecimalValue,
-  scope: MemoryScope | undefined,
+  scope: MemoryReservationSource | undefined,
   consume: (compare: (left: DecimalValue) => number) => T,
 ): T {
   const state = scope?.reserve(2 * c.object + 4 * c.property, "prepared decimal comparison state");

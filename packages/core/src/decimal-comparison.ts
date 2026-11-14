@@ -1,11 +1,15 @@
 import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { compareDecimalValues, DecimalValue, isDecimalValue } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
-import type { MemoryScope } from "./memory-scope.js";
+import type { MemoryReservationSource } from "./memory-budget.js";
 
 /** Compare mathematical numeric values: a number contributes its exact binary64
  * value, never its rounded display string. No decimal operand becomes Number. */
-export function compareDecimalOperands(left: unknown, right: unknown, scope?: MemoryScope): number {
+export function compareDecimalOperands(
+  left: unknown,
+  right: unknown,
+  scope?: MemoryReservationSource,
+): number {
   if (isDecimalValue(left) && isDecimalValue(right))
     return compareDecimalValues(left, right, scope);
   if (isDecimalValue(left))
@@ -27,7 +31,7 @@ const scalarBytes = c.object + 2 * c.property;
  * consume returns; its result cannot expose the temporary decimal scalar. */
 export function withDecimalComparisonOperand<T extends number | Uint8Array>(
   value: unknown,
-  scope: MemoryScope | undefined,
+  scope: MemoryReservationSource | undefined,
   consume: (value: DecimalValue) => T,
 ): T {
   if (isDecimalValue(value)) return consume(value);

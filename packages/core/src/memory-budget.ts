@@ -2,6 +2,12 @@ import { isLakeqlError, LakeqlError } from "./errors.js";
 
 const reservationState = Symbol("reservation state");
 
+/** Synchronous temporary allocation admission. Callers release reservations before
+ * returning; owning scopes and query budgets implement the same contract. */
+export interface MemoryReservationSource {
+  reserve(bytes: number, purpose: string): MemoryReservation;
+}
+
 /** Allocation admission, separate from serialized operator-size limits. */
 export class MemoryBudget {
   private readonly chain: readonly MemoryBudget[];

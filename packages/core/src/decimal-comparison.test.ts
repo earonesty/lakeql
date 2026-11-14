@@ -109,3 +109,61 @@ it("reuses prepared digit storage while preserving sign, scale and equality orde
     scope.dispose();
   }
 });
+
+it("admits repeated comparisons directly against a query budget sharing a bounded pool", () => {
+  const value = decimalFromParts(1n, 1);
+  const probe = new MemoryBudget(65536);
+  expect(compareDecimalOperands(value, 0.1, probe)).toBe(-1);
+  const extent = probe.peakBytes;
+  const pool = new MemoryBudget(extent + 37);
+  const peer = pool.child(37).reserve(37, "concurrent retained output");
+  const query = pool.child(extent);
+  for (let index = 0; index < 1000; index++) {
+    expect(compareDecimalOperands(value, 0.1, query)).toBe(-1);
+    expect(query.usedBytes).toBe(0);
+    expect(pool.usedBytes).toBe(37);
+  }
+  expect(query.peakBytes).toBe(extent);
+  expect(pool.peakBytes).toBe(extent + 37);
+  const tight = pool.child(extent - 1);
+  expect(() => compareDecimalOperands(value, 0.1, tight)).toThrow(/budget/i);
+  expect(tight.usedBytes).toBe(0);
+  expect(pool.usedBytes).toBe(37);
+  peer.release();
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("keeps prepared comparison storage admitted through callbacks without an owning scope", () => {
+  const right = decimalFromParts(1230n, 3);
+  const left = decimalFromParts(123n, 2);
+  const pool = new MemoryBudget(65536);
+  const query = pool.child(65536);
+  let retained = 0;
+  withPreparedDecimalComparison(right, query, (compare) => {
+    expect(compare(left)).toBe(0);
+    retained = query.usedBytes;
+    expect(retained).toBeGreaterThan(0);
+    for (let index = 0; index < 1000; index++) {
+      expect(compare(left)).toBe(0);
+      expect(query.usedBytes).toBe(retained);
+    }
+    return 0;
+  });
+  const peak = query.peakBytes;
+  expect(pool.usedBytes).toBe(0);
+  for (const cap of [peak - 1, peak]) {
+    const budget = new MemoryBudget(cap);
+    const run = () => withPreparedDecimalComparison(right, budget, (compare) => compare(left));
+    if (cap < peak) expect(run).toThrow(/budget/i);
+    else expect(run()).toBe(0);
+    expect(budget.usedBytes).toBe(0);
+  }
+  expect(() =>
+    withPreparedDecimalComparison(right, query, (compare) => {
+      compare(left);
+      throw new Error("comparison consumer failed");
+    }),
+  ).toThrow("comparison consumer failed");
+  expect(query.usedBytes).toBe(0);
+  expect(pool.usedBytes).toBe(0);
+});
