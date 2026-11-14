@@ -1,0 +1,25 @@
+{
+  "runtimeSourceCommit": "9206579",
+  "requirements": ["F5", "M1", "V2"],
+  "artifact": "docs/benchmarks/top-k-scalar-widths-2026-11-14.json",
+  "harnessSha256": "a4f34f47c954aa8a1efcc15af45b80ef411e6ff3a4a62f0f04835af1501d78d0",
+  "conditions": {
+    "rows": [100, 10000],
+    "limit": 3,
+    "packedWidths": [16, 128, 1024],
+    "warmups": 2,
+    "samples": 7,
+    "poolMiB": 64
+  },
+  "observations": [
+    "Tracked incremental peak is constant across row counts for each tested shape/width.",
+    "Bigint workspace 140 bytes; timestamp96 524 bytes; packed widths 16/128/1024 use 460/908/4492 bytes.",
+    "Each iteration checks exact sorted output and zero reservations after release."
+  ],
+  "implementationGap": "vectorTopKOwnedBatch admits capacity*4 for its Uint32Array candidate heap, omitting the standard view charge; figures are current tracked reservations, not complete allocation accounting.",
+  "limitations": [
+    "No before/after speedup or cloud throughput claim.",
+    "No measured alternative key-cache comparison; direct-access tradeoff evaluation remains open.",
+    "Native heap/GC and other bookkeeping are not fully represented."
+  ]
+}

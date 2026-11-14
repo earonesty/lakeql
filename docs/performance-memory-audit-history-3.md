@@ -4434,3 +4434,12 @@ Final verification: build/typecheck passed; 3,731 regular tests (645 skipped), 1
 Source `9206579` passes coverage with 3,731 tests / 645 skipped and unchanged thresholds: statements 91.29%, branches 85.42%, functions 95.82%, lines 93.09%. Build, clean package consumer (66 installed packages), required external conformance (520 passed / one inactive missing-fixture guard), lint, compatibility, large-file, changeset and deterministic fixture-regeneration checks pass. Fixture hashes remain identical and git status is clean after regeneration. Typecheck, 120 reference tests and 82 Worker tests passed on the identical implementation immediately before that commit.
 
 Updated conflicting current-release pointers while retaining historical evidence. Evidence: `docs/validation/current-window-release-gates-2026-11-14.json`. Green release checks do not close the full allocation, lifecycle, runtime headroom, scaling and performance acceptance checklist.
+
+
+### F5 scalar width scaling and candidate accounting follow-up (2026-11-14)
+
+Expanded `bench/top-k-scalar-workspace.mjs` from one packed-text width to 16/128/1024 bytes, retaining bigint and timestamp96 cases, 100/10,000 rows, top-3, two warmups and seven samples. Every iteration verifies exact selected values and zero final reservations. Tracked incremental peak remains constant by row count for every shape: bigint 140 bytes, timestamp96 524 bytes, packed text 460/908/4492 bytes by width. At 10,000 rows, observed medians were 0.744/1.625 ms for bigint/timestamp96 and 2.803/3.274/4.831 ms for packed widths. Short kernel timings do not establish production throughput or a speedup.
+
+Source review confirms direct scalar reads with reusable workspace rather than a batch-sized key cache. It also identifies a remaining M1 gap: `vectorTopKOwnedBatch` admits only `capacity * 4` before constructing its Uint32Array candidate heap, omitting the standard view charge. These benchmark figures therefore describe current tracked reservations, not complete allocation coverage. A measured comparison against admitted key caching and broader bookkeeping review remain open under F5/M1.
+
+Evidence: `docs/validation/top-k-scalar-widths-2026-11-14.json` and raw `docs/benchmarks/top-k-scalar-widths-2026-11-14.json`; runtime source `9206579`. Harness assertions and formatting passed; no runtime implementation changed.

@@ -11,7 +11,12 @@ import {
 } from "../packages/core/dist/index.js";
 
 const results = [];
-for (const kind of ["bigint", "timestamp96", "packed text"]) {
+const shapes = [
+  { kind: "bigint" },
+  { kind: "timestamp96" },
+  ...[16, 128, 1024].map((width) => ({ kind: "packed text", width })),
+];
+for (const { kind, width } of shapes) {
   for (const rows of [100, 10000]) {
     const samples = [];
     let workspaceBytes;
@@ -23,16 +28,16 @@ for (const kind of ["bigint", "timestamp96", "packed text"]) {
       let expected;
       if (kind === "packed text") {
         const data = scope.allocate(
-          rows * 128,
+          rows * width,
           "packed source",
-          () => new Uint8Array(rows * 128),
+          () => new Uint8Array(rows * width),
         ).value;
         const encoder = new TextEncoder();
-        const text = (value) => String(value).padStart(8, "0").padEnd(128, "x");
-        for (let i = 0; i < rows; i++) data.set(encoder.encode(text((i * 17) % rows)), i * 128);
+        const text = (value) => String(value).padStart(8, "0").padEnd(width, "x");
+        for (let i = 0; i < rows; i++) data.set(encoder.encode(text((i * 17) % rows)), i * width);
         batch = {
           rowCount: rows,
-          columns: { key: { type: "utf8-view", data, fixedLength: 128, length: rows } },
+          columns: { key: { type: "utf8-view", data, fixedLength: width, length: rows } },
         };
         expected = [0, 1, 2].map((value) => ({ key: text(value) }));
       } else {
@@ -61,6 +66,7 @@ for (const kind of ["bigint", "timestamp96", "packed text"]) {
     }
     results.push({
       kind,
+      ...(width === undefined ? {} : { width }),
       rows,
       limit: 3,
       inputBytes,
@@ -70,10 +76,13 @@ for (const kind of ["bigint", "timestamp96", "packed text"]) {
     });
   }
 }
-for (const kind of ["bigint", "timestamp96", "packed text"])
+for (const { kind, width } of shapes)
   assert.equal(
-    new Set(results.filter((result) => result.kind === kind).map((result) => result.workspaceBytes))
-      .size,
+    new Set(
+      results
+        .filter((result) => result.kind === kind && result.width === width)
+        .map((result) => result.workspaceBytes),
+    ).size,
     1,
   );
 const report = {
