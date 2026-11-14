@@ -1,9 +1,11 @@
 /// <reference types="@cloudflare/vitest-pool-workers/types" />
 import { env } from "cloudflare:test";
 import {
+  and,
   decimalFromParts,
   eq,
   gatherOwnedBatch,
+  gt,
   Lake,
   lt,
   MemoryBudget,
@@ -922,7 +924,12 @@ for (const [kind, fixture, coefficient, spelling] of [
             [1, 3, 32].map((size) =>
               lake
                 .path(path)
-                .where(eq("var", decimalFromParts(coefficient * 10n, 10)))
+                .where(
+                  and(
+                    eq("var", decimalFromParts(coefficient * 10n, 10)),
+                    gt("var", Number(coefficient / 1000000000n)),
+                  ),
+                )
                 .batchSize(size)
                 .run()
                 .toOwnedArray(),

@@ -123,6 +123,10 @@ const shreddedDecimalFixtureOwned = await lake.path("shredded-decimal.parquet")
   .where(gt("var", decimalFromParts(9876543210123456788n, 9))).run().toOwnedArray();
 assert.equal(String(shreddedDecimalFixtureOwned.value[0].var), "9876543210.123456789");
 shreddedDecimalFixtureOwned.release();
+const mixedNumericOwned = await lake.path("shredded-decimal.parquet")
+  .where(gt("var", 9876543210)).run().toOwnedArray();
+assert.equal(String(mixedNumericOwned.value[0].var), "9876543210.123456789");
+mixedNumericOwned.release();
 assert.equal(pool.usedBytes, 0);
 const exactDecimal = decimalFromParts(123456789987654321n, 9);
 const decimalRows = materializeBatchRows(batchFromColumns({ amount: [exactDecimal, null] }));

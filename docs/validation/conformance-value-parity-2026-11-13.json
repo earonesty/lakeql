@@ -472,5 +472,39 @@
     "cloudEvidence": "All five binary/shredded decimal fixture cases pass matching and nonmatching owned predicates over HTTP 206 and ignored-range 200. Local workerd R2 checks use three concurrent matching queries with differently scaled decimal literals plus a cancelled peer at 64/128 MiB. Clean npm-install smoke compares a real shredded value against a threshold one coefficient unit smaller, which would be lost by Number coercion.",
     "measurement": "Local 10000-row vector comparisons measured about 1.7\u20131.9 ms median, with 142 bytes of tracked scratch beyond the output mask. Input vectors are constructed before timing and excluded from predicate reservations. No before/after speedup, cloud throughput or whole-heap claim.",
     "remaining": "Mixed decimal/numeric coercion, general order/group/aggregate/arithmetic operator integration, ordinary high-precision decimal vectors and broad allocation coverage remain unfinished. CPU-wide decimal vector capability is not advertised merely because predicate selection now works."
+  },
+  "mixedDecimalNumericComparisons": {
+    "change": "A shared numeric comparison module extends exact decimal predicates to bigint and finite binary64 operands. Existing decimal operands never become Number. Safe integers and large represented integer numbers use bounded BigInt conversion; fractional numbers decode IEEE-754 bits and construct coefficient = significand * 5^scale, with scale at most 1074. Intermediate integer workspace, reader storage and scalar wrapper are reserved before construction and released after comparison.",
+    "semantics": "Comparison uses represented mathematical values, not display-string coercion. Decimal 0.1 is less than binary64 0.1; decimal 0.5 equals binary64 0.5. Bigints compare exactly. Null remains SQL unknown in evaluators. Strings, booleans, objects, NaN and infinities reject as nonnumeric/nonfinite. This replaces the prior checkpoint's rejection of mixed numeric operands.",
+    "validation": {
+      "defaultPassed": 2931,
+      "defaultSkipped": 629,
+      "workerPassed": 61,
+      "focusedCorePassed": 8,
+      "focusedCoreAndHttpPassed": 26,
+      "build": "passed",
+      "typecheck": "passed",
+      "lint": "passed",
+      "cleanNpmInstall": "passed",
+      "referencePassed": 104,
+      "conformancePassed": 511,
+      "conformanceFailed": 6,
+      "conformanceSkipped": 1,
+      "compatibility": "passed",
+      "trackedFileSizes": "passed"
+    },
+    "evidence": "../benchmarks/decimal-numeric-comparison-2026-11-13.json",
+    "edgeCases": [
+      "2000 deterministic random binary64 patterns checked against an independent cross-multiplied binary-rational oracle.",
+      "Both signs, negative zero, exact half, inexact tenth, MAX_SAFE_INTEGER boundary, largest finite number and smallest subnormal.",
+      "Positive/negative exact decimal representations of the smallest subnormal compare equal.",
+      "Decimal scales through MAX_SAFE_INTEGER do not expand conversion workspace.",
+      "Exact reservation capacity succeeds and one-byte-short rejects with zero remaining reservations.",
+      "Mixed decimal/number/bigint union batches preserve row/vector predicate agreement.",
+      "Real binary/shredded HTTP fixtures reject equality with their rounded Number equivalents, retaining every documented digit."
+    ],
+    "cloudEvidence": "The existing 64/128 MiB native R2 concurrency tests now combine exact decimal equality with a numeric integer threshold. Clean npm-install smoke also filters the real shredded fixture with an ordinary numeric literal. HTTP checks include both 206 and ignored-range 200 responses.",
+    "measurement": "10000 scalar comparisons measured about 1.8 ms for safe integer zero, 12 ms for numeric 0.1, 153 ms for the smallest subnormal, 30 ms for the largest finite number, and 3.1 ms for bigint. Tracked peak workspace ranged from 264 to 5816 bytes. Timing includes assertions and repeated conversion; these are local kernel measurements, not cloud throughput or total heap.",
+    "next": "Prepare repeated numeric literals once per bounded batch: the subnormal measurement exposes repeated exponentiation cost. General sorting/grouping/aggregate/arithmetic integration, ordinary high-precision vectors and broader allocation coverage remain unfinished. Native BigInt implementation scratch/GC remains outside explicit reservation accounting."
   }
 }

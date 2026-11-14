@@ -147,6 +147,7 @@ for (const [name, path, expectedValue, json] of [
           for (const [literal, matches] of [
             [decimalFromParts(expectedValue.coefficient * 10n, expectedValue.scale + 1), true],
             [decimalFromParts(0n, 0), false],
+            [Number(String(expectedValue)), false],
           ] as const) {
             const filtered = await lake
               .path("binary.parquet")

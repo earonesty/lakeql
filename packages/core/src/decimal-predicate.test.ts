@@ -69,12 +69,32 @@ it("bounds comparison workspace independently of scale and row count", () => {
   }
 });
 
-it("rejects implicit decimal coercion in both evaluators", () => {
+it("compares mixed numeric union batches using exact represented values", () => {
+  const values = [decimalFromParts(1n, 1), 0.1, 0n, 0.5, decimalFromParts(5n, 1), null];
+  const batch = batchFromColumns({ value: values });
+  const expr = gt(col("value"), decimalFromParts(1n, 1));
+  const scope = new MemoryScope(new MemoryBudget(65536));
+  expect(Array.from(predicateSelection(batch, expr, scope))).toEqual([0, 1, 0, 1, 1, 2]);
+  expect(values.map((value) => evaluate(expr, { value }))).toEqual([
+    false,
+    true,
+    false,
+    true,
+    true,
+    null,
+  ]);
+  scope.dispose();
+  expect(scope.budget.usedBytes).toBe(0);
+  const exactIntegers = batchFromColumns({ value: [decimalFromParts(9007199254740993n, 0)] });
+  expect(Array.from(predicateSelection(exactIntegers, gt("value", 9007199254740992)))).toEqual([1]);
+});
+
+it("rejects nonnumeric decimal coercion in both evaluators", () => {
   const value = decimalFromParts(1n, 0);
   const batch = batchFromColumns({ value: [value] });
-  for (const other of [1, 1n, "1", true]) {
+  for (const other of ["1", true, NaN, Infinity]) {
     const expr = eq(col("value"), lit(other));
-    expect(() => evaluate(expr, { value })).toThrow(/decimal operands/);
-    expect(() => predicateSelection(batch, expr)).toThrow(/decimal operands/);
+    expect(() => evaluate(expr, { value })).toThrow(/finite numeric/);
+    expect(() => predicateSelection(batch, expr)).toThrow(/finite numeric/);
   }
 });

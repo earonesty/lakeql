@@ -1,4 +1,5 @@
-import { compareDecimalOperands, decimalToString, isDecimalValue } from "./decimal-value.js";
+import { compareDecimalOperands } from "./decimal-comparison.js";
+import { decimalToString, isDecimalValue } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
 import type { Expr, Scalar } from "./expr.js";
 import { intervalToString, isIntervalValue } from "./interval.js";

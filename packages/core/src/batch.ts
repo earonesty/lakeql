@@ -1,7 +1,7 @@
 import { batchCallExprValues, batchCallPredicateMask } from "./batch-call.js";
 import { registerCompactionMetadata } from "./compaction-metadata.js";
+import { compareDecimalOperands } from "./decimal-comparison.js";
 import {
-  compareDecimalOperands,
   DecimalValue,
   decimalValueAllocationBytes,
   isDecimalValue,

@@ -1,0 +1,60 @@
+{
+  "description": "Mixed decimal/binary64/bigint scalar kernel, 10000 comparisons per sample including assertions. Two warmups and seven measured rounds. Input scalars excluded from scope. Tracks explicit workspace, not VM heap, native BigInt scratch, or cloud throughput. No speedup claim.",
+  "node": "v24.18.1",
+  "sources": {
+    "packages/core/src/decimal-comparison.ts": "5540f80a5653b8884aada00aa31345c62a4b056debb86c82cb84ccbda7299bf7",
+    "packages/core/src/decimal-value.ts": "79ad93bbc03aa2ba663b5d8440736e909a0dd5ba77fa3a34c69d2c8d741a0f40"
+  },
+  "results": [
+    {
+      "name": "safe integer",
+      "comparisons": 10000,
+      "peakReservedBytes": 264,
+      "medianMilliseconds": 1.794794000000003,
+      "samples": [
+        2.195999999999998, 2.097163000000002, 2.079329999999999, 1.7923389999999984,
+        1.794794000000003, 1.5635879999999958, 1.4808410000000052
+      ]
+    },
+    {
+      "name": "fraction",
+      "comparisons": 10000,
+      "peakReservedBytes": 1370,
+      "medianMilliseconds": 12.23769999999999,
+      "samples": [
+        12.230997000000002, 13.728810999999993, 12.669494999999998, 12.543526999999997,
+        12.23769999999999, 12.070796000000001, 11.960346999999985
+      ]
+    },
+    {
+      "name": "subnormal",
+      "comparisons": 10000,
+      "peakReservedBytes": 5816,
+      "medianMilliseconds": 152.921472,
+      "samples": [
+        151.26866700000005, 152.921472, 153.59288800000002, 153.2513039999999, 151.55153999999993,
+        153.71417699999984, 152.0439879999999
+      ]
+    },
+    {
+      "name": "largest finite",
+      "comparisons": 10000,
+      "peakReservedBytes": 1132,
+      "medianMilliseconds": 29.777194999999892,
+      "samples": [
+        29.151836000000003, 30.634882999999945, 29.40910100000019, 29.777194999999892,
+        28.87302999999997, 31.042069999999967, 29.986719999999877
+      ]
+    },
+    {
+      "name": "bigint",
+      "comparisons": 10000,
+      "peakReservedBytes": 324,
+      "medianMilliseconds": 3.074636000000055,
+      "samples": [
+        3.061180999999806, 3.1141000000000076, 3.0499790000001212, 3.074636000000055,
+        3.0212960000001203, 3.1461209999999937, 3.190063999999893
+      ]
+    }
+  ]
+}
