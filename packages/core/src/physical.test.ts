@@ -874,3 +874,80 @@ it.each([
   expect(await run(peak - 1)).toBeLessThanOrEqual(peak - 1);
   await expect(run(16)).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
 });
+
+it.each([
+  false,
+  true,
+])("plans scoped reduction through chained projections (grouped=%s)", async (grouped) => {
+  const batch = batchFromColumns({ value: [1, 2] });
+  const fragment = testFragment(batch, {
+    operators: [
+      { kind: "project", projections: { value: mul(col("value"), 2) } },
+      { kind: "project", select: ["value"], projections: { alias: col("value") } },
+      grouped
+        ? { kind: "grouped-reduce", keys: ["alias"], aggregates: { n: { op: "count" } } }
+        : { kind: "reduce", aggregates: { total: { op: "sum", column: "alias" } } },
+    ],
+    output: { kind: grouped ? "grouped-aggregate-snapshot" : "aggregate-snapshot" },
+  });
+  const backend = new CpuPhysicalBackend();
+  const pool = new MemoryBudget(65536);
+  const scope = new MemoryScope(pool);
+  try {
+    const plan = planPhysicalFragment(fragment, [backend], { requireAllocationScope: true });
+    const result = await executePlannedPhysicalFragment(
+      plan,
+      [backend],
+      { kind: "batch", batch },
+      { allocationScope: scope },
+    );
+    if (result.output.kind === "aggregate-snapshot")
+      expect(
+        finalizeVectorAggregateStates(restoreVectorAggregateStates(result.output.snapshot)),
+      ).toEqual({ total: 6 });
+    else if (result.output.kind === "grouped-aggregate-snapshot")
+      expect(
+        finalizeVectorGroupByRows(
+          restoreVectorGroupByState(["alias"], { n: { op: "count" } }, result.output.snapshot),
+        ),
+      ).toEqual([
+        { alias: 2, n: 1 },
+        { alias: 4, n: 1 },
+      ]);
+    else throw Error("Missing snapshot");
+  } finally {
+    scope.dispose();
+  }
+  expect(pool.usedBytes).toBe(0);
+});
+
+it.each([
+  "dropped",
+  "binary",
+  "binary-literal",
+])("rejects unsupported projected reduction input: %s", (shape) => {
+  const batch = batchFromColumns({ value: [1], binary: [Uint8Array.of(1)] });
+  const fragment = testFragment(batch, {
+    operators: [
+      {
+        kind: "project",
+        select: ["binary"],
+        ...(shape === "dropped"
+          ? {}
+          : {
+              projections: {
+                value:
+                  shape === "binary"
+                    ? col("binary")
+                    : { kind: "literal" as const, value: Uint8Array.of(1) },
+              },
+            }),
+      },
+      { kind: "reduce", aggregates: { n: { op: "count", column: "value" } } },
+    ],
+    output: { kind: "aggregate-snapshot" },
+  });
+  expect(() =>
+    planPhysicalFragment(fragment, [new CpuPhysicalBackend()], { requireAllocationScope: true }),
+  ).toThrowError(expect.objectContaining({ code: "LAKEQL_PHYSICAL_BACKEND_UNAVAILABLE" }));
+});

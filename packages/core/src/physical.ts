@@ -868,7 +868,32 @@ function cpuReductionInputReasons(fragment: PhysicalFragment): BackendRejection[
     if (["binary", "binary-view", "list", "struct", "map"].includes(shape.shape))
       throw new Error(`Reduction continuation lacks allocation metadata for ${shape.shape}`);
   };
-  const requireColumn = (name: string): void => requireShape(columns[name]);
+  const reductionIndex = fragment.operators.indexOf(operator);
+  const requireColumnAt = (name: string, before: number): void => {
+    for (let index = before - 1; index >= 0; index--) {
+      const project = fragment.operators[index];
+      if (project?.kind !== "project") continue;
+      const expression =
+        project.projections !== undefined && Object.hasOwn(project.projections, name)
+          ? project.projections[name]
+          : undefined;
+      if (expression !== undefined) {
+        ownedAggregateExpressionBytesForColumns(expression, (source) =>
+          requireColumnAt(source, index),
+        );
+        return;
+      }
+      if (
+        project.select !== undefined &&
+        project.select.length > 0 &&
+        !project.select.includes("*") &&
+        !project.select.includes(name)
+      )
+        throw new Error(`Reduction column ${name} was removed by projection`);
+    }
+    requireShape(Object.hasOwn(columns, name) ? columns[name] : undefined);
+  };
+  const requireColumn = (name: string): void => requireColumnAt(name, reductionIndex);
   try {
     if (operator.kind === "grouped-reduce") for (const key of operator.keys) requireColumn(key);
     for (const alias in operator.aggregates) {

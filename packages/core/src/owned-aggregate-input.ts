@@ -1,7 +1,9 @@
 import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import type { Batch, Vector } from "./batch.js";
+import { isDecimalValue } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
 import type { Expr } from "./expr.js";
+import { TimestampValue } from "./timestamp.js";
 
 const admittedCalls = new Set([
   "lower",
@@ -68,6 +70,13 @@ function expressionPlanBytes(
       if (expr.else !== undefined) bytes += scalar(expr.else);
       return checkedPlanBytes(bytes);
     case "literal":
+      if (
+        expr.value !== null &&
+        typeof expr.value === "object" &&
+        !isDecimalValue(expr.value) &&
+        !(expr.value instanceof TimestampValue)
+      )
+        throw unsupported("literal", "non-scalar backing");
       return bytes;
     case "column":
       requireColumn(expr.name);
