@@ -1,0 +1,28 @@
+{
+  "base": "4a45c4d",
+  "change": "Require safe integer restored top-k offset/limit and combined extent; slice/resumable capacities and policy maxLimit must also be safe integers.",
+  "evidence": {
+    "focused": "44 row-limits tests pass, including 24 added cases",
+    "regular": {
+      "passed": 3801,
+      "skipped": 645
+    },
+    "worker": {
+      "passed": 82
+    },
+    "build": "pnpm exec tsc -b passed",
+    "types": "pnpm typecheck passed"
+  },
+  "coverage": [
+    "Object and encoded invalid top-k states reject before head/scan and unwind all pool charges.",
+    "Unsafe sum rejects even when each operand is individually safe.",
+    "Slice and resumable invalid capacities reject before discovery.",
+    "Invalid policy cap rejects even when explicit limit is small.",
+    "Exact safe snapshot bounds remain accepted."
+  ],
+  "limitations": [
+    "This is extent validation, not output allocation accounting.",
+    "Slice collection still accumulates plain rows across batch lifetimes; F3 explicitly tracks its remaining ownership work.",
+    "Full release gate refresh remains pending."
+  ]
+}

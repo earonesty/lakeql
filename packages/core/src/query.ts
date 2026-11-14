@@ -2033,8 +2033,8 @@ export class QueryResult {
   }
 
   async slice(options: SliceOptions): Promise<SliceResult> {
-    if (!Number.isInteger(options.maxRows) || options.maxRows <= 0) {
-      throw new LakeqlError("LAKEQL_TYPE_ERROR", "slice maxRows must be a positive integer");
+    if (!Number.isSafeInteger(options.maxRows) || options.maxRows <= 0) {
+      throw new LakeqlError("LAKEQL_TYPE_ERROR", "slice maxRows must be a positive safe integer");
     }
     const manifestOwner = await this.ownedTaskManifest();
     try {
@@ -5314,11 +5314,12 @@ function isTopKOperatorState(value: unknown): value is TopKOperatorState {
     Array.isArray(value.orderBy) &&
     value.orderBy.every(isOrderByTerm) &&
     typeof value.offset === "number" &&
-    Number.isInteger(value.offset) &&
+    Number.isSafeInteger(value.offset) &&
     value.offset >= 0 &&
     typeof value.limit === "number" &&
-    Number.isInteger(value.limit) &&
+    Number.isSafeInteger(value.limit) &&
     value.limit >= 0 &&
+    Number.isSafeInteger(value.offset + value.limit) &&
     Array.isArray(value.rows) &&
     value.rows.length <= value.offset + value.limit &&
     value.rows.every(isTopKSnapshotRow)
@@ -5743,8 +5744,11 @@ function combineWhere(queryWhere: Expr | undefined, rowFilter: Expr | undefined)
 
 function policyLimit(limit: number | undefined, maxLimit: number | undefined): number | undefined {
   if (maxLimit === undefined) return limit;
-  if (!Number.isInteger(maxLimit) || maxLimit < 0) {
-    throw new LakeqlError("LAKEQL_TYPE_ERROR", "policy maxLimit must be a non-negative integer");
+  if (!Number.isSafeInteger(maxLimit) || maxLimit < 0) {
+    throw new LakeqlError(
+      "LAKEQL_TYPE_ERROR",
+      "policy maxLimit must be a non-negative safe integer",
+    );
   }
   return limit === undefined ? maxLimit : Math.min(limit, maxLimit);
 }

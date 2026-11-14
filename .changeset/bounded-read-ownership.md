@@ -365,3 +365,5 @@ Omit unsafe truncated writer statistics and dependent column indexes instead of 
 Bound ordinary row projection by output batch size and collect fallback rows with explicit ownership. Preserve selected mutable values across scanner reuse, retain known immutable projection backing without duplicate payload charges, and release failed collected output before asynchronous cleanup.
 
 Require safe integer query and aggregate row bounds, positive safe batch/group capacities, and a safe `offset + limit` sum. Reject invalid bounds before scans or vector selection allocation; retain support for large safe limits over small inputs.
+
+Apply the same exact-integer contract to restored top-k bounds (including their sum), slice/resumable batch capacities, and policy row caps. Invalid restored state rejects before discovery; invalid policy caps cannot be hidden by a smaller explicit limit.

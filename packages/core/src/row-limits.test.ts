@@ -3,7 +3,7 @@ import { batchFromColumns, materializeBatchRows } from "./batch.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope } from "./memory-scope.js";
 import { memoryStore } from "./memory-store.js";
-import { Lake } from "./query.js";
+import { deserializeTopKOperatorState, Lake } from "./query.js";
 import { vectorTopKBatch, vectorTopKOwnedBatch } from "./vector-sort.js";
 
 const invalid = [NaN, Infinity, -1, 0.5, Number.MAX_SAFE_INTEGER + 1];
@@ -109,5 +109,68 @@ it("keeps vector top-k's limit mandatory for JavaScript callers", () => {
   } finally {
     input.release();
     scope.dispose();
+  }
+});
+
+it.each(bounds)("rejects unsafe restored top-k bounds %j before discovery", async (options) => {
+  const state = { version: 1 as const, orderBy: [{ column: "key" }], ...options, rows: [] };
+  const store = memoryStore();
+  const head = vi.spyOn(store, "head");
+  const scan = vi.fn(async function* () {
+    yield [{ key: 1 }];
+  });
+  const pool = new MemoryBudget(65536);
+  const lake = new Lake({ store, scanner: { scan }, memoryPool: pool });
+  for (const input of [state, new TextEncoder().encode(JSON.stringify(state))]) {
+    expect(() => deserializeTopKOperatorState(input)).toThrow(
+      expect.objectContaining({ code: "LAKEQL_BOOKMARK_INVALID" }),
+    );
+    await expect(
+      lake
+        .path("file")
+        .orderBy([{ column: "key" }])
+        .limit(1)
+        .run()
+        .topKWithState({ operatorState: input }),
+    ).rejects.toMatchObject({ code: "LAKEQL_BOOKMARK_INVALID" });
+    expect(pool.usedBytes).toBe(0);
+  }
+  expect(head).not.toHaveBeenCalled();
+  expect(scan).not.toHaveBeenCalled();
+});
+
+it.each([...invalid, 0])("rejects unsafe slice capacity %s before discovery", async (maxRows) => {
+  const store = memoryStore();
+  const head = vi.spyOn(store, "head");
+  const scan = vi.fn(async function* () {
+    yield [];
+  });
+  const query = new Lake({ store, scanner: { scan } }).path("file").run();
+  await expect(query.slice({ maxRows })).rejects.toMatchObject({ code: "LAKEQL_TYPE_ERROR" });
+  await expect(
+    query.resumableBatches({ bookmarkEvery: maxRows })[Symbol.asyncIterator]().next(),
+  ).rejects.toMatchObject({ code: "LAKEQL_TYPE_ERROR" });
+  expect(head).not.toHaveBeenCalled();
+  expect(scan).not.toHaveBeenCalled();
+});
+
+it.each(invalid)("rejects invalid policy cap %s even with a smaller explicit limit", (maxLimit) => {
+  const lake = new Lake({
+    store: memoryStore(),
+    scanner: { scan: async function* () {} },
+    policy: { maxLimit },
+  });
+  expect(() => lake.path("file").limit(1).run()).toThrow(
+    expect.objectContaining({ code: "LAKEQL_TYPE_ERROR" }),
+  );
+});
+
+it("accepts exact safe restored bounds", () => {
+  for (const options of [
+    { offset: 0, limit: Number.MAX_SAFE_INTEGER },
+    { offset: Number.MAX_SAFE_INTEGER, limit: 0 },
+  ]) {
+    const state = { version: 1 as const, orderBy: [{ column: "key" }], ...options, rows: [] };
+    expect(deserializeTopKOperatorState(state)).toMatchObject(state);
   }
 });
