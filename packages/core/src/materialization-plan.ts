@@ -32,6 +32,13 @@ export function planBatchMaterialization(batch: Batch, selection?: Selection): M
   return planMaterialization(batch, selection);
 }
 
+/** Plan exactly one candidate without a batch-sized mask or traversal.
+ * Execution returns a one-element row array under the same plan contract.
+ */
+export function planBatchRowMaterialization(batch: Batch, index: number): MaterializationPlan {
+  return planMaterialization(batch, undefined, index);
+}
+
 function planMaterialization(
   batch: Batch,
   selection?: Selection,
@@ -259,7 +266,7 @@ export function materializeOwnedBatchRow(
 ): OwnedMemory<Row> {
   return materializeOwnedPlan(
     input,
-    planMaterialization(input.value, undefined, index),
+    planBatchRowMaterialization(input.value, index),
     budget,
     (rows) => rows[0] as Row,
   );

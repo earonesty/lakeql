@@ -17,6 +17,7 @@ export {
   type MaterializationPlan,
   materializeOwnedBatchRows,
   planBatchMaterialization,
+  planBatchRowMaterialization,
 } from "./materialization-plan.js";
 export * from "./memory-budget.js";
 export * from "./memory-scope.js";

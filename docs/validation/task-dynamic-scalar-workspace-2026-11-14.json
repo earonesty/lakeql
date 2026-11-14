@@ -1,0 +1,29 @@
+{
+  "date": "2026-11-14",
+  "changes": [
+    "Expose the existing single-row materialization planner through the generic plan contract; owned single-row materialization uses it too.",
+    "Select batch scalar predicate workspace when its planned admission uses at most half current available capacity; otherwise evaluate one admitted row at a time.",
+    "Keep selection and output ownership unchanged; no user tuning required."
+  ],
+  "validation": {
+    "targeted_tests": 45,
+    "build": "passed",
+    "fixture": "256 Parquet rows with 4096-code-unit Unicode partition text and scalar LIKE operate within a 128 KiB pool.",
+    "edge_cases": [
+      "exact planner budget",
+      "one-byte-short rejection",
+      "invalid row indices",
+      "empty results",
+      "early iterator close"
+    ],
+    "benchmark": "docs/benchmarks/task-row-materialization-2026-11-14.json",
+    "typecheck": "passed",
+    "real_http_tests": 4
+  },
+  "limitations": [
+    "Local microbenchmark measures materialization and disposal, not cloud I/O or complete queries.",
+    "Single-row processing costs more CPU; the headroom rule is a conservative heuristic, not a measured runtime throughput optimizer.",
+    "Planner traversal bookkeeping and full query allocation coverage remain under audit.",
+    "Final release gates and production whole-heap bounds remain unproven."
+  ]
+}

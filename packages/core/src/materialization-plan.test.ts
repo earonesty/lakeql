@@ -163,3 +163,35 @@ it("plans only own enumerable fields, including nested structs", () => {
     scope.dispose();
   }
 });
+
+it("plans one packed row independently of batch size and validates its index", async () => {
+  const { planBatchRowMaterialization } = await import("./materialization-plan.js");
+  const data = new TextEncoder().encode("界".repeat(4096));
+  const ranges = new Uint32Array(512 * 2);
+  for (let i = 0; i < 512; i++) ranges[i * 2 + 1] = data.length;
+  const batch = batchFromVectors({ text: { type: "utf8-view", data, length: 512, ranges } });
+  const plan = planBatchRowMaterialization(batch, 511);
+  expect(plan.rows).toBe(1);
+  expect(planBatchMaterialization(batch).allocationBytes).toBeGreaterThan(
+    plan.allocationBytes * 100,
+  );
+  const budget = new MemoryBudget(plan.allocationBytes);
+  const scope = new MemoryScope(budget);
+  try {
+    const rows = plan.execute(scope);
+    expect(rows.value).toEqual([{ text: "界".repeat(4096) }]);
+    rows.release();
+  } finally {
+    scope.dispose();
+  }
+  expect(budget.usedBytes).toBe(0);
+  for (const index of [-1, 512, 0.5, NaN])
+    expect(() => planBatchRowMaterialization(batch, index)).toThrow();
+  const tight = new MemoryScope(new MemoryBudget(plan.allocationBytes - 1));
+  try {
+    expect(() => plan.execute(tight)).toThrow(/budget/);
+  } finally {
+    tight.dispose();
+  }
+  expect(tight.budget.usedBytes).toBe(0);
+});

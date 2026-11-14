@@ -1,0 +1,18 @@
+{
+  "rows": 512,
+  "codeUnitsPerRow": 4096,
+  "warmups": 1,
+  "samples": 5,
+  "results": [
+    {
+      "mode": "batch",
+      "medianMs": 3.7567809999999895,
+      "peakReservedBytes": 12755256
+    },
+    {
+      "mode": "row",
+      "medianMs": 7.867780999999994,
+      "peakReservedBytes": 25224
+    }
+  ]
+}

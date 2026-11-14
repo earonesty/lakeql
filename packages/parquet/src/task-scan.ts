@@ -8,6 +8,7 @@ import {
   matches,
   type ObjectStore,
   planBatchMaterialization,
+  planBatchRowMaterialization,
   type Row,
   type TaskInput,
   tryPredicateSelection,
@@ -107,25 +108,37 @@ export async function* scanParquetTaskColumnBatches(
           if (batch.residualPredicateSatisfied !== true && task.residualPredicate !== undefined) {
             selection = tryPredicateSelection(augmented, task.residualPredicate, output);
             if (selection === undefined) {
-              const scratch = output.childScope();
-              try {
-                const rows = planBatchMaterialization(augmented).execute(scratch);
+              selection = output.allocate(
+                c.view + augmented.rowCount,
+                "task residual selection",
+                () => new Uint8Array(augmented.rowCount),
+              ).value;
+              const batchPlan = planBatchMaterialization(augmented);
+              // Use the cheaper batch traversal only when it leaves equal headroom
+              // for concurrent work; otherwise keep scalar workspace to one row.
+              const useBatch = batchPlan.allocationBytes <= output.budget.availableBytes / 2;
+              for (
+                let index = 0;
+                index < augmented.rowCount;
+                index += useBatch ? augmented.rowCount : 1
+              ) {
+                const scratch = output.childScope();
                 try {
-                  selection = output.allocate(
-                    c.view + augmented.rowCount,
-                    "task residual selection",
-                    () => new Uint8Array(augmented.rowCount),
-                  ).value;
-                  for (let index = 0; index < rows.value.length; index += 1) {
-                    const row = rows.value[index];
-                    if (row !== undefined && matches(task.residualPredicate, row, scratch))
-                      selection[index] = 1;
+                  const rows = (
+                    useBatch ? batchPlan : planBatchRowMaterialization(augmented, index)
+                  ).execute(scratch);
+                  try {
+                    for (let offset = 0; offset < rows.value.length; offset += 1) {
+                      const row = rows.value[offset];
+                      if (row !== undefined && matches(task.residualPredicate, row, scratch))
+                        selection[index + offset] = 1;
+                    }
+                  } finally {
+                    rows.release();
                   }
                 } finally {
-                  rows.release();
+                  scratch.dispose();
                 }
-              } finally {
-                scratch.dispose();
               }
             }
           }

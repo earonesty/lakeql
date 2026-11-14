@@ -48,8 +48,11 @@ describe("task vector transformations", () => {
   });
 });
 
-it("scans a real Parquet partition column without expanding repeated text", async () => {
-  const { memoryStore } = await import("lakeql-core");
+it.each([
+  false,
+  true,
+])("scans a real Parquet partition column with scalar residual %s", async (scalar) => {
+  const { memoryStore, like } = await import("lakeql-core");
   const { writeParquet, scanParquetTaskColumnBatches } = await import("./index.js");
   const store = memoryStore();
   await writeParquet(store, "partition-vector.parquet", {
@@ -66,6 +69,7 @@ it("scans a real Parquet partition column without expanding repeated text", asyn
       rowGroupRanges: [{ start: 0, end: 1 }],
       projectedColumns: ["id", "partition"],
       partitionValues: { partition: text },
+      ...(scalar ? { residualPredicate: like("partition", "界%") } : {}),
     },
     { memoryBudget: budget, batchSize: 256 },
   )) {
