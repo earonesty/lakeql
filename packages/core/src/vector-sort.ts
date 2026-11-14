@@ -90,8 +90,6 @@ export function vectorTopKOwnedBatch(
   if (!Number.isSafeInteger(batch.rowCount) || batch.rowCount < 0 || batch.rowCount > 0x100000000) {
     throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Top-k indices exceed Uint32 capacity");
   }
-  const normalized = normalizeVectorOrderBy(orderBy);
-  validateOrderColumns(batch, normalized);
   const offset = options.offset ?? 0;
   let selectedRows = batch.rowCount;
   if (selection !== undefined && options.limit > 0) {
@@ -105,6 +103,8 @@ export function vectorTopKOwnedBatch(
   const reader = new ScalarReadWorkspace(scope);
   try {
     scope.adopt(input.retain());
+    const normalized = normalizeVectorOrderBy(orderBy, scope);
+    validateOrderColumns(batch, normalized);
     const heap = scope.allocate(
       c.view + capacity * 4,
       "top-k candidate indices",
@@ -543,30 +543,63 @@ function collectInputVectors(vector: Vector, dictionaries: Set<Vector>): void {
 }
 
 /** Validates sort terms and removes equivalent terms without changing their precedence. */
-function normalizeVectorOrderBy(orderBy: readonly OrderByTerm[]): OrderByTerm[] {
+function normalizeVectorOrderBy(
+  orderBy: readonly OrderByTerm[],
+  scope?: MemoryScope,
+): OrderByTerm[] {
   if (!Array.isArray(orderBy) || orderBy.length === 0) {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy must contain at least one term");
   }
-  const normalized: OrderByTerm[] = [];
-  const seen = new Set<string>();
-  for (const term of orderBy) {
-    if (typeof term.column !== "string" || term.column.length === 0) {
-      throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy columns must be non-empty strings");
+  const scratch = scope?.childScope();
+  try {
+    const normalized: OrderByTerm[] =
+      scope === undefined
+        ? []
+        : scope.allocate(c.array, "normalized vector order", () => [] as OrderByTerm[]).value;
+    const seen =
+      scratch === undefined
+        ? new Map<string, number>()
+        : scratch.allocate(c.object, "vector order deduplication", () => new Map<string, number>())
+            .value;
+    for (const term of orderBy) {
+      if (typeof term.column !== "string" || term.column.length === 0) {
+        throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy columns must be non-empty strings");
+      }
+      const direction = term.direction ?? "asc";
+      if (direction !== "asc" && direction !== "desc") {
+        throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy direction must be asc or desc", {
+          term,
+        });
+      }
+      const nulls = term.nulls ?? (direction === "asc" ? "last" : "first");
+      if (nulls !== "first" && nulls !== "last") {
+        throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy nulls must be first or last", { term });
+      }
+      const bit = 1 << ((direction === "desc" ? 2 : 0) + (nulls === "last" ? 1 : 0));
+      const prior = seen.get(term.column) ?? 0;
+      if ((prior & bit) !== 0) continue;
+      if (prior === 0)
+        scratch?.allocate(
+          c.object + 2 * c.property,
+          "vector order deduplication entry",
+          () => undefined,
+        );
+      seen.set(term.column, prior | bit);
+      const create = () => ({ column: term.column, direction, nulls });
+      normalized.push(
+        scope === undefined
+          ? create()
+          : scope.allocate(
+              c.object + 3 * c.property + c.arraySlot,
+              "normalized vector order term",
+              create,
+            ).value,
+      );
     }
-    const direction = term.direction ?? "asc";
-    if (direction !== "asc" && direction !== "desc") {
-      throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy direction must be asc or desc", { term });
-    }
-    const nulls = term.nulls ?? (direction === "asc" ? "last" : "first");
-    if (nulls !== "first" && nulls !== "last") {
-      throw new LakeqlError("LAKEQL_TYPE_ERROR", "orderBy nulls must be first or last", { term });
-    }
-    const key = JSON.stringify([term.column, direction, nulls]);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    normalized.push({ column: term.column, direction, nulls });
+    return normalized;
+  } finally {
+    scratch?.dispose();
   }
-  return normalized;
 }
 
 function validateOrderColumns(batch: Batch, orderBy: readonly OrderByTerm[]): void {

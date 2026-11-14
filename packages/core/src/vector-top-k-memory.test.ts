@@ -6,6 +6,8 @@ import { MemoryScope } from "./memory-scope.js";
 import { timestampFromEpoch } from "./timestamp.js";
 import { vectorTopKBatch, vectorTopKOwnedBatch } from "./vector-sort.js";
 
+const orderBytes = c.array + c.object + 3 * c.property + c.arraySlot;
+
 it.each([
   "bigint",
   "timestamp",
@@ -45,7 +47,7 @@ it.each([
   scope.dispose();
   const order = [{ column: "key" }];
   const expected = materializeBatchRows(vectorTopKBatch(batch, order, { limit: 2 }));
-  const required = input.bytes + c.view + 8 + 2 * scalarBytes;
+  const required = input.bytes + orderBytes + c.view + 8 + 2 * scalarBytes;
   const tight = budget.child(required - 1);
   const tightPin = input.retainIn(tight);
   expect(() => vectorTopKOwnedBatch(tightPin, order, { limit: 2 })).toThrow(/budget/i);
@@ -74,7 +76,7 @@ it("rejects packed text scalar allocation before decoding when the first read ca
   };
   const input = scope.retainAllocations(batch);
   scope.dispose();
-  const child = budget.child(input.bytes + c.view + 8 + c.view + c.string + 256 - 1);
+  const child = budget.child(input.bytes + orderBytes + c.view + 8 + c.view + c.string + 256 - 1);
   const pin = input.retainIn(child);
   const decode = vi.spyOn(TextDecoder.prototype, "decode");
   try {
@@ -161,12 +163,12 @@ it("sizes the admitted heap from actual selected rows rather than an oversized l
   scope.dispose();
   const selected = new Uint8Array(128);
   selected[73] = 1;
-  // Candidate view, one index and one Float64 output, plus pinned input.
-  const child = root.child(input.bytes + c.view + 4 + 8);
+  // Normalization scratch dominates the one-index candidate/output overlap.
+  const child = root.child(input.bytes + orderBytes + 2 * c.object + 2 * c.property);
   const pin = input.retainIn(child);
   const output = vectorTopKOwnedBatch(pin, [{ column: "id" }], { limit: 1000000 }, selected);
   expect(materializeBatchRows(output.value)).toEqual([{ id: 73 }]);
-  expect(child.peakBytes).toBe(input.bytes + c.view + 12);
+  expect(child.peakBytes).toBe(input.bytes + orderBytes + 2 * c.object + 2 * c.property);
   output.release();
   pin.release();
   expect(child.usedBytes).toBe(0);
@@ -215,4 +217,39 @@ it.each([
   }
   input.release();
   expect(budget.usedBytes).toBe(0);
+});
+
+it("deduplicates normalized order variants without per-duplicate storage", () => {
+  const pool = new MemoryBudget(65536);
+  const scope = new MemoryScope(pool);
+  const key = '雪"key';
+  const input = scope.retainAllocations(batchFromColumns({ [key]: [null, 3, 1, 2] }, scope));
+  scope.dispose();
+  const terms = (["asc", "desc"] as const).flatMap((direction) =>
+    (["first", "last"] as const).map((nulls) => ({ column: key, direction, nulls })),
+  );
+  const run = (repeat: number, capacity = 65536) => {
+    const budget = pool.child(capacity);
+    const pin = input.retainIn(budget);
+    try {
+      const output = vectorTopKOwnedBatch(pin, Array.from({ length: repeat }, () => terms).flat(), {
+        limit: 2,
+      });
+      expect(materializeBatchRows(output.value)).toEqual([{ [key]: null }, { [key]: 1 }]);
+      output.release();
+      return budget.peakBytes;
+    } finally {
+      pin.release();
+      expect(budget.usedBytes).toBe(0);
+    }
+  };
+  try {
+    const peak = run(1);
+    expect(run(100)).toBe(peak);
+    expect(run(100, peak)).toBe(peak);
+    expect(() => run(100, peak - 1)).toThrow(/budget/i);
+  } finally {
+    input.release();
+  }
+  expect(pool.usedBytes).toBe(0);
 });

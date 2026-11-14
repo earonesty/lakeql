@@ -96,7 +96,8 @@ it("propagates projection allocation scopes through fused top-k execution", asyn
       (bytes, name) => bytes + c.property + c.string + name.length * c.stringCodeUnit,
       0,
     );
-  const scope = new MemoryScope(new MemoryBudget(40 + descriptors));
+  const orderingScratch = c.array + 3 * c.object + 5 * c.property + c.arraySlot;
+  const scope = new MemoryScope(new MemoryBudget(Math.max(40 + descriptors, 24 + orderingScratch)));
   try {
     const batch = batchFromColumns({ id: [3, 1, 2] }, scope);
     const backend = new CpuPhysicalBackend();

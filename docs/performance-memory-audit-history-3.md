@@ -4461,3 +4461,12 @@ Removed the mixed-input path's redundant `heap.subarray(0, size)` view. Candidat
 Extended exact-capacity/cap-minus-one replay to offsets zero, one and beyond all rows. All thirteen focused top-k tests pass, including existing null/tie/selection/order/limit comparisons. This removes an allocation while accounting for required slices; normalized ordering metadata and broader gather/operator bookkeeping remain separate M1 work. No cloud throughput or complete heap-bound claim is made.
 
 Final verification: build/typecheck, 3,733 regular tests (645 skipped) and 82 Worker tests passed. Evidence: `docs/validation/top-k-selection-view-2026-11-14.json`.
+
+
+### F5/M1 shared vector order normalization and admission (2026-11-14)
+
+The shared vector order normalizer previously serialized `[column, direction, nulls]` for every input term into a deduplication Set, and owned top-k ran normalization outside its scope. It now maps each borrowed column name to a four-bit direction/null-order mask, avoiding per-term JSON strings while preserving the first occurrence of each equivalent term. The same helper serves owned and legacy vector sort/top-k paths. Owned top-k admits the normalized array and unique records in its operation scope and admits Map/entry scratch in a child scope released before candidate selection. Invalid-column/normalization errors unwind the owned scope.
+
+Updated exact-budget tests to include retained normalized terms and scratch overlap. A new Unicode/quoted-column case repeats all four normalized variants one hundred times, verifies identical output and identical tracked peaks, then checks exact capacity and one byte below. All fourteen focused tests pass. For a single selected numeric row, normalization scratch now dominates peak admission; the test reflects that overlap rather than treating the heap as the only workspace. Caller-owned term arrays and borrowed column strings remain input storage, not cloned allocations.
+
+The fused projection fixture now admits the larger normalization scratch peak while retaining its exact final-storage assertion. Final verification: build/typecheck, 3,734 regular tests (645 skipped) and 82 Worker tests passed. Evidence: `docs/validation/vector-order-normalization-2026-11-14.json`. No measured speedup is claimed.
