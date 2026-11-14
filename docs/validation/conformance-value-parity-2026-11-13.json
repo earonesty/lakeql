@@ -302,5 +302,33 @@
       "Validate primitive and nested values, signed boundaries, scale normalization, null/empty values, budget caps, cancellation, real HTTP/R2 fixtures and clean package distribution."
     ],
     "scope": "Oracle uses memoryStore and vendored fixture documentation. No cloud performance or total-memory claim. Exact-decimal support remains unimplemented; removing the schema precision guard alone is not an acceptable fix."
+  },
+  "exactDecimalKernel": {
+    "status": "Internal representation/comparison/formatting implemented; not yet connected to readers or generic execution, and not exported from the package entry point.",
+    "source": "packages/core/src/decimal-value.ts",
+    "contract": "Immutable bigint coefficient with a nonnegative safe-integer scale. Canonical fixed spelling at adjusted exponents -6 through 20 and scientific spelling otherwise. Exact string/JSON conversion; implicit numeric coercion rejects.",
+    "comparison": "Compare signs and adjusted exponents, then virtual zero-extended coefficient digits. No powers of ten or scale-sized strings. Same-scale/sign/zero shortcuts avoid formatting entirely.",
+    "allocation": "Optional scope admits scalar backing and formatting before allocation. Comparison reserves coefficient strings and releases in finally. Formatting estimate includes slices, mantissa, exponent and output. VM/GC internals and BigInt arithmetic used for forecasts remain separate.",
+    "validation": {
+      "focusedPassed": 22,
+      "randomComparisonCases": 5000,
+      "randomExactFormattingCases": 1000,
+      "typescriptBuild": "passed",
+      "typecheck": "passed",
+      "lint": "passed"
+    },
+    "edgeCases": [
+      "Documented precision-loss values retain every digit",
+      "Equivalent scales canonicalize identically",
+      "Positive/negative/zero comparisons",
+      "MAX_SAFE_INTEGER scale with constant coefficient-sized workspace",
+      "Exact cap and one-byte-short construction/formatting/comparison",
+      "Invalid scales reject before admission",
+      "Implicit Number and unary-plus coercion reject",
+      "Immutable scalar storage"
+    ],
+    "benchmark": "../benchmarks/decimal-scale-workspace-2026-11-13.json",
+    "measurement": "For fixed coefficients at scales 4, 1000 and MAX_SAFE_INTEGER, comparison peak is 136 reservation bytes and formatting retains 1036 reservation bytes in every case. Microbenchmark medians are approximately 0.00016-0.00017ms; this is a kernel check, not query/cloud performance.",
+    "remaining": "Connect exact decimal capabilities to vectors, readers, generic comparison/hash/sort, arithmetic/aggregates and owned output. Preserve existing low-precision number behavior where required by compatibility. The 30 conformance failures remain unresolved at this checkpoint."
   }
 }
