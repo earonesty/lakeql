@@ -435,3 +435,8 @@ and fall back to direct decoding without cache eviction when workspace is scarce
 Decode shared packed-text dictionary comparison operands once when their physical
 entry and outer null state match. Preserve comparator validation, secondary
 ordering, stable ties, and scalar admission without adding retained cache state.
+
+Admit nested Parquet page cache-key workspace before constructing escaped JSON
+keys. Skip optional decoded-cache lookup when workspace is unavailable or would
+consume a nonrefundable stage extent, and release key scratch independently of
+retained page output.

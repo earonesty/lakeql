@@ -5,6 +5,7 @@ import { dictionaryPageOffset } from "./dictionary-offset.js";
 import type { TemporalColumnDecoder } from "./int96-interpretation.js";
 import { decodeCompactNestedColumnPage, decodeNestedColumnPage } from "./nested-column-page.js";
 import { decodeNestedDictionaryPage } from "./nested-dictionary-page.js";
+import { nestedPageCacheKey } from "./nested-page-cache-key.js";
 import { preparePageWindow, readPreparedPageBody } from "./page-window.js";
 import type { ReadParquetBatchOptions, StoreAsyncBuffer } from "./types.js";
 
@@ -113,18 +114,18 @@ async function* readNestedPages<Page extends CompactPage>(
         const cache = options.decodedColumnCache;
         const key =
           cache && options.decodedColumnCacheKey !== undefined
-            ? JSON.stringify([
-                "nested-page-v3",
-                header.type === "DICTIONARY_PAGE" ? "dictionary" : shape,
-                (decoder as TemporalColumnDecoder).int96Interpretation ?? "julian-nanos",
-                options.decodedColumnCacheKey,
-                file.byteLength,
-                file.etag,
-                column.path_in_schema,
-                start + offset,
-                prepared.bodyEnd,
+            ? nestedPageCacheKey(pageScope.childScope(), {
+                shape: header.type === "DICTIONARY_PAGE" ? "dictionary" : shape,
+                interpretation:
+                  (decoder as TemporalColumnDecoder).int96Interpretation ?? "julian-nanos",
+                parentKey: options.decodedColumnCacheKey,
+                byteLength: file.byteLength,
+                etag: file.etag,
+                path: column.path_in_schema,
+                start: start + offset,
+                end: prepared.bodyEnd,
                 previousDefinition,
-              ])
+              })
             : undefined;
         if (header.type === "DICTIONARY_PAGE") {
           if (dictionary !== undefined || sawData) throw invalid();

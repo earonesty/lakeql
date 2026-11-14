@@ -218,3 +218,52 @@ it("separates compact and leaf-slot cache shapes across cold and warm reads", as
   }
   expect(pool.usedBytes).toBe(0);
 });
+
+it("decodes real nested pages without constructing oversized optional lookup keys", async () => {
+  const metadata = parquetMetadata(nestedListFile.slice().buffer);
+  const store = memoryStore();
+  await store.put("nested", nestedListFile);
+  const file = await asyncBufferFromStore(store, "nested");
+  const pool = new MemoryBudget(1024 * 1024);
+  const shared = new SharedMemoryCache({ maxBytes: 512 * 1024, memoryBudget: pool });
+  const cache = new DecodedColumnCache(shared, { maxBytes: 512 * 1024, policy: "latency" });
+  const run = async (parentKey?: string) => {
+    const scope = new MemoryScope(pool.child(128 * 1024));
+    const rows: unknown[] = [];
+    try {
+      for await (const owner of readNestedRowGroupBatches(file, metadata, scope, {
+        batchSize: 2,
+        ...(parentKey === undefined
+          ? {}
+          : { decodedColumnCache: cache, decodedColumnCacheKey: parentKey }),
+      })) {
+        try {
+          rows.push(...materializeBatchRows(owner.value.batch));
+        } finally {
+          owner.release();
+        }
+      }
+      return rows;
+    } finally {
+      scope.dispose();
+    }
+  };
+  const expected = await run();
+  const stringify = vi.spyOn(JSON, "stringify");
+  const get = vi.spyOn(cache, "getValue");
+  try {
+    expect(await run("x".repeat(128 * 1024))).toEqual(expected);
+    expect(expected).toHaveLength(3);
+    expect(get).not.toHaveBeenCalled();
+    expect(
+      stringify.mock.calls.filter(
+        ([value]) => Array.isArray(value) && value[0] === "nested-page-v3",
+      ),
+    ).toHaveLength(0);
+  } finally {
+    stringify.mockRestore();
+    get.mockRestore();
+    shared.deleteWhere(() => true);
+  }
+  expect(pool.usedBytes).toBe(0);
+});

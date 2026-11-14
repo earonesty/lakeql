@@ -1,0 +1,43 @@
+{
+  "baseline": "d5132f7",
+  "status": "validated implementation; full audit acceptance remains open",
+  "contract": [
+    "Admit JSON-escaped key storage and temporary array workspace before nested page key construction.",
+    "Preserve the existing nested-page-v3 key format and version/shape/offset identity.",
+    "Decline optional decoded-cache lookup/insertion without reclamation when key workspace cannot fit.",
+    "Do not consume nonrefundable parent-stage admission reserved for future mandatory decode/output.",
+    "Hold key scratch through insertion as a child scope, excluding it from retained page/dictionary owners."
+  ],
+  "negativeControl": "The real nested-list fixture with a 128 KiB parent key still attempted two getValue lookups in the prior implementation. The candidate performs no nested key stringify or decoded-value lookup, returns identical rows, and releases to zero.",
+  "validation": {
+    "focusedPassed": 9,
+    "regularPassed": 4008,
+    "regularSkipped": 645,
+    "build": "passed",
+    "types": "passed",
+    "cleanConsumer": "passed",
+    "lint": "passed",
+    "compatibility": "passed",
+    "largeFiles": "passed",
+    "changeset": "passed",
+    "fixtures": "passed",
+    "workerPassed": 95,
+    "requiredConformancePassed": 520,
+    "requiredConformanceSkipped": 1,
+    "referencePassed": 120,
+    "thresholdsAndTimeouts": "unchanged"
+  },
+  "remaining": [
+    "Other decoded-cache key constructors and prefix concatenations still need admission review.",
+    "Delimiter-joined decodedColumnCacheKey has a reproduced collision for columns [\"a\\u001fb\", \"c\"] versus [\"a\", \"b\\u001fc\"]; actual cached-query impact and fix are the next review item.",
+    "Whole-runtime memory limits and broad audit acceptance remain open."
+  ],
+  "publicR2": {
+    "scenarios": 52,
+    "ordinaryScenarios": 40,
+    "maxOrdinaryReadConcurrency": 4,
+    "maxIncrementalAdmission": 415448,
+    "maxWarmOrdinaryDataRequests": 0,
+    "queryHeadroomBytes": 524288
+  }
+}
