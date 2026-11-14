@@ -1,0 +1,25 @@
+{
+  "baseCommit": "77d87af",
+  "scope": "Preserve cached range transport hints and support admitted metadata copies",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 90,
+    "fullSuite": {
+      "passed": 3579,
+      "skipped": 629,
+      "log": "/tmp/object-info-full.log"
+    }
+  },
+  "evidence": [
+    "Native/emulated/absent hints preserved in clones",
+    "Mutable dates detached",
+    "Scoped clone exact capacity succeeds, one byte below rejects and preserves sibling allocations",
+    "HEAD and LIST cold/warm planning observes identical transport hints with one discovery"
+  ],
+  "limitations": [
+    "New transport tests use simulated adapter hints, not production cloud measurements",
+    "Scoped clone support is not yet integrated through full object discovery lifetime",
+    "External planning cache lifetime remains caller-controlled"
+  ]
+}

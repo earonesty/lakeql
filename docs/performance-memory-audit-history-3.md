@@ -3567,3 +3567,23 @@ Queries with no abort signal return the original iterable without an extra async
 generator; an identity test verifies that fast path. Final build/typecheck passed;
 full suite passed 3,573 tests with 629 skips. Evidence:
 `docs/validation/scan-completion-cancellation-2026-11-14.json`.
+
+### 2026-11-14 — preserve cached transport hints and admit metadata copies
+
+Object discovery cache cloning dropped `rangeReadMode`, so a warm plan could lose
+its observed native-versus-emulated range hint. Extracted a shared metadata clone
+that preserves all declared `ObjectInfo` fields, independently copies mutable
+Dates, and supports scoped admission of list/record/string/date storage before
+copying. The cache path now uses this helper. Its scoped form rolls back partial
+copies without releasing caller siblings and passes exact-capacity/one-byte-below
+tests.
+
+Cold/warm query tests exercise both HEAD and listing discovery for native and
+emulated hints, require one discovery across two plans, and inspect what the scan
+planner receives. These tests simulate adapter metadata; they are not additional
+production cloud measurements. Scoped copying is a prerequisite for owned object
+discovery, not a claim that current cache/list collection is fully admitted. The
+existing externally supplied planning-cache lifetime remains caller-controlled.
+
+Build/typecheck passed; focused suites passed 90 tests; full suite passed 3,579
+with 629 skips. Evidence: `docs/validation/object-info-transport-copy-2026-11-14.json`.

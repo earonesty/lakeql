@@ -39,6 +39,7 @@ import {
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
 import { MutableMemoryLedger } from "./mutable-memory-ledger.js";
+import { cloneObjectInfos } from "./object-info.js";
 
 export { parseHivePartitions } from "./hive-partitions.js";
 
@@ -5668,18 +5669,6 @@ async function listMatchingObjects(
   }
   paths.sort((a, b) => a.path.localeCompare(b.path));
   return paths;
-}
-
-function cloneObjectInfos(objects: ObjectInfo[]): ObjectInfo[] {
-  return objects.map((object) => {
-    const cloned: ObjectInfo = {
-      path: object.path,
-      size: object.size,
-    };
-    if (object.etag !== undefined) cloned.etag = object.etag;
-    if (object.lastModified !== undefined) cloned.lastModified = new Date(object.lastModified);
-    return cloned;
-  });
 }
 
 function partitionColumnsFromTasks(tasks: TaskInput[]): string[] {
