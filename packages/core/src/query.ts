@@ -39,6 +39,7 @@ import { encodeOwnedCheckpoint } from "./owned-checkpoint-encoding.js";
 import { OwnedGroupDirectory } from "./owned-group-directory.js";
 import { collectOwnedRows } from "./owned-row-collector.js";
 import { detachOwnedRow } from "./owned-row-detachment.js";
+import { snapshotOwnedRows } from "./owned-snapshot-rows.js";
 import {
   type AcceleratorPolicy,
   CpuPhysicalBackend,
@@ -1653,7 +1654,13 @@ export class QueryResult {
         enforceBudget(config.budget, this.stats, config.now, startedAt);
       }
       this.stats.elapsedMs = config.now() - startedAt;
-      const state = topKOperatorState(orderBy, config.offset ?? 0, config.limit, matched);
+      const state = topKOperatorState(
+        orderBy,
+        config.offset ?? 0,
+        config.limit,
+        matched,
+        retainedScope,
+      );
       const checkpoint = retainedScope.adopt(encodeOwnedCheckpoint(state, retainedScope));
       const operatorState = checkpoint.value;
       const result: TopKResult = { rows, operatorState };
@@ -4068,13 +4075,14 @@ function topKOperatorState(
   offset: number,
   limit: number,
   rows: Row[],
+  scope: MemoryScope,
 ): TopKOperatorState {
   return {
     version: 1,
     orderBy: normalizeOrderBy(orderBy),
     offset,
     limit,
-    rows: rows.map(snapshotRecord),
+    rows: scope.adopt(snapshotOwnedRows(rows, scope)).value,
   };
 }
 
@@ -4087,13 +4095,14 @@ async function sortOperatorState(
 ): Promise<SortOperatorState> {
   const runStates: SortRunState[] = [];
   for (const [index, run] of runs.entries()) {
-    const rows = run.map(snapshotRecord);
     if (spill === undefined) {
+      const rows = scope.adopt(snapshotOwnedRows(run, scope)).value;
       runStates.push({ rows });
       continue;
     }
     const encoding = scope.childScope();
     try {
+      const rows = encoding.adopt(snapshotOwnedRows(run, encoding)).value;
       const output = encoding.adopt(encodeOwnedCheckpoint(rows, encoding));
       const ref = await writeOwnedCheckpoint(
         spill,

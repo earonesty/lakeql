@@ -23,7 +23,8 @@
     "workerTestsPassed": 61
   },
   "remaining": [
-    "Checkpoint snapshot object construction and decoding remain unadmitted.",
+    "Top-k/sort row snapshot construction is now admitted (linked evidence). Envelope metadata, decoding and legacy aggregate snapshot construction remain outstanding.",
     "Traversal and normalization charges are conservative accounting units, not a total VM heap guarantee."
-  ]
+  ],
+  "snapshotEvidence": "checkpoint-snapshot-admission-2026-11-13.json"
 }
