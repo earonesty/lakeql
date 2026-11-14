@@ -713,18 +713,62 @@ export function retainSelectedAllocations(
   target: MemoryScope,
   keep: (allocatedValue: unknown) => boolean,
 ): void {
-  const guard = input.retain();
-  let selected: MemoryScope | undefined;
+  const selected = target.childScope();
   try {
-    const destination = target.childScope();
-    selected = destination;
+    visitOwnedAllocations(input, selected, (owner, opaque) => {
+      if (opaque || keep(owner.value)) selected.adopt(owner.retainIn(target.budget));
+    });
+    target.adopt(selected.retainAllocations(undefined));
+  } finally {
+    selected.dispose();
+  }
+}
+
+/** Index trusted immutable scalar backing once for a detachment stage. Unknown
+ * external ownership has no atomic provenance and is left to the copying path.
+ * The returned child scope must stay live during lookup, then be disposed.
+ */
+export function indexImmutableBacking(
+  input: OwnedMemory<unknown>,
+  parent: MemoryScope,
+): MemoryScope {
+  const index = parent.childScope();
+  try {
+    index.allocate(c.object, "immutable backing index", () => undefined);
+    visitOwnedAllocations(input, index, (owner, opaque) => {
+      if (opaque || (typeof owner.value !== "string" && typeof owner.value !== "bigint")) return;
+      const existing = index.tryRetainAllocation(owner.value);
+      if (existing !== undefined) {
+        existing.release();
+        return;
+      }
+      index.allocate(c.property, "immutable backing index entry", () => undefined);
+      index.adopt(owner.retainIn(parent.budget));
+    });
+    return index;
+  } catch (error) {
+    index.dispose();
+    throw error;
+  }
+}
+
+function visitOwnedAllocations(
+  input: OwnedMemory<unknown>,
+  parent: MemoryScope,
+  visit: (owner: OwnedMemory<unknown>, opaque: boolean) => void,
+): void {
+  const guard = input.retain();
+  let traversal: MemoryScope | undefined;
+  try {
+    const frames = parent.childScope();
+    traversal = frames;
     interface Frame {
       owner: OwnedMemory<unknown>;
       index: number;
       parent: OwnedMemory<Frame> | undefined;
     }
     const push = (owner: OwnedMemory<unknown>, parent: OwnedMemory<Frame> | undefined) =>
-      destination.allocate(c.object + 3 * c.property, "ownership traversal frame", () => ({
+      frames.allocate(c.object + 3 * c.property, "ownership traversal frame", () => ({
         owner,
         index: 0,
         parent,
@@ -737,24 +781,20 @@ export function retainSelectedAllocations(
         const child = provenance[state.index++];
         if (child !== undefined) {
           const childProvenance = allocationProvenance.get(child);
-          // Atomic/opaque owners need no traversal frame: process them directly
-          // while the parent frame and source guard keep their lifetime stable.
           if (childProvenance === undefined || childProvenance === null) {
-            if (childProvenance === undefined || keep(child.value))
-              destination.adopt(child.retainIn(target.budget));
+            visit(child, childProvenance === undefined);
           } else if (childProvenance.length > 0) frame = push(child, frame);
         }
         continue;
       }
-      if (provenance === undefined || (provenance === null && keep(state.owner.value)))
-        destination.adopt(state.owner.retainIn(target.budget));
+      if (provenance === undefined || provenance === null)
+        visit(state.owner, provenance === undefined);
       const parent: OwnedMemory<Frame> | undefined = state.parent;
       frame.release();
       frame = parent;
     }
-    target.adopt(destination.retainAllocations(undefined));
   } finally {
-    selected?.dispose();
+    traversal?.dispose();
     guard.release();
   }
 }

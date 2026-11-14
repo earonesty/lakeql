@@ -569,3 +569,40 @@ it.each([64, 128])("shares a %s MiB pool across concurrent owned window jobs", a
   }
   expect(pool.usedBytes).toBe(0);
 });
+
+it("uses immutable backing reuse when window task headroom is tight", async () => {
+  const store = memoryStore();
+  const payloads = Array.from({ length: 64 }, (_, id) => `${id}:${"x".repeat(16384)}`);
+  await writeParquet(store, "tight-window.parquet", {
+    rowGroupSize: Array(8).fill(8),
+    columnData: [
+      { name: "id", data: payloads.map((_, id) => id) },
+      { name: "payload", data: payloads },
+    ],
+  });
+  const pool = new MemoryBudget(4 * 1024 * 1024);
+  const result = await windowParquetTasksOwned(
+    store,
+    [
+      {
+        path: "tight-window.parquet",
+        rowGroupRanges: [{ start: 0, end: 8 }],
+        projectedColumns: ["id", "payload"],
+        partitionValues: {},
+      },
+    ],
+    {
+      rn: { fn: "row_number", args: [], over: { partitionBy: [], orderBy: [{ expr: col("id") }] } },
+    },
+    { memoryBudget: pool, batchSize: 8 },
+  );
+  try {
+    expect(result.value.map((row) => row.payload)).toEqual(payloads);
+    expect(result.value[63]?.rn).toBe(64);
+    expect(pool.usedBytes).toBeGreaterThan(2 * 1024 * 1024);
+    expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
+  } finally {
+    result.release();
+  }
+  expect(pool.usedBytes).toBe(0);
+});

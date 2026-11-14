@@ -1,0 +1,14 @@
+{
+  "finding": "Passing the source MemoryScope to detachOwnedRow did not reduce partition or evaluation peak reservations for a 20,000-character string. Both comparison tests measured zero improvement, while mutable byte isolation and cleanup still passed.",
+  "cause": "MemoryScope.tryRetainAllocation indexes directly adopted values. A detached row is adopted as a composite owner indexed by row object; its nested scalar atomic allocations are not visible to that lookup. The same limitation applies when partial owners are adopted by fan-in.",
+  "decision": "Removed the ineffective optional input-scope API and restored the tested implementation. Do not add per-row recursive ownership searches: that risks quadratic work.",
+  "nextImplementationRequirement": "Build a bounded immutable-backing index once per input stage from trusted ownership provenance; retain selected backing independently, preserve opaque owner fallback, never share mutable byte buffers through scalar reuse, and measure both construction overhead and peak reduction.",
+  "scope": "Investigation only; no runtime behavior change or benchmark speedup claimed.",
+  "restoredSourceVerification": {
+    "productionRevision": "46ff797",
+    "typescriptBuild": "passed",
+    "localWorkerTests": 75,
+    "runtimeDiffAfterExperiment": "none"
+  },
+  "followupEvidence": "docs/validation/window-task-immutable-index-2026-11-14.json"
+}

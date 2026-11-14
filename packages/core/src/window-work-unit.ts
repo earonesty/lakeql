@@ -30,7 +30,12 @@ export interface WindowWorkUnitPartial {
   buckets: WindowWorkUnitBucket[];
 }
 
-export interface WindowWorkUnitEvaluationOptions extends WindowExecutionOptions {
+export interface WindowWorkUnitOptions extends WindowExecutionOptions {
+  /** Optional stage index of known immutable scalar backing. */
+  immutableSource?: MemoryScope;
+}
+
+export interface WindowWorkUnitEvaluationOptions extends WindowWorkUnitOptions {
   bucketCount?: number;
 }
 
@@ -38,7 +43,7 @@ export function partitionWindowWorkUnitRows(
   rows: readonly WindowWorkUnitRow[],
   windows: Record<string, WindowExpr>,
   bucketCount: number,
-  options: WindowExecutionOptions = {},
+  options: WindowWorkUnitOptions = {},
 ): WindowWorkUnitPartial {
   return withWindowResultScope(options, (scope) => {
     validateBucketCount(bucketCount);
@@ -60,7 +65,7 @@ export function partitionWindowWorkUnitRows(
         ).value;
         buckets.set(bucket, target);
       }
-      const detached = detachOwnedRow(entry.row, scope.budget, scope);
+      const detached = detachOwnedRow(entry.row, scope.budget, options.immutableSource ?? scope);
       try {
         scope.adopt(detached);
       } catch (error) {
@@ -132,7 +137,11 @@ export async function evaluateWindowWorkUnitPartials(
         // Detach payloads once at the borrowed partial boundary. Result records
         // may share these payloads, so their charge follows the result scope.
         for (const entry of bucket.rows) {
-          const detached = detachOwnedRow(entry.row, scope.budget, scope);
+          const detached = detachOwnedRow(
+            entry.row,
+            scope.budget,
+            options.immutableSource ?? scope,
+          );
           try {
             scope.adopt(detached);
           } catch (error) {

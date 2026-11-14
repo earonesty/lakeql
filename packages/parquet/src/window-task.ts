@@ -3,6 +3,7 @@ import {
   detachOwnedRow,
   evaluateWindowWorkUnitPartials,
   fanInWorkUnits,
+  indexImmutableBacking,
   LakeqlError,
   MemoryBudget,
   MemoryScope,
@@ -86,11 +87,16 @@ export async function windowParquetTaskOwned(
       }
     }
     enforceWindowTaskBudget(options, rows.length);
+    const immutableSource = taskImmutableIndex(buffer, scope);
     const partial = partitionWindowWorkUnitRows(
       rows,
       windows,
       options.bucketCount ?? task.window?.bucketCount ?? 1,
-      { memoryBudget: scope.budget, resultScope: scope },
+      {
+        memoryBudget: scope.budget,
+        resultScope: scope,
+        ...(immutableSource === undefined ? {} : { immutableSource }),
+      },
     );
     return scope.retainAllocations(partial);
   } finally {
@@ -167,14 +173,33 @@ export async function windowParquetTasksOwned(
       },
     });
     enforceWindowTaskBudget(options, 0);
+    const immutableSource = taskImmutableIndex(inputs, scope);
     const rows = await evaluateWindowWorkUnitPartials(partials, windows, {
       memoryBudget: scope.budget,
       resultScope: scope,
+      ...(immutableSource === undefined ? {} : { immutableSource }),
       bucketCount,
     });
     return scope.retainAllocations(rows);
   } finally {
     scope.dispose();
+  }
+}
+
+function taskImmutableIndex(source: MemoryScope, parent: MemoryScope): MemoryScope | undefined {
+  const owner = source.retainAllocations(undefined);
+  try {
+    // Indexing saves payload overlap but has measurable CPU cost. Keep the fast
+    // copying path while two source-sized extents fit in current headroom.
+    if (owner.bytes <= parent.budget.availableBytes / 2) return undefined;
+    return indexImmutableBacking(owner, parent);
+  } catch (error) {
+    // Optional optimization: release failed index admission and use ordinary
+    // admitted copies when the shared pool cannot fit lookup metadata.
+    if (error instanceof LakeqlError && error.code === "LAKEQL_BUDGET_EXCEEDED") return undefined;
+    throw error;
+  } finally {
+    owner.release();
   }
 }
 
