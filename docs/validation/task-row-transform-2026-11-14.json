@@ -1,0 +1,27 @@
+{
+  "date": "2026-11-14",
+  "scope": "Parquet row-task projection, partition merge, residual evaluation and yielded row ownership",
+  "changes": [
+    "Replace map/filter/map intermediates with one scoped traversal.",
+    "Admit merged and projected row containers and property slots before construction. Evaluate residual predicates with a memory scope.",
+    "Detach accepted output payloads under the shared budget and retain charges until generator advance or close. Release scratch per row and output per batch.",
+    "Preserve ordinary output object prototypes and define special property names safely."
+  ],
+  "validation": {
+    "build": "pnpm exec tsc -b passed",
+    "typecheck": "pnpm typecheck passed",
+    "task_and_work_unit_tests": 31,
+    "real_http_window_task_tests": 4,
+    "format": "Biome passed",
+    "fixture": "Real Parquet file, filtered rows, duplicate projection names, binary partition payload, own __proto__ property, early iterator return and 64 KiB rejection cleanup."
+  },
+  "tradeoffs": [
+    "Detaching accepted payloads increases copy work and overlapping live charges; it establishes independent output backing while preserving configured admission limits. No speedup claim is made."
+  ],
+  "remaining": [
+    "Column-task materialization/gather/projection fallback admission is not addressed by this change.",
+    "Task planning metadata and topology allocations still require review.",
+    "Full current-revision release gates and complete 64/128 MiB mixed-job validation remain open.",
+    "Reservation accounting does not establish a whole-process or production Cloudflare heap cap."
+  ]
+}

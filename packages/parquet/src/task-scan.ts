@@ -1,6 +1,8 @@
 import {
   type Batch,
   batchFromColumns,
+  MATERIALIZATION_CHARGES as c,
+  detachOwnedRow,
   gatherBatch,
   LakeqlError,
   MemoryBudget,
@@ -59,12 +61,14 @@ export async function* scanParquetTaskBatches(
         metadata,
         taskReadOptions(rowStart, rowEnd, physicalColumns, task.residualPredicate, options),
       )) {
-        const rows = batch.rows
-          .map((row: Row) => ({ ...task.partitionValues, ...row }))
-          .filter((row: Row) => matches(task.residualPredicate, row))
-          .map((row: Row) => projectTaskRow(row, task.projectedColumns));
-        recordRowsMatched(options.stats, rows.length);
-        if (rows.length > 0) yield rows;
+        const output = scope.childScope();
+        try {
+          const rows = transformTaskRows(batch.rows, task, output);
+          recordRowsMatched(options.stats, rows.length);
+          if (rows.length > 0) yield rows;
+        } finally {
+          output.dispose();
+        }
       }
     }
   } finally {
@@ -281,6 +285,67 @@ function selectionIndices(selection: Uint8Array): number[] {
     if (selection[index] === 1) indices.push(index);
   }
   return indices;
+}
+
+/** The source batch stays live while rows are transformed and yielded. */
+function transformTaskRows(source: Row[], task: TaskInput, output: MemoryScope): Row[] {
+  const rows = output.allocate(c.array, "task output rows", () => [] as Row[]).value;
+  for (const row of source) {
+    const scratch = output.childScope();
+    try {
+      const merged = scratch.allocate(c.object, "task predicate row", () => ({}) as Row).value;
+      for (let inputIndex = 0; inputIndex < 2; inputIndex += 1) {
+        const input = inputIndex === 0 ? task.partitionValues : row;
+        for (const name in input) {
+          if (!Object.hasOwn(input, name)) continue;
+          scratch.allocate(
+            Object.hasOwn(merged, name) ? 0 : c.property,
+            "task predicate property",
+            () => {
+              Object.defineProperty(merged, name, {
+                value: input[name],
+                enumerable: true,
+                writable: true,
+                configurable: true,
+              });
+            },
+          );
+        }
+      }
+      if (!matches(task.residualPredicate, merged, scratch)) continue;
+      let selected = merged;
+      if (task.projectedColumns !== undefined) {
+        selected = scratch.allocate(c.object, "task projection", () => ({}) as Row).value;
+        for (const name of task.projectedColumns) {
+          scratch.allocate(
+            Object.hasOwn(selected, name) ? 0 : c.property,
+            "task projection property",
+            () => {
+              Object.defineProperty(selected, name, {
+                value: merged[name],
+                enumerable: true,
+                writable: true,
+                configurable: true,
+              });
+            },
+          );
+        }
+      }
+      const owned = detachOwnedRow(selected, output.budget);
+      try {
+        output.adopt(owned);
+      } catch (error) {
+        owned.release();
+        throw error;
+      }
+      output.allocate(c.arraySlot, "task output row slot", () => {
+        rows.push(owned.value);
+      });
+    } finally {
+      scratch.dispose();
+    }
+  }
+  return rows;
 }
 
 function projectTaskRow(row: Row, columns: string[] | undefined): Row {

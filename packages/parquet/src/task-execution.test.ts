@@ -916,3 +916,40 @@ it.each([
   });
   expect(rejected.usedBytes).toBe(0);
 });
+
+it("admits projected task payloads and releases them on iterator close or rejection", async () => {
+  const store = memoryStore();
+  await writeParquet(store, "task-payload.parquet", {
+    rowGroupSize: [3],
+    columnData: [{ name: "value", type: "DOUBLE", data: [1, 2, 3] }],
+  });
+  const payload = new Uint8Array(128 * 1024).fill(7);
+  const task: TaskInput = {
+    path: "task-payload.parquet",
+    rowGroupRanges: [{ start: 0, end: 1 }],
+    partitionValues: { payload, ...JSON.parse('{"__proto__":"partition"}') },
+    projectedColumns: ["value", "payload", "__proto__", "payload"],
+    residualPredicate: gt("value", 1),
+  };
+  const pool = new MemoryBudget(1024 * 1024);
+  const iterator = scanParquetTaskBatches(store, task, { memoryBudget: pool, batchSize: 3 })[
+    Symbol.asyncIterator
+  ]();
+  const first = await iterator.next();
+  expect(first.done).toBe(false);
+  expect(first.value?.map((row) => row.value)).toEqual([2, 3]);
+  expect(Object.getPrototypeOf(first.value?.[0])).toBe(Object.prototype);
+  expect(Object.hasOwn(first.value?.[0] ?? {}, "__proto__")).toBe(true);
+  expect(Object.getOwnPropertyDescriptor(first.value?.[0] ?? {}, "__proto__")?.value).toBe(
+    "partition",
+  );
+  expect(first.value?.[0]?.payload).not.toBe(payload);
+  expect(pool.usedBytes).toBeGreaterThan(2 * payload.byteLength);
+  await iterator.return?.();
+  expect(pool.usedBytes).toBe(0);
+  const small = new MemoryBudget(64 * 1024);
+  await expect(
+    scanParquetTaskBatches(store, task, { memoryBudget: small })[Symbol.asyncIterator]().next(),
+  ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  expect(small.usedBytes).toBe(0);
+});
