@@ -2,7 +2,6 @@ import { continuousQuantile, requiredQuantile } from "./aggregate-quantile.js";
 import { MATERIALIZATION_CHARGES as allocationCharges } from "./allocation-charges.js";
 import {
   type Batch,
-  materializeBatchRows,
   predicateSelection,
   selectedRowCount,
   selectedRowIndexBuffer,
@@ -1242,9 +1241,9 @@ export class QueryResult {
         object.path,
         scanOptions,
       )) {
-        const stage = owner === undefined ? undefined : new MemoryScope(this.memoryBudget);
+        const stage = new MemoryScope(this.memoryBudget);
         try {
-          if (owner !== undefined) stage?.adopt(owner.retain());
+          if (owner !== undefined) stage.adopt(owner.retain());
           const sourceIdentity = physicalSourceIdentity(object, rowOffset);
           let projectedBatch: Batch;
           let selectedRows: number;
@@ -1309,23 +1308,29 @@ export class QueryResult {
               enforceBudget(config.budget, stats, config.now, startedAt);
             }
             stats.elapsedMs = config.now() - startedAt;
-            if (ownedOutput) {
-              if (stage === undefined)
-                throw new LakeqlError(
-                  "LAKEQL_TYPE_ERROR",
-                  "Owned output requires scoped vector input",
-                );
-              const input = stage.retainAllocations(selected);
-              try {
-                yield materializeCollectedOutput(input, fail);
-              } finally {
-                input.release();
+            // Borrowed scanner storage is valid only until the iterator advances.
+            // Detach the selected output, rather than retaining the entire input batch.
+            const input =
+              owner === undefined
+                ? detachOwnedBatch(selected, this.memoryBudget)
+                : stage.retainAllocations(selected);
+            try {
+              const output = materializeCollectedOutput(input, fail);
+              if (ownedOutput) yield output;
+              else {
+                try {
+                  yield output.value;
+                } finally {
+                  output.release();
+                }
               }
-            } else yield materializeBatchRows(selected);
+            } finally {
+              input.release();
+            }
           }
           if (config.limit !== undefined && returned >= config.limit) return;
         } finally {
-          stage?.dispose();
+          stage.dispose();
         }
       }
     }

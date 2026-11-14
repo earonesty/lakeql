@@ -80,7 +80,10 @@ describe.runIf(await dawnAdapterAvailable())("WebGpuPhysicalBackend with Dawn", 
     });
   });
 
-  it("executes an ordinary Lake row query through WebGPU selection and host projection", async () => {
+  it.each([
+    "auto",
+    "required",
+  ] as const)("enforces scoped selection capability (%s)", async (policy) => {
     const store = memoryStore();
     await store.put("scores.parquet", Uint8Array.of(1));
     const batch = batchFromVectors({
@@ -100,23 +103,33 @@ describe.runIf(await dawnAdapterAvailable())("WebGpuPhysicalBackend with Dawn", 
       scanner,
       physicalExecution: {
         backends: [backend],
-        acceleratorPolicy: "required",
+        acceleratorPolicy: policy,
       },
     });
 
     const result = lake.path("scores.parquet").select(["id"]).where(gt("score", 0.5)).run();
-    await expect(result.toArray()).resolves.toEqual([{ id: 2 }, { id: 3 }]);
-    expect(result.stats).toMatchObject({
-      acceleratorFragments: 1,
-      acceleratorDispatches: 1,
-    });
-    expect((await result.explain()).json.physicalFragments).toEqual([
-      expect.objectContaining({
-        backendId: "webgpu",
-        operators: ["select"],
-        output: "selection",
-      }),
-    ]);
+    if (policy === "required") {
+      await expect(result.toArray()).rejects.toMatchObject({
+        code: "LAKEQL_PHYSICAL_BACKEND_UNAVAILABLE",
+        details: {
+          candidates: expect.arrayContaining([
+            expect.objectContaining({
+              backendId: "webgpu",
+              reasons: expect.arrayContaining([
+                expect.objectContaining({
+                  message: "Backend does not support allocation scopes for this fragment",
+                }),
+              ]),
+            }),
+          ]),
+        },
+      });
+    } else {
+      await expect(result.toArray()).resolves.toEqual([{ id: 2 }, { id: 3 }]);
+      expect((await result.explain()).json.physicalFragments).toEqual([
+        expect.objectContaining({ backendId: "cpu", operators: ["select"], output: "selection" }),
+      ]);
+    }
   });
 
   it("dispatches more than one workgroup and reuses the compiled pipeline", async () => {

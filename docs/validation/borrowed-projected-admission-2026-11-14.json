@@ -1,0 +1,34 @@
+{
+  "date": "2026-11-14",
+  "requirements": [
+    "F2",
+    "F3",
+    "M1"
+  ],
+  "changes": [
+    "General borrowed projected scans now pass an allocation scope to physical execution, selection gathering and projection.",
+    "Detach only selected borrowed output and share owned row materialization; release stage, detached input and materialized output on iterator cleanup.",
+    "Enforce backend allocation-scope capabilities for borrowed scans as for owned scans. Optional WebGPU falls back to CPU; required WebGPU rejects unsupported scoped selection."
+  ],
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "targeted_tests": 92,
+    "full_default_suite": {
+      "passed": 3487,
+      "skipped": 629
+    },
+    "coverage": [
+      "Eight borrowed scan cases: streaming/collected, filtered/unfiltered, offset-limit/unlimited; mutable binary backing survives scanner reuse.",
+      "Exact observed peak succeeds; one byte below rejects; scanner closes and reservations return to zero on both success and budget failure.",
+      "Real fixture and HTTP tests included in the full default suite.",
+      "WebGPU auto and required placement policies explicitly tested."
+    ]
+  },
+  "remaining": [
+    "Borrowed projected toOwnedArray eligibility and deferred-limit ownership are not yet unified.",
+    "WebGPU scoped selection allocation support remains incomplete; required acceleration for this query path is a compatibility limitation to resolve before final acceptance.",
+    "Projected read-column planning and other planner/runtime metadata still require admission.",
+    "No new cloud-specific benchmark or whole-runtime 64/128 MiB cap proof is supplied by this change."
+  ]
+}
