@@ -19,6 +19,10 @@ import { cachedRangeBuffer } from "../packages/parquet/dist/range-cache.js";
 const baseUrl = "https://pub-9d5bcb33a5384d79875a943eef183b6d.r2.dev/bench/";
 const path = "window-events.parquet";
 const reports = [];
+const queryHeadroom = Number(process.env.LAKEQL_CLOUD_QUERY_HEADROOM ?? 128 * 1024);
+assert.ok(
+  Number.isSafeInteger(queryHeadroom) && queryHeadroom > 0 && queryHeadroom < 64 * 1024 * 1024,
+);
 
 function measuredStore() {
   const metrics = {
@@ -289,7 +293,7 @@ for (const scenario of ["aggregate", "top-k", "projection", "one-row-batches", "
       const { store: rawStore, metrics } = measuredStore();
       const store = withObjectStoreReadControls(rawStore, { maxConcurrentReads: 4 });
       const root = new MemoryBudget(memoryMiB * 1024 * 1024);
-      const headroom = 128 * 1024;
+      const headroom = queryHeadroom;
       const cache = new SharedMemoryCache({ maxBytes: root.maxBytes, memoryBudget: root });
       const seed = new MemoryScope(root);
       const occupied = root.maxBytes - headroom;

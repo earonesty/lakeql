@@ -4582,3 +4582,47 @@ runtime `c950498`, including the dynamic RANGE/GROUPS exclusion matrix. Those
 reference tests use local files; the R2 test uses a native local workerd binding,
 not production cloud service measurements. See
 `validation/window-owned-r2-2026-11-14.json`.
+
+### F6 range-prefetch acceptance trace and current cloud headroom check
+
+The current source keeps borrowed demand copying in `sliceEntry`; prefetch uses
+`ensureRange` and releases its cache lease without calling that copy operation.
+`range-cache.test.ts` instruments source `ArrayBuffer.slice` for local and shared
+caches: prefetch makes zero discarded copies, while demand returns independent
+mutable output. Owned prefetch/demand tests separately assert coalesced backing
+charges, output charges, pinned lifetime and cross-job reuse.
+
+The requirement trace is:
+
+| Contract | Evidence |
+| --- | --- |
+| Copy-free prefetch and independent demand buffers | `range-cache.test.ts`, instrumented copy counts and mutation isolation |
+| Bounded concurrency and early-stop planning | `range-cache.test.ts`, `owned-vector-batches.test.ts` |
+| Coalescing, pending deduplication, per-job ownership | `range-cache-owned.test.ts`, `range-cache-wrapper.test.ts` |
+| File/version separation and failed pending-read retry | `range-cache-wrapper.test.ts`, v1/v2 wrappers and physical-read count |
+| Cancellation and transport error propagation | `range-cache-owned.test.ts`, last-waiter abort and settle-before-error cases |
+| Real HTTP range semantics and full fixture correctness | `range-cache-http.test.ts`, 206 responses, request/byte/concurrency assertions and local-reference comparison |
+
+All 107 tests across these five suites pass on runtime `4160696`. A fresh run
+of `bench/cloud-range-validation.mjs` against the public R2 fixture fails at its
+legacy 128 KiB remaining-headroom scenario: `LAKEQL_BUDGET_EXCEEDED`, purpose
+`raw compact metadata`, root limit 67,108,864 bytes and attempted total 67,134,270.
+That aborted run emits no complete report and must not be counted as a passing
+cloud matrix. Its pool cap is enforced; the historical 128 KiB success claim is
+not current. The harness now accepts explicit `LAKEQL_CLOUD_QUERY_HEADROOM` for
+measured comparisons, retaining the same 128 KiB default and assertions. This
+is a benchmark parameter, not a change to query defaults.
+
+With 4 MiB of explicitly available headroom, the live R2 run completes all 52
+scenarios, including 40 ordinary-query combinations (five query kinds, two pool
+caps, one/four concurrent jobs, cold/warm cache). The maximum tracked incremental
+charge is 397,512 bytes; all warm ordinary-query cases issue zero data reads.
+Coalesced overlap remains four physical reads / 4,096 data bytes, with one
+additional two-byte metadata probe; measured parallelism reaches exactly one or
+four as configured. Every result and final pool cleanup assertion passes.
+Single-run ordinary-query elapsed times range from 121.675 to 1,047.026 ms;
+these network timings are descriptive, not a before/after speed claim.
+
+See `benchmarks/cloud-range-headroom4m-2026-11-14.json` and
+`validation/range-prefetch-current-2026-11-14.json`. This does not establish the
+minimum safe headroom, total VM memory, or a fix for the 128 KiB scenario.

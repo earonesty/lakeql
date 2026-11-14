@@ -1,0 +1,46 @@
+{
+  "requirements": ["F6", "M2", "V1", "V2"],
+  "runtimeSourceCommit": "4160696",
+  "benchmark": "bench/cloud-range-validation.mjs",
+  "benchmarkSha256": "ffb78ce781c28c546df0f6b5cf5ade1b052a943c42ddaccf0ba19745d287f99a",
+  "source": "https://pub-9d5bcb33a5384d79875a943eef183b6d.r2.dev/bench/window-events.parquet",
+  "transport": "Live public R2 endpoint over HTTP Range requests from Node; not workerd native binding",
+  "failedRun": {
+    "queryHeadroomBytes": 131072,
+    "status": "LAKEQL_BUDGET_EXCEEDED",
+    "purpose": "raw compact metadata",
+    "limit": 67108864,
+    "attemptedTotalBytes": 67134270,
+    "completeReport": false
+  },
+  "successfulRun": {
+    "queryHeadroomBytes": 4194304,
+    "poolMiB": [64, 128],
+    "reports": 52,
+    "ordinaryQueryCases": 40,
+    "concurrency": [1, 4],
+    "temperature": ["cold", "warm"],
+    "maximumIncrementalChargedBytes": 397512,
+    "ordinaryWarmDataRequests": 0,
+    "maximumReadConcurrency": 4,
+    "rawReport": "docs/benchmarks/cloud-range-headroom4m-2026-11-14.json"
+  },
+  "focusedValidation": {
+    "testsPassed": 107,
+    "files": 5,
+    "filesCovered": [
+      "range-cache.test.ts",
+      "range-cache-owned.test.ts",
+      "range-cache-http.test.ts",
+      "owned-vector-batches.test.ts",
+      "range-cache-wrapper.test.ts"
+    ]
+  },
+  "limitations": [
+    "Single live-network run, not a statistically controlled latency comparison",
+    "Does not prove minimum required headroom or successful operation at 128 KiB",
+    "Accounted allocations are not exact total VM/native memory",
+    "Copy instrumentation is in focused tests, not live-network report",
+    "Broader query scheduling, metadata allocation and whole-runtime acceptance remain open"
+  ]
+}
