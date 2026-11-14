@@ -33,5 +33,6 @@
   "limitations": [
     "Scalar source payload ownership and complete query outputs remain separate open audit work.",
     "Formatting forecasts and ledger metadata are conservative reservation units, not total runtime heap bounds."
-  ]
+  ],
+  "sharedQuantileFollowup": "docs/validation/quantile-shared-interpolation-2026-11-13.json"
 }

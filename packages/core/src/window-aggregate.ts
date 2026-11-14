@@ -1,8 +1,8 @@
+import { continuousQuantileInPlace } from "./aggregate-quantile.js";
 import { MATERIALIZATION_CHARGES as charges } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
 import { evaluate, jsonSafeValue } from "./evaluator.js";
 import type { Scalar } from "./expr.js";
-import { heapSort } from "./heap-sort.js";
 import { jsonScalarKeyAllocationBytes } from "./json-scalar-key-memory.js";
 import {
   MemoryBudget,
@@ -213,9 +213,9 @@ class AggregateState {
       case "last":
         return this.last ?? null;
       case "median":
-        return continuousQuantile(this.values ?? [], 0.5);
+        return continuousQuantileInPlace(this.values ?? [], 0.5);
       case "quantile":
-        return continuousQuantile(this.values ?? [], this.quantile ?? 0.5);
+        return continuousQuantileInPlace(this.values ?? [], this.quantile ?? 0.5);
       case "mode":
         return this.mode();
       case "approx_count_distinct":
@@ -376,19 +376,6 @@ function quantile(expr: WindowExpr): number | undefined {
     throw new LakeqlError("LAKEQL_TYPE_ERROR", "quantile_cont percentile must be between 0 and 1");
   }
   return arg.value;
-}
-
-function continuousQuantile(sorted: number[], q: number): number | null {
-  // Numeric state has no insertion-order semantics. Reuse its admitted backing;
-  // heapsort requires constant scratch, unlike a copied/native sorted array.
-  heapSort(sorted, (a, b) => a - b);
-  if (sorted.length === 0) return null;
-  const position = (sorted.length - 1) * q;
-  const lower = Math.floor(position);
-  const upper = Math.ceil(position);
-  const lowerValue = sorted[lower] ?? 0;
-  const upperValue = sorted[upper] ?? lowerValue;
-  return lowerValue + (upperValue - lowerValue) * (position - lower);
 }
 
 function numericValue(op: AggregateOp, value: Scalar): number {
