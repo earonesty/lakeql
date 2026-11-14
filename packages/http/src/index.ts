@@ -1,8 +1,10 @@
 import {
   MATERIALIZATION_CHARGES as c,
+  isLakeqlError,
   LakeqlError,
   type ListOptions,
-  type MemoryScope,
+  type MemoryBudget,
+  MemoryScope,
   type ObjectHead,
   type ObjectInfo,
   type ObjectStore,
@@ -25,6 +27,8 @@ export interface HttpStoreOptions {
   /** Maximum full-response fallback cache payload bytes. Default: 16 MiB. */
   maxFullObjectCacheBytes?: number;
   objects?: ObjectInfo[];
+  /** Shared pool for retained full-response backing and owned probe reuse. */
+  memoryBudget?: MemoryBudget;
 }
 
 export function httpStore(options: HttpStoreOptions): ObjectStore {
@@ -58,7 +62,10 @@ export class HttpObjectStore implements ObjectStore {
         );
       }
     }
-    this.fullObjectCache = new SharedMemoryCache({ maxBytes: maxCacheBytes });
+    this.fullObjectCache = new SharedMemoryCache({
+      maxBytes: maxCacheBytes,
+      ...(options.memoryBudget === undefined ? {} : { memoryBudget: options.memoryBudget }),
+    });
   }
 
   async get(path: string): Promise<Uint8Array | null> {
@@ -130,6 +137,22 @@ export class HttpObjectStore implements ObjectStore {
       });
     }
     if (range.length === 0) return scope.allocate(0, "empty HTTP range", () => new Uint8Array());
+    let cached: OwnedMemory<Uint8Array> | undefined;
+    try {
+      cached = this.fullObjectCache.acquireOwned<Uint8Array>(path, scope.budget);
+      if (cached !== undefined && range.offset + range.length <= cached.value.byteLength) {
+        const bytes = cached.value;
+        return scope.allocate(range.length, "cached HTTP owned range", () =>
+          bytes.slice(range.offset, range.offset + range.length),
+        );
+      }
+    } catch (error) {
+      // A small child budget may fit the range but not a pin on the full cache
+      // backing. Fall back to a bounded transport read after releasing the pin.
+      if (!isLakeqlError(error) || error.code !== "LAKEQL_BUDGET_EXCEEDED") throw error;
+    } finally {
+      cached?.release();
+    }
     const reservation = scope.reserve(
       Math.min(range.length, this.maxResponseBytes),
       "HTTP range response",
@@ -171,11 +194,13 @@ export class HttpObjectStore implements ObjectStore {
     if (options?.contentType) headers.set("content-type", options.contentType);
     const response = await this.fetchPath(path, { method: "PUT", headers, body: bodyInit(body) });
     assertOk(response, path);
+    this.fullObjectCache.delete(path);
   }
 
   async delete(path: string): Promise<void> {
     const response = await this.fetchPath(path, { method: "DELETE" });
     assertOk(response, path);
+    this.fullObjectCache.delete(path);
   }
 
   async *list(prefix: string, options?: ListOptions): AsyncIterable<ObjectInfo> {
@@ -238,6 +263,7 @@ export class HttpObjectStore implements ObjectStore {
 
   async headOwned(path: string, scope: MemoryScope): Promise<OwnedMemory<ObjectHead> | null> {
     const scratch = scope.childScope();
+    this.fullObjectCache.delete(path);
     try {
       let response = await this.fetchOwnedPath(
         path,
@@ -274,6 +300,7 @@ export class HttpObjectStore implements ObjectStore {
       if (!Number.isSafeInteger(size) || size < 0) {
         throw new LakeqlError("LAKEQL_OBJECT_NOT_FOUND", `Missing size for ${path}`, { path });
       }
+      if (response.status !== 206 || compressed) this.retainOwnedProbe(path, probe);
       const etag = response.headers.get("etag");
       const modified = response.headers.get("last-modified");
       const contentType = response.headers.get("content-type");
@@ -294,6 +321,40 @@ export class HttpObjectStore implements ObjectStore {
         .retain();
     } finally {
       scratch.dispose();
+    }
+  }
+
+  /** Release retained full responses; independent active read owners remain valid. */
+  clearFullObjectCache(): void {
+    this.fullObjectCache.deleteWhere(() => true);
+  }
+
+  private retainOwnedProbe(path: string, owner: OwnedMemory<Uint8Array>): void {
+    if (!this.fullObjectCache.supportsOwnedRetention(owner.budget)) return;
+    const scope = new MemoryScope(owner.budget);
+    try {
+      scope.allocate(
+        c.object + 6 * c.property + c.string + path.length * c.stringCodeUnit,
+        "HTTP full response cache entry",
+        () => undefined,
+      );
+      const retained = owner.retain();
+      try {
+        scope.adopt(retained);
+      } catch (error) {
+        retained.release();
+        throw error;
+      }
+      const entry = scope.retainAllocations(owner.value);
+      try {
+        this.fullObjectCache.setOwned(path, entry);
+      } finally {
+        entry.release();
+      }
+    } catch (error) {
+      if (!isLakeqlError(error) || error.code !== "LAKEQL_BUDGET_EXCEEDED") throw error;
+    } finally {
+      scope.dispose();
     }
   }
 

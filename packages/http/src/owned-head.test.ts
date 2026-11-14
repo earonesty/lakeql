@@ -91,3 +91,92 @@ it("cancels oversized probe bodies and leaves no reservations", async () => {
   expect(scope.budget.usedBytes).toBe(0);
   expect(canceled).toBe(true);
 });
+
+it("reuses admitted full probes and isolates range output from cache mutation", async () => {
+  const pool = new MemoryBudget(65536);
+  let requests = 0;
+  const store = new HttpObjectStore({
+    baseUrl: "https://example.test",
+    memoryBudget: pool,
+    fetch: async () => {
+      requests++;
+      return new Response(new Uint8Array([1, 2, 3, 4]));
+    },
+  });
+  const headScope = new MemoryScope(pool);
+  (await store.headOwned("file", headScope))?.release();
+  headScope.dispose();
+  expect(pool.usedBytes).toBeGreaterThan(4);
+  const readScope = new MemoryScope(pool);
+  const first = await store.getRangeOwned("file", { offset: 1, length: 2 }, readScope);
+  expect([...first.value]).toEqual([2, 3]);
+  first.value[0] = 99;
+  const second = await store.getRangeOwned("file", { offset: 1, length: 2 }, readScope);
+  expect([...second.value]).toEqual([2, 3]);
+  expect(requests).toBe(1);
+  store.clearFullObjectCache();
+  expect([...second.value]).toEqual([2, 3]);
+  readScope.dispose();
+  expect(pool.usedBytes).toBe(0);
+});
+
+it.each([
+  0, 100,
+])("declines full-probe retention above cache limit %s without failing metadata", async (maxFullObjectCacheBytes) => {
+  const pool = new MemoryBudget(65536);
+  const store = new HttpObjectStore({
+    baseUrl: "https://example.test",
+    memoryBudget: pool,
+    maxFullObjectCacheBytes,
+    fetch: async () => new Response(new Uint8Array(200)),
+  });
+  const scope = new MemoryScope(pool);
+  const owner = await store.headOwned("file", scope);
+  expect(owner?.value.size).toBe(200);
+  owner?.release();
+  scope.dispose();
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("reclaims full probes for sibling allocations and invalidates after writes", async () => {
+  const pool = new MemoryBudget(4096);
+  const store = new HttpObjectStore({
+    baseUrl: "https://example.test",
+    memoryBudget: pool,
+    fetch: async (_url, init) => new Response(init?.method === "PUT" ? null : new Uint8Array(200)),
+  });
+  for (const action of ["pressure", "write"] as const) {
+    const scope = new MemoryScope(pool);
+    (await store.headOwned("file", scope))?.release();
+    scope.dispose();
+    expect(pool.usedBytes).toBeGreaterThan(0);
+    if (action === "pressure") {
+      const sibling = pool.reserve(4096, "sibling");
+      sibling.release();
+    } else await store.put("file", new Uint8Array(1));
+    expect(pool.usedBytes).toBe(0);
+  }
+});
+
+it("falls back to bounded transport when a child cannot pin the full cached backing", async () => {
+  const pool = new MemoryBudget(65536);
+  let requests = 0;
+  const store = new HttpObjectStore({
+    baseUrl: "https://example.test",
+    memoryBudget: pool,
+    fetch: async () => {
+      requests++;
+      return new Response(new Uint8Array(4096).fill(7));
+    },
+  });
+  const head = new MemoryScope(pool);
+  (await store.headOwned("file", head))?.release();
+  head.dispose();
+  const child = new MemoryScope(pool.child(512));
+  const range = await store.getRangeOwned("file", { offset: 2, length: 2 }, child);
+  expect([...range.value]).toEqual([7, 7]);
+  expect(requests).toBe(2);
+  child.dispose();
+  store.clearFullObjectCache();
+  expect(pool.usedBytes).toBe(0);
+});

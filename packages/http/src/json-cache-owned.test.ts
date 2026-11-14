@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { MemoryBudget, ObjectStoreJsonCache } from "lakeql-core";
 import { expect, it } from "vitest";
-import { httpStore } from "./index.js";
+import { HttpObjectStore } from "./index.js";
 
 it.each([
   206, 200,
@@ -32,16 +32,22 @@ it.each([
   try {
     const address = server.address();
     if (address === null || typeof address === "string") throw Error("No server port");
-    const cache = new ObjectStoreJsonCache({
-      store: httpStore({ baseUrl: `http://127.0.0.1:${address.port}` }),
-      prefix: "cache",
-    });
     const pool = new MemoryBudget(65536);
+    const store = new HttpObjectStore({
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      memoryBudget: pool,
+    });
+    const cache = new ObjectStoreJsonCache({ store, prefix: "cache" });
     const result = await cache.getOwnedEntry("key", pool);
     expect(result?.value).toEqual({ value });
-    expect(pool.usedBytes).toBe(result?.bytes);
+    expect(pool.usedBytes).toBeGreaterThanOrEqual(result?.bytes ?? 0);
     expect(pool.peakBytes).toBeGreaterThan(pool.usedBytes);
     result?.release();
+    if (status === 200) {
+      expect(pool.usedBytes).toBeGreaterThan(0);
+      expect(ranges).toHaveLength(1);
+    }
+    store.clearFullObjectCache();
     expect(pool.usedBytes).toBe(0);
     expect(ranges.length).toBeGreaterThan(0);
   } finally {

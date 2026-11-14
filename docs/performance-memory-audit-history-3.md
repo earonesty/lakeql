@@ -4002,3 +4002,32 @@ HEAD remains unchanged, and runtime-provided network chunks are external storage
 
 Build/typecheck passed; focused suites passed 15 tests; full suite passed 3,650
 with 629 skips. Evidence: `docs/validation/http-owned-head-2026-11-14.json`.
+
+### 2026-11-14 — shared-budget full HTTP probe reuse
+
+HttpStoreOptions accepts a shared memoryBudget for full-response cache retention.
+Owned metadata probes retain ignored-range and compressed-fallback bodies only
+when the configured cache shares their allocation pool. Cache key/record overhead
+is admitted with payload ownership; optional insertion declines under pressure or
+capacity limits. Matching-pool owned range reads copy their requested window from
+the retained body, so mutable output cannot corrupt shared cache contents. Cache
+clear, successful PUT/DELETE and a new metadata probe invalidate stale backing.
+
+The real localhost ignored-range JSON-cache fixture now uses one request for
+probe plus subsequent payload use. Tests cover output isolation, cache clearing
+while returned output remains live, zero/undersized retention limits, shared-pool
+sibling reclamation and write invalidation. A caller must identify the intended
+shared pool; without one, owned probe bodies release rather than escaping into an
+unaccounted legacy cache. Automatic propagation of the query pool through every
+store factory and broader mixed-workload cache validation remain open.
+
+Review also identified cache-pin capacity as a distinct limit from requested
+range capacity. If a child query cannot pin the entire retained backing or admit
+the copied range while pinned, the reader releases its pin and falls back to a
+bounded transport read. A 512-byte child reads two bytes from a 4 KiB cached object
+successfully through this fallback; cache presence does not force that query to
+retain the larger backing.
+
+Build/typecheck passed; initial focused suites passed 19 tests, final owned-HEAD
+suite passed 9; full suite passed 3,655 with 629 skips. Evidence:
+`docs/validation/http-owned-probe-cache-2026-11-14.json`.

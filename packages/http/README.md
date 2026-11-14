@@ -39,3 +39,13 @@ scope. Compressed range probes use an admitted full-response fallback. Returned
 metadata is releasable ownership. Probe bodies are released after metadata
 construction; they are not inserted into the legacy full-response cache. Runtime
 network chunks remain external to these engine allocation reservations.
+
+Pass `memoryBudget` in `HttpStoreOptions` to retain full owned probe responses in
+the same shared allocation pool as queries. Owned range reads reuse matching-pool
+entries with independent copies. Cache entry/key overhead is charged alongside
+payload; the existing `maxFullObjectCacheBytes` limit and shared-pool reclamation
+bound retention. Insufficient capacity simply declines caching. Without a supplied
+pool, owned probe bodies release after metadata construction. This makes pool
+ownership explicit rather than retaining query allocations in an unrelated cache.
+`clearFullObjectCache()` releases retained responses; successful PUT/DELETE also
+invalidate the affected entry. Existing returned ranges remain valid.
