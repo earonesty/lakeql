@@ -1,0 +1,1484 @@
+{
+  "node": "v24.18.1",
+  "scope": "Diagnostic trace of current synchronous top-k packed dictionary decoding. Simulated LRU hit counts are not timing, memory admission, or a production cache policy. Instrumentation/selection/oracle allocations excluded from modeled pool; all outputs verified against independent stable sorting. No cloud claim.",
+  "rows": 8192,
+  "width": 128,
+  "cases": [
+    {
+      "cardinality": 16,
+      "stride": 1,
+      "limit": 3,
+      "rows": 8192,
+      "selectedRows": 8192,
+      "decodes": 15205,
+      "uniqueDecodedEntries": 16,
+      "simulations": [
+        {
+          "capacity": 1,
+          "hits": 1212,
+          "misses": 13993
+        },
+        {
+          "capacity": 8,
+          "hits": 8222,
+          "misses": 6983
+        },
+        {
+          "capacity": 64,
+          "hits": 15189,
+          "misses": 16
+        },
+        {
+          "capacity": 256,
+          "hits": 15189,
+          "misses": 16
+        }
+      ],
+      "directMappedSimulations": [
+        {
+          "capacity": 1,
+          "kind": "modulo",
+          "hits": 1212,
+          "misses": 13993
+        },
+        {
+          "capacity": 1,
+          "kind": "mixed",
+          "hits": 1212,
+          "misses": 13993
+        },
+        {
+          "capacity": 8,
+          "kind": "modulo",
+          "hits": 8405,
+          "misses": 6800
+        },
+        {
+          "capacity": 8,
+          "kind": "mixed",
+          "hits": 8310,
+          "misses": 6895
+        },
+        {
+          "capacity": 64,
+          "kind": "modulo",
+          "hits": 15189,
+          "misses": 16
+        },
+        {
+          "capacity": 64,
+          "kind": "mixed",
+          "hits": 15189,
+          "misses": 16
+        },
+        {
+          "capacity": 256,
+          "kind": "modulo",
+          "hits": 15189,
+          "misses": 16
+        },
+        {
+          "capacity": 256,
+          "kind": "mixed",
+          "hits": 15189,
+          "misses": 16
+        }
+      ],
+      "finalAdmittedBytes": 0
+    },
+    {
+      "cardinality": 16,
+      "stride": 1,
+      "limit": 100,
+      "rows": 8192,
+      "selectedRows": 8192,
+      "decodes": 20352,
+      "uniqueDecodedEntries": 16,
+      "simulations": [
+        {
+          "capacity": 1,
+          "hits": 2874,
+          "misses": 17478
+        },
+        {
+          "capacity": 8,
+          "hits": 13251,
+          "misses": 7101
+        },
+        {
+          "capacity": 64,
+          "hits": 20336,
+          "misses": 16
+        },
+        {
+          "capacity": 256,
+          "hits": 20336,
+          "misses": 16
+        }
+      ],
+      "directMappedSimulations": [
+        {
+          "capacity": 1,
+          "kind": "modulo",
+          "hits": 2874,
+          "misses": 17478
+        },
+        {
+          "capacity": 1,
+          "kind": "mixed",
+          "hits": 2874,
+          "misses": 17478
+        },
+        {
+          "capacity": 8,
+          "kind": "modulo",
+          "hits": 13318,
+          "misses": 7034
+        },
+        {
+          "capacity": 8,
+          "kind": "mixed",
+          "hits": 13165,
+          "misses": 7187
+        },
+        {
+          "capacity": 64,
+          "kind": "modulo",
+          "hits": 20336,
+          "misses": 16
+        },
+        {
+          "capacity": 64,
+          "kind": "mixed",
+          "hits": 20336,
+          "misses": 16
+        },
+        {
+          "capacity": 256,
+          "kind": "modulo",
+          "hits": 20336,
+          "misses": 16
+        },
+        {
+          "capacity": 256,
+          "kind": "mixed",
+          "hits": 20336,
+          "misses": 16
+        }
+      ],
+      "finalAdmittedBytes": 0
+    },
+    {
+      "cardinality": 16,
+      "stride": 16,
+      "limit": 3,
+      "rows": 8192,
+      "selectedRows": 512,
+      "decodes": 516,
+      "uniqueDecodedEntries": 1,
+      "simulations": [
+        {
+          "capacity": 1,
+          "hits": 515,
+          "misses": 1
+        },
+        {
+          "capacity": 8,
+          "hits": 515,
+          "misses": 1
+        },
+        {
+          "capacity": 64,
+          "hits": 515,
+          "misses": 1
+        },
+        {
+          "capacity": 256,
+          "hits": 515,
+          "misses": 1
+        }
+      ],
+      "directMappedSimulations": [
+        {
+          "capacity": 1,
+          "kind": "modulo",
+          "hits": 515,
+          "misses": 1
+        },
+        {
+          "capacity": 1,
+          "kind": "mixed",
+          "hits": 515,
+          "misses": 1
+        },
+        {
+          "capacity": 8,
+          "kind": "modulo",
+          "hits": 515,
+          "misses": 1
+        },
+        {
+          "capacity": 8,
+          "kind": "mixed",
+          "hits": 515,
+          "misses": 1
+        },
+        {
+          "capacity": 64,
+          "kind": "modulo",
+          "hits": 515,
+          "misses": 1
+        },
+        {
+          "capacity": 64,
+          "kind": "mixed",
+          "hits": 515,
+          "misses": 1
+        },
+        {
+          "capacity": 256,
+          "kind": "modulo",
+          "hits": 515,
+          "misses": 1
+        },
+        {
+          "capacity": 256,
+          "kind": "mixed",
+          "hits": 515,
+          "misses": 1
+        }
+      ],
+      "finalAdmittedBytes": 0
+    },
+    {
+      "cardinality": 16,
+      "stride": 16,
+      "limit": 100,
+      "rows": 8192,
+      "selectedRows": 512,
+      "decodes": 1578,
+      "uniqueDecodedEntries": 1,
+      "simulations": [
+        {
+          "capacity": 1,
+          "hits": 1577,
+          "misses": 1
+        },
+        {
+          "capacity": 8,
+          "hits": 1577,
+          "misses": 1
+        },
+        {
+          "capacity": 64,
+          "hits": 1577,
+          "misses": 1
+        },
+        {
+          "capacity": 256,
+          "hits": 1577,
+          "misses": 1
+        }
+      ],
+      "directMappedSimulations": [
+        {
+          "capacity": 1,
+          "kind": "modulo",
+          "hits": 1577,
+          "misses": 1
+        },
+        {
+          "capacity": 1,
+          "kind": "mixed",
+          "hits": 1577,
+          "misses": 1
+        },
+        {
+          "capacity": 8,
+          "kind": "modulo",
+          "hits": 1577,
+          "misses": 1
+        },
+        {
+          "capacity": 8,
+          "kind": "mixed",
+          "hits": 1577,
+          "misses": 1
+        },
+        {
+          "capacity": 64,
+          "kind": "modulo",
+          "hits": 1577,
+          "misses": 1
+        },
+        {
+          "capacity": 64,
+          "kind": "mixed",
+          "hits": 1577,
+          "misses": 1
+        },
+        {
+          "capacity": 256,
+          "kind": "modulo",
+          "hits": 1577,
+          "misses": 1
+        },
+        {
+          "capacity": 256,
+          "kind": "mixed",
+          "hits": 1577,
+          "misses": 1
+        }
+      ],
+      "finalAdmittedBytes": 0
+    },
+    {
+      "cardinality": 16,
+      "stride": 128,
+      "limit": 3,
+      "rows": 8192,
+      "selectedRows": 64,
+      "decodes": 68,
+      "uniqueDecodedEntries": 1,
+      "simulations": [
+        {
+          "capacity": 1,
+          "hits": 67,
+          "misses": 1
+        },
+        {
+          "capacity": 8,
+          "hits": 67,
+          "misses": 1
+        },
+        {
+          "capacity": 64,
+          "hits": 67,
+          "misses": 1
+        },
+        {
+          "capacity": 256,
+          "hits": 67,
+          "misses": 1
+        }
+      ],
+      "directMappedSimulations": [
+        {
+          "capacity": 1,
+          "kind": "modulo",
+          "hits": 67,
+          "misses": 1
+        },
+        {
+          "capacity": 1,
+          "kind": "mixed",
+          "hits": 67,
+          "misses": 1
+        },
+        {
+          "capacity": 8,
+          "kind": "modulo",
+          "hits": 67,
+          "misses": 1
+        },
+        {
+          "capacity": 8,
+          "kind": "mixed",
+          "hits": 67,
+          "misses": 1
+        },
+        {
+          "capacity": 64,
+          "kind": "modulo",
+          "hits": 67,
+          "misses": 1
+        },
+        {
+          "capacity": 64,
+          "kind": "mixed",
+          "hits": 67,
+          "misses": 1
+        },
+        {
+          "capacity": 256,
+          "kind": "modulo",
+          "hits": 67,
+          "misses": 1
+        },
+        {
+          "capacity": 256,
+          "kind": "mixed",
+          "hits": 67,
+          "misses": 1
+        }
+      ],
+      "finalAdmittedBytes": 0
+    },
+    {
+      "cardinality": 16,
+      "stride": 128,
+      "limit": 100,
+      "rows": 8192,
+      "selectedRows": 64,
+      "decodes": 629,
+      "uniqueDecodedEntries": 1,
+      "simulations": [
+        {
+          "capacity": 1,
+          "hits": 628,
+          "misses": 1
+        },
+        {
+          "capacity": 8,
+          "hits": 628,
+          "misses": 1
+        },
+        {
+          "capacity": 64,
+          "hits": 628,
+          "misses": 1
+        },
+        {
+          "capacity": 256,
+          "hits": 628,
+          "misses": 1
+        }
+      ],
+      "directMappedSimulations": [
+        {
+          "capacity": 1,
+          "kind": "modulo",
+          "hits": 628,
+          "misses": 1
+        },
+        {
+          "capacity": 1,
+          "kind": "mixed",
+          "hits": 628,
+          "misses": 1
+        },
+        {
+          "capacity": 8,
+          "kind": "modulo",
+          "hits": 628,
+          "misses": 1
+        },
+        {
+          "capacity": 8,
+          "kind": "mixed",
+          "hits": 628,
+          "misses": 1
+        },
+        {
+          "capacity": 64,
+          "kind": "modulo",
+          "hits": 628,
+          "misses": 1
+        },
+        {
+          "capacity": 64,
+          "kind": "mixed",
+          "hits": 628,
+          "misses": 1
+        },
+        {
+          "capacity": 256,
+          "kind": "modulo",
+          "hits": 628,
+          "misses": 1
+        },
+        {
+          "capacity": 256,
+          "kind": "mixed",
+          "hits": 628,
+          "misses": 1
+        }
+      ],
+      "finalAdmittedBytes": 0
+    },
+    {
+      "cardinality": 1024,
+      "stride": 1,
+      "limit": 3,
+      "rows": 8192,
+      "selectedRows": 8192,
+      "decodes": 15699,
+      "uniqueDecodedEntries": 1024,
+      "simulations": [
+        {
+          "capacity": 1,
+          "hits": 754,
+          "misses": 14945
+        },
+        {
+          "capacity": 8,
+          "hits": 8238,
+          "misses": 7461
+        },
+        {
+          "capacity": 64,
+          "hits": 8250,
+          "misses": 7449
+        },
+        {
+          "capacity": 256,
+          "hits": 8258,
+          "misses": 7441
+        }
+      ],
+      "directMappedSimulations": [
+        {
+          "capacity": 1,
+          "kind": "modulo",
+          "hits": 754,
+          "misses": 14945
+        },
+        {
+          "capacity": 1,
+          "kind": "mixed",
+          "hits": 754,
+          "misses": 14945
+        },
+        {
+          "capacity": 8,
+          "kind": "modulo",
+          "hits": 7304,
+          "misses": 8395
+        },
+        {
+          "capacity": 8,
+          "kind": "mixed",
+          "hits": 7249,
+          "misses": 8450
+        },
+        {
+          "capacity": 64,
+          "kind": "modulo",
+          "hits": 8136,
+          "misses": 7563
+        },
+        {
+          "capacity": 64,
+          "kind": "mixed",
+          "hits": 8122,
+          "misses": 7577
+        },
+        {
+          "capacity": 256,
+          "kind": "modulo",
+          "hits": 8231,
+          "misses": 7468
+        },
+        {
+          "capacity": 256,
+          "kind": "mixed",
+          "hits": 8221,
+          "misses": 7478
+        }
+      ],
+      "finalAdmittedBytes": 0
+    },
+    {
+      "cardinality": 1024,
+      "stride": 1,
+      "limit": 100,
+      "rows": 8192,
+      "selectedRows": 8192,
+      "decodes": 25840,
+      "uniqueDecodedEntries": 1024,
+      "simulations": [
+        {
+          "capacity": 1,
+          "hits": 1023,
+          "misses": 24817
+        },
+        {
+          "capacity": 8,
+          "hits": 14281,
+          "misses": 11559
+        },
+        {
+          "capacity": 64,
+          "hits": 17045,
+          "misses": 8795
+        },
+        {
+          "capacity": 256,
+          "hits": 18269,
+          "misses": 7571
+        }
+      ],
+      "directMappedSimulations": [
+        {
+          "capacity": 1,
+          "kind": "modulo",
+          "hits": 1023,
+          "misses": 24817
+        },
+        {
+          "capacity": 1,
+          "kind": "mixed",
+          "hits": 1023,
+          "misses": 24817
+        },
+        {
+          "capacity": 8,
+          "kind": "modulo",
+          "hits": 12437,
+          "misses": 13403
+        },
+        {
+          "capacity": 8,
+          "kind": "mixed",
+          "hits": 12139,
+          "misses": 13701
+        },
+        {
+          "capacity": 64,
+          "kind": "modulo",
+          "hits": 16357,
+          "misses": 9483
+        },
+        {
+          "capacity": 64,
+          "kind": "mixed",
+          "hits": 16124,
+          "misses": 9716
+        },
+        {
+          "capacity": 256,
+          "kind": "modulo",
+          "hits": 17928,
+          "misses": 7912
+        },
+        {
+          "capacity": 256,
+          "kind": "mixed",
+          "hits": 17791,
+          "misses": 8049
+        }
+      ],
+      "finalAdmittedBytes": 0
+    },
+    {
+      "cardinality": 1024,
+      "stride": 16,
+      "limit": 3,
+      "rows": 8192,
+      "selectedRows": 512,
+      "decodes": 1014,
+      "uniqueDecodedEntries": 64,
+      "simulations": [
+        {
+          "capacity": 1,
+          "hits": 54,
+          "misses": 960
+        },
+        {
+          "capacity": 8,
+          "hits": 548,
+          "misses": 466
+        },
+        {
+          "capacity": 64,
+          "hits": 950,
+          "misses": 64
+        },
+        {
+          "capacity": 256,
+          "hits": 950,
+          "misses": 64
+        }
+      ],
+      "directMappedSimulations": [
+        {
+          "capacity": 1,
+          "kind": "modulo",
+          "hits": 54,
+          "misses": 960
+        },
+        {
+          "capacity": 1,
+          "kind": "mixed",
+          "hits": 54,
+          "misses": 960
+        },
+        {
+          "capacity": 8,
+          "kind": "modulo",
+          "hits": 54,
+          "misses": 960
+        },
+        {
+          "capacity": 8,
+          "kind": "mixed",
+          "hits": 486,
+          "misses": 528
+        },
+        {
+          "capacity": 64,
+          "kind": "modulo",
+          "hits": 423,
+          "misses": 591
+        },
+        {
+          "capacity": 64,
+          "kind": "mixed",
+          "hits": 561,
+          "misses": 453
+        },
+        {
+          "capacity": 256,
+          "kind": "modulo",
+          "hits": 531,
+          "misses": 483
+        },
+        {
+          "capacity": 256,
+          "kind": "mixed",
+          "hits": 814,
+          "misses": 200
+        }
+      ],
+      "finalAdmittedBytes": 0
+    },
+    {
+      "cardinality": 1024,
+      "stride": 16,
+      "limit": 100,
+      "rows": 8192,
+      "selectedRows": 512,
+      "decodes": 5818,
+      "uniqueDecodedEntries": 64,
+      "simulations": [
+        {
+          "capacity": 1,
+          "hits": 366,
+          "misses": 5452
+        },
+        {
+          "capacity": 8,
+          "hits": 4164,
+          "misses": 1654
+        },
+        {
+          "capacity": 64,
+          "hits": 5754,
+          "misses": 64
+        },
+        {
+          "capacity": 256,
+          "hits": 5754,
+          "misses": 64
+        }
+      ],
+      "directMappedSimulations": [
+        {
+          "capacity": 1,
+          "kind": "modulo",
+          "hits": 366,
+          "misses": 5452
+        },
+        {
+          "capacity": 1,
+          "kind": "mixed",
+          "hits": 366,
+          "misses": 5452
+        },
+        {
+          "capacity": 8,
+          "kind": "modulo",
+          "hits": 366,
+          "misses": 5452
+        },
+        {
+          "capacity": 8,
+          "kind": "mixed",
+          "hits": 3508,
+          "misses": 2310
+        },
+        {
+          "capacity": 64,
+          "kind": "modulo",
+          "hits": 2783,
+          "misses": 3035
+        },
+        {
+          "capacity": 64,
+          "kind": "mixed",
+          "hits": 4413,
+          "misses": 1405
+        },
+        {
+          "capacity": 256,
+          "kind": "modulo",
+          "hits": 4544,
+          "misses": 1274
+        },
+        {
+          "capacity": 256,
+          "kind": "mixed",
+          "hits": 5458,
+          "misses": 360
+        }
+      ],
+      "finalAdmittedBytes": 0
+    },
+    {
+      "cardinality": 1024,
+      "stride": 128,
+      "limit": 3,
+      "rows": 8192,
+      "selectedRows": 64,
+      "decodes": 134,
+      "uniqueDecodedEntries": 8,
+      "simulations": [
+        {
+          "capacity": 1,
+          "hits": 14,
+          "misses": 120
+        },
+        {
+          "capacity": 8,
+          "hits": 126,
+          "misses": 8
+        },
+        {
+          "capacity": 64,
+          "hits": 126,
+          "misses": 8
+        },
+        {
+          "capacity": 256,
+          "hits": 126,
+          "misses": 8
+        }
+      ],
+      "directMappedSimulations": [
+        {
+          "capacity": 1,
+          "kind": "modulo",
+          "hits": 14,
+          "misses": 120
+        },
+        {
+          "capacity": 1,
+          "kind": "mixed",
+          "hits": 14,
+          "misses": 120
+        },
+        {
+          "capacity": 8,
+          "kind": "modulo",
+          "hits": 14,
+          "misses": 120
+        },
+        {
+          "capacity": 8,
+          "kind": "mixed",
+          "hits": 104,
+          "misses": 30
+        },
+        {
+          "capacity": 64,
+          "kind": "modulo",
+          "hits": 14,
+          "misses": 120
+        },
+        {
+          "capacity": 64,
+          "kind": "mixed",
+          "hits": 126,
+          "misses": 8
+        },
+        {
+          "capacity": 256,
+          "kind": "modulo",
+          "hits": 55,
+          "misses": 79
+        },
+        {
+          "capacity": 256,
+          "kind": "mixed",
+          "hits": 126,
+          "misses": 8
+        }
+      ],
+      "finalAdmittedBytes": 0
+    },
+    {
+      "cardinality": 1024,
+      "stride": 128,
+      "limit": 100,
+      "rows": 8192,
+      "selectedRows": 64,
+      "decodes": 1012,
+      "uniqueDecodedEntries": 8,
+      "simulations": [
+        {
+          "capacity": 1,
+          "hits": 107,
+          "misses": 905
+        },
+        {
+          "capacity": 8,
+          "hits": 1004,
+          "misses": 8
+        },
+        {
+          "capacity": 64,
+          "hits": 1004,
+          "misses": 8
+        },
+        {
+          "capacity": 256,
+          "hits": 1004,
+          "misses": 8
+        }
+      ],
+      "directMappedSimulations": [
+        {
+          "capacity": 1,
+          "kind": "modulo",
+          "hits": 107,
+          "misses": 905
+        },
+        {
+          "capacity": 1,
+          "kind": "mixed",
+          "hits": 107,
+          "misses": 905
+        },
+        {
+          "capacity": 8,
+          "kind": "modulo",
+          "hits": 107,
+          "misses": 905
+        },
+        {
+          "capacity": 8,
+          "kind": "mixed",
+          "hits": 832,
+          "misses": 180
+        },
+        {
+          "capacity": 64,
+          "kind": "modulo",
+          "hits": 107,
+          "misses": 905
+        },
+        {
+          "capacity": 64,
+          "kind": "mixed",
+          "hits": 1004,
+          "misses": 8
+        },
+        {
+          "capacity": 256,
+          "kind": "modulo",
+          "hits": 421,
+          "misses": 591
+        },
+        {
+          "capacity": 256,
+          "kind": "mixed",
+          "hits": 1004,
+          "misses": 8
+        }
+      ],
+      "finalAdmittedBytes": 0
+    },
+    {
+      "cardinality": 8192,
+      "stride": 1,
+      "limit": 3,
+      "rows": 8192,
+      "selectedRows": 8192,
+      "decodes": 15684,
+      "uniqueDecodedEntries": 7447,
+      "simulations": [
+        {
+          "capacity": 1,
+          "hits": 745,
+          "misses": 14939
+        },
+        {
+          "capacity": 8,
+          "hits": 8223,
+          "misses": 7461
+        },
+        {
+          "capacity": 64,
+          "hits": 8225,
+          "misses": 7459
+        },
+        {
+          "capacity": 256,
+          "hits": 8225,
+          "misses": 7459
+        }
+      ],
+      "directMappedSimulations": [
+        {
+          "capacity": 1,
+          "kind": "modulo",
+          "hits": 745,
+          "misses": 14939
+        },
+        {
+          "capacity": 1,
+          "kind": "mixed",
+          "hits": 745,
+          "misses": 14939
+        },
+        {
+          "capacity": 8,
+          "kind": "modulo",
+          "hits": 7294,
+          "misses": 8390
+        },
+        {
+          "capacity": 8,
+          "kind": "mixed",
+          "hits": 7276,
+          "misses": 8408
+        },
+        {
+          "capacity": 64,
+          "kind": "modulo",
+          "hits": 8110,
+          "misses": 7574
+        },
+        {
+          "capacity": 64,
+          "kind": "mixed",
+          "hits": 8107,
+          "misses": 7577
+        },
+        {
+          "capacity": 256,
+          "kind": "modulo",
+          "hits": 8198,
+          "misses": 7486
+        },
+        {
+          "capacity": 256,
+          "kind": "mixed",
+          "hits": 8200,
+          "misses": 7484
+        }
+      ],
+      "finalAdmittedBytes": 0
+    },
+    {
+      "cardinality": 8192,
+      "stride": 1,
+      "limit": 100,
+      "rows": 8192,
+      "selectedRows": 8192,
+      "decodes": 23807,
+      "uniqueDecodedEntries": 7447,
+      "simulations": [
+        {
+          "capacity": 1,
+          "hits": 723,
+          "misses": 23084
+        },
+        {
+          "capacity": 8,
+          "hits": 12149,
+          "misses": 11658
+        },
+        {
+          "capacity": 64,
+          "hits": 15121,
+          "misses": 8686
+        },
+        {
+          "capacity": 256,
+          "hits": 15434,
+          "misses": 8373
+        }
+      ],
+      "directMappedSimulations": [
+        {
+          "capacity": 1,
+          "kind": "modulo",
+          "hits": 723,
+          "misses": 23084
+        },
+        {
+          "capacity": 1,
+          "kind": "mixed",
+          "hits": 723,
+          "misses": 23084
+        },
+        {
+          "capacity": 8,
+          "kind": "modulo",
+          "hits": 10751,
+          "misses": 13056
+        },
+        {
+          "capacity": 8,
+          "kind": "mixed",
+          "hits": 10537,
+          "misses": 13270
+        },
+        {
+          "capacity": 64,
+          "kind": "modulo",
+          "hits": 14458,
+          "misses": 9349
+        },
+        {
+          "capacity": 64,
+          "kind": "mixed",
+          "hits": 14467,
+          "misses": 9340
+        },
+        {
+          "capacity": 256,
+          "kind": "modulo",
+          "hits": 15382,
+          "misses": 8425
+        },
+        {
+          "capacity": 256,
+          "kind": "mixed",
+          "hits": 15479,
+          "misses": 8328
+        }
+      ],
+      "finalAdmittedBytes": 0
+    },
+    {
+      "cardinality": 8192,
+      "stride": 16,
+      "limit": 3,
+      "rows": 8192,
+      "selectedRows": 512,
+      "decodes": 1014,
+      "uniqueDecodedEntries": 465,
+      "simulations": [
+        {
+          "capacity": 1,
+          "hits": 47,
+          "misses": 967
+        },
+        {
+          "capacity": 8,
+          "hits": 539,
+          "misses": 475
+        },
+        {
+          "capacity": 64,
+          "hits": 545,
+          "misses": 469
+        },
+        {
+          "capacity": 256,
+          "hits": 549,
+          "misses": 465
+        }
+      ],
+      "directMappedSimulations": [
+        {
+          "capacity": 1,
+          "kind": "modulo",
+          "hits": 47,
+          "misses": 967
+        },
+        {
+          "capacity": 1,
+          "kind": "mixed",
+          "hits": 47,
+          "misses": 967
+        },
+        {
+          "capacity": 8,
+          "kind": "modulo",
+          "hits": 47,
+          "misses": 967
+        },
+        {
+          "capacity": 8,
+          "kind": "mixed",
+          "hits": 475,
+          "misses": 539
+        },
+        {
+          "capacity": 64,
+          "kind": "modulo",
+          "hits": 418,
+          "misses": 596
+        },
+        {
+          "capacity": 64,
+          "kind": "mixed",
+          "hits": 530,
+          "misses": 484
+        },
+        {
+          "capacity": 256,
+          "kind": "modulo",
+          "hits": 512,
+          "misses": 502
+        },
+        {
+          "capacity": 256,
+          "kind": "mixed",
+          "hits": 540,
+          "misses": 474
+        }
+      ],
+      "finalAdmittedBytes": 0
+    },
+    {
+      "cardinality": 8192,
+      "stride": 16,
+      "limit": 100,
+      "rows": 8192,
+      "selectedRows": 512,
+      "decodes": 6051,
+      "uniqueDecodedEntries": 465,
+      "simulations": [
+        {
+          "capacity": 1,
+          "hits": 42,
+          "misses": 6009
+        },
+        {
+          "capacity": 8,
+          "hits": 2996,
+          "misses": 3055
+        },
+        {
+          "capacity": 64,
+          "hits": 5078,
+          "misses": 973
+        },
+        {
+          "capacity": 256,
+          "hits": 5556,
+          "misses": 495
+        }
+      ],
+      "directMappedSimulations": [
+        {
+          "capacity": 1,
+          "kind": "modulo",
+          "hits": 42,
+          "misses": 6009
+        },
+        {
+          "capacity": 1,
+          "kind": "mixed",
+          "hits": 42,
+          "misses": 6009
+        },
+        {
+          "capacity": 8,
+          "kind": "modulo",
+          "hits": 42,
+          "misses": 6009
+        },
+        {
+          "capacity": 8,
+          "kind": "mixed",
+          "hits": 2597,
+          "misses": 3454
+        },
+        {
+          "capacity": 64,
+          "kind": "modulo",
+          "hits": 1768,
+          "misses": 4283
+        },
+        {
+          "capacity": 64,
+          "kind": "mixed",
+          "hits": 4130,
+          "misses": 1921
+        },
+        {
+          "capacity": 256,
+          "kind": "modulo",
+          "hits": 3397,
+          "misses": 2654
+        },
+        {
+          "capacity": 256,
+          "kind": "mixed",
+          "hits": 5131,
+          "misses": 920
+        }
+      ],
+      "finalAdmittedBytes": 0
+    },
+    {
+      "cardinality": 8192,
+      "stride": 128,
+      "limit": 3,
+      "rows": 8192,
+      "selectedRows": 64,
+      "decodes": 163,
+      "uniqueDecodedEntries": 58,
+      "simulations": [
+        {
+          "capacity": 1,
+          "hits": 6,
+          "misses": 157
+        },
+        {
+          "capacity": 8,
+          "hits": 95,
+          "misses": 68
+        },
+        {
+          "capacity": 64,
+          "hits": 105,
+          "misses": 58
+        },
+        {
+          "capacity": 256,
+          "hits": 105,
+          "misses": 58
+        }
+      ],
+      "directMappedSimulations": [
+        {
+          "capacity": 1,
+          "kind": "modulo",
+          "hits": 6,
+          "misses": 157
+        },
+        {
+          "capacity": 1,
+          "kind": "mixed",
+          "hits": 6,
+          "misses": 157
+        },
+        {
+          "capacity": 8,
+          "kind": "modulo",
+          "hits": 6,
+          "misses": 157
+        },
+        {
+          "capacity": 8,
+          "kind": "mixed",
+          "hits": 84,
+          "misses": 79
+        },
+        {
+          "capacity": 64,
+          "kind": "modulo",
+          "hits": 6,
+          "misses": 157
+        },
+        {
+          "capacity": 64,
+          "kind": "mixed",
+          "hits": 103,
+          "misses": 60
+        },
+        {
+          "capacity": 256,
+          "kind": "modulo",
+          "hits": 43,
+          "misses": 120
+        },
+        {
+          "capacity": 256,
+          "kind": "mixed",
+          "hits": 105,
+          "misses": 58
+        }
+      ],
+      "finalAdmittedBytes": 0
+    },
+    {
+      "cardinality": 8192,
+      "stride": 128,
+      "limit": 100,
+      "rows": 8192,
+      "selectedRows": 64,
+      "decodes": 1096,
+      "uniqueDecodedEntries": 58,
+      "simulations": [
+        {
+          "capacity": 1,
+          "hits": 6,
+          "misses": 1090
+        },
+        {
+          "capacity": 8,
+          "hits": 616,
+          "misses": 480
+        },
+        {
+          "capacity": 64,
+          "hits": 1038,
+          "misses": 58
+        },
+        {
+          "capacity": 256,
+          "hits": 1038,
+          "misses": 58
+        }
+      ],
+      "directMappedSimulations": [
+        {
+          "capacity": 1,
+          "kind": "modulo",
+          "hits": 6,
+          "misses": 1090
+        },
+        {
+          "capacity": 1,
+          "kind": "mixed",
+          "hits": 6,
+          "misses": 1090
+        },
+        {
+          "capacity": 8,
+          "kind": "modulo",
+          "hits": 6,
+          "misses": 1090
+        },
+        {
+          "capacity": 8,
+          "kind": "mixed",
+          "hits": 527,
+          "misses": 569
+        },
+        {
+          "capacity": 64,
+          "kind": "modulo",
+          "hits": 6,
+          "misses": 1090
+        },
+        {
+          "capacity": 64,
+          "kind": "mixed",
+          "hits": 997,
+          "misses": 99
+        },
+        {
+          "capacity": 256,
+          "kind": "modulo",
+          "hits": 173,
+          "misses": 923
+        },
+        {
+          "capacity": 256,
+          "kind": "mixed",
+          "hits": 1038,
+          "misses": 58
+        }
+      ],
+      "finalAdmittedBytes": 0
+    }
+  ]
+}

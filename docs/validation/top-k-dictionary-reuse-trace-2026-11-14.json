@@ -1,0 +1,20 @@
+{
+  "baseline": "4a28543",
+  "runtimeChanged": false,
+  "cases": 18,
+  "method": "Instrument only packed dictionary TextDecoder calls during current owned top-k. Restore the decoder before output materialization. Independently verify selected stable-sort results and final zero admission. Simulate bounded LRU and modulo/mixed direct-mapped directories at capacities 1, 8, 64, 256.",
+  "findings": [
+    "Mostly unique input dictionaries still reuse heap candidates: eight-entry LRU predicts about 51\u201352% hits for dense cardinality-8192 cases. Cardinality/selected-count heuristics alone miss this reuse.",
+    "Modulo direct mapping suffers severe strided-selection collisions, down to approximately 0.5% hits for eight slots.",
+    "Multiplicative high-bit mixing avoids that particular collapse, with eight-slot predictions around 43\u201382% on the larger-dictionary sparse cases; LRU generally retains more hits.",
+    "Small repeated dictionaries can approach full hit coverage once directory capacity covers their reachable entries."
+  ],
+  "scope": "Predicted decode avoidance is not speed, retained-memory admission, live heap, or concurrent cloud evidence. Diagnostic simulation bookkeeping is outside the engine allocation pool.",
+  "nextContract": [
+    "Evaluate a bounded lazy cache with separately charged string payload and fixed slot metadata.",
+    "Protect currently borrowed comparator operands from eviction and disposal until comparison returns.",
+    "Release optional cached values before mandatory scalar growth or result gather; exact-cap direct-access successes must remain successful.",
+    "Measure actual elapsed time and allocation under sparse/adversarial selections, varied widths, multiple keys and shared-pool pressure before selecting policy."
+  ],
+  "remaining": "F5 adaptive preparation and whole-runtime acceptance remain open."
+}
