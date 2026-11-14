@@ -467,3 +467,37 @@ function containsRuntimeHandle(value: unknown): boolean {
   if (Array.isArray(value)) return value.some(containsRuntimeHandle);
   return Object.values(value).some(containsRuntimeHandle);
 }
+
+it("budgets work-unit metadata and releases it after row-limit planning", async () => {
+  const { MemoryBudget } = await import("lakeql-core");
+  const store = memoryStore();
+  await writeParquet(store, "planning.parquet", {
+    rowGroupSize: [2, 2],
+    columnData: [{ name: "id", type: "INT32", data: [1, 2, 3, 4] }],
+  });
+  const task: TaskInput = {
+    path: "planning.parquet",
+    rowGroupRanges: [{ start: 0, end: 2 }],
+    partitionValues: {},
+  };
+  const pool = new MemoryBudget(128 * 1024);
+  const units = await planParquetTaskWorkUnits(store, task, {
+    maxRowsPerTask: 2,
+    memoryBudget: pool,
+  });
+  expect(units.map((unit) => unit.rowGroupRanges)).toEqual([
+    [{ start: 0, end: 1 }],
+    [{ start: 1, end: 2 }],
+  ]);
+  expect(pool.peakBytes).toBeGreaterThan(0);
+  expect(pool.usedBytes).toBe(0);
+  await expect(
+    planParquetTaskWorkUnits(store, task, { maxRowsPerTask: 1, memoryBudget: pool }),
+  ).rejects.toMatchObject({ code: "LAKEQL_TYPE_ERROR" });
+  expect(pool.usedBytes).toBe(0);
+  const tight = new MemoryBudget(1);
+  await expect(
+    planParquetTaskWorkUnits(store, task, { maxRowsPerTask: 2, memoryBudget: tight }),
+  ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  expect(tight.usedBytes).toBe(0);
+});

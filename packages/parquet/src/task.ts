@@ -29,6 +29,7 @@ export interface ScanParquetTaskOptions {
 }
 
 export interface PlanParquetTaskWorkUnitsOptions {
+  memoryBudget?: MemoryBudget;
   maxRowGroupsPerTask?: number;
   maxRowsPerTask?: number;
   metadataCache?: CacheAdapter<ParquetMetadata>;

@@ -1,0 +1,20 @@
+{
+  "date": "2026-11-14",
+  "changes": [
+    "Add a memoryBudget option to work-unit planning and retain metadata through the shared owned task-metadata reader.",
+    "Release metadata on successful planning, invalid row-limit failure and allocation rejection.",
+    "Remove the duplicate full-file row-count array; consult metadata row groups directly."
+  ],
+  "validation": {
+    "build": "passed",
+    "targeted_tests": 44,
+    "fixture": "Four rows in two real Parquet row groups: two work units under 128 KiB, indivisible group rejection, and a one-byte metadata-budget rejection. Existing metadata-cache/borrowed-store work-unit tests also pass.",
+    "typecheck": "passed"
+  },
+  "remaining": [
+    "Returned task descriptors, range lists and grouping/splitting topology are not fully admitted yet. A supplied budget does not yet bound all planner allocations.",
+    "The row-group-count-only fast path avoids metadata but still has topology admission gaps.",
+    "Borrowed-only stores allocate their metadata externally before the shared helper can admit retained copies.",
+    "This follow-up uses in-memory real-file fixtures, not new remote HTTP or production-cloud evidence."
+  ]
+}
