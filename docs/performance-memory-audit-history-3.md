@@ -3686,3 +3686,23 @@ this owned capability. This contract alone does not close that implementation ga
 
 Build/typecheck passed; full suite passed 3,597 tests with 629 skips. Evidence:
 `docs/validation/owned-object-plan-contract-2026-11-14.json`.
+
+### 2026-11-14 — iterative admitted Parquet schema-shape construction
+
+Extracted schema-shape construction from the scan adapter. It now creates one
+shape record per schema node and uses an explicit traversal stack, eliminating
+recursive calls and the prior per-child shape-record spread copy. Optional scoped
+construction admits output records, child slots, stack capacity and live frames;
+frames release when popped, and failures roll back output/scratch without touching
+caller siblings. Element values remain borrowed from metadata, which the caller
+must keep live. The existing descriptor path uses the shared builder.
+
+Tests preserve nested shape fields and root-versus-child name behavior, build a
+20,000-level synthetic shape without call-stack overflow, and verify exact peak
+capacity and one-byte-below rollback. The deep test covers only this builder:
+Parquet tree construction and signature serialization are separate remaining
+boundaries. Scoped shape construction is not yet wired into an owned Parquet
+planner; descriptor/signature storage and multi-file plan ownership remain open.
+
+Final build/typecheck passed; focused suites passed 28 tests; full suite passed
+3,600 with 629 skips. Evidence: `docs/validation/parquet-schema-shape-2026-11-14.json`.

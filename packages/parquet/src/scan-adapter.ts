@@ -40,6 +40,7 @@ import { ParquetReadScope } from "./read-scope.js";
 import { iteratePlannedRowGroups, summarizePlannedRowGroups } from "./row-group-plan.js";
 import { rowGroupMayMatch } from "./row-group-pruning.js";
 import { rejectUnsupportedParquetSchema } from "./schema.js";
+import { parquetColumnShape } from "./schema-shape.js";
 import { asyncBufferFromObjectInfo, asyncBufferFromStore } from "./store-buffer.js";
 import type { ParquetMetadata, StoreAsyncBuffer } from "./types.js";
 import { parquetValueDecoders } from "./value-decoders.js";
@@ -698,23 +699,6 @@ function parquetColumnDescriptors(
     });
   }
   return columns;
-}
-
-function parquetColumnShape(node: ReturnType<typeof parquetSchema>): Record<string, unknown> {
-  const element = node.element as unknown as Record<string, unknown>;
-  return {
-    type: element.type,
-    converted_type: element.converted_type,
-    logical_type: element.logical_type,
-    repetition_type: element.repetition_type,
-    type_length: element.type_length,
-    precision: element.precision,
-    scale: element.scale,
-    children: node.children.map((child) => ({
-      name: child.element.name,
-      ...parquetColumnShape(child),
-    })),
-  };
 }
 
 function stableSchemaSignature(value: unknown): string {

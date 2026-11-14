@@ -1,0 +1,26 @@
+{
+  "baseCommit": "cad167c",
+  "scope": "Iterative schema shape construction with optional admitted output and traversal storage",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "focusedTests": 28,
+    "fullSuite": {
+      "passed": 3600,
+      "skipped": 629,
+      "log": "/tmp/schema-shape-full-final.log"
+    }
+  },
+  "evidence": [
+    "Nested shape fields and root/child names preserved",
+    "Twenty-thousand-level shape construction avoids recursive stack overflow",
+    "Exact peak capacity succeeds and one byte below rolls back without releasing siblings",
+    "Existing real-fixture adapter schema tests pass"
+  ],
+  "limits": [
+    "Element value backing is borrowed from source metadata",
+    "Existing descriptor caller does not yet pass allocation scope",
+    "Parquet schema tree construction and signature recursion remain separate boundaries",
+    "Owned multi-file Parquet planning migration remains unfinished"
+  ]
+}
