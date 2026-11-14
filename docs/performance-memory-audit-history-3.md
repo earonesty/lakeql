@@ -4793,3 +4793,24 @@ a claim that all physical allocations are covered. This review does not close
 broader spill/checkpoint integration or whole-window workspace acceptance.
 Focused buffer, DISTINCT, aggregate checkpoint, aggregate sizing and query-memory
 suites pass: 59 tests across five files.
+
+### M2 retained-input progress and alias-aware admission
+
+A new scheduler regression uses a 12-byte pool with an 8-byte input and a gated
+4-byte active stage. It queues a 5-byte request retaining that input, followed
+by a 4-byte request with two aliases of the same input. Once active work settles,
+the first request rejects without execution and the second runs. Physical
+admission counts the aliased input once: peak remains 12 bytes. Disposing the
+original input scope preserves the result and its input pins; final output
+release returns the pool and scheduler to zero.
+
+This verifies that retained inputs do not keep an impossible request waiting
+after progress-producing stages settle, and guards against the tempting but
+incorrect shortcut of summing conservative `OwnedMemory.bytes` values to reject
+aliased inputs. Existing runtime behavior already satisfies the test; only an
+explanatory scheduler comment is added. All 55 scheduler/budget/scope tests and
+typechecking pass. See `validation/stage-retained-input-progress-2026-11-14.json`.
+
+This is primitive-level evidence. It does not establish whole-query fairness,
+cover all metadata/operator scheduling, or relax the execution contract that a
+running callback must not await another scheduled stage.

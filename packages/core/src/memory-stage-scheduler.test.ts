@@ -518,3 +518,66 @@ it.each([
   expect(root.usedBytes).toBe(0);
   expect(root.peakBytes).toBeLessThanOrEqual(12);
 });
+
+it("rejects self-pinned capacity after active work settles and advances aliased-input work", async () => {
+  const root = new MemoryBudget(12);
+  const inputs = new MemoryScope(root.child());
+  const input = inputs.allocate(8, "shared input", () => new Uint8Array(8).fill(7));
+  const scheduler = new MemoryStageScheduler(root);
+  const transport = gate();
+  const active = scheduler.run({
+    budget: root.child(),
+    bytes: 4,
+    purpose: "temporary work",
+    async execute() {
+      await transport.promise;
+    },
+  });
+  let impossibleStarted = false;
+  const impossible = scheduler.run({
+    budget: root.child(),
+    bytes: 5,
+    purpose: "input plus output cannot fit",
+    inputs: [input],
+    execute() {
+      impossibleStarted = true;
+    },
+  });
+  const rejected = expect(impossible).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  let fittingStarted = false;
+  const fitting = scheduler.run({
+    budget: root.child(),
+    bytes: 4,
+    purpose: "aliased input plus output fits",
+    inputs: [input, input],
+    execute(scope, _signal, owners) {
+      fittingStarted = true;
+      expect(owners[0]?.value).toBe(owners[1]?.value);
+      expect(root.usedBytes).toBe(12);
+      const value = owners[0]?.value;
+      if (!(value instanceof Uint8Array)) throw new Error("Missing input bytes");
+      return scope.allocate(4, "result", () => new Uint8Array(4).fill(value[0] ?? 0)).value;
+    },
+  });
+  expect(scheduler.queuedStages).toBe(2);
+  expect(fittingStarted).toBe(false);
+  transport.open();
+  (await active).release();
+  await rejected;
+  const output = await fitting;
+  try {
+    expect(impossibleStarted).toBe(false);
+    expect(fittingStarted).toBe(true);
+    expect([...output.value]).toEqual([7, 7, 7, 7]);
+    expect(scheduler.queuedStages).toBe(0);
+    inputs.dispose();
+    // Stage outputs conservatively retain their inputs until explicit release.
+    expect(root.usedBytes).toBe(12);
+    expect(root.peakBytes).toBe(12);
+  } finally {
+    output.release();
+    inputs.dispose();
+  }
+  expect(root.usedBytes).toBe(0);
+  expect(scheduler.activeStages).toBe(0);
+});

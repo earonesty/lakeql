@@ -173,6 +173,9 @@ export class MemoryStageScheduler {
           scope.dispose();
           // Reclamation may synchronously cancel and remove this queued stage.
           if (this.queue[0] !== stage) continue;
+          // Input handles may alias, so their reported byte sums are not an
+          // exact lower bound. Let real admission decide; once active work
+          // settles, retained inputs alone cannot justify continued waiting.
           if (
             this.active > 0 &&
             isLakeqlError(error) &&

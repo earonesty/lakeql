@@ -1,0 +1,34 @@
+{
+  "requirements": ["M2", "V2"],
+  "runtimeSourceCommit": "fe8b068",
+  "test": "packages/core/src/memory-stage-scheduler.test.ts",
+  "testSha256": "876033647168e110fc6bbe085602b4925375de954535e56ddcf3e2b39bce9c0b",
+  "scenario": {
+    "poolBytes": 12,
+    "retainedInputBytes": 8,
+    "activeTemporaryBytes": 4,
+    "queuedImpossibleBytes": 5,
+    "queuedFittingBytes": 4,
+    "fittingInputHandles": 2,
+    "uniqueInputAllocations": 1
+  },
+  "assertions": [
+    "Both requests initially queue while active work occupies capacity",
+    "After active stage settles, impossible input-plus-output request rejects without execution",
+    "FIFO advances to fitting aliased-input request",
+    "Aliases share physical backing and do not double charge pool",
+    "Result remains valid after original input scope closes",
+    "Peak stays at 12 bytes; output release returns pool to zero and active/queued counts to zero"
+  ],
+  "validation": {
+    "focusedTestsPassed": 55,
+    "files": 3,
+    "typecheck": "passed"
+  },
+  "limits": [
+    "Scheduler primitive test, not whole-query fairness or cloud throughput evidence",
+    "A running stage must not await another scheduled stage; documented execution contract remains",
+    "Does not imply all query metadata/decode/operator paths use this scheduler",
+    "No runtime behavior changed"
+  ]
+}
