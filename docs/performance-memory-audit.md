@@ -31,7 +31,7 @@ under verified 64/128 MiB V8 heap settings; this distinguishes runtime GC policy
 from a persistent leak, but does not cap external backing or prove production
 Cloudflare total-memory safety. See the constrained-runtime section below.
 
-Window quantile buffer admission and real HTTP/Worker fixture evidence: `docs/validation/window-quantile-admission-2026-11-13.json`. Mode/distinct key admission remains open.
+Window quantile buffer admission and real HTTP/Worker fixture evidence: `docs/validation/window-quantile-admission-2026-11-13.json`. Mode/distinct key admission and fixture evidence: `docs/validation/window-key-admission-2026-11-13.json`; scalar payload ownership remains open.
 
 Latest execution checkpoint (November 13, 2026): coverage and deterministic
 fixture regeneration pass; BSON now rejects at selected-schema preflight.

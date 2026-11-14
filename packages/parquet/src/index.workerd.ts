@@ -801,6 +801,16 @@ it.each([64, 128])("owns deferred top-k over native R2 with a %s MiB shared pool
               orderBy: [{ expr: col("id"), direction: "desc" }],
             },
           })
+          .window("distinct_ids", {
+            fn: { aggregate: "count_distinct" },
+            args: [col("id")],
+            over: { partitionBy: [], orderBy: [{ expr: col("id") }] },
+          })
+          .window("mode_id", {
+            fn: { aggregate: "mode" },
+            args: [col("id")],
+            over: { partitionBy: [], orderBy: [{ expr: col("id") }] },
+          })
           .window("running_quantile", {
             fn: { aggregate: "quantile" },
             args: [col("id"), lit(0.25)],
@@ -852,6 +862,8 @@ it.each([64, 128])("owns deferred top-k over native R2 with a %s MiB shared pool
           running_count: 100 - id,
           last_text: text[99],
           running_quantile: id * 0.25,
+          distinct_ids: id + 1,
+          mode_id: 0,
           previous_text: id >= 3 ? text[id - 3] : "missing",
           tied: 1,
         })),

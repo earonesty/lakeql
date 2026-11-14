@@ -3,6 +3,7 @@ import { LakeqlError } from "./errors.js";
 import { evaluate, jsonSafeValue } from "./evaluator.js";
 import type { Scalar } from "./expr.js";
 import { heapSort } from "./heap-sort.js";
+import { jsonScalarKeyAllocationBytes } from "./json-scalar-key-memory.js";
 import type { MemoryReservation, MemoryReservationSource } from "./memory-budget.js";
 import type { AggregateOp } from "./query.js";
 import { compareAggregateScalars, numericAggregateValue } from "./scalar-order.js";
@@ -101,6 +102,7 @@ class AggregateState {
   private valuesReservation: MemoryReservation | undefined;
   private modeValues: Map<string, { value: Scalar; count: number }> | undefined;
   private seenDistinct: Set<string> | undefined;
+  private keyReservation: MemoryReservation | undefined;
 
   constructor(
     private readonly op: AggregateOp,
@@ -114,8 +116,10 @@ class AggregateState {
     this.values = undefined;
     this.valuesReservation?.release();
     this.valuesReservation = undefined;
-    this.modeValues?.clear();
-    this.seenDistinct?.clear();
+    this.modeValues = undefined;
+    this.seenDistinct = undefined;
+    this.keyReservation?.release();
+    this.keyReservation = undefined;
   }
 
   add(value: Scalar, distinct: boolean): void {
@@ -217,11 +221,12 @@ class AggregateState {
 
   private addDistinct(value: Scalar, distinct: boolean): boolean {
     if (!distinct && this.op !== "count_distinct") return true;
-    const key = JSON.stringify(jsonSafeValue(value));
-    this.seenDistinct ??= new Set();
-    if (this.seenDistinct.has(key)) return false;
-    this.seenDistinct.add(key);
-    return true;
+    return this.withKey(value, this.seenDistinct === undefined, false, (key) => {
+      this.seenDistinct ??= new Set();
+      if (this.seenDistinct.has(key)) return false;
+      this.seenDistinct.add(key);
+      return true;
+    });
   }
 
   private addNumber(value: Scalar): void {
@@ -239,14 +244,53 @@ class AggregateState {
   }
 
   private addMode(value: Scalar): void {
-    const key = JSON.stringify(jsonSafeValue(value));
-    this.modeValues ??= new Map();
-    const current = this.modeValues.get(key);
-    if (current === undefined) {
+    this.withKey(value, this.modeValues === undefined, true, (key) => {
+      this.modeValues ??= new Map();
+      const current = this.modeValues.get(key);
+      if (current !== undefined) {
+        current.count += 1;
+        return false;
+      }
       this.modeValues.set(key, { value, count: 1 });
-      return;
+      return true;
+    });
+  }
+
+  private withKey(
+    value: Scalar,
+    first: boolean,
+    mode: boolean,
+    insert: (key: string) => boolean,
+  ): boolean {
+    const entryBytes =
+      charges.property +
+      (first ? charges.object : 0) +
+      (mode ? charges.object + 2 * charges.property : 0);
+    let reservation = this.budget?.reserve(
+      jsonScalarKeyAllocationBytes(value) + entryBytes,
+      "window aggregate JSON key",
+    );
+    try {
+      const key = JSON.stringify(jsonSafeValue(value));
+      const added = insert(key);
+      if (added && reservation !== undefined) {
+        const retainedBytes = charges.string + charges.stringCodeUnit * key.length + entryBytes;
+        const [retained, scratch] = reservation.partition([
+          retainedBytes,
+          reservation.bytes - retainedBytes,
+        ]);
+        scratch?.release();
+        reservation = retained;
+        if (reservation === undefined)
+          throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Missing key reservation");
+        this.keyReservation =
+          this.keyReservation === undefined ? reservation : this.keyReservation.merge(reservation);
+        reservation = undefined;
+      }
+      return added;
+    } finally {
+      reservation?.release();
     }
-    current.count += 1;
   }
 
   private mode(): Scalar {
