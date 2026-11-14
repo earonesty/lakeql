@@ -11,6 +11,8 @@ JSON writing follow-up: [validation](validation/iterative-json-writing-2026-11-1
 JSON traversal performance follow-up: [initial measurement](validation/json-traversal-benchmark-2026-11-14.json), [reservation-reuse measurement](validation/json-traversal-reuse-benchmark-2026-11-14.json). Shared high-water admission reduces churn, the 1,000-row encoding kernel was about 5.5× slower than recursion at that revision. The shared-enumeration follow-up below improves this further. Build/typecheck and 3,682 tests passed (629 skipped).
 
 Shared JSON enumeration follow-up: [benchmark](validation/json-shared-enumeration-benchmark-2026-11-14.json). One iterator implementation now serves sizing and writing; row-array median improves to 0.85 ms but remains about 2.5× slower than the recursive reference, so the regression remains open.
+
+Current JSON runtime checks: [Worker and coverage evidence](validation/json-worker-coverage-2026-11-14.json), 78 Worker tests passed; coverage thresholds passed unchanged. Deep NDJSON exact-capacity tests exercise workerd directly; total isolate heap bounds remain unproven.
 Current release checks (source `246b165`):
 `docs/validation/current-cache-ownership-release-gates-2026-11-14.json`.
 

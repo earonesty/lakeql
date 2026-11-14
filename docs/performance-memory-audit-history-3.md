@@ -4198,3 +4198,11 @@ An isolated rerun of the same kernel benchmark measured median row-array encodin
 Focused suites passed 73 tests before the final full run. Added byte-level comparison with native JSON.stringify for numeric/empty property keys, inherited and non-enumerable properties, symbols, undefined values, sparse arrays, and repeated aliases. Existing deep/Unicode/cycle/exact-budget tests continue to exercise both passes.
 
 Final verification: build/typecheck and formatting passed; full suite 3,683 passed / 629 skipped in 401 passing files. No claim of completed performance acceptance: the shallow row-array kernel regression remains measurable.
+
+### Worker JSON traversal validation (2026-11-14)
+
+The current runtime source (`d9e53bf`) passes the existing 75 workerd tests, including real R2-backed concurrent JSON/NDJSON/CSV output fixtures. Added direct workerd coverage for 20,000-level NDJSON streaming with a Unicode leaf at 64/128 MiB shared reservation budgets. Each fixture consumes the actual Response stream, compares complete output, reruns at the observed exact reservation peak and one byte below, and checks zero live reservations after success and rejection. A separate low-capacity output test verifies cleanup on admission failure.
+
+The expanded Worker gate passes 78 tests in 22 files. This establishes correct deep traversal and allocation-accounting cleanup in workerd; it does not assert a 64/128 MiB total isolate heap cap. The shallow row-array kernel regression and standard cache-write serialization remain open.
+
+Coverage gate passed unchanged: statements 91.28%, branches 85.39%, functions 95.80%, lines 93.08%. Typecheck passed. Evidence is recorded in `json-worker-coverage-2026-11-14.json`.
