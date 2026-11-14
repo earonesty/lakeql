@@ -4309,3 +4309,11 @@ Sort checkpoint descriptors carried `byteSize` and `rowCount`, but restoration d
 Fifteen focused sort restore/transaction tests pass. New cases cover changed/truncated run bytes, mismatched row counts, unsafe descriptor integers, valid resumed ordering, no scanner invocation on rejection, and zero remaining pool usage. The real Parquet HTTP fixture now also verifies a bad sort-run descriptor prevents new data requests for both 206 and ignored-range 200 servers. Spill storage in these fixtures is the memory adapter: this proves extent validation and query transport separation, not production remote spill atomicity or detection of same-size/same-count content changes.
 
 Final verification: build/typecheck/formatting passed; full suite 3,723 passed / 629 skipped (408 files). Evidence: `sort-restore-extent-2026-11-14.json`.
+
+### F1/F2/V2 actual R2-bound spill continuation fixtures (2026-11-14)
+
+The built-in spill backend is in-memory; `SpillAdapter` is the extension contract for other stores. Added a test adapter over the workerd R2 binding with direct writes and independently owned reads, deliberately omitting staged/batch publication capabilities. The fixture writes actual SNAPPY Parquet data with two row groups, checkpoints grouped aggregation and sort into R2 objects, then resumes both through the spill-reference path. Its unowned read method throws, proving that continuation uses owned reads. A changed sort run is rejected through the extent checks.
+
+Both 64/128 MiB reservation-pool fixtures pass, with correct aggregate totals/order, input checkpoint bytes charged during writes, zero retained query charges after success/failure, and peak charges within the pool. The full workerd suite passes 81 tests in 23 files. These small correctness fixtures are not memory-pressure or production-network benchmarks. Native R2 upload buffering remains external. No transaction is advertised by this test adapter: it proves the supported nontransactional fallback contract, not atomic multi-object publication. Core's atomic batch guarantees apply only to adapters exposing `beginWriteBatch`; production remote transaction evidence remains separate.
+
+Final verification: typecheck and all 81 workerd tests passed. Evidence: `r2-spill-continuation-2026-11-14.json`.

@@ -37,6 +37,8 @@ F1 restore-lifetime follow-up: [validation](validation/aggregate-restore-scratch
 F3 discovery-lifetime follow-up: [validation](validation/topk-restore-before-discovery-2026-11-14.json). Top-k now releases checkpoint scratch before metadata discovery; sort already releases it before planning. Build/typecheck and 3,718 tests passed (629 skipped).
 
 F2 sort-spill follow-up: [validation](validation/sort-restore-extent-2026-11-14.json). Run byte sizes and row counts are checked before merge/new scanning; unsafe descriptors are rejected. Build/typecheck and 3,723 tests passed (629 skipped). Remote spill atomicity remains unproven.
+
+R2 spill continuation follow-up: [validation](validation/r2-spill-continuation-2026-11-14.json). Real SNAPPY Parquet queries resume aggregate/sort state from the workerd R2 binding at 64/128 MiB reservation budgets, using owned spill reads. Typecheck and 81 Worker tests passed. These small fixtures do not prove memory-pressure behavior, production-network performance, or atomic multi-object publication.
 Current release checks (source `246b165`):
 `docs/validation/current-cache-ownership-release-gates-2026-11-14.json`.
 
