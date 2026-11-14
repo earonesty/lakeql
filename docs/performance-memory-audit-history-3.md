@@ -5041,3 +5041,39 @@ thresholds and conformance timeouts remain unchanged. Git/LFS initially needed
 permission for temporary comparison metadata; the subsequent diff confirms no
 fixture changes. These checks supersede the earlier complete release gate on
 `beebd97` without closing the broader audit acceptance items.
+
+### Scope release detachment and failure-safe cleanup (2026-11-14)
+
+A reachability negative control showed that released scoped handles still held
+their scope and adopted backing object, while disposed children still referenced
+their parent allocation source. The final candidate drops those links before
+release callbacks. All three objects now collect across event-loop turns with
+released handles/disposed child still held. Existing released payload/container
+probes also pass. Forced GC is diagnostic only.
+
+Two disposal negative controls left later allocations charged when an adopted
+owner threw. Scope disposal now attempts every child, signal, admission, snapshot
+and owner cleanup and preserves the first error, including a thrown undefined.
+A separate negative control exposed leaked registration when cached snapshot
+cleanup threw. Snapshot invalidation now precedes registration; the incoming
+owner releases on failure or reentrant scope closure. A released index node is
+unlinked before snapshot cleanup and direct-owner release are attempted.
+
+Focused tests cover double cleanup failures, remaining aliases, reentrant closure,
+and delayed asynchronous allocation. A native R2 fixture additionally delays an
+actual binding range response across disposal failure to verify settlement
+ownership. No cleanup path releases pending I/O early. An external owner remains
+responsible for actually releasing resources inside its own callback.
+
+The real many-page Parquet comparison measures 2.537 → 2.509 seconds; this is no
+observed regression in one isolated comparison, not a stable speedup claim.
+Evidence: `validation/scope-release-detachment-2026-11-14.json`.
+
+Final validation passes 3,929 regular/coverage tests (645 skipped), 86 Worker
+tests, 520 required conformance cases (one inactive guard skipped), 120 references,
+full build/types and the clean 66-package consumer. Coverage thresholds and test
+timeouts are unchanged. The first Worker run passed 85 cases but timed out on
+the first 64 MiB row-expression case. Its isolated eight-case fixture passed,
+then the complete unchanged suite passed all 86 in 33.11 seconds. The new native
+R2 cleanup fixture passed in both full runs. Initial timeout evidence is retained;
+no cause beyond the observed timeout is asserted.

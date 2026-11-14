@@ -1,0 +1,6 @@
+{
+  "node": "v24.18.1",
+  "retainedReleasedHandles": 9,
+  "verified": ["scoped", "retained", "composite", "sibling"],
+  "scope": "Real forced Node GC while released handles remain strongly held. Verifies no handle-to-payload retention; does not prove collection timing or Worker heap bounds."
+}

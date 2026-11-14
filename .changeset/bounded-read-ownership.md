@@ -393,3 +393,5 @@ Reuse materialization-planning ancestry capacity across sibling rows, merging ex
 Grow reusable JSON scalar and traversal workspace through shared incremental admission, preserving exact fixed-stage limits and cleanup without re-admitting existing capacity.
 
 Share reservation method implementations and bind callbacks only when used, reducing ownership bookkeeping while preserving detached callbacks and allocation-transfer semantics.
+
+Detach released scope ownership graphs, drain all cleanup phases after callback failures, and release incoming allocations when snapshot invalidation fails or closes the scope. Pending I/O remains charged until settlement.

@@ -425,14 +425,31 @@ export class MemoryScope {
     this.closed = true;
     this.parentScope?.children.delete(this);
     this.parentScope = undefined;
-    for (const child of this.children) child.dispose();
-    this.detachSignals?.();
+    this.allocationSource = undefined;
+    let failed = false;
+    let failure: unknown;
+    const attempt = (release: (() => void) | undefined, receiver?: object) => {
+      if (release === undefined) return;
+      try {
+        release.call(receiver);
+      } catch (error) {
+        if (!failed) {
+          failed = true;
+          failure = error;
+        }
+      }
+    };
+    for (const child of this.children) attempt(child.dispose, child);
+    const detach = this.detachSignals;
     this.detachSignals = undefined;
-    this.controller?.abort();
-    this.admission?.release();
+    attempt(detach);
+    attempt(this.controller?.abort, this.controller);
+    const admission = this.admission;
     this.admission = undefined;
-    this.invalidateSnapshot();
-    for (const release of this.owned.keys()) release();
+    attempt(admission?.release, admission);
+    attempt(this.invalidateSnapshot, this);
+    for (const release of this.owned.keys()) attempt(release);
+    if (failed) throw failure;
   }
 
   private track<T>(value: T, reservation: MemoryReservation): OwnedMemory<T> {
@@ -441,41 +458,70 @@ export class MemoryScope {
   }
 
   private trackOwner<T>(owner: OwnedMemory<T>): OwnedMemory<T> {
+    try {
+      this.invalidateSnapshot();
+      this.requireOpen();
+    } catch (error) {
+      try {
+        owner.release();
+      } catch {
+        // Preserve the registration failure after attempting transferred cleanup.
+      }
+      throw error;
+    }
     let released = false;
+    let scope: MemoryScope | undefined = this;
+    let backing: OwnedMemory<T> | undefined = owner;
     let key: unknown = owner.value;
     const release = () => {
       if (released) return;
       released = true;
-      this.owned.delete(release);
-      this.invalidateSnapshot();
-      if (allocation.next === allocation) this.allocationsByValue.delete(key);
+      const current = scope as MemoryScope;
+      const retained = backing as OwnedMemory<T>;
+      scope = undefined;
+      backing = undefined;
+      current.owned.delete(release);
+      if (allocation.next === allocation) current.allocationsByValue.delete(key);
       else {
         allocation.previous.next = allocation.next;
         allocation.next.previous = allocation.previous;
-        if (this.allocationsByValue.get(key) === allocation)
-          this.allocationsByValue.set(key, allocation.next);
+        if (current.allocationsByValue.get(key) === allocation)
+          current.allocationsByValue.set(key, allocation.next);
       }
-      // Do not let a released handle retain other live owners through the list.
+      // A released handle must not pin its scope, payload, or neighboring owners.
       allocation.previous = allocation.next = allocation;
       key = undefined;
-      owner.release();
+      let failed = false;
+      let failure: unknown;
+      try {
+        current.invalidateSnapshot();
+      } catch (error) {
+        failed = true;
+        failure = error;
+      }
+      try {
+        retained.release();
+      } catch (error) {
+        if (!failed) throw error;
+      }
+      if (failed) throw failure;
     };
     // The public scope handle also serves as its index node: no second object
     // per allocation just to link duplicate values.
     const allocation = {
       get value() {
         if (released) throw releasedOwnership();
-        return owner.value;
+        return (backing as OwnedMemory<T>).value;
       },
       bytes: owner.bytes,
       budget: owner.budget,
       retain() {
         if (released) throw releasedOwnership();
-        return owner.retain();
+        return (backing as OwnedMemory<T>).retain();
       },
       retainIn(budget: MemoryBudget) {
         if (released) throw releasedOwnership();
-        return owner.retainIn(budget);
+        return (backing as OwnedMemory<T>).retainIn(budget);
       },
       release,
     } as ScopedAllocation & OwnedMemory<T>;
@@ -493,7 +539,6 @@ export class MemoryScope {
       first.previous.next = allocation;
       first.previous = allocation;
     }
-    this.invalidateSnapshot();
     this.owned.set(release, owner);
     return allocation;
   }

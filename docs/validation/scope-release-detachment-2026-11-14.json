@@ -1,0 +1,80 @@
+{
+  "runtimeBase": "c2eae26",
+  "requirements": ["M1", "M2", "V1", "V2"],
+  "sourceSha256": "412b20ec7a8a720d3e6ea4b3a5703a9e76c12e409acbbdce5d7abbaefd081894",
+  "findings": [
+    "Released scoped handles retained their scope and adopted owner; disposed children retained their parent allocation source.",
+    "A throwing cleanup callback stopped scope disposal before later children and owners were released.",
+    "Snapshot invalidation failure during registration left the incoming allocation unregistered and charged."
+  ],
+  "changes": [
+    "Detach scope and backing references before executing release callbacks; clear disposed child allocation source.",
+    "Attempt every cleanup phase and preserve the first thrown value, including undefined.",
+    "Invalidate cached backing and recheck open state before registration; release transferred ownership if cleanup fails or closes the scope."
+  ],
+  "negativeControls": {
+    "reachability": "All three probes remained reachable on c2eae26; all three collect with the fix while released handles/disposed child stay strongly held.",
+    "disposal": "Both original disposal regression cases failed with later allocations still charged.",
+    "registration": "The snapshot-invalidation regression failed with a new allocation still charged."
+  },
+  "artifacts": [
+    "docs/benchmarks/released-scope-retention-baseline-2026-11-14.json",
+    "docs/benchmarks/released-scope-retention-2026-11-14.json",
+    "docs/benchmarks/released-ownership-scope-refresh-2026-11-14.json",
+    "docs/benchmarks/scope-disposal-page-count-2026-11-14.json"
+  ],
+  "tests": [
+    "Descendant and same-scope cleanup errors drain remaining owners; first error remains observable.",
+    "Snapshot cleanup and owner release both fail: index unlinks, both releases execute, first error wins.",
+    "Snapshot cleanup closes scope: new allocation rejects and releases.",
+    "Pending asynchronous allocation stays charged until settlement despite disposal failure.",
+    "Native workerd R2 delayed range response remains charged until it settles after a separate owner throws."
+  ],
+  "pageCount": {
+    "priorMedianMs": 2537.005005,
+    "currentMedianMs": 2508.805397,
+    "scope": "Alternating fresh Node processes; only the named module is replaced by the prior implementation, with current dependencies. Local 40,000-row many-page fixture query, not cloud throughput. Source store/runtime overhead excluded from pool metrics. Value parity is covered by external conformance; benchmark checks count and release.",
+    "interpretation": "No observed regression in this run; not evidence of a stable speedup."
+  },
+  "validation": {
+    "regularPassed": 3929,
+    "regularSkipped": 645,
+    "coverage": {
+      "statements": 91.37,
+      "branches": 85.53,
+      "functions": 95.9,
+      "lines": 93.18,
+      "thresholds": "unchanged"
+    },
+    "firstWorkerRun": {
+      "passed": 85,
+      "failed": 1,
+      "failure": "First row-expression case (64 MiB, projection=false, vector=false) exceeded existing 5000 ms timeout; new native R2 cleanup test passed.",
+      "durationSeconds": 58.14
+    },
+    "focusedPassed": 56,
+    "workerIsolatedPassed": 8,
+    "workerRepeatPassed": 86,
+    "workerRepeatDurationSeconds": 33.11,
+    "requiredConformancePassed": 520,
+    "requiredConformanceSkipped": 1,
+    "timeouts": "unchanged",
+    "build": "full bundles/declarations and fixture TypeScript passed",
+    "typecheck": "passed",
+    "cleanPackageConsumer": {
+      "passed": true,
+      "installedPackages": 66
+    },
+    "referencePassed": 120,
+    "compatibility": "passed",
+    "largeFiles": "passed",
+    "changeset": "passed",
+    "fixtureReproducibility": "passed; regenerated hashes identical and Git/LFS comparison confirms no fixture changes",
+    "lint": "passed"
+  },
+  "boundaries": [
+    "Forced GC is a Node reachability diagnostic, not production behavior or a total-memory guarantee.",
+    "Scope cleanup attempts all callbacks; an opaque external owner must still release its own resources.",
+    "Whole-runtime 64/128 MiB headroom and remaining allocation categories stay open."
+  ]
+}

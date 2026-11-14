@@ -142,3 +142,65 @@ it("holds the R2 metadata slot until a cancelled binding call settles", async ()
     await bucket.delete(path);
   }
 });
+
+it("keeps a native R2 range charged through settlement when another owner throws on disposal", async () => {
+  const bucket = (env as unknown as { MEMORY_TEST_BUCKET: R2BucketLike }).MEMORY_TEST_BUCKET;
+  const path = "cleanup-failure-range";
+  await bucket.put(
+    path,
+    Uint8Array.from({ length: 256 }, (_, index) => index),
+  );
+  let enter!: () => void;
+  let finish!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    enter = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const delayed: R2BucketLike = {
+    head: bucket.head.bind(bucket),
+    put: bucket.put.bind(bucket),
+    delete: bucket.delete.bind(bucket),
+    list: bucket.list.bind(bucket),
+    async get(key, options) {
+      const object = await bucket.get(key, options);
+      enter();
+      await gate;
+      return object;
+    },
+  };
+  const scope = new MemoryScope(new MemoryBudget(256));
+  const original = scope.allocate(8, "throwing owner", () => ({})).retain();
+  scope.adopt({
+    value: original.value,
+    bytes: original.bytes,
+    budget: original.budget,
+    retain: original.retain,
+    retainIn: original.retainIn,
+    release() {
+      original.release();
+      throw new Error("cleanup failure");
+    },
+  });
+  scope.allocate(8, "later owner", () => ({}));
+  const pending = new R2ObjectStore(delayed).getRangeOwned(
+    path,
+    { offset: 64, length: 128 },
+    scope,
+  );
+  const rejected = expect(pending).rejects.toMatchObject({ code: "LAKEQL_ABORTED" });
+  try {
+    await entered;
+    expect(() => scope.dispose()).toThrow("cleanup failure");
+    expect(scope.signal.aborted).toBe(true);
+    expect(scope.budget.usedBytes).toBe(128);
+    finish();
+    await rejected;
+    expect(scope.budget.usedBytes).toBe(0);
+  } finally {
+    finish();
+    scope.dispose();
+    await bucket.delete(path);
+  }
+});
