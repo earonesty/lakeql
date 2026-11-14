@@ -389,5 +389,24 @@
     "distribution": "Clean npm-install smoke reads the real decimal fixture through public and owned APIs and checks exact spelling plus pool cleanup, proving bundled consumers receive the parser patch.",
     "timeoutObservation": "An initial conformance run concurrent with the default suite timed out on overflow_i16_page_cnt, giving 15 failures. Two subsequent isolated conformance runs passed that case and reported the same 14 remaining failures. No timeout setting or assertion was changed.",
     "remaining": "Four shredded high-precision decimal fixtures still reject through both readers; ALP, BSON and BROTLI account for six other failures. Generic decimal expression/order/group/aggregate integration and broader decoder/runtime memory accounting remain open. No tests were waived."
+  },
+  "boundedDecimalDiagnostics": {
+    "change": "Rejected decimal values no longer retain byte-carrier backing, malformed object graphs or arbitrary strings in error details. BigInt diagnostic formatting is restricted to signed 128-bit coefficients; larger values use a fixed message before any toString call. Existing physical integer diagnostics remain exact.",
+    "validation": {
+      "focusedDecimalAndRealFixturePassed": 22,
+      "typescriptBuild": "passed",
+      "defaultPassed": 2909,
+      "defaultSkipped": 621,
+      "lint": "passed"
+    },
+    "edgeCases": [
+      "An 8-byte invalid carrier aliases a 1 MiB backing buffer; the error contains only carrier type and length.",
+      "Malformed object with hostile toJSON is never retained or invoked.",
+      "A 1 MiB malformed string is replaced by its type.",
+      "Positive and negative million-bit integers reject without invoking BigInt.toString.",
+      "Signed 128-bit boundaries retain exact diagnostic text.",
+      "Failed scoped scalar conversion releases its reservation."
+    ],
+    "limits": "This bounds input-dependent diagnostic payloads, not Error stack/runtime allocation. Shredded decimal integration and the remaining audit requirements are still open."
   }
 }

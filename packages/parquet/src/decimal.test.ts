@@ -1,6 +1,6 @@
 import type { SchemaElement } from "hyparquet";
 import { MATERIALIZATION_CHARGES as c, MemoryBudget, MemoryScope } from "lakeql-core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { convertDecimalValue, convertDecimalValues, isIntegerDecimal } from "./decimal.js";
 
 const navDecimal: SchemaElement = {
@@ -10,6 +10,57 @@ const navDecimal: SchemaElement = {
   precision: 18,
   scale: 4,
 };
+
+it("does not retain rejected byte carriers or malformed input in error diagnostics", () => {
+  const backing = new Uint8Array(1024 * 1024);
+  const carrier = backing.subarray(8, 16);
+  carrier[0] = 0x20;
+  const hostile = {
+    toJSON: vi.fn(() => {
+      throw new Error("must not serialize input");
+    }),
+  };
+  for (const [value, diagnostic] of [
+    [carrier, { type: "Uint8Array", byteLength: 8 }],
+    [hostile, { type: "object" }],
+    ["x".repeat(1024 * 1024), { type: "string" }],
+  ]) {
+    const scope = new MemoryScope(new MemoryBudget(c.number));
+    let caught: unknown;
+    try {
+      convertDecimalValue(value, navDecimal, "nav", scope);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toMatchObject({ details: { value: diagnostic } });
+    expect(JSON.stringify(caught).length).toBeLessThan(512);
+    expect(scope.budget.usedBytes).toBe(0);
+    scope.dispose();
+  }
+  expect(hostile.toJSON).not.toHaveBeenCalled();
+});
+
+it("bounds rejected integer diagnostics before formatting", () => {
+  const huge = 1n << 1000000n;
+  const formatter = vi.spyOn(BigInt.prototype, "toString");
+  try {
+    for (const value of [huge, -huge]) {
+      expect(() => convertDecimalValue(value, navDecimal, "nav")).toThrowError(
+        expect.objectContaining({
+          details: expect.objectContaining({ value: "bigint outside signed 128-bit range" }),
+        }),
+      );
+    }
+    expect(formatter).not.toHaveBeenCalled();
+  } finally {
+    formatter.mockRestore();
+  }
+  for (const value of [-(1n << 127n), (1n << 127n) - 1n]) {
+    expect(() => convertDecimalValue(value, navDecimal, "nav")).toThrowError(
+      expect.objectContaining({ details: expect.objectContaining({ value: String(value) }) }),
+    );
+  }
+});
 
 describe("integer decimal conversion", () => {
   it("converts safe INT64 values using their declared scale", () => {

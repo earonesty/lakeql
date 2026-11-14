@@ -43,7 +43,8 @@ The latest full external conformance checkpoint reports **495 passed, 14 failed,
 one skipped**. It checks both reader paths and compares owned values with public
 output, in addition to cardinality and cleanup. Eleven additional differential
 findings were fixed or independently validated as representation differences;
-bounded dictionary-extent recovery fixes two original failures; sixteen remain. See
+bounded dictionary-extent recovery fixes two original failures. Decimal rejection
+diagnostics now avoid retaining input backing or formatting unbounded integers. See
 `docs/validation/conformance-value-parity-2026-11-13.json` for the chronological
 results and independent INT96/Date evidence. No release-readiness or whole-runtime
 memory claim follows from the passing suites.

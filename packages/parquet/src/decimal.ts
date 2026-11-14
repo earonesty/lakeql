@@ -221,7 +221,22 @@ function unsafeDecimalValue(
       scale:
         element.scale ??
         (element.logical_type?.type === "DECIMAL" ? element.logical_type.scale : undefined),
-      value: typeof value === "bigint" ? value.toString() : value,
+      value: decimalDiagnosticValue(value),
     },
   );
+}
+
+/** Errors may outlive the decoding scope: never retain input backing or build
+ * diagnostic text proportional to a rejected coefficient's size. */
+function decimalDiagnosticValue(value: unknown): unknown {
+  if (typeof value === "bigint") {
+    // Preserve useful physical integer diagnostics within a fixed 128-bit bound.
+    return value >= -(1n << 127n) && value < 1n << 127n
+      ? value.toString()
+      : "bigint outside signed 128-bit range";
+  }
+  if (value instanceof Uint8Array) return { type: "Uint8Array", byteLength: value.byteLength };
+  if (typeof value === "number" || typeof value === "boolean" || value == null) return value;
+  // Do not call user conversion hooks or retain malformed object/string inputs.
+  return { type: typeof value };
 }
