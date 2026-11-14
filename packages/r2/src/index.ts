@@ -1,9 +1,10 @@
 import {
   type CacheAdapter,
   type CacheEntry,
+  MATERIALIZATION_CHARGES as c,
   LakeqlError,
   type ListOptions,
-  type MemoryScope,
+  MemoryScope,
   type ObjectHead,
   type ObjectInfo,
   type ObjectStore,
@@ -243,13 +244,22 @@ export class R2ObjectStore implements ObjectStore {
     body: Uint8Array | ReadableStream<Uint8Array>,
     options?: PutOptions,
   ): Promise<void> {
-    const putOptions: {
-      httpMetadata?: { contentType?: string };
-      customMetadata?: Record<string, string>;
-    } = {};
-    if (options?.contentType) putOptions.httpMetadata = { contentType: options.contentType };
-    if (options?.metadata) putOptions.customMetadata = options.metadata;
-    await this.bucket.put(path, body, putOptions);
+    await this.bucket.put(path, body, r2PutOptions(options));
+  }
+
+  async putOwned(path: string, body: OwnedMemory<Uint8Array>, options?: PutOptions): Promise<void> {
+    const scope = new MemoryScope(body.budget);
+    try {
+      const input = scope.adopt(body.retain()).value;
+      const putOptions = scope.allocate(2 * c.object + 3 * c.property, "R2 write options", () =>
+        r2PutOptions(options),
+      ).value;
+      // R2 accepts the view directly. Its internal upload buffering is external;
+      // retain the supplied backing until the binding settles without copying it.
+      await this.bucket.put(path, input, putOptions);
+    } finally {
+      scope.dispose();
+    }
   }
 
   async delete(path: string): Promise<void> {
@@ -323,4 +333,17 @@ function jsonCacheValue(value: unknown, key: string): string {
       cause,
     });
   }
+}
+
+function r2PutOptions(options?: PutOptions): {
+  httpMetadata?: { contentType?: string };
+  customMetadata?: Record<string, string>;
+} {
+  const result: {
+    httpMetadata?: { contentType?: string };
+    customMetadata?: Record<string, string>;
+  } = {};
+  if (options?.contentType) result.httpMetadata = { contentType: options.contentType };
+  if (options?.metadata) result.customMetadata = options.metadata;
+  return result;
 }

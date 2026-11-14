@@ -4238,3 +4238,11 @@ HTTP now shares write response handling between plain and owned methods. Its own
 Focused tests prove exact-budget admission and one-byte-below rejection before any fetch, subarray extent handling, delayed lifetime after caller-scope disposal, cleanup for success/HTTP/network errors, wrapper path forwarding, pre-aborted controls, and invalidation of cache entries repopulated during a pending write. A real localhost JSON cache PUT/GET now exercises the URI/cache/read-control chain and owned HTTP write path.
 
 Final verification: build/typecheck/formatting passed; full suite 3,699 passed / 629 skipped (404 files), workerd 78 passed (22 files). Evidence: `owned-http-write-2026-11-14.json`.
+
+### R2 owned write lifetime without a payload copy (2026-11-14)
+
+`R2ObjectStore.putOwned` now retains its supplied byte owner through binding settlement and admits adapter-created write-option records before invoking R2. Plain and owned writes share the same options conversion. Unlike HTTP, R2 already accepts the view directly, so the owned path adds no payload copy. Caller options remain borrowed immutable data; native binding upload buffers remain external.
+
+Unit tests verify reference identity for the supplied subarray (no backing copy), content/custom metadata forwarding, exact and one-byte-below admission before binding invocation, and input lifetime after caller-scope disposal during delayed success/failure. All 14 R2 unit tests pass. A new workerd fixture writes a standard-JSON cache entry containing a date, Unicode path, and typed array through the actual R2 binding, checks stored bytes against native JSON.stringify, reads it back through owned cache parsing, and checks cleanup.
+
+Final verification: build/typecheck/formatting passed; all 14 R2 unit tests and 79 workerd tests (22 files) passed. Evidence: `owned-r2-write-2026-11-14.json`.

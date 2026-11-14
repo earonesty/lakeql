@@ -1,0 +1,28 @@
+{
+  "baseCommit": "141c217",
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "r2UnitTests": {
+      "passed": 14,
+      "files": 2
+    },
+    "workerd": {
+      "passed": 79,
+      "files": 22
+    }
+  },
+  "edgeCases": [
+    "Exact admission and one byte below",
+    "No invocation on budget rejection",
+    "Subarray identity preserved without copying",
+    "Metadata forwarding",
+    "Pending success/failure after caller scope disposal",
+    "Standard JSON cache round trip via actual R2 binding"
+  ],
+  "limitations": [
+    "Native R2 upload buffers remain external",
+    "Caller metadata/options are borrowed immutable data",
+    "No whole Worker heap cap claimed"
+  ]
+}

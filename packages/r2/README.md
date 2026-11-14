@@ -25,3 +25,10 @@ remaining bytes. Custom `R2BucketLike` implementations must expose `body` for th
 method; the adapter does not fall back to unbounded `arrayBuffer()` materialization.
 The existing `getRange()` API retains its byte-returning behavior. These buffer
 charges do not include runtime-owned stream chunks or decoded query objects.
+
+`putOwned(path, body, options)` retains the supplied byte owner through R2 upload
+settlement and admits the adapter's options records in that owner's budget. It
+passes the existing view directly to the R2 binding without an adapter payload
+copy. Metadata strings/maps are borrowed from the immutable caller options;
+R2 runtime upload buffering remains outside the adapter's accounting. Owned JSON
+cache writes automatically use this capability.
