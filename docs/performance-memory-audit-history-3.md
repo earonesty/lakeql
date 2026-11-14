@@ -4542,3 +4542,25 @@ lifecycle evidence, not a cloud or public scanner fixture, and a measured
 reservation peak is not a VM heap bound. Fixed helper-object accounting and the
 broader F4/M1 acceptance work remain open. See
 `validation/window-lifecycle-memory-2026-11-14.json`.
+
+### F4/M1 fixed peer metadata admission
+
+`WindowPeers` now reserves its fixed instance and three reusable cursor records
+before constructing cursors whenever a budget is provided. The explicit charge
+is 1,536 bytes (four objects and twenty properties); borrowed partition keys
+remain with their existing owner. Optional index admission uses remaining
+headroom after that fixed charge. Disposal releases both charges idempotently.
+The standalone segment-tree entry point now creates its default peer helper with
+the supplied budget and disposes it on success or failure; caller-provided helpers
+remain caller-owned. Unsupported and empty standalone inputs return before
+constructing a helper.
+
+Boundary tests cover exact fixed admission, one-byte pressure, sibling isolation,
+retry and double disposal. Existing dynamic-frame independent oracles now test
+1,828/1,827-byte total capacities (1,536 fixed plus 292/291 index headroom).
+Ranking tests still bound peer-key visits; their previous zero-budget assumption
+is replaced by the exact fixed charge. Tree fallback and failure tests preserve
+their previous optional-workspace headroom and verify helper cleanup.
+
+This closes the identified peer-helper gap, not all window helper/VM allocation
+coverage. See `validation/window-peer-metadata-2026-11-14.json` for validation.

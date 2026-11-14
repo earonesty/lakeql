@@ -4,6 +4,7 @@ import { MemoryBudget } from "./memory-budget.js";
 import { TimestampValue, timestampFromEpoch } from "./timestamp.js";
 import type { WindowExpr, WindowRankingFn } from "./window.js";
 import { applyWindowsToRows, applyWindowsToRuns, evaluateWindowRows } from "./window-backend.js";
+import { WINDOW_PEER_METADATA_BYTES } from "./window-peers.js";
 import type { WindowRow } from "./window-utils.js";
 
 const functions = ["rank", "dense_rank", "percent_rank", "cume_dist"] as const;
@@ -28,7 +29,7 @@ it.each(functions)("uses existing peer keys in linear work for %s", (fn) => {
           return [Math.floor(index / groupSize)];
         },
       }));
-      const budget = new MemoryBudget(0);
+      const budget = new MemoryBudget(WINDOW_PEER_METADATA_BYTES);
       const values = evaluateWindowRows(
         length,
         partition,
@@ -46,7 +47,7 @@ it.each(functions)("uses existing peer keys in linear work for %s", (fn) => {
       });
       expect(values).toEqual(expected);
       expect(keyReads).toBeLessThanOrEqual(4 * length);
-      expect(budget.peakBytes).toBe(0);
+      expect(budget.peakBytes).toBe(WINDOW_PEER_METADATA_BYTES);
       expect(budget.usedBytes).toBe(0);
     }
   }

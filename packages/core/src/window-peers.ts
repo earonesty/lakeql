@@ -8,25 +8,39 @@ interface PeerPosition {
   group: number;
 }
 
+/** One instance (eleven fields) and three cursor records (three fields each).
+ * The partition and its keys are borrowed and charged by their existing owner.
+ */
+export const WINDOW_PEER_METADATA_BYTES = 4 * c.object + 20 * c.property;
+
 /** Evaluation-local cursors over an immutable partition. Sequential traversal
  * uses constant auxiliary space. Repeated traversal can admit a compact index
  * when measured work exceeds four partition passes and a budget is available.
  */
 export class WindowPeers {
-  private current: PeerPosition = { start: 0, end: 0, group: 0 };
-  private first: PeerPosition = { start: 0, end: 0, group: 0 };
-  private last: PeerPosition = { start: 0, end: 0, group: 0 };
+  private current: PeerPosition;
+  private first: PeerPosition;
+  private last: PeerPosition;
   private count: number | undefined;
   private comparisons = 0;
   private index: Uint32Array | undefined;
   private reservation: MemoryReservation | undefined;
   private attemptedIndex = false;
+  private metadata: MemoryReservation | undefined;
   constructor(
     private readonly partition: readonly WindowRow[],
     private readonly budget?: MemoryBudget,
-  ) {}
+  ) {
+    // Instance fields and three reusable cursor records; partition storage is borrowed.
+    this.metadata = budget?.reserve(WINDOW_PEER_METADATA_BYTES, "window peer metadata");
+    this.current = { start: 0, end: 0, group: 0 };
+    this.first = { start: 0, end: 0, group: 0 };
+    this.last = { start: 0, end: 0, group: 0 };
+  }
 
   dispose(): void {
+    this.metadata?.release();
+    this.metadata = undefined;
     this.index = undefined;
     this.reservation?.release();
     this.reservation = undefined;

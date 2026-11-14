@@ -3,7 +3,7 @@ import { col, gt } from "./expr.js";
 import { MemoryBudget } from "./memory-budget.js";
 import type { WindowExpr } from "./window.js";
 import { applyWindowsToRows, evaluateWindowRows } from "./window-backend.js";
-import { WindowPeers } from "./window-peers.js";
+import { WINDOW_PEER_METADATA_BYTES as metadataBytes, WindowPeers } from "./window-peers.js";
 import { segmentTreeAggregateValues, segmentTreeWorkspaceBytes } from "./window-segment-tree.js";
 import { partitionRows, partitionSpans } from "./window-utils.js";
 
@@ -25,15 +25,15 @@ it("keeps growing frames incremental within exact shared-budget availability", (
   for (const length of [1, 7, 16]) {
     const required = segmentTreeWorkspaceBytes(length);
     for (const cap of [0, required - 1, required]) {
-      const pool = new MemoryBudget(cap + 37);
+      const pool = new MemoryBudget(metadataBytes + cap + 37);
       const retained = pool.child(37).reserve(37, "other query output");
-      const budget = pool.child(cap);
+      const budget = pool.child(metadataBytes + cap);
       let reads = 0;
       const rows = Array.from({ length }, (_, id) => ({
         id,
         get amount() {
           reads++;
-          expect(budget.usedBytes).toBe(0);
+          expect(budget.usedBytes).toBe(metadataBytes);
           return id + 1;
         },
       }));
@@ -44,9 +44,9 @@ it("keeps growing frames incremental within exact shared-budget availability", (
           Array.from({ length }, (_, id) => ((id + 1) * (id + 2)) / 2),
         );
         expect(reads).toBe(length);
-        expect(budget.usedBytes).toBe(0);
-        expect(budget.peakBytes).toBe(0);
-        expect(pool.usedBytes).toBe(37);
+        expect(budget.usedBytes).toBe(metadataBytes);
+        expect(budget.peakBytes).toBe(metadataBytes);
+        expect(pool.usedBytes).toBe(metadataBytes + 37);
       } finally {
         peers.dispose();
         retained.release();
@@ -75,9 +75,9 @@ it("admits a tree only after repeated visits and releases it on completion or fa
   const required = segmentTreeWorkspaceBytes(length);
   for (const cap of [required - 1, required]) {
     for (const fail of [false, true]) {
-      const pool = new MemoryBudget(cap + 37);
+      const pool = new MemoryBudget(metadataBytes + cap + 37);
       const retained = pool.child(37).reserve(37, "concurrent output");
-      const budget = pool.child(cap);
+      const budget = pool.child(metadataBytes + cap);
       let visits = 0;
       let firstAdmittedVisit = 0;
       const rows = Array.from({ length }, (_, id) => ({
@@ -86,7 +86,7 @@ it("admits a tree only after repeated visits and releases it on completion or fa
         after: id % 2 === 0 ? length - id - 1 : 0,
         get amount() {
           visits++;
-          if (budget.usedBytes > 0) {
+          if (budget.usedBytes > metadataBytes) {
             firstAdmittedVisit ||= visits;
             if (fail) throw new Error("admitted leaf failed");
           }
@@ -101,7 +101,7 @@ it("admits a tree only after repeated visits and releases it on completion or fa
         expect(run()).toEqual(
           rows.map((_row, id) => (id % 2 === 0 ? (length * (length + 1)) / 2 : id + 1)),
         );
-      expect(budget.peakBytes).toBe(cap === required ? required : 0);
+      expect(budget.peakBytes).toBe(metadataBytes + (cap === required ? required : 0));
       expect(budget.usedBytes).toBe(0);
       if (cap === required) expect(firstAdmittedVisit).toBeGreaterThan(length * 3);
       else expect(firstAdmittedVisit).toBe(0);
@@ -124,7 +124,7 @@ it("propagates kernel budget and keeps null and filter semantics", () => {
   const indexed = partitionRows(rows, expr);
   const spans = partitionSpans(indexed);
   for (const cap of [0, segmentTreeWorkspaceBytes(rows.length)]) {
-    const memoryBudget = new MemoryBudget(cap);
+    const memoryBudget = new MemoryBudget(metadataBytes + cap);
     expect(evaluateWindowRows(rows.length, indexed, spans, expr, { memoryBudget })).toEqual([
       null,
       2,
@@ -139,7 +139,7 @@ it("propagates kernel budget and keeps null and filter semantics", () => {
         { memoryBudget },
       ),
     ).toEqual([null, null, 3]);
-    expect(memoryBudget.peakBytes).toBe(0);
+    expect(memoryBudget.peakBytes).toBe(metadataBytes);
     expect(memoryBudget.usedBytes).toBe(0);
   }
   const zero = new MemoryBudget(0);
@@ -187,7 +187,7 @@ it("reuses growing frames and resets correctly when dynamic bounds shrink or mov
       const expected = partition.map((_row, index) =>
         aggregateWindowValue(frameRows(partition, index, dynamic), dynamic),
       );
-      const budget = new MemoryBudget(0);
+      const budget = new MemoryBudget(metadataBytes);
       expect(segmentTreeAggregateValues(partition, dynamic, undefined, budget)).toEqual(expected);
       expect(budget.usedBytes).toBe(0);
     }

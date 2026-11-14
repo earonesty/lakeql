@@ -35,7 +35,7 @@ const EMPTY_NODE: SegmentNode = {
 export function segmentTreeAggregateValues(
   partition: readonly WindowRow[],
   expr: WindowExpr,
-  peers = new WindowPeers(partition),
+  peers: WindowPeers | undefined = undefined,
   budget?: MemoryBudget,
   resultScope?: MemoryScope,
 ): Scalar[] | undefined {
@@ -44,6 +44,14 @@ export function segmentTreeAggregateValues(
   const op = expr.fn.aggregate;
   if (!isSegmentAggregate(op)) return undefined;
   if (partition.length === 0) return [];
+  if (peers === undefined) {
+    const ownedPeers = new WindowPeers(partition, budget);
+    try {
+      return segmentTreeAggregateValues(partition, expr, ownedPeers, budget, resultScope);
+    } finally {
+      ownedPeers.dispose();
+    }
+  }
   const accumulator = createWindowAggregateAccumulator(expr, budget, resultScope);
   const frameScope = budget === undefined ? undefined : new MemoryScope(budget);
   let treeScope = budget === undefined ? undefined : new MemoryScope(budget);

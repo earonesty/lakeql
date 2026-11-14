@@ -5,7 +5,7 @@ import { MemoryBudget } from "./memory-budget.js";
 import type { WindowExpr } from "./window.js";
 import { applyWindowsToRows } from "./window-backend.js";
 import { frameRows, frameSpan } from "./window-frame.js";
-import { WindowPeers } from "./window-peers.js";
+import { WINDOW_PEER_METADATA_BYTES as metadataBytes, WindowPeers } from "./window-peers.js";
 import type { WindowRow } from "./window-utils.js";
 
 function rows(keys: number[]): WindowRow[] {
@@ -104,26 +104,26 @@ it("admits an adaptive peer index only after repeated traversal, with bounded ke
       },
     });
   }
-  const budget = new MemoryBudget(c.view + 4004);
+  const budget = new MemoryBudget(metadataBytes + c.view + 4004);
   const peers = new WindowPeers(partition, budget);
   for (let index = 0; index < 1000; index += 1) peers.group(index, "start");
-  expect(budget.peakBytes).toBe(0);
+  expect(budget.peakBytes).toBe(metadataBytes);
   for (let index = 0; index < 1000; index += 1) {
     const target = index % 2 ? 0 : 999;
     expect(peers.group(target, "start")).toEqual({ start: target, end: target + 1, group: target });
     expect(peers.peer(target)).toEqual({ start: target, end: target + 1, group: target });
   }
-  expect(budget.usedBytes).toBe(c.view + 4004);
+  expect(budget.usedBytes).toBe(metadataBytes + c.view + 4004);
   expect(visits).toBeLessThan(40000);
   peers.dispose();
   expect(budget.usedBytes).toBe(0);
-  const tight = new MemoryBudget(c.view + 4003);
+  const tight = new MemoryBudget(metadataBytes + c.view + 4003);
   const fallback = new WindowPeers(partition, tight);
   for (let index = 0; index < 20; index += 1) {
     const target = index % 2 ? 0 : 999;
     expect(fallback.group(target, "end").start).toBe(target);
   }
-  expect(tight.peakBytes).toBe(0);
+  expect(tight.peakBytes).toBe(metadataBytes);
   fallback.dispose();
 });
 
@@ -166,12 +166,12 @@ it.each([
     };
   });
   for (const capacity of [indexBytes - 1, indexBytes]) {
-    const budget = new MemoryBudget(capacity);
+    const budget = new MemoryBudget(metadataBytes + capacity);
     const peers = new WindowPeers(partition, budget);
     try {
       // Force repeated traversal before checking both indexed and fallback paths.
       for (let visit = 0; visit < 30; visit++) peers.group(visit % 2 ? 0 : groups - 1, "start");
-      expect(budget.usedBytes).toBe(capacity === indexBytes ? indexBytes : 0);
+      expect(budget.usedBytes).toBe(metadataBytes + (capacity === indexBytes ? indexBytes : 0));
       for (const mode of ["groups", "range"] as const) {
         for (const exclude of ["no-others", "current-row", "group", "ties"] as const) {
           const expr = expression(mode);
@@ -207,10 +207,30 @@ it.each([
           }
         }
       }
-      expect(budget.peakBytes).toBeLessThanOrEqual(capacity);
+      expect(budget.peakBytes).toBeLessThanOrEqual(metadataBytes + capacity);
     } finally {
       peers.dispose();
     }
     expect(budget.usedBytes).toBe(0);
   }
+});
+
+it("admits peer metadata at the exact shared boundary and releases it idempotently", () => {
+  const pool = new MemoryBudget(metadataBytes + 37);
+  const sibling = pool.reserve(37, "sibling output");
+  const budget = pool.child(metadataBytes);
+  const pressure = budget.reserve(1, "pressure");
+  expect(() => new WindowPeers([], budget)).toThrow(
+    expect.objectContaining({ code: "LAKEQL_BUDGET_EXCEEDED" }),
+  );
+  expect(pool.usedBytes).toBe(38);
+  pressure.release();
+  const peers = new WindowPeers(rows([1, 1, 2]), budget);
+  expect(peers.peer(2)).toEqual({ start: 2, end: 3, group: 1 });
+  expect(budget.usedBytes).toBe(metadataBytes);
+  peers.dispose();
+  peers.dispose();
+  expect(pool.usedBytes).toBe(37);
+  sibling.release();
+  expect(pool.usedBytes).toBe(0);
 });

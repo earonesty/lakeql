@@ -6,7 +6,7 @@ import { MemoryScope } from "./memory-scope.js";
 import type { WindowExpr } from "./window.js";
 import { createWindowAggregateAccumulator } from "./window-aggregate.js";
 import { applyWindowsToRows, applyWindowsToRuns } from "./window-backend.js";
-import { WindowPeers } from "./window-peers.js";
+import { WINDOW_PEER_METADATA_BYTES as metadataBytes, WindowPeers } from "./window-peers.js";
 import { segmentTreeAggregateValues, segmentTreeWorkspaceBytes } from "./window-segment-tree.js";
 import { partitionRows } from "./window-utils.js";
 import { applyWindowsToVectorBatches } from "./window-vector.js";
@@ -83,7 +83,9 @@ it.each([
   true,
 ])("retains adaptive min-tree payloads or falls back when payloads exceed tree headroom (tight=%s)", (tight) => {
   const length = 32;
-  const budget = new MemoryBudget(tight ? segmentTreeWorkspaceBytes(length) + 2500 : 1024 * 1024);
+  const budget = new MemoryBudget(
+    tight ? metadataBytes + segmentTreeWorkspaceBytes(length) + 2500 : 1024 * 1024,
+  );
   const resultScope = new MemoryScope(budget);
   const expr: WindowExpr = {
     ...expression("min", 100),
@@ -102,7 +104,7 @@ it.each([
   const rows = Array.from({ length }, (_, id) => ({
     id,
     get text() {
-      if (budget.usedBytes >= segmentTreeWorkspaceBytes(length)) treeReads++;
+      if (budget.usedBytes >= metadataBytes + segmentTreeWorkspaceBytes(length)) treeReads++;
       else if (treeReads > 0) fallbackReads++;
       return `x${id.toString().padStart(2, "0")}`;
     },
