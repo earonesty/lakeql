@@ -26,7 +26,6 @@ import { jsonOutputStream } from "./json-output-stream.js";
 import { jsonStringUtf8Bytes } from "./json-string-size.js";
 import {
   assertBookmarkMatches,
-  createBookmark,
   createOwnedTaskManifest,
   fingerprint,
   stableStringify,
@@ -49,6 +48,7 @@ export { parseHivePartitions } from "./hive-partitions.js";
 import { isPrototypeMutationKey } from "./object-key.js";
 import { ownedAggregateExpressionBytesForColumns } from "./owned-aggregate-input.js";
 import { OwnedAggregateState } from "./owned-aggregate-state.js";
+import { createOwnedBookmark } from "./owned-bookmark.js";
 import { OwnedBoundedTopK } from "./owned-bounded-top-k.js";
 import {
   encodeOwnedCheckpoint,
@@ -2034,11 +2034,25 @@ export class QueryResult {
   }
 
   async slice(options: SliceOptions): Promise<SliceResult> {
+    const output = await this.ownedSlice(options);
+    try {
+      return output.value;
+    } finally {
+      // Plain results transfer to caller management, matching toArray().
+      output.release();
+    }
+  }
+
+  /** Keep slice rows and continuation metadata charged until the owner is released. */
+  async ownedSlice(options: SliceOptions): Promise<OwnedMemory<SliceResult>> {
     if (!Number.isSafeInteger(options.maxRows) || options.maxRows <= 0) {
       throw new LakeqlError("LAKEQL_TYPE_ERROR", "slice maxRows must be a positive safe integer");
     }
     const manifestOwner = await this.ownedTaskManifest();
-    let collected: OwnedMemory<Row[]> | undefined;
+    const outputScope = new MemoryScope(
+      this.memoryBudget,
+      this.config.budget.signal ? [this.config.budget.signal] : [],
+    );
     try {
       const manifest = manifestOwner.value;
       const startOffset = options.bookmark?.position.rowOffset ?? 0;
@@ -2051,31 +2065,53 @@ export class QueryResult {
         options.maxRows,
         this.config.budget.signal,
       );
-      collected = output.rows;
-      const rows = collected.value;
+      let rows: Row[];
+      try {
+        rows = outputScope.adopt(output.rows).value;
+      } catch (error) {
+        output.rows.release();
+        throw error;
+      }
       const { hasMore, seen } = output;
 
-      if (!hasMore) return { rows };
-      const position: { fileIndex: number; rowGroup: number; rowOffset: number; taskId?: string } =
-        {
-          fileIndex: 0,
-          rowGroup: 0,
-          rowOffset: seen,
-        };
-      const taskId = manifest.tasks[0]?.id;
-      if (taskId !== undefined) position.taskId = taskId;
-      return {
-        rows,
-        bookmark: createBookmark({
-          planFingerprint: manifest.planFingerprint,
-          snapshot: manifest.snapshot,
-          query: this.config.bookmarkQuery,
-          position,
-        }),
-      };
+      const result = outputScope.allocate(
+        allocationCharges.object + 2 * allocationCharges.property,
+        "slice result",
+        () => ({ rows }) as SliceResult,
+      ).value;
+      if (!hasMore) return outputScope.retainAllocations(result);
+      const argumentsScope = outputScope.childScope();
+      try {
+        const position = argumentsScope.allocate(
+          allocationCharges.object + 4 * allocationCharges.property,
+          "slice bookmark position",
+          () => ({ fileIndex: 0, rowGroup: 0, rowOffset: seen }) as Bookmark["position"],
+        ).value;
+        const taskId = manifest.tasks[0]?.id;
+        if (taskId !== undefined) position.taskId = taskId;
+        const init = argumentsScope.allocate(
+          allocationCharges.object + 4 * allocationCharges.property,
+          "slice bookmark arguments",
+          () => ({
+            planFingerprint: manifest.planFingerprint,
+            snapshot: manifest.snapshot,
+            query: this.config.bookmarkQuery,
+            position,
+          }),
+        ).value;
+        const bookmark = createOwnedBookmark(init, outputScope);
+        try {
+          result.bookmark = outputScope.adopt(bookmark).value;
+        } catch (error) {
+          bookmark.release();
+          throw error;
+        }
+      } finally {
+        argumentsScope.dispose();
+      }
+      return outputScope.retainAllocations(result);
     } finally {
-      // Plain slice results transfer to caller management, as with toArray().
-      collected?.release();
+      outputScope.dispose();
       manifestOwner.release();
     }
   }

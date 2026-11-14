@@ -475,3 +475,42 @@ it("bounds retained slice output and recovers with a smaller slice", async () =>
   expect(small.rows).toEqual(rows.slice(0, 2));
   expect(pool.usedBytes).toBe(0);
 });
+
+it("owns slice rows and bookmarks across query completion, resumption and independent handles", async () => {
+  const { store, rows } = await fixture();
+  const pool = new MemoryBudget(1024 * 1024);
+  const lake = createParquetLake({ store, memoryPool: pool, scanRangeCache: { maxBytes: 0 } });
+  const query = lake.path("rows.parquet").batchSize(7).run();
+  const first = await query.ownedSlice({ maxRows: 11 });
+  const retained = first.retain();
+  first.release();
+  try {
+    expect(retained.value.rows).toEqual(rows.slice(0, 11));
+    expect(pool.usedBytes).toBeGreaterThan(0);
+    const bookmark = retained.value.bookmark;
+    if (!bookmark) throw new Error("Expected continuation");
+    const second = await query.ownedSlice({ maxRows: 117, bookmark });
+    try {
+      expect(second.value.rows).toEqual(rows.slice(11));
+      expect(second.value.bookmark).toBeUndefined();
+      expect(retained.value.rows).toEqual(rows.slice(0, 11));
+      const occupied = pool.usedBytes;
+      const pressure = pool.reserve(pool.maxBytes - occupied, "other jobs");
+      try {
+        await expect(query.ownedSlice({ maxRows: 1 })).rejects.toMatchObject({
+          code: "LAKEQL_BUDGET_EXCEEDED",
+        });
+        expect(second.value.rows).toEqual(rows.slice(11));
+      } finally {
+        pressure.release();
+      }
+      expect(pool.usedBytes).toBe(occupied);
+    } finally {
+      second.release();
+    }
+    expect(pool.usedBytes).toBeGreaterThan(0);
+  } finally {
+    retained.release();
+  }
+  expect(pool.usedBytes).toBe(0);
+});

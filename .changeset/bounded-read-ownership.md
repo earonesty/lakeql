@@ -369,3 +369,5 @@ Require safe integer query and aggregate row bounds, positive safe batch/group c
 Apply the same exact-integer contract to restored top-k bounds (including their sum), slice/resumable batch capacities, and policy row caps. Invalid restored state rejects before discovery; invalid policy caps cannot be hidden by a smaller explicit limit.
 
 Bound slice accumulation using the shared owned row collector. Detach selected rows before borrowed scanners advance or close, admit payload and collection arrays, and release failed collection before asynchronous producer cleanup. Preserve pagination/lookahead behavior and transfer completed plain slices to caller management.
+
+Add `QueryResult.ownedSlice()` to retain both rows and continuation metadata in the shared pool until release. Admit bookmark normalization and sorting scratch, then detach nested expression literals and operator bytes into the returned owner. Plain `slice()` reuses this path and transfers completed output to caller management.

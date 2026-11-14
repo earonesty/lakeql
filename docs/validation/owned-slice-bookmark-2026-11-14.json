@@ -1,0 +1,32 @@
+{
+  "base": "f1e3c12",
+  "implementation": [
+    "QueryResult.ownedSlice returns an independently retained owner of rows and optional bookmark; slice delegates and releases its owner on return.",
+    "createOwnedBookmark pre-admits constructed normalization records, arrays, sorted-key directories and copied operator bytes, invokes the existing normalizer, then uses shared row detachment to own retained nested data.",
+    "Slice arguments/result metadata are admitted; adoption failures release independently returned row/bookmark handles."
+  ],
+  "validation": {
+    "build": "pnpm exec tsc -b passed",
+    "types": "pnpm typecheck passed",
+    "focusedBookmarkQueryFixtureTests": 112,
+    "focusedOwnedParquetTests": 26,
+    "regularPassed": 3817,
+    "regularSkipped": 645,
+    "workerPassed": 82
+  },
+  "evidence": [
+    "Owned bookmarks match legacy normalized values and sorted keys across projection/window/order, multipart and inline/spilled operator fields.",
+    "Nested literal byte and operator byte mutations do not affect returned bookmarks; owner remains valid after parent scope disposal.",
+    "Exact normalization/output-overlap cap succeeds and cap-minus-one fails, retaining sibling charges; invalid windows release scratch.",
+    "Real Parquet owned slices retain independent handles, resume across row groups, survive concurrent admission failure, and release all charges.",
+    "Four native R2 jobs at both 64/128 MiB caps retain first and resumed slice owners across cache eviction; releasing resumed outputs preserves first-page charges; final release returns pool to zero.",
+    "Existing HTTP range/full-body slice and plain bookmark regression tests remain in the passing regular suite."
+  ],
+  "boundaries": [
+    "Input bookmark data must remain immutable during synchronous normalization; retained data uses the existing detachable data contract.",
+    "Normalization scratch overlaps detached output intentionally; stricter admission can reject before previously untracked allocation.",
+    "Sort/enumerator VM internals are not portable heap measurements.",
+    "Small native R2 fixtures prove ownership lifecycle, not production near-cap whole-runtime headroom.",
+    "Other audit items and final release gates remain open."
+  ]
+}
