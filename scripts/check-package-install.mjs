@@ -111,6 +111,21 @@ assert.deepEqual(timestampTopK.value.map(({ a }) => timestampEpochForUnit(a, "na
   [1704070800000000000n, 1704141296123456000n, 1735599600000000000n]);
 timestampTopK.release();
 assert.equal(pool.usedBytes, 0);
+// Slice ownership must be available through the packed public API as well.
+const sliceQuery = lake.path("nation.parquet").select(["nation_key"]).batchSize(3).run();
+const firstSlice = await sliceQuery.ownedSlice({ maxRows: 7 });
+try {
+  assert.deepEqual(firstSlice.value.rows, expectedKeys.slice(0, 7));
+  assert.ok(firstSlice.value.bookmark);
+  assert.ok(pool.usedBytes > 0);
+  const continuation = await sliceQuery.ownedSlice({ maxRows: 18, bookmark: firstSlice.value.bookmark });
+  try {
+    assert.deepEqual(continuation.value.rows, expectedKeys.slice(7));
+    assert.equal(continuation.value.bookmark, undefined);
+  } finally { continuation.release(); }
+  assert.ok(pool.usedBytes > 0);
+} finally { firstSlice.release(); }
+assert.equal(pool.usedBytes, 0);
 await store.put("variant-binary.parquet", readFileSync(new URL("variant-binary.parquet", import.meta.url)));
 const binaryExpected = [{ id: 1, var: new Uint8Array([10, 11, 12, 13]) }];
 assert.deepEqual(await readParquetObjects(store, "variant-binary.parquet"), binaryExpected);
