@@ -1,0 +1,100 @@
+{
+  "baseline": "97a8ed4",
+  "moduleName": "memory-scope,owned-row-collector",
+  "modules": [
+    {
+      "name": "memory-scope",
+      "baselineSourceSha256": "154a6771d792780a5785eba7251b38f66ebfb63246b087744a061b69feeb7ed1",
+      "currentSourceSha256": "13ebc4262b0af8711a40b368b728ff19b0050028c4f51f292acbe07751902887"
+    },
+    {
+      "name": "owned-row-collector",
+      "baselineSourceSha256": "caab8954e238af09ac7cb74b734525f1b696eadc6636326febc590d4687fe17b",
+      "currentSourceSha256": "1a26354faae20898418046ef77aa3518a7a332a8a28087f9a2bf3f14f1b2ba36"
+    }
+  ],
+  "node": "v24.18.1",
+  "warmupPairs": 1,
+  "measuredPairs": 4,
+  "scope": "Alternating fresh Node processes; the named modules are replaced together by their prior implementations, with current dependencies. Local 40,000-row many-page fixture query, not cloud throughput. Source store/runtime overhead excluded from pool metrics. Value parity is covered by external conformance; benchmark checks count and release.",
+  "priorMedianMs": 4666.713589999999,
+  "currentMedianMs": 4443.437460499999,
+  "runs": {
+    "prior": [
+      {
+        "scope": "Local memory-store query; fixture storage and runtime heap excluded; no cloud claim",
+        "node": "v24.18.1",
+        "outputMode": "owned",
+        "rows": 40000,
+        "elapsedMs": 4596.083507,
+        "peakBytes": 19601203,
+        "afterReleaseBytes": 0
+      },
+      {
+        "scope": "Local memory-store query; fixture storage and runtime heap excluded; no cloud claim",
+        "node": "v24.18.1",
+        "outputMode": "owned",
+        "rows": 40000,
+        "elapsedMs": 4769.729429000001,
+        "peakBytes": 19601203,
+        "afterReleaseBytes": 0
+      },
+      {
+        "scope": "Local memory-store query; fixture storage and runtime heap excluded; no cloud claim",
+        "node": "v24.18.1",
+        "outputMode": "owned",
+        "rows": 40000,
+        "elapsedMs": 4698.507645,
+        "peakBytes": 19601203,
+        "afterReleaseBytes": 0
+      },
+      {
+        "scope": "Local memory-store query; fixture storage and runtime heap excluded; no cloud claim",
+        "node": "v24.18.1",
+        "outputMode": "owned",
+        "rows": 40000,
+        "elapsedMs": 4634.919535,
+        "peakBytes": 19601203,
+        "afterReleaseBytes": 0
+      }
+    ],
+    "current": [
+      {
+        "scope": "Local memory-store query; fixture storage and runtime heap excluded; no cloud claim",
+        "node": "v24.18.1",
+        "outputMode": "owned",
+        "rows": 40000,
+        "elapsedMs": 4502.96335,
+        "peakBytes": 9361859,
+        "afterReleaseBytes": 0
+      },
+      {
+        "scope": "Local memory-store query; fixture storage and runtime heap excluded; no cloud claim",
+        "node": "v24.18.1",
+        "outputMode": "owned",
+        "rows": 40000,
+        "elapsedMs": 4448.384023,
+        "peakBytes": 9361859,
+        "afterReleaseBytes": 0
+      },
+      {
+        "scope": "Local memory-store query; fixture storage and runtime heap excluded; no cloud claim",
+        "node": "v24.18.1",
+        "outputMode": "owned",
+        "rows": 40000,
+        "elapsedMs": 4438.490898,
+        "peakBytes": 9361859,
+        "afterReleaseBytes": 0
+      },
+      {
+        "scope": "Local memory-store query; fixture storage and runtime heap excluded; no cloud claim",
+        "node": "v24.18.1",
+        "outputMode": "owned",
+        "rows": 40000,
+        "elapsedMs": 4398.8759660000005,
+        "peakBytes": 9361859,
+        "afterReleaseBytes": 0
+      }
+    ]
+  }
+}

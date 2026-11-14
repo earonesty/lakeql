@@ -421,3 +421,8 @@ its workspace; see the audit for measured retained-memory and CPU tradeoffs.
 Decline optional container compaction when traversal workspace is unavailable,
 retaining the original complete owner without evicting reusable caches. Preserve
 mandatory output limits and propagate producer failures; callers need no new flag.
+
+Collect multiple owned batches into one incrementally admitted output directory,
+releasing replaceable source arrays during append. Preserve direct single-batch
+handoff, payload ownership under reentrant disposal, and charged high-water
+capacity after failed growth. See the audit for fixture timings and memory bounds.

@@ -3,23 +3,27 @@ import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope } from "./memory-scope.js";
 import { collectOwnedRows, OwnedRowCollector } from "./owned-row-collector.js";
 
-it("admits chunk bookkeeping and final array at the exact combined boundary", () => {
-  for (const cap of [711, 712]) {
+it("admits directory promotion at the exact overlap boundary", () => {
+  for (const cap of [519, 520]) {
     const scope = new MemoryScope(new MemoryBudget(cap));
     const source = scope.allocate(100, "input rows", () => [{ id: 1 }, { id: 2 }]);
     const collector = new OwnedRowCollector(scope.budget);
     collector.append(source);
     const second = scope.allocate(100, "second input rows", () => [{ id: 3 }, { id: 4 }]);
-    collector.append(second);
-    expect(collector.rowCount).toBe(4);
-    if (cap === 711) {
-      expect(() => collector.finish()).toThrow(/budget/);
+    if (cap === 519) {
+      expect(() => collector.append(second)).toThrow(/budget/);
+      expect(collector.rowCount).toBe(2);
+      const output = collector.finish();
+      expect(output.value).toBe(source.value);
+      output.release();
       expect(scope.budget.usedBytes).toBe(200);
     } else {
+      collector.append(second);
+      expect(collector.rowCount).toBe(4);
       const output = collector.finish();
       expect(output.value).toEqual([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
       expect(output.value[0]).toBe(source.value[0]);
-      expect(scope.budget.peakBytes).toBe(712);
+      expect(scope.budget.peakBytes).toBe(520);
       expect(scope.budget.usedBytes).toBe(328);
       scope.dispose();
       expect(scope.budget.usedBytes).toBe(328);
@@ -70,7 +74,7 @@ it("closes producers and releases yielded handles on cancellation and producer f
 });
 
 it("releases failed collection before awaiting asynchronous producer closure", async () => {
-  const budget = new MemoryBudget(511);
+  const budget = new MemoryBudget(415);
   let enter!: () => void;
   let finish!: () => void;
   const entered = new Promise<void>((resolve) => {
@@ -97,7 +101,7 @@ it("releases failed collection before awaiting asynchronous producer closure", a
   await entered;
   try {
     expect(budget.usedBytes).toBe(0);
-    const sibling = budget.reserve(511, "sibling progress during remote cleanup");
+    const sibling = budget.reserve(415, "sibling progress during remote cleanup");
     sibling.release();
   } finally {
     finish();
@@ -191,4 +195,162 @@ it("releases collected output at producer failure before asynchronous unwind", a
     resume();
   }
   await rejected;
+});
+
+it.each([
+  false,
+  true,
+])("rolls back a partial copy and permits retry after promotion=%s", (promoted) => {
+  const scope = new MemoryScope(new MemoryBudget(8192));
+  const collector = new OwnedRowCollector(scope.budget);
+  const failure = new Error("row getter failed");
+  try {
+    collector.append(scope.allocate(100, "first", () => [{ id: 0 }]));
+    if (promoted) collector.append(scope.allocate(100, "second", () => [{ id: 1 }]));
+    const broken = scope.allocate(
+      100,
+      "broken input",
+      () =>
+        new Proxy([{ id: 2 }, { id: 3 }], {
+          get(target, key, receiver) {
+            if (key === "1") throw failure;
+            return Reflect.get(target, key, receiver);
+          },
+        }),
+    );
+    const before = scope.budget.usedBytes;
+    expect(() => collector.append(broken)).toThrow(failure);
+    // A failed growth may leave array backing expanded even after length rollback.
+    expect(scope.budget.usedBytes).toBe(before + (promoted ? 32 : 0));
+    expect(collector.rowCount).toBe(promoted ? 2 : 1);
+    collector.append(scope.allocate(100, "retry", () => [{ id: 4 }]));
+    const output = collector.finish();
+    try {
+      expect(output.value).toEqual(
+        promoted ? [{ id: 0 }, { id: 1 }, { id: 4 }] : [{ id: 0 }, { id: 4 }],
+      );
+    } finally {
+      output.release();
+    }
+  } finally {
+    collector.dispose();
+    scope.dispose();
+  }
+  expect(scope.budget.usedBytes).toBe(0);
+});
+
+it.each([4, 64])("copies each source row once across %i chunks", (chunks) => {
+  const budget = new MemoryBudget(1024 * 1024);
+  const collector = new OwnedRowCollector(budget);
+  let reads = 0;
+  for (let chunk = 0; chunk < chunks; chunk++) {
+    const scope = new MemoryScope(budget);
+    try {
+      const rows = scope.allocate(
+        4096,
+        "fixture chunk",
+        () =>
+          new Proxy(
+            Array.from({ length: 1024 / chunks }, (_, row) => ({
+              id: (chunk * 1024) / chunks + row,
+            })),
+            {
+              get(target, key, receiver) {
+                if (typeof key === "string" && /^[0-9]+$/.test(key)) reads++;
+                return Reflect.get(target, key, receiver);
+              },
+            },
+          ),
+      );
+      collector.append(rows);
+    } finally {
+      scope.dispose();
+    }
+  }
+  expect(reads).toBe(1024);
+  const output = collector.finish();
+  try {
+    expect(reads).toBe(1024);
+    expect(output.value.map((row) => row.id)).toEqual(Array.from({ length: 1024 }, (_, i) => i));
+  } finally {
+    output.release();
+    collector.dispose();
+  }
+  expect(budget.usedBytes).toBe(0);
+});
+
+it("releases private directory admission when reclamation closes collection", () => {
+  const pool = new MemoryBudget(400);
+  const source = new MemoryScope(pool);
+  const collector = new OwnedRowCollector(pool);
+  collector.append(source.allocate(100, "first", () => [{ id: 0 }]));
+  const second = source.allocate(100, "second", () => [{ id: 1 }]);
+  const detach = pool.registerReclaimer(() => collector.dispose());
+  try {
+    expect(() => collector.append(second)).toThrow(/disposed/);
+    expect(pool.usedBytes).toBe(200);
+    expect(() => collector.finish()).toThrow(/disposed/);
+  } finally {
+    detach();
+    collector.dispose();
+    source.dispose();
+  }
+  expect(pool.usedBytes).toBe(0);
+});
+
+it.each([
+  false,
+  true,
+])("pins active copy ownership when a getter disposes the collector, promoted=%s", (promoted) => {
+  const budget = new MemoryBudget(8192);
+  const scope = new MemoryScope(budget);
+  const collector = new OwnedRowCollector(budget);
+  collector.append(scope.allocate(100, "first", () => [{ id: 0 }]));
+  if (promoted) collector.append(scope.allocate(100, "second", () => [{ id: 1 }]));
+  const incoming = scope.allocate(
+    100,
+    "reentrant input",
+    () =>
+      new Proxy([{ id: 2 }], {
+        get(target, key, receiver) {
+          if (key === "0") {
+            collector.dispose();
+            scope.dispose();
+            // Both the active source owners and the destination remain admitted.
+            expect(budget.usedBytes).toBeGreaterThanOrEqual(296);
+          }
+          return Reflect.get(target, key, receiver);
+        },
+      }),
+  );
+  expect(() => collector.append(incoming)).toThrow(/disposed/);
+  expect(budget.usedBytes).toBe(0);
+  expect(() => collector.finish()).toThrow(/disposed/);
+});
+
+it("rejects recursive append and finish without corrupting the active append", () => {
+  const scope = new MemoryScope(new MemoryBudget(8192));
+  const collector = new OwnedRowCollector(scope.budget);
+  const first = scope.allocate(100, "first", () => [{ id: 0 }]);
+  collector.append(first);
+  const incoming = scope.allocate(
+    100,
+    "reentrant input",
+    () =>
+      new Proxy([{ id: 1 }], {
+        get(target, key, receiver) {
+          if (key === "0") {
+            expect(() => collector.append(first)).toThrow(/already active/);
+            expect(() => collector.finish()).toThrow(/during collection append/);
+          }
+          return Reflect.get(target, key, receiver);
+        },
+      }),
+  );
+  collector.append(incoming);
+  const output = collector.finish();
+  expect(output.value).toEqual([{ id: 0 }, { id: 1 }]);
+  scope.dispose();
+  output.release();
+  expect(scope.budget.usedBytes).toBe(0);
 });

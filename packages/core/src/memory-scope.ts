@@ -368,6 +368,14 @@ export class MemoryScope {
     return this.allocateWithReservation(this.consumeAdmission(admission), allocate);
   }
 
+  /** Transfer exclusive pre-admitted container storage into lifetime ownership. */
+  allocateContainerReserved<T extends object>(
+    admission: MemoryReservation,
+    allocate: () => T,
+  ): OwnedMemory<T> {
+    return this.allocateWithReservation(this.consumeAdmission(admission), allocate, true);
+  }
+
   private allocateWithReservation<T>(
     reservation: MemoryReservation,
     allocate: () => T,

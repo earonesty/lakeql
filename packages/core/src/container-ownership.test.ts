@@ -203,11 +203,11 @@ it("declines optional compaction before rejecting mandatory replacement overlap"
   };
   const peak = execute(16384);
   expect(execute(peak)).toBe(peak);
-  expect(execute(peak - 1, 1)).toBeLessThanOrEqual(peak - 1);
-  // Two 778-byte chunks, two 192-byte collector nodes and a 192-byte result
-  // directory must overlap before either source directory can be released.
-  expect(execute(2132, 2)).toBe(2132);
-  expect(() => execute(2131)).toThrow(/budget/);
+  expect(execute(peak - 1, 2)).toBeLessThanOrEqual(peak - 1);
+  // Two 778-byte chunks, one 192-byte pending state and a 192-byte result
+  // directory overlap during promotion; later chunks need no pending nodes.
+  expect(execute(1940, 2)).toBe(1940);
+  expect(() => execute(1939)).toThrow(/budget/);
 });
 
 it.each([
@@ -343,5 +343,20 @@ it("does not evict a reusable cache solely to compact a row directory", () => {
     target.dispose();
     cache.release();
   }
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("transfers an existing container reservation at the exact admitted limit", () => {
+  const pool = new MemoryBudget(176);
+  const scope = new MemoryScope(pool);
+  const payload = scope.allocate(96, "payload", () => ({ value: 7 }));
+  const reservation = scope.reserve(80, "container admission");
+  const array = scope.allocateContainerReserved(reservation, () => [payload.value]);
+  const output = scope.retainAllocations(array.value);
+  scope.dispose();
+  expect(output.value).toEqual([{ value: 7 }]);
+  expect(pool.usedBytes).toBe(176);
+  expect(pool.peakBytes).toBe(176);
+  output.release();
   expect(pool.usedBytes).toBe(0);
 });

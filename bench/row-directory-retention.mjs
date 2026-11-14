@@ -8,9 +8,13 @@ import { OwnedRowCollector } from "../packages/core/dist/owned-row-collector.js"
 import { applyWindowsToVectorBatches } from "../packages/core/dist/window-vector.js";
 
 assert.equal(typeof globalThis.gc, "function", "Run Node with --expose-gc");
-const totalRows = 1024;
+const totalRows = Number(process.env.LAKEQL_RETENTION_ROWS ?? 1024);
+const chunkCounts = (process.env.LAKEQL_RETENTION_CHUNKS ?? "1,4,64").split(",").map(Number);
+assert.ok(Number.isSafeInteger(totalRows) && totalRows > 0);
+for (const chunks of chunkCounts)
+  assert.ok(Number.isSafeInteger(chunks) && chunks > 0 && totalRows % chunks === 0);
 const cases = [];
-function collect(chunks) {
+async function collect(chunks) {
   const budget = new MemoryBudget(16 * 1024 * 1024);
   const collector = new OwnedRowCollector(budget);
   const directories = [];
@@ -36,12 +40,15 @@ function collect(chunks) {
       input.dispose();
     }
   }
+  const beforeFinishBytes = budget.usedBytes;
+  await collectGarbage();
+  const beforeFinishDirectories = alive(directories);
   const output = collector.finish();
   assert.deepEqual(
     output.value.map((row) => row.id),
     Array.from({ length: totalRows }, (_, i) => i),
   );
-  return { budget, output, directories };
+  return { budget, output, directories, beforeFinishBytes, beforeFinishDirectories };
 }
 async function collectGarbage() {
   for (let i = 0; i < 8; i++) {
@@ -52,12 +59,15 @@ async function collectGarbage() {
 function alive(references) {
   return references.filter((reference) => reference.deref() !== undefined).length;
 }
-for (const chunks of [1, 4, 64]) {
-  const { budget, output, directories } = collect(chunks);
+for (const chunks of chunkCounts) {
+  const { budget, output, directories, beforeFinishBytes, beforeFinishDirectories } =
+    await collect(chunks);
   await collectGarbage();
   const retainedDirectories = alive(directories);
   if (process.env.LAKEQL_EXPECT_SEPARATE_ROW_CONTAINERS === "1")
     assert.equal(retainedDirectories, chunks === 1 ? 1 : 0);
+  if (process.env.LAKEQL_EXPECT_INCREMENTAL_COLLECTION === "1")
+    assert.equal(beforeFinishDirectories, chunks === 1 ? 1 : 0);
   const retainedBytes = budget.usedBytes;
   const peakBytes = budget.peakBytes;
   output.release();
@@ -69,6 +79,8 @@ for (const chunks of [1, 4, 64]) {
     route: "collector",
     chunks,
     totalRows,
+    beforeFinishBytes,
+    beforeFinishDirectories,
     retainedDirectories,
     afterReleaseDirectories,
     retainedBytes,
@@ -76,7 +88,7 @@ for (const chunks of [1, 4, 64]) {
     finalBytes: budget.usedBytes,
   });
 }
-for (const chunks of [1, 4, 64]) {
+for (const chunks of chunkCounts) {
   const budget = new MemoryBudget(16 * 1024 * 1024);
   const scope = new MemoryScope(budget);
   const inputs = Array.from({ length: chunks }, (_, chunk) => ({
@@ -96,6 +108,8 @@ for (const chunks of [1, 4, 64]) {
     rows.map((row) => row.id),
     Array.from({ length: totalRows }, (_, i) => i),
   );
+  if (process.env.LAKEQL_EXPECT_INCREMENTAL_COLLECTION === "1")
+    assert.equal(beforeFinishDirectories, chunks === 1 ? 1 : 0);
   const retainedBytes = budget.usedBytes;
   const peakBytes = budget.peakBytes;
   scope.dispose();

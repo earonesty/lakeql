@@ -1,0 +1,86 @@
+{
+  "node": "v24.18.1",
+  "scope": "Local output-ownership diagnostic on identical numeric rows at different batch fragmentation. Borrowed input construction excluded. Forced GC tests reachability only, not production reclamation or total-runtime caps. Collector source directories are weakly observed while final output is pinned and after release; one-chunk collection returns the original directory legitimately. Vector-window values and admission are measured without a reachability claim. No wall-clock performance claim.",
+  "cases": [
+    {
+      "route": "collector",
+      "chunks": 1,
+      "totalRows": 1024,
+      "beforeFinishBytes": 164164,
+      "beforeFinishDirectories": 1,
+      "retainedDirectories": 1,
+      "afterReleaseDirectories": 0,
+      "retainedBytes": 163972,
+      "peakBytes": 164164,
+      "finalBytes": 0
+    },
+    {
+      "route": "collector",
+      "chunks": 4,
+      "totalRows": 1024,
+      "beforeFinishBytes": 164176,
+      "beforeFinishDirectories": 0,
+      "retainedDirectories": 0,
+      "afterReleaseDirectories": 0,
+      "retainedBytes": 164176,
+      "peakBytes": 168848,
+      "finalBytes": 0
+    },
+    {
+      "route": "collector",
+      "chunks": 64,
+      "totalRows": 1024,
+      "beforeFinishBytes": 168256,
+      "beforeFinishDirectories": 0,
+      "retainedDirectories": 0,
+      "afterReleaseDirectories": 0,
+      "retainedBytes": 168256,
+      "peakBytes": 169088,
+      "finalBytes": 0
+    },
+    {
+      "route": "collector",
+      "chunks": 1024,
+      "totalRows": 1024,
+      "beforeFinishBytes": 233536,
+      "beforeFinishDirectories": 0,
+      "retainedDirectories": 0,
+      "afterReleaseDirectories": 0,
+      "retainedBytes": 233536,
+      "peakBytes": 234128,
+      "finalBytes": 0
+    },
+    {
+      "route": "vector-window",
+      "chunks": 1,
+      "totalRows": 1024,
+      "retainedBytes": 163972,
+      "peakBytes": 524804,
+      "finalBytes": 0
+    },
+    {
+      "route": "vector-window",
+      "chunks": 4,
+      "totalRows": 1024,
+      "retainedBytes": 164176,
+      "peakBytes": 512720,
+      "finalBytes": 0
+    },
+    {
+      "route": "vector-window",
+      "chunks": 64,
+      "totalRows": 1024,
+      "retainedBytes": 168256,
+      "peakBytes": 512960,
+      "finalBytes": 0
+    },
+    {
+      "route": "vector-window",
+      "chunks": 1024,
+      "totalRows": 1024,
+      "retainedBytes": 233536,
+      "peakBytes": 578000,
+      "finalBytes": 0
+    }
+  ]
+}

@@ -1,0 +1,166 @@
+{
+  "baseline": "97a8ed4",
+  "status": "validated implementation; full audit acceptance remains open",
+  "contract": [
+    "Single input array transfers directly; multiple batches append to one incrementally admitted private directory.",
+    "Payload ownership transfers before replaced source containers release. Optional traversal falls back conservatively under pressure.",
+    "Failed array growth retains its admitted high-water capacity because truncation need not shrink backing.",
+    "Reentrant disposal defers accumulated payload release until active append settles; recursive append/finish reject. No repeated scan of prior owners is needed."
+  ],
+  "validation": {
+    "focusedPassed": 66,
+    "regularPassed": 3993,
+    "regularSkipped": 645,
+    "workerPassed": 95,
+    "requiredConformancePassed": 520,
+    "requiredConformanceSkipped": 1,
+    "referencePassed": 120,
+    "releaseGates": "build, types, 66-package consumer, lint, compatibility, large files, changeset and fixtures passed",
+    "thresholdsAndTimeouts": "unchanged"
+  },
+  "runtime": [
+    {
+      "transport": "native emulated R2",
+      "poolMiB": 64,
+      "jobs": 1,
+      "counts": {
+        "result": {
+          "ok": 4
+        },
+        "recovery": {},
+        "recoveryAfterRelease": {}
+      },
+      "maxSampledManagedHeapBytes": 46462304,
+      "peakAdmittedBytes": 28362441,
+      "finalAdmittedBytes": 0
+    },
+    {
+      "transport": "native emulated R2",
+      "poolMiB": 64,
+      "jobs": 4,
+      "counts": {
+        "result": {
+          "ok": 8,
+          "budget": 8
+        },
+        "recovery": {
+          "budget": 4
+        },
+        "recoveryAfterRelease": {
+          "ok": 4
+        }
+      },
+      "maxSampledManagedHeapBytes": 111056976,
+      "peakAdmittedBytes": 67083723,
+      "finalAdmittedBytes": 0
+    },
+    {
+      "transport": "native emulated R2",
+      "poolMiB": 128,
+      "jobs": 1,
+      "counts": {
+        "result": {
+          "ok": 4
+        },
+        "recovery": {},
+        "recoveryAfterRelease": {}
+      },
+      "maxSampledManagedHeapBytes": 46469276,
+      "peakAdmittedBytes": 28362441,
+      "finalAdmittedBytes": 0
+    },
+    {
+      "transport": "native emulated R2",
+      "poolMiB": 128,
+      "jobs": 4,
+      "counts": {
+        "result": {
+          "ok": 16
+        },
+        "recovery": {},
+        "recoveryAfterRelease": {}
+      },
+      "maxSampledManagedHeapBytes": 90656804,
+      "peakAdmittedBytes": 110879826,
+      "finalAdmittedBytes": 0
+    },
+    {
+      "transport": "localhost HTTP ranges",
+      "poolMiB": 64,
+      "jobs": 1,
+      "counts": {
+        "result": {
+          "ok": 4
+        },
+        "recovery": {},
+        "recoveryAfterRelease": {}
+      },
+      "maxSampledManagedHeapBytes": 38499488,
+      "peakAdmittedBytes": 28362113,
+      "finalAdmittedBytes": 0
+    },
+    {
+      "transport": "localhost HTTP ranges",
+      "poolMiB": 64,
+      "jobs": 4,
+      "counts": {
+        "result": {
+          "ok": 8,
+          "budget": 8
+        },
+        "recovery": {
+          "budget": 4
+        },
+        "recoveryAfterRelease": {
+          "ok": 4
+        }
+      },
+      "maxSampledManagedHeapBytes": 54926668,
+      "peakAdmittedBytes": 67082739,
+      "finalAdmittedBytes": 0
+    },
+    {
+      "transport": "localhost HTTP ranges",
+      "poolMiB": 128,
+      "jobs": 1,
+      "counts": {
+        "result": {
+          "ok": 4
+        },
+        "recovery": {},
+        "recoveryAfterRelease": {}
+      },
+      "maxSampledManagedHeapBytes": 49501028,
+      "peakAdmittedBytes": 28362113,
+      "finalAdmittedBytes": 0
+    },
+    {
+      "transport": "localhost HTTP ranges",
+      "poolMiB": 128,
+      "jobs": 4,
+      "counts": {
+        "result": {
+          "ok": 16
+        },
+        "recovery": {},
+        "recoveryAfterRelease": {}
+      },
+      "maxSampledManagedHeapBytes": 52639916,
+      "peakAdmittedBytes": 110878514,
+      "finalAdmittedBytes": 0
+    }
+  ],
+  "runtimeBoundary": "All baseline, round, retained-output, release and eviction samples included. Sparse GC-dependent samples are lower bounds, not exact peaks or statistical comparisons. Native emulated R2 and managed-heap-limited HTTP do not establish production Cloudflare total-memory caps.",
+  "remaining": [
+    "Whole-runtime caps, broad allocation/scheduling audit, F5 adaptation and JSON row-kernel regression remain open.",
+    "Optional-compaction fallback can retain source directories until output release."
+  ],
+  "publicR2": {
+    "scenarios": 52,
+    "ordinaryScenarios": 40,
+    "maxOrdinaryReadConcurrency": 4,
+    "maxIncrementalAdmission": 415176,
+    "maxWarmOrdinaryDataRequests": 0,
+    "queryHeadroomBytes": 524288
+  }
+}

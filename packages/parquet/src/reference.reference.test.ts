@@ -395,9 +395,23 @@ describeReference("DuckDB reference comparisons", () => {
           expect(pool.usedBytes).toBe(0);
         }
       };
-      const peak = await owned(1024 * 1024);
-      expect(await owned(peak)).toBe(peak);
-      await expect(owned(peak - 1)).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+      // Optional container compaction may decline workspace under pressure.
+      // Follow strictly decreasing measured peaks until mandatory admission fails.
+      let peak = await owned(1024 * 1024);
+      let boundaryVerified = false;
+      for (let attempt = 0; attempt < 32; attempt++) {
+        expect(await owned(peak)).toBe(peak);
+        try {
+          const lowerPeak = await owned(peak - 1);
+          expect(lowerPeak).toBeLessThan(peak);
+          peak = lowerPeak;
+        } catch (error) {
+          expect(error).toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+          boundaryVerified = true;
+          break;
+        }
+      }
+      expect(boundaryVerified).toBe(true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
