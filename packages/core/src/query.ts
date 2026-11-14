@@ -2461,7 +2461,7 @@ export class QueryResult {
         this.config.budget.maxMemoryBytes === undefined &&
         this.config.budget.maxBufferedRows === undefined
           ? undefined
-          : new AggregateMemory(groupColumns, spec, groups, this.config.budget);
+          : new AggregateMemory(groupColumns, spec, groups, this.config.budget, checkpointScope);
       const startedAt = this.config.now();
       const readColumns = aggregateReadColumns(
         groupColumns,
@@ -3549,6 +3549,7 @@ interface AggregateState {
 }
 
 class AggregateGroup {
+  private serializedHeaderBytes: number | undefined;
   private readonly keys: Record<string, unknown>;
   private readonly states: Record<string, AggregateState>;
 
@@ -3590,20 +3591,27 @@ class AggregateGroup {
 
   memory(key: string, budget: QueryBudget): { bytes: number; rows: number } {
     const measureBytes = budget.maxMemoryBytes !== undefined;
-    let bytes = measureBytes
-      ? estimateOperatorMemoryBytes({ key, keys: snapshotRecord(this.keys), states: {} })
-      : 0;
+    if (measureBytes && this.serializedHeaderBytes === undefined) {
+      let header = estimateOperatorMemoryBytes({
+        key,
+        keys: snapshotRecord(this.keys),
+        states: {},
+      });
+      let count = 0;
+      for (const alias in this.states) {
+        if (!Object.hasOwn(this.states, alias)) continue;
+        header += estimateOperatorMemoryBytes(alias) + 1 + (count++ > 0 ? 1 : 0);
+      }
+      this.serializedHeaderBytes = header;
+    }
+    let bytes = measureBytes ? (this.serializedHeaderBytes ?? 0) : 0;
     let rows = 0;
-    let count = 0;
-    for (const [alias, state] of Object.entries(this.states)) {
+    for (const alias in this.states) {
+      if (!Object.hasOwn(this.states, alias)) continue;
+      const state = this.states[alias] as AggregateState;
       const buffered = state.bufferedMemory?.(measureBytes);
       if (budget.maxBufferedRows !== undefined) rows += buffered?.rows ?? 0;
-      if (measureBytes) {
-        bytes += estimateOperatorMemoryBytes(alias) + 1;
-        bytes += buffered?.bytes ?? estimateOperatorMemoryBytes(state.snapshot());
-        if (count > 0) bytes += 1;
-      }
-      count += 1;
+      if (measureBytes) bytes += buffered?.bytes ?? estimateOperatorMemoryBytes(state.snapshot());
     }
     return { bytes, rows };
   }
@@ -5888,7 +5896,7 @@ function enforceOperatorMemoryBudget(budget: QueryBudget, memoryBytes: number): 
 }
 
 class AggregateMemory {
-  private readonly charges = new Map<AggregateGroup, { bytes: number; rows: number }>();
+  private readonly charges: Map<AggregateGroup, { bytes: number; rows: number }>;
   bytes: number;
   rows = 0;
 
@@ -5897,7 +5905,13 @@ class AggregateMemory {
     spec: AggregateSpec,
     groups: Map<string, AggregateGroup>,
     private readonly budget: QueryBudget,
+    private readonly scope: MemoryScope,
   ) {
+    this.charges = scope.allocate(
+      allocationCharges.object,
+      "aggregate accounting directory",
+      () => new Map<AggregateGroup, { bytes: number; rows: number }>(),
+    ).value;
     this.bytes =
       budget.maxMemoryBytes === undefined
         ? 0
@@ -5912,7 +5926,16 @@ class AggregateMemory {
       this.bytes += 1;
     this.bytes += bytes - (previous?.bytes ?? 0);
     this.rows += rows - (previous?.rows ?? 0);
-    this.charges.set(group, { bytes, rows });
+    if (previous) {
+      previous.bytes = bytes;
+      previous.rows = rows;
+    } else {
+      this.scope.allocate(
+        2 * allocationCharges.object + 3 * allocationCharges.property,
+        "aggregate accounting entry",
+        () => this.charges.set(group, { bytes, rows }),
+      );
+    }
   }
 }
 

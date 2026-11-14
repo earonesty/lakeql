@@ -20,6 +20,9 @@ async function run(rows, pool) {
   const lake = new Lake({
     store,
     memoryPool: pool,
+    ...(process.env.LAKEQL_ROW_AGGREGATE_SERIALIZED === "1"
+      ? { budget: { maxMemoryBytes: 64 * 1024 * 1024 } }
+      : {}),
     scanner: {
       async *scan() {
         const batch = Array.from({ length: 128 }, () => ({ bucket: 0, amount: 0, label: "" }));
@@ -85,6 +88,7 @@ for (const capMiB of [64, 128]) {
 const report = {
   description:
     "Local reused row-batch scanner; eight groups and seven aggregate states, including growing median/quantile and distinct/mode. Two warmups and three timed samples per size. Independent arithmetic assertions and final zero pool usage. Input scanner buffers and runtime heap are outside reservation accounting; this is not cloud transport or total Worker heap certification.",
+  serializedSizeAccounting: process.env.LAKEQL_ROW_AGGREGATE_SERIALIZED === "1",
   querySourceSha256: createHash("sha256")
     .update(readFileSync("packages/core/src/query.ts"))
     .digest("hex"),

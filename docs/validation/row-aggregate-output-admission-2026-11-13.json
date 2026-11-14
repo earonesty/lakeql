@@ -18,5 +18,6 @@
     "Plain AggregateResult transfers rows to caller management after query return; there is no independently retained aggregate output handle here.",
     "HAVING/evaluator temporary scalar allocations, legacy serialized-size estimation and per-row bookkeeping need further review.",
     "Native-sort and runtime GC storage are not portable total-heap guarantees."
-  ]
+  ],
+  "accountingReuseEvidence": "aggregate-accounting-record-reuse-2026-11-13.json"
 }
