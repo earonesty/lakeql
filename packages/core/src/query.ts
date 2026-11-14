@@ -3892,10 +3892,6 @@ class AggregateValuesMemory<T> {
     this.memory?.add(value);
   }
 
-  remove(value: T): void {
-    this.memory?.remove(value);
-  }
-
   bytes(headerBytes: number): number {
     this.memory ??= new BufferMemory<T>(estimateOperatorMemoryBytes, this.values());
     return headerBytes - 2 + this.memory.bytes;
@@ -4165,11 +4161,7 @@ class CountDistinctState implements AggregateState {
 }
 
 class ModeState implements AggregateState {
-  private readonly memory = new AggregateValuesMemory<{
-    key: string;
-    value: AggregateSnapshotValue;
-    count: number;
-  }>(() => this.memoryValues());
+  private serializedEntriesBytes: number | undefined;
   private readonly values: Map<string, { value: string | number | boolean | null; count: number }>;
 
   private readonly ledger: MutableMemoryLedger;
@@ -4217,13 +4209,17 @@ class ModeState implements AggregateState {
       if (existing === undefined) {
         this.ledger.append(this.entryBytes(key, value), "mode entry", () => {
           const entry = { value, count: 1 };
-          this.memory.add({ key, ...entry });
+          if (this.serializedEntriesBytes !== undefined)
+            this.serializedEntriesBytes +=
+              (this.values.size > 0 ? 1 : 0) + modeEntrySerializedBytes(key, value, 1);
           this.values.set(key, entry);
         });
       } else {
-        this.memory.remove({ key, value: existing.value, count: existing.count });
-        existing.count += 1;
-        this.memory.add({ key, value: existing.value, count: existing.count });
+        const nextCount = existing.count + 1;
+        if (this.serializedEntriesBytes !== undefined)
+          this.serializedEntriesBytes +=
+            serializedValueBytes(nextCount) - serializedValueBytes(existing.count);
+        existing.count = nextCount;
       }
     } finally {
       scratch.release();
@@ -4238,14 +4234,14 @@ class ModeState implements AggregateState {
     return best?.value ?? null;
   }
 
-  private *memoryValues() {
-    for (const [key, entry] of this.values) {
-      yield { key, value: entry.value, count: entry.count };
-    }
-  }
-
   serializedBytes(): number {
-    return this.memory.bytes('{"op":"mode","values":[]}'.length);
+    if (this.serializedEntriesBytes === undefined) {
+      let bytes = Math.max(0, this.values.size - 1);
+      for (const [key, entry] of this.values)
+        bytes += modeEntrySerializedBytes(key, entry.value, entry.count);
+      this.serializedEntriesBytes = bytes;
+    }
+    return '{"op":"mode","values":[]}'.length + this.serializedEntriesBytes;
   }
   bufferedRows(): number {
     return this.values.size;
@@ -4272,6 +4268,19 @@ class ModeState implements AggregateState {
       }),
     ).value;
   }
+}
+
+function modeEntrySerializedBytes(
+  key: string,
+  value: AggregateSnapshotValue,
+  count: number,
+): number {
+  return (
+    '{"key":,"value":,"count":}'.length +
+    serializedValueBytes(key) +
+    serializedValueBytes(value) +
+    serializedValueBytes(count)
+  );
 }
 
 class FirstState implements AggregateState {

@@ -15,8 +15,9 @@
     "workerTestsPassed": 61
   },
   "remaining": [
-    "Mode changed-count bookkeeping still creates temporary entry-shaped values for its incremental serialized metric.",
+    "Mode changed-count entry temporaries are removed via cached entry sizes/count deltas (linked evidence).",
     "Native scalar formatting, expression/evaluator temporaries and request compatibility serialization need broader allocation review.",
     "No wall-clock improvement is claimed without an isolated before/after benchmark."
-  ]
+  ],
+  "modeDeltaEvidence": "mode-count-size-delta-2026-11-13.json"
 }

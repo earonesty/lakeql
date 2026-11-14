@@ -345,3 +345,31 @@ it.each([
     details: { metric: "operator memory bytes", actual: baseline.operatorState.byteLength },
   });
 });
+
+it.each([
+  9, 10, 99, 100, 1000,
+])("keeps mode serialized limits exact across count %s", async (count) => {
+  const store = memoryStore();
+  await store.put("table", new Uint8Array(1));
+  const run = (maxMemoryBytes?: number) =>
+    new Lake({
+      store,
+      budget: { maxMemoryBytes, maxAllocatedMemoryBytes: 1024 * 1024 },
+      scanner: {
+        async *scan() {
+          for (let i = 0; i < count; i++) yield [{ value: '雪"\\' }];
+        },
+      },
+    })
+      .path("table")
+      .run()
+      .aggregateWithState([], { mode: { op: "mode", column: "value" } });
+  const baseline = await run();
+  expect((await run(baseline.operatorState.byteLength)).operatorState).toEqual(
+    baseline.operatorState,
+  );
+  await expect(run(baseline.operatorState.byteLength - 1)).rejects.toMatchObject({
+    code: "LAKEQL_BUDGET_EXCEEDED",
+    details: { metric: "operator memory bytes", actual: baseline.operatorState.byteLength },
+  });
+});
