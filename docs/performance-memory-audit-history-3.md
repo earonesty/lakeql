@@ -3876,3 +3876,21 @@ remain separate work.
 
 Build/typecheck passed; focused suites passed 111 tests; full suite passed 3,622
 with 629 skips. Evidence: `docs/validation/sidecar-logical-workspace-2026-11-14.json`.
+
+### 2026-11-14 — cached spatial literal shape validation
+
+Prepared sidecar literal records now retain validated bbox/string-array views
+alongside the admitted parsed tree. H3 array type validation runs once per literal
+text per pruning invocation rather than once per indexed file; invalid shapes
+are cached as conservative non-pruning results. The prepared record is admitted
+and released with the existing scratch scope. Parsing remains lazy, shared
+between functions, and scoped to a single pruning operation.
+
+Operation-count tests verify one array validation across 100 files for both
+valid and rejected shapes. Existing exact-capacity, malformed JSON rollback,
+short-circuit and Unicode tests continue to cover the shared preparation path.
+Per-file index validation and membership comparisons still depend on each file;
+this change does not claim constant-time H3 membership or whole-runtime bounds.
+
+Build/typecheck passed; focused suites passed 112 tests; full suite passed 3,623
+with 629 skips. Evidence: `docs/validation/sidecar-prepared-shapes-2026-11-14.json`.

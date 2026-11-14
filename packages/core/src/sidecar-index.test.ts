@@ -514,3 +514,23 @@ it("preserves empty logic and nested short-circuit behavior", () => {
   expect(pruneFilesWithIndex(input, or(and(no, bad), yes, bad)).planned).toHaveLength(1);
   expect(pruneFilesWithIndex(input, and(or(yes, bad), no, bad)).skipped).toHaveLength(1);
 });
+
+it("validates each spatial literal shape once across files, including rejected shapes", () => {
+  const input = Array.from({ length: 100 }, (_, i) => ({
+    path: String(i).padStart(3, "0"),
+    h3: { cell: ["a"] },
+  }));
+  for (const text of ['["a","b"]', '["a",7]']) {
+    const every = vi.spyOn(Array.prototype, "every");
+    let validations: number;
+    let result: ReturnType<typeof pruneFilesWithIndex>;
+    try {
+      result = pruneFilesWithIndex(input, fn("h3_in", col("cell"), text));
+      validations = every.mock.calls.length;
+    } finally {
+      every.mockRestore();
+    }
+    expect(result.planned).toHaveLength(100);
+    expect(validations).toBe(1);
+  }
+});

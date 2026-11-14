@@ -53,9 +53,10 @@ export function pruneFilesWithIndex<T extends SidecarFileIndex>(
   ): V => (scope === undefined ? create() : scope.allocate(bytes, purpose, create).value);
   try {
     // Lazy preparation preserves short-circuit and missing-index behavior.
-    let literals: Map<string, unknown> | undefined;
-    const parseLiteral = (text: string): unknown => {
-      if (literals?.has(text)) return literals.get(text);
+    let literals: Map<string, PreparedSpatialLiteral> | undefined;
+    const parseLiteral = (text: string): PreparedSpatialLiteral => {
+      const existing = literals?.get(text);
+      if (existing !== undefined) return existing;
       literals ??= allocate(scratch, c.object, "sidecar literal directory", () => new Map());
       scratch?.allocate(c.property + 2 * c.arraySlot, "sidecar literal entry", () => undefined);
       let parsed: unknown;
@@ -68,8 +69,17 @@ export function pruneFilesWithIndex<T extends SidecarFileIndex>(
           owner.release();
         }
       }
-      literals.set(text, parsed);
-      return parsed;
+      const prepared = allocate(
+        scratch,
+        c.object + 2 * c.property,
+        "sidecar prepared literal",
+        () => ({
+          bbox: parseBBoxLiteral(parsed),
+          cells: parseStringArray(parsed),
+        }),
+      );
+      literals.set(text, prepared);
+      return prepared;
     };
     const frames = allocate(
       scratch,
@@ -217,6 +227,11 @@ export function buildBBoxIndex<T extends Record<string, unknown>>(
   return { minx, miny, maxx, maxy };
 }
 
+interface PreparedSpatialLiteral {
+  bbox: BBoxIndex | undefined;
+  cells: string[] | undefined;
+}
+
 type LogicalExpr = Extract<Expr, { kind: "logical" }>;
 interface PredicateFrame {
   expr: LogicalExpr;
@@ -226,7 +241,7 @@ interface PredicateFrame {
 function fileMayMatch(
   file: SidecarFileIndex,
   expr: Expr | undefined,
-  parseLiteral: (text: string) => unknown,
+  parseLiteral: (text: string) => PreparedSpatialLiteral,
   frames: PredicateFrame[],
   enter: (expr: LogicalExpr, depth: number) => PredicateFrame,
 ): boolean {
@@ -262,7 +277,7 @@ function fileMayMatch(
 function leafMayMatch(
   file: SidecarFileIndex,
   expr: Expr | undefined,
-  parseLiteral: (text: string) => unknown,
+  parseLiteral: (text: string) => PreparedSpatialLiteral,
 ): boolean {
   if (expr === undefined) return true;
   switch (expr.kind) {
@@ -390,7 +405,7 @@ function inMayMatch(file: SidecarFileIndex, expr: Extract<Expr, { kind: "in" }>)
 function callMayMatch(
   file: SidecarFileIndex,
   expr: Expr,
-  parseLiteral: (text: string) => unknown,
+  parseLiteral: (text: string) => PreparedSpatialLiteral,
 ): boolean {
   if (expr.kind !== "call") return true;
   if (expr.fn === "st_intersects") return stIntersectsMayMatch(file, expr, parseLiteral);
@@ -402,28 +417,28 @@ function callMayMatch(
 function stIntersectsMayMatch(
   file: SidecarFileIndex,
   expr: Extract<Expr, { kind: "call" }>,
-  parseLiteral: (text: string) => unknown,
+  parseLiteral: (text: string) => PreparedSpatialLiteral,
 ): boolean {
   const [target, query] = expr.args;
   if (target?.kind !== "column" || query?.kind !== "literal" || typeof query.value !== "string")
     return true;
   const index = ownIndex(file.bbox, target.name);
   if (!index) return true;
-  const parsed = parseBBoxLiteral(parseLiteral(query.value));
+  const parsed = parseLiteral(query.value).bbox;
   return parsed ? bboxMayIntersect(index, parsed) : true;
 }
 
 function h3InMayMatch(
   file: SidecarFileIndex,
   expr: Extract<Expr, { kind: "call" }>,
-  parseLiteral: (text: string) => unknown,
+  parseLiteral: (text: string) => PreparedSpatialLiteral,
 ): boolean {
   const [target, cells] = expr.args;
   if (target?.kind !== "column" || cells?.kind !== "literal" || typeof cells.value !== "string")
     return true;
   const indexed = ownIndex(file.h3, target.name);
   if (!indexed) return true;
-  const wanted = parseStringArray(parseLiteral(cells.value));
+  const wanted = parseLiteral(cells.value).cells;
   return wanted ? wanted.some((cell) => indexed.includes(cell)) : true;
 }
 
