@@ -455,3 +455,31 @@ it("admits grouped task storage and releases all failed grouping allocations", a
   expect(tight.budget.usedBytes).toBe(0);
   tight.dispose();
 });
+
+it("admits aggregate column planning and distinguishes own partition columns", async () => {
+  const { MemoryBudget, MemoryScope } = await import("lakeql-core");
+  const task: TaskInput = {
+    path: "data",
+    rowGroupRanges: [],
+    partitionValues: { region: "west" },
+    residualPredicate: eq("id", 2),
+  };
+  const spec: AggregateSpec = { total: { op: "sum", column: "amount" } };
+  const pool = new MemoryBudget(4096);
+  const scope = new MemoryScope(pool);
+  expect(aggregateTaskReadColumns(task, spec, ["region", "id", "__proto__"], scope)).toEqual([
+    "__proto__",
+    "amount",
+    "id",
+  ]);
+  expect(pool.usedBytes).toBeGreaterThan(0);
+  const peak = pool.peakBytes;
+  scope.dispose();
+  expect(pool.usedBytes).toBe(0);
+  const tight = new MemoryScope(new MemoryBudget(peak - 1));
+  expect(() => aggregateTaskReadColumns(task, spec, ["region", "id", "__proto__"], tight)).toThrow(
+    /budget/,
+  );
+  tight.dispose();
+  expect(tight.budget.usedBytes).toBe(0);
+});

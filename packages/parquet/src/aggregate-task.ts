@@ -106,6 +106,7 @@ async function aggregateTaskSnapshotOwned(
       task,
       spec,
       operator.kind === "grouped-reduce" ? operator.keys : undefined,
+      metadataScope,
     );
     reducer = new CpuPhysicalBackend().openReduction(operator, {
       allocationScope: scope,
