@@ -4,7 +4,7 @@ import type { MemoryReservation } from "./memory-budget.js";
 import type { MemoryScope } from "./memory-scope.js";
 
 // Reserve bookkeeping as well as payload. One ledger entry covers many appends.
-const ledgerBytes = c.object + 32 * c.property + c.arraySlot;
+export const MUTABLE_LEDGER_CHUNK_BYTES = c.object + 32 * c.property + c.arraySlot;
 const maxChunk = 64 * 1024;
 
 /** Exclusive mutable ledger storage accounting. No mutable backing is retained out
@@ -36,20 +36,25 @@ export class MutableMemoryLedger {
     let added: MemoryReservation | undefined;
     let capacity = 0;
     if (bytes > this.spare) {
-      capacity = Math.max(bytes - this.spare, Math.min(maxChunk, Math.max(1024, this.payload)));
+      const desired = Math.min(maxChunk, Math.max(1024, this.payload));
+      const available = Math.max(
+        0,
+        this.scope.availableAllocationBytes - MUTABLE_LEDGER_CHUNK_BYTES,
+      );
+      capacity = Math.max(bytes - this.spare, Math.min(desired, available));
       try {
-        added = this.scope.reserve(capacity + ledgerBytes, purpose);
+        added = this.scope.reserve(capacity + MUTABLE_LEDGER_CHUNK_BYTES, purpose);
       } catch (error) {
         if (!isLakeqlError(error) || error.code !== "LAKEQL_BUDGET_EXCEEDED") throw error;
         capacity = bytes - this.spare;
-        added = this.scope.reserve(capacity + ledgerBytes, purpose);
+        added = this.scope.reserve(capacity + MUTABLE_LEDGER_CHUNK_BYTES, purpose);
       }
       // Reclaimers can trim this allocator during reservation. Re-evaluate its
       // available payload before mutation, rather than relying on stale capacity.
       if (capacity + this.spare < bytes) {
         added.release();
         capacity = bytes - this.spare;
-        added = this.scope.reserve(capacity + ledgerBytes, purpose);
+        added = this.scope.reserve(capacity + MUTABLE_LEDGER_CHUNK_BYTES, purpose);
       }
     }
     const previousSpare = this.spare;
@@ -109,7 +114,7 @@ export class MutableMemoryLedger {
     while (this.spare > 0) {
       const last = this.chunks[this.chunks.length - 1];
       if (!last) throw new Error("Missing mutable ledger capacity");
-      const capacity = last.bytes - ledgerBytes;
+      const capacity = last.bytes - MUTABLE_LEDGER_CHUNK_BYTES;
       const bytes = Math.min(capacity, this.spare);
       if (bytes === capacity) {
         this.chunks.pop();

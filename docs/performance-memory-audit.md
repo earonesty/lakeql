@@ -31,7 +31,7 @@ under verified 64/128 MiB V8 heap settings; this distinguishes runtime GC policy
 from a persistent leak, but does not cap external backing or prove production
 Cloudflare total-memory safety. See the constrained-runtime section below.
 
-Buffered aggregate admission remains costly. Shrink results and benchmark links: `docs/validation/reservation-shrink-2026-11-13.json`; amortization remains open.
+Quantile chunking: `docs/validation/window-quantile-ledger-2026-11-13.json`. Key admission remains costly. Shrink results and benchmark links: `docs/validation/reservation-shrink-2026-11-13.json`; amortization remains open.
 
 Window quantile buffer admission and real HTTP/Worker fixture evidence: `docs/validation/window-quantile-admission-2026-11-13.json`. Mode/distinct key admission and fixture evidence: `docs/validation/window-key-admission-2026-11-13.json`; scalar payload ownership remains open.
 

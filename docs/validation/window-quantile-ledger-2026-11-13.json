@@ -1,0 +1,32 @@
+{
+  "status": "Implemented; default and Worker suites passed, followed by focused lifecycle checks",
+  "change": "Window numeric quantile state reuses MutableMemoryLedger for MemoryBudget and MemoryScope sources, with isolated child-scope disposal. Generic reserve-only sources retain exact per-value admission. Ledger chunks now choose available headroom before exact fallback.",
+  "contract": [
+    "Admit numeric backing and ledger metadata before mutation.",
+    "Bound optional chunk size and make spare capacity reclaimable by sibling queries.",
+    "Drop numeric backing before disposing its scope.",
+    "Preserve parent stage ownership and consumed-allocation limits.",
+    "Keep exact-cap and one-byte-below checks inclusive of ledger metadata."
+  ],
+  "validation": {
+    "testsPassed": 132,
+    "suites": [
+      "window-quantile-memory",
+      "mutable-memory-ledger",
+      "owned-aggregate-state",
+      "owned-group-directory"
+    ],
+    "newChecks": [
+      "fewer than 32 reserve calls for 16384 numeric values",
+      "sibling admission reclaims spare capacity while quantile state remains correct",
+      "reset leaves parent stage and sibling ownership live"
+    ],
+    "defaultTestsPassed": 3009,
+    "defaultTestsSkipped": 629,
+    "workerTestsPassed": 61,
+    "followup": "Added reserve-only-source compatibility and closed-parent empty-append checks after the broad run. Numeric backing is dropped by the child abort hook before ledger disposal. Focused window/ledger suites passed after this change."
+  },
+  "benchmark": "docs/benchmarks/window-buffered-quantile-ledger-2026-11-13.json",
+  "measurement": "Local 16384-value admitted median: unique 1.308ms and duplicates 1.258ms, versus prior roughly 8ms and 7.7ms. Peak reservation 351088 bytes versus 262208 bytes for exact per-value admission; the increase includes ledger metadata and reclaimable spare capacity. This is not total VM heap or cloud latency.",
+  "remaining": "Mode/distinct per-key admission remains unchanged. Whole-query ownership and audit acceptance work remain open."
+}

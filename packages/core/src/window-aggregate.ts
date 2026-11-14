@@ -4,7 +4,13 @@ import { evaluate, jsonSafeValue } from "./evaluator.js";
 import type { Scalar } from "./expr.js";
 import { heapSort } from "./heap-sort.js";
 import { jsonScalarKeyAllocationBytes } from "./json-scalar-key-memory.js";
-import type { MemoryReservation, MemoryReservationSource } from "./memory-budget.js";
+import {
+  MemoryBudget,
+  type MemoryReservation,
+  type MemoryReservationSource,
+} from "./memory-budget.js";
+import { MemoryScope } from "./memory-scope.js";
+import { MutableMemoryLedger } from "./mutable-memory-ledger.js";
 import type { AggregateOp } from "./query.js";
 import { compareAggregateScalars, numericAggregateValue } from "./scalar-order.js";
 import type { Row } from "./types.js";
@@ -57,6 +63,13 @@ export function createWindowAggregateAccumulator(
   return {
     append(rows) {
       if (active) throw aggregateReentry();
+      if (budget instanceof MemoryScope && budget.disposed) {
+        state.reset();
+        throw new LakeqlError(
+          "LAKEQL_VALIDATION_ERROR",
+          "Window aggregate memory scope is disposed",
+        );
+      }
       active = true;
       try {
         for (const row of rows) {
@@ -100,6 +113,8 @@ class AggregateState {
   private last: Scalar | undefined;
   private values: number[] | undefined;
   private valuesReservation: MemoryReservation | undefined;
+  private valuesScope: MemoryScope | undefined;
+  private valuesLedger: MutableMemoryLedger | undefined;
   private modeValues: Map<string, { value: Scalar; count: number }> | undefined;
   private seenDistinct: Set<string> | undefined;
   private keyReservation: MemoryReservation | undefined;
@@ -114,6 +129,9 @@ class AggregateState {
     this.count = this.sum = this.mean = this.m2 = 0;
     this.min = this.max = this.first = this.last = undefined;
     this.values = undefined;
+    this.valuesScope?.dispose();
+    this.valuesScope = undefined;
+    this.valuesLedger = undefined;
     this.valuesReservation?.release();
     this.valuesReservation = undefined;
     this.modeValues = undefined;
@@ -207,6 +225,33 @@ class AggregateState {
   }
 
   private addQuantileValue(value: number): void {
+    if (this.budget instanceof MemoryBudget || this.budget instanceof MemoryScope) {
+      if (this.valuesLedger === undefined) {
+        this.valuesScope =
+          this.budget instanceof MemoryScope
+            ? this.budget.childScope()
+            : new MemoryScope(this.budget);
+        // Register before the ledger's abort hook: drop backing references before
+        // its admission is released when the parent closes this child scope.
+        this.valuesScope.signal.addEventListener(
+          "abort",
+          () => {
+            this.values = undefined;
+          },
+          { once: true },
+        );
+        this.valuesLedger = new MutableMemoryLedger(this.valuesScope);
+      }
+      this.valuesLedger.append(
+        (this.values === undefined ? charges.array : 0) + charges.arraySlot,
+        "window quantile values",
+        () => {
+          this.values ??= [];
+          this.values.push(value);
+        },
+      );
+      return;
+    }
     const reservation = this.budget?.reserve(
       (this.values === undefined ? charges.array : 0) + charges.arraySlot,
       "window quantile values",
