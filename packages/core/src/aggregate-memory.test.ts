@@ -147,30 +147,40 @@ describe("buffering aggregate memory", () => {
     }
   });
 
-  it("serialises each value once, not the whole list per value", () => {
-    const rows = 50_000;
-    const large = batchFromColumns({
-      label: Array.from({ length: rows }, (_, index) => `asset-${index % 30_000}`),
-      amount: Array.from({ length: rows }, (_, index) => index / 7),
-    });
-    const options = { budget: { maxMemoryBytes: 1 << 30 } };
-    const states = createVectorAggregateStates(spec, options);
-    let serialised = 0;
-    const stringify = JSON.stringify;
-    vi.spyOn(JSON, "stringify").mockImplementation((...args: Parameters<typeof stringify>) => {
-      const json = stringify(...args);
-      serialised += json?.length ?? 0;
-      return json;
-    });
-
-    updateVectorAggregateStates(states, spec, large, undefined, options);
-
-    const listBytes = aliases.reduce(
-      (total, alias) => total + (states[alias]?.memoryBytes ?? 0),
-      0,
-    );
-    // Each value once, plus its key form; re-serialising per value would be about rows / 2 times this.
-    expect(serialised).toBeLessThan(listBytes * 2);
+  it.each([
+    "median",
+    "quantile",
+    "mode",
+    "count_distinct",
+    "approx_count_distinct",
+  ] as const)("%s measures restored storage once per accounting epoch", (op) => {
+    const spec = { value: { op, quantile: 0.5 } };
+    const initial = createVectorAggregateStates(spec);
+    const source = initial.value;
+    if (!source) throw new Error("Missing source accumulator");
+    for (let value = 0; value < 1024; value++) updateVectorAggregateStateValue(source, value);
+    const states = restoreVectorAggregateStates(snapshotVectorAggregateStates(initial));
+    const state = states.value;
+    if (!state || !("values" in state)) throw new Error("Missing buffered accumulator");
+    const traversal =
+      state.op === "mode"
+        ? vi.spyOn(state.values, "keys")
+        : vi.spyOn(state.values, Symbol.iterator);
+    const options = { budget: { maxMemoryBytes: 1024 * 1024 } };
+    try {
+      for (let value = 1024; value < 1536; value++)
+        updateVectorAggregateStateValue(state, value, options);
+      expect(traversal).toHaveBeenCalledTimes(1);
+      // An unmeasured append invalidates the cached size. Re-enabling the
+      // byte limit must measure once again, rather than trust a stale total.
+      updateVectorAggregateStateValue(state, 1536);
+      for (let value = 1537; value < 2048; value++)
+        updateVectorAggregateStateValue(state, value, options);
+      expect(traversal).toHaveBeenCalledTimes(2);
+    } finally {
+      traversal.mockRestore();
+    }
+    expect(state.memoryBytes).toBe(serialisedBytes(state));
   });
 });
 

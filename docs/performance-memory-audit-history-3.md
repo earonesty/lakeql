@@ -4763,3 +4763,33 @@ Validation: 84 focused tests, 3,751 regular tests (645 skipped), 82 Worker tests
 `tsc -b` and typechecking pass. See
 `validation/aggregate-key-reuse-2026-11-14.json`. The prior complete release-gate
 refresh remains historical after this runtime change.
+
+### F2 serialized-buffer lifecycle trace and direct traversal regression
+
+The previous aggregate complexity regression counted `JSON.stringify` output.
+Current sizing computes UTF-8 bytes directly, so that test could pass even if
+whole-list iteration regressed. It is replaced by five direct traversal tests
+(median, quantile, mode, distinct and approximate distinct). Each restores 1,024
+values without a serialized-byte limit, performs 512 budgeted updates and requires
+exactly one collection traversal. An unbudgeted append invalidates the size;
+511 further budgeted updates require exactly one additional traversal. The final
+size is checked against actual encoded JSON. The assertion targets work performed,
+not elapsed time or whether a particular serializer happens to be called.
+
+Current source trace:
+
+| Path | Accounting work / retained full traversal |
+| --- | --- |
+| `RowDistinctSet` | Adds only each new normalized key's serialized bytes; duplicates leave the count unchanged |
+| `BufferMemory` | Measures each add/remove once; construction measures restored entries once; clear resets counters |
+| Ordered rows / bounded row top-k | Changed candidates update `BufferMemory`; restored top-k has an explicit whole-state validation before collection and then builds candidate accounting |
+| Sort runs | Adds each retained row once; flush clears run counters; retained physical run ownership is a separate allocation contract |
+| Row `AggregateValuesMemory` | Lazily measures restored values once; subsequent additions adjust the cached list total |
+| Row `AggregateMemory` | Initializes restored group charges once, then updates only the changed group and accumulator widths |
+| Window rows/runs | Full serialized sizing remains at output/partition boundaries; it is not invoked for every frame endpoint |
+
+These retained restore/partition traversals are explicit lifecycle boundaries, not
+a claim that all physical allocations are covered. This review does not close
+broader spill/checkpoint integration or whole-window workspace acceptance.
+Focused buffer, DISTINCT, aggregate checkpoint, aggregate sizing and query-memory
+suites pass: 59 tests across five files.
