@@ -1,0 +1,92 @@
+{
+  "runtimeBase": "955bebc",
+  "requirements": ["M1", "M2", "F6", "V1", "V2"],
+  "finding": "Released SharedMemoryCache leases retained payload snapshots after eviction and zero reservation counters. Both reserved-entry and owned-entry payloads remained reachable.",
+  "baseline": {
+    "node": "v24.18.1",
+    "sourceSha256": "80e11218be879e771d69b988e0276d7fdea93864895ebf9ac20ba3206353fdc6",
+    "heldReleasedLeases": 2,
+    "results": [
+      {
+        "kind": "reserved-entry",
+        "collected": false
+      },
+      {
+        "kind": "owned-entry",
+        "collected": false
+      }
+    ],
+    "finalAdmittedBytes": 0,
+    "limitation": "Forced-GC Node reachability diagnostic, not a production GC requirement or runtime cap."
+  },
+  "current": {
+    "node": "v24.18.1",
+    "sourceSha256": "b37333fe8290f9da3cb65a8eb715f34da4fcd63d490abcfc2fbfa4569f2b633e",
+    "heldReleasedLeases": 2,
+    "results": [
+      {
+        "kind": "reserved-entry",
+        "collected": true
+      },
+      {
+        "kind": "owned-entry",
+        "collected": true
+      }
+    ],
+    "finalAdmittedBytes": 0,
+    "limitation": "Forced-GC Node reachability diagnostic, not a production GC requirement or runtime cap."
+  },
+  "contract": [
+    "Release detaches the payload snapshot and pin before invoking pin cleanup.",
+    "Released value reads/writes reject with LAKEQL_VALIDATION_ERROR; bytes remains a snapshot.",
+    "Detached release callbacks and repeated release remain supported.",
+    "Independent live leases retain payload across eviction and sibling release."
+  ],
+  "implementation": "Private fields with shared prototype value accessors and a bound release callback. Initial per-lease accessor closures were replaced after kernel overhead.",
+  "benchmarks": [
+    "docs/benchmarks/cache-lease-initial-2026-11-14.json",
+    "docs/benchmarks/cache-lease-final-2026-11-14.json",
+    "docs/benchmarks/cache-lease-repeat-2026-11-14.json"
+  ],
+  "benchmarkInterpretation": "Final timings are mixed and close: reserved leases slightly faster in both runs; owned leases faster in the first, about 1.6% slower in repeat. No stable throughput speedup claim.",
+  "liveR2": {
+    "scope": "Public HTTP 206 through scheduled stage, controlled store and owned range cache; exact engine buffer accounting, not full heap or automatic query scheduling",
+    "requests": 1,
+    "metadataProbeRequests": 1,
+    "metadataProbeBytes": 2,
+    "wireBytes": 4096,
+    "copies": 3,
+    "extent": 4144,
+    "peakChargedBytes": 4144,
+    "cachedBytesAfterStage": 4096,
+    "finalChargedBytes": 0
+  },
+  "limits": [
+    "Forced-GC Node diagnostics prove reference detachment, not production GC timing or total heap.",
+    "Live cloud check uses an exact 4144-byte engine-buffer budget, not a 64/128 MiB Worker cap.",
+    "Broader allocation coverage, scheduling integration and runtime headroom remain open."
+  ],
+  "validation": {
+    "regularPassed": 3949,
+    "regularSkipped": 645,
+    "workerPassed": 90,
+    "requiredConformancePassed": 520,
+    "requiredConformanceSkipped": 1,
+    "referencePassed": 120,
+    "coverage": {
+      "statements": 91.39,
+      "branches": 85.54,
+      "functions": 95.9,
+      "lines": 93.19
+    },
+    "build": "passed",
+    "typecheck": "passed",
+    "cleanConsumer": "passed; 66 packages",
+    "lint": "passed",
+    "compatibility": "passed",
+    "largeFiles": "passed",
+    "changeset": "passed",
+    "fixtureReproducibility": "passed; no fixture data diff",
+    "thresholdsAndTimeouts": "unchanged"
+  }
+}

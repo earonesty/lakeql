@@ -1,0 +1,48 @@
+{
+  "reference": "955bebc",
+  "node": "v24.18.1",
+  "warmupRounds": 4,
+  "measuredRounds": 8,
+  "results": [
+    {
+      "owned": false,
+      "samplesMs": {
+        "reference": [
+          2.303707999999972, 2.6730029999999942, 4.635730000000024, 2.702077999999972,
+          2.7503489999999715, 2.318315000000041, 2.2053530000000023, 2.309398999999985
+        ],
+        "current": [
+          2.515397000000007, 2.6235810000000015, 2.668624999999963, 2.429134999999974,
+          2.5314669999999637, 2.2886199999999803, 2.279984000000013, 2.1821290000000317
+        ]
+      },
+      "medianMsPer10000Leases": {
+        "reference": 2.4956590000000176,
+        "current": 2.4722659999999905
+      }
+    },
+    {
+      "owned": true,
+      "samplesMs": {
+        "reference": [
+          4.886011999999994, 4.920987000000025, 4.827500999999984, 4.796483000000023,
+          4.819476000000009, 4.7970940000000155, 4.877464999999972, 5.432520000000011
+        ],
+        "current": [
+          7.06894299999999, 5.443331000000001, 4.807512999999972, 4.812212000000045,
+          4.846647000000019, 4.886092000000019, 5.6763200000000325, 4.978174999999965
+        ]
+      },
+      "medianMsPer10000Leases": {
+        "reference": 4.852482999999978,
+        "current": 4.932133499999992
+      }
+    }
+  ],
+  "limitations": [
+    "Cache lease kernel only; not cloud/query throughput or total heap.",
+    "Reference module with current dependencies; alternating variant order."
+  ],
+  "candidate": "Shared class accessors; isolated repeat.",
+  "sourceSha256": "b37333fe8290f9da3cb65a8eb715f34da4fcd63d490abcfc2fbfa4569f2b633e"
+}

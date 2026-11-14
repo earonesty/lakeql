@@ -401,3 +401,5 @@ Settle scheduled stages only after cleanup, release failed output before admitti
 Measure numeric decode inputs once when shared-pool admission still fails after reclamation and active-stage progress. Preserve parallel reads when the conservative plan fits, and never retry execution failures or queue-capacity errors.
 
 Detach compressed-input decoder closures when measured numeric plans are disposed, while preserving independent output ownership and draining input cleanup after release failures.
+
+Detach shared-cache payloads and pins from released leases. Released value access now rejects; live sibling leases, byte snapshots and detached/idempotent release callbacks remain supported.

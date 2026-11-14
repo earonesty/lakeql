@@ -646,3 +646,37 @@ it("invalidates rejected replacements while preserving already acquired pins", (
   scope.dispose();
   expect(pool.usedBytes).toBe(0);
 });
+
+it.each([
+  false,
+  true,
+])("detaches released cache leases while sibling readers remain valid (owned=%s)", (owned) => {
+  const pool = new MemoryBudget(4096);
+  const cache = new SharedMemoryCache({ memoryBudget: pool });
+  const scope = new MemoryScope(pool);
+  const value = new Uint8Array([1, 2, 3]);
+  if (owned)
+    cache.setOwned(
+      "lease",
+      scope.allocate(3, "payload", () => value),
+    );
+  else cache.set("lease", value, 3);
+  const first = cache.acquire<Uint8Array>("lease");
+  const second = cache.acquire<Uint8Array>("lease");
+  if (!first || !second) throw new Error("Missing leases");
+  const bytes = first.bytes;
+  scope.dispose();
+  cache.delete("lease");
+  const release = first.release;
+  release();
+  release();
+  expect(first.bytes).toBe(bytes);
+  expect(() => first.value).toThrow(/released/);
+  expect(() => {
+    first.value = value;
+  }).toThrow(/released/);
+  expect(second.value).toEqual(value);
+  expect(pool.usedBytes).toBe(3);
+  second.release();
+  expect(pool.usedBytes).toBe(0);
+});

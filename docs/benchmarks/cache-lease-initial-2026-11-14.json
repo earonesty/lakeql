@@ -1,0 +1,48 @@
+{
+  "reference": "955bebc",
+  "node": "v24.18.1",
+  "warmupRounds": 4,
+  "measuredRounds": 8,
+  "results": [
+    {
+      "owned": false,
+      "samplesMs": {
+        "reference": [
+          2.3409689999999728, 2.592161000000033, 3.8896850000000427, 2.5634469999999965,
+          5.522640000000024, 4.577500000000043, 6.466467000000023, 4.730929000000003
+        ],
+        "current": [
+          6.050554000000034, 5.680517000000009, 4.702375000000018, 5.9392839999999865,
+          5.090043999999978, 9.84588100000002, 4.724936999999954, 7.052399999999977
+        ]
+      },
+      "medianMsPer10000Leases": {
+        "reference": 4.233592500000043,
+        "current": 5.809900499999998
+      }
+    },
+    {
+      "owned": true,
+      "samplesMs": {
+        "reference": [
+          5.049878999999976, 5.262459999999976, 5.034048999999982, 5.942920999999956,
+          5.108900000000062, 8.485057999999981, 12.086049000000003, 7.412378000000103
+        ],
+        "current": [
+          7.590814000000023, 8.638316000000032, 12.042798000000062, 7.291550000000029,
+          7.250411999999983, 12.224699999999984, 7.858448000000067, 8.235337999999956
+        ]
+      },
+      "medianMsPer10000Leases": {
+        "reference": 5.602690499999966,
+        "current": 8.046893000000011
+      }
+    }
+  ],
+  "limitations": [
+    "Cache lease kernel only; not cloud/query throughput or total heap.",
+    "Reference module with current dependencies; alternating variant order."
+  ],
+  "candidate": "Per-lease accessor closures; replaced after measured overhead.",
+  "sourceSha256": "0abd35c996cf918808cccb69a3eed0f461e047a92b0c2f90a1027a92d731892a"
+}

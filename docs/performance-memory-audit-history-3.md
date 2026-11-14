@@ -5202,3 +5202,25 @@ Full release gates pass: 3,947 regular/coverage tests (645 skipped), 90 Worker
 tests, 520 required conformance cases (one inactive guard skipped), 120 references,
 full build/types, clean 66-package consumer and repository checks. Fixture data
 is unchanged after regeneration. Thresholds and timeouts remain unchanged.
+
+### Released shared-cache lease retention (2026-11-14)
+
+Both reserved and owned cache entries retained their payload through released
+leases after eviction, despite zero admitted bytes. A forced-GC Node diagnostic
+keeps both expired leases held and observes both payloads reachable on the baseline;
+both collect after the fix. Leases detach payload/pin references before cleanup.
+Released value access now rejects, while live sibling leases retain backing, byte
+snapshots remain available and detached/idempotent release callbacks still work.
+
+Shared prototype accessors replace an initial per-lease closure implementation
+that added measured cache-hit overhead. Two final isolated comparisons are close
+and mixed, including an approximately 1.6% owned-lease slowdown in the repeat;
+there is no stable throughput improvement claim. Live public R2 HTTP 206 validates
+one coalesced 4 KiB request, warm cache reuse, exact 4,144-byte engine-buffer peak,
+and zero final admission after eviction. This is not a whole-Worker memory cap.
+Evidence: `validation/released-cache-retention-2026-11-14.json`.
+
+Final release checks pass 3,949 regular/coverage tests (645 skipped), all 90
+Worker tests, 520 required conformance cases (one inactive guard skipped), 120
+references, full build/types, clean 66-package consumer and repository gates.
+Fixture regeneration leaves data unchanged. Thresholds and timeouts are unchanged.

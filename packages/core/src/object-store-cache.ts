@@ -32,8 +32,43 @@ interface SharedCacheRecord {
 }
 
 export interface SharedCacheLease<T> extends SharedCacheEntry<T> {
-  /** Release after the last use of the borrowed payload. */
+  /** Release after the last use of the borrowed payload; value access then rejects. */
   release(): void;
+}
+
+/** Shared accessors avoid allocating getter/setter closures for every cache hit. */
+class CacheLease<T> implements SharedCacheLease<T> {
+  #entry: SharedCacheEntry<T> | undefined;
+  #pin: MemoryReservation | OwnedMemory<unknown> | undefined;
+  bytes: number;
+
+  constructor(
+    entry: SharedCacheEntry<T>,
+    pin: MemoryReservation | OwnedMemory<unknown> | undefined,
+  ) {
+    this.#entry = entry;
+    this.#pin = pin;
+    this.bytes = entry.bytes;
+  }
+
+  get value(): T {
+    if (this.#entry === undefined)
+      throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Cache lease released");
+    return this.#entry.value;
+  }
+
+  set value(value: T) {
+    if (this.#entry === undefined)
+      throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Cache lease released");
+    this.#entry.value = value;
+  }
+
+  release = (): void => {
+    const pin = this.#pin;
+    this.#pin = undefined;
+    this.#entry = undefined;
+    pin?.release();
+  };
 }
 
 export interface SharedCacheSetOptions {
@@ -102,7 +137,7 @@ export class SharedMemoryCache {
     if (entry === undefined) return undefined;
     const record = this.entries.get(key);
     const pin = record?.owner?.retain() ?? record?.reservation?.retain();
-    return { ...entry, release: () => pin?.release() };
+    return new CacheLease(entry, pin);
   }
 
   /** Whether this cache can retain allocations from the given pool.
