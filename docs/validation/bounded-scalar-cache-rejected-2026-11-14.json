@@ -1,0 +1,45 @@
+{
+  "baseline": "1cb0dcb",
+  "decision": "Reject the bounded owned-text cache candidate; restore the published runtime unchanged.",
+  "candidate": "Eight mixed-index slots, weak dictionary identity, separately admitted string owners, retained hit handles, optional insertion after successful comparisons, workspace-before-cache reclamation propagated across ancestors.",
+  "validation": {
+    "candidateFocusedPassed": 35,
+    "candidateBuild": "passed",
+    "rollbackFocusedPassed": 39,
+    "rollbackBuild": "passed",
+    "archivedPatchApplies": "git apply --check passed against baseline",
+    "runtimeDiffAfterRollback": "empty"
+  },
+  "comparisons": [
+    {
+      "priorMedianMs": 425.4852795,
+      "candidateMedianMs": 1335.0500835
+    },
+    {
+      "priorMedianMs": 420.859295,
+      "candidateMedianMs": 1344.896481
+    }
+  ],
+  "findings": [
+    "All six real query cases slowed in both comparisons despite predicted decode reuse.",
+    "Overall admitted peaks were identical to the baseline in every case; temporary key retention did not improve whole-query peaks.",
+    "Successful lifetime/admission tests and simulated hit rates do not establish a worthwhile optimization.",
+    "The experiment does not isolate which ownership/cache operations dominate elapsed time; no causal allocation-profile claim is made."
+  ],
+  "artifacts": {
+    "patch": "docs/benchmarks/bounded-scalar-cache-rejected-2026-11-14.patch",
+    "first": "docs/benchmarks/bounded-scalar-cache-rejected-first-2026-11-14.json",
+    "repeat": "docs/benchmarks/bounded-scalar-cache-rejected-repeat-2026-11-14.json"
+  },
+  "reproduce": [
+    "Check out baseline 1cb0dcb in an isolated checkout and apply the archived patch.",
+    "pnpm exec tsc -b",
+    "LAKEQL_DICTIONARY_QUERY_MODE=topk LAKEQL_COMPARE_BASELINE=1cb0dcb LAKEQL_COMPARE_MODULE=scalar-read-workspace,memory-budget,vector-sort LAKEQL_COMPARE_BENCHMARK=dictionary-materialization-query.mjs node bench/page-count-query-comparison.mjs"
+  ],
+  "scope": "Alternating fresh Node processes, six independent DuckDB Parquet cases, one warmup/four measured pairs in each run, full result parity and zero cleanup checks. No cloud-throughput or total-runtime cap claim.",
+  "remaining": [
+    "Preserve measured same-entry comparison reuse and direct access as the current default.",
+    "Any further cross-comparison reuse needs substantially lower management cost and fresh end-to-end evidence.",
+    "F5 broader acceptance, JSON row-kernel performance and complete memory/runtime audit remain open."
+  ]
+}

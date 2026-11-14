@@ -1,0 +1,320 @@
+diff --git a/packages/core/src/memory-budget.ts b/packages/core/src/memory-budget.ts
+index 5e665d5..4ec5ccf 100644
+--- a/packages/core/src/memory-budget.ts
++++ b/packages/core/src/memory-budget.ts
+@@ -14,6 +14,7 @@ export class MemoryBudget {
+   private used = 0;
+   private peak = 0;
+   private readonly reclaimers = new Set<(bytesNeeded: number) => void>();
++  private readonly workspaceReclaimers = new Set<(bytesNeeded: number) => void>();
+   private reclaiming = false;
+ 
+   constructor(
+@@ -41,14 +42,19 @@ export class MemoryBudget {
+     return new MemoryBudget(maxBytes, this);
+   }
+ 
+-  /** Register synchronous eviction of reusable memory. Returns an idempotent detach. */
+-  registerReclaimer(reclaim: (bytesNeeded: number) => void): () => void {
+-    this.reclaimers.add(reclaim);
++  /** Release optional workspace before reusable cache entries. Registration order
++   * is preserved within each class, including ancestor/sibling reclamation. */
++  registerReclaimer(
++    reclaim: (bytesNeeded: number) => void,
++    kind: "workspace" | "cache" = "cache",
++  ): () => void {
++    const reclaimers = kind === "workspace" ? this.workspaceReclaimers : this.reclaimers;
++    reclaimers.add(reclaim);
+     // Reusable child allocations also occupy every ancestor pool. A sibling
+     // request must be able to reclaim them even when this child has headroom.
+-    const detachParent = this.parent?.registerReclaimer(reclaim);
++    const detachParent = this.parent?.registerReclaimer(reclaim, kind);
+     return () => {
+-      this.reclaimers.delete(reclaim);
++      reclaimers.delete(reclaim);
+       detachParent?.();
+     };
+   }
+@@ -301,17 +307,22 @@ export class MemoryBudget {
+     if (!this.reclaiming && bytes > this.maxBytes - this.used) {
+       this.reclaiming = true;
+       try {
+-        for (const reclaim of this.reclaimers) {
+-          const needed = bytes - (this.maxBytes - this.used);
+-          if (needed <= 0) break;
+-          reclaim(needed);
+-        }
++        this.reclaimFrom(this.workspaceReclaimers, bytes);
++        this.reclaimFrom(this.reclaimers, bytes);
+       } finally {
+         this.reclaiming = false;
+       }
+     }
+   }
+ 
++  private reclaimFrom(reclaimers: ReadonlySet<(bytesNeeded: number) => void>, bytes: number): void {
++    for (const reclaim of reclaimers) {
++      const needed = bytes - (this.maxBytes - this.used);
++      if (needed <= 0) break;
++      reclaim(needed);
++    }
++  }
++
+   private exceeded(bytes: number, purpose: string): never {
+     throw new LakeqlError("LAKEQL_BUDGET_EXCEEDED", "Allocation exceeds memory budget", {
+       metric: "allocated memory bytes",
+diff --git a/packages/core/src/scalar-read-workspace.ts b/packages/core/src/scalar-read-workspace.ts
+index 22a3646..aa45732 100644
+--- a/packages/core/src/scalar-read-workspace.ts
++++ b/packages/core/src/scalar-read-workspace.ts
+@@ -3,6 +3,7 @@ import { LakeqlError } from "./errors.js";
+ import type { Scalar } from "./expr.js";
+ import type { MemoryReservation } from "./memory-budget.js";
+ import type { MemoryScope } from "./memory-scope.js";
++import { ScalarTextCache } from "./scalar-text-cache.js";
+ import type { VectorAllocator } from "./vector-buffer.js";
+ 
+ /** Reusable storage admission for two synchronous borrowed scalar reads. Each
+@@ -15,8 +16,13 @@ export class ScalarReadWorkspace implements VectorAllocator {
+   private used = 0;
+   private active = false;
+   private closed = false;
++  private cache: ScalarTextCache | undefined;
++  private cacheAttempted = false;
+ 
+-  constructor(private readonly scope: MemoryScope) {}
++  constructor(
++    private readonly scope: MemoryScope,
++    private readonly cacheText = false,
++  ) {}
+ 
+   consume(
+     vector: Vector,
+@@ -29,8 +35,11 @@ export class ScalarReadWorkspace implements VectorAllocator {
+       throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Scalar reads cannot reenter");
+     this.active = true;
+     this.used = 0;
++    let firstPin: ReturnType<ScalarTextCache["get"]>;
++    let secondPin: ReturnType<ScalarTextCache["get"]>;
+     try {
+-      const first = scalarVectorValue(vector, left, this);
++      firstPin = this.cached(vector, left);
++      const first = firstPin?.value ?? scalarVectorValue(vector, left, this);
+       // One immutable decoded text can serve both operands when their physical
+       // dictionary entry and outer null state match. Still call the comparator:
+       // equality does not bypass its validation or tie-breaking contract.
+@@ -41,11 +50,34 @@ export class ScalarReadWorkspace implements VectorAllocator {
+         right < vector.indices.length &&
+         vector.indices[left] === vector.indices[right] &&
+         (vector.valid?.[left] === 0) === (vector.valid?.[right] === 0);
+-      return compare(first, sameText ? first : scalarVectorValue(vector, right, this));
++      if (!sameText) secondPin = this.cached(vector, right);
++      const second = sameText
++        ? first
++        : (secondPin?.value ?? scalarVectorValue(vector, right, this));
++      const result = compare(first, second);
++      if (
++        this.cacheText &&
++        !this.closed &&
++        !this.scope.disposed &&
++        vector.type === "dict" &&
++        vector.dictionary.type === "utf8-view"
++      ) {
++        if (!this.cacheAttempted) {
++          this.cacheAttempted = true;
++          this.cache = ScalarTextCache.create(this.scope, this.scope.availableAllocationBytes);
++        }
++        if (typeof first === "string" && firstPin === undefined)
++          this.cache?.put(vector.dictionary, vector.indices[left] ?? 0, first);
++        if (!sameText && typeof second === "string" && secondPin === undefined)
++          this.cache?.put(vector.dictionary, vector.indices[right] ?? 0, second);
++      }
++      return result;
+     } catch (error) {
+       this.release();
+       throw error;
+     } finally {
++      firstPin?.release();
++      secondPin?.release();
+       this.active = false;
+       this.used = 0;
+       if (this.closed || this.scope.disposed) this.release();
+@@ -77,6 +109,7 @@ export class ScalarReadWorkspace implements VectorAllocator {
+ 
+   dispose(): void {
+     this.closed = true;
++    this.cache?.dispose();
+     if (!this.active) this.release();
+   }
+ 
+@@ -87,7 +120,20 @@ export class ScalarReadWorkspace implements VectorAllocator {
+     }
+   }
+ 
++  private cached(vector: Vector, index: number): ReturnType<ScalarTextCache["get"]> {
++    if (
++      vector.type !== "dict" ||
++      vector.dictionary.type !== "utf8-view" ||
++      index < 0 ||
++      index >= vector.indices.length ||
++      vector.valid?.[index] === 0
++    )
++      return undefined;
++    return this.cache?.get(vector.dictionary, vector.indices[index] ?? 0);
++  }
++
+   private release(): void {
++    this.cache?.dispose();
+     this.backing?.release();
+     this.backing = undefined;
+     this.capacity = 0;
+diff --git a/packages/core/src/vector-sort.ts b/packages/core/src/vector-sort.ts
+index db6dd93..78b46e2 100644
+--- a/packages/core/src/vector-sort.ts
++++ b/packages/core/src/vector-sort.ts
+@@ -101,7 +101,7 @@ export function vectorTopKOwnedBatch(
+   }
+   const capacity = options.limit === 0 ? 0 : Math.min(selectedRows, offset + options.limit);
+   const scope = new MemoryScope(input.budget);
+-  const reader = new ScalarReadWorkspace(scope);
++  const reader = new ScalarReadWorkspace(scope, true);
+   try {
+     scope.adopt(input.retain());
+     const normalized = normalizeVectorOrderBy(orderBy, scope);
+diff --git a/packages/core/src/scalar-text-cache.ts b/packages/core/src/scalar-text-cache.ts
+new file mode 100644
+index 0000000..1c61aeb
+--- /dev/null
++++ b/packages/core/src/scalar-text-cache.ts
+@@ -0,0 +1,131 @@
++import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
++import { LakeqlError } from "./errors.js";
++import type { MemoryReservation } from "./memory-budget.js";
++import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
++
++type Slot = { source: WeakRef<object>; index: number; owner: OwnedMemory<string> };
++
++/** Optional immutable scalar storage. Weak identity keys cannot pin input pages;
++ * independently owned hits survive cache eviction while a comparator uses them.
++ * This primitive does not choose an admission/reuse policy for the caller. */
++export class ScalarTextCache {
++  private slots: (Slot | undefined)[] | undefined;
++  private directory: MemoryReservation | undefined;
++  private detachReclaimer: (() => void) | undefined;
++  private closed = false;
++  private payloadBytes = 0;
++  private readonly close = () => this.dispose();
++
++  static directoryBytes(capacity: number): number {
++    return (
++      c.object + 6 * c.property + c.array + capacity * (c.arraySlot + 2 * c.object + 3 * c.property)
++    );
++  }
++
++  static create(scope: MemoryScope, maxBytes: number, capacity = 8): ScalarTextCache | undefined {
++    if (
++      !Number.isSafeInteger(maxBytes) ||
++      maxBytes < 0 ||
++      !Number.isSafeInteger(capacity) ||
++      capacity < 1 ||
++      capacity > 256 ||
++      (capacity & (capacity - 1)) !== 0
++    )
++      throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Invalid scalar cache extent");
++    const bytes = ScalarTextCache.directoryBytes(capacity);
++    // Stage extents are consumed irreversibly. Optional cache admission must not
++    // consume capacity that cannot be returned for subsequent mandatory work.
++    if (
++      scope.disposed ||
++      scope.hasAdmission ||
++      bytes > maxBytes ||
++      bytes > scope.availableAllocationBytes
++    )
++      return undefined;
++    const admission = scope.reserve(bytes, "optional scalar cache directory");
++    try {
++      const cache = new ScalarTextCache(scope, maxBytes, capacity, admission);
++      return cache;
++    } catch (error) {
++      admission.release();
++      throw error;
++    }
++  }
++
++  private constructor(
++    private readonly scope: MemoryScope,
++    private readonly maxBytes: number,
++    private readonly capacity: number,
++    admission: MemoryReservation,
++  ) {
++    this.directory = admission;
++    this.slots = new Array(capacity);
++    this.detachReclaimer = scope.budget.registerReclaimer(this.close, "workspace");
++    scope.signal.addEventListener("abort", this.close, { once: true });
++  }
++
++  get(source: object, index: number): OwnedMemory<string> | undefined {
++    if (this.closed) return undefined;
++    const slot = this.slots?.[this.position(index)];
++    if (slot?.source.deref() !== source || slot.index !== index) return undefined;
++    return slot.owner.retain();
++  }
++
++  put(source: object, index: number, text: string): boolean {
++    const slots = this.slots;
++    if (this.closed || slots === undefined) return false;
++    const position = this.position(index);
++    const previous = slots[position];
++    if (previous !== undefined) {
++      slots[position] = undefined;
++      this.payloadBytes -= previous.owner.bytes;
++      previous.owner.release();
++    }
++    const bytes = c.string + text.length * c.stringCodeUnit;
++    if (
++      bytes + this.payloadBytes + (this.directory?.bytes ?? 0) > this.maxBytes ||
++      bytes > this.scope.availableAllocationBytes
++    )
++      return false;
++    const admission = this.scope.reserve(bytes, "optional cached scalar text");
++    const ownerScope = new MemoryScope(this.scope.budget);
++    try {
++      const owner = ownerScope.allocateReserved(admission, () => text).retain();
++      try {
++        slots[position] = { source: new WeakRef(source), index, owner };
++      } catch (error) {
++        owner.release();
++        throw error;
++      }
++      this.payloadBytes += bytes;
++      return true;
++    } finally {
++      ownerScope.dispose();
++    }
++  }
++
++  dispose(): void {
++    if (this.closed) return;
++    this.closed = true;
++    this.scope.signal.removeEventListener("abort", this.close);
++    this.detachReclaimer?.();
++    this.detachReclaimer = undefined;
++    const slots = this.slots;
++    this.slots = undefined;
++    try {
++      for (const slot of slots ?? []) slot?.owner.release();
++    } finally {
++      this.payloadBytes = 0;
++      this.directory?.release();
++      this.directory = undefined;
++    }
++  }
++
++  private position(index: number): number {
++    if (!Number.isSafeInteger(index) || index < 0 || index > 0xffffffff)
++      throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Invalid scalar cache index");
++    return this.capacity === 1
++      ? 0
++      : Math.imul(index, 0x9e3779b1) >>> (32 - Math.log2(this.capacity));
++  }
++}
