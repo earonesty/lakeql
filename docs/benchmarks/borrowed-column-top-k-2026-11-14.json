@@ -1,0 +1,125 @@
+{
+  "warmups": 1,
+  "samples": 3,
+  "batchRows": 256,
+  "payloadBytes": 128,
+  "poolBytes": 67108864,
+  "inputOrders": "ascending keeps early winners; descending replaces winners every batch",
+  "scope": "Local borrowed column scanner; current implementation scaling, not a before/after speedup. Scanner-created input and runtime heap are outside reservation measurements. No cloud latency claim.",
+  "results": [
+    {
+      "inputOrder": "ascending",
+      "rows": 4096,
+      "k": 1,
+      "batches": 16,
+      "medianMs": 64.945367,
+      "peakReservedBytes": 231848,
+      "retainedOutputBytes": 1364
+    },
+    {
+      "inputOrder": "ascending",
+      "rows": 16384,
+      "k": 1,
+      "batches": 64,
+      "medianMs": 175.71507099999997,
+      "peakReservedBytes": 231848,
+      "retainedOutputBytes": 1364
+    },
+    {
+      "inputOrder": "ascending",
+      "rows": 65536,
+      "k": 1,
+      "batches": 256,
+      "medianMs": 668.8097980000002,
+      "peakReservedBytes": 231848,
+      "retainedOutputBytes": 1364
+    },
+    {
+      "inputOrder": "ascending",
+      "rows": 4096,
+      "k": 64,
+      "batches": 16,
+      "medianMs": 42.02873199999976,
+      "peakReservedBytes": 242996,
+      "retainedOutputBytes": 33368
+    },
+    {
+      "inputOrder": "ascending",
+      "rows": 16384,
+      "k": 64,
+      "batches": 64,
+      "medianMs": 167.85453299999972,
+      "peakReservedBytes": 242996,
+      "retainedOutputBytes": 33368
+    },
+    {
+      "inputOrder": "ascending",
+      "rows": 65536,
+      "k": 64,
+      "batches": 256,
+      "medianMs": 701.4438200000004,
+      "peakReservedBytes": 242996,
+      "retainedOutputBytes": 33368
+    },
+    {
+      "inputOrder": "descending",
+      "rows": 4096,
+      "k": 1,
+      "batches": 16,
+      "medianMs": 42.922905999999784,
+      "peakReservedBytes": 231848,
+      "retainedOutputBytes": 1364
+    },
+    {
+      "inputOrder": "descending",
+      "rows": 16384,
+      "k": 1,
+      "batches": 64,
+      "medianMs": 171.88518099999965,
+      "peakReservedBytes": 231848,
+      "retainedOutputBytes": 1364
+    },
+    {
+      "inputOrder": "descending",
+      "rows": 65536,
+      "k": 1,
+      "batches": 256,
+      "medianMs": 679.4694289999989,
+      "peakReservedBytes": 231848,
+      "retainedOutputBytes": 1364
+    },
+    {
+      "inputOrder": "descending",
+      "rows": 4096,
+      "k": 64,
+      "batches": 16,
+      "medianMs": 42.320660999999745,
+      "peakReservedBytes": 242996,
+      "retainedOutputBytes": 33368
+    },
+    {
+      "inputOrder": "descending",
+      "rows": 16384,
+      "k": 64,
+      "batches": 64,
+      "medianMs": 181.64891499999976,
+      "peakReservedBytes": 242996,
+      "retainedOutputBytes": 33368
+    },
+    {
+      "inputOrder": "descending",
+      "rows": 65536,
+      "k": 64,
+      "batches": 256,
+      "medianMs": 710.4602319999995,
+      "peakReservedBytes": 242996,
+      "retainedOutputBytes": 33368
+    }
+  ],
+  "runtime": {
+    "node": "v24.18.1",
+    "platform": "linux",
+    "arch": "x64"
+  },
+  "source_revision": "8e49438"
+}
