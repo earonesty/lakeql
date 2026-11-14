@@ -53,9 +53,22 @@ export class PipelineCache<T> {
     return reservation.retainIn(budget);
   }
 
-  set(key: string, source: string, value: Promise<T>, pool?: MemoryBudget): void {
-    const bytes =
-      2 * c.string + (key.length + source.length) * c.stringCodeUnit + c.object + 3 * c.property;
+  set(
+    key: string,
+    source: string,
+    value: Promise<T>,
+    pool?: MemoryBudget,
+    backing?: MemoryReservation,
+  ): void {
+    const bytes = pipelineMetadataBytes(key, source);
+    if (
+      backing !== undefined &&
+      (backing.bytes !== bytes || pool === undefined || !backing.budget.sharesPoolWith(pool))
+    )
+      throw new LakeqlError(
+        "LAKEQL_VALIDATION_ERROR",
+        "Pipeline cache backing does not match its metadata",
+      );
     this.delete(key);
     if (this.maxEntries === 0 || bytes > this.maxBytes) return;
     while (this.entries.size >= this.maxEntries || this.bytes + bytes > this.maxBytes) {
@@ -64,7 +77,10 @@ export class PipelineCache<T> {
       this.delete(oldest[0]);
     }
     const root = pool?.allocationPool;
-    const reservation = root?.tryReserve(bytes, "WebGPU pipeline cache metadata");
+    const reservation =
+      root === undefined
+        ? undefined
+        : (backing?.retainIn(root) ?? root.tryReserve(bytes, "WebGPU pipeline cache metadata"));
     if (root !== undefined && reservation === undefined) return;
     const entry = {
       value,
@@ -101,4 +117,8 @@ export class PipelineCache<T> {
   clear(): void {
     for (const key of this.entries.keys()) this.delete(key);
   }
+}
+
+export function pipelineMetadataBytes(key: string, source: string): number {
+  return 2 * c.string + (key.length + source.length) * c.stringCodeUnit + c.object + 3 * c.property;
 }

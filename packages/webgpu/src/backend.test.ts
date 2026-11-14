@@ -160,7 +160,7 @@ describe.runIf(await dawnAdapterAvailable())("WebGpuPhysicalBackend with Dawn", 
     };
     try {
       const peak = await run(65536);
-      expect(peak).toBe(100);
+      expect(peak).toBeGreaterThan(100);
       expect(await run(peak)).toBe(peak);
       expect(await run(peak, true)).toBe(peak);
       await expect(run(peak - 1)).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
@@ -571,6 +571,56 @@ it("pins selection backing until pending device work settles after scope disposa
   }
 });
 
+it("pins active pipeline metadata through dispatch even after eviction and cancellation", async () => {
+  let started!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  let settle!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    settle = resolve;
+  });
+  const destroyed: number[] = [];
+  const backend = new WebGpuPhysicalBackend(() =>
+    failingPipelineRuntime({
+      destroyed,
+      dispatch: async () => {
+        started();
+        await pending;
+      },
+    }),
+  );
+  const pool = new MemoryBudget(65536);
+  const scope = new MemoryScope(pool.child(65536));
+  try {
+    const batch = batchFromVectors({ value: { type: "u32", values: Uint32Array.of(1, 2, 3, 4) } });
+    const target = fragment(batch, gt("value", 1));
+    const work = backend.execute(
+      await backend.compile(target),
+      { kind: "batch", batch },
+      { allocationScope: scope },
+    );
+    const rejected = expect(work).rejects.toThrow();
+    await ready;
+    const held = pool.usedBytes;
+    expect(held).toBeGreaterThan(100);
+    // Pressure drops the cache reference but cannot reclaim the live execution pin.
+    expect(() => pool.reserve(65536, "sibling pressure")).toThrow();
+    expect(backend.assess(target, {}).compiledResident).toBe(false);
+    scope.dispose();
+    expect(pool.usedBytes).toBe(held);
+    expect(destroyed).toEqual([]);
+    settle();
+    await rejected;
+    expect(destroyed).toEqual([1, 2, 3, 4]);
+    expect(pool.usedBytes).toBe(0);
+  } finally {
+    settle();
+    scope.dispose();
+    backend.close();
+  }
+});
+
 function execute(
   backend: WebGpuPhysicalBackend,
   batch: Parameters<typeof physicalInputFromBatch>[0],
@@ -615,6 +665,7 @@ function failingPipelineRuntime(failure?: {
   uploadAt?: number;
   destroyed: number[];
   pipeline?: () => Promise<void>;
+  dispatch?: () => Promise<void>;
 }): WebGpuRuntime {
   let created = 0;
   let uploaded = 0;
@@ -625,6 +676,10 @@ function failingPipelineRuntime(failure?: {
     },
     lost: new Promise<GPUDeviceLostInfo>(() => {}),
     queue: {
+      submit() {},
+      onSubmittedWorkDone() {
+        return failure?.dispatch?.() ?? Promise.resolve();
+      },
       writeBuffer() {
         if (++uploaded === failure?.uploadAt) throw new Error("injected upload failure");
       },
@@ -642,17 +697,38 @@ function failingPipelineRuntime(failure?: {
         destroy() {
           failure?.destroyed.push(id);
         },
+        async mapAsync() {},
         getMappedRange() {
           return contents;
         },
         unmap() {},
       } as unknown as GPUBuffer;
     },
+    createBindGroup() {
+      return {};
+    },
+    createCommandEncoder() {
+      return {
+        beginComputePass() {
+          return { setPipeline() {}, setBindGroup() {}, dispatchWorkgroups() {}, end() {} };
+        },
+        copyBufferToBuffer() {},
+        finish() {
+          return {};
+        },
+      };
+    },
     createShaderModule() {
       return {} as GPUShaderModule;
     },
     async createComputePipelineAsync() {
       await failure?.pipeline?.();
+      if (failure?.dispatch)
+        return {
+          getBindGroupLayout() {
+            return {};
+          },
+        };
       throw new Error("device lost while compiling pipeline");
     },
   } as unknown as GPUDevice;

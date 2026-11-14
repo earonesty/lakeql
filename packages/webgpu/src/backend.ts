@@ -10,7 +10,7 @@ import {
   estimateBatchBytes,
   getOrCreateVectorGroupByValues,
   LakeqlError,
-  type MemoryBudget,
+  type MemoryReservation,
   MemoryScope,
   mergePhysicalScoredCandidates,
   PhysicalBackendExecutionError,
@@ -42,7 +42,7 @@ import {
   type CompiledWebGpuGroupedReduction,
   compileWebGpuGroupedReduction,
 } from "./grouped-reduction.js";
-import { PipelineCache } from "./pipeline-cache.js";
+import { PipelineCache, pipelineMetadataBytes } from "./pipeline-cache.js";
 import {
   type CompiledWebGpuPredicate,
   compileWebGpuPredicate,
@@ -627,6 +627,7 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
       context.allocationScope === undefined
         ? undefined
         : new MemoryScope(context.allocationScope.budget);
+    let pipelineReservation: MemoryReservation | undefined;
     const workspace = context.allocationScope?.reserve(
       transfer.uploadBytes + transfer.deviceBytes,
       "WebGPU selection host upload and device backing",
@@ -720,7 +721,10 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
               lease.device,
               lease.generation,
               predicate,
-              context.allocationScope?.budget,
+              context.allocationScope,
+              (reservation) => {
+                pipelineReservation = reservation;
+              },
             );
             throwIfAborted(signal);
             const bindGroup = lease.device.createBindGroup({
@@ -805,6 +809,7 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
         },
       };
     } finally {
+      pipelineReservation?.release();
       workspace?.release();
       resultScope?.dispose();
     }
@@ -1377,27 +1382,39 @@ export class WebGpuPhysicalBackend implements PhysicalExecutionBackend {
     device: GPUDevice,
     generation: number,
     predicate: WebGpuKernel,
-    pool?: MemoryBudget,
+    scope?: MemoryScope,
+    hold?: (reservation: MemoryReservation) => void,
   ): Promise<GPUComputePipeline> {
     const key = this.#pipelineKey(predicate, generation);
+    const pool = scope?.budget;
     let pipeline = this.#pipelines.get(key, pool);
-    if (pipeline === undefined) {
-      pipeline = device.createComputePipelineAsync({
-        label: `lakeql:${predicate.kind}`,
-        layout: "auto",
-        compute: {
-          module: device.createShaderModule({
-            label: `lakeql:${predicate.kind}`,
-            code: predicate.wgsl,
-          }),
-          entryPoint: "main",
-        },
-      });
-      this.#pipelines.set(key, predicate.wgsl, pipeline, pool);
-    }
-    const pin = pool === undefined ? undefined : this.#pipelines.pin(key, pool);
+    let pin =
+      pipeline === undefined || pool === undefined ? undefined : this.#pipelines.pin(key, pool);
     try {
-      return await pipeline;
+      if (pipeline === undefined) {
+        pin = scope?.reserve(
+          pipelineMetadataBytes(key, predicate.wgsl),
+          "active WebGPU pipeline metadata",
+        );
+        pipeline = device.createComputePipelineAsync({
+          label: `lakeql:${predicate.kind}`,
+          layout: "auto",
+          compute: {
+            module: device.createShaderModule({
+              label: `lakeql:${predicate.kind}`,
+              code: predicate.wgsl,
+            }),
+            entryPoint: "main",
+          },
+        });
+        this.#pipelines.set(key, predicate.wgsl, pipeline, pool, pin);
+      }
+      const result = await pipeline;
+      if (pin !== undefined && hold !== undefined) {
+        hold(pin);
+        pin = undefined;
+      }
+      return result;
     } finally {
       pin?.release();
     }

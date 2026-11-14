@@ -144,3 +144,17 @@ it("reclaims the least recently used entry in the requesting pool", () => {
   cache.clear();
   expect(pool.usedBytes).toBe(0);
 });
+
+it("retains active metadata in cache without reserving backing twice", () => {
+  const pool = new MemoryBudget(388);
+  const job = pool.child(388);
+  const active = job.reserve(388, "active pipeline");
+  const cache = new PipelineCache<number>(2, 1024);
+  cache.set("a", "b", Promise.resolve(1), job, active);
+  expect(pool.usedBytes).toBe(388);
+  active.release();
+  expect(job.usedBytes).toBe(0);
+  expect(pool.usedBytes).toBe(388);
+  cache.clear();
+  expect(pool.usedBytes).toBe(0);
+});
