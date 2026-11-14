@@ -1,0 +1,25 @@
+{
+  "status": "Implemented; build, focused, full default, Worker and real R2 validation passed",
+  "change": "matches accepts an optional scope and releases its predicate child scope on true, false or exception. Aggregate result options retain the supplied scope through HAVING after pre-admitting result array storage, eliminating the recursive unscoped call. Existing scoped row and owned vector aggregate result routes therefore include supported predicate expression temporaries while aggregate outputs remain live.",
+  "validation": {
+    "build": "passed",
+    "focusedTestsPassed": 34,
+    "workerTestsPassed": 61,
+    "cases": [
+      "1000 repeated true/false Unicode predicates leave zero temporary usage",
+      "Exact predicate peak succeeds; one byte short rejects with no retained charges",
+      "HAVING combined with ordering and limit preserves results",
+      "Large replacement expansion in HAVING rejects against the live query pool and releases aggregate state"
+    ],
+    "remoteEvidence": "../benchmarks/having-cloud-2026-11-13.json",
+    "remote": "Actual R2 HTTP 206, nested cast/upper HAVING during initial aggregate and checkpoint resume; four concurrent jobs at 64/128 MiB shared pools, 8 MiB/query, cold and warm shared cache. Peak tracked allocations 424571 bytes; retained cache 5481; eviction zero.",
+    "defaultTestsPassed": 3102,
+    "defaultTestsSkipped": 629
+  },
+  "limits": [
+    "Only scalar operations with admission support are bounded by the evaluator scope. Regex, date, spatial, comparison and additional evaluator call sites remain open.",
+    "Legacy unscoped aggregate routes still lack this ownership contract.",
+    "Small cloud fixture proves operation, not throughput or total Worker heap limits.",
+    "Previously recorded six Parquet conformance failures remain unresolved."
+  ]
+}

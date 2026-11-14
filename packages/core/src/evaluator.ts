@@ -187,9 +187,15 @@ export function evaluate(expr: Expr, row: Row, scope?: MemoryScope): EvalValue {
   }
 }
 
-export function matches(expr: Expr | undefined, row: Row): boolean {
+export function matches(expr: Expr | undefined, row: Row, scope?: MemoryScope): boolean {
   if (!expr) return true;
-  return toSqlBoolean(evaluate(expr, row)) === true;
+  if (scope === undefined) return toSqlBoolean(evaluate(expr, row)) === true;
+  const temporary = scope.childScope();
+  try {
+    return toSqlBoolean(evaluate(expr, row, temporary)) === true;
+  } finally {
+    temporary.dispose();
+  }
 }
 
 export function jsonSafeValue(value: unknown): unknown {

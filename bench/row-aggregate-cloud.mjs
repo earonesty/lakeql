@@ -77,7 +77,28 @@ for (const capMiB of [64, 128]) {
           quantile: { op: "quantile", column: "amount", quantile: 0.5 },
           distinct: { op: "count_distinct", column: "amount" },
         };
-        const result = await lake.path("window-events.parquet").run().aggregateWithState([], spec);
+        const having = {
+          kind: "null-check",
+          negated: true,
+          target: {
+            kind: "call",
+            fn: "upper",
+            args: [
+              {
+                kind: "call",
+                fn: "cast",
+                args: [
+                  { kind: "column", name: "count" },
+                  { kind: "literal", value: "string" },
+                ],
+              },
+            ],
+          },
+        };
+        const result = await lake
+          .path("window-events.parquet")
+          .run()
+          .aggregateWithState([], spec, { having });
         assert.deepEqual(result.rows, [
           {
             count: 144,
@@ -95,6 +116,7 @@ for (const capMiB of [64, 128]) {
             .run()
             .aggregateWithState([], spec, {
               operatorState: result.operatorState,
+              having,
             });
           assert.deepEqual(resumed.rows, [
             {

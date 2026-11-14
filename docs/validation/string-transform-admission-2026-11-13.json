@@ -19,5 +19,6 @@
     "Native VM allocation and scratch are not measured by explicit reservation units.",
     "Regex, date, spatial and comparison allocations, and scope integration in additional row evaluator call sites, remain open.",
     "No throughput improvement is claimed by this sharing change."
-  ]
+  ],
+  "followupEvidence": "having-admission-2026-11-13.json"
 }

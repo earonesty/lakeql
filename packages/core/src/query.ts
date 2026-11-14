@@ -5127,13 +5127,11 @@ function applyAggregateResultOptions(
               (allocationCharges.arraySlot +
                 allocationCharges.object +
                 4 * allocationCharges.property));
-      return scope.allocate(bytes, "aggregate result ordering and slicing", () =>
-        applyAggregateResultOptions(rows, options),
-      ).value;
+      scope.allocate(bytes, "aggregate result ordering and slicing", () => undefined);
     }
   }
   let out = rows;
-  if (options.having !== undefined) out = out.filter((row) => matches(options.having, row));
+  if (options.having !== undefined) out = out.filter((row) => matches(options.having, row, scope));
   if (options.orderBy !== undefined) {
     const orderBy = normalizeOrderBy(options.orderBy);
     out = [...out].sort((left, right) => compareRows(left, right, orderBy));
