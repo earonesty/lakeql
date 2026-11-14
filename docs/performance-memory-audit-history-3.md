@@ -4524,3 +4524,21 @@ Refreshed the public grouped-continuation harness on source `1d43a68`, adding an
 The owned-median diagnostic verifies the expected median and zero cleanup at 1,024/8,192/65,536 rows; growth reservation calls are 6/10/38, rather than one per appended value. It uses explicit Node GC and one timing sample, so retained-heap/timing observations are diagnostic only. Public grouping uses a synthetic owned vector scanner, not cloud reads. These checks strengthen incremental accounting evidence without closing every update/merge/restore/spill lifecycle path.
 
 Evidence: `docs/validation/aggregate-scaling-current-2026-11-14.json` and its raw report links/harness hashes. All executable assertions and formatting passed; no runtime implementation changed.
+
+### F4/M1/M2 window output and failure lifecycle matrix
+
+`window-lifecycle-memory.test.ts` now exercises row, sorted-run and vector-batch
+execution with two interleaved partitions, cross-input peers, an empty run/batch,
+null and negative aggregate values, and compatible prefix/full sort keys. Literal
+expected dense ranks and cumulative sums provide an independent result oracle.
+Each route measures its tracked peak, rejects with one byte occupied at that cap,
+verifies failure cleanup without releasing a sibling job's pinned allocation,
+and then succeeds three times on the same pool after pressure is released.
+Returned output remains charged until explicit scope disposal; execution scratch
+is absent from the retained output charge. Inputs remain unchanged.
+
+All 63 tests across six focused window suites pass. This is in-memory kernel
+lifecycle evidence, not a cloud or public scanner fixture, and a measured
+reservation peak is not a VM heap bound. Fixed helper-object accounting and the
+broader F4/M1 acceptance work remain open. See
+`validation/window-lifecycle-memory-2026-11-14.json`.

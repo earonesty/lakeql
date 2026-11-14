@@ -1,0 +1,28 @@
+{
+  "requirements": ["F4", "M1", "M2", "V2"],
+  "runtimeSource": "a0ff9e9",
+  "test": "packages/core/src/window-lifecycle-memory.test.ts",
+  "sha256": "f72fd9934b19de4cdf76ac12bbfbabf0654afc97bb3d41ea8d2dde263a4215cb",
+  "routes": ["rows", "runs with empty run", "vector batches with empty batch"],
+  "fixture": "Five in-memory rows, two interleaved partitions, peers spanning input boundaries, null and negative aggregate values, compatible prefix and full order keys",
+  "assertions": [
+    "Independent literal rank and cumulative-sum expected output",
+    "Measured mandatory peak succeeds exactly; one occupied byte rejects with LAKEQL_BUDGET_EXCEEDED",
+    "Failure leaves only pre-existing sibling and pressure reservations",
+    "Three retries on same pool and query budget succeed after pressure release",
+    "Published output remains charged until result scope disposal; partition/planning scratch is released",
+    "Sibling pinned output remains charged and unaffected",
+    "Input rows remain unmodified; final used bytes are zero"
+  ],
+  "validation": {
+    "focusedTests": 63,
+    "focusedFiles": 6,
+    "typecheck": "passed"
+  },
+  "limits": [
+    "In-memory kernel lifecycle evidence, not a cloud fixture or public scan test",
+    "Measured accounting peak is not total native/VM heap",
+    "Does not close remaining fixed helper-object, decoder, or whole-window allocation coverage",
+    "Small partitions do not exercise optional adaptive index/tree admission; separate tests cover those policies"
+  ]
+}
