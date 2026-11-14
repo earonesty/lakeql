@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { and, between, col, eq, fn, gt, gte, isIn, lit, lt, lte, ne, not, or } from "./expr.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope } from "./memory-scope.js";
@@ -377,4 +377,47 @@ it("rolls back partial pruning when index lookup fails", () => {
   expect(pool.usedBytes).toBe(8);
   scope.dispose();
   expect(pool.usedBytes).toBe(0);
+});
+
+it("parses spatial literals once per pruning operation and admits their lifetime", () => {
+  const input = Array.from({ length: 100 }, (_, i) => ({
+    path: String(i).padStart(3, "0"),
+    h3: { cell: ["a"] },
+  }));
+  const predicate = fn("h3_in", col("cell"), '["a","雪"]');
+  const pool = new MemoryBudget(65536);
+  const scope = new MemoryScope(pool);
+  const parse = vi.spyOn(JSON, "parse");
+  try {
+    expect(pruneFilesWithIndex(input, predicate, { scope }).planned).toHaveLength(100);
+    expect(parse).toHaveBeenCalledTimes(1);
+  } finally {
+    parse.mockRestore();
+  }
+  const peak = pool.peakBytes;
+  scope.dispose();
+  expect(pool.usedBytes).toBe(0);
+  for (const cap of [peak - 1, peak]) {
+    const target = new MemoryScope(new MemoryBudget(cap));
+    try {
+      if (cap < peak)
+        expect(() => pruneFilesWithIndex(input, predicate, { scope: target })).toThrow(/budget/i);
+      else
+        expect(pruneFilesWithIndex(input, predicate, { scope: target }).planned).toHaveLength(100);
+    } finally {
+      target.dispose();
+    }
+    expect(target.budget.usedBytes).toBe(0);
+  }
+});
+it("keeps malformed spatial literals lazy and rolls back on reached parse failures", () => {
+  const predicate = fn("h3_in", col("cell"), "[");
+  const scope = new MemoryScope(new MemoryBudget(65536));
+  expect(pruneFilesWithIndex([{ path: "a" }], predicate, { scope }).planned).toHaveLength(1);
+  const baseline = scope.budget.usedBytes;
+  expect(() =>
+    pruneFilesWithIndex([{ path: "b", h3: { cell: ["a"] } }], predicate, { scope }),
+  ).toThrow(SyntaxError);
+  expect(scope.budget.usedBytes).toBe(baseline);
+  scope.dispose();
 });

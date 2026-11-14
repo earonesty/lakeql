@@ -29,3 +29,21 @@ it("releases reservations when JSON parsing rejects malformed input", () => {
   expect(scope.budget.usedBytes).toBe(0);
   scope.dispose();
 });
+
+it("parses borrowed UTF16 text without allocating an encoded or decoded copy", () => {
+  const text = '{"雪":["😀","\\ud800",1,null]}';
+  const scope = new MemoryScope(new MemoryBudget(65536));
+  const owner = parseOwnedJson(text, scope);
+  expect(owner.value).toEqual(JSON.parse(text));
+  const peak = scope.budget.peakBytes;
+  expect(peak).toBe(owner.bytes);
+  owner.release();
+  scope.dispose();
+  for (const capacity of [peak - 1, peak]) {
+    const target = new MemoryScope(new MemoryBudget(capacity));
+    if (capacity < peak) expect(() => parseOwnedJson(text, target)).toThrow(/budget/i);
+    else parseOwnedJson(text, target).release();
+    target.dispose();
+    expect(target.budget.usedBytes).toBe(0);
+  }
+});

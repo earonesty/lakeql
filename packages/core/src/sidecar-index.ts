@@ -2,6 +2,7 @@ import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { LakeqlError } from "./errors.js";
 import type { Expr } from "./expr.js";
 import type { MemoryScope } from "./memory-scope.js";
+import { parseOwnedJson } from "./owned-json-parse.js";
 
 export type IndexValue = string | number | bigint | boolean;
 
@@ -51,6 +52,25 @@ export function pruneFilesWithIndex<T extends SidecarFileIndex>(
     create: () => V,
   ): V => (scope === undefined ? create() : scope.allocate(bytes, purpose, create).value);
   try {
+    // Lazy preparation preserves short-circuit and missing-index behavior.
+    let literals: Map<string, unknown> | undefined;
+    const parseLiteral = (text: string): unknown => {
+      if (literals?.has(text)) return literals.get(text);
+      literals ??= allocate(scratch, c.object, "sidecar literal directory", () => new Map());
+      scratch?.allocate(c.property + 2 * c.arraySlot, "sidecar literal entry", () => undefined);
+      let parsed: unknown;
+      if (scratch === undefined) parsed = JSON.parse(text);
+      else {
+        const owner = parseOwnedJson(text, scratch);
+        try {
+          parsed = owner.value;
+        } finally {
+          owner.release();
+        }
+      }
+      literals.set(text, parsed);
+      return parsed;
+    };
     let ordered = files;
     for (let index = 1; index < files.length; index++) {
       const previous = files[index - 1],
@@ -82,7 +102,8 @@ export function pruneFilesWithIndex<T extends SidecarFileIndex>(
     const skipped = allocate(output, c.array, "sidecar skipped list", () => [] as T[]);
     for (const file of ordered) {
       const index = options.indexForFile === undefined ? file : options.indexForFile(file);
-      const target = index === undefined || fileMayMatch(index, where) ? planned : skipped;
+      const target =
+        index === undefined || fileMayMatch(index, where, parseLiteral) ? planned : skipped;
       output?.allocate(c.arraySlot, "sidecar result slot", () => undefined);
       target.push(file);
     }
@@ -173,7 +194,11 @@ export function buildBBoxIndex<T extends Record<string, unknown>>(
   return { minx, miny, maxx, maxy };
 }
 
-function fileMayMatch(file: SidecarFileIndex, expr: Expr | undefined): boolean {
+function fileMayMatch(
+  file: SidecarFileIndex,
+  expr: Expr | undefined,
+  parseLiteral: (text: string) => unknown,
+): boolean {
   if (!expr) return true;
   switch (expr.kind) {
     case "literal":
@@ -183,13 +208,13 @@ function fileMayMatch(file: SidecarFileIndex, expr: Expr | undefined): boolean {
     case "arithmetic":
     case "case":
     case "call":
-      return callMayMatch(file, expr);
+      return callMayMatch(file, expr, parseLiteral);
     case "not":
       return true;
     case "logical":
       return expr.op === "and"
-        ? expr.operands.every((operand) => fileMayMatch(file, operand))
-        : expr.operands.some((operand) => fileMayMatch(file, operand));
+        ? expr.operands.every((operand) => fileMayMatch(file, operand, parseLiteral))
+        : expr.operands.some((operand) => fileMayMatch(file, operand, parseLiteral));
     case "compare":
       return compareMayMatch(file, expr);
     case "between":
@@ -278,10 +303,14 @@ function inMayMatch(file: SidecarFileIndex, expr: Extract<Expr, { kind: "in" }>)
   });
 }
 
-function callMayMatch(file: SidecarFileIndex, expr: Expr): boolean {
+function callMayMatch(
+  file: SidecarFileIndex,
+  expr: Expr,
+  parseLiteral: (text: string) => unknown,
+): boolean {
   if (expr.kind !== "call") return true;
-  if (expr.fn === "st_intersects") return stIntersectsMayMatch(file, expr);
-  if (expr.fn === "h3_in") return h3InMayMatch(file, expr);
+  if (expr.fn === "st_intersects") return stIntersectsMayMatch(file, expr, parseLiteral);
+  if (expr.fn === "h3_in") return h3InMayMatch(file, expr, parseLiteral);
   if (expr.fn === "h3_within") return h3WithinMayMatch(file, expr);
   return true;
 }
@@ -289,23 +318,28 @@ function callMayMatch(file: SidecarFileIndex, expr: Expr): boolean {
 function stIntersectsMayMatch(
   file: SidecarFileIndex,
   expr: Extract<Expr, { kind: "call" }>,
+  parseLiteral: (text: string) => unknown,
 ): boolean {
   const [target, query] = expr.args;
   if (target?.kind !== "column" || query?.kind !== "literal" || typeof query.value !== "string")
     return true;
   const index = file.bbox?.[target.name];
   if (!index) return true;
-  const parsed = parseBBoxLiteral(query.value);
+  const parsed = parseBBoxLiteral(parseLiteral(query.value));
   return parsed ? bboxMayIntersect(index, parsed) : true;
 }
 
-function h3InMayMatch(file: SidecarFileIndex, expr: Extract<Expr, { kind: "call" }>): boolean {
+function h3InMayMatch(
+  file: SidecarFileIndex,
+  expr: Extract<Expr, { kind: "call" }>,
+  parseLiteral: (text: string) => unknown,
+): boolean {
   const [target, cells] = expr.args;
   if (target?.kind !== "column" || cells?.kind !== "literal" || typeof cells.value !== "string")
     return true;
   const indexed = file.h3?.[target.name];
   if (!indexed) return true;
-  const wanted = parseStringArray(cells.value);
+  const wanted = parseStringArray(parseLiteral(cells.value));
   return wanted ? wanted.some((cell) => indexed.includes(cell)) : true;
 }
 
@@ -328,8 +362,7 @@ function h3WithinMayMatch(file: SidecarFileIndex, expr: Extract<Expr, { kind: "c
   return indexed.includes(origin.value);
 }
 
-function parseBBoxLiteral(value: string): BBoxIndex | undefined {
-  const parsed: unknown = JSON.parse(value);
+function parseBBoxLiteral(parsed: unknown): BBoxIndex | undefined {
   if (
     typeof parsed === "object" &&
     parsed !== null &&
@@ -345,14 +378,13 @@ function parseBBoxLiteral(value: string): BBoxIndex | undefined {
       typeof box.maxx === "number" &&
       typeof box.maxy === "number"
     ) {
-      return { minx: box.minx, miny: box.miny, maxx: box.maxx, maxy: box.maxy };
+      return box as unknown as BBoxIndex;
     }
   }
   return undefined;
 }
 
-function parseStringArray(value: string): string[] | undefined {
-  const parsed: unknown = JSON.parse(value);
+function parseStringArray(parsed: unknown): string[] | undefined {
   return Array.isArray(parsed) && parsed.every((item) => typeof item === "string")
     ? parsed
     : undefined;

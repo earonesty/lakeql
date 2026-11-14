@@ -3784,3 +3784,23 @@ whole runtime-memory contract.
 Build/typecheck passed; targeted suites passed 105 tests; full suite passed 3,615
 with 629 skips. Evidence:
 `docs/validation/sidecar-planning-admission-2026-11-14.json`.
+
+### 2026-11-14 — shared admitted spatial literal parsing
+
+Sidecar pruning lazily caches parsed JSON literals for one pruning operation.
+Repeated files and repeated literal text share the parsed tree; missing indexes
+and short-circuited expressions do not trigger parsing. Malformed reached literals
+still fail, with partial planning allocations released. The directory and trees
+are scratch allocations, released before the result is handed off. Bbox validation
+uses the parsed record directly instead of copying four fields for every file.
+
+The shared owned JSON parser now accepts borrowed UTF16 text as well as UTF8
+bytes. Text input forecasts parsed storage directly without an intermediate
+UTF8 encoding or decoded text copy. The caller retains the input text. Tests
+cover Unicode, escaped surrogate input, exact capacity and one-byte-below failure,
+100 files sharing one JSON parse, lazy malformed literals and failure rollback.
+Expression traversal and repeated spatial shape validation remain separate open
+work; these checks do not prove whole-runtime memory bounds.
+
+Build/typecheck passed; focused tests passed 26; full suite passed 3,618 with 629
+skips. Evidence: `docs/validation/sidecar-literal-preparation-2026-11-14.json`.

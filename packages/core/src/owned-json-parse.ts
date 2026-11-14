@@ -1,16 +1,20 @@
 import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import type { MemoryScope, OwnedMemory } from "./memory-scope.js";
 
-/** Forecast JSON storage from UTF8 bytes without constructing decoded text.
- * String payloads are bounded by input bytes; punctuation bounds containers,
+/** Forecast JSON storage from UTF8 bytes or borrowed UTF16 text.
+ * String payloads are bounded by input bytes/code units; punctuation bounds containers,
  * properties and slots. JSON.parse remains responsible for syntax validation.
  */
-export function parseOwnedJson(bytes: Uint8Array, scope: MemoryScope): OwnedMemory<unknown> {
+export function parseOwnedJson(
+  bytes: Uint8Array | string,
+  scope: MemoryScope,
+): OwnedMemory<unknown> {
   let storage = c.object + bytes.length * c.stringCodeUnit;
   let quoted = false;
   let escaped = false;
   let scalar = false;
-  for (const byte of bytes) {
+  for (let offset = 0; offset < bytes.length; offset++) {
+    const byte = typeof bytes === "string" ? bytes.charCodeAt(offset) : (bytes[offset] ?? 0);
     if (quoted) {
       if (escaped) escaped = false;
       else if (byte === 92) escaped = true;
@@ -34,12 +38,17 @@ export function parseOwnedJson(bytes: Uint8Array, scope: MemoryScope): OwnedMemo
       scalar = true;
     }
   }
-  const text = scope.reserve(c.string + bytes.length * c.stringCodeUnit, "JSON decode text");
+  const text =
+    typeof bytes === "string"
+      ? undefined
+      : scope.reserve(c.string + bytes.length * c.stringCodeUnit, "JSON decode text");
   try {
     return scope
-      .allocate(storage, "parsed JSON tree", () => JSON.parse(new TextDecoder().decode(bytes)))
+      .allocate(storage, "parsed JSON tree", () =>
+        JSON.parse(typeof bytes === "string" ? bytes : new TextDecoder().decode(bytes)),
+      )
       .retain();
   } finally {
-    text.release();
+    text?.release();
   }
 }
