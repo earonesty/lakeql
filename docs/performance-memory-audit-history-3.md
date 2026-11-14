@@ -4254,3 +4254,10 @@ Added R2 `headOwned`: retained metadata records, etag/content-type strings, and 
 The focused R2 metadata/adapter suites pass 14 tests, including exact capacity/one byte below, owner survival after scope disposal, date isolation, zero-budget missing objects, and late-result rejection. The real R2 JSON cache fixture now makes legacy `head` throw before reading, proving that the cache routes metadata through the new owned capability.
 
 Final verification: build/typecheck/formatting passed; 14 focused R2 tests and all 79 workerd tests passed. Evidence: `owned-r2-metadata-2026-11-14.json`.
+
+
+### Allocation matrix and release-gate refresh (2026-11-14)
+
+Updated M1's allocation matrix to reflect iterative JSON traversal/scalar admission, bounded planning/cache retention, owned standard-JSON cache I/O, and HTTP/R2 write/metadata ownership. Each row retains its external/runtime boundaries. No acceptance item was narrowed or marked complete; row fallback/spill/state paths, remaining conversion workspace, scheduling/fairness, current mixed-runtime evidence and the JSON kernel regression still require work.
+
+Runtime source `563df61` passes build, clean npm consumer (66 installed packages), current typecheck, 79 Worker tests, 104 reference tests, and required external conformance (520 passed / one inactive missing-fixture guard). Coverage runs 3,705 passing tests / 629 skipped and passes unchanged thresholds: statements 91.29%, branches 85.41%, functions 95.82%, lines 93.09%. Lint initially caught five benchmark JSON formatting errors; formatting was corrected and parsed JSON equality against committed reports verified. Compatibility, large-file, changeset and deterministic fixture-regeneration checks pass; regeneration leaves no tracked fixture changes. Evidence: `current-owned-io-release-gates-2026-11-14.json`.

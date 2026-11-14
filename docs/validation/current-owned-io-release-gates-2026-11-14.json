@@ -1,0 +1,53 @@
+{
+  "runtimeSourceCommit": "563df61",
+  "gates": {
+    "build": "passed",
+    "cleanPackageConsumer": {
+      "passed": true,
+      "installedPackages": 66
+    },
+    "typecheck": {
+      "passed": true,
+      "evidence": "r2-owned-head-types.log at identical runtime source"
+    },
+    "coverage": {
+      "passed": true,
+      "testsPassed": 3705,
+      "testsSkipped": 629,
+      "filesPassed": 406,
+      "statements": 91.29,
+      "branches": 85.41,
+      "functions": 95.82,
+      "lines": 93.09,
+      "thresholdsUnchanged": true
+    },
+    "workerd": {
+      "passed": 79,
+      "files": 22,
+      "evidence": "r2-owned-head-workerd.log at identical runtime source"
+    },
+    "reference": {
+      "passed": 104,
+      "files": 4
+    },
+    "requiredExternalConformance": {
+      "passed": 520,
+      "skipped": 1,
+      "files": 2,
+      "skipReason": "Missing-required-fixtures guard is inactive when external fixtures exist; required Spark/PyIceberg matrix tests ran."
+    },
+    "lint": "passed after formatting five JSON reports without changing values",
+    "compatibility": "passed",
+    "largeFiles": "passed",
+    "changeset": "passed",
+    "fixtureReproducibility": "passed; no tracked fixture changes"
+  },
+  "acceptance": "Full goal remains active; these release gates do not prove closure of F1-F6/M1-M2/V1-V3.",
+  "remainingExamples": [
+    "General row fallback/spill/resumable-state ownership",
+    "Remaining decode/conversion and runtime workspace",
+    "Mixed-query scheduling/fairness and current end-to-end memory evidence",
+    "JSON row-array performance gap",
+    "Whole-runtime memory headroom evidence"
+  ]
+}
