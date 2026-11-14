@@ -321,37 +321,51 @@ export function decodeRowGroupMetadata(
       ? []
       : scope.allocate(MATERIALIZATION_CHARGES.array, "converted column list", () => []).value;
   const reader = { view, offset: 0 };
+  const append = (value: ThriftObject, index: number, scratch?: MemoryScope) => {
+    if (scope !== undefined && scratch !== undefined)
+      scope.allocateReserved(
+        scratch.reserve(columnRawAliasBytes(value), "retained raw column aliases"),
+        () => undefined,
+      );
+    const convert = () =>
+      columns.push(convertColumnChunkMetadata(value, leaves[index], checkedDecimals, scope));
+    if (scope === undefined) convert();
+    else scope.allocate(MATERIALIZATION_CHARGES.arraySlot, "converted column slot", convert);
+  };
   const projection: CompactProjection = {
-    1: {
-      list: COLUMN_CHUNK_PROJECTION,
-      visit: (value, index) => {
-        const append = () => {
-          if (scope !== undefined && scratch !== undefined)
-            scope.allocateReserved(
-              scratch.reserve(
-                columnRawAliasBytes(value as ThriftObject),
-                "retained raw column aliases",
-              ),
-              () => undefined,
-            );
-          return columns.push(
-            convertColumnChunkMetadata(
-              value as ThriftObject,
-              leaves[index],
-              checkedDecimals,
-              scope,
-            ),
-          );
-        };
-        if (scope === undefined) append();
-        else scope.allocate(MATERIALIZATION_CHARGES.arraySlot, "converted column slot", append);
-      },
-    },
+    1:
+      scope === undefined
+        ? {
+            list: COLUMN_CHUNK_PROJECTION,
+            visit: (value, index) => append(value as ThriftObject, index),
+          }
+        : {
+            // The directory visitor validates each complete wire struct without
+            // materializing it. Only the current column's raw tree needs admission.
+            list: false,
+            visitRange: (start, end, index) => {
+              const columnReader = { view, offset: start };
+              const columnScratch = scope.childStage(
+                planCompactAllocation(columnReader, COLUMN_CHUNK_PROJECTION),
+                "raw compact column metadata",
+              );
+              try {
+                const value = readCompactHeader(columnReader, COLUMN_CHUNK_PROJECTION);
+                if (columnReader.offset !== end)
+                  throw new LakeqlError(
+                    "LAKEQL_PARQUET_READ_ERROR",
+                    "Invalid column metadata extent",
+                  );
+                append(value, index, columnScratch);
+              } finally {
+                columnScratch.dispose();
+              }
+            },
+          },
     ...ROW_GROUP_FIELDS_PROJECTION,
   };
-  // Admit the whole raw tree before parsing. Retained aliases consume partitions
-  // of this reservation; they are not newly allocated copies. The remainder
-  // covers transient parser records until conversion finishes.
+  // Group fields remain live through conversion. Column scratch is admitted
+  // separately; retained raw aliases transfer to the output before release.
   const scratch = scope?.childStage(
     planCompactAllocation(reader, projection),
     "raw compact metadata",

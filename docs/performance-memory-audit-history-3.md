@@ -4650,3 +4650,42 @@ bound or that serializing parser calls alone would resolve it.
 
 See `validation/cloud-range-headroom-diagnosis-2026-11-14.json` and
 `benchmarks/cloud-range-headroom512k-2026-11-14.json`.
+
+### M1/M2 column-scoped raw metadata scratch
+
+Owned row-group decoding now uses the existing validated struct-range visitor
+to admit one projected column tree at a time. Each column is converted while
+its raw scratch remains live; retained raw aliases transfer to the output owner
+before scratch disposal. Group fields retain their separate admission through
+final conversion. The borrowed path retains its existing direct visitor. No
+column-offset directory or copied metadata bytes are introduced.
+
+Real written Parquet tests compare 1/8/32-column metadata to hyparquet's complete
+reader, replay exact/cap-minus-one bounds, reject truncated groups, and verify
+cleanup. Existing opaque crypto/histogram/geospatial alias tests remain green.
+The new width regression keeps peak-minus-retained scratch exactly 3,478 bytes
+for each width. A before/after benchmark against source `7cba928` uses two warmup
+rounds and five samples of 100 decodes each. At 32 columns, total tracked peak
+falls from 261,222 to 160,150 bytes; transient overhead above retained output falls
+from 104,550 to 3,478 bytes. At eight columns, peak falls from 66,294 to 43,174.
+
+The extra validation passes have a CPU cost in this local run: median decode
+time at 32 columns rises from 0.716 to 0.765 ms, at eight columns from 0.219 to
+0.237 ms, and at one column from 0.056 to 0.082 ms. This is a bounded-memory
+tradeoff, not a throughput speedup. No user configuration is added. Benchmark
+fixture generation is excluded; decoding, scope cleanup and zero-used checks
+are included. Correctness is compared once per timing round.
+
+The 128 KiB live R2 cold/four-aggregate scenario still rejects, now at converted
+column metadata (attempted 67,109,030 against 67,108,864 bytes), after raw-column
+admission succeeds. This is not evidence that another 166 bytes would allow the
+whole query to complete: subsequent allocations remain. Diagnostics again show
+cleanup to the pinned-cache baseline. Broader concurrent metadata/output overlap
+and whole-runtime accounting remain open.
+
+Validation: 3,748 regular tests (645 skipped), 82 Worker tests, 520 required
+external conformance tests (one inactive missing-fixtures guard), build and types
+pass. The current 512 KiB live R2 run passes all 52 scenarios; maximum incremental
+charge stays 397,512 bytes and warm ordinary reads stay zero. Thus the parser
+scratch improvement does not lower this workload's overall maximum. Evidence:
+`validation/column-metadata-scratch-2026-11-14.json`.

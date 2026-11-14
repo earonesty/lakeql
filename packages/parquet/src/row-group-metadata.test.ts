@@ -103,3 +103,67 @@ it("preserves legacy non-scalar column metadata field 15", async () => {
     readCompactHeader({ view: new DataView(bytes.buffer), offset: 0 }, COLUMN_CHUNK_PROJECTION),
   ).toEqual({ field_3: { field_15: [1] } });
 });
+
+it("bounds raw scratch by one column while retaining real wide-schema metadata", async () => {
+  const { parquetWriteBuffer } = await import("hyparquet-writer");
+  const { parquetMetadata } = await import("hyparquet");
+  const { MemoryBudget, MemoryScope } = await import("lakeql-core");
+  const { indexFooterRowGroups, footerRowGroupView } = await import("./footer-directory.js");
+  const { decodeRowGroupMetadata } = await import("./row-group-metadata.js");
+  const { lakeqlParquetParsers } = await import("./parsers.js");
+  const scratchPeaks: number[] = [];
+  for (const width of [1, 8, 32]) {
+    const file = parquetWriteBuffer({
+      rowGroupSize: [2, 2],
+      columnData: Array.from({ length: width }, (_, index) => ({
+        name: `c${index.toString().padStart(2, "0")}`,
+        type: "INT32" as const,
+        data: [null, index, -index, index + 1],
+      })),
+    });
+    const expected = parquetMetadata(file, { parsers: lakeqlParquetParsers });
+    const leaves = expected.schema.filter((element) => element.type);
+    const footerLength = new DataView(file).getUint32(file.byteLength - 8, true);
+    const view = new DataView(file, file.byteLength - footerLength - 8, footerLength);
+    const directoryScope = new MemoryScope(new MemoryBudget(16));
+    const directory = indexFooterRowGroups(view, directoryScope);
+    const group = footerRowGroupView(view, directory, 1);
+    directoryScope.dispose();
+    const run = (budget: InstanceType<typeof MemoryBudget>) => {
+      const scope = new MemoryScope(budget);
+      try {
+        const result = decodeRowGroupMetadata(group, leaves, true, scope);
+        expect(result).toEqual(expected.row_groups[1]);
+        return budget.usedBytes;
+      } finally {
+        scope.dispose();
+      }
+    };
+    const budget = new MemoryBudget(1024 * 1024);
+    const retained = run(budget);
+    scratchPeaks.push(budget.peakBytes - retained);
+    expect(budget.usedBytes).toBe(0);
+    expect(run(new MemoryBudget(budget.peakBytes))).toBe(retained);
+    const tight = new MemoryBudget(budget.peakBytes - 1);
+    expect(() => run(tight)).toThrow(expect.objectContaining({ code: "LAKEQL_BUDGET_EXCEEDED" }));
+    expect(tight.usedBytes).toBe(0);
+    const invalid = new MemoryBudget(1024 * 1024);
+    const scope = new MemoryScope(invalid);
+    try {
+      expect(() =>
+        decodeRowGroupMetadata(
+          new DataView(group.buffer, group.byteOffset, group.byteLength - 1),
+          leaves,
+          true,
+          scope,
+        ),
+      ).toThrow();
+    } finally {
+      scope.dispose();
+    }
+    expect(invalid.usedBytes).toBe(0);
+  }
+  // Equal-shaped columns must not grow temporary raw-tree storage with width.
+  expect(scratchPeaks[1]).toBe(scratchPeaks[0]);
+  expect(scratchPeaks[2]).toBe(scratchPeaks[0]);
+});

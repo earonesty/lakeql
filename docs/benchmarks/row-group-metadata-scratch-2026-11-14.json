@@ -1,0 +1,83 @@
+{
+  "conditions": {
+    "warmupRounds": 2,
+    "sampleRounds": 5,
+    "decodesPerRound": 100,
+    "fixture": "real written two-row-group nullable INT32 Parquet",
+    "timing": "decode, scope cleanup and zero-used check; reference equality checked once per round"
+  },
+  "reports": [
+    {
+      "width": 1,
+      "variant": "current",
+      "peakBytes": 9056,
+      "retainedBytes": 5578,
+      "scratchOverRetainedBytes": 3478,
+      "samplesMs": [
+        0.10854600000000005, 0.059944779999999864, 0.07412577999999996, 0.08243122999999997,
+        0.08289349000000015
+      ],
+      "medianMs": 0.08243122999999997
+    },
+    {
+      "width": 1,
+      "variant": "reference",
+      "peakBytes": 9440,
+      "retainedBytes": 5578,
+      "scratchOverRetainedBytes": 3862,
+      "samplesMs": [
+        0.037541200000000004, 0.04169551999999982, 0.05601487999999989, 0.062265950000000035,
+        0.07070233999999999
+      ],
+      "medianMs": 0.05601487999999989
+    },
+    {
+      "width": 8,
+      "variant": "current",
+      "peakBytes": 43174,
+      "retainedBytes": 39696,
+      "scratchOverRetainedBytes": 3478,
+      "samplesMs": [
+        0.3402016100000003, 0.3035702400000002, 0.15739426999999978, 0.23753729999999962,
+        0.2151692700000001
+      ],
+      "medianMs": 0.23753729999999962
+    },
+    {
+      "width": 8,
+      "variant": "reference",
+      "peakBytes": 66294,
+      "retainedBytes": 39696,
+      "scratchOverRetainedBytes": 26598,
+      "samplesMs": [
+        0.20429059999999993, 0.21889499, 0.15915549999999995, 0.21953779999999995,
+        0.26222128000000056
+      ],
+      "medianMs": 0.21889499
+    },
+    {
+      "width": 32,
+      "variant": "current",
+      "peakBytes": 160150,
+      "retainedBytes": 156672,
+      "scratchOverRetainedBytes": 3478,
+      "samplesMs": [
+        0.8727386200000001, 0.7651889999999991, 0.8010372999999993, 0.7148901899999999,
+        0.7526084100000002
+      ],
+      "medianMs": 0.7651889999999991
+    },
+    {
+      "width": 32,
+      "variant": "reference",
+      "peakBytes": 261222,
+      "retainedBytes": 156672,
+      "scratchOverRetainedBytes": 104550,
+      "samplesMs": [
+        0.7159400600000003, 0.6661086199999999, 0.7175158299999999, 0.656198260000001,
+        0.7279294400000004
+      ],
+      "medianMs": 0.7159400600000003
+    }
+  ]
+}
