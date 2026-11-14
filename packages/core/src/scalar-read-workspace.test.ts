@@ -138,3 +138,47 @@ it("handles union leaves and reversed extents within one admitted stage", () => 
   expect(pool.peakBytes).toBe(pool.maxBytes);
   expect(pool.usedBytes).toBe(0);
 });
+
+it("keeps a borrowed pair charged when its parent scope closes inside comparison", () => {
+  const pool = new MemoryBudget(bytes(1) + bytes(2));
+  const parent = new MemoryScope(pool);
+  const stage = parent.childStage(pool.maxBytes, "comparison stage");
+  const reader = new ScalarReadWorkspace(stage);
+  expect(
+    reader.consume(packed([1, 2]), 0, 1, (left, right) => {
+      parent.dispose();
+      expect(pool.usedBytes).toBe(pool.maxBytes);
+      expect(left).toBe("a");
+      expect(right).toBe("aa");
+      expect(() => pool.reserve(1, "sibling cannot reuse live pair storage")).toThrow(/budget/i);
+      return -1;
+    }),
+  ).toBe(-1);
+  expect(pool.usedBytes).toBe(0);
+  expect(() => reader.consume(packed([1, 2]), 0, 1, () => 0)).toThrow(/disposed/);
+  reader.dispose();
+});
+
+it("holds scalar admission through a decoder callback that closes its scope", () => {
+  const pool = new MemoryBudget(bytes(1));
+  const scope = new MemoryScope(pool);
+  const reader = new ScalarReadWorkspace(scope);
+  const original = TextDecoder.prototype.decode;
+  let calls = 0;
+  const decode = vi.spyOn(TextDecoder.prototype, "decode").mockImplementation(function (...args) {
+    calls++;
+    scope.dispose();
+    expect(pool.usedBytes).toBe(pool.maxBytes);
+    expect(() => pool.reserve(1, "sibling during active decode")).toThrow(/budget/i);
+    return original.apply(this, args);
+  });
+  try {
+    expect(() => reader.consume(packed([1, 2]), 0, 1, () => 0)).toThrow(/disposed/);
+    expect(calls).toBe(1);
+    expect(pool.usedBytes).toBe(0);
+  } finally {
+    decode.mockRestore();
+    reader.dispose();
+    scope.dispose();
+  }
+});

@@ -1,0 +1,31 @@
+{
+  "baseline": "ae00c55",
+  "runtimeChanged": false,
+  "reviewed": [
+    "packages/core/src/scalar-read-workspace.ts",
+    "packages/core/src/memory-scope.ts",
+    "packages/core/src/vector-sort.ts",
+    "packages/core/src/materialization-plan.ts"
+  ],
+  "findings": [
+    "ScalarReadWorkspace owns its returned reservations independently of scope disposal. Closing its parent stage during comparison does not release active scalar storage prematurely.",
+    "Closing a scope from the decoder callback leaves the in-progress scalar charged; workspace detects closure, rejects before decoding the next scalar, and releases at settlement.",
+    "Materialization cache references point to strings already covered by mandatory output admission. Top-k comparison strings instead use reusable two-value scratch and cannot safely be retained in that reference-only cache."
+  ],
+  "regressions": {
+    "passed": 23,
+    "files": 2,
+    "newCases": [
+      "Parent-stage disposal inside comparison: both values remain usable; a sibling cannot reserve one byte until callback returns; final cleanup is zero.",
+      "Scope disposal inside decode: current scalar stays charged during callback; second decode never begins; typed disposal failure and final zero cleanup."
+    ]
+  },
+  "topKReuseContract": [
+    "Retained decoded keys must have separate payload admission, including string storage and reference/index bookkeeping.",
+    "Optional retained keys must relinquish capacity before a mandatory wider scalar read or gather would otherwise fail; preserve direct-access success at exact boundaries.",
+    "Do not evict shared transport caches merely to prepare keys. Preparation must be bounded by available parent/query/pool allowances.",
+    "Cache lifetime must end before result gather unless output intentionally retains an independently charged owner; borrowed binary and mutable nested values cannot share immutable-text cache semantics.",
+    "Measure reuse under actual mixed selections and concurrency before selecting a default. Existing eager-preparation benchmarks are insufficient evidence for universal preparation."
+  ],
+  "remaining": "F5 adaptive top-k preparation and broader allocation/runtime audit remain open."
+}
