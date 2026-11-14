@@ -260,10 +260,15 @@ it("preserves aggregate state when continuation placement changes between batche
 });
 
 it.each(
-  [false, true].flatMap((grouped) => [0, 7, 99].map((threshold) => ({ grouped, threshold }))),
-)("joins owned deferred aggregate vectors (grouped=$grouped, threshold=$threshold)", async ({
+  [false, true].flatMap((grouped) =>
+    [0, 7, 99].flatMap((threshold) =>
+      [false, true].map((borrowed) => ({ grouped, threshold, borrowed })),
+    ),
+  ),
+)("joins deferred aggregate vectors (grouped=$grouped, threshold=$threshold, borrowed=$borrowed)", async ({
   grouped,
   threshold,
+  borrowed,
 }) => {
   const store = memoryStore();
   await store.put("table", new Uint8Array(1));
@@ -296,6 +301,23 @@ it.each(
       }
     },
   };
+  if (borrowed) {
+    const source = scanner.scanOwnedVectorBatches;
+    if (!source) throw Error("Missing source");
+    delete scanner.scanOwnedVectorBatches;
+    scanner.scanVectorBatches = async function* (path, options) {
+      for await (const owner of source(path, options)) {
+        try {
+          yield owner.value;
+        } finally {
+          owner.release();
+        }
+      }
+    };
+    scanner.scanColumns = async function* (path, options) {
+      for await (const input of scanner.scanVectorBatches?.(path, options) ?? []) yield input.batch;
+    };
+  }
   const lake = new Lake({ store, scanner, memoryPool: pool });
   const rows = await lake
     .path("table")

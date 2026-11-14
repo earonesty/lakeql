@@ -4,7 +4,6 @@ import {
   type Batch,
   materializeBatchRows,
   predicateSelection,
-  scalarVectorValue,
   selectedRowCount,
   selectedRowIndexBuffer,
   selectedRowIndices,
@@ -100,15 +99,6 @@ import { serializedBatchBytes, serializedValueBytes } from "./serialized-size.js
 import { pruneFilesWithIndex, type SidecarFileIndex } from "./sidecar-index.js";
 import type { ObjectInfo, ObjectStore } from "./store.js";
 import type { Bookmark, BookmarkQuery, QueryStats, Row, SliceResult } from "./types.js";
-import type { VectorAggregateValue } from "./vector-aggregate.js";
-import {
-  createVectorGroupByState,
-  enforceVectorGroupByBudget,
-  finalizeVectorGroupByRows,
-  getOrCreateVectorGroup,
-  updateVectorGroupAggregateValue,
-  type VectorGroup,
-} from "./vector-group-by.js";
 import { vectorProjectBatch } from "./vector-project.js";
 import { sliceBatch } from "./vector-slice.js";
 import { concatOwnedBatches, gatherSelectedBatch, vectorTopKOwnedBatch } from "./vector-sort.js";
@@ -1360,6 +1350,31 @@ export class QueryResult {
     }
   }
 
+  /** Transfer an independent positioned input owner to a bounded gather consumer. */
+  private async *ownedProjectedScanInputs(
+    path: string,
+    options: ScanOptions,
+  ): AsyncIterable<OwnedMemory<ScanVectorBatch>> {
+    for await (const input of this.projectedScanInputs(path, options)) {
+      if (input.owner) {
+        yield input.owner.retain();
+        continue;
+      }
+      const scope = new MemoryScope(this.memoryBudget);
+      try {
+        const batch = scope.adopt(detachOwnedBatch(input.batch, this.memoryBudget));
+        const positioned = scope.allocate(
+          allocationCharges.object + 2 * allocationCharges.property,
+          "detached positioned scan batch",
+          () => ({ rowOffset: input.rowOffset, batch: batch.value }),
+        );
+        yield scope.retainAllocations(positioned.value);
+      } finally {
+        scope.dispose();
+      }
+    }
+  }
+
   private async executePhysicalBatch(
     batch: Batch,
     operators: readonly PhysicalOperator[],
@@ -2294,117 +2309,14 @@ export class QueryResult {
     const lateColumns = aggregateColumns.filter((column) => !earlyColumns.includes(column));
     if (lateColumns.length === 0) return undefined;
 
-    if (config.scanner.scanOwnedVectorBatches !== undefined)
-      return this.tryOwnedLateAggregateRows(
-        groupColumns,
-        spec,
-        options,
-        earlyColumns,
-        lateColumns,
-        startedAt,
-      );
-
-    if (scanVectorBatches === undefined) return undefined;
-
-    const statsBefore = { ...this.stats };
-    const state = createVectorGroupByState(groupColumns, spec);
-    const refs: AggregateRowRef[] = [];
-    let scannedRows = 0;
-    let matchedRows = 0;
-    const maxLateDensity = 0.35;
-    const maxLateRows = Math.min(config.budget?.maxBufferedRows ?? 4096, 4096);
-    const aggregateEntries = Object.entries(spec);
-    const countStarAliases = aggregateEntries
-      .filter(
-        ([, aggregate]) =>
-          aggregate.op === "count" &&
-          aggregate.column === undefined &&
-          aggregate.expr === undefined,
-      )
-      .map(([alias]) => alias);
-    const { planned: paths, skipped: skippedFiles } = await this.planObjects();
-    this.stats.filesSkipped = skippedFiles;
-    for (const object of paths) {
-      this.stats.filesPlanned += 1;
-      this.stats.filesRead += 1;
-      this.stats.bytesRequested += object.size;
-      enforceBudget(config.budget, this.stats, config.now, startedAt);
-      const scanOptions: ScanOptions = {
-        memoryBudget: this.memoryBudget,
-        object,
-        columns: earlyColumns,
-        ...(config.where === undefined ? {} : { where: config.where }),
-        batchSize: columnarBatchSize(config.batchSize),
-        stats: this.stats,
-        budget: config.budget,
-        now: config.now,
-        startedAt,
-      };
-      for await (const { rowOffset, batch } of scanVectorBatches(
-        config.scanner,
-        object.path,
-        scanOptions,
-      )) {
-        scannedRows += batch.rowCount;
-        const selection = predicateSelection(batch, config.where);
-        const selected = [...selectedRowIndices(batch.rowCount, selection)];
-        for (const index of selected) {
-          matchedRows += 1;
-          if (matchedRows > maxLateRows) {
-            Object.assign(this.stats, statsBefore);
-            return undefined;
-          }
-          const group = getOrCreateVectorGroup(state, batch, index, {
-            budget: config.budget,
-            ...(options.maxGroups === undefined ? {} : { maxGroups: options.maxGroups }),
-          });
-          for (const alias of countStarAliases) {
-            updateVectorGroupAggregateValue(group, alias, true, { budget: config.budget });
-          }
-          refs.push({
-            path: object.path,
-            object,
-            rowIndex: rowOffset + index,
-            group,
-            early: aggregateEarlyRow(batch, index, earlyColumns),
-          });
-        }
-        if (matchedRows / Math.max(1, scannedRows) > maxLateDensity) {
-          Object.assign(this.stats, statsBefore);
-          return undefined;
-        }
-        enforceBufferedRowsBudget(config.budget, refs.length);
-        enforceVectorGroupByBudget(state, config.budget);
-        enforceBudget(config.budget, this.stats, config.now, startedAt);
-      }
-    }
-    this.stats.rowsMatched += matchedRows;
-    for await (const materialized of this.aggregateMaterializedRows(refs, lateColumns, startedAt)) {
-      for (const [alias, aggregate] of aggregateEntries) {
-        if (
-          aggregate.op === "count" &&
-          aggregate.column === undefined &&
-          aggregate.expr === undefined
-        ) {
-          continue;
-        }
-        updateVectorGroupAggregateValue(
-          materialized.ref.group,
-          alias,
-          aggregateValueForRow(aggregate, materialized.row),
-          { budget: config.budget },
-        );
-      }
-      enforceVectorGroupByBudget(state, config.budget);
-      enforceBudget(config.budget, this.stats, config.now, startedAt);
-    }
-    const rows = applyAggregateResultOptions(finalizeVectorGroupByRows(state), options);
-    for (const _row of rows) {
-      this.stats.rowsReturned += 1;
-      enforceBudget(config.budget, this.stats, config.now, startedAt);
-    }
-    this.stats.elapsedMs = config.now() - startedAt;
-    return rows;
+    return this.tryOwnedLateAggregateRows(
+      groupColumns,
+      spec,
+      options,
+      earlyColumns,
+      lateColumns,
+      startedAt,
+    );
   }
 
   /** Owned deferred aggregation joins selected positions in bounded windows;
@@ -2418,8 +2330,6 @@ export class QueryResult {
     startedAt: number,
   ): Promise<Row[] | undefined> {
     const config = this.config;
-    const scanOwned = config.scanner.scanOwnedVectorBatches;
-    if (!scanOwned) return undefined;
     // Assess expression contracts before speculative I/O. Column shapes are
     // checked against the joined vectors by the shared reduction implementation.
     try {
@@ -2481,14 +2391,12 @@ export class QueryResult {
           now: config.now,
           startedAt,
         };
-        for await (const { batch, owner } of this.projectedScanInputs(object.path, scanOptions)) {
-          if (!owner)
-            throw new LakeqlError(
-              "LAKEQL_TYPE_ERROR",
-              "Owned deferred reduction lost input ownership",
-            );
-          const stage = scope.childScope();
+        for await (const owner of this.ownedProjectedScanInputs(object.path, scanOptions)) {
+          let stage: MemoryScope | undefined;
           try {
+            stage = scope.childScope();
+            stage.adopt(owner.retain());
+            const { batch } = owner.value;
             const selection = predicateSelection(batch, config.where, stage);
             scannedRows += batch.rowCount;
             matchedRows += selectedRowCount(batch.rowCount, selection);
@@ -2498,7 +2406,7 @@ export class QueryResult {
             }
             const indices = selectedRowIndexBuffer(batch.rowCount, selection, stage);
             const read = (rowStart: number, rowEnd: number) =>
-              scanOwned.call(config.scanner, object.path, {
+              this.ownedProjectedScanInputs(object.path, {
                 memoryBudget: this.memoryBudget,
                 object,
                 columns: lateColumns,
@@ -2517,6 +2425,7 @@ export class QueryResult {
               read,
             )) {
               try {
+                enforceBudget(config.budget, this.stats, config.now, startedAt);
                 await reducer.append(gathered.value);
               } finally {
                 gathered.release();
@@ -2524,7 +2433,8 @@ export class QueryResult {
             }
             enforceBudget(config.budget, this.stats, config.now, startedAt);
           } finally {
-            stage.dispose();
+            owner.release();
+            stage?.dispose();
           }
         }
       }
@@ -2557,49 +2467,6 @@ export class QueryResult {
     } finally {
       reducer?.dispose();
       scope.dispose();
-    }
-  }
-
-  private async *aggregateMaterializedRows(
-    refs: readonly AggregateRowRef[],
-    lateColumns: readonly string[],
-    startedAt: number,
-  ): AsyncIterable<{ ref: AggregateRowRef; row: Row }> {
-    const scanVectorBatches = vectorBatchScanner(this.config.scanner);
-    if (scanVectorBatches === undefined) return;
-    const refsByKey = new Map<string, AggregateRowRef>();
-    for (const ref of refs) refsByKey.set(rowRefKey(ref), ref);
-    for (const window of aggregateMaterializationWindows(
-      refs,
-      columnarBatchSize(this.config.batchSize),
-    )) {
-      const scanOptions: ScanOptions = {
-        memoryBudget: this.memoryBudget,
-        ...(window.object === undefined ? {} : { object: window.object }),
-        columns: [...lateColumns],
-        rowStart: window.rowStart,
-        rowEnd: window.rowEnd,
-        batchSize: columnarBatchSize(this.config.batchSize),
-        stats: this.stats,
-        budget: this.config.budget,
-        now: this.config.now,
-        startedAt,
-      };
-      for await (const { rowOffset, batch } of scanVectorBatches(
-        this.config.scanner,
-        window.path,
-        scanOptions,
-      )) {
-        for (let index = 0; index < batch.rowCount; index += 1) {
-          const key = rowRefKey({ path: window.path, rowIndex: rowOffset + index });
-          const ref = refsByKey.get(key);
-          if (ref === undefined) continue;
-          yield {
-            ref,
-            row: { ...ref.early, ...aggregateLateRow(batch, index, lateColumns) },
-          };
-        }
-      }
     }
   }
 
@@ -5769,14 +5636,6 @@ interface RankedRowRef {
   keys: Row;
 }
 
-interface AggregateRowRef {
-  path: string;
-  object?: ObjectInfo;
-  rowIndex: number;
-  group: VectorGroup;
-  early: Row;
-}
-
 interface MaterializationWindow {
   path: string;
   object?: ObjectInfo;
@@ -5801,68 +5660,6 @@ function aggregateInputColumns(spec: AggregateSpec): string[] {
     collectExprColumns(aggregate.expr, columns);
   }
   return [...columns].sort();
-}
-
-function aggregateEarlyRow(batch: Batch, index: number, columns: readonly string[]): Row {
-  const row: Row = {};
-  for (const column of columns) {
-    const vector = batch.columns[column];
-    if (vector !== undefined) row[column] = scalarVectorValue(vector, index);
-  }
-  return row;
-}
-
-function aggregateLateRow(batch: Batch, index: number, columns: readonly string[]): Row {
-  const row: Row = {};
-  for (const column of columns) {
-    const vector = batch.columns[column];
-    if (vector !== undefined) row[column] = scalarVectorValue(vector, index);
-  }
-  return row;
-}
-
-function aggregateValueForRow(aggregate: AggregateExpr, row: Row): VectorAggregateValue {
-  if (aggregate.expr !== undefined) return aggregateValueFromUnknown(evaluate(aggregate.expr, row));
-  if (aggregate.column === undefined) return true;
-  return aggregateValueFromUnknown(row[aggregate.column]);
-}
-
-function aggregateValueFromUnknown(value: unknown): VectorAggregateValue {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean" ||
-    typeof value === "bigint"
-  ) {
-    return value;
-  }
-  return null;
-}
-
-function aggregateMaterializationWindows(
-  refs: readonly AggregateRowRef[],
-  maxWindowRows: number,
-): MaterializationWindow[] {
-  const out: MaterializationWindow[] = [];
-  for (const ref of refs) {
-    const current = out[out.length - 1];
-    if (
-      current !== undefined &&
-      current.path === ref.path &&
-      ref.rowIndex + 1 - current.rowStart <= maxWindowRows
-    ) {
-      current.rowEnd = Math.max(current.rowEnd, ref.rowIndex + 1);
-      continue;
-    }
-    out.push({
-      path: ref.path,
-      ...(ref.object === undefined ? {} : { object: ref.object }),
-      rowStart: ref.rowIndex,
-      rowEnd: ref.rowIndex + 1,
-    });
-  }
-  return out;
 }
 
 /** Borrowed vectors may be reused at the next yield; detach only selected rows. */

@@ -156,6 +156,22 @@ it.each(
       owner.release();
     }
     expect(ranges.filter((range) => range !== "bytes=0-1")).toHaveLength(0);
+    cache.deleteWhere(() => true);
+    borrowedReads.length = 0;
+    const aggregate = await lake
+      .path("rows.parquet")
+      .where(eq(mod(col("id"), 257), 256))
+      .batchSize(16)
+      .groupBy(["id"])
+      .aggregate({ first: { op: "min", column: "text" }, n: { op: "count" } });
+    expect(aggregate).toEqual([{ id: 256, first: rows[256]?.text, n: 1 }]);
+    if (borrowed && !ignoreRange) {
+      expect(borrowedReads.some((read) => read.columns?.join() === "id")).toBe(true);
+      expect(
+        borrowedReads.some((read) => read.columns?.join() === "text" && read.rowStart === 256),
+      ).toBe(true);
+    }
+
     expect(peak).toBeLessThanOrEqual(2);
     expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
     if (process.env.LAKEQL_DEFERRED_METRICS === "1")
