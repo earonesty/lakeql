@@ -1,4 +1,5 @@
 import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
+import { decimalToString, isDecimalValue } from "./decimal-value.js";
 import { intervalToString, isIntervalValue } from "./interval.js";
 import { encodeOwnedJsonOutput } from "./json-output-encoding.js";
 import { isPlainJsonAscii } from "./json-string-size.js";
@@ -47,7 +48,8 @@ export function encodeOwnedCsvOutput(
         let prepared: string | Uint8Array = empty;
         let start = 0;
         let end = 0;
-        if (isTimestampValue(value)) {
+        if (isDecimalValue(value)) value = decimalToString(value, stage);
+        else if (isTimestampValue(value)) {
           const timestamp = value;
           value = stage.allocate(
             scalarStringAllocationBytes(timestamp),

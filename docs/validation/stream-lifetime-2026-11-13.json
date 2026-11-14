@@ -192,5 +192,34 @@
       "interpretation": "Separate synthetic encoder runs, two warmup and seven alternating-order measured rounds, byte parity checked. Final run after full suite terminated. These show reduced per-value accounting overhead, not whole-query or cloud speedups; native unaccounted fractional output remains faster."
     },
     "remaining": "Traversal directories/recursion, BigInt forecast arithmetic, native formatter/GC workspace, accounting metadata and consumer-retained output remain outside complete heap admission. Reusing live capacity does not establish a physical GC or whole-Worker heap limit."
+  },
+  "exactDecimalOutput": {
+    "change": "JSON-safe conversion, serialized size, owned JSON encoding and CSV preparation now recognize internal DecimalValue. JSON preserves canonical decimal text as a string; CSV emits the exact text. Nested values share the same contract and admitted formatting workspace.",
+    "validation": {
+      "focusedPassed": 98,
+      "defaultPassed": 2873,
+      "defaultSkipped": 621,
+      "workerPassed": 57,
+      "referencePassed": 104,
+      "build": "passed",
+      "lint": "passed",
+      "typecheck": "passed",
+      "cleanPackageInstall": "passed"
+    },
+    "edgeCases": [
+      "Positive and negative documented precision-loss values",
+      "Zero and MAX_SAFE_INTEGER scale",
+      "Top-level CSV cells and nested JSON arrays",
+      "JSON-safe clone, native JSON and owned JSON byte parity",
+      "Exact-cap success and one-byte-short rejection with zero leaked reservations",
+      "1000/10000-value arrays reuse one decimal formatting workspace"
+    ],
+    "scope": "Serialization integration only. Decimal remains internal and is not yet a generic Scalar/vector type or reader output. Existing real HTTP/R2 tests are regression coverage, not proof of exact-decimal reader support. The independent conformance failures remain open.",
+    "skipExplanation": "Default suite skips the separate conformance group; its 16 newly added independent decimal assertions account for the change from 605 to 621 skips. They run and fail in test:conformance, not waived.",
+    "benchmarks": [
+      "../benchmarks/json-output-decimal-2026-11-13.json",
+      "../benchmarks/csv-output-decimal-2026-11-13.json"
+    ],
+    "timing": "Synthetic 1000-decimal arrays: owned JSON median 0.451ms versus unaccounted legacy 0.118ms; nested CSV 0.513ms versus 0.173ms. Formatting admission and two-pass output have a CPU cost. Fractional medians remain 0.202ms JSON and 0.209ms CSV; other cases vary. No whole-query or cloud throughput claim."
   }
 }

@@ -29,6 +29,10 @@ export class DecimalValue {
   }
 }
 
+export function isDecimalValue(value: unknown): value is DecimalValue {
+  return value instanceof DecimalValue;
+}
+
 export function decimalFromParts(
   coefficient: bigint,
   scale: number,

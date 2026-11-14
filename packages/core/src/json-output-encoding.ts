@@ -1,4 +1,5 @@
 import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
+import { isDecimalValue } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
 import { isIntervalValue } from "./interval.js";
 import { writeJsonInteger } from "./json-integer-output.js";
@@ -91,6 +92,10 @@ export function encodeOwnedJsonOutput(
     const write = (value: unknown): void => {
       if (value === null || absent(value)) {
         ascii("null");
+        return;
+      }
+      if (isDecimalValue(value)) {
+        scalar.consume(value, string);
         return;
       }
       if (isTimestampValue(value)) {

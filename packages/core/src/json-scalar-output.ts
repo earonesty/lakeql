@@ -1,4 +1,9 @@
 import {
+  type DecimalValue,
+  decimalFormatAllocationBytes,
+  isDecimalValue,
+} from "./decimal-value.js";
+import {
   type IntervalValue,
   intervalStringAllocationBytes,
   intervalToString,
@@ -20,13 +25,15 @@ export class JsonScalarFormatter {
 
   // biome-ignore lint/suspicious/noConfusingVoidType: consumers either measure or write, never retain text.
   consume<T extends number | void>(
-    value: number | bigint | TimestampValue | IntervalValue,
+    value: number | bigint | TimestampValue | IntervalValue | DecimalValue,
     consume: (text: string) => T,
   ): T {
     if (this.scope !== undefined) {
-      const bytes = isIntervalValue(value)
-        ? intervalStringAllocationBytes(value)
-        : scalarStringAllocationBytes(value);
+      const bytes = isDecimalValue(value)
+        ? decimalFormatAllocationBytes(value)
+        : isIntervalValue(value)
+          ? intervalStringAllocationBytes(value)
+          : scalarStringAllocationBytes(value);
       if (bytes > (this.reservation?.bytes ?? 0)) {
         this.dispose();
         this.reservation = this.scope.reserve(bytes, "JSON scalar formatting");

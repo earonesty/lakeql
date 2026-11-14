@@ -1,4 +1,5 @@
 import { type Batch, type Vector, vectorLength, vectorValue } from "./batch.js";
+import { decimalToString, isDecimalValue } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
 import { intervalToString, isIntervalValue } from "./interval.js";
 import { jsonStringUtf8Bytes } from "./json-string-size.js";
@@ -12,6 +13,7 @@ import { isTimestampValue } from "./timestamp.js";
  */
 export function serializedValueBytes(value: unknown): number {
   if (value === null) return 4;
+  if (isDecimalValue(value)) return jsonStringUtf8Bytes(decimalToString(value));
   if (isTimestampValue(value)) return jsonStringUtf8Bytes(value.toJSON());
   if (isIntervalValue(value)) return jsonStringUtf8Bytes(intervalToString(value));
   if (value instanceof Uint8Array) return 2 + value.byteLength * 2;

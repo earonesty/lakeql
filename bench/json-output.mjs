@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
+import { decimalFromParts } from "../packages/core/dist/decimal-value.js";
 import { jsonSafeValue } from "../packages/core/dist/evaluator.js";
 import { encodeOwnedJsonOutput } from "../packages/core/dist/json-output-encoding.js";
 import { MemoryBudget } from "../packages/core/dist/memory-budget.js";
@@ -9,6 +10,11 @@ import { MemoryScope } from "../packages/core/dist/memory-scope.js";
 const encoder = new TextEncoder();
 const cases = {
   small: { id: 42, name: "example", active: true },
+  decimal: {
+    values: Array.from({ length: 1000 }, (_, i) =>
+      decimalFromParts(123456789987654321n + BigInt(i), 9),
+    ),
+  },
   fractional: { values: Array.from({ length: 1000 }, (_, i) => i + 0.25) },
   ascii: { text: "abcdefghij".repeat(10000) },
   unicode: { text: '雪😀\n"'.repeat(20000) },
@@ -50,6 +56,7 @@ for (const [name, value] of Object.entries(cases)) {
   });
 }
 const sources = [
+  "decimal-value",
   "json-output-encoding",
   "json-scalar-output",
   "json-integer-output",

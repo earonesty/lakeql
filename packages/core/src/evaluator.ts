@@ -1,3 +1,4 @@
+import { decimalToString, isDecimalValue } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
 import type { Expr, Scalar } from "./expr.js";
 import { intervalToString, isIntervalValue } from "./interval.js";
@@ -191,6 +192,7 @@ export function matches(expr: Expr | undefined, row: Row): boolean {
 }
 
 export function jsonSafeValue(value: unknown): unknown {
+  if (isDecimalValue(value)) return decimalToString(value);
   if (isTimestampValue(value)) return value.toJSON();
   if (isIntervalValue(value)) return intervalToString(value);
   if (value instanceof Uint8Array) return bytesToHex(value);

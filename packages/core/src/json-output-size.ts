@@ -1,3 +1,4 @@
+import { isDecimalValue } from "./decimal-value.js";
 import { LakeqlError } from "./errors.js";
 import { isIntervalValue } from "./interval.js";
 import { jsonIntegerBytes } from "./json-integer-output.js";
@@ -18,6 +19,7 @@ export function jsonOutputUtf8Bytes(value: unknown, scope?: MemoryScope): number
   const ancestors = new Set<object>();
   const measure = (value: unknown): number | undefined => {
     if (value === null) return 4;
+    if (isDecimalValue(value)) return scalar.consume(value, jsonStringUtf8Bytes);
     if (isTimestampValue(value)) return scalar.consume(value, jsonStringUtf8Bytes);
     if (isIntervalValue(value)) return scalar.consume(value, jsonStringUtf8Bytes);
     if (value instanceof Uint8Array) return 2 + 2 * value.byteLength;
