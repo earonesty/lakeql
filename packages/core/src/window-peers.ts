@@ -1,3 +1,4 @@
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import type { MemoryBudget, MemoryReservation } from "./memory-budget.js";
 import { samePeer, type WindowRow } from "./window-utils.js";
 
@@ -43,7 +44,7 @@ export class WindowPeers {
       return;
     this.attemptedIndex = true;
     const groups = this.groupCount;
-    const reservation = this.budget.tryReserve((groups + 1) * 4, "window peer index");
+    const reservation = this.budget.tryReserve(c.view + (groups + 1) * 4, "window peer index");
     if (reservation === undefined) return;
     try {
       const index = new Uint32Array(groups + 1);

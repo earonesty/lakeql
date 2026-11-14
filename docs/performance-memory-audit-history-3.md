@@ -4418,3 +4418,12 @@ Extended the existing public CLI/DuckDB differential matrix with sixteen combina
 All 120 reference tests pass across four files, including the sixteen added cases and existing deterministic randomized windows, timestamp intervals, ranking, value/holistic/statistical windows and format reference checks. This refresh supplies current public execution/reference evidence beyond the primitive oracle; fixture size is small and local-file based, so it establishes neither adaptive-index activation nor cloud memory-pressure behavior. Runtime source remains `558e3a5`.
 
 Final verification: all 120 reference tests, typecheck and formatting passed. Evidence: `docs/validation/window-dynamic-reference-2026-11-14.json`. No runtime implementation changed.
+
+
+### F4/M1 adaptive peer-index view admission (2026-11-14)
+
+The allocation review found that `WindowPeers` admitted only `(groups + 1) * 4` backing bytes before constructing its Uint32Array. It now also reserves the shared `MATERIALIZATION_CHARGES.view` charge before allocation. The optional index still falls back to cursor traversal when the full reservation cannot fit; no new user configuration or query failure is introduced. Disposal releases the combined reservation. Fixed cursor/helper object accounting remains part of the broader allocation review, so this is not complete window heap accounting.
+
+Updated the existing adaptive-index exact/cap-minus-one tests and independent dynamic-frame matrix to use backing plus view: forty groups now require 292 reservation bytes (164 backing plus 128 view), with a 291-byte capacity exercising the fallback. The earlier 164/163-byte evidence is historical and predates this correction. Results, exclusions and traversal behavior are unchanged; only optional-index admission reflects the full modeled typed-array charge.
+
+Final verification: build/typecheck passed; 3,731 regular tests (645 skipped), 120 reference tests and 82 Worker tests passed. The sixteen added regular skips are opt-in reference cases that run successfully in the reference command. Evidence: `docs/validation/window-peer-view-admission-2026-11-14.json`.

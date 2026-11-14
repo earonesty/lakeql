@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { col } from "./expr.js";
 import { MemoryBudget } from "./memory-budget.js";
 import type { WindowExpr } from "./window.js";
@@ -103,7 +104,7 @@ it("admits an adaptive peer index only after repeated traversal, with bounded ke
       },
     });
   }
-  const budget = new MemoryBudget(4004);
+  const budget = new MemoryBudget(c.view + 4004);
   const peers = new WindowPeers(partition, budget);
   for (let index = 0; index < 1000; index += 1) peers.group(index, "start");
   expect(budget.peakBytes).toBe(0);
@@ -112,11 +113,11 @@ it("admits an adaptive peer index only after repeated traversal, with bounded ke
     expect(peers.group(target, "start")).toEqual({ start: target, end: target + 1, group: target });
     expect(peers.peer(target)).toEqual({ start: target, end: target + 1, group: target });
   }
-  expect(budget.usedBytes).toBe(4004);
+  expect(budget.usedBytes).toBe(c.view + 4004);
   expect(visits).toBeLessThan(40000);
   peers.dispose();
   expect(budget.usedBytes).toBe(0);
-  const tight = new MemoryBudget(4003);
+  const tight = new MemoryBudget(c.view + 4003);
   const fallback = new WindowPeers(partition, tight);
   for (let index = 0; index < 20; index += 1) {
     const target = index % 2 ? 0 : 999;
@@ -152,7 +153,7 @@ it.each([
   "desc",
 ] as const)("matches an independent dynamic-frame oracle at peer-index capacity (%s)", (direction) => {
   const groups = 40;
-  const indexBytes = (groups + 1) * 4;
+  const indexBytes = c.view + (groups + 1) * 4;
   const sign = direction === "asc" ? 1 : -1;
   const partition: WindowRow[] = Array.from({ length: groups * 3 }, (_, index) => {
     const group = Math.floor(index / 3);
