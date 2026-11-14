@@ -5387,17 +5387,17 @@ function isAggregateStateSnapshot(value: unknown): value is AggregateStateSnapsh
   if (!isRecord(value) || typeof value.op !== "string") return false;
   switch (value.op) {
     case "count":
-      return typeof value.count === "number";
+      return isAggregateCount(value.count);
     case "sum":
       return typeof value.sum === "number";
     case "avg":
-      return typeof value.sum === "number" && typeof value.count === "number";
+      return typeof value.sum === "number" && isAggregateCount(value.count);
     case "var_samp":
     case "var_pop":
     case "stddev_samp":
     case "stddev_pop":
       return (
-        typeof value.count === "number" &&
+        isAggregateCount(value.count) &&
         typeof value.mean === "number" &&
         typeof value.m2 === "number"
       );
@@ -5430,9 +5430,7 @@ function isAggregateStateSnapshot(value: unknown): value is AggregateStateSnapsh
             isRecord(inner) &&
             typeof inner.key === "string" &&
             isAggregateSnapshotValue(inner.value) &&
-            typeof inner.count === "number" &&
-            Number.isInteger(inner.count) &&
-            inner.count >= 0,
+            isAggregateCount(inner.count),
         )
       );
     case "first":
@@ -5442,6 +5440,10 @@ function isAggregateStateSnapshot(value: unknown): value is AggregateStateSnapsh
     default:
       return false;
   }
+}
+
+function isAggregateCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
 function isAggregateSnapshotValue(value: unknown): value is AggregateSnapshotValue {

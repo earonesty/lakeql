@@ -580,3 +580,54 @@ it.each([
   expect(observations[1]?.liveAtScan).toBe(observations[0]?.liveAtScan);
   expect(observations[1]?.peak).toBeGreaterThan((observations[0]?.peak ?? 0) + 65536);
 });
+
+it.each([
+  false,
+  true,
+])("rejects invalid restored aggregate counters before scanning (spilled=%s)", async (spilled) => {
+  const pool = new MemoryBudget(1024 * 1024);
+  const store = memoryStore();
+  await store.put("table", new Uint8Array(1));
+  let scans = 0;
+  const lake = new Lake({
+    store,
+    memoryPool: pool,
+    scanner: {
+      async *scan() {
+        scans++;
+        yield [{ value: 2 }, { value: 3 }];
+      },
+    },
+  });
+  const spec = {
+    count: { op: "count" as const },
+    avg: { op: "avg" as const, column: "value" },
+    variance: { op: "var_pop" as const, column: "value" },
+    mode: { op: "mode" as const, column: "value" },
+  };
+  const first = await lake.path("table").run().aggregateWithState([], spec);
+  const original = new TextDecoder().decode(first.operatorState as Uint8Array);
+  const spill = memorySpillAdapter();
+  for (const alias of ["count", "avg", "variance", "mode"]) {
+    for (const invalid of [-1, 0.5, Number.MAX_SAFE_INTEGER + 1]) {
+      const snapshot = JSON.parse(original);
+      const state = snapshot.groups[0].states[alias];
+      if (alias === "mode") state.values[0].count = invalid;
+      else state.count = invalid;
+      const bytes = new TextEncoder().encode(JSON.stringify(snapshot));
+      await spill.write("invalid-count", bytes);
+      scans = 0;
+      await expect(
+        lake
+          .path("table")
+          .run()
+          .aggregateWithState([], spec, {
+            spill,
+            operatorState: spilled ? { spillRef: "invalid-count" } : bytes,
+          }),
+      ).rejects.toMatchObject({ code: "LAKEQL_BOOKMARK_INVALID" });
+      expect(scans).toBe(0);
+      expect(pool.usedBytes).toBe(0);
+    }
+  }
+});

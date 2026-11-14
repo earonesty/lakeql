@@ -4497,3 +4497,12 @@ Extended the experimental key-cache benchmark to no-null, nulls-first and nulls-
 Cached medians were lower in 35/36 scenarios in this run; 10,000-row, 1024-byte, nulls-first top-3 was slightly slower (2.793 versus 2.642 ms). The earlier non-null wide top-3 result reversed in this run, demonstrating that these sequential microbenchmarks cannot select a stable production threshold. Memory conclusions are more deterministic: nullable wide caches retain roughly 18.3 MB versus about 5 KB of direct workspace. No production default changed. Dictionary/multiple-key/Unicode payload/reuse/concurrency evidence remains open.
 
 Evidence: `docs/validation/top-k-key-cache-nullable-2026-11-14.json` and raw `docs/benchmarks/top-k-key-cache-nullable-2026-11-14.json`, including the executed harness hash. Runtime source remains `a8ba6db`; all benchmark assertions and formatting pass.
+
+
+### F1/V2 restored aggregate counter invariants (2026-11-14)
+
+Checkpoint validation previously accepted any numeric count for count/average/variance states; mode counts accepted nonnegative integers without checking safe representability. All restored row aggregate counters now share a nonnegative safe-integer predicate. This rejects negative, fractional and unsafe counters before accumulator construction or new scanning, avoiding invalid continuation arithmetic. Sum/mean/value semantics are unchanged.
+
+Added inline and owned-spill regression matrices covering count, average, variance and mode with each invalid counter class. All twenty-four malformed restore combinations reject with `LAKEQL_BOOKMARK_INVALID`, never invoke the scanner and leave zero tracked storage. All 31 checkpoint tests pass, including valid continuation and ownership cases. These are memory-adapter malformed-state fixtures; actual transport operation remains covered by separate HTTP/R2 continuation suites. Broader aggregate lifecycle and allocation acceptance remains open.
+
+Final verification: build/typecheck, 3,736 regular tests (645 skipped) and 82 Worker tests passed. Evidence: `docs/validation/aggregate-restore-counters-2026-11-14.json`.
