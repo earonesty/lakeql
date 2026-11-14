@@ -1,0 +1,29 @@
+{
+  "base": "2d037cb",
+  "change": "Bounded slice collection reuses collectOwnedRows and detaches selected borrowed payload before producer advance or closure.",
+  "tests": {
+    "focused": 119,
+    "http": 12,
+    "regularPassed": 3813,
+    "regularSkipped": 645,
+    "workerPassed": 82,
+    "build": "pnpm exec tsc -b passed",
+    "types": "pnpm typecheck passed"
+  },
+  "evidence": [
+    "Six offset/limit cases cover empty batches, zero count, cross-batch selection, exact end and offset beyond input.",
+    "Nested byte values survive scanner mutation and closure; unsupported lookahead payload is not copied.",
+    "Exact measured peak succeeds; cap-minus-one fails without releasing sibling reservation.",
+    "Partial and previous copied chunks release before delayed producer cleanup; cancellation releases prior chunks.",
+    "Real Parquet fixture spans 16 row groups and 128 text-bearing rows; pagination crosses row groups and preserves the first result after resumption.",
+    "48 KiB pool rejects oversized slice collection and recovers with a two-row slice.",
+    "Twelve real HTTP cases include 206 ranges, ignored-range 200 bodies, borrowed/native scanner capabilities, 64/128 MiB pools and cache eviction."
+  ],
+  "boundaries": [
+    "Plain completed slice results transfer to caller management, matching toArray; the API does not retain charges after return.",
+    "Bookmark creation metadata and explicitly owned public slice results remain under review.",
+    "Selected values use the existing detachable scanner-data contract; cycles, accessors and unsupported custom prototypes reject.",
+    "Native Worker suite is regression evidence; newly added slice-specific fixture coverage is local-memory Parquet and local HTTP, not live cloud or native R2 slice coverage.",
+    "Full audit and final release gate refresh remain open."
+  ]
+}

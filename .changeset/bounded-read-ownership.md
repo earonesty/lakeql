@@ -367,3 +367,5 @@ Bound ordinary row projection by output batch size and collect fallback rows wit
 Require safe integer query and aggregate row bounds, positive safe batch/group capacities, and a safe `offset + limit` sum. Reject invalid bounds before scans or vector selection allocation; retain support for large safe limits over small inputs.
 
 Apply the same exact-integer contract to restored top-k bounds (including their sum), slice/resumable batch capacities, and policy row caps. Invalid restored state rejects before discovery; invalid policy caps cannot be hidden by a smaller explicit limit.
+
+Bound slice accumulation using the shared owned row collector. Detach selected rows before borrowed scanners advance or close, admit payload and collection arrays, and release failed collection before asynchronous producer cleanup. Preserve pagination/lookahead behavior and transfer completed plain slices to caller management.

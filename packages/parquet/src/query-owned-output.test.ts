@@ -445,3 +445,33 @@ it.each([
     spy.mockRestore();
   }
 });
+
+it("collects and resumes bounded slices across real Parquet row groups", async () => {
+  const { store, rows } = await fixture();
+  const pool = new MemoryBudget(1024 * 1024);
+  const lake = createParquetLake({ store, memoryPool: pool, scanRangeCache: { maxBytes: 0 } });
+  const query = lake.path("rows.parquet").batchSize(7).run();
+  const first = await query.slice({ maxRows: 11 });
+  expect(first.rows).toEqual(rows.slice(0, 11));
+  expect(first.bookmark?.position.rowOffset).toBe(11);
+  expect(pool.usedBytes).toBe(0);
+  if (!first.bookmark) throw new Error("Expected continuation bookmark");
+  const second = await query.slice({ maxRows: 117, bookmark: first.bookmark });
+  expect(second.rows).toEqual(rows.slice(11));
+  expect(second.bookmark).toBeUndefined();
+  expect(first.rows).toEqual(rows.slice(0, 11));
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("bounds retained slice output and recovers with a smaller slice", async () => {
+  const { store, rows } = await fixture();
+  const pool = new MemoryBudget(48 * 1024);
+  const lake = createParquetLake({ store, memoryPool: pool, scanRangeCache: { maxBytes: 0 } });
+  await expect(
+    lake.path("rows.parquet").batchSize(4).run().slice({ maxRows: 128 }),
+  ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  expect(pool.usedBytes).toBe(0);
+  const small = await lake.path("rows.parquet").batchSize(4).run().slice({ maxRows: 2 });
+  expect(small.rows).toEqual(rows.slice(0, 2));
+  expect(pool.usedBytes).toBe(0);
+});

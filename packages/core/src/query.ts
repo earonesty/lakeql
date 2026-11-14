@@ -60,6 +60,7 @@ import { parseOwnedJson } from "./owned-json-parse.js";
 import { OwnedReplacementValue } from "./owned-replacement-value.js";
 import { collectOwnedRows } from "./owned-row-collector.js";
 import { detachOwnedBatch, detachOwnedRow } from "./owned-row-detachment.js";
+import { collectOwnedRowSlice } from "./owned-row-slice.js";
 import {
   snapshotOwnedRows,
   snapshotScalarSerializedBytes,
@@ -2037,28 +2038,22 @@ export class QueryResult {
       throw new LakeqlError("LAKEQL_TYPE_ERROR", "slice maxRows must be a positive safe integer");
     }
     const manifestOwner = await this.ownedTaskManifest();
+    let collected: OwnedMemory<Row[]> | undefined;
     try {
       const manifest = manifestOwner.value;
       const startOffset = options.bookmark?.position.rowOffset ?? 0;
       if (options.bookmark) assertBookmarkMatches(options.bookmark, manifest.planFingerprint);
 
-      const rows: Row[] = [];
-      let skipped = 0;
-      let seen = 0;
-      let hasMore = false;
-      for await (const row of this.rows()) {
-        if (skipped < startOffset) {
-          skipped += 1;
-          seen += 1;
-          continue;
-        }
-        if (rows.length >= options.maxRows) {
-          hasMore = true;
-          break;
-        }
-        rows.push(row);
-        seen += 1;
-      }
+      const output = await collectOwnedRowSlice(
+        this.batches(),
+        this.memoryBudget,
+        startOffset,
+        options.maxRows,
+        this.config.budget.signal,
+      );
+      collected = output.rows;
+      const rows = collected.value;
+      const { hasMore, seen } = output;
 
       if (!hasMore) return { rows };
       const position: { fileIndex: number; rowGroup: number; rowOffset: number; taskId?: string } =
@@ -2079,6 +2074,8 @@ export class QueryResult {
         }),
       };
     } finally {
+      // Plain slice results transfer to caller management, as with toArray().
+      collected?.release();
       manifestOwner.release();
     }
   }

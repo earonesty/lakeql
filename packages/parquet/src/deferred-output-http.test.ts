@@ -172,6 +172,26 @@ it.each(
       ).toBe(true);
     }
 
+    // Exercise the same retained slice contract through real HTTP 206 and 200
+    // fallback responses, including borrowed scanner adapters and cache eviction.
+    const sliceQuery = lake
+      .path("rows.parquet")
+      .where(eq(mod(col("id"), 17), 0))
+      .limit(20)
+      .batchSize(7)
+      .run();
+    const expectedSlice = rows.filter((row) => row.id % 17 === 0).slice(0, 20);
+    const firstSlice = await sliceQuery.slice({ maxRows: 9 });
+    expect(firstSlice.rows).toEqual(expectedSlice.slice(0, 9));
+    if (!firstSlice.bookmark) throw new Error("Expected slice continuation");
+    cache.deleteWhere(() => true);
+    const secondSlice = await sliceQuery.slice({ maxRows: 11, bookmark: firstSlice.bookmark });
+    expect(secondSlice.rows).toEqual(expectedSlice.slice(9));
+    expect(secondSlice.bookmark).toBeUndefined();
+    cache.deleteWhere(() => true);
+    expect(firstSlice.rows).toEqual(expectedSlice.slice(0, 9));
+    expect(pool.usedBytes).toBe(0);
+
     expect(peak).toBeLessThanOrEqual(2);
     expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
     if (process.env.LAKEQL_DEFERRED_METRICS === "1")
