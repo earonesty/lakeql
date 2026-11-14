@@ -31,6 +31,7 @@ import {
 import { materializeOwnedBatchRow, materializeOwnedBatchRows } from "./materialization-plan.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
+import { MutableMemoryLedger } from "./mutable-memory-ledger.js";
 import { isPrototypeMutationKey } from "./object-key.js";
 import { ownedAggregateExpressionBytesForColumns } from "./owned-aggregate-input.js";
 import { OwnedAggregateState } from "./owned-aggregate-state.js";
@@ -2482,7 +2483,7 @@ export class QueryResult {
               { limit: options.maxGroups, actual: groups.size + 1 },
             );
           }
-          group = createAggregateGroup(groupColumns, keyValues, spec);
+          group = createAggregateGroup(groupColumns, keyValues, spec, checkpointScope);
           groups.set(key, group);
         }
         group.add(aggregateRow);
@@ -3572,6 +3573,7 @@ function createAggregateGroup(
   groupColumns: string[],
   keyValues: unknown[],
   spec: AggregateSpec,
+  scope: MemoryScope,
 ): AggregateGroup {
   const keys: Record<string, unknown> = {};
   for (let index = 0; index < groupColumns.length; index += 1) {
@@ -3580,14 +3582,14 @@ function createAggregateGroup(
   }
   const states: Record<string, AggregateState> = {};
   for (const [alias, aggregate] of Object.entries(spec)) {
-    const state = createAggregateState(aggregate);
+    const state = createAggregateState(aggregate, scope);
     stateSpecs.set(state, aggregate);
     states[alias] = state;
   }
   return new AggregateGroup(keys, states);
 }
 
-function createAggregateState(aggregate: AggregateExpr): AggregateState {
+function createAggregateState(aggregate: AggregateExpr, scope: MemoryScope): AggregateState {
   switch (aggregate.op) {
     case "count":
       return new CountState();
@@ -3601,9 +3603,9 @@ function createAggregateState(aggregate: AggregateExpr): AggregateState {
     case "stddev_pop":
       return new VarianceState(aggregate.op);
     case "median":
-      return new MedianState();
+      return new MedianState([], scope);
     case "quantile":
-      return new QuantileState(requiredQuantile(aggregate));
+      return new QuantileState(requiredQuantile(aggregate), [], scope);
     case "min":
       return new MinMaxState("min");
     case "max":
@@ -3733,27 +3735,61 @@ class AggregateValuesMemory<T> {
   }
 }
 
+function aggregateRetainedValueBytes(value: number | string): number {
+  return typeof value === "string"
+    ? allocationCharges.string + value.length * allocationCharges.stringCodeUnit
+    : allocationCharges.number;
+}
+
 class MedianState implements AggregateState {
   private readonly memory = new AggregateValuesMemory<number | string>();
-  constructor(private readonly values: (number | string)[] = []) {}
+  private readonly values: (number | string)[];
+  private readonly ledger: MutableMemoryLedger;
+  constructor(
+    values: (number | string)[],
+    private readonly scope: MemoryScope,
+  ) {
+    this.values = scope.allocate(
+      allocationCharges.array,
+      "median values",
+      () => [] as (number | string)[],
+    ).value;
+    this.ledger = new MutableMemoryLedger(scope);
+    for (const value of values) this.add(value);
+  }
 
   add(value: unknown): void {
     if (value === null || value === undefined) return;
     if (typeof value !== "number" && typeof value !== "string") throwAggregateType("median");
-    this.memory.add(value);
-    this.values.push(value);
+    this.ledger.append(
+      allocationCharges.arraySlot + aggregateRetainedValueBytes(value),
+      "aggregate retained value",
+      () => {
+        this.memory.add(value);
+        this.values.push(value);
+      },
+    );
   }
 
   finish(): number | string | null {
     if (this.values.length === 0) return null;
-    const values = [...this.values].sort(compareMedianValues);
-    const middle = Math.floor((values.length - 1) / 2);
-    const left = values[middle];
-    if (left === undefined) return null;
-    if (values.length % 2 === 1) return left;
-    const right = values[middle + 1];
-    if (typeof left === "number" && typeof right === "number") return (left + right) / 2;
-    return left;
+    const scratch = this.scope.reserve(
+      allocationCharges.array +
+        this.values.length * (2 * allocationCharges.arraySlot + allocationCharges.object),
+      "median sort workspace",
+    );
+    try {
+      const values = [...this.values].sort(compareMedianValues);
+      const middle = Math.floor((values.length - 1) / 2);
+      const left = values[middle];
+      if (left === undefined) return null;
+      if (values.length % 2 === 1) return left;
+      const right = values[middle + 1];
+      if (typeof left === "number" && typeof right === "number") return (left + right) / 2;
+      return left;
+    } finally {
+      scratch.release();
+    }
   }
 
   bufferedMemory(measureBytes: boolean): { bytes: number; rows: number } {
@@ -3764,7 +3800,14 @@ class MedianState implements AggregateState {
   }
 
   snapshot(): AggregateStateSnapshot {
-    return { op: "median", values: [...this.values] };
+    return this.scope.allocate(
+      allocationCharges.object +
+        2 * allocationCharges.property +
+        allocationCharges.array +
+        this.values.length * allocationCharges.arraySlot,
+      "median snapshot",
+      () => ({ op: "median" as const, values: [...this.values] }),
+    ).value;
   }
 }
 
@@ -3772,18 +3815,44 @@ class QuantileState implements AggregateState {
   private readonly memory = new AggregateValuesMemory<number>();
   constructor(
     private readonly quantile: number,
-    private readonly values: number[] = [],
-  ) {}
+    values: number[],
+    private readonly scope: MemoryScope,
+  ) {
+    this.values = scope.allocate(
+      allocationCharges.array,
+      "quantile values",
+      () => [] as number[],
+    ).value;
+    this.ledger = new MutableMemoryLedger(scope);
+    for (const value of values) this.add(value);
+  }
+  private readonly values: number[];
+  private readonly ledger: MutableMemoryLedger;
 
   add(value: unknown): void {
     if (value === null || value === undefined) return;
     if (typeof value !== "number") throwAggregateType("quantile");
-    this.memory.add(value);
-    this.values.push(value);
+    this.ledger.append(
+      allocationCharges.arraySlot + aggregateRetainedValueBytes(value),
+      "aggregate retained value",
+      () => {
+        this.memory.add(value);
+        this.values.push(value);
+      },
+    );
   }
 
   finish(): number | null {
-    return continuousQuantile(this.values, this.quantile);
+    const scratch = this.scope.reserve(
+      allocationCharges.array +
+        this.values.length * (2 * allocationCharges.arraySlot + allocationCharges.object),
+      "quantile sort workspace",
+    );
+    try {
+      return continuousQuantile(this.values, this.quantile);
+    } finally {
+      scratch.release();
+    }
   }
 
   bufferedMemory(measureBytes: boolean): { bytes: number; rows: number } {
@@ -3796,7 +3865,14 @@ class QuantileState implements AggregateState {
   }
 
   snapshot(): AggregateStateSnapshot {
-    return { op: "quantile", quantile: this.quantile, values: [...this.values] };
+    return this.scope.allocate(
+      allocationCharges.object +
+        3 * allocationCharges.property +
+        allocationCharges.array +
+        this.values.length * allocationCharges.arraySlot,
+      "quantile snapshot",
+      () => ({ op: "quantile" as const, quantile: this.quantile, values: [...this.values] }),
+    ).value;
   }
 }
 
@@ -4310,7 +4386,7 @@ async function aggregateGroupsFromState(
   }
   const groups = new Map<string, AggregateGroup>();
   for (const group of snapshot.groups)
-    groups.set(group.key, aggregateGroupFromSnapshot(spec, group));
+    groups.set(group.key, aggregateGroupFromSnapshot(spec, group, scope));
   return groups;
 }
 
@@ -4321,6 +4397,7 @@ function isSpilledOperatorState(value: unknown): value is { spillRef: string } {
 function aggregateGroupFromSnapshot(
   spec: AggregateSpec,
   snapshot: AggregateGroupSnapshot,
+  scope: MemoryScope,
 ): AggregateGroup {
   const states: Record<string, AggregateState> = {};
   for (const [alias, aggregate] of Object.entries(spec)) {
@@ -4328,7 +4405,7 @@ function aggregateGroupFromSnapshot(
     if (state === undefined) {
       throw new LakeqlError("LAKEQL_BOOKMARK_INVALID", `Missing aggregate state ${alias}`);
     }
-    states[alias] = aggregateStateFromSnapshot(aggregate, state);
+    states[alias] = aggregateStateFromSnapshot(aggregate, state, scope);
     stateSpecs.set(states[alias], aggregate);
   }
   return new AggregateGroup(snapshot.keys, states);
@@ -4337,6 +4414,7 @@ function aggregateGroupFromSnapshot(
 function aggregateStateFromSnapshot(
   aggregate: AggregateExpr,
   snapshot: AggregateStateSnapshot,
+  scope: MemoryScope,
 ): AggregateState {
   if (snapshot.op !== aggregate.op) {
     throw new LakeqlError("LAKEQL_BOOKMARK_INVALID", "Aggregate state operation mismatch", {
@@ -4357,9 +4435,9 @@ function aggregateStateFromSnapshot(
     case "stddev_pop":
       return new VarianceState(snapshot.op, snapshot.count, snapshot.mean, snapshot.m2);
     case "median":
-      return new MedianState(snapshot.values);
+      return new MedianState(snapshot.values, scope);
     case "quantile":
-      return new QuantileState(snapshot.quantile, snapshot.values);
+      return new QuantileState(snapshot.quantile, snapshot.values, scope);
     case "min":
     case "max":
       return new MinMaxState(snapshot.op, snapshot.value);

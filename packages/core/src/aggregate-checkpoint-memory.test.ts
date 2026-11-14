@@ -101,3 +101,42 @@ it("admits aggregate checkpoint overlap at exact capacity and cleans up below it
     expect(pool.usedBytes).toBe(0);
   }
 });
+
+it.each([
+  "median",
+  "quantile",
+] as const)("%s rejects retained growth during scanning and releases partial state", async (op) => {
+  const pool = new MemoryBudget(8192);
+  const store = memoryStore();
+  await store.put("table", new Uint8Array(1));
+  let scanned = 0;
+  let closed = false;
+  const lake = new Lake({
+    store,
+    memoryPool: pool,
+    scanner: {
+      async *scan() {
+        try {
+          for (let value = 0; value < 10000; value++) {
+            scanned++;
+            yield [{ value }];
+          }
+        } finally {
+          closed = true;
+        }
+      },
+    },
+  });
+  await expect(
+    lake
+      .path("table")
+      .run()
+      .aggregateWithState([], {
+        result: op === "median" ? { op, column: "value" } : { op, column: "value", quantile: 0.5 },
+      }),
+  ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  expect(scanned).toBeGreaterThan(0);
+  expect(scanned).toBeLessThan(10000);
+  expect(closed).toBe(true);
+  expect(pool.usedBytes).toBe(0);
+});
