@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { batchFromColumns, materializeBatchRows, vectorFromSource } from "./batch.js";
 import { col, gt, lit, mul } from "./expr.js";
 import { MemoryBudget } from "./memory-budget.js";
@@ -26,7 +27,14 @@ it("admits projected typed outputs and releases CASE workspace before returning"
         { id: 2, doubled: null, category: 0 },
         { id: 3, doubled: 60, category: 1 },
       ]);
-      expect(budget.usedBytes).toBe(51); // Two Float64 outputs and one validity mask.
+      const descriptors =
+        2 * c.object +
+        2 * c.property +
+        ["id", "doubled", "category"].reduce(
+          (bytes, name) => bytes + c.property + c.string + name.length * c.stringCodeUnit,
+          0,
+        );
+      expect(budget.usedBytes).toBe(descriptors + 51); // Typed outputs plus admitted descriptors.
       return budget.peakBytes;
     } finally {
       scope.dispose();
@@ -34,7 +42,7 @@ it("admits projected typed outputs and releases CASE workspace before returning"
     }
   }
   const peak = run(65536);
-  expect(peak).toBe(54); // CASE condition overlaps construction, then releases.
+  expect(peak).toBe(728); // CASE condition overlaps construction, then releases.
   expect(run(peak)).toBe(peak);
   expect(() => run(peak - 1)).toThrow();
 });
@@ -70,4 +78,35 @@ it("constructs string output during inference without re-evaluating expressions"
   expect(materializeBatchRows({ rowCount: values.length, columns: { s: vector } })).toEqual(
     values.map((s) => ({ s })),
   );
+});
+
+it("charges duplicate projected names once and releases failed output independently", () => {
+  const batch = batchFromColumns({ id: [1] });
+  const descriptors = 2 * c.object + 2 * c.property + c.property + c.string + 2 * c.stringCodeUnit;
+  const pool = new MemoryBudget(descriptors + 16);
+  const parent = new MemoryScope(pool);
+  parent.allocate(16, "sibling", () => undefined);
+  const output = vectorProjectBatch(batch, ["id", "*", "id"], { id: col("id") }, parent);
+  expect(Object.keys(output.columns)).toEqual(["id"]);
+  expect(output.columns.id).toBe(batch.columns.id);
+  expect(pool.usedBytes).toBe(descriptors + 16);
+  parent.dispose();
+  expect(pool.usedBytes).toBe(0);
+
+  for (const mode of ["missing-selection", "missing-expression", "budget"]) {
+    const budget = new MemoryBudget(mode === "budget" ? 32 : 65536);
+    const scope = new MemoryScope(budget);
+    scope.allocate(16, "sibling", () => undefined);
+    expect(() =>
+      vectorProjectBatch(
+        batch,
+        mode === "missing-selection" ? ["id", "missing"] : ["id"],
+        mode === "missing-expression" ? { alias: col("missing") } : {},
+        scope,
+      ),
+    ).toThrow();
+    expect(budget.usedBytes).toBe(16);
+    scope.dispose();
+    expect(budget.usedBytes).toBe(0);
+  }
 });

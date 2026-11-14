@@ -436,3 +436,24 @@ describe("vector sort kernels", () => {
     ).toThrowError(expect.objectContaining({ code: "LAKEQL_TYPE_ERROR" }));
   });
 });
+
+it("preserves prototype-like column names across gather and concatenation", () => {
+  const batch = batchFromColumns(
+    Object.fromEntries([
+      ["__proto__", [1, 2]],
+      ["constructor", [3, 4]],
+    ]),
+  );
+  const gathered = gatherBatch(batch, [1, 0]);
+  const combined = concatBatches([gathered, batch]);
+  for (const output of [gathered, combined]) {
+    expect(Object.hasOwn(output.columns, "__proto__")).toBe(true);
+    expect(Object.hasOwn(output.columns, "constructor")).toBe(true);
+  }
+  expect(materializeBatchRows(combined)).toEqual([
+    { ["__proto__"]: 2, constructor: 4 },
+    { ["__proto__"]: 1, constructor: 3 },
+    { ["__proto__"]: 1, constructor: 3 },
+    { ["__proto__"]: 2, constructor: 4 },
+  ]);
+});

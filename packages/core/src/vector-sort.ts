@@ -283,7 +283,7 @@ function gatherBatchStorage(
     sharedIndices = admitVectorBuffer(scope, indices.length * 4, () => Uint32Array.from(indices));
     return sharedIndices;
   };
-  const columns: Record<string, Vector> = {};
+  const columns: Record<string, Vector> = Object.create(null);
   for (const [name, vector] of Object.entries(batch.columns)) {
     if (compact && scope !== undefined && packedGatherLeaf(vector) !== undefined) {
       columns[name] = compactPackedGather(vector, indices, scope);
@@ -359,7 +359,7 @@ export function concatBatches(
   const first = batches[0];
   if (first === undefined) return { rowCount: 0, columns: {} };
   const columnNames = Object.keys(first.columns);
-  const columns: Record<string, Vector> = {};
+  const columns: Record<string, Vector> = Object.create(null);
   const indexCopies: DictionaryIndexCopies = new Map();
   for (const name of columnNames) {
     const vectors = batches.map((batch) => {

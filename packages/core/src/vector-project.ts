@@ -1,8 +1,8 @@
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { type Batch, batchExprValues, type Vector, vectorFromSource } from "./batch.js";
 import { LakeqlError } from "./errors.js";
 import type { Expr } from "./expr.js";
-
-import { MemoryScope } from "./memory-scope.js";
+import type { MemoryScope } from "./memory-scope.js";
 
 export type VectorProjectionSpec = Record<string, Expr>;
 
@@ -12,37 +12,66 @@ export function vectorProjectBatch(
   projections: VectorProjectionSpec = {},
   scope?: MemoryScope,
 ): Batch {
-  const columns: Record<string, Vector> = Object.create(null);
-  for (const column of projectionColumns(batch, select)) {
-    const vector = batch.columns[column];
-    if (vector === undefined) {
-      throw new LakeqlError("LAKEQL_UNKNOWN_COLUMN", `Unknown column ${column}`, { column });
+  const output = scope?.childScope();
+  try {
+    const createColumns = (): Record<string, Vector> => Object.create(null);
+    const columns = output
+      ? output.allocate(c.object, "projection column directory", createColumns).value
+      : createColumns();
+    const createBatch = () => ({ rowCount: batch.rowCount, columns });
+    const result = output
+      ? output.allocate(c.object + 2 * c.property, "projected batch descriptor", createBatch).value
+      : createBatch();
+    const admitName = (name: string) => {
+      if (!Object.hasOwn(columns, name))
+        output?.allocate(
+          c.property + c.string + name.length * c.stringCodeUnit,
+          "projection column entry",
+          () => undefined,
+        );
+    };
+    for (const column of projectionColumns(batch, select)) {
+      const vector = Object.hasOwn(batch.columns, column) ? batch.columns[column] : undefined;
+      if (vector === undefined)
+        throw new LakeqlError("LAKEQL_UNKNOWN_COLUMN", `Unknown column ${column}`, { column });
+      admitName(column);
+      columns[column] = vector;
     }
-    columns[column] = vector;
-  }
-  for (const [alias, expr] of Object.entries(projections)) {
-    const evaluation =
-      scope === undefined ? undefined : new MemoryScope(scope.budget, [scope.signal]);
+    for (const alias in projections) {
+      if (!Object.hasOwn(projections, alias)) continue;
+      const expr = projections[alias];
+      if (!expr) continue;
+      admitName(alias);
+      const evaluation = output?.childScope();
+      try {
+        const values = batchExprValues(batch, expr, evaluation);
+        // Aliases borrow input backing; the execution-stage owner pins it.
+        columns[alias] =
+          values.vector ??
+          vectorFromSource(
+            { length: batch.rowCount, get: (index) => values.valueAt(index) },
+            output,
+          );
+      } finally {
+        evaluation?.dispose();
+      }
+    }
+    if (!output || !scope) return result;
+    const owned = output.retainAllocations(result);
     try {
-      const values = batchExprValues(batch, expr, evaluation);
-      // Direct vector expressions preserve shape and borrowed backing just as
-      // selected columns do; the execution stage retains input ownership.
-      columns[alias] =
-        values.vector ??
-        vectorFromSource({ length: batch.rowCount, get: (index) => values.valueAt(index) }, scope);
-    } finally {
-      evaluation?.dispose();
+      return scope.adopt(owned).value;
+    } catch (error) {
+      owned.release();
+      throw error;
     }
+  } finally {
+    output?.dispose();
   }
-  return { rowCount: batch.rowCount, columns };
 }
 
-function projectionColumns(batch: Batch, select: readonly string[] | undefined): string[] {
-  if (select === undefined || select.length === 0) return Object.keys(batch.columns);
-  if (!select.includes("*")) return [...select];
-  const columns = new Set(Object.keys(batch.columns));
-  for (const column of select) {
-    if (column !== "*") columns.add(column);
+function* projectionColumns(batch: Batch, select: readonly string[] | undefined): Iterable<string> {
+  if (select === undefined || select.length === 0 || select.includes("*")) {
+    for (const name in batch.columns) if (Object.hasOwn(batch.columns, name)) yield name;
   }
-  return [...columns];
+  if (select !== undefined) for (const name of select) if (name !== "*") yield name;
 }

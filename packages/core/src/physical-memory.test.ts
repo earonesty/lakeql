@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { batchFromColumns, materializeBatchRows } from "./batch.js";
 import { lt } from "./expr.js";
 import { MemoryBudget } from "./memory-budget.js";
@@ -88,7 +89,14 @@ it("rejects an unscoped backend during planning and before dispatch", async () =
 });
 
 it("propagates projection allocation scopes through fused top-k execution", async () => {
-  const scope = new MemoryScope(new MemoryBudget(128));
+  const descriptors =
+    2 * c.object +
+    2 * c.property +
+    ["id", "copy"].reduce(
+      (bytes, name) => bytes + c.property + c.string + name.length * c.stringCodeUnit,
+      0,
+    );
+  const scope = new MemoryScope(new MemoryBudget(40 + descriptors));
   try {
     const batch = batchFromColumns({ id: [3, 1, 2] }, scope);
     const backend = new CpuPhysicalBackend();
@@ -115,7 +123,7 @@ it("propagates projection allocation scopes through fused top-k execution", asyn
       { id: 2, copy: 2 },
     ]);
     expect(result.output.batch.columns.copy).toBe(result.output.batch.columns.id);
-    expect(scope.budget.usedBytes).toBe(40);
+    expect(scope.budget.usedBytes).toBe(40 + descriptors);
   } finally {
     scope.dispose();
   }

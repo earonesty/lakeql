@@ -1,0 +1,32 @@
+{
+  "date": "2026-11-14",
+  "requirements": ["M1", "V2"],
+  "changes": [
+    "Scoped vector projection admits its null-prototype column directory, unique key entries and batch descriptor before constructing output.",
+    "Projection results transfer from a local scope on success; errors release partial output while preserving parent/sibling allocations.",
+    "Iterate source, selected and projected names directly instead of constructing Object.keys/Object.entries arrays and a wildcard Set.",
+    "Preserve alias backing without a duplicate data charge; descriptor storage is now accounted.",
+    "Use null-prototype column directories in gather and concatenation, fixing __proto__ loss exposed by own-property projection lookup."
+  ],
+  "validation": {
+    "build": "passed",
+    "typecheck": "passed",
+    "targeted_memory_and_parquet_tests": 39,
+    "scenarios": [
+      "Typed projection and CASE scratch succeed at the exact peak and reject one byte below.",
+      "Wildcard/explicit duplicate names and an overwritten alias incur one key-entry charge.",
+      "Missing selected column, missing expression column and budget failure release partial allocations without disposing sibling storage.",
+      "Aliases preserve physical shape/backing and remain valid with execution-stage ownership.",
+      "Real Parquet prototype-like names survive filtered owned projection; gather/concat regression verifies own column properties."
+    ],
+    "full_default_suite": {
+      "passed": 3478,
+      "skipped": 629
+    }
+  },
+  "remaining": [
+    "Other physical operator directories, vector wrapper headers and planning/runtime overhead still require allocation review.",
+    "Borrowed backing must remain pinned by its caller; descriptor admission does not claim ownership of external input buffers.",
+    "No total Worker heap or production-cloud memory guarantee follows from these checks."
+  ]
+}
