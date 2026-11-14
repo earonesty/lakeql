@@ -4731,3 +4731,35 @@ encountered sandbox subprocess/LFS restrictions and passed when rerun with norma
 repository access; these were execution restrictions, not test failures.
 See `validation/current-metadata-release-gates-2026-11-14.json`. Passing these
 commands does not close the remaining scope/ownership/headroom requirements.
+
+### F1 aggregate lifecycle trace and shared normalized-key update
+
+Source review confirms `GroupMemoryMap` keeps the ordinary vector group's byte
+total incremental. Budget checks read the cached total; update helpers apply a
+single accumulator delta; restore builds the map once; merges iterate source
+groups and update only matching targets. The plain-map fallback intentionally
+retains a full estimator for externally supplied maps. Existing independent
+full-map oracle tests cover updates, budget changes, restore, repeated merges,
+replacement/removal, shared aliases, clear and failed updates. Iterator spies
+verify that high-cardinality updates and repeated restored-state merges do not
+rescan all accumulated target groups. This trace does not close broader row
+fallback, spill/resume and owned-output acceptance.
+
+The owned accumulator arena normalized distinct/mode keys once for its admission
+lookup and again inside the generic updater. Updates now reuse `addDistinctValue`
+and `addModeEntry`, the same normalized-key helpers already used by merges. The
+existing conservative scratch allowance remains unchanged; no memory-bound
+relaxation or new configuration is introduced.
+
+Three parameterized regression cases compare snapshots against the generic
+updater for null, Unicode/empty strings, numbers, bigint, booleans, NaN, signed
+zero and repeated timestamps. Timestamp string conversion is counted: two
+timestamp updates now call it twice, where the old path called it four times.
+Formatting exceptions release lookup scratch; collection-limit failures preserve
+the arena's growth count and collection size. This is direct work-count evidence,
+not a whole-query throughput claim.
+
+Validation: 84 focused tests, 3,751 regular tests (645 skipped), 82 Worker tests,
+`tsc -b` and typechecking pass. See
+`validation/aggregate-key-reuse-2026-11-14.json`. The prior complete release-gate
+refresh remains historical after this runtime change.

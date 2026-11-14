@@ -86,19 +86,24 @@ export class AggregateStateMemory {
         if (value === null) return;
         const scratch = this.scope.childScope();
         try {
-          // The existing updater creates its own key; both strings overlap the lookup.
+          // Keep the conservative formatting/key workspace allowance, but normalize
+          // once and share the key between admission lookup and mutation.
           const keyBytes = keyAllocationBytes(value);
           const key = scratch.allocate(2 * keyBytes, "aggregate key lookup", () =>
             distinctKey(value),
           ).value;
+          const updateKey = () =>
+            state.op === "mode"
+              ? addModeEntry(state, key, value, 1, options.budget)
+              : addDistinctValue(state, key, options.budget);
           if (state.values.has(key)) {
-            update();
+            updateKey();
           } else {
             const entryBytes =
               c.property +
               keyBytes +
               (state.op === "mode" ? c.object + 2 * c.property + scalarBytes(value) : 0);
-            this.growth.append(entryBytes, "aggregate collection growth", update);
+            this.growth.append(entryBytes, "aggregate collection growth", updateKey);
           }
         } finally {
           scratch.dispose();

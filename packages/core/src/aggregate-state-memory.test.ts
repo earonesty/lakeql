@@ -61,3 +61,54 @@ it("rejects foreign state and rolls back failed construction", () => {
   scope.dispose();
   expect(scope.budget.usedBytes).toBe(0);
 });
+
+it.each([
+  "count_distinct",
+  "approx_count_distinct",
+  "mode",
+] as const)("normalizes owned %s keys once without changing scalar or limit semantics", async (op) => {
+  const { timestampFromEpoch } = await import("./timestamp.js");
+  const {
+    createVectorAggregateStates,
+    updateVectorAggregateStateValue,
+    snapshotVectorAggregateStates,
+  } = await import("./vector-aggregate.js");
+  const scope = new MemoryScope(new MemoryBudget(1024 * 1024));
+  try {
+    const arena = AggregateStateMemory.allocate(scope);
+    const actual = arena.create({ value: { op } });
+    const expected = createVectorAggregateStates({ value: { op } });
+    const timestamp = timestampFromEpoch(123456789n, "micros");
+    const values = [null, "", "雪😀", "1", 1, 1n, true, NaN, -0, 0, timestamp, timestamp, "雪😀"];
+    const state = actual.value;
+    const reference = expected.value;
+    if (!state || !reference) throw new Error("Missing aggregate state");
+    const options = { budget: { maxMemoryBytes: 65536, maxBufferedRows: 32 } };
+    for (const value of values) updateVectorAggregateStateValue(reference, value, options);
+    const stringify = vi.spyOn(timestamp, "toString");
+    for (const value of values) arena.updateValue(state, value, options);
+    expect(stringify).toHaveBeenCalledTimes(2);
+    stringify.mockRestore();
+    expect(snapshotVectorAggregateStates(actual)).toEqual(snapshotVectorAggregateStates(expected));
+    const limited = arena.create({ value: { op } }).value;
+    if (
+      !limited ||
+      (limited.op !== "mode" &&
+        limited.op !== "count_distinct" &&
+        limited.op !== "approx_count_distinct")
+    )
+      throw new Error("Missing limited state");
+    const limit = { budget: { maxBufferedRows: 1 } };
+    arena.updateValue(limited, "first", limit);
+    arena.updateValue(limited, "first", limit);
+    const before = arena.usedBytes;
+    expect(() => arena.updateValue(limited, "second", limit)).toThrow(
+      expect.objectContaining({ code: "LAKEQL_BUDGET_EXCEEDED" }),
+    );
+    expect(arena.usedBytes).toBe(before);
+    expect(limited.values.size).toBe(1);
+  } finally {
+    scope.dispose();
+  }
+  expect(scope.budget.usedBytes).toBe(0);
+});
