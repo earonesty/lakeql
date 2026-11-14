@@ -154,9 +154,9 @@ export async function windowParquetTasksOwned(
         }
       },
       async boundary(partial, task, index) {
-        const replacement = (await options.partialBoundary?.(partial, task, index)) ?? partial;
+        if (options.partialBoundary === undefined) return partial;
+        const replacement = await options.partialBoundary(partial, task, index);
         enforceWindowTaskBudget(options, 0);
-        if (replacement === partial) return partial;
         // Custom transport allocation is external. Admit the retained copy before
         // storing it; callers must separately bound allocation in their callback.
         const detached = detachOwnedRow({ partial: replacement }, scope.budget);

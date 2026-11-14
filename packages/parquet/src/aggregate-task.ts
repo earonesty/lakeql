@@ -1,25 +1,27 @@
 import {
   type AggregateSpec,
   type Batch,
-  createVectorAggregateStates,
+  CpuPhysicalBackend,
+  MATERIALIZATION_CHARGES as c,
   createVectorGroupByState,
+  detachOwnedRow,
   fanInWorkUnits,
-  finalizeVectorAggregateStates,
   finalizeVectorGroupByBatch,
   LakeqlError,
+  MemoryBudget,
+  MemoryScope,
   materializeBatchRows,
-  mergeVectorAggregateStateSnapshots,
   mergeVectorGroupByStates,
   type ObjectStore,
+  type OwnedMemory,
+  type PhysicalReductionContinuation,
   type Row,
   restoreVectorGroupByState,
   selectedRowCount,
   sliceBatch as sliceBatchRows,
-  snapshotVectorAggregateStates,
   snapshotVectorGroupByState,
   type TaskInput,
   tryPredicateSelection,
-  updateVectorAggregateStates,
   updateVectorGroupByState,
   type Vector,
   type VectorAggregateStateSnapshots,
@@ -53,6 +55,23 @@ export async function aggregateParquetTask(
   spec: AggregateSpec,
   options: AggregateParquetTaskOptions = {},
 ): Promise<VectorAggregateStateSnapshots> {
+  const owner = await aggregateParquetTaskOwned(store, task, spec, options);
+  try {
+    return owner.value;
+  } finally {
+    owner.release();
+  }
+}
+
+export async function aggregateParquetTaskOwned(
+  store: ObjectStore,
+  task: TaskInput,
+  spec: AggregateSpec,
+  options: AggregateParquetTaskOptions = {},
+): Promise<OwnedMemory<VectorAggregateStateSnapshots>> {
+  const scope = new MemoryScope(options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER));
+  options = { ...options, memoryBudget: scope.budget };
+  let reducer: PhysicalReductionContinuation | undefined;
   try {
     const scanOptions = aggregateScanOptions(options);
     const file = await taskSource(store, task.path, options);
@@ -69,8 +88,15 @@ export async function aggregateParquetTask(
     });
     enforceAggregateTaskBudget(scanOptions);
     const physicalColumns = aggregateTaskReadColumns(task, spec);
-    const aggregateOptions = aggregateVectorOptions(options);
-    const states = createVectorAggregateStates(spec, aggregateOptions);
+    reducer = new CpuPhysicalBackend().openReduction(
+      { kind: "reduce", aggregates: spec },
+      {
+        allocationScope: scope,
+        ...(options.budget === undefined ? {} : { budget: options.budget }),
+        ...(options.now === undefined ? {} : { now: options.now }),
+        ...(options.startedAt === undefined ? {} : { queryStartedAt: options.startedAt }),
+      },
+    );
     for (const { rowStart, rowEnd } of taskRowWindows(metadata, task)) {
       const readOptions = taskReadOptions(
         rowStart,
@@ -86,7 +112,7 @@ export async function aggregateParquetTask(
             recordRowsMatched(scanOptions.stats, batch.batch.rowCount);
             enforceAggregateTaskBudget(scanOptions);
           }
-          updateVectorAggregateStates(states, spec, batch.batch, undefined, aggregateOptions);
+          await reducer.append(batch.batch);
           continue;
         }
         const selection = tryPredicateSelection(batch.batch, task.residualPredicate);
@@ -101,16 +127,22 @@ export async function aggregateParquetTask(
           recordRowsMatched(scanOptions.stats, selectedRowCount(batch.batch.rowCount, selection));
           enforceAggregateTaskBudget(scanOptions);
         }
-        updateVectorAggregateStates(states, spec, batch.batch, selection, aggregateOptions);
+        await reducer.append(batch.batch, selection);
       }
     }
-    return snapshotVectorAggregateStates(states);
+    const checkpoint = scope.adopt(await reducer.checkpoint());
+    if (checkpoint.value.kind !== "aggregate-snapshot")
+      throw new LakeqlError("LAKEQL_TYPE_ERROR", "Expected aggregate task checkpoint");
+    return scope.retainAllocations(checkpoint.value.snapshot);
   } catch (cause) {
     if (cause instanceof LakeqlError) throw cause;
     throw new LakeqlError("LAKEQL_PARQUET_READ_ERROR", `Failed to read ${task.path}`, {
       path: task.path,
       cause,
     });
+  } finally {
+    reducer?.dispose();
+    scope.dispose();
   }
 }
 
@@ -120,27 +152,98 @@ export async function aggregateParquetTasks(
   spec: AggregateSpec,
   options: AggregateParquetTasksOptions = {},
 ): Promise<Record<string, unknown>> {
-  const maxConcurrentTasks = options.maxConcurrentTasks ?? 1;
-  const taskInputs = aggregateTaskInputs(tasks, options);
-  const aggregateOptions = aggregateVectorOptions(options);
-  const merged = createVectorAggregateStates(spec, aggregateOptions);
-  await fanInWorkUnits({
-    ...(options.memoryBudget === undefined ? {} : { memoryBudget: options.memoryBudget }),
-    inputs: taskInputs,
-    initial: merged,
-    maxConcurrentTasks,
-    ...(options.maxBufferedPartials !== undefined
-      ? { maxBufferedPartials: options.maxBufferedPartials }
-      : {}),
-    run(task) {
-      return aggregateParquetTask(store, task, spec, options);
-    },
-    ...(options.partialBoundary === undefined ? {} : { boundary: options.partialBoundary }),
-    reduce(accumulator, partial) {
-      mergeVectorAggregateStateSnapshots(accumulator, partial, aggregateOptions);
-    },
-  });
-  return finalizeVectorAggregateStates(merged);
+  const owner = await aggregateParquetTasksOwned(store, tasks, spec, options);
+  try {
+    return owner.value;
+  } finally {
+    owner.release();
+  }
+}
+
+export async function aggregateParquetTasksOwned(
+  store: ObjectStore,
+  tasks: TaskInput[],
+  spec: AggregateSpec,
+  options: AggregateParquetTasksOptions = {},
+): Promise<OwnedMemory<Record<string, unknown>>> {
+  const scope = new MemoryScope(options.memoryBudget ?? new MemoryBudget(Number.MAX_SAFE_INTEGER));
+  const inputs = scope.childScope();
+  let reducer: PhysicalReductionContinuation | undefined;
+  try {
+    reducer = new CpuPhysicalBackend().openReduction(
+      { kind: "reduce", aggregates: spec },
+      {
+        allocationScope: scope,
+        ...(options.budget === undefined ? {} : { budget: options.budget }),
+        ...(options.now === undefined ? {} : { now: options.now }),
+        ...(options.startedAt === undefined ? {} : { queryStartedAt: options.startedAt }),
+      },
+    );
+    const merged = reducer;
+    await fanInWorkUnits({
+      memoryBudget: scope.budget,
+      inputs: aggregateTaskInputs(tasks, options),
+      initial: merged,
+      maxConcurrentTasks: options.maxConcurrentTasks ?? 1,
+      ...(options.maxBufferedPartials === undefined
+        ? {}
+        : { maxBufferedPartials: options.maxBufferedPartials }),
+      async run(task) {
+        const owner = await aggregateParquetTaskOwned(store, task, spec, {
+          ...options,
+          memoryBudget: scope.budget,
+        });
+        try {
+          return inputs.adopt(owner);
+        } catch (error) {
+          owner.release();
+          throw error;
+        }
+      },
+      async boundary(owner, task, index) {
+        if (options.partialBoundary === undefined) return owner;
+        const replacement = await options.partialBoundary(owner.value, task, index);
+        const detached = detachOwnedRow({ snapshot: replacement }, scope.budget);
+        try {
+          const retained = inputs.retainBacking(
+            detached.value.snapshot as VectorAggregateStateSnapshots,
+            [detached],
+          );
+          owner.release();
+          return retained;
+        } finally {
+          detached.release();
+        }
+      },
+      async reduce(target, partial) {
+        const scratch = scope.childScope();
+        try {
+          if (target.mergeCheckpoint === undefined)
+            throw new LakeqlError(
+              "LAKEQL_UNSUPPORTED_PUSHDOWN",
+              "Backend lacks checkpoint merge capability",
+            );
+          const checkpoint = scratch.allocate(
+            c.object + 2 * c.property,
+            "aggregate task merge checkpoint",
+            () => ({ kind: "aggregate-snapshot" as const, snapshot: partial.value }),
+          ).value;
+          await target.mergeCheckpoint(checkpoint);
+        } finally {
+          scratch.dispose();
+          partial.release();
+        }
+      },
+    });
+    const output = scope.adopt(await merged.finish());
+    const row = output.value[0];
+    if (row === undefined)
+      throw new LakeqlError("LAKEQL_TYPE_ERROR", "Aggregate task returned no result");
+    return scope.retainAllocations(row);
+  } finally {
+    reducer?.dispose();
+    scope.dispose();
+  }
 }
 
 export async function aggregateParquetGroupTask(

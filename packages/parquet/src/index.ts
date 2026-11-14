@@ -45,7 +45,9 @@ export {
   aggregateParquetGroupTasks,
   aggregateParquetGroupTasksBatch,
   aggregateParquetTask,
+  aggregateParquetTaskOwned,
   aggregateParquetTasks,
+  aggregateParquetTasksOwned,
 } from "./aggregate-task.js";
 export {
   encodedParquetMetadataCache,

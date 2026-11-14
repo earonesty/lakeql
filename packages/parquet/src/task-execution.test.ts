@@ -16,6 +16,7 @@ import {
   aggregateParquetGroupTasksBatch,
   aggregateParquetTask,
   aggregateParquetTasks,
+  aggregateParquetTasksOwned,
   createParquetLake,
   scanParquetTaskBatches,
   scanParquetTaskColumnBatches,
@@ -604,5 +605,122 @@ it("uses immutable backing reuse when window task headroom is tight", async () =
   } finally {
     result.release();
   }
+  expect(pool.usedBytes).toBe(0);
+});
+
+it.each([
+  false,
+  true,
+])("owns aggregate partials across delayed transport (failure=%s)", async (fail) => {
+  const store = memoryStore();
+  await writeParquet(store, "owned-aggregate.parquet", {
+    rowGroupSize: [2, 2],
+    columnData: [{ name: "value", type: "DOUBLE", data: [1, null, 3, 7] }],
+  });
+  const tasks: TaskInput[] = [0, 1].map((index) => ({
+    path: "owned-aggregate.parquet",
+    rowGroupRanges: [{ start: index, end: index + 1 }],
+    partitionValues: {},
+  }));
+  const pool = new MemoryBudget(1024 * 1024);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let entered!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const pending = aggregateParquetTasksOwned(
+    store,
+    tasks,
+    {
+      middle: { op: "median", column: "value" },
+      total: { op: "sum", column: "value" },
+      n: { op: "count", column: "value" },
+    },
+    {
+      memoryBudget: pool,
+      maxConcurrentTasks: 2,
+      preserveTaskBoundaries: true,
+      async partialBoundary(partial, _task, index) {
+        if (index === 0) {
+          entered();
+          await gate;
+          if (fail) throw new Error("aggregate transport failed");
+        }
+        return jsonWorkUnitBoundary(partial);
+      },
+    },
+  );
+  const outcome = pending.then(
+    (value) => ({ value }),
+    (error: unknown) => ({ error }),
+  );
+  await ready;
+  expect(pool.usedBytes).toBeGreaterThan(0);
+  expect(() => pool.reserve(pool.availableBytes + 1, "competing allocation")).toThrow(/budget/i);
+  release();
+  const result = await outcome;
+  if ("error" in result) {
+    expect(fail).toBe(true);
+    expect(result.error).toEqual(new Error("aggregate transport failed"));
+  } else {
+    expect(fail).toBe(false);
+    expect(result.value.value).toEqual({ middle: 3, total: 11, n: 3 });
+    expect(pool.usedBytes).toBeGreaterThan(0);
+    result.value.release();
+  }
+  expect(pool.usedBytes).toBe(0);
+});
+
+it.each([
+  "aggregate",
+  "window",
+] as const)("admits in-place transport mutations for %s tasks", async (kind) => {
+  const store = memoryStore();
+  await writeParquet(store, "mutated-partial.parquet", {
+    rowGroupSize: [1],
+    columnData: [{ name: "value", type: "DOUBLE", data: [1] }],
+  });
+  const tasks: TaskInput[] = [
+    {
+      path: "mutated-partial.parquet",
+      rowGroupRanges: [{ start: 0, end: 1 }],
+      partitionValues: {},
+    },
+  ];
+  const pool = new MemoryBudget(65536);
+  const pending =
+    kind === "aggregate"
+      ? aggregateParquetTasksOwned(
+          store,
+          tasks,
+          { middle: { op: "median", column: "value" } },
+          {
+            memoryBudget: pool,
+            partialBoundary(partial) {
+              const middle = partial.middle;
+              if (middle?.op !== "median") throw new Error("Missing median checkpoint");
+              middle.values = Array(10000).fill(1);
+              return partial;
+            },
+          },
+        )
+      : windowParquetTasksOwned(
+          store,
+          tasks,
+          { rn: { fn: "row_number", args: [], over: { partitionBy: [], orderBy: [] } } },
+          {
+            memoryBudget: pool,
+            partialBoundary(partial) {
+              const row = partial.buckets[0]?.rows[0]?.row;
+              if (!row) throw new Error("Missing partial row");
+              row.payload = "x".repeat(100000);
+              return partial;
+            },
+          },
+        );
+  await expect(pending).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
   expect(pool.usedBytes).toBe(0);
 });
