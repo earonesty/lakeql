@@ -162,7 +162,8 @@ if (process.argv.includes("--concurrent")) {
     }
   }
   writeFileSync(
-    "docs/benchmarks/public-grouped-concurrent-2026-11-13.json",
+    process.env.LAKEQL_GROUPED_REPORT ??
+      "docs/benchmarks/public-grouped-concurrent-2026-11-13.json",
     `${JSON.stringify(
       {
         description:
@@ -207,7 +208,8 @@ if (process.argv.includes("--concurrent")) {
     results,
   };
   writeFileSync(
-    "docs/benchmarks/public-grouped-continuation-2026-11-13.json",
+    process.env.LAKEQL_GROUPED_REPORT ??
+      "docs/benchmarks/public-grouped-continuation-2026-11-13.json",
     `${JSON.stringify(report, null, 2)}\n`,
   );
   console.log(

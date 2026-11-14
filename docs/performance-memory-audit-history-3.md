@@ -4515,3 +4515,12 @@ The analogous vector restore path also accepted arbitrary numeric counters. Extr
 Seven operation cases cover count, average, all four variance/stddev variants and mode. Each rejects negative, fractional, unsafe, NaN and infinite counters through direct and scoped restore; valid zero/one/maximum-safe counters round-trip. Scoped failures dispose cleanly. The two focused row/vector suites pass 40 tests. This aligns counter invariants without changing valid accumulator arithmetic or claiming full restore-shape validation.
 
 Final verification: build/typecheck, 3,743 regular tests (645 skipped) and 82 Worker tests passed. Evidence: `docs/validation/vector-restore-counters-2026-11-14.json`.
+
+
+### F1/F2 current aggregate cardinality and reservation scaling (2026-11-14)
+
+Refreshed the public grouped-continuation harness on source `1d43a68`, adding an output-path override so historical evidence is preserved. At 2,000/4,000/8,000 unique groups, batch sizes 128 and 512 each use one reduction session, exactly one append per batch, zero inter-batch checkpoints, correct per-group counts, closed scanners and zero final reservations. Tracked peaks are 3,213,686 / 6,331,270 / 12,634,102 bytes, independent of batch size in these cases. Observed medians grow from 46.85 to 209.13 ms (batch 128) and 42.43 to 201.68 ms (batch 512): approximately 4.5–4.8× time for 4× groups, consistent with near-linear growth over this range but not an asymptotic proof.
+
+The owned-median diagnostic verifies the expected median and zero cleanup at 1,024/8,192/65,536 rows; growth reservation calls are 6/10/38, rather than one per appended value. It uses explicit Node GC and one timing sample, so retained-heap/timing observations are diagnostic only. Public grouping uses a synthetic owned vector scanner, not cloud reads. These checks strengthen incremental accounting evidence without closing every update/merge/restore/spill lifecycle path.
+
+Evidence: `docs/validation/aggregate-scaling-current-2026-11-14.json` and its raw report links/harness hashes. All executable assertions and formatting passed; no runtime implementation changed.
