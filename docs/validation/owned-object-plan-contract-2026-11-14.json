@@ -1,0 +1,27 @@
+{
+  "baseCommit": "5f1c37a",
+  "scope": "Owned adapter object-planning contract and query lifetime integration",
+  "checks": {
+    "build": "passed",
+    "typecheck": "passed",
+    "fullSuite": {
+      "passed": 3597,
+      "skipped": 629,
+      "log": "/tmp/owned-object-plan-full.log"
+    }
+  },
+  "evidence": [
+    "Owned planner takes precedence over legacy planner",
+    "Input owner stays live through delayed callback settlement",
+    "Added metadata remains charged and reaches scan options",
+    "Failure and cancellation release input/output ownership",
+    "Foreign-budget result rejected and both pools return to zero"
+  ],
+  "remaining": [
+    "Parquet schema descriptor and signature admission",
+    "Built-in Parquet owned planner implementation",
+    "Sidecar planning",
+    "External cache retention and auxiliary discovery storage",
+    "Final runtime/headroom and release acceptance"
+  ]
+}

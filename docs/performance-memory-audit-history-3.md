@@ -3666,3 +3666,23 @@ requirements.
 
 Final build/typecheck passed; full suite passed 3,593 tests with 629 skips.
 Evidence: `docs/validation/discovery-scan-lifetime-2026-11-14.json`.
+
+### 2026-11-14 — owned adapter object-plan contract
+
+Added optional `ScanAdapter.planOwnedObjects`, preferred over legacy `planObjects`.
+It receives a borrowed input owner and the query budget and returns an owner for
+its result. Adapters retain input backing referenced by their returned plans.
+The query keeps the input handle through callback settlement, adopts the result
+into discovery lifetime, and releases both handles on callback failure,
+cancellation before handoff, or incompatible-budget rejection. Adapter-specific
+metadata survives rather than being discarded by a generic ObjectInfo clone.
+
+Delayed success/failure/cancellation tests verify that added metadata remains
+charged and reaches scanner options only on success; incompatible-budget output
+is rejected and released without leaking either pool. The built-in Parquet
+adapter still uses the legacy planner: its recursive schema-shape/signature work,
+per-file descriptors and shared schema sets must be admitted before advertising
+this owned capability. This contract alone does not close that implementation gap.
+
+Build/typecheck passed; full suite passed 3,597 tests with 629 skips. Evidence:
+`docs/validation/owned-object-plan-contract-2026-11-14.json`.

@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { MemoryBudget } from "./memory-budget.js";
+import { MemoryScope } from "./memory-scope.js";
 import { memoryStore } from "./memory-store.js";
 import { Lake } from "./query.js";
 
@@ -145,4 +146,98 @@ it("keeps discovered metadata charged across delayed row scans", async () => {
   });
   expect(await lake.path("table").toArray()).toEqual([{ id: 1 }]);
   expect(pool.usedBytes).toBe(0);
+});
+
+it.each([
+  "success",
+  "failure",
+  "cancel",
+] as const)("owns adapter-added plan storage through %s", async (outcome) => {
+  const store = memoryStore();
+  await store.put("table", new Uint8Array(1));
+  const pool = new MemoryBudget(65536);
+  const controller = new AbortController();
+  let entered!: () => void, finish!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const pending = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  let scanned = false;
+  const lake = new Lake({
+    store,
+    memoryPool: pool,
+    budget: { signal: controller.signal },
+    scanner: {
+      planObjects() {
+        throw Error("legacy planner must not run");
+      },
+      async planOwnedObjects(input, options) {
+        const scope = new MemoryScope(options.memoryBudget);
+        try {
+          scope.adopt(input.retain());
+          const output = scope.allocate(4096, "adapter schema plan", () =>
+            input.value.map((object) => ({ ...object, schemaMarker: 7 })),
+          );
+          entered();
+          await pending;
+          expect(pool.usedBytes).toBeGreaterThanOrEqual(4096);
+          if (outcome === "failure") throw Error("owned planning failed");
+          return scope.retainAllocations(output.value);
+        } finally {
+          scope.dispose();
+        }
+      },
+      async *scan(_path, options) {
+        scanned = true;
+        expect(options.object).toMatchObject({ schemaMarker: 7 });
+        expect(pool.usedBytes).toBeGreaterThanOrEqual(4096);
+        yield [{ id: 1 }];
+      },
+    },
+  });
+  const work = lake.path("table").toArray();
+  const checked =
+    outcome === "success"
+      ? expect(work).resolves.toEqual([{ id: 1 }])
+      : expect(work).rejects.toMatchObject(
+          outcome === "failure" ? { message: "owned planning failed" } : { code: "LAKEQL_ABORTED" },
+        );
+  await ready;
+  if (outcome === "cancel") controller.abort();
+  expect(pool.usedBytes).toBeGreaterThanOrEqual(4096);
+  finish();
+  await checked;
+  expect(scanned).toBe(outcome === "success");
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("releases a plan returned under an incompatible budget", async () => {
+  const store = memoryStore();
+  await store.put("table", new Uint8Array(1));
+  const pool = new MemoryBudget(65536);
+  const foreign = new MemoryBudget(65536);
+  const lake = new Lake({
+    store,
+    memoryPool: pool,
+    scanner: {
+      async planOwnedObjects(input) {
+        const scope = new MemoryScope(foreign);
+        try {
+          return scope.allocate(512, "foreign plan", () => input.value).retain();
+        } finally {
+          scope.dispose();
+        }
+      },
+      scan() {
+        throw Error("unexpected scan");
+      },
+    },
+  });
+  await expect(lake.path("table").planTasks()).rejects.toMatchObject({
+    code: "LAKEQL_VALIDATION_ERROR",
+  });
+  expect(pool.usedBytes).toBe(0);
+  expect(foreign.usedBytes).toBe(0);
 });

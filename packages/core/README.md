@@ -52,3 +52,12 @@ live. `taskManifest()` admits construction, then transfers the plain result out 
 accounting. Sorting, stable serialization and fingerprint overlap count during
 construction; this does not bound later caller-controlled serialization of a plain
 manifest.
+
+Adapters can implement `ScanAdapter.planOwnedObjects(input, options)` to account
+for added object-plan metadata such as schema maps and indexes. It takes priority
+over `planObjects`. The input owner is borrowed until the callback settles; retain
+input backing that the returned plan references. Return an owner using
+`options.memoryBudget`. The query retains that owner through execution and releases
+it on cancellation or failure. A plan returned under a different budget is
+rejected and released. Legacy `planObjects` remains supported, with adapter-owned
+workspace and retained metadata outside this ownership contract.

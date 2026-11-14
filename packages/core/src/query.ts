@@ -235,6 +235,11 @@ export interface ScanAdapter {
   scanColumnBatches?(path: string, options: ScanOptions): AsyncIterable<ScanColumnBatch>;
   /** Options/column lists are borrowed until this promise settles; retained planner storage needs its own admission. */
   planObjects?(objects: ObjectInfo[], options: ScanObjectPlanOptions): Promise<ObjectInfo[]>;
+  /** Borrow the input handle until settlement; retain any input backing used by the returned plan. */
+  planOwnedObjects?(
+    objects: OwnedMemory<ObjectInfo[]>,
+    options: ScanObjectPlanOptions & { memoryBudget: MemoryBudget },
+  ): Promise<OwnedMemory<ObjectInfo[]>>;
   /** Arguments are borrowed until settlement; returned ranges are copied into task ownership. */
   planTask?(path: string, options: ScanTaskPlanOptions): Promise<ScanTaskPlan>;
   executeOwnedWindowTasks?(
@@ -3833,7 +3838,10 @@ export class QueryResult {
         planned = pruned.planned;
         skipped += pruned.skipped.length;
       }
-      if (config.scanner.planObjects !== undefined) {
+      if (
+        config.scanner.planObjects !== undefined ||
+        config.scanner.planOwnedObjects !== undefined
+      ) {
         // Planning callbacks borrow these arguments until their promise settles.
         // Do not tie this scope to cancellation while the callback may still use them.
         const planning = new MemoryScope(this.memoryBudget);
@@ -3861,9 +3869,26 @@ export class QueryResult {
           ).value;
           throwIfAborted(config.budget.signal);
           enforceBudget(config.budget, this.stats, config.now, startedAt);
-          planned = await config.scanner.planObjects(planned, options);
-          throwIfAborted(config.budget.signal);
-          enforceBudget(config.budget, this.stats, config.now, startedAt);
+          if (config.scanner.planOwnedObjects !== undefined) {
+            const input = discovery.retainAllocations(planned);
+            try {
+              const output = await config.scanner.planOwnedObjects(input, options);
+              try {
+                throwIfAborted(config.budget.signal);
+                enforceBudget(config.budget, this.stats, config.now, startedAt);
+                planned = discovery.adopt(output).value;
+              } catch (error) {
+                output.release();
+                throw error;
+              }
+            } finally {
+              input.release();
+            }
+          } else if (config.scanner.planObjects !== undefined) {
+            planned = await config.scanner.planObjects(planned, options);
+            throwIfAborted(config.budget.signal);
+            enforceBudget(config.budget, this.stats, config.now, startedAt);
+          }
         } finally {
           planning.dispose();
         }
