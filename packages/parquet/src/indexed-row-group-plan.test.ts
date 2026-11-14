@@ -348,11 +348,17 @@ it.each([
   }
 });
 
-it("pins acquired group footer backing independently of source disposal", async () => {
+it.each([
+  "source",
+  "parent",
+  "abort",
+])("pins acquired group backing independently of %s closure", async (close) => {
   const { acquireIndexedParquetSource } = await import("./indexed-source.js");
   const { bytes, file, groupBytes } = await fixture();
   const budget = new MemoryBudget(65536);
-  const source = await acquireIndexedParquetSource(file, budget);
+  const parent = new MemoryScope(budget);
+  const controller = new AbortController();
+  const source = await acquireIndexedParquetSource(file, parent, [controller.signal]);
   const expected = parquetMetadata(bytes).row_groups[0];
   const first = source.acquireRowGroup(0);
   const second = source.acquireRowGroup(1);
@@ -360,7 +366,9 @@ it("pins acquired group footer backing independently of source disposal", async 
   expect(first.bytes).toBeGreaterThan(0);
   expect(() => source.acquireRowGroup(-1)).toThrow();
   expect(budget.usedBytes).toBe(before);
-  source.dispose();
+  if (close === "parent") parent.dispose();
+  else if (close === "abort") controller.abort();
+  else source.dispose();
   expect(first.value).toEqual(expected);
   expect(budget.usedBytes).toBe(first.bytes + groupBytes);
   expect(budget.usedBytes).toBeLessThan(before);
@@ -369,5 +377,7 @@ it("pins acquired group footer backing independently of source disposal", async 
   first.release();
   expect(budget.usedBytes).toBe(second.bytes);
   second.release();
+  source.dispose();
+  parent.dispose();
   expect(budget.usedBytes).toBe(0);
 });

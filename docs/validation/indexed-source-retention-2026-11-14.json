@@ -1,0 +1,131 @@
+{
+  "runtimeBase": "de61497",
+  "requirements": ["M1", "M2", "V1", "V2"],
+  "finding": "Indexed-source handles retained acquisition closure state and transport scope after explicit or parent disposal, keeping footer buffer, metadata and input source reachable at zero admitted bytes.",
+  "baseline": {
+    "node": "v24.18.1",
+    "sourceSha256": "d022441ee2bf29420b56441b28cfd5fe57bfc4ef91c86c20360c0b80bc26c707",
+    "heldClosedSources": 2,
+    "results": [
+      {
+        "close": "source",
+        "kind": "footer-buffer",
+        "collected": false
+      },
+      {
+        "close": "source",
+        "kind": "metadata",
+        "collected": false
+      },
+      {
+        "close": "source",
+        "kind": "input-source",
+        "collected": false
+      },
+      {
+        "close": "parent",
+        "kind": "footer-buffer",
+        "collected": false
+      },
+      {
+        "close": "parent",
+        "kind": "metadata",
+        "collected": false
+      },
+      {
+        "close": "parent",
+        "kind": "input-source",
+        "collected": false
+      }
+    ],
+    "finalAdmittedBytes": 0,
+    "limitation": "Forced-GC Node reachability diagnostic, not a production GC requirement or total-runtime cap."
+  },
+  "current": {
+    "node": "v24.18.1",
+    "sourceSha256": "43000a596a705df02739fcf67880156304164bc2adaef88d0e624d40e9ed2e3d",
+    "heldClosedSources": 2,
+    "results": [
+      {
+        "close": "source",
+        "kind": "footer-buffer",
+        "collected": true
+      },
+      {
+        "close": "source",
+        "kind": "metadata",
+        "collected": true
+      },
+      {
+        "close": "source",
+        "kind": "input-source",
+        "collected": true
+      },
+      {
+        "close": "parent",
+        "kind": "footer-buffer",
+        "collected": true
+      },
+      {
+        "close": "parent",
+        "kind": "metadata",
+        "collected": true
+      },
+      {
+        "close": "parent",
+        "kind": "input-source",
+        "collected": true
+      }
+    ],
+    "finalAdmittedBytes": 0,
+    "limitation": "Forced-GC Node reachability diagnostic, not a production GC requirement or total-runtime cap."
+  },
+  "contract": [
+    "Return the source handle from a separate closure containing only active ownership state.",
+    "Detach active state on explicit disposal or allocation-scope abort; remove the listener on explicit disposal.",
+    "Acquired row groups retain independent raw/footer ownership across source, parent and abort closure.",
+    "Closed source metadata and row-group access continue to reject."
+  ],
+  "focused": {
+    "regularPassed": 19,
+    "nativeWorkerPassed": 3,
+    "initialHttpRun": "Restricted environment failed two local HTTP listener setups with EPERM; unchanged escalated rerun passes all 19."
+  },
+  "liveR2": {
+    "artifact": "docs/benchmarks/indexed-source-retention-live-r2-2026-11-14.json",
+    "trials": 24,
+    "successes": 6,
+    "typedBudgetFailures": 18,
+    "allFinalCharges": 0,
+    "maximumPeakBytes": 143324,
+    "scope": "Full and indexed planning over real public HTTP 206, three trials at each configured capacity. Small caps reject; 64 MiB passes. No whole-runtime cap or latency comparison."
+  },
+  "limitations": [
+    "Forced-GC diagnostic proves reachability under Node, not production collection timing.",
+    "Native R2 fixture uses 65536 admitted bytes for a small file, not a whole-Worker cap.",
+    "Broader allocation coverage, scheduling and whole-runtime headroom remain open."
+  ],
+  "validation": {
+    "regularPassed": 3951,
+    "regularSkipped": 645,
+    "workerPassed": 93,
+    "requiredConformancePassed": 520,
+    "requiredConformanceSkipped": 1,
+    "referencePassed": 120,
+    "coverage": {
+      "statements": 91.39,
+      "branches": 85.54,
+      "functions": 95.9,
+      "lines": 93.19
+    },
+    "build": "passed",
+    "typecheck": "passed",
+    "cleanConsumer": "passed; 66 packages",
+    "lint": "passed",
+    "compatibility": "passed",
+    "largeFiles": "passed",
+    "changeset": "passed",
+    "fixtureReproducibility": "passed; no data diff",
+    "thresholdsAndTimeouts": "unchanged"
+  }
+}

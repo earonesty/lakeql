@@ -5224,3 +5224,27 @@ Final release checks pass 3,949 regular/coverage tests (645 skipped), all 90
 Worker tests, 520 required conformance cases (one inactive guard skipped), 120
 references, full build/types, clean 66-package consumer and repository gates.
 Fixture regeneration leaves data unchanged. Thresholds and timeouts are unchanged.
+
+### Indexed-source closure detachment (2026-11-14)
+
+Closed indexed-source handles retained footer buffers, metadata and transport
+source references through acquisition closure state and the read scope. A Node
+forced-GC probe keeps source handles held across explicit/parent disposal; all
+six observed references remain reachable on the baseline at zero admitted bytes.
+A separate handle closure now detaches active state on disposal or parent abort.
+All six references collect in the same probe.
+
+Existing independent row-group ownership is preserved across source, parent and
+abort closure. All 19 focused tests and three actual native R2 fixture cases pass.
+The first local HTTP run failed to bind under sandbox restrictions (EPERM); the
+unchanged permitted rerun passes. Public R2 full/indexed planning completes 24
+trials: six successes at sufficient capacity and eighteen typed budget failures
+at smaller caps. All trials finish at zero admitted bytes and remain within cap.
+The maximum admitted peak is 143,324 bytes. These are reachability, lifetime and
+transport checks; they do not prove total Worker memory or throughput improvement.
+Evidence: `validation/indexed-source-retention-2026-11-14.json`.
+
+Final release validation passes 3,951 regular/coverage tests (645 skipped), 93
+Worker tests, 520 required conformance cases (one inactive guard skipped), 120
+references, full build/types, clean 66-package consumer and repository gates.
+Fixture regeneration leaves data unchanged; thresholds and timeouts are unchanged.

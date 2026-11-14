@@ -53,43 +53,69 @@ export async function acquireIndexedParquetSource(
       await narrow();
       envelope = readParquetFooterEnvelope(footer, undefined, acquisition);
     }
-    let source: ReturnType<typeof openIndexedParquetEnvelope> | undefined =
-      openIndexedParquetEnvelope(envelope, stage.allocations);
-    const current = () => {
-      if (source === undefined || stage.allocations.disposed)
-        throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Indexed footer source is closed");
-      return source;
-    };
-    return {
-      get metadata() {
-        return current().metadata;
-      },
-      get rowGroupCount() {
-        return current().rowGroupCount;
-      },
-      readRowGroup(index: number) {
-        return current().readRowGroup(index);
-      },
-      acquireRowGroup(index: number) {
-        const indexed = current();
-        const groupScope = stage.allocations.childScope();
-        try {
-          const group = indexed.readRowGroup(index, groupScope);
-          // Pin footer views and the admitted raw group independently of source
-          // disposal. Directory backing is not needed by the completed group.
-          groupScope.adopt(acquisition.retainTreeAllocations(undefined));
-          return groupScope.retainAllocations(group);
-        } finally {
-          groupScope.dispose();
-        }
-      },
-      dispose() {
-        source = undefined;
-        stage.dispose();
-      },
-    };
+    return indexedSourceHandle(
+      stage,
+      acquisition,
+      openIndexedParquetEnvelope(envelope, stage.allocations),
+    );
   } catch (error) {
     stage.dispose();
     throw error;
   }
+}
+
+/** Keep the public handle outside acquisition scratch's closure context. Closing
+ * either the source or its parent detaches all state; acquired groups own pins.
+ */
+function indexedSourceHandle(
+  stage: ParquetReadScope,
+  acquisition: MemoryScope,
+  source: ReturnType<typeof openIndexedParquetEnvelope>,
+) {
+  let active:
+    | {
+        stage: ParquetReadScope;
+        acquisition: MemoryScope;
+        source: ReturnType<typeof openIndexedParquetEnvelope>;
+      }
+    | undefined = { stage, acquisition, source };
+  const current = () => {
+    if (active === undefined || active.stage.allocations.disposed)
+      throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Indexed footer source is closed");
+    return active;
+  };
+  const dispose = () => {
+    const previous = active;
+    active = undefined;
+    if (previous === undefined) return;
+    previous.stage.allocations.signal.removeEventListener("abort", dispose);
+    previous.stage.dispose();
+  };
+  stage.allocations.signal.addEventListener("abort", dispose, { once: true });
+  if (stage.allocations.disposed) dispose();
+  return {
+    get metadata() {
+      return current().source.metadata;
+    },
+    get rowGroupCount() {
+      return current().source.rowGroupCount;
+    },
+    readRowGroup(index: number) {
+      return current().source.readRowGroup(index);
+    },
+    acquireRowGroup(index: number) {
+      const state = current();
+      const groupScope = state.stage.allocations.childScope();
+      try {
+        const group = state.source.readRowGroup(index, groupScope);
+        // Pin footer views and raw group independently of source disposal.
+        // Directory backing is not needed by the completed group.
+        groupScope.adopt(state.acquisition.retainTreeAllocations(undefined));
+        return groupScope.retainAllocations(group);
+      } finally {
+        groupScope.dispose();
+      }
+    },
+    dispose,
+  };
 }
