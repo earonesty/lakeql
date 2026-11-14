@@ -953,3 +953,77 @@ it("admits projected task payloads and releases them on iterator close or reject
   ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
   expect(small.usedBytes).toBe(0);
 });
+
+it.each([
+  64, 128,
+])("retains concurrent grouped task outputs within a shared %i MiB pool", async (mib) => {
+  const store = memoryStore();
+  await writeParquet(store, "shared-grouping.parquet", {
+    rowGroupSize: [16, 16, 16, 16],
+    columnData: [
+      { name: "g", type: "INT32", data: Array.from({ length: 64 }, (_, i) => i % 8) },
+      { name: "value", type: "INT32", data: Array.from({ length: 64 }, (_, i) => i) },
+    ],
+  });
+  const pool = new MemoryBudget(mib * 1024 * 1024);
+  const region = "界".repeat(2048);
+  const tasks: TaskInput[] = Array.from({ length: 4 }, (_, i) => ({
+    path: "shared-grouping.parquet",
+    rowGroupCount: 4,
+    rowGroupRanges: [{ start: i, end: i + 1 }],
+    partitionValues: { region },
+  }));
+  for (const fail of [false, true]) {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let ready!: () => void;
+    const reached = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+    let waiting = 0;
+    const jobs = Array.from({ length: 4 }, (_, job) =>
+      aggregateParquetGroupTasksOwned(
+        store,
+        tasks,
+        ["region", "g"],
+        { total: { op: "sum", column: "value" }, n: { op: "count" } },
+        {
+          memoryBudget: pool,
+          batchSize: 8,
+          maxConcurrentTasks: 2,
+          async partialBoundary(partial) {
+            waiting++;
+            if (waiting === 4) ready();
+            await gate;
+            if (fail && job === 0) throw new Error("failed job");
+            return partial;
+          },
+        },
+      ),
+    );
+    const settled = Promise.allSettled(jobs);
+    await reached;
+    expect(pool.usedBytes).toBeGreaterThan(0);
+    expect(() => pool.reserve(pool.maxBytes, "oversized competing job")).toThrow(/budget/);
+    release();
+    const outcomes = await settled;
+    expect(outcomes.filter((outcome) => outcome.status === "rejected")).toHaveLength(fail ? 1 : 0);
+    for (const outcome of outcomes) {
+      if (outcome.status === "rejected") {
+        expect(outcome.reason).toEqual(new Error("failed job"));
+        continue;
+      }
+      const rows = [...outcome.value.value].sort((a, b) => Number(a.g) - Number(b.g));
+      expect(rows).toEqual(
+        Array.from({ length: 8 }, (_, g) => ({ region, g, total: 224 + g * 8, n: 8 })),
+      );
+      const before = pool.usedBytes;
+      outcome.value.release();
+      expect(pool.usedBytes).toBeLessThan(before);
+    }
+    expect(pool.usedBytes).toBe(0);
+    expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
+  }
+});

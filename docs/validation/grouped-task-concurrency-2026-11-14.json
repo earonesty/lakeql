@@ -1,0 +1,35 @@
+{
+  "date": "2026-11-14",
+  "source_revision": "caa1ffd",
+  "validation": {
+    "task_execution_tests": 24,
+    "matrix": {
+      "shared_pool_mib": [64, 128],
+      "concurrent_jobs": 4,
+      "outcomes": ["all succeed", "one boundary callback fails while siblings succeed"],
+      "batch_rows": 8,
+      "fixture_rows": 64,
+      "row_groups": 4,
+      "groups_per_job": 8,
+      "partition_text_code_units": 2048
+    },
+    "assertions": [
+      "hold all four partial boundaries concurrently",
+      "oversized competing reservation rejects",
+      "exact grouped sums/counts remain correct",
+      "each returned owner release reduces live reservations",
+      "failing job does not invalidate sibling results",
+      "all reservations release after final output owner"
+    ],
+    "typecheck": "passed"
+  },
+  "limits": [
+    "In-memory object store with actual Parquet encoding and decoding, not remote HTTP/native R2.",
+    "The fixture is small relative to pool capacity; this checks interleaved ownership and failure isolation, not sustained saturation or complete mixed-operator resource pressure.",
+    "No total JavaScript heap/RSS or production Cloudflare memory guarantee."
+  ],
+  "remaining": [
+    "Remote mixed-job cold/warm cache and concurrent read/decode pressure matrix",
+    "Broader allocation coverage and final release acceptance"
+  ]
+}
