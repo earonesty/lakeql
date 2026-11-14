@@ -239,7 +239,7 @@ async function aggregateTasksOwnedRows<
     const merged = reducer;
     await fanInWorkUnits({
       memoryBudget: scope.budget,
-      inputs: aggregateTaskInputs(tasks, options),
+      inputs: aggregateTaskInputs(tasks, options, inputs),
       initial: merged,
       maxConcurrentTasks: options.maxConcurrentTasks ?? 1,
       ...(options.maxBufferedPartials === undefined
@@ -499,8 +499,9 @@ export async function aggregateParquetGroupTasksBatchOwned(
 function aggregateTaskInputs(
   tasks: TaskInput[],
   options: { preserveTaskBoundaries?: boolean },
+  scope: MemoryScope,
 ): TaskInput[] {
-  return options.preserveTaskBoundaries === true ? tasks : groupAggregateTasks(tasks);
+  return options.preserveTaskBoundaries === true ? tasks : groupAggregateTasks(tasks, scope);
 }
 
 function recordMetadataCache(

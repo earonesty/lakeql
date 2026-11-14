@@ -433,3 +433,25 @@ it("combines fragmented task ranges once without mutating input ranges", () => {
   ]);
   expect(overlapping[0]?.rowGroupRanges).toEqual([{ start: 0, end: 2000 }]);
 });
+
+it("admits grouped task storage and releases all failed grouping allocations", async () => {
+  const { MemoryBudget, MemoryScope } = await import("lakeql-core");
+  const tasks: TaskInput[] = Array.from({ length: 20 }, (_, i) => ({
+    path: "data",
+    partitionValues: { p: "west" },
+    rowGroupRanges: [{ start: i * 2, end: i * 2 + 1 }],
+  }));
+  const pool = new MemoryBudget(128 * 1024);
+  const scope = new MemoryScope(pool);
+  const grouped = groupAggregateTasks(tasks, scope);
+  expect(grouped[0]?.rowGroupRanges).toHaveLength(20);
+  expect(pool.usedBytes).toBeGreaterThan(0);
+  expect(() => pool.reserve(pool.maxBytes, "competing job")).toThrow(/budget/);
+  const peak = pool.peakBytes;
+  scope.dispose();
+  expect(pool.usedBytes).toBe(0);
+  const tight = new MemoryScope(new MemoryBudget(peak - 1));
+  expect(() => groupAggregateTasks(tasks, tight)).toThrow(/budget/);
+  expect(tight.budget.usedBytes).toBe(0);
+  tight.dispose();
+});

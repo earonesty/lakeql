@@ -2,10 +2,12 @@ import {
   type AggregateSpec,
   type CacheAdapter,
   MATERIALIZATION_CHARGES as c,
+  detachOwnedRow,
   type Expr,
+  internStableDataKey,
   LakeqlError,
-  type MemoryBudget,
-  type MemoryScope,
+  MemoryBudget,
+  MemoryScope,
   type OrderByTerm,
   type QueryBudget,
   type QueryStats,
@@ -270,24 +272,69 @@ export function cloneTaskWithRanges(
   return clone;
 }
 
-export function groupAggregateTasks(tasks: TaskInput[]): TaskInput[] {
-  const groups = new Map<string, { task: TaskInput; combined: boolean }>();
-  for (const task of tasks) {
-    const key = aggregateTaskGroupKey(task);
-    const existing = groups.get(key);
-    if (existing === undefined) {
-      groups.set(key, { task: cloneTaskWithRanges(task, task.rowGroupRanges), combined: false });
-      continue;
+export function groupAggregateTasks(tasks: TaskInput[], parent?: MemoryScope): TaskInput[] {
+  const scope = parent?.childScope() ?? new MemoryScope(new MemoryBudget(Number.MAX_SAFE_INTEGER));
+  const keys = scope.childScope();
+  try {
+    const groups = keys.allocate(
+      c.object,
+      "task grouping directory",
+      () => new Map<string, { task: TaskInput; combined: boolean }>(),
+    ).value;
+    for (const task of tasks) {
+      const key = aggregateTaskGroupKey(task, keys);
+      const existing = groups.get(key);
+      if (existing === undefined) {
+        const detached = detachOwnedRow(task as unknown as Record<string, unknown>, scope.budget);
+        try {
+          scope.adopt(detached);
+        } catch (error) {
+          detached.release();
+          throw error;
+        }
+        keys.allocate(c.property + c.object + 2 * c.property, "task grouping entry", () =>
+          groups.set(key, { task: detached.value as unknown as TaskInput, combined: false }),
+        );
+        continue;
+      }
+      for (const range of task.rowGroupRanges)
+        scope.allocate(c.arraySlot + c.object + 2 * c.property, "grouped task range", () =>
+          existing.task.rowGroupRanges.push({ ...range }),
+        );
+      existing.combined = true;
     }
-    for (const range of task.rowGroupRanges) existing.task.rowGroupRanges.push({ ...range });
-    existing.combined = true;
+    const output = scope.allocate(
+      c.array + groups.size * c.arraySlot,
+      "grouped tasks",
+      () => [] as TaskInput[],
+    ).value;
+    for (const { task, combined } of groups.values()) {
+      if (combined) {
+        const sorting = scope.reserve(
+          c.array + task.rowGroupRanges.length * c.arraySlot * 2,
+          "task range sort workspace",
+        );
+        try {
+          mergeOwnedRowGroupRanges(task.rowGroupRanges);
+        } finally {
+          sorting.release();
+        }
+      }
+      output.push(task);
+    }
+    if (parent !== undefined) {
+      const owned = scope.retainAllocations(output);
+      try {
+        parent.adopt(owned);
+      } catch (error) {
+        owned.release();
+        throw error;
+      }
+    }
+    return output;
+  } finally {
+    scope.dispose();
   }
-  const output: TaskInput[] = [];
-  for (const { task, combined } of groups.values()) {
-    if (combined) mergeOwnedRowGroupRanges(task.rowGroupRanges);
-    output.push(task);
-  }
-  return output;
 }
 
 export function aggregateTaskReadColumns(
@@ -310,16 +357,22 @@ export function aggregateTaskReadColumns(
   return columns.size === 0 ? undefined : [...columns].sort();
 }
 
-function aggregateTaskGroupKey(task: TaskInput): string {
-  return JSON.stringify({
-    path: task.path,
-    etag: task.etag,
-    size: task.size,
-    rowGroupCount: task.rowGroupCount,
-    partitionValues: sortStringRecord(task.partitionValues),
-    projectedColumns: task.projectedColumns,
-    residualPredicate: task.residualPredicate,
-  });
+function aggregateTaskGroupKey(task: TaskInput, scope: MemoryScope): string {
+  const scratch = scope.childScope();
+  try {
+    const fields = scratch.allocate(c.object + 7 * c.property, "task grouping key fields", () => ({
+      path: task.path,
+      etag: task.etag,
+      size: task.size,
+      rowGroupCount: task.rowGroupCount,
+      partitionValues: task.partitionValues,
+      projectedColumns: task.projectedColumns,
+      residualPredicate: task.residualPredicate,
+    })).value;
+    return internStableDataKey(fields, scope);
+  } finally {
+    scratch.dispose();
+  }
 }
 
 /** Sort and compact caller-independent range storage once per combined task. */
@@ -386,12 +439,6 @@ function collectExprColumns(
       collectExprColumns(expr.else, columns, partitionColumns);
       return;
   }
-}
-
-function sortStringRecord(record: Record<string, string>): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const key of Object.keys(record).sort()) out[key] = record[key] ?? "";
-  return out;
 }
 
 function aggregateTaskStats(): QueryStats {
