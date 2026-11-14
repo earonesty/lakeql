@@ -1476,3 +1476,74 @@ it("reclaims shared capacity before measuring and preserves parallel body reads"
     cached.release();
   }
 });
+
+it.each([
+  1, 2,
+])("retains measured input %s until cancelled transport settles", async (blockedRead) => {
+  const { file, entries, plan } = await fixture(1, 1 << 20, "ZSTD");
+  const pool = new MemoryBudget(plan.bytes + 8192);
+  const pinned = pool.reserve(plan.bytes, "other retained output");
+  const scope = new MemoryScope(pool.child(plan.bytes));
+  const scheduler = new MemoryStageScheduler(pool);
+  let unblock!: () => void;
+  let entered!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    unblock = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  let reads = 0;
+  let decodes = 0;
+  const source = {
+    ...file,
+    async sliceOwned(start: number, end: number, transport: MemoryScope) {
+      reads++;
+      if (reads !== blockedRead) {
+        if (!file.sliceOwned) throw new Error("Missing owned read");
+        return file.sliceOwned(start, end, transport);
+      }
+      return transport.allocateAsync(end - start, "delayed measured body", async () => {
+        entered();
+        await gate;
+        return file.slice(start, end);
+      });
+    },
+  };
+  const sources = entries.map((entry, i) => ({
+    column: String(i),
+    pages: (async function* () {
+      yield { ...entry, rowOffset: 0, rowCount: 1 };
+    })(),
+  }));
+  const pending = (async () => {
+    for await (const output of readAlignedNumericPageGroups(source, sources, scope, {
+      scheduler,
+      decode(work) {
+        decodes++;
+        return work();
+      },
+    }))
+      output.release();
+  })();
+  const rejected = expect(pending).rejects.toMatchObject({ code: "LAKEQL_ABORTED" });
+  try {
+    await started;
+    scope.dispose();
+    expect(scope.budget.usedBytes).toBeGreaterThan(0);
+    expect(pool.usedBytes).toBeGreaterThan(pinned.bytes);
+    expect(decodes).toBe(0);
+    unblock();
+    await rejected;
+    expect(reads).toBe(blockedRead);
+    expect(scope.budget.usedBytes).toBe(0);
+    expect(pool.usedBytes).toBe(pinned.bytes);
+    expect(scheduler.activeStages).toBe(0);
+    expect(scheduler.queuedStages).toBe(0);
+  } finally {
+    unblock();
+    scope.dispose();
+    pinned.release();
+  }
+  expect(pool.usedBytes).toBe(0);
+});

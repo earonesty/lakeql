@@ -1,0 +1,31 @@
+{
+  "runtime": "0b74d0e (unchanged production source)",
+  "requirements": ["M2", "V1", "V2"],
+  "scope": "Cancellation during either measured ZSTD input under shared pinned pressure, through prepared page groups and the ordinary owned scanner.",
+  "newRegularCases": 2,
+  "newNativeWorkerCases": 2,
+  "assertions": [
+    "Pending transport stays charged after cancellation until its callback settles.",
+    "No decode or later body read starts after cancellation.",
+    "Settlement releases all job charges and scheduler slots, preserving sibling pinned output.",
+    "Actual R2 binding retry succeeds using the same job/root pool with the sibling pin still held."
+  ],
+  "fixture": "Node-compressed two-column real ZSTD Parquet; local workerd native R2 responses delayed at first/second page-body offset.",
+  "diagnostics": "Focused and full Worker runs emit disconnected: pump canceled while deliberately cancelling native response streams. All assertions pass.",
+  "validation": {
+    "focusedRegularPassed": 46,
+    "focusedWorkerPassed": 3,
+    "regularPassed": 3945,
+    "regularSkipped": 645,
+    "workerPassed": 90,
+    "typescriptBuild": "passed",
+    "typecheck": "passed",
+    "lint": "passed",
+    "previousFullRelease": "numeric-shared-pressure-2026-11-14.json; runtime unchanged; coverage/conformance/reference/package gates not rerun for tests-only change."
+  },
+  "limitations": [
+    "Reservation pressure is not total Worker memory measurement.",
+    "Native binding is not public-cloud latency evidence.",
+    "Broader scheduling and whole-runtime headroom acceptance remain open."
+  ]
+}

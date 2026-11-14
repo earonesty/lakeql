@@ -5160,3 +5160,24 @@ small stream outputs should not pay that cost for modest batched gains. The patc
 and both runs are retained in `validation/json-frame-reuse-experiment-2026-11-14.json`.
 Production source is restored. This closes an experiment, not the JSON or runtime
 headroom requirement; cursor construction is not total-heap measurement.
+
+### Measured-input cancellation and same-pool recovery (2026-11-14)
+
+Two new prepared-page cases cancel while either the first or second ZSTD input
+is pending under pinned shared-pool pressure. They verify that pending transport
+remains charged after scope disposal, no decode starts, no later input read starts,
+and all job charges and scheduler counters reach zero after settlement.
+
+Two corresponding native workerd/R2 cases use independently Node-compressed
+Parquet, delay actual binding responses at the selected page-body offset, and
+cancel through the ordinary owned scanner. Both retain charges through settlement
+and then successfully retry with the same job/root pool while the sibling output
+reservation remains pinned. This extends the measured fallback's integration
+evidence without changing production code. It does not model whole-runtime
+64/128 MiB caps or public-cloud latency. Workerd emits “pump canceled” diagnostics
+on the deliberately cancelled responses; all three focused Worker assertions pass.
+Evidence: `validation/measured-input-cancellation-2026-11-14.json`.
+
+Final checks pass all 3,945 regular tests (645 skipped), 90 Worker tests,
+TypeScript build, typecheck and lint. Production source is unchanged from
+`0b74d0e`; earlier full release evidence remains scoped to that runtime.
