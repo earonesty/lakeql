@@ -106,6 +106,29 @@
       "Bigint/timestamp/interval scalar formatting, recursive JSON traversal and native/runtime workspace are not complete heap admission.",
       "Chunks retained by consumers after delivery require caller accounting.",
       "Worker reservation tests are not production total-heap proof. The broader memory audit and remaining conformance failures are still open."
-    ]
+    ],
+    "directPrimitiveText": {
+      "change": "Primitive cells retain text through preparation and write UTF8 directly into the final admitted buffer. No per-cell UTF8 allocation or scratch view is created. Nested JSON/binary cells retain admitted backing. UTF8 writing matches TextEncoder replacement behavior and doubles only CSV quotes.",
+      "validation": {
+        "defaultPassed": 2825,
+        "defaultSkipped": 605,
+        "workerPassed": 57,
+        "referencePassed": 104,
+        "buildLintTypecheck": "passed",
+        "edgeCases": "Wide ASCII and quoted Unicode cells succeed with output bytes plus 1 KiB of preparation capacity. All UTF16 code units and explicit surrogate boundaries match native CSV/TextEncoder output. Existing exact-cap, cap-minus-one, lifetime, HTTP and native R2 cases pass.",
+        "cleanNpmInstall": "passed"
+      },
+      "benchmark": "../benchmarks/csv-output-direct-text-2026-11-13.json",
+      "reservationChanges": {
+        "asciiBefore": 200657,
+        "asciiAfter": 100529,
+        "quotedUnicodeBefore": 380659,
+        "quotedUnicodeAfter": 200531,
+        "smallBefore": 1613,
+        "smallAfter": 1216
+      },
+      "timing": "Final alternating-order medians in milliseconds: small owned 0.00727 / legacy 0.000789; ASCII 0.363 / 0.132; Unicode 0.758 / 1.104; binary 1.086 / 2.555; nested 0.444 / 0.461. Prior small-row owned median was 0.0157 in a separate run. Timing variation prevents causal whole-query claims; tiny rows remain slower than unaccounted legacy output.",
+      "remaining": "Native scalar formatting still creates strings before admission; existing scalarStringWithAdmission and decimalStringAllocationBytes provide reusable machinery for the next integration. BigInt arithmetic/traversal/runtime overhead and consumer-retained output remain separate gaps."
+    }
   }
 }

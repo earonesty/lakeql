@@ -101,3 +101,30 @@ it("rolls back prepared cells after a later cell fails", () => {
   expect(scope.budget.usedBytes).toBe(0);
   scope.dispose();
 });
+
+it("encodes wide primitive text with constant preparation headroom", () => {
+  for (const text of ["a".repeat(65536), '雪,"\n😀'.repeat(10000)]) {
+    const expected = new TextEncoder().encode(`${legacyCell(text)}\n`);
+    const pool = new MemoryBudget(expected.length + 1024);
+    const scope = new MemoryScope(pool);
+    const output = encodeOwnedCsvOutput({ value: text }, ["value"], false, scope);
+    expect(output.value).toEqual(expected);
+    expect(pool.peakBytes - output.bytes).toBeLessThan(1024);
+    scope.dispose();
+    output.release();
+    expect(pool.usedBytes).toBe(0);
+  }
+});
+
+it("matches native CSV UTF8 encoding across every UTF16 code unit", () => {
+  let text = "";
+  for (let code = 0; code <= 0xffff; code++) text += String.fromCharCode(code);
+  text += "\ud800\udc00\udbff\udfff\ud800x\udfff";
+  const expected = new TextEncoder().encode(`${legacyCell(text)}\n`);
+  const scope = new MemoryScope(new MemoryBudget(expected.length + 1024));
+  const output = encodeOwnedCsvOutput({ value: text }, ["value"], false, scope);
+  expect(output.value).toEqual(expected);
+  output.release();
+  scope.dispose();
+  expect(scope.budget.usedBytes).toBe(0);
+});

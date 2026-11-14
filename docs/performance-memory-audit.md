@@ -32,7 +32,7 @@ from a persistent leak, but does not cap external backing or prove production
 Cloudflare total-memory safety. See the constrained-runtime section below.
 
 Current stream-admission checkpoint (November 13, 2026) passes
-**2,823 default tests** (605 skipped), **57 Worker tests**, and **104 reference
+**2,825 default tests** (605 skipped), **57 Worker tests**, and **104 reference
 tests**, plus TypeScript build, typecheck and lint. These counts are recorded in
 `docs/validation/stream-lifetime-2026-11-13.json`. Distribution build,
 expanded clean npm install smoke checks, compatibility and tracked-file size checks
