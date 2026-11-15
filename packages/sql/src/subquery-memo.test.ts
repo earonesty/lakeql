@@ -1,4 +1,4 @@
-import { SharedMemoryCache, TimestampValue } from "lakeql-core";
+import { type Expr, SharedMemoryCache, TimestampValue } from "lakeql-core";
 import { expect, it, vi } from "vitest";
 import { parseSql, type SqlQueryAst } from "./index.js";
 import {
@@ -161,4 +161,71 @@ it("resolves correlated residual scalar dependencies with or without prior root 
     expect(values[0]?.rows).toBe(values[1]?.rows);
     expect(values[0]?.rows.get(sqlCorrelationKey({ id: 1n }, ["id"]) ?? "")?.max).toBe(30);
   }
+});
+
+it("resolves scalar dependencies across QUALIFY and every window expression slot", async () => {
+  const placeholder = (): Expr => ({
+    kind: "call",
+    fn: "__lakeql_scalar_subquery",
+    args: [{ kind: "literal", value: "s" }],
+  });
+  const ast: SqlQueryAst = {
+    source: "purchases",
+    qualify: placeholder(),
+    windows: {
+      total: {
+        fn: { aggregate: "sum" },
+        args: [placeholder()],
+        filter: placeholder(),
+        ignoreNulls: true,
+        over: {
+          partitionBy: [placeholder()],
+          orderBy: [{ expr: placeholder(), direction: "desc", nulls: "first" }],
+          frame: {
+            mode: "rows",
+            start: { kind: "preceding", offset: placeholder() },
+            end: { kind: "following", offset: placeholder() },
+            exclude: "ties",
+          },
+        },
+      },
+    },
+    scalarSubqueries: { s: { query: { source: "bonuses" }, column: "value" } },
+  };
+  const before = structuredClone(ast);
+  const execute = vi.fn(async () => [{ value: 5 }]);
+  const out = await resolveSqlScalarSubqueries(ast, execute, new SharedMemoryCache());
+  expect(execute).toHaveBeenCalledTimes(1);
+  expect(out.scalarSubqueries).toBeUndefined();
+  expect(JSON.stringify(out)).not.toContain("__lakeql_scalar_subquery");
+  expect(out.windows?.total).toMatchObject({
+    args: [{ kind: "literal", value: 5 }],
+    filter: { kind: "literal", value: 5 },
+    ignoreNulls: true,
+    over: {
+      partitionBy: [{ kind: "literal", value: 5 }],
+      orderBy: [{ expr: { kind: "literal", value: 5 }, direction: "desc", nulls: "first" }],
+      frame: {
+        mode: "rows",
+        start: { offset: { value: 5 } },
+        end: { offset: { value: 5 } },
+        exclude: "ties",
+      },
+    },
+  });
+  expect(out.qualify).toEqual({ kind: "literal", value: 5 });
+  expect(ast).toEqual(before);
+});
+
+it("resolves aggregate and HAVING dependencies in grouped predicate subqueries", async () => {
+  const ast = parseSql(
+    "SELECT amount FROM purchases WHERE group_id IN (SELECT group_id FROM purchases GROUP BY group_id HAVING MAX(amount + (SELECT MAX(bonus) FROM purchases)) > (SELECT MAX(amount) FROM purchases))",
+  );
+  const execute = vi.fn(async (query: SqlQueryAst) => [
+    { max: query.aggregates?.max?.column === "bonus" ? 5 : 30 },
+  ]);
+  const out = await resolveSqlScalarSubqueries(ast, execute, new SharedMemoryCache());
+  expect(execute).toHaveBeenCalledTimes(2);
+  expect(JSON.stringify(out)).not.toContain("__lakeql_scalar_subquery");
+  expect(out.subqueryJoin?.having).toMatchObject({ right: { kind: "literal", value: 30 } });
 });

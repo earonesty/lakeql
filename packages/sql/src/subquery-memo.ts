@@ -127,10 +127,47 @@ export async function resolveSqlScalarSubqueries(
   return out;
 }
 
-function mapScalarExpressions(ast: SqlQueryAst, replace: (expr: Expr) => Expr): SqlQueryAst {
+function mapScalarExpressions<T extends SqlQueryAst>(ast: T, replace: (expr: Expr) => Expr): T {
   const out = { ...ast };
   if (ast.where !== undefined) out.where = replace(ast.where);
   if (ast.having !== undefined) out.having = replace(ast.having);
+  if (ast.qualify !== undefined) out.qualify = replace(ast.qualify);
+  if (ast.windows !== undefined) {
+    out.windows = Object.fromEntries(
+      Object.entries(ast.windows).map(([alias, window]) => [
+        alias,
+        {
+          ...window,
+          args: window.args.map(replace),
+          ...(window.filter === undefined ? {} : { filter: replace(window.filter) }),
+          over: {
+            ...window.over,
+            partitionBy: window.over.partitionBy.map(replace),
+            orderBy: window.over.orderBy.map((term) => ({ ...term, expr: replace(term.expr) })),
+            ...(window.over.frame === undefined
+              ? {}
+              : {
+                  frame: {
+                    ...window.over.frame,
+                    start: {
+                      ...window.over.frame.start,
+                      ...(window.over.frame.start.offset === undefined
+                        ? {}
+                        : { offset: replace(window.over.frame.start.offset) }),
+                    },
+                    end: {
+                      ...window.over.frame.end,
+                      ...(window.over.frame.end.offset === undefined
+                        ? {}
+                        : { offset: replace(window.over.frame.end.offset) }),
+                    },
+                  },
+                }),
+          },
+        },
+      ]),
+    );
+  }
   if (ast.projections !== undefined) {
     out.projections = Object.fromEntries(
       Object.entries(ast.projections).map(([alias, expr]) => [alias, replace(expr)]),
@@ -153,22 +190,15 @@ function mapScalarExpressions(ast: SqlQueryAst, replace: (expr: Expr) => Expr): 
   } else if (ast.join?.predicate !== undefined) {
     out.join = { ...ast.join, predicate: replace(ast.join.predicate) };
   }
-  if (ast.subqueryJoins !== undefined) {
-    out.subqueryJoins = ast.subqueryJoins.map((join) => ({
-      ...join,
-      ...(join.where === undefined ? {} : { where: replace(join.where) }),
+  const subqueryJoins =
+    ast.subqueryJoins ?? (ast.subqueryJoin === undefined ? undefined : [ast.subqueryJoin]);
+  if (subqueryJoins !== undefined) {
+    const mapped = subqueryJoins.map((join) => ({
+      ...mapScalarExpressions(join, replace),
       ...(join.predicate === undefined ? {} : { predicate: replace(join.predicate) }),
     }));
-    const firstSubqueryJoin = out.subqueryJoins[0];
-    if (firstSubqueryJoin !== undefined) out.subqueryJoin = firstSubqueryJoin;
-  } else if (ast.subqueryJoin?.where !== undefined || ast.subqueryJoin?.predicate !== undefined) {
-    out.subqueryJoin = {
-      ...ast.subqueryJoin,
-      ...(ast.subqueryJoin.where === undefined ? {} : { where: replace(ast.subqueryJoin.where) }),
-      ...(ast.subqueryJoin.predicate === undefined
-        ? {}
-        : { predicate: replace(ast.subqueryJoin.predicate) }),
-    };
+    if (ast.subqueryJoins !== undefined) out.subqueryJoins = mapped;
+    if (mapped[0] !== undefined) out.subqueryJoin = mapped[0];
   }
   return out;
 }

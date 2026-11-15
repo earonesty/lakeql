@@ -1,3 +1,4 @@
+import { jsonListBytes } from "./aggregate-memory.js";
 import {
   type Batch,
   type BatchExprValues,
@@ -30,6 +31,7 @@ import {
   type VectorAggregateStates,
   type VectorAggregateValue,
 } from "./vector-aggregate.js";
+import { inspectDistinctMemoryBytes } from "./vector-aggregate-distinct.js";
 
 // Counters contain no payload references, so holding one shared group does not
 // keep another directory's groups alive. Unbudgeted updates invalidate the byte
@@ -83,9 +85,10 @@ class GroupDirectory extends Map<string, VectorGroup> {
   }
 }
 
-function groupBytes(key: string, group: VectorGroup): number {
+function groupBytes(key: string, group: VectorGroup, inspect = false): number {
   let bytes = 64 + key.length * 2 + group.keyValues.length * 16;
-  for (const state of Object.values(group.states)) bytes += estimateAggregateStateBytes(state);
+  for (const state of Object.values(group.states))
+    bytes += estimateAggregateStateBytes(state, inspect);
   return bytes;
 }
 
@@ -821,12 +824,12 @@ function enforceGroupByMemoryBudget(state: VectorGroupByState, budget?: QueryBud
 function estimateVectorGroupByMemoryBytes(state: VectorGroupByState): number {
   let bytes = 0;
   for (const [key, group] of state.groups) {
-    bytes += groupBytes(key, group);
+    bytes += groupBytes(key, group, true);
   }
   return bytes;
 }
 
-function estimateAggregateStateBytes(state: VectorAggregateState): number {
+function estimateAggregateStateBytes(state: VectorAggregateState, inspect = false): number {
   switch (state.op) {
     case "count":
     case "sum":
@@ -843,11 +846,18 @@ function estimateAggregateStateBytes(state: VectorAggregateState): number {
       return 32;
     case "median":
     case "quantile":
-      return 32 + state.memoryBytes;
+      return (
+        32 + (inspect && state.memoryBytes === 0 ? jsonListBytes(state.values) : state.memoryBytes)
+      );
     case "count_distinct":
     case "approx_count_distinct":
-      return 32 + state.memoryBytes;
+      return 32 + (inspect ? inspectDistinctMemoryBytes(state) : state.memoryBytes);
     case "mode":
-      return 32 + state.memoryBytes;
+      return (
+        32 +
+        (inspect && state.memoryBytes === 0
+          ? jsonListBytes(state.values.keys())
+          : state.memoryBytes)
+      );
   }
 }

@@ -44,7 +44,7 @@ pool shared with every reader and operator.
 
 - `pnpm check` passes build, lint, types, package consumers, compatibility, fixture
   checks; the final counter integration separately passes lint, types, build,
-  947 regular tests (97 skipped), 9 Worker tests, 81 references
+  955 regular tests (97 skipped), 9 Worker tests, 81 references
   and 7 conformance cases (one skipped). The optional external Parquet corpus is
   absent in this checkout.
 - Unit tests cover pending/completed reuse, capacity pressure, oversized results,
@@ -57,7 +57,10 @@ pool shared with every reader and operator.
   scalar dependency resolution through shared parser registries, aggregate-argument
   substitutions, aggregate and LIMIT scalar dependencies inside correlated
   predicates, and bigint correlation keys. LIMIT regressions include ordering,
-  offset and empty results. Library and CLI tests execute real
+  offset and empty results. Window regressions cover QUALIFY, arguments, FILTER,
+  partition/order expressions and frame offsets; grouped predicate subqueries
+  also resolve aggregate arguments and HAVING dependencies. Borrowed plain-Map checks cover
+  unmeasured buffered states without mutation, including distinct sorted runs. Library and CLI tests execute real
   Parquet INT64 fixtures; the Iceberg fixture verifies nested source planning and
   temporary-object cleanup.
 - Real Parquet tests use actual HTTP 206 and range-ignoring HTTP 200 responses,

@@ -1420,6 +1420,31 @@ it("executes nested scalar, aggregate-argument and bigint-correlated CLI queries
       expected.map((value, index) => ({ amount: (index + 1) * 10, x: value, y: value })),
     );
   }
+  const windowResult = await runCli([
+    "query",
+    "--path",
+    path,
+    "--sql",
+    "SELECT amount, SUM(amount + (SELECT MAX(bonus) FROM input)) FILTER (WHERE amount > (SELECT MIN(amount) FROM input)) OVER (PARTITION BY (SELECT MAX(bonus) FROM input)) AS total FROM input QUALIFY amount > (SELECT MIN(amount) FROM input) ORDER BY amount",
+    "--format",
+    "json",
+  ]);
+  expect(windowResult).toMatchObject({ exitCode: 0, stderr: "" });
+  expect(JSON.parse(windowResult.stdout)).toEqual([
+    { amount: 20, total: 60 },
+    { amount: 30, total: 60 },
+  ]);
+  const groupedResult = await runCli([
+    "query",
+    "--path",
+    path,
+    "--sql",
+    "SELECT amount FROM input WHERE group_id IN (SELECT group_id FROM input GROUP BY group_id HAVING MAX(amount + (SELECT MAX(bonus) FROM input)) > (SELECT MAX(amount) FROM input))",
+    "--format",
+    "json",
+  ]);
+  expect(groupedResult).toMatchObject({ exitCode: 0, stderr: "" });
+  expect(JSON.parse(groupedResult.stdout)).toEqual([{ amount: 30 }]);
   for (const [sql, expected] of [
     [
       `SELECT amount, ${nested} AS a, ${nested} AS b FROM input LIMIT 1`,
