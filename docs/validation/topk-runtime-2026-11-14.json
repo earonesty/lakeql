@@ -1,0 +1,428 @@
+{
+  "implementationCommit": "1221b43b54e3885b669440488d8534ddf7a1fd03",
+  "workload": {
+    "rows": 32768,
+    "payloadBytesPerRow": 256,
+    "rounds": 4,
+    "mode": "owned",
+    "queries": ["topk-id", "topk-text"],
+    "poolMiB": [64, 128],
+    "jobs": [1, 4]
+  },
+  "scope": "Inspector samples are lower bounds. Managed heap and backing storage are separate counters, not additive process-memory measurements. HTTP runtime heap flag does not bound backing storage. Diagnostic GC runs only after all measured rounds and eviction; it is not a production remedy. These results do not establish a Cloudflare total-memory cap.",
+  "findings": [
+    {
+      "case": "id-native",
+      "poolMiB": 64,
+      "jobs": 1,
+      "status": "complete",
+      "primaryOutcomes": {
+        "ok": 4
+      },
+      "maxSampledManagedHeapBytes": 50944940,
+      "maxSampledBackingStorageBytes": 101893495,
+      "finalAdmissionBytes": 0,
+      "diagnosticGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 6406.322398,
+          "usedSize": 5453476,
+          "totalSize": 6287360,
+          "embedderHeapUsedSize": 1304,
+          "backingStorageSize": 366064
+        }
+      },
+      "rawArtifact": "benchmarks/topk-runtime-id-native-2026-11-14.json"
+    },
+    {
+      "case": "id-native",
+      "poolMiB": 64,
+      "jobs": 4,
+      "status": "complete",
+      "primaryOutcomes": {
+        "budget": 12,
+        "ok": 4
+      },
+      "maxSampledManagedHeapBytes": 54226340,
+      "maxSampledBackingStorageBytes": 513609163,
+      "finalAdmissionBytes": 0,
+      "diagnosticGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 38146.948496,
+          "usedSize": 5873948,
+          "totalSize": 7073792,
+          "embedderHeapUsedSize": 1304,
+          "backingStorageSize": 366064
+        }
+      },
+      "rawArtifact": "benchmarks/topk-runtime-id-native-2026-11-14.json"
+    },
+    {
+      "case": "id-native",
+      "poolMiB": 128,
+      "jobs": 1,
+      "status": "complete",
+      "primaryOutcomes": {
+        "ok": 4
+      },
+      "maxSampledManagedHeapBytes": 51425064,
+      "maxSampledBackingStorageBytes": 151398738,
+      "finalAdmissionBytes": 0,
+      "diagnosticGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 45081.332659,
+          "usedSize": 5448360,
+          "totalSize": 6549504,
+          "embedderHeapUsedSize": 1304,
+          "backingStorageSize": 366064
+        }
+      },
+      "rawArtifact": "benchmarks/topk-runtime-id-native-2026-11-14.json"
+    },
+    {
+      "case": "id-native",
+      "poolMiB": 128,
+      "jobs": 4,
+      "status": "complete",
+      "primaryOutcomes": {
+        "ok": 16
+      },
+      "maxSampledManagedHeapBytes": 98166148,
+      "maxSampledBackingStorageBytes": 251173173,
+      "finalAdmissionBytes": 0,
+      "diagnosticGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 67836.390841,
+          "usedSize": 5840148,
+          "totalSize": 7335936,
+          "embedderHeapUsedSize": 1304,
+          "backingStorageSize": 366064
+        }
+      },
+      "rawArtifact": "benchmarks/topk-runtime-id-native-2026-11-14.json"
+    },
+    {
+      "case": "text-native",
+      "poolMiB": 64,
+      "jobs": 1,
+      "status": "complete",
+      "primaryOutcomes": {
+        "ok": 4
+      },
+      "maxSampledManagedHeapBytes": 44817364,
+      "maxSampledBackingStorageBytes": 181573982,
+      "finalAdmissionBytes": 0,
+      "diagnosticGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 9529.859008,
+          "usedSize": 5441712,
+          "totalSize": 6549504,
+          "embedderHeapUsedSize": 1304,
+          "backingStorageSize": 366064
+        }
+      },
+      "rawArtifact": "benchmarks/topk-runtime-text-native-2026-11-14.json"
+    },
+    {
+      "case": "text-native",
+      "poolMiB": 64,
+      "jobs": 4,
+      "status": "complete",
+      "primaryOutcomes": {
+        "budget": 12,
+        "ok": 4
+      },
+      "maxSampledManagedHeapBytes": 62646412,
+      "maxSampledBackingStorageBytes": 712852467,
+      "finalAdmissionBytes": 0,
+      "diagnosticGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 45526.083757,
+          "usedSize": 5848540,
+          "totalSize": 6811648,
+          "embedderHeapUsedSize": 1304,
+          "backingStorageSize": 366064
+        }
+      },
+      "rawArtifact": "benchmarks/topk-runtime-text-native-2026-11-14.json"
+    },
+    {
+      "case": "text-native",
+      "poolMiB": 128,
+      "jobs": 1,
+      "status": "complete",
+      "primaryOutcomes": {
+        "ok": 4
+      },
+      "maxSampledManagedHeapBytes": 41679392,
+      "maxSampledBackingStorageBytes": 127114920,
+      "finalAdmissionBytes": 0,
+      "diagnosticGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 51789.845304,
+          "usedSize": 5422228,
+          "totalSize": 6811648,
+          "embedderHeapUsedSize": 1304,
+          "backingStorageSize": 366064
+        }
+      },
+      "rawArtifact": "benchmarks/topk-runtime-text-native-2026-11-14.json"
+    },
+    {
+      "case": "text-native",
+      "poolMiB": 128,
+      "jobs": 4,
+      "status": "complete",
+      "primaryOutcomes": {
+        "ok": 16
+      },
+      "maxSampledManagedHeapBytes": 144455160,
+      "maxSampledBackingStorageBytes": 388892198,
+      "finalAdmissionBytes": 0,
+      "diagnosticGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 72694.934141,
+          "usedSize": 5824884,
+          "totalSize": 7073792,
+          "embedderHeapUsedSize": 1304,
+          "backingStorageSize": 366064
+        }
+      },
+      "rawArtifact": "benchmarks/topk-runtime-text-native-2026-11-14.json"
+    },
+    {
+      "case": "id-heap64",
+      "poolMiB": 64,
+      "jobs": 1,
+      "status": "complete",
+      "primaryOutcomes": {
+        "ok": 4
+      },
+      "maxSampledManagedHeapBytes": 49509156,
+      "maxSampledBackingStorageBytes": 793402998,
+      "finalAdmissionBytes": 0,
+      "diagnosticGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 6503.328161,
+          "usedSize": 5481088,
+          "totalSize": 6549504,
+          "embedderHeapUsedSize": 1264,
+          "backingStorageSize": 366064
+        }
+      },
+      "rawArtifact": "benchmarks/topk-runtime-id-heap64-2026-11-14.json"
+    },
+    {
+      "case": "id-heap64",
+      "poolMiB": 64,
+      "jobs": 4,
+      "status": "complete",
+      "primaryOutcomes": {
+        "budget": 12,
+        "ok": 4
+      },
+      "maxSampledManagedHeapBytes": 55160640,
+      "maxSampledBackingStorageBytes": 1189989396,
+      "finalAdmissionBytes": 0,
+      "diagnosticGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 40515.334865,
+          "usedSize": 5919892,
+          "totalSize": 7598080,
+          "embedderHeapUsedSize": 1264,
+          "backingStorageSize": 366064
+        }
+      },
+      "rawArtifact": "benchmarks/topk-runtime-id-heap64-2026-11-14.json"
+    },
+    {
+      "case": "id-heap64",
+      "poolMiB": 128,
+      "jobs": 1,
+      "status": "complete",
+      "primaryOutcomes": {
+        "ok": 4
+      },
+      "maxSampledManagedHeapBytes": 37386060,
+      "maxSampledBackingStorageBytes": 398094972,
+      "finalAdmissionBytes": 0,
+      "diagnosticGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 47065.929542,
+          "usedSize": 5460864,
+          "totalSize": 6811648,
+          "embedderHeapUsedSize": 1264,
+          "backingStorageSize": 366064
+        }
+      },
+      "rawArtifact": "benchmarks/topk-runtime-id-heap64-2026-11-14.json"
+    },
+    {
+      "case": "id-heap64",
+      "poolMiB": 128,
+      "jobs": 4,
+      "status": "complete",
+      "primaryOutcomes": {
+        "ok": 16
+      },
+      "maxSampledManagedHeapBytes": 56697972,
+      "maxSampledBackingStorageBytes": 484757985,
+      "finalAdmissionBytes": 0,
+      "diagnosticGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 69963.515264,
+          "usedSize": 5867472,
+          "totalSize": 8908800,
+          "embedderHeapUsedSize": 1264,
+          "backingStorageSize": 366064
+        }
+      },
+      "rawArtifact": "benchmarks/topk-runtime-id-heap64-2026-11-14.json"
+    },
+    {
+      "case": "text-heap64",
+      "poolMiB": 64,
+      "jobs": 1,
+      "status": "complete",
+      "primaryOutcomes": {
+        "ok": 4
+      },
+      "maxSampledManagedHeapBytes": 24047612,
+      "maxSampledBackingStorageBytes": 288519634,
+      "finalAdmissionBytes": 0,
+      "diagnosticGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 6586.598755,
+          "usedSize": 5457084,
+          "totalSize": 7073792,
+          "embedderHeapUsedSize": 1264,
+          "backingStorageSize": 366064
+        }
+      },
+      "rawArtifact": "benchmarks/topk-runtime-text-heap64-2026-11-14.json"
+    },
+    {
+      "case": "text-heap64",
+      "poolMiB": 64,
+      "jobs": 4,
+      "status": "complete",
+      "primaryOutcomes": {
+        "budget": 12,
+        "ok": 4
+      },
+      "maxSampledManagedHeapBytes": 51157632,
+      "maxSampledBackingStorageBytes": 1264245421,
+      "finalAdmissionBytes": 0,
+      "diagnosticGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 44090.78709,
+          "usedSize": 5906100,
+          "totalSize": 6811648,
+          "embedderHeapUsedSize": 1264,
+          "backingStorageSize": 366064
+        }
+      },
+      "rawArtifact": "benchmarks/topk-runtime-text-heap64-2026-11-14.json"
+    },
+    {
+      "case": "text-heap64",
+      "poolMiB": 128,
+      "jobs": 1,
+      "status": "complete",
+      "primaryOutcomes": {
+        "ok": 4
+      },
+      "maxSampledManagedHeapBytes": 45648888,
+      "maxSampledBackingStorageBytes": 663949768,
+      "finalAdmissionBytes": 0,
+      "diagnosticGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 51055.828039,
+          "usedSize": 5444496,
+          "totalSize": 6287360,
+          "embedderHeapUsedSize": 1264,
+          "backingStorageSize": 366064
+        }
+      },
+      "rawArtifact": "benchmarks/topk-runtime-text-heap64-2026-11-14.json"
+    },
+    {
+      "case": "text-heap64",
+      "poolMiB": 128,
+      "jobs": 4,
+      "status": "complete",
+      "primaryOutcomes": {
+        "ok": 16
+      },
+      "maxSampledManagedHeapBytes": 58175376,
+      "maxSampledBackingStorageBytes": 452141537,
+      "finalAdmissionBytes": 0,
+      "diagnosticGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 75234.284945,
+          "usedSize": 5861344,
+          "totalSize": 7073792,
+          "embedderHeapUsedSize": 1264,
+          "backingStorageSize": 366064
+        }
+      },
+      "rawArtifact": "benchmarks/topk-runtime-text-heap64-2026-11-14.json"
+    }
+  ],
+  "matchedScanControl": {
+    "artifact": "benchmarks/topk-runtime-scan-native-2026-11-14.json",
+    "allScenariosComplete": true,
+    "maxSampledBackingStorageBytes": 23316278,
+    "maxSampledManagedHeapBytes": 90950872,
+    "allFinalAdmissionBytes": 0,
+    "interpretation": "Same native R2 fixture, four rounds, pool sizes, jobs and recovery probes. Top-k exhibits substantially higher backing-storage churn than this scan control; sampling and GC scheduling prevent exact causal peak attribution."
+  },
+  "allocationProfile": {
+    "artifact": "benchmarks/topk-runtime-id-profile-2026-11-14.json",
+    "query": "topk-id",
+    "rounds": 2,
+    "includesCollectedObjects": true,
+    "allScenariosComplete": true,
+    "singleJobEstimatedAllocationBytesRange": [958300228, 1021498560],
+    "leadingSites": [
+      "compareBatchRows",
+      "vectorValue called from vectorBytes",
+      "subarray called from compactPackedGather",
+      "subarray called from concatPackedVectors"
+    ],
+    "scope": "Sampling estimates of total allocated managed objects, including collected objects. Not backing-storage allocation attribution, exact live bytes, a peak, or comparable uninstrumented latency."
+  },
+  "sourceFindings": [
+    {
+      "file": "packages/core/src/query.ts",
+      "symbol": "tryColumnarTopKRows",
+      "finding": "Every scanned batch produces sorted candidates, concatenates them with retained candidates, then runs top-k again on the joined batch. Full-limit workloads repeatedly copy and order growing retained state."
+    },
+    {
+      "file": "packages/core/src/query.ts",
+      "symbol": "tryLateMaterializedTopKRows",
+      "finding": "Requires explicit projection. This wildcard fixture uses the ordinary columnar top-k path, so deferred-gather window rereads do not explain its peak."
+    },
+    {
+      "file": "packages/core/src/query.ts",
+      "symbol": "tryColumnarTopKRows",
+      "finding": "serializedBatchBytes(retained, sizing) runs after every candidate merge even when maxMemoryBytes is undefined. This fixture configures maxAllocatedMemoryBytes only; the serialized-size scan cannot reject it."
+    }
+  ],
+  "nextWork": "Prioritize a generic retained top-k continuation that avoids repeatedly sorting and copying the growing retained payload, with explicit vector-shape capability and stable tie semantics. Also avoid serialized-size computation when its legacy limit is absent. Prove scaling and real-fixture runtime effects before claiming a cap."
+}

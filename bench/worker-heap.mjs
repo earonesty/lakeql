@@ -20,6 +20,8 @@ const bundle = await build({
 const script = bundle.outputFiles[0].text;
 const rows = Number(process.env.LAKEQL_HEAP_ROWS ?? 32768);
 assert.ok(Number.isSafeInteger(rows) && rows > 0 && rows <= 131072);
+const queryKind = process.env.LAKEQL_HEAP_QUERY ?? "scan";
+assert.ok(["scan", "topk-id", "topk-text"].includes(queryKind));
 const mode = process.env.LAKEQL_HEAP_MODE ?? "materialized";
 assert.ok(mode === "materialized" || mode === "stream" || mode === "owned");
 const recoveryProbe = process.env.LAKEQL_HEAP_RECOVERY_PROBE === "1";
@@ -30,6 +32,16 @@ assert.ok(!recoveryProbe || mode === "owned");
 const roundCount = Number(process.env.LAKEQL_HEAP_ROUNDS ?? 2);
 assert.ok(Number.isSafeInteger(roundCount) && roundCount >= 2 && roundCount <= 32);
 const payloadLength = 256;
+const expectedIds = Array.from({ length: rows }, (_, id) => id);
+if (queryKind === "topk-id") expectedIds.reverse();
+else if (queryKind === "topk-text") {
+  const keys = expectedIds.map((id) => `${id}:`.padEnd(payloadLength, "x"));
+  expectedIds.sort((a, b) => (keys[a] < keys[b] ? 1 : keys[a] > keys[b] ? -1 : a - b));
+}
+let expectedSequence = 2166136261;
+for (const id of expectedIds) expectedSequence = Math.imul(expectedSequence ^ id, 16777619) >>> 0;
+const expectedLastId = expectedIds.at(-1);
+const workloadParameters = `query=${queryKind}&rows=${rows}`;
 const bytes = new Uint8Array(
   parquetWriteBuffer({
     rowGroupSize: Array.from({ length: Math.ceil(rows / 4096) }, (_, i) =>
@@ -125,7 +137,7 @@ for (const mib of [64, 128])
             includeObjectsCollectedByMinorGC: profileCollected,
           });
         const start = performance.now();
-        const operation = request(`/run?jobs=${jobs}&mode=${mode}`).then(
+        const operation = request(`/run?jobs=${jobs}&mode=${mode}&${workloadParameters}`).then(
           (value) => {
             done = true;
             return { value };
@@ -154,19 +166,21 @@ for (const mib of [64, 128])
           assert.equal(report.rows, rows);
           assert.equal(report.ids, (rows * (rows - 1)) / 2);
           assert.equal(report.characters, rows * payloadLength);
+          assert.equal(report.sequence, expectedSequence);
           if (round !== "cold" && complete) assert.equal(report.ranges, 0);
         }
         assert.ok(result.peakBytes <= mib * 1024 * 1024);
         let recovery;
         let recovered = 0;
         if (recoveryProbe && !complete) {
-          recovery = await request(`/run?jobs=1&mode=owned&retainPrevious=1`);
+          recovery = await request(`/run?jobs=1&mode=owned&retainPrevious=1&${workloadParameters}`);
           assert.ok(recovery.peakBytes <= mib * 1024 * 1024);
           const report = recovery.reports[0];
           if (report.status === "ok") {
             assert.equal(report.rows, rows);
             assert.equal(report.ids, (rows * (rows - 1)) / 2);
             assert.equal(report.characters, rows * payloadLength);
+            assert.equal(report.sequence, expectedSequence);
             recovered = 1;
           } else {
             assert.equal(report.status, "budget");
@@ -178,7 +192,7 @@ for (const mib of [64, 128])
         assert.equal(held.rows, mode === "stream" ? 0 : rows * (successes + recovered));
         assert.deepEqual(
           held.lastIds,
-          Array(mode === "stream" ? 0 : successes + recovered).fill(rows - 1),
+          Array(mode === "stream" ? 0 : successes + recovered).fill(expectedLastId),
         );
         const retainedOutput = await sample();
         const allocationProfile = profileAllocations
@@ -192,17 +206,18 @@ for (const mib of [64, 128])
         // pool and cache after releasing output; do not evict or reconfigure.
         let recoveryAfterRelease;
         if (recoveryProbe && !complete) {
-          recoveryAfterRelease = await request("/run?jobs=1&mode=owned");
+          recoveryAfterRelease = await request(`/run?jobs=1&mode=owned&${workloadParameters}`);
           assert.ok(recoveryAfterRelease.peakBytes <= mib * 1024 * 1024);
           const report = recoveryAfterRelease.reports[0];
           assert.equal(report.status, "ok");
           assert.equal(report.rows, rows);
           assert.equal(report.ids, (rows * (rows - 1)) / 2);
           assert.equal(report.characters, rows * payloadLength);
+          assert.equal(report.sequence, expectedSequence);
           const heldRecovery = await request("/held");
           assert.equal(heldRecovery.jobs, 1);
           assert.equal(heldRecovery.rows, rows);
-          assert.deepEqual(heldRecovery.lastIds, [rows - 1]);
+          assert.deepEqual(heldRecovery.lastIds, [expectedLastId]);
           await request("/release");
         }
         rounds.push({
@@ -261,6 +276,8 @@ console.log(
     {
       node: process.version,
       mode,
+      queryKind,
+      expectedSequence,
       diagnosticGc,
       profileAllocations,
       profileCollected,
@@ -274,7 +291,7 @@ console.log(
       fixtureSha256: createHash("sha256").update(bytes).digest("hex"),
       bundleSha256: createHash("sha256").update(script).digest("hex"),
       scope:
-        "Local workerd using the recorded transport; host-generated real Parquet fixture; fresh isolate per capacity/concurrency scenario. Runtime.getHeapUsage sampled approximately every 5ms while requests run; samples are lower bounds on peaks, not enforced Cloudflare production heap limits. No forced GC during measured rounds; diagnosticGc optionally collects only after final eviction. In materialized/owned mode output rows are pinned through a post-query snapshot then explicitly released; stream mode keeps only checksums. Only checksums leave Worker. Pool bounds cover tracked allocations only. Optional runtimeHeapMiB supplies a verified V8 managed-heap flag, not a cap on external buffers, total process memory, or production Cloudflare accounting. Raw JS/embedder/backing counters retained separately; no assumed additive total.",
+        "Local workerd using the recorded transport; host-generated real Parquet fixture; fresh isolate per capacity/concurrency scenario. Runtime.getHeapUsage sampled approximately every 5ms while requests run; samples are lower bounds on peaks, not enforced Cloudflare production heap limits. No forced GC during measured rounds; diagnosticGc optionally collects only after final eviction. In materialized/owned mode output rows are pinned through a post-query snapshot then explicitly released; stream mode keeps only checksums. Only aggregate checksums and an order-sensitive ID digest leave Worker; the host computes the reference order independently. Verification is included in observed runtime. Pool bounds cover tracked allocations only. Optional runtimeHeapMiB supplies a verified V8 managed-heap flag, not a cap on external buffers, total process memory, or production Cloudflare accounting. Raw JS/embedder/backing counters retained separately; no assumed additive total.",
       scenarios,
     },
     null,

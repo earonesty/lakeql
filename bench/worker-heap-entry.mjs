@@ -50,16 +50,35 @@ export default {
     const concurrency = Number(url.searchParams.get("jobs"));
     const reports = await Promise.all(
       Array.from({ length: concurrency }, async () => {
-        const result = lake.path("stress.parquet").batchSize(1024).run();
+        let query = lake.path("stress.parquet").batchSize(1024);
+        const queryKind = url.searchParams.get("query") ?? "scan";
+        if (queryKind !== "scan") {
+          const limit = Number(url.searchParams.get("rows"));
+          if (
+            !Number.isSafeInteger(limit) ||
+            limit <= 0 ||
+            !["topk-id", "topk-text"].includes(queryKind)
+          )
+            throw new Error("Invalid heap workload");
+          query = query
+            .orderBy([{ column: queryKind === "topk-id" ? "id" : "payload", direction: "desc" }])
+            .limit(limit);
+        }
+        const result = query.run();
         try {
           let ids = 0,
             characters = 0,
-            count = 0;
+            count = 0,
+            sequence = 2166136261;
+          const consume = (row) => {
+            ids += row.id;
+            characters += row.payload.length;
+            sequence = Math.imul(sequence ^ row.id, 16777619) >>> 0;
+            count++;
+          };
           if (url.searchParams.get("mode") === "stream") {
             for await (const row of result.rows()) {
-              ids += row.id;
-              characters += row.payload.length;
-              count++;
+              consume(row);
             }
           } else {
             const owner =
@@ -67,13 +86,16 @@ export default {
             const rows = owner === undefined ? await result.toArray() : owner.value;
             if (owner !== undefined) heldOwners.push(owner);
             heldRows.push(rows);
-            for (const row of rows) {
-              ids += row.id;
-              characters += row.payload.length;
-            }
-            count = rows.length;
+            for (const row of rows) consume(row);
           }
-          return { status: "ok", rows: count, ids, characters, ranges: result.stats.rangeRequests };
+          return {
+            status: "ok",
+            rows: count,
+            ids,
+            characters,
+            sequence,
+            ranges: result.stats.rangeRequests,
+          };
         } catch (error) {
           if (error?.code !== "LAKEQL_BUDGET_EXCEEDED") throw error;
           return {
