@@ -1,5 +1,6 @@
 import { matches } from "./evaluator.js";
 import type { PathQueryInit, QueryBudget } from "./query.js";
+import { RunningCounter } from "./running-counter.js";
 import type { QueryStats, Row } from "./types.js";
 
 export interface WindowBatchExecutionOptions {
@@ -19,7 +20,12 @@ export interface WindowBatchExecutionOptions {
     projections: PathQueryInit["projections"],
   ) => Row;
   compareRows: (left: Row, right: Row, orderBy: NonNullable<PathQueryInit["orderBy"]>) => number;
-  addDistinctRow: (seen: Set<string>, row: Row, budget: QueryBudget) => boolean;
+  addDistinctRow: (
+    seen: Set<string>,
+    row: Row,
+    budget: QueryBudget,
+    usage: RunningCounter,
+  ) => boolean;
   enforceBudget: (
     budget: QueryBudget,
     stats: QueryStats,
@@ -71,13 +77,17 @@ export async function* postWindowQueryBatches(
   }
 
   const distinct = config.distinct === true ? new Set<string>() : undefined;
+  const distinctUsage = new RunningCounter();
   const batchSize = config.batchSize ?? 4096;
   let batch: Row[] = [];
   let offsetSkipped = 0;
   let returned = 0;
   for (const row of rows) {
     const projected = options.project(row, config.select, config.projections);
-    if (distinct !== undefined && !options.addDistinctRow(distinct, projected, config.budget)) {
+    if (
+      distinct !== undefined &&
+      !options.addDistinctRow(distinct, projected, config.budget, distinctUsage)
+    ) {
       continue;
     }
     if (offsetSkipped < (config.offset ?? 0)) {

@@ -54,6 +54,7 @@ import {
   validateSortRow,
   valueForColumn,
 } from "./query-sort.js";
+import { RunningCounter } from "./running-counter.js";
 import type {
   CacheAdapter,
   MetricsHook,
@@ -844,6 +845,7 @@ export class QueryResult {
     let offsetSkipped = 0;
     let returned = 0;
     const distinct = config.distinct === true ? new Set<string>() : undefined;
+    const distinctUsage = new RunningCounter();
     const { planned: paths, skipped: skippedFiles } = await this.planObjects();
     stats.filesSkipped = skippedFiles;
     const columns = projectedReadColumns(
@@ -881,7 +883,10 @@ export class QueryResult {
           if (!matches(config.where, row)) continue;
           stats.rowsMatched += 1;
           const projected = project(row, config.select, config.projections);
-          if (distinct !== undefined && !addDistinctRow(distinct, projected, config.budget)) {
+          if (
+            distinct !== undefined &&
+            !addDistinctRow(distinct, projected, config.budget, distinctUsage)
+          ) {
             continue;
           }
           if (offsetSkipped < (config.offset ?? 0)) {
@@ -1789,6 +1794,27 @@ export class QueryResult {
       options.having,
     ]);
     const groups = await aggregateGroupsFromState(groupColumns, spec, options);
+    if (options.maxGroups !== undefined && groups.size > options.maxGroups)
+      throw new LakeqlError(
+        "LAKEQL_GROUP_LIMIT_EXCEEDED",
+        "Restored aggregate state exceeds group budget",
+        { limit: options.maxGroups, actual: groups.size },
+      );
+    const usage = new RunningCounter();
+    const measured = this.config.budget.maxMemoryBytes !== undefined;
+    const envelopeBytes = measured
+      ? estimateOperatorMemoryBytes({ version: 1, groupColumns, spec, groups: [] }) - 2
+      : 0;
+    for (const [key, group] of groups)
+      usage.add(measured ? group.snapshotBytes(key) : 0, group.bufferedRows);
+    const checkUsage = () => {
+      enforceBufferedRowsBudget(this.config.budget, usage.items);
+      enforceOperatorMemoryBudget(
+        this.config.budget,
+        envelopeBytes + 2 + usage.bytes + Math.max(0, groups.size - 1),
+      );
+    };
+    checkUsage();
     const startedAt = this.config.now();
     const readColumns = aggregateReadColumns(
       groupColumns,
@@ -1812,13 +1838,14 @@ export class QueryResult {
         }
         group = createAggregateGroup(groupColumns, keyValues, spec);
         groups.set(key, group);
+        usage.add(measured ? group.snapshotBytes(key) : 0, group.bufferedRows);
       }
+      const beforeBytes = measured ? group.snapshotBytes(key) : 0;
+      const beforeRows = group.bufferedRows;
       group.add(aggregateRow);
-      enforceBufferedRowsBudget(this.config.budget, estimateAggregateBufferedRows(groups));
-      enforceOperatorMemoryBudget(
-        this.config.budget,
-        estimateAggregateOperatorMemoryBytes(groupColumns, spec, groups),
-      );
+      usage.remove(beforeBytes, beforeRows);
+      usage.add(measured ? group.snapshotBytes(key) : 0, group.bufferedRows);
+      checkUsage();
     }
     const rows = applyAggregateResultOptions(
       [...groups.values()].map((group) => group.finish()),
@@ -1869,9 +1896,14 @@ export class QueryResult {
     let offsetSkipped = 0;
     let returned = 0;
     const distinct = config.distinct === true ? new Set<string>() : undefined;
+    const distinctUsage = new RunningCounter();
     for (const row of matched) {
       const projected = project(row, config.select, config.projections);
-      if (distinct !== undefined && !addDistinctRow(distinct, projected, config.budget)) continue;
+      if (
+        distinct !== undefined &&
+        !addDistinctRow(distinct, projected, config.budget, distinctUsage)
+      )
+        continue;
       if (offsetSkipped < (config.offset ?? 0)) {
         offsetSkipped += 1;
         continue;
@@ -1981,8 +2013,16 @@ export class QueryResult {
     const outputColumns = [...new Set([...config.select, ...orderBy.map((term) => term.column)])];
     if (outputColumns.every((column) => rankColumns.includes(column))) return undefined;
 
-    const retained = new BoundedSelection<RankedRowRef>(topK, (a, b) =>
-      compareRankedRefs(a, b, orderBy),
+    const usage = new RunningCounter();
+    const itemBytes = (value: RankedRowRef) =>
+      config.budget.maxMemoryBytes === undefined ? 0 : estimateOperatorMemoryBytes(value);
+    const retained = new BoundedSelection<RankedRowRef>(
+      topK,
+      (a, b) => compareRankedRefs(a, b, orderBy),
+      (added, removed) => {
+        if (removed !== undefined) usage.remove(itemBytes(removed));
+        usage.add(itemBytes(added));
+      },
     );
     const scanVectorBatches = vectorBatchScanner(config.scanner);
     if (scanVectorBatches === undefined) return undefined;
@@ -2013,10 +2053,7 @@ export class QueryResult {
         addRankedRefs(retained, object.path, object, rowOffset, batch, selection, rankColumns);
         enforceBufferedRowsBudget(config.budget, retained.size);
         if (config.budget.maxMemoryBytes !== undefined)
-          enforceOperatorMemoryBudget(
-            config.budget,
-            estimateOperatorMemoryBytes([...retained.values()]),
-          );
+          enforceOperatorMemoryBudget(config.budget, usage.listBytes);
         enforceBudget(config.budget, this.stats, config.now, startedAt);
       }
     }
@@ -2134,10 +2171,22 @@ export class QueryResult {
     const { planned: paths, skipped: skippedFiles } = await this.planObjects();
     stats.filesSkipped = skippedFiles;
     const orderBy = config.orderBy ?? [];
+    const usage = new RunningCounter();
+    const itemBytes = (row: Row) =>
+      config.budget.maxMemoryBytes === undefined ? 0 : estimateOperatorMemoryBytes(row);
     const selection =
       topK === undefined
         ? undefined
-        : new BoundedSelection<Row>(topK, (a, b) => compareRows(a, b, orderBy));
+        : new BoundedSelection<Row>(
+            topK,
+            (a, b) => compareRows(a, b, orderBy),
+            (added, removed) => {
+              if (removed !== undefined) usage.remove(itemBytes(removed));
+              usage.add(itemBytes(added));
+              enforceBufferedRowsBudget(config.budget, usage.items);
+              enforceOperatorMemoryBudget(config.budget, usage.listBytes);
+            },
+          );
     if (selection !== undefined) {
       for (const row of matched) selection.add(row);
       matched.length = 0;
@@ -2170,16 +2219,12 @@ export class QueryResult {
           if (!matches(config.where, row)) continue;
           stats.rowsMatched += 1;
           validateSortRow(row, orderBy);
-          if (selection === undefined) matched.push(row);
-          else selection.add(row);
-          enforceBufferedRowsBudget(config.budget, selection?.size ?? matched.length);
-          if (config.budget.maxMemoryBytes !== undefined)
-            enforceOperatorMemoryBudget(
-              config.budget,
-              estimateOperatorMemoryBytes(
-                selection === undefined ? matched : [...selection.values()],
-              ),
-            );
+          if (selection === undefined) {
+            usage.add(itemBytes(row));
+            enforceBufferedRowsBudget(config.budget, usage.items);
+            enforceOperatorMemoryBudget(config.budget, usage.listBytes);
+            matched.push(row);
+          } else selection.add(row);
         }
       }
     }
@@ -2200,6 +2245,7 @@ export class QueryResult {
     const columns = projectedReadColumns(config.select, config.where, orderBy, config.projections);
     const runCapacity = config.budget.maxBufferedRows ?? Number.POSITIVE_INFINITY;
     const currentRun: Row[] = [];
+    const usage = new RunningCounter();
     for (const object of paths) {
       stats.filesPlanned += 1;
       stats.filesRead += 1;
@@ -2227,10 +2273,16 @@ export class QueryResult {
           if (!matches(config.where, row)) continue;
           stats.rowsMatched += 1;
           validateSortRow(row, orderBy);
+          usage.add(
+            config.budget.maxMemoryBytes === undefined ? 0 : estimateOperatorMemoryBytes(row),
+          );
+          enforceBufferedRowsBudget(config.budget, usage.items);
+          enforceOperatorMemoryBudget(config.budget, usage.listBytes);
           currentRun.push(row);
-          enforceBufferedRowsBudget(config.budget, currentRun.length);
-          enforceOperatorMemoryBudget(config.budget, estimateOperatorMemoryBytes(currentRun));
-          if (currentRun.length >= runCapacity) flushSortRun(runs, currentRun, orderBy);
+          if (currentRun.length >= runCapacity) {
+            flushSortRun(runs, currentRun, orderBy);
+            usage.clear();
+          }
         }
       }
     }
@@ -2511,11 +2563,60 @@ interface AggregateState {
   add(value: unknown): void;
   finish(): unknown;
   snapshot(): AggregateStateSnapshot;
+  readonly bufferedRows?: number;
+  snapshotBytes?(): number;
+}
+
+/** Growing aggregate lists keep their own serialized payload total. Restored
+ * lists initialize once when a byte limit first needs it; unbudgeted execution
+ * does not format values solely for accounting. */
+class BufferedAggregateState {
+  protected usage: RunningCounter | undefined;
+  protected listBytes(values: Iterable<unknown>): number {
+    if (this.usage === undefined) {
+      this.usage = new RunningCounter();
+      for (const value of values) this.usage.add(estimateOperatorMemoryBytes(value));
+    }
+    return this.usage.listBytes;
+  }
+  protected appended(value: unknown): void {
+    this.usage?.add(estimateOperatorMemoryBytes(value));
+  }
+  protected replaced(previous: unknown, next: unknown): void {
+    if (this.usage === undefined) return;
+    this.usage.remove(estimateOperatorMemoryBytes(previous));
+    this.usage.add(estimateOperatorMemoryBytes(next));
+  }
 }
 
 class AggregateGroup {
   private readonly keys: Record<string, unknown>;
   private readonly states: Record<string, AggregateState>;
+  private snapshotBaseBytes: number | undefined;
+
+  get bufferedRows(): number {
+    let rows = 0;
+    for (const state of Object.values(this.states)) rows += state.bufferedRows ?? 0;
+    return rows;
+  }
+
+  snapshotBytes(key: string): number {
+    this.snapshotBaseBytes ??= estimateOperatorMemoryBytes({
+      key,
+      keys: snapshotRecord(this.keys),
+      states: {},
+    });
+    let bytes = this.snapshotBaseBytes;
+    let fields = 0;
+    for (const [alias, state] of Object.entries(this.states)) {
+      bytes +=
+        (fields++ === 0 ? 0 : 1) +
+        estimateOperatorMemoryBytes(alias) +
+        1 +
+        (state.snapshotBytes?.() ?? estimateOperatorMemoryBytes(state.snapshot()));
+    }
+    return bytes;
+  }
 
   constructor(keys: Record<string, unknown>, states: Record<string, AggregateState>) {
     this.keys = keys;
@@ -2690,12 +2791,23 @@ class VarianceState implements AggregateState {
   }
 }
 
-class MedianState implements AggregateState {
-  constructor(private readonly values: (number | string)[] = []) {}
+class MedianState extends BufferedAggregateState implements AggregateState {
+  constructor(private readonly values: (number | string)[] = []) {
+    super();
+  }
+  get bufferedRows(): number {
+    return this.values.length;
+  }
+  snapshotBytes(): number {
+    return (
+      estimateOperatorMemoryBytes({ op: "median", values: [] }) - 2 + this.listBytes(this.values)
+    );
+  }
 
   add(value: unknown): void {
     if (value === null || value === undefined) return;
     if (typeof value !== "number" && typeof value !== "string") throwAggregateType("median");
+    this.appended(value);
     this.values.push(value);
   }
 
@@ -2716,15 +2828,28 @@ class MedianState implements AggregateState {
   }
 }
 
-class QuantileState implements AggregateState {
+class QuantileState extends BufferedAggregateState implements AggregateState {
   constructor(
     private readonly quantile: number,
     private readonly values: number[] = [],
-  ) {}
+  ) {
+    super();
+  }
+  get bufferedRows(): number {
+    return this.values.length;
+  }
+  snapshotBytes(): number {
+    return (
+      estimateOperatorMemoryBytes({ op: "quantile", quantile: this.quantile, values: [] }) -
+      2 +
+      this.listBytes(this.values)
+    );
+  }
 
   add(value: unknown): void {
     if (value === null || value === undefined) return;
     if (typeof value !== "number") throwAggregateType("quantile");
+    this.appended(value);
     this.values.push(value);
   }
 
@@ -2770,19 +2895,32 @@ class MinMaxState implements AggregateState {
   }
 }
 
-class CountDistinctState implements AggregateState {
+class CountDistinctState extends BufferedAggregateState implements AggregateState {
   private readonly values: Set<string>;
 
   constructor(
     private readonly op: "count_distinct" | "approx_count_distinct",
     values: string[] = [],
   ) {
+    super();
     this.values = new Set(values);
+  }
+
+  get bufferedRows(): number {
+    return this.values.size;
+  }
+  snapshotBytes(): number {
+    return (
+      estimateOperatorMemoryBytes({ op: this.op, values: [] }) - 2 + this.listBytes(this.values)
+    );
   }
 
   add(value: unknown): void {
     if (value === null || value === undefined) return;
-    this.values.add(stableStringify(value));
+    const key = stableStringify(value);
+    if (this.values.has(key)) return;
+    this.appended(key);
+    this.values.add(key);
   }
 
   finish(): number {
@@ -2794,11 +2932,26 @@ class CountDistinctState implements AggregateState {
   }
 }
 
-class ModeState implements AggregateState {
+class ModeState extends BufferedAggregateState implements AggregateState {
   private readonly values: Map<string, { value: string | number | boolean | null; count: number }>;
 
   constructor(values: { key: string; value: AggregateSnapshotValue; count: number }[] = []) {
+    super();
     this.values = new Map(values.map((entry) => [entry.key, { ...entry }]));
+  }
+
+  get bufferedRows(): number {
+    return this.values.size;
+  }
+  private *snapshotEntries(): Iterable<unknown> {
+    for (const [key, entry] of this.values) yield { key, value: entry.value, count: entry.count };
+  }
+  snapshotBytes(): number {
+    return (
+      estimateOperatorMemoryBytes({ op: "mode", values: [] }) -
+      2 +
+      this.listBytes(this.snapshotEntries())
+    );
   }
 
   add(value: unknown): void {
@@ -2808,8 +2961,16 @@ class ModeState implements AggregateState {
     }
     const key = stableStringify(value);
     const existing = this.values.get(key);
-    if (existing === undefined) this.values.set(key, { value, count: 1 });
-    else existing.count += 1;
+    if (existing === undefined) {
+      this.appended({ key, value, count: 1 });
+      this.values.set(key, { value, count: 1 });
+    } else {
+      this.replaced(
+        { key, value: existing.value, count: existing.count },
+        { key, value: existing.value, count: existing.count + 1 },
+      );
+      existing.count += 1;
+    }
   }
 
   finish(): string | number | boolean | null {
@@ -4125,12 +4286,18 @@ function project(
   return out;
 }
 
-function addDistinctRow(seen: Set<string>, row: Row, budget: QueryBudget): boolean {
+function addDistinctRow(
+  seen: Set<string>,
+  row: Row,
+  budget: QueryBudget,
+  usage: RunningCounter,
+): boolean {
   const key = stableStringify(jsonSafeValue(row));
   if (seen.has(key)) return false;
+  enforceBufferedRowsBudget(budget, seen.size + 1);
+  usage.add(budget.maxMemoryBytes === undefined ? 0 : estimateOperatorMemoryBytes(key));
+  enforceOperatorMemoryBudget(budget, usage.listBytes);
   seen.add(key);
-  enforceBufferedRowsBudget(budget, seen.size);
-  enforceOperatorMemoryBudget(budget, estimateOperatorMemoryBytes([...seen]));
   return true;
 }
 
@@ -4237,38 +4404,6 @@ function enforceOperatorMemoryBudget(budget: QueryBudget, memoryBytes: number): 
   if (budget.maxMemoryBytes !== undefined && memoryBytes > budget.maxMemoryBytes) {
     throwBudget("operator memory bytes", budget.maxMemoryBytes, memoryBytes);
   }
-}
-
-function estimateAggregateOperatorMemoryBytes(
-  groupColumns: string[],
-  spec: AggregateSpec,
-  groups: Map<string, AggregateGroup>,
-): number {
-  return estimateOperatorMemoryBytes(aggregateOperatorState(groupColumns, spec, groups));
-}
-
-function estimateAggregateBufferedRows(groups: Map<string, AggregateGroup>): number {
-  let rows = 0;
-  for (const [key, group] of groups) {
-    for (const state of Object.values(group.snapshot(key).states)) {
-      switch (state.op) {
-        case "median":
-          rows += state.values.length;
-          break;
-        case "quantile":
-          rows += state.values.length;
-          break;
-        case "mode":
-          rows += state.values.length;
-          break;
-        case "count_distinct":
-        case "approx_count_distinct":
-          rows += state.values.length;
-          break;
-      }
-    }
-  }
-  return rows;
 }
 
 function estimateOperatorMemoryBytes(value: unknown): number {

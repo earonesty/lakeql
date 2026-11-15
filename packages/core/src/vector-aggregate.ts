@@ -169,6 +169,15 @@ export function mergeVectorAggregateStateSnapshots(
   mergeVectorAggregateStates(target, restored, options);
 }
 
+/** Initialize restored/unbudgeted buffered measurements once, then enforce their
+ * existing per-state limits without constructing a checkpoint. */
+export function enforceVectorAggregateStatesBudget(
+  states: VectorAggregateStates,
+  options: VectorAggregateOptions = {},
+): void {
+  for (const state of Object.values(states)) enforceStateBudget(state, options.budget);
+}
+
 export function finalizeVectorAggregateStates(
   states: VectorAggregateStates,
 ): Record<string, unknown> {

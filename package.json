@@ -50,7 +50,8 @@
     "version": "changeset version",
     "release": "pnpm check && changeset publish",
     "check": "pnpm lint && pnpm build && pnpm typecheck && pnpm check:compatibility && pnpm check:large-files && pnpm check:packages && pnpm test && pnpm test:workerd && pnpm test:conformance && pnpm test:reference && pnpm coverage && node scripts/check-fixtures.mjs",
-    "bench:ordering": "pnpm build && node bench/unified-ordering.mjs"
+    "bench:ordering": "pnpm build && node bench/unified-ordering.mjs",
+    "bench:query-state": "pnpm build && node bench/query-state-reuse.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.0",

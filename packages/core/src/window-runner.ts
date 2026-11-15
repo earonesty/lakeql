@@ -13,6 +13,7 @@ import type {
   ScanVectorBatch,
   TaskInput,
 } from "./query.js";
+import { RunningCounter } from "./running-counter.js";
 import type { ObjectInfo } from "./store.js";
 import type { QueryStats, Row } from "./types.js";
 import {
@@ -158,6 +159,9 @@ export async function collectWindowMatches(
   startedAt: number,
 ): Promise<WindowExecutionMode> {
   const { config, stats } = options;
+  const usage = new RunningCounter();
+  for (const row of matched)
+    usage.add(config.budget.maxMemoryBytes === undefined ? 0 : options.estimateMemoryBytes(row));
   const { planned: paths, skipped: skippedFiles } = await options.planObjects();
   stats.filesSkipped = skippedFiles;
   const columns = windowReadColumns(config);
@@ -180,9 +184,12 @@ export async function collectWindowMatches(
         options.enforceBudget(config.budget, stats, config.now, startedAt);
         if (!matches(config.where, row)) continue;
         stats.rowsMatched += 1;
+        usage.add(
+          config.budget.maxMemoryBytes === undefined ? 0 : options.estimateMemoryBytes(row),
+        );
+        options.enforceBufferedRows(config.budget, usage.items);
+        options.enforceMemoryBytes(config.budget, usage.listBytes);
         matched.push(row);
-        options.enforceBufferedRows(config.budget, matched.length);
-        options.enforceMemoryBytes(config.budget, options.estimateMemoryBytes(matched));
       }
     }
   }
@@ -196,9 +203,16 @@ export async function collectWindowRuns(
   startedAt: number,
 ): Promise<WindowExecutionMode> {
   const currentRun: Row[] = [];
-  const execution = (await collectVectorWindowRunMatches(options, runs, currentRun, startedAt))
+  const usage = new RunningCounter();
+  const execution = (await collectVectorWindowRunMatches(
+    options,
+    runs,
+    currentRun,
+    usage,
+    startedAt,
+  ))
     ? "vector-window"
-    : await collectRowWindowRunMatches(options, runs, currentRun, startedAt);
+    : await collectRowWindowRunMatches(options, runs, currentRun, usage, startedAt);
   flushWindowRun(runs, currentRun);
   return execution;
 }
@@ -273,6 +287,7 @@ async function collectVectorWindowRunMatches(
   options: WindowRunnerOptions,
   runs: Row[][],
   currentRun: Row[],
+  usage: RunningCounter,
   startedAt: number,
 ): Promise<boolean> {
   const { config, stats } = options;
@@ -298,7 +313,7 @@ async function collectVectorWindowRunMatches(
           ? materializeBatchRows(batch)
           : materializeSelectedBatchRows(batch, selection);
       for (const row of rows) {
-        pushWindowRunRow(options, runs, currentRun, row);
+        pushWindowRunRow(options, runs, currentRun, row, usage);
         options.enforceBudget(config.budget, stats, config.now, startedAt);
       }
       stats.elapsedMs = config.now() - startedAt;
@@ -312,6 +327,7 @@ async function collectRowWindowRunMatches(
   options: WindowRunnerOptions,
   runs: Row[][],
   currentRun: Row[],
+  usage: RunningCounter,
   startedAt: number,
 ): Promise<WindowExecutionMode> {
   const { config, stats } = options;
@@ -337,7 +353,7 @@ async function collectRowWindowRunMatches(
         options.enforceBudget(config.budget, stats, config.now, startedAt);
         if (!matches(config.where, row)) continue;
         stats.rowsMatched += 1;
-        pushWindowRunRow(options, runs, currentRun, row);
+        pushWindowRunRow(options, runs, currentRun, row, usage);
       }
     }
   }
@@ -395,12 +411,17 @@ function pushWindowRunRow(
   runs: Row[][],
   currentRun: Row[],
   row: Row,
+  usage: RunningCounter,
 ): void {
+  usage.add(
+    options.config.budget.maxMemoryBytes === undefined ? 0 : options.estimateMemoryBytes(row),
+  );
+  options.enforceBufferedRows(options.config.budget, usage.items);
+  options.enforceMemoryBytes(options.config.budget, usage.listBytes);
   currentRun.push(row);
-  options.enforceBufferedRows(options.config.budget, currentRun.length);
-  options.enforceMemoryBytes(options.config.budget, options.estimateMemoryBytes(currentRun));
   if (currentRun.length >= windowRunCapacity(options.config.budget)) {
     flushWindowRun(runs, currentRun);
+    usage.clear();
   }
 }
 

@@ -2389,3 +2389,11 @@ function throwUnsupported(message: string): never {
 function throwType(message: string, details?: Record<string, unknown>): never {
   throw new LakeqlError("LAKEQL_TYPE_ERROR", message, details);
 }
+
+export {
+  resolveSqlCorrelatedLookups,
+  resolveSqlScalarSubqueries,
+  type SqlCorrelatedLookup,
+  sqlMemoBytes,
+  sqlMemoKey,
+} from "./subquery-memo.js";
