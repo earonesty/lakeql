@@ -14,9 +14,7 @@
     "Existing exact/one-byte-short fingerprint serialization admission and zero cleanup"
   ],
   "runtimeEvidence": "utf8-fingerprint-runtime-2026-11-14.json",
-  "remaining": [
-    "Broader allocation integration and whole-runtime caps"
-  ],
+  "remaining": ["Broader allocation integration and whole-runtime caps"],
   "performance": {
     "node": "Final sum of per-case medians 0.85435 \u2192 0.67522 ms; workload mix is diagnostic, not a real query. Large ASCII improved around 1.5\u20131.7x across runs; Unicode/mixed results vary around parity.",
     "worker": "Native workerd host-timed comparison: about 1.20x for 1024-character ASCII, 1.00x for 65536-character ASCII. Unicode/mixed cases range around parity; dispatch overhead is included.",
