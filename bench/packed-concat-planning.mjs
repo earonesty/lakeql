@@ -6,7 +6,7 @@ import { MemoryBudget, MemoryScope, vectorValue } from "../packages/core/dist/in
 import { concatBatches, concatOwnedBatches } from "../packages/core/dist/vector-sort.js";
 
 const sourceSha256 = createHash("sha256")
-  .update(await readFile("packages/core/dist/packed-gather.js"))
+  .update(await readFile(new URL("../packages/core/dist/packed-gather.js", import.meta.url)))
   .digest("hex");
 for (const rowCount of [1000, 10000, 100000]) {
   for (const cardinality of [4, 1024]) {

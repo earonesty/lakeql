@@ -36,7 +36,7 @@ export function nestedDifference(actual, expected, path = "rows") {
     const actualNanos = isTimestampValue(actual)
       ? actual.epochNanoseconds
       : actual instanceof Date
-        ? BigInt(actual.getTime()) * 1000000n
+        ? (Number.isFinite(actual.getTime()) ? BigInt(actual.getTime()) : undefined) * 1000000n
         : undefined;
     return actualNanos === nanos ? undefined : fail();
   }

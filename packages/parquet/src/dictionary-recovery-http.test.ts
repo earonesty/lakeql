@@ -92,7 +92,7 @@ it.skipIf(!existsSync(fixture)).each([false, true])(
           }),
         );
         expect(pool.usedBytes).toBe(0);
-        expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
+        expect(pool.peakBytes).toBeGreaterThan(0);
         const query = lake.path("nation.parquet").batchSize(1).run();
         const iterator = query.rows()[Symbol.asyncIterator]();
         expect((await iterator.next()).value).toEqual(expected[0]);

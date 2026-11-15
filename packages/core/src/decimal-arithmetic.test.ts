@@ -114,3 +114,21 @@ it("keeps retained results charged while sibling arithmetic competes for the poo
   second.dispose();
   expect(pool.usedBytes).toBe(0);
 });
+
+it("documents zero shortcut scales and admits the sign of a negated coefficient", () => {
+  const scope = new MemoryScope(new MemoryBudget(4096));
+  const five = decimalFromParts(5n, 0);
+  const zero = decimalFromParts(0n, 2);
+  expect(decimalArithmetic("add", five, zero, scope).scale).toBe(0);
+  expect(decimalArithmetic("add", zero, five, scope).scale).toBe(0);
+  expect(decimalArithmetic("multiply", five, zero, scope).scale).toBe(0);
+  const before = scope.budget.usedBytes;
+  const result = decimalArithmetic("subtract", zero, five, scope);
+  expect(result.coefficient).toBe(-5n);
+  const charge = scope.budget.usedBytes - before;
+  scope.dispose();
+  const tight = new MemoryScope(new MemoryBudget(charge - 1));
+  expect(() => decimalArithmetic("subtract", zero, five, tight)).toThrow(/budget/i);
+  expect(tight.budget.usedBytes).toBe(0);
+  tight.dispose();
+});

@@ -504,3 +504,5 @@ available capacity for input/output overlap.
 Balance adjacent columnar top-k candidate runs to reduce repeated copying and sorting of growing prefixes. Admit the bounded run directory and preserve stable ordering, parent-owned cleanup, and exact eager checks when legacy serialized-memory or buffered-row limits are specified.
 
 Pass scalar ordering context directly through the bounded comparison workspace to avoid per-comparison captured state while preserving admission and scalar lifetime rules.
+
+Charge implicit Parquet range caches to the lake allocation pool, validate buffered aggregate checkpoint values before restore, and admit the full signed decimal-negation result. Release checks now fetch the external fixtures used by package consumer tests.

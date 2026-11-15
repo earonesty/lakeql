@@ -1,6 +1,14 @@
 {
   "description": "Independent documented decimal digits from vendored cases.json, never converted to Number for expected values. Both readers over memoryStore; no cloud/HTTP or whole-heap claim. String comparison is exact for these fixed-form fixture values.",
   "node": "v24.18.1",
+  "sources": {
+    "packages/parquet/src/parsers.ts": "807f71c7fec3b47d2ec46da80edc441c60a99c3cc90ce0cd3b588aa9d75c0129",
+    "packages/parquet/src/schema.ts": "788d737e51257042e6d5a5451730ba6b86d8e64858dc1764d53c969a0c78fa1c",
+    "packages/parquet/src/decoded-rows.ts": "0d77aa4e3ec65ddfd516f60e923b037f22f75a108cf6b8a5ce16d896e5347128",
+    "packages/parquet/src/object-batches.ts": "500f99dab28c7fe41e8a764bbf9200dd2bab9312243c8911f8711bed3a5f2fe9",
+    "packages/parquet/src/column-batches.ts": "8cf87e06f653df233f167e92c09e064e284c7dbefe919ded13ce38f0f55d7b1a",
+    "patches/hyparquet@1.26.0.patch": "b788c22a969fece73d6bdda5b5db8fdb5035e79b7328c1e440053eef763a639b"
+  },
   "casesSha256": "200e7f7f722638dd680c2b374f396ba0959c9c7716740fd93e6e0ac44b020117",
   "results": [
     {
@@ -9,17 +17,17 @@
       "documentedValue": "123456789.987654321",
       "outcomes": {
         "public": {
-          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
-          "message": "Parquet decimals above precision 15 are not supported",
-          "exact": false
+          "actual": "123456789.987654321",
+          "type": "object",
+          "exact": true
         },
         "owned": {
-          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
-          "message": "Parquet decimals above precision 15 are not supported",
-          "exact": false
+          "actual": "123456789.987654321",
+          "type": "object",
+          "exact": true
         }
       },
-      "peakReservedBytes": 23289
+      "peakReservedBytes": 51113
     },
     {
       "fixture": "case-027.parquet",
@@ -27,17 +35,17 @@
       "documentedValue": "-123456789.987654321",
       "outcomes": {
         "public": {
-          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
-          "message": "Parquet decimals above precision 15 are not supported",
-          "exact": false
+          "actual": "-123456789.987654321",
+          "type": "object",
+          "exact": true
         },
         "owned": {
-          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
-          "message": "Parquet decimals above precision 15 are not supported",
-          "exact": false
+          "actual": "-123456789.987654321",
+          "type": "object",
+          "exact": true
         }
       },
-      "peakReservedBytes": 23289
+      "peakReservedBytes": 51113
     },
     {
       "fixture": "case-028.parquet",
@@ -45,17 +53,17 @@
       "documentedValue": "9876543210.123456789",
       "outcomes": {
         "public": {
-          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
-          "message": "Parquet decimals above precision 15 are not supported",
-          "exact": false
+          "actual": "9876543210.123456789",
+          "type": "object",
+          "exact": true
         },
         "owned": {
-          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
-          "message": "Parquet decimals above precision 15 are not supported",
-          "exact": false
+          "actual": "9876543210.123456789",
+          "type": "object",
+          "exact": true
         }
       },
-      "peakReservedBytes": 23482
+      "peakReservedBytes": 51512
     },
     {
       "fixture": "case-029.parquet",
@@ -63,17 +71,17 @@
       "documentedValue": "-9876543210.123456789",
       "outcomes": {
         "public": {
-          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
-          "message": "Parquet decimals above precision 15 are not supported",
-          "exact": false
+          "actual": "-9876543210.123456789",
+          "type": "object",
+          "exact": true
         },
         "owned": {
-          "code": "LAKEQL_UNSUPPORTED_PARQUET_FEATURE",
-          "message": "Parquet decimals above precision 15 are not supported",
-          "exact": false
+          "actual": "-9876543210.123456789",
+          "type": "object",
+          "exact": true
         }
       },
-      "peakReservedBytes": 23482
+      "peakReservedBytes": 51512
     },
     {
       "fixture": "case-070.parquet",
@@ -81,17 +89,17 @@
       "documentedValue": "123456789.987654321",
       "outcomes": {
         "public": {
-          "actual": "123456789.98765433",
-          "type": "number",
-          "exact": false
+          "actual": "123456789.987654321",
+          "type": "object",
+          "exact": true
         },
         "owned": {
-          "actual": "123456789.98765433",
-          "type": "number",
-          "exact": false
+          "actual": "123456789.987654321",
+          "type": "object",
+          "exact": true
         }
       },
-      "peakReservedBytes": 52768
+      "peakReservedBytes": 41340
     },
     {
       "fixture": "case-071.parquet",
@@ -99,17 +107,17 @@
       "documentedValue": "-123456789.987654321",
       "outcomes": {
         "public": {
-          "actual": "-123456789.98765433",
-          "type": "number",
-          "exact": false
+          "actual": "-123456789.987654321",
+          "type": "object",
+          "exact": true
         },
         "owned": {
-          "actual": "-123456789.98765433",
-          "type": "number",
-          "exact": false
+          "actual": "-123456789.987654321",
+          "type": "object",
+          "exact": true
         }
       },
-      "peakReservedBytes": 52768
+      "peakReservedBytes": 41340
     },
     {
       "fixture": "case-072.parquet",
@@ -117,17 +125,17 @@
       "documentedValue": "9876543210.123456789",
       "outcomes": {
         "public": {
-          "actual": "9876543210.123457",
-          "type": "number",
-          "exact": false
+          "actual": "9876543210.123456789",
+          "type": "object",
+          "exact": true
         },
         "owned": {
-          "actual": "9876543210.123457",
-          "type": "number",
-          "exact": false
+          "actual": "9876543210.123456789",
+          "type": "object",
+          "exact": true
         }
       },
-      "peakReservedBytes": 52888
+      "peakReservedBytes": 41460
     },
     {
       "fixture": "case-073.parquet",
@@ -135,17 +143,17 @@
       "documentedValue": "-9876543210.123456789",
       "outcomes": {
         "public": {
-          "actual": "-9876543210.123457",
-          "type": "number",
-          "exact": false
+          "actual": "-9876543210.123456789",
+          "type": "object",
+          "exact": true
         },
         "owned": {
-          "actual": "-9876543210.123457",
-          "type": "number",
-          "exact": false
+          "actual": "-9876543210.123456789",
+          "type": "object",
+          "exact": true
         }
       },
-      "peakReservedBytes": 52888
+      "peakReservedBytes": 41460
     },
     {
       "fixture": "case-112.parquet",
@@ -153,17 +161,17 @@
       "documentedValue": "123456789.987654321",
       "outcomes": {
         "public": {
-          "actual": "123456789.98765433",
-          "type": "number",
-          "exact": false
+          "actual": "123456789.987654321",
+          "type": "object",
+          "exact": true
         },
         "owned": {
-          "actual": "123456789.98765433",
-          "type": "number",
-          "exact": false
+          "actual": "123456789.987654321",
+          "type": "object",
+          "exact": true
         }
       },
-      "peakReservedBytes": 67434
+      "peakReservedBytes": 51548
     },
     {
       "fixture": "case-113.parquet",
@@ -171,17 +179,17 @@
       "documentedValue": "-123456789.987654321",
       "outcomes": {
         "public": {
-          "actual": "-123456789.98765433",
-          "type": "number",
-          "exact": false
+          "actual": "-123456789.987654321",
+          "type": "object",
+          "exact": true
         },
         "owned": {
-          "actual": "-123456789.98765433",
-          "type": "number",
-          "exact": false
+          "actual": "-123456789.987654321",
+          "type": "object",
+          "exact": true
         }
       },
-      "peakReservedBytes": 67434
+      "peakReservedBytes": 51548
     },
     {
       "fixture": "case-114.parquet",
@@ -189,17 +197,17 @@
       "documentedValue": "9876543210.123456789",
       "outcomes": {
         "public": {
-          "actual": "9876543210.123457",
-          "type": "number",
-          "exact": false
+          "actual": "9876543210.123456789",
+          "type": "object",
+          "exact": true
         },
         "owned": {
-          "actual": "9876543210.123457",
-          "type": "number",
-          "exact": false
+          "actual": "9876543210.123456789",
+          "type": "object",
+          "exact": true
         }
       },
-      "peakReservedBytes": 67554
+      "peakReservedBytes": 51668
     },
     {
       "fixture": "case-115.parquet",
@@ -207,17 +215,17 @@
       "documentedValue": "-9876543210.123456789",
       "outcomes": {
         "public": {
-          "actual": "-9876543210.123457",
-          "type": "number",
-          "exact": false
+          "actual": "-9876543210.123456789",
+          "type": "object",
+          "exact": true
         },
         "owned": {
-          "actual": "-9876543210.123457",
-          "type": "number",
-          "exact": false
+          "actual": "-9876543210.123456789",
+          "type": "object",
+          "exact": true
         }
       },
-      "peakReservedBytes": 67554
+      "peakReservedBytes": 51668
     }
   ]
 }

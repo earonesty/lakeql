@@ -60,6 +60,7 @@ describeReference("DuckDB reference comparisons", () => {
           const lake = createParquetLake({
             store,
             memoryPool: pool,
+            scanRangeCache: { maxBytes: 0 },
             budget: { maxMemoryBytes: limit, maxAllocatedMemoryBytes: pool.maxBytes },
           });
           const query = lake
@@ -113,7 +114,11 @@ describeReference("DuckDB reference comparisons", () => {
           // Small batches exercise scalar fallback; large batches allow the lookup.
           for (const batchSize of [3, 2048]) {
             const pool = new MemoryBudget(1024 * 1024);
-            const lake = createParquetLake({ store, memoryPool: pool });
+            const lake = createParquetLake({
+              store,
+              memoryPool: pool,
+              scanRangeCache: { maxBytes: 0 },
+            });
             const result = await lake
               .path("numeric-in.parquet")
               .batchSize(batchSize)

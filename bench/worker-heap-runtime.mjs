@@ -20,7 +20,12 @@ export async function createWorkerHeapRuntime(script, bytes, heapMiB) {
     try {
       await mf.ready;
       await (await mf.getR2Bucket("DATA")).put("stress.parquet", bytes);
-      return mf;
+      return {
+        getInspectorURL: () => mf.getInspectorURL(),
+        dispatchFetch: (input, init) => mf.dispatchFetch(input, init),
+        runtimeStderr: () => null,
+        dispose: () => mf.dispose(),
+      };
     } catch (error) {
       await mf.dispose();
       throw error;
@@ -58,9 +63,12 @@ export async function createWorkerHeapRuntime(script, bytes, heapMiB) {
   let runtimeStderr = "";
   const dispose = async () => {
     controller.abort();
-    await runtime.dispose();
-    server.closeAllConnections();
-    await new Promise((resolve) => server.close(resolve));
+    try {
+      await runtime.dispose();
+    } finally {
+      server.closeAllConnections();
+      await new Promise((resolve) => server.close(resolve));
+    }
   };
   try {
     const ports = await runtime.updateConfig(
@@ -109,7 +117,7 @@ export async function createWorkerHeapRuntime(script, bytes, heapMiB) {
       dispose,
     };
   } catch (error) {
-    await dispose();
+    await dispose().catch(() => undefined);
     throw error;
   }
 }

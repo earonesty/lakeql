@@ -8,7 +8,9 @@ const root = "fixtures/external/parquet-testing/shredded_variant/";
 const cases = JSON.parse(readFileSync(`${root}cases.json`, "utf8"));
 const selected = new Set([26, 27, 28, 29, 70, 71, 72, 73, 112, 113, 114, 115]);
 const results = [];
-for (const item of cases.filter((item) => selected.has(item.case_number))) {
+const matched = cases.filter((item) => selected.has(item.case_number));
+assert.equal(matched.length, selected.size, "Every selected decimal fixture must exist");
+for (const item of matched) {
   const expected = /value=(-?\d+\.\d+)\)\)/.exec(item.variant)?.[1];
   assert.ok(expected, "fixture documentation must supply exact decimal digits");
   const bytes = readFileSync(`${root}${item.parquet_file}`);

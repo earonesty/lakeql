@@ -1,0 +1,1130 @@
+{
+  "pr": 21,
+  "scope": "Requested review repair; the broad performance audit remains paused. Historical hashes must not be rewritten to imply new measurements. Each unresolved thread requires current-source verification.",
+  "items": [
+    {
+      "comment": 4569273578,
+      "thread": "PRRT_kwDOS5ka5863TuDU",
+      "path": "docs/validation/nested-lifetime-checkpoint-2026-11-12.json",
+      "finding": "P2: The recorded sha256 values for four of the five files don't match the files at HEAD (only `collection-concat.ts` matches). Regenerate the digests from the final file contents, or drop the hashes, so the checkpoint is verifiable.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273583,
+      "thread": "PRRT_kwDOS5ka5863TuDY",
+      "path": "docs/validation/dictionary-concat-checkpoint-2026-11-12.json",
+      "finding": "P2: Four of the five `sourceSha256` values here don't match the current files (`batch.ts`, `vector-sort.ts`, `packed-gather.ts`, `parsers.ts`). Regenerate the hashes from the reviewed sources, or update the checkpoint if the sources changed after validation, so the provenance record matches what was tested.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273599,
+      "thread": "PRRT_kwDOS5ka5863TuDj",
+      "path": "bench/stage-admission.mjs",
+      "finding": "P2: The recorded `budgetSha256` only covers `memory-budget.js`, but the timed path also runs `MemoryScope` from `memory-scope.js`, which is imported statically and not hashed. Hash the scope module too, or the provenance field does not identify the measured code.",
+      "status": "fixed and verified in first review-repair batch"
+    },
+    {
+      "comment": 4569273605,
+      "thread": "PRRT_kwDOS5ka5863TuDn",
+      "path": "docs/benchmarks/cloud-numeric-group-failures-2026-11-12.json",
+      "finding": "P2: This artifact does not show the accounting returning to zero. `releasedBytes` is 0 in both modes, and the peer-failure entry drops from 198 to 186 held bytes with no matching release. Add the post-settlement held total to the artifact, and record the released bytes that match the drop, so the audit's 'returns to zero' claim is backed by data.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273618,
+      "thread": "PRRT_kwDOS5ka5863TuDx",
+      "path": "bench/packed-concat-planning.mjs",
+      "finding": "P2: `readFile` here resolves the path against the current working directory, so the script throws ENOENT when run from anywhere except the repo root. Resolve it from the module like the sibling benches do with `new URL(..., import.meta.url)`.",
+      "status": "fixed and verified in first review-repair batch"
+    },
+    {
+      "comment": 4569273627,
+      "thread": "PRRT_kwDOS5ka5863TuD5",
+      "path": "bench/worker-heap-runtime.mjs",
+      "finding": "P2: The default (`heapMiB` undefined) branch returns the raw Miniflare instance, which has no `runtimeStderr()`, while the HTTP branch does. Callers get different shapes, and failed default-backend runs in `worker-heap.mjs` silently record `runtimeStderr: null`. Return the same contract from both branches.",
+      "status": "fixed and verified in first review-repair batch"
+    },
+    {
+      "comment": 4569273642,
+      "thread": "PRRT_kwDOS5ka5863TuEG",
+      "path": "docs/benchmarks/footer-preflight-overhead-2026-11-13.json",
+      "finding": "P2: This artifact is stale relative to `bench/footer-preflight-overhead.mjs`. The script now also measures an `incremental` mode and emits a different scope string, but this JSON has only `baseline` and `preflight`. Regenerate the file with the current script so the evidence cited in the audit matches what the benchmark actually measures.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273650,
+      "thread": "PRRT_kwDOS5ka5863TuEN",
+      "path": "docs/benchmarks/cloud-numeric-groups-cache-2026-11-12.json",
+      "finding": "P2: `peakBytes` in the warm rows is a cumulative pool high-water mark from the preceding cold wave, not a warm-wave peak, but the artifact presents it as a per-report value. Add that to `scope` or record a per-wave peak, so readers don't compare warm and cold peaks directly.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273655,
+      "thread": "PRRT_kwDOS5ka5863TuES",
+      "path": "biome.json",
+      "finding": "P2: This exclusion covers the whole file, but only the upstream fzstd body is vendored. The hand-written typed `decompressInto`, `allocateBytes`, and `readFrameSize` at the bottom also stop getting Biome lint and format checks. Move the upstream body to its own vendor file and exclude only that path, so `zstd.ts` stays checked.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273663,
+      "thread": "PRRT_kwDOS5ka5863TuEZ",
+      "path": "docs/benchmarks/stage-admission-2026-11-12.json",
+      "finding": "P2: The recorded provenance does not pin the code that was timed. The benchmark's hash covers only `memory-budget.js`, not `memory-scope.ts`, which holds the measured scope logic. The `implementation` labels are not produced by `bench/stage-admission.mjs`. Record hashes of every imported module and the bench script, and emit the implementation label from the script, so the JSON can be reproduced and verified.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273673,
+      "thread": "PRRT_kwDOS5ka5863TuEg",
+      "path": "bench/footer-structure-census.mjs",
+      "finding": "P2: This census can exit 0 while fixtures fail. Every catch-all rejection, including an oracle mismatch from `incrementalParquetMetadata`, is only written to the JSON. Set `process.exitCode = 1` when any result has `status === \"rejected\"`, as `bench/indexed-metadata-corpus.mjs` does. Also consider keeping assertion mismatches separate from structural rejections so a parser divergence is not labeled as a malformed footer.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273683,
+      "thread": "PRRT_kwDOS5ka5863TuEo",
+      "path": "docs/benchmarks/nested-serialized-size-2026-11-12.jsonl",
+      "finding": "P2: This artifact does not match the generator in `bench/nested-serialized-size.mjs`. The generator also measures `chargedVisitor` (the budget-charged path) and uses a different scope string. Regenerate the file from the script so the committed rows include `chargedVisitor` and the scope text matches the code.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273690,
+      "thread": "PRRT_kwDOS5ka5863TuEs",
+      "path": "docs/validation/flights-page-layout-2026-11-12.json",
+      "finding": "P2: The page offsets and `chunkCompressed` values do not reconcile. The listed pages span about 1 MB of each roughly 7.7 MB chunk, and the next column chunk starts 101 bytes after the expected chunk end. Either the page list is truncated, or the chunk sizes are wrong. Add a field such as `pagesListed` or `truncated`, or list every page so the layout can be checked. The audit cites this file as evidence, so it should be fixed before that citation stands.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273698,
+      "thread": "PRRT_kwDOS5ka5863TuEx",
+      "path": "docs/validation/pr-preparation-refresh-2026-11-13.json",
+      "finding": "P2: This refresh record has no command, date, or commit reference, so the `passed` results and the `focusedOwnedOutputPassed: 16` count cannot be tied to HEAD or re-run. Add the commands, the revision they ran against, and an artifact path for each count, as the sibling validation records do.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273713,
+      "thread": "PRRT_kwDOS5ka5863TuE-",
+      "path": "docs/benchmarks/union-concat-current-profile-2026-11-13.json",
+      "finding": "P2: This profile has no `command` field, unlike the sibling `union-concat-cpu-profile-2026-11-13.json`. Add the exact `node --cpu-prof ...` invocation so the samples can be reproduced.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273721,
+      "thread": "PRRT_kwDOS5ka5863TuFG",
+      "path": "docs/benchmarks/memory-budget-ancestry-2026-11-12.json",
+      "finding": "P2: The baseline `per-reservation-ancestry` rows have no `budgetSourceSha256`, so nothing ties them to the pre-change budget module. Regenerate both baseline rows with the benchmark pointed at the baseline build, so each row records its budget source hash like the shared rows do.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273734,
+      "thread": "PRRT_kwDOS5ka5863TuFO",
+      "path": "docs/validation/struct-concat-known-failure-2026-11-12.json",
+      "finding": "P2: The cited evidence does not show the concat result matches the reference. The JSONL only records a `difference` for the decoded-input phase, so the `concatMatchesReference: true` claim for nonnullable.impala.parquet is unverifiable from this artifact. Add a concat-phase record with `\"difference\": null` for this file, or cite the artifact that records it.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273745,
+      "thread": "PRRT_kwDOS5ka5863TuFX",
+      "path": "docs/benchmarks/aligned-page-header-release-2026-11-12.jsonl",
+      "finding": "P2: This artifact does not show the 760\u2192380 peak reduction the audit attributes to header-probe release. Both arms here report 380 bytes, and the bench never toggles the probe release. Either record the producing revision and rerun the earlier arm, or reword the audit to state the drop is across artifacts.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273748,
+      "thread": "PRRT_kwDOS5ka5863TuFa",
+      "path": "docs/benchmarks/union-selection-scaling-2026-11-13.json",
+      "finding": "P2: This artifact doesn't match what `bench/union-selection-scaling.mjs` emits. The script writes five modes (selected, strings, binary, struct, list) per append count, but this file keeps only `selected`. Regenerate it from the script, or document that it is a filtered snapshot. As committed, it is also the pre-fix retention result that the later pruned artifacts supersede.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273761,
+      "thread": "PRRT_kwDOS5ka5863TuFm",
+      "path": "docs/validation/fixed-binary-conformance-2026-11-12.json",
+      "finding": "P2: The zero-delta claim in this artifact can't be verified from the repo. `addedFailures`/`removedFailures` are empty, but the 167 failed test names are not recorded, and the `previousLog` baseline is an uncommitted `/tmp` file. The audit describes the baseline as the 'previous detailed checkpoint', which doesn't match. Commit the named failure list and the baseline set so the comparison can be reproduced.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273767,
+      "thread": "PRRT_kwDOS5ka5863TuFr",
+      "path": "bench/owned-aggregate-accounting.mjs",
+      "finding": "P2: The default output path is the committed 'before' baseline, so a default run on this code overwrites it with after-state numbers. Require the output path explicitly, or use a label that does not collide with the preserved before/after artifacts.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273776,
+      "thread": "PRRT_kwDOS5ka5863TuFz",
+      "path": "docs/benchmarks/union-selection-pruned-slots-2026-11-13.json",
+      "finding": "P2: This benchmark artifact cannot be regenerated from the checked-in generator. `bench/union-selection-scaling.mjs` emits five modes (`selected`, `strings`, `binary`, `struct`, `list`), but this JSON contains only two, and no script in the repo produces this filename. Regenerate the file with the script at HEAD, or record the exact script and command that produced it, so the audit's cited numbers stay reproducible.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273793,
+      "thread": "PRRT_kwDOS5ka5863TuGB",
+      "path": "docs/benchmarks/union-selection-payload-scaling-2026-11-13.json",
+      "finding": "P2: This benchmark artifact has no generator in `bench/`, and the current `bench/union-selection-scaling.mjs` cannot reproduce it. The script emits five modes and writes a different file by default, while this file has two modes and pre-pruning numbers. Add the generating script or command and label the file as the pre-slot-pruning baseline in its name or scope.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273797,
+      "thread": "PRRT_kwDOS5ka5863TuGD",
+      "path": "docs/validation/page-ownership-conformance-2026-11-12.json",
+      "finding": "P2: The empty `addedFailures` and `removedFailures` arrays cannot be checked from this repo. The logs are absolute `/tmp` paths and the file contains no failing test names, so the claim of no changed failures is unsupported. Commit the named failure lists (or the per-file baseline comparison) so the comparison can be reproduced.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273804,
+      "thread": "PRRT_kwDOS5ka5863TuGK",
+      "path": "bench/conformance-failure-causes.mjs",
+      "finding": "P2: This assertion aborts the whole run on the first leaked reservation, so no results file is written. Record `remainingBytes` for each case first, then assert after the loop, or report the leak as a field in the result.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273810,
+      "thread": "PRRT_kwDOS5ka5863TuGQ",
+      "path": "docs/benchmarks/cloud-numeric-groups-cache-2026-11-12.json",
+      "finding": "P2: The read-limit-2 rows never reach two concurrent reads (`peakReads` is 1 everywhere), so this artifact does not show the parallel-read path working. Add a case that actually overlaps reads, or state in `scope` that only the upper bound was checked.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273813,
+      "thread": "PRRT_kwDOS5ka5863TuGS",
+      "path": "bench/nested-serialized-size.mjs",
+      "finding": "P2: Measurement order is fixed, so the variants do not get equal warmup or GC conditions. Interleave the variants per trial, or randomize their order, before reporting medians as speedups.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273818,
+      "thread": "PRRT_kwDOS5ka5863TuGV",
+      "path": "bench/footer-projection-scaling.mjs",
+      "finding": "P2: Run order is fixed (tree path first, visitor path second) within one process, with two warmups. The second path inherits JIT state from the first, so the tree/visitor timing comparison is order-biased. Randomize or alternate the order, or run each configuration in a fresh process.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273835,
+      "thread": "PRRT_kwDOS5ka5863TuGe",
+      "path": "docs/validation/scheduled-cache-http-ranges-2026-11-12.json",
+      "finding": "P2: `copies: 3` is a literal in the generator, and `peakChargedBytes` equals the declared stage reservation, so this artifact does not independently evidence the copy count or the 48-byte overhead. Derive `copies` from the actual owned slices, or drop the \"exact accounting\" wording from `scope`.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273843,
+      "thread": "PRRT_kwDOS5ka5863TuGi",
+      "path": "docs/benchmarks/metadata-ownership-scaling-2026-11-13.json",
+      "finding": "P2: This artifact cannot be regenerated by the committed `bench/metadata-ownership.mjs`. The script now yields the post-partition numbers (for example full retained 2,752,879 at 256 groups), while this file records the pre-partition 4,573,039. Add a revision or generator-version field, or regenerate the file, so the reproducibility claim holds.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273848,
+      "thread": "PRRT_kwDOS5ka5863TuGm",
+      "path": "docs/validation/nested-map-normalization-2026-11-12.json",
+      "finding": "P2: The `addedFailures` and `removedFailures` arrays are empty, but the file records no failure names, log paths, or command to back the 'named failure comparison' scope. Add the compared failure lists (or the baseline and current log paths) and the `pnpm test:conformance` harness version so the 167/83 counts can be checked against the 467/18 headline.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273851,
+      "thread": "PRRT_kwDOS5ka5863TuGn",
+      "path": "docs/benchmarks/union-concat-dynamic-compaction-2026-11-13.json",
+      "finding": "P2: This `unionDepth: 10` at 128 appends equals the compaction trigger limit (2 + ceil(log2(130)) = 10), yet the 128-append test asserts no compaction is needed at every step. Please regenerate this artifact from the current build, or confirm which depth measure it uses, so the recorded depth matches what `needsUnionCompaction` enforces.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273867,
+      "thread": "PRRT_kwDOS5ka5863TuGv",
+      "path": "bench/indexed-metadata-corpus.mjs",
+      "finding": "P2: Throwing from `finally` aborts the whole corpus run and prints no results, so the leak is not recorded per fixture. Record the leak as a rejection for that fixture and set `process.exitCode` instead of asserting.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273872,
+      "thread": "PRRT_kwDOS5ka5863TuGy",
+      "path": "bench/parquet-page-lifetime.mjs",
+      "finding": "P3: The page-lifetime benchmark times per-row validation and scope disposal, so its `medianMs` measures assertion and cleanup overhead rather than the decode paths. Stop timing before validation and disposal, and run parity checks separately.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273882,
+      "thread": "PRRT_kwDOS5ka5863TuG5",
+      "path": "docs/benchmarks/worker-heap-limit-probe-2026-11-13.json",
+      "finding": "P3: This committed `runtimeStderr` dump leaks the local username and home-directory layout, plus a PID and raw stack addresses that cannot be reproduced. Keep only the fatal line (`workerd/jsg/setup.c++:38: fatal: V8 fatal error; location = Reached heap limit`) and the last-GC lines, and strip the paths. Or sanitize the paths in `bench/worker-heap-limit-probe.mjs` before writing the JSON.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273895,
+      "thread": "PRRT_kwDOS5ka5863TuG_",
+      "path": "packages/core/src/aggregate-memory.ts",
+      "finding": "P3: `rejectAppend` duplicates `throwBudget` from `vector-aggregate.ts` and `vector-aggregate-distinct.ts`, but drops their \"Add a partition filter, date filter, h3 filter, or limit.\" hint. Because `bufferedAppendBytes` now throws before the existing `enforce*Budget` checks run, count_distinct, approx_count_distinct, mode, median and quantile overflows lose that guidance. Include the same hint in this message.",
+      "status": "fixed and verified in first review-repair batch"
+    },
+    {
+      "comment": 4569273899,
+      "thread": "PRRT_kwDOS5ka5863TuHD",
+      "path": "bench/cloud-scan-metadata-policy.mjs",
+      "finding": "P3: This harness is copy-pasted from `bench/cloud-task-planning.mjs`, including the R2 fetch wrapper, pool/cache/lake setup, round loop, and report shape. Extract the shared setup into `bench-utils.mjs` or a small helper so a fix to one benchmark applies to both.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273911,
+      "thread": "PRRT_kwDOS5ka5863TuHO",
+      "path": "packages/core/src/gather-plan.ts",
+      "finding": "P3: This validity check rescans `indices` for every nullable column. `gatherValid` in `vector-sort.ts` already performs the same all-present scan when it builds the mask. Consider reusing that result or computing it once per gather so the accounting pass is not repeated per column.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273917,
+      "thread": "PRRT_kwDOS5ka5863TuHR",
+      "path": "docs/benchmarks/grouped-batch-continuation-2026-11-13.json",
+      "finding": "P3: The key `restoredGroups` reads as a group count, but the generator records cumulative prior-group key reads (15360 for 2000 rows at batch 128, while only 2000 groups exist). Rename the key to something like `priorGroupKeyReads` in `bench/grouped-batch-continuation.mjs` and regenerate.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273924,
+      "thread": "PRRT_kwDOS5ka5863TuHU",
+      "path": "docs/benchmarks/nested-dictionary-concat-2026-11-12.jsonl",
+      "finding": "P3: This results file does not match its generator: `bench/nested-dictionary-concat.mjs` also emits `planned-selection` rows, which are missing here. Regenerate the file from the script so anyone re-running the benchmark can diff against it.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273932,
+      "thread": "PRRT_kwDOS5ka5863TuHZ",
+      "path": "bench/schema-depth-scaling.mjs",
+      "finding": "P3: This benchmark imports from `packages/parquet/dist`, which is gitignored build output, but it has no build step and no `package.json` script. Add a `bench:schema-depth` script using `pnpm build && node bench/schema-depth-scaling.mjs`, matching the other bench entries, so the reported numbers come from the current source.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273939,
+      "thread": "PRRT_kwDOS5ka5863TuHe",
+      "path": "bench/vector-project-source.mjs",
+      "finding": "P3: This benchmark imports from `packages/core/dist`, but it is not wired into `package.json`. Add a `bench:vector-project-source` script in the form `pnpm build && node bench/vector-project-source.mjs`, matching the other benchmarks, so it cannot run against stale or missing build output.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273943,
+      "thread": "PRRT_kwDOS5ka5863TuHi",
+      "path": "bench/metadata-retained-heap.mjs",
+      "finding": "P3: This file repeats the full measurement harness from `bench/indexed-metadata-retained-heap.mjs`: input generation, warmup, GC sampling, subprocess orchestration and report output. Consider extracting the shared harness into `bench-utils.mjs` (or a sibling helper) and passing in only the parse strategy, so methodology fixes apply to both benches.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273949,
+      "thread": "PRRT_kwDOS5ka5863TuHm",
+      "path": "bench/timestamp-concat.mjs",
+      "finding": "P3: `sourceHashes` omits `memory-budget` and `memory-scope`, even though this script imports both and the tracked-byte assertions depend on them. Add them to the hashed list so the recorded provenance covers the modules that produce the measured numbers.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273958,
+      "thread": "PRRT_kwDOS5ka5863TuHs",
+      "path": "packages/core/README.md",
+      "finding": "P3: The Resource controls list above this paragraph omits `maxAllocatedMemoryBytes`, which this paragraph now makes the primary per-query ceiling. Add it to that list so the two sections agree.",
+      "status": "fixed and verified in first review-repair batch"
+    },
+    {
+      "comment": 4569273962,
+      "thread": "PRRT_kwDOS5ka5863TuHv",
+      "path": "bench/packed-concat-planning.mjs",
+      "finding": "P3: `sourceSha256` should identify the module under test, but this hashes `packed-gather.js`, which is only a transitive dependency. Hash `concat-plan.js` as `sourceSha256` (and `packed-gather.js` under its own key), matching bench/concat-planning.mjs, so the reported digest actually covers the measured code.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273967,
+      "thread": "PRRT_kwDOS5ka5863TuHz",
+      "path": "bench/cloud-flights-validation.mjs",
+      "finding": "P3: `fixtureRows` and `fixtureBytes` are copied literals that duplicate `EXTERNAL_PLOTLY` in `fixtures/src/index.ts`. Derive them from that shared constant, or from the local file, instead of hardcoding them in the report.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569273973,
+      "thread": "PRRT_kwDOS5ka5863TuH4",
+      "path": "bench/nested-value-comparison.mjs",
+      "finding": "P3: The map key lookup calls `nestedDifference` on every unmatched candidate key, and each failed call builds `diagnostic(...)` strings via `JSON.stringify`. For a map with n entries this is O(n\u00b2) stringify work, even though only the boolean match result is used. Split out a boolean key-equality helper that does not build diagnostics.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352639,
+      "thread": "PRRT_kwDOS5ka5863T5q0",
+      "path": "docs/validation/decoder-lifetime-checkpoint-2026-11-12.json",
+      "finding": "P2: The sha256 values in this checkpoint do not match the committed files. None of the five recorded hashes match HEAD, so the checkpoint does not tie its test results to the code it validates. Regenerate the hashes from HEAD and update all five entries, starting with numeric-page.ts.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352645,
+      "thread": "PRRT_kwDOS5ka5863T5q6",
+      "path": "bench/scheduled-range-validation.mjs",
+      "finding": "P2: This benchmark reads an owned result after releasing it, so `scheduled-range-validation.mjs` fails before printing reports. Capture `results[0].value` before the release loop, then release the owners.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352652,
+      "thread": "PRRT_kwDOS5ka5863T5rB",
+      "path": "bench/cloud-indexed-planning.mjs",
+      "finding": "P2: This benchmark treats footer backing plus directory bytes as the complete indexed-read budget, but indexed acquisition also reserves the copied schema leaves and envelope/index bookkeeping. The exact-threshold case can therefore fail with `LAKEQL_BUDGET_EXCEEDED`; derive the threshold from all indexed admissions or test the footer and directory allocations separately.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352661,
+      "thread": "PRRT_kwDOS5ka5863T5rH",
+      "path": ".github/workflows/ci.yml",
+      "finding": "P2: This gate clones the moving `apache/parquet-testing` `master` branch without a revision or checksum, so identical commits can run against different test inputs. Pin the corpus revision and verify its contents, or vendor the tested files.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352664,
+      "thread": "PRRT_kwDOS5ka5863T5rJ",
+      "path": "bench/int96-spark-oracle.mjs",
+      "finding": "P2: The loop only validates the first 5 dictionary entries, but the conclusion claims all raw dictionary records match. Assert that the dictionary payload holds exactly `documented.length` 12-byte INT96 entries, so unverified entries fail instead of being silently skipped.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352678,
+      "thread": "PRRT_kwDOS5ka5863T5rV",
+      "path": "bench/cloud-task-planning.mjs",
+      "finding": "P2: This peak check can never fail: `MemoryBudget.pin` rejects any charge that would push `used` past `maxBytes`. It gives false assurance that capacity was checked. Replace it with an assertion that verifies the accounting actually recorded charges, or drop it.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352683,
+      "thread": "PRRT_kwDOS5ka5863T5rY",
+      "path": "docs/benchmarks/dictionary-concat-adaptive-2026-11-12.jsonl",
+      "finding": "P2: This artifact's text baseline reports `peakTrackedBytes: 0`, while `direct-concat` reports 801580 bytes at 100k rows. The baseline allocates JS strings, which the scope excludes, so the file cannot demonstrate a memory reduction for text. Measure both implementations with the same accounting, or label the text memory column as not comparable.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352691,
+      "thread": "PRRT_kwDOS5ka5863T5re",
+      "path": "bench/aligned-page-release.mjs",
+      "finding": "P2: This bench only logs `peakBytes` for both modes and never asserts the claimed benefit. Compare the `release-consumed-peers` peak against the `sequential-release` peak for the same `unequal`/`window` case, and fail if the released mode is higher. Otherwise a regression in early peer release passes silently.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352701,
+      "thread": "PRRT_kwDOS5ka5863T5ri",
+      "path": "docs/validation/nested-decoder-probe-2026-11-12.json",
+      "finding": "P2: This artifact does not match its generator. `bench/struct-decoder-probe.mjs` writes `logicalValuesEqual` and `upstream*` fields, and never writes `jsonRepresentationEqual`. Regenerate this file from the script, or remove it and cite the typed probe that the audit describes.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352707,
+      "thread": "PRRT_kwDOS5ka5863T5rn",
+      "path": "bench/grouped-batch-continuation.mjs",
+      "finding": "P2: The getter counting `restoredGroups` runs inside the timed `backend.execute` call, so the recorded `ms` includes instrumentation overhead. The JSON description says \"instrumentation excluded\", which is false. Either move the counting into an untimed pass or correct the description.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352713,
+      "thread": "PRRT_kwDOS5ka5863T5rt",
+      "path": "bench/numeric-in-memory.mjs",
+      "finding": "P2: For `candidates: 8`, the sorted-lookup path is never taken, so the `headroom` and `no-scratch` rows measure the same scalar code. The `scope` string also says 'sorted lookup only', which is wrong for these rows. Skip or label the rows where the budget does not change the chosen path, and record which path ran.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352720,
+      "thread": "PRRT_kwDOS5ka5863T5rx",
+      "path": "bench/cloud-scan-metadata-policy.mjs",
+      "finding": "P2: `trackedPeakBytes` is the pool's lifetime peak, not the peak for each round. The warm round repeats the cold peak, as the committed artifact shows. Rename the field to make it cumulative, or record the peak per round with a fresh pool.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352725,
+      "thread": "PRRT_kwDOS5ka5863T5r1",
+      "path": "docs/benchmarks/memory-owner-bookkeeping-2026-11-12.json",
+      "finding": "P2: This captured report drops `budgetSourceSha256`, which `bench/memory-owner-bookkeeping.mjs` emits and the sibling ancestry benchmark keeps. Without it, nothing in the artifact shows that both `separate-index-node` and `combined-handle-node` ran against the same `MemoryBudget` module, so the comparison is not reproducible. Re-capture the entries from the script output with `budgetSourceSha256` included.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352732,
+      "thread": "PRRT_kwDOS5ka5863T5r6",
+      "path": "bench/nested-value-comparison.mjs",
+      "finding": "P2: An invalid `Date` makes `BigInt(actual.getTime())` throw a RangeError, which crashes the bench instead of reporting a mismatch. Return `undefined` for NaN times so the comparison fails cleanly.",
+      "status": "fixed and verified in first review-repair batch"
+    },
+    {
+      "comment": 4569352738,
+      "thread": "PRRT_kwDOS5ka5863T5r-",
+      "path": "docs/benchmarks/definition-level-lazy-mask-2026-11-12.jsonl",
+      "finding": "P2: This artifact shows the lazy-mask strategy is about 70% slower than buffer-normalize for 1,024-row mixed input (0.081 ms vs 0.047 ms), with no memory saving (peakBytes 3072 in both). The audit only reports the 65,536-row mixed overhead (~14%). Note the 1,024-row mixed regression in the audit, or rerun with more samples to show it is noise.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352741,
+      "thread": "PRRT_kwDOS5ka5863T5sB",
+      "path": "docs/benchmarks/union-concat-compacted-2026-11-13.json",
+      "finding": "P2: This artifact records the rejected always-compact experiment, but its `scope` does not say so. Readers will take the ~4.5 s incremental timing and depth-3 result as current behavior, and the committed `bench/union-concat-scaling.mjs` can no longer regenerate these numbers. Add the compaction policy to `scope`, or record the experiment's source in the file.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352751,
+      "thread": "PRRT_kwDOS5ka5863T5sI",
+      "path": "docs/benchmarks/vector-owned-top-k-2026-11-12.jsonl",
+      "finding": "P2: This benchmark artifact records no environment or provenance (Node version, CPU/host, commit, build, or run date), so the timings cannot be reproduced or compared. Emit that metadata from `bench/vector-owned-top-k.mjs` alongside these rows before the audit cites them.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352753,
+      "thread": "PRRT_kwDOS5ka5863T5sL",
+      "path": "bench/nested-dictionary-concat.mjs",
+      "finding": "P2: The output check here cannot detect mis-selected rows: both inputs share an identical dictionary, so every row expects `[{ k: 7 }]`. Compare each output row against its source row, as `bench/dictionary-concat.mjs` does.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352760,
+      "thread": "PRRT_kwDOS5ka5863T5sS",
+      "path": "docs/benchmarks/dictionary-concat-2026-11-12.jsonl",
+      "finding": "P2: The `sourceSha256` in these records hashes only `packed-gather.js`, but the benchmark times `concatBatches` in `vector-sort.ts`, which pulls in several other concat modules. Hash the full set of modules on the measured path, or record the git commit, so the provenance covers the code actually measured.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352769,
+      "thread": "PRRT_kwDOS5ka5863T5sX",
+      "path": "docs/benchmarks/indexed-planning-i64-scaling-2026-11-13.json",
+      "finding": "P2: This artifact is labelled i64, but the only generator in the repo (`bench/indexed-planning-scaling.mjs`) writes INT32 columns and never produces i64 data. The file looks like a rerun of the INT32 matrix. Either regenerate it from a script that actually builds i64 columns, or rename it and correct the audit reference.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352777,
+      "thread": "PRRT_kwDOS5ka5863T5se",
+      "path": "bench/stage-admission.mjs",
+      "finding": "P2: The per-stage `assert.equal(budget.usedBytes, 0)` runs inside the timed loop, so assertion overhead is included in `medianMs`. Move that check after the loop, where the timing has already been captured.",
+      "status": "fixed and verified in first review-repair batch"
+    },
+    {
+      "comment": 4569352781,
+      "thread": "PRRT_kwDOS5ka5863T5sh",
+      "path": "docs/validation/scheduled-http-ranges-2026-11-12.json",
+      "finding": "P2: This evidence file is a byte-for-byte copy of `scheduled-controlled-http-ranges-2026-11-12.json`, but the audit cites it for the earlier checkpoint, before the controlled-read wrapper obstacle was fixed. Regenerate it from that checkpoint's code or remove it and point the earlier audit section at the controlled-read artifact.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352786,
+      "thread": "PRRT_kwDOS5ka5863T5sk",
+      "path": "docs/benchmarks/cloud-numeric-groups-2026-11-12.json",
+      "finding": "P2: This benchmark artifact doesn't match what `bench/cloud-numeric-groups.mjs` emits at HEAD: it lacks `jobBytes`, `cacheBytes`, `temperature`, `retainedCacheBytes`, and `ranges`, and its `scope` text is not one the script produces. The audit cites this file as evidence, so regenerate it with the current script and cite the regenerated output so the reported numbers are reproducible.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352791,
+      "thread": "PRRT_kwDOS5ka5863T5sm",
+      "path": "bench/union-selection-scaling.mjs",
+      "finding": "P2: `depth()` does not descend into `list` or `struct` children, so `unionDepth` for the `list` and `struct` modes misses unions nested inside them and understates the metric. Recurse through `list.child` and `struct.fields` as well.",
+      "status": "fixed and verified in first review-repair batch"
+    },
+    {
+      "comment": 4569352808,
+      "thread": "PRRT_kwDOS5ka5863T5sw",
+      "path": "docs/benchmarks/metadata-admission-conformance-2026-11-13.json",
+      "finding": "P2: Eight `bad_data` entries in `failingTests` are labeled 'decodes ... through the public reader', but the test suite excludes those files from that case. They only run as 'rejects documented malformed ... in both readers'. Regenerate this record from the current suite, or correct the entries, so the failure list matches the test names.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352814,
+      "thread": "PRRT_kwDOS5ka5863T5s3",
+      "path": "bench/schema-leaf-scaling.mjs",
+      "finding": "P2: The timed region includes `JSON.stringify` key construction (index mode only) and `assert.equal` (both modes), so the tree/index ratios measure harness overhead as well as lookup cost. Precompute the keys and expected elements before `performance.now()`, and check identity after the timer stops.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352821,
+      "thread": "PRRT_kwDOS5ka5863T5s8",
+      "path": "bench/cloud-indexed-planning.mjs",
+      "finding": "P2: The `full` branch has no rejection handling, so a cap smaller than the converted metadata throws and aborts the sweep. The `indexed` branch records `rejected`, but this branch does not. Catch LAKEQL_BUDGET_EXCEEDED here and record `rejected: true`, as the indexed branch does.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352833,
+      "thread": "PRRT_kwDOS5ka5863T5tD",
+      "path": "bench/released-ownership-retention.mjs",
+      "finding": "P2: The retained cases never check that the handle keeps its charge after `scope.dispose()`. Assert `usedBytes` while the handle is live, before releasing it. Otherwise the script can pass even when retention is not enforced.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352838,
+      "thread": "PRRT_kwDOS5ka5863T5tK",
+      "path": "bench/union-routing.mjs",
+      "finding": "P2: `elapsed` is read after `scratch?.dispose()`, so only the released-scratch mode includes teardown in its timing. Capture `elapsed` before the dispose call, or time the dispose separately, so both modes measure construction alone.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352855,
+      "thread": "PRRT_kwDOS5ka5863T5tU",
+      "path": "bench/decimal-owned-conversion.mjs",
+      "finding": "P2: The two modes run in fixed blocks, so the owned-typed timings follow the array mode's allocation churn and may absorb its GC pauses. Interleave the modes inside the repeat loop, or alternate their order per repeat, so the reported medians are not order-biased.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352862,
+      "thread": "PRRT_kwDOS5ka5863T5ta",
+      "path": "bench/indexed-metadata-corpus.mjs",
+      "finding": "P2: The leak assertion in `finally` is not caught by the per-fixture handler, so one leaked byte aborts the whole run before any report prints. Record the leak as a result field or failure for that fixture instead of throwing from `finally`.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352869,
+      "thread": "PRRT_kwDOS5ka5863T5td",
+      "path": "bench/worker-heap-runtime.mjs",
+      "finding": "P2: If `runtime.dispose()` throws, `server` is never closed and the original startup error is lost. Put the server teardown in a `finally` so it always runs.",
+      "status": "fixed and verified in first review-repair batch"
+    },
+    {
+      "comment": 4569352876,
+      "thread": "PRRT_kwDOS5ka5863T5ti",
+      "path": "bench/metadata-size.mjs",
+      "finding": "P3: The timed region includes the `assert.equal` call, so assertion overhead is counted in each sample. Capture the result and stop the timer before asserting.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352890,
+      "thread": "PRRT_kwDOS5ka5863T5tu",
+      "path": "bench/packed-concat.mjs",
+      "finding": "P3: `sourceSha256` hashes only `dist/packed-gather.js`, but the benchmarked `concatBatches` is defined in `vector-sort.js`, and the fallback path uses `vectorFromValues` from `batch.js`. The emitted hash therefore does not fingerprint the code being timed. Hash the measured module (`vector-sort.js`), and record `packed-gather.js` under a separate key as `bench/concat-planning.mjs` does.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352896,
+      "thread": "PRRT_kwDOS5ka5863T5ty",
+      "path": "bench/struct-materialization.mjs",
+      "finding": "P3: The `previous` baseline uses `setRecordValue`, which the pre-PR struct branch did not use. Use a plain `out[name] = ...` assignment so the baseline matches the code this PR replaced. Otherwise the reported delta mixes in the new helper's cost.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352905,
+      "thread": "PRRT_kwDOS5ka5863T5t4",
+      "path": "bench/aggregate-arena-accounting.mjs",
+      "finding": "P3: The output path is resolved from the current working directory, so the bench only works when run from the repo root. Resolve it from the script location instead, for example `new URL(\"../docs/benchmarks/...\", import.meta.url)`.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352917,
+      "thread": "PRRT_kwDOS5ka5863T5uB",
+      "path": "docs/compatibility.md",
+      "finding": "P3: The two new LZ4 rows land after the WebGPU section, away from the other Parquet rows. Move them in `docs/compatibility.json` next to the existing Parquet entries, then run `pnpm docs:compatibility`. Editing the generated markdown alone will be overwritten.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352927,
+      "thread": "PRRT_kwDOS5ka5863T5uJ",
+      "path": "bench/parquet-conformance-diagnostics.mjs",
+      "finding": "P3: This cause-chain walk and rejected/decoded classification duplicates `bench/conformance-diagnostics.mjs`. Extract the walker into `bench/bench-utils.mjs` and reuse it. The two copies already disagree on `details.cause` vs `cause` precedence.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352934,
+      "thread": "PRRT_kwDOS5ka5863T5uO",
+      "path": "bench/scheduled-cache-range-validation.mjs",
+      "finding": "P3: `metadataProbeBytes` silently adds `Number(null)` (0) when the probe response has no `content-length`, so the reported total can undercount without any failure. Assert the header is present before summing it.",
+      "status": "fixed and verified in first review-repair batch"
+    },
+    {
+      "comment": 4569352943,
+      "thread": "PRRT_kwDOS5ka5863T5uU",
+      "path": "docs/benchmarks/union-selection-pruned-nested-2026-11-13.json",
+      "finding": "P3: This benchmark artifact does not record which script, command, or Node version produced it. Add the generator and runtime to the file, as `union-ownership-repeated-2026-11-13.json` does, so the numbers can be reproduced and compared.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352949,
+      "thread": "PRRT_kwDOS5ka5863T5uX",
+      "path": "docs/benchmarks/nested-dictionary-concat-2026-11-12.jsonl",
+      "finding": "P3: This benchmark record omits the sample count that the harness uses and sibling benchmark artifacts record. Add `\"samples\":5` to each row so the audit's \"five-sample median\" claim can be checked against the artifact itself.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352955,
+      "thread": "PRRT_kwDOS5ka5863T5ud",
+      "path": "docs/benchmarks/cloud-incremental-footer-2026-11-13.json",
+      "finding": "P3: This artifact does not record the outcome per case, so the 1,534-byte cap entry reads like a success with peak equal to cap. Add an explicit outcome field (for example `\"outcome\": \"LAKEQL_BUDGET_EXCEEDED\"`) to each report, emitted by `bench/cloud-owned-footer.mjs`. Also record the run commit and the fixture's size/ETag, since the source is a mutable public r2.dev URL.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352959,
+      "thread": "PRRT_kwDOS5ka5863T5uh",
+      "path": "bench/worker-heap-limit-probe.mjs",
+      "finding": "P3: The fixed 50 ms sleep is a timing guess for stderr capture, so `heapLimitFailure` and `runtimeStderr` can be missing the fatal-OOM line on a slow machine. Wait for the runtime's stderr to end or for the process to exit instead of sleeping for a fixed interval.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352962,
+      "thread": "PRRT_kwDOS5ka5863T5uk",
+      "path": "docs/validation/flights-page-layout-2026-11-12.json",
+      "finding": "P3: This validation artifact has no provenance. Add the source fixture path, its hash, the row group, and the command or script that produced it so the page offsets and sizes can be reproduced.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352968,
+      "thread": "PRRT_kwDOS5ka5863T5up",
+      "path": "bench/footer-preflight-overhead.mjs",
+      "finding": "P3: The `DataView` construction and `assert.equal` run inside the timed loop, but only for the preflight and incremental modes. That adds harness overhead to the numbers this benchmark exists to compare. Move the count check out of the timed region, for example by validating once before the trial loop.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352973,
+      "thread": "PRRT_kwDOS5ka5863T5us",
+      "path": "docs/performance.md",
+      "finding": "P3: This sentence understates default behavior. Every lake still builds a shared parsed-metadata cache when no `metadataCache` is passed, and the removed text said so. State that default lakes keep encoded ranges plus a shared parsed-metadata cache used by cached or fallback paths.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352981,
+      "thread": "PRRT_kwDOS5ka5863T5uw",
+      "path": "docs/validation/nested-decoder-typed-probe-2026-11-12.json",
+      "finding": "P3: This snapshot still shows the two Impala map fixtures as `logicalValuesEqual: false`, but the later fix and `nested-map-normalization-2026-11-12.json` show them passing. Add a status field marking this as a superseded pre-correction snapshot so readers do not take it as the current decoder state.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352986,
+      "thread": "PRRT_kwDOS5ka5863T5u0",
+      "path": "bench/dictionary-concat.mjs",
+      "finding": "P3: `sourceSha256` hashes only `dist/packed-gather.js`, but the measured `direct-concat` path runs `concatBatches` from `dist/vector-sort.js`. The fallback path also depends on `dist/batch.js`. The provenance hash should cover the files actually exercised, or the output should say it covers only packed-gather.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352990,
+      "thread": "PRRT_kwDOS5ka5863T5u3",
+      "path": "docs/benchmarks/cloud-owned-footer-2026-11-12.json",
+      "finding": "P3: The `requests` array mixes admitted and rejected reads without marking them. The 1535-byte range in the cap-1534 report exceeds its cap, so a reader will take it for a budget breach. Add an `admitted` or `outcome` field per request, and record the object size or ETag so the byte ranges can be checked against the source later.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569352995,
+      "thread": "PRRT_kwDOS5ka5863T5u7",
+      "path": "bench/packed-dictionary.mjs",
+      "finding": "P3: This deep import reaches into the pnpm `node_modules` layout of `packages/parquet`, which breaks if the install layout or hoisting changes. Resolve `hyparquet` through the package the way the repo's tests do, or use `createRequire` from `packages/parquet/package.json`.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569353000,
+      "thread": "PRRT_kwDOS5ka5863T5u-",
+      "path": "bench/union-ownership-repeated.mjs",
+      "finding": "P3: The output argument is resolved relative to `bench/`, not the working directory. A plain relative path such as `docs/benchmarks/x.json` passed from the repo root becomes `bench/docs/benchmarks/x.json` and fails with ENOENT only after all 16 child runs. Resolve the argument with `resolve(process.argv[2])` and convert it with `pathToFileURL` before passing it to `new URL`, or document that the argument must be a file URL.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569353007,
+      "thread": "PRRT_kwDOS5ka5863T5vC",
+      "path": "bench/serialized-size.mjs",
+      "finding": "P3: The `sourceSha256` provenance field only covers `serialized-size.js`, but the serialized-copy baseline also runs `materializeBatchRows`, `jsonSafeValue`, and `stableStringify`. Hash all four dist modules, or rename the field to say it covers only the direct-count module.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569353016,
+      "thread": "PRRT_kwDOS5ka5863T5vI",
+      "path": "docs/benchmarks/cloud-flights-projection-2026-11-12.json",
+      "finding": "P3: The field `concurrency` is undefined in this artifact, and a reader will take it as a read cap. A single-job run reporting `peakRequestsAwaitingHeaders: 2` looks like a cap violation. Rename it to a job count and record the actual read cap (4) in the scope.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569353019,
+      "thread": "PRRT_kwDOS5ka5863T5vK",
+      "path": "bench/schema-leaf-scaling.mjs",
+      "finding": "P3: This benchmark reads `packages/parquet/dist/schema-leaves.js` without a build step. Add a package.json script that runs `pnpm build` before this file, as the other benchmarks do, so the recorded index hash matches the measured source.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569353021,
+      "thread": "PRRT_kwDOS5ka5863T5vM",
+      "path": "bench/parquet-conformance-diagnostics.mjs",
+      "finding": "P3: This script imports from `dist` builds but does not say a build is required, unlike the sibling `conformance-diagnostics.mjs`. Add a header note that `pnpm build` must run first, or the script fails with ERR_MODULE_NOT_FOUND.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569353030,
+      "thread": "PRRT_kwDOS5ka5863T5vR",
+      "path": "bench/typed-map-key-probe.mjs",
+      "finding": "P3: If `DuckDBConnection.create()` rejects, the `mkdtemp` directory is never removed. Move the connection creation inside the `try` so the `finally` always runs cleanup, and guard the `disconnectSync()` call.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569353035,
+      "thread": "PRRT_kwDOS5ka5863T5vV",
+      "path": "bench/composite-ownership.mjs",
+      "finding": "P3: This assertion has no message, so running without `--expose-gc` fails with an unhelpful `'undefined' !== 'function'`. Add the message the sibling bench uses, and add a `// Run with node --expose-gc` header comment.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569353041,
+      "thread": "PRRT_kwDOS5ka5863T5vX",
+      "path": "bench/compact-header-parsing.mjs",
+      "finding": "P3: The loop variable `encoding` holds both encoding names and fixture file names, and the JSON output reports it as `encoding`. Rename it to a neutral name such as `input` (or split the list into separate encoding and fixture cases) so the reported field matches what it contains.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569413102,
+      "thread": "PRRT_kwDOS5ka5863UCiL",
+      "path": "packages/parquet/src/deferred-output-http.test.ts",
+      "finding": "P2: The `ranked` cases don't test ordering: the predicate `mod(id, 257) = 256` matches only id 256 in 0..511, so `orderBy(id desc).limit(1)` always has one candidate. Use a predicate that matches several rows (and expects the highest id first) so the top-k path is actually exercised.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569413108,
+      "thread": "PRRT_kwDOS5ka5863UCiO",
+      "path": "packages/parquet/src/index.ts",
+      "finding": "P2: The default scan-range and metadata caches bypass the lake allocation cap because their fallback `SharedMemoryCache` has no `memoryBudget`. Construct that fallback with `memoryBudget: memoryPool`.",
+      "status": "fixed and verified in first review-repair batch"
+    },
+    {
+      "comment": 4569413114,
+      "thread": "PRRT_kwDOS5ka5863UCiR",
+      "path": "packages/core/src/query.ts",
+      "finding": "P2: The non-owned branch returns `output.value` before the `finally` disposes `scope`, so binary or nested projected values can retain aliases to released owned scan backing. Materialize detached values for ordinary results, or preserve the backing until the caller releases an owned result.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569413122,
+      "thread": "PRRT_kwDOS5ka5863UCiW",
+      "path": "docs/validation/deferred-ranking-followup-2026-11-13.json",
+      "finding": "P3: The `finalCheckpoint` gives passed and skipped counts for the default suite but omits `defaultFailed`, which `fullRefresh` reported as 1. Add the actual failed count from the final run so the record shows the default suite is green.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569413129,
+      "thread": "PRRT_kwDOS5ka5863UCie",
+      "path": "packages/core/src/deferred-gather.test.ts",
+      "finding": "P3: This test finds the boundary by search instead of asserting it. It will not catch accounting drift, since the threshold can move and the test still passes. Assert the expected admitted byte count for the joined descriptor directly, or derive the expected boundary from the known batch allocation size.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569413135,
+      "thread": "PRRT_kwDOS5ka5863UCih",
+      "path": "packages/parquet/src/index.test.ts",
+      "finding": "P3: The `peakBytes <= maxBytes` assertions can never fail: `MemoryBudget.pin()` already rejects any admission that would exceed `maxBytes`, so this adds no coverage of the cache behavior the test name describes. Replace them with an assertion on an observable value, such as the exact bytes charged to the cache, or drop them.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569481783,
+      "thread": "PRRT_kwDOS5ka5863UM2I",
+      "path": "packages/core/src/vector-aggregate-snapshot.ts",
+      "finding": "P2: `validateAggregateSnapshotScalar` does not cover median or quantile entries on the normal no-scope restore path. Validate every list element before copying, enforcing each aggregate\u2019s allowed primitive type, so malformed checkpoints cannot enter numeric/string accumulator state.",
+      "status": "fixed and verified in first review-repair batch"
+    },
+    {
+      "comment": 4569481789,
+      "thread": "PRRT_kwDOS5ka5863UM2M",
+      "path": "docs/validation/admission-checkpoint-2026-11-12.json",
+      "finding": "P3: The note says to consult 'subsequent validation checkpoints' without naming them. Name the checkpoint file(s) that supersede this run, and say whether the referenced cloud artifact still applies to HEAD.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569481800,
+      "thread": "PRRT_kwDOS5ka5863UM2R",
+      "path": "docs/validation/review-followup-2026-11-13.json",
+      "finding": "P3: The cited cloud artifacts do not record reservation release, so `All reservations released` is unsupported by them. Record the post-run reservation count in the artifacts, or drop the claim from this checkpoint.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4569481806,
+      "thread": "PRRT_kwDOS5ka5863UM2W",
+      "path": "docs/validation/worker-harness-lifecycle-2026-11-13.json",
+      "finding": "P3: `reconfiguredPreviousBytes` is measured after `/configure` releases the old owners and evicts the cache, so this artifact cannot show how much state existed before reconfiguration. Capture the old pool usage before cleanup and assert both pre-cleanup usage and post-cleanup zero.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471201,
+      "thread": "PRRT_kwDOS5ka5863WfGo",
+      "path": "scripts/check-package-install.mjs",
+      "finding": "P1: These `readFileSync` calls read from `fixtures/external/parquet-testing`, which is only populated by `pnpm fixtures:external`. The release workflow runs `pnpm check`, which now includes `check:packages`, but never fetches that corpus, so the release gate fails with ENOENT before publish. Either fetch the fixtures in `release.yml` before `pnpm check`, or use fixtures that are committed under `fixtures/data`.",
+      "status": "fixed and verified in first review-repair batch"
+    },
+    {
+      "comment": 4570471217,
+      "thread": "PRRT_kwDOS5ka5863WfGy",
+      "path": "packages/core/src/evaluator.ts",
+      "finding": "P2: The new decimal branch in `jsonSafeValue` calls `decimalToString(value)` without a `MemoryScope`, so the formatted string is not charged to the budget. The CSV and JSON output paths admit this same formatting via `decimalFormatAllocationBytes`. Callers such as distinct-row keys, window partition keys, and aggregate snapshots reach this branch without admission. Consider threading an optional scope through `jsonSafeValue`, or documenting this as a known untracked path.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471228,
+      "thread": "PRRT_kwDOS5ka5863WfG4",
+      "path": "packages/parquet/src/task-execution.test.ts",
+      "finding": "P2: This relaxed assertion no longer checks the budget accounting. `toBeLessThan(3204)` can never fail with a 3203-byte cap, so only `toBeGreaterThan(0)` is checked. Pin the exact schema-validation charge, as `schema-validation.test.ts` does, or assert it from a schema-only run.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471232,
+      "thread": "PRRT_kwDOS5ka5863WfG7",
+      "path": "docs/benchmarks/csv-output-reused-nested-scalar-2026-11-13.json",
+      "finding": "P2: This benchmark was recorded against the pre-decimal code (d5a60b8), but its `sources` hashes no longer match HEAD: `csv-output-encoding.ts`, `json-output-encoding.ts`, `json-scalar-output.ts`, `json-output-size.ts`, and `evaluator.ts` changed in 1afe68b. The `csvAfter` figure cited in `stream-lifetime-2026-11-13.json` therefore does not measure the current CSV encoder. Re-run the benchmark on HEAD and regenerate the hashes, or mark the file as superseded and stop citing it as evidence for the current code.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471243,
+      "thread": "PRRT_kwDOS5ka5863WfHC",
+      "path": "packages/parquet/src/decoded-rows.ts",
+      "finding": "P2: Using `Object.defineProperty` for every column of every decoded row is slower than plain assignment. This runs on the row-normalization hot path, and the PR is about reducing query work. Only the `__proto__` key needs the descriptor-based write, so branch on that key and keep plain assignment for the rest.",
+      "status": "fixed and verified in first review-repair batch"
+    },
+    {
+      "comment": 4570471248,
+      "thread": "PRRT_kwDOS5ka5863WfHF",
+      "path": "docs/benchmarks/csv-output-direct-text-2026-11-13.json",
+      "finding": "P2: The `sources` hashes in this benchmark no longer match HEAD: `csv-output-encoding.ts`, `json-output-encoding.ts`, `json-output-size.ts` and `evaluator.ts` have changed since the run. The stream-lifetime validation doc still cites these timings as the final CSV result. Re-run the benchmark on the current encoder, or label this record as a superseded snapshot in the validation doc.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471254,
+      "thread": "PRRT_kwDOS5ka5863WfHI",
+      "path": "docs/benchmarks/csv-output-2026-11-13.json",
+      "finding": "P2: The owned CSV path is roughly 2x to 23x slower than legacy in every case here, and the audit doc does not record it. Note the regression in `docs/performance-memory-audit.md` alongside the admission-cost trade-off, or justify it there, so the cost is not hidden behind the memory-bounding claim.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471259,
+      "thread": "PRRT_kwDOS5ka5863WfHL",
+      "path": "docs/benchmarks/csv-output-2026-11-13.json",
+      "finding": "P2: The `sources` hashes in this benchmark do not match the current encoder files: `csv-output-encoding.ts` records `6e1fac60\u2026` but HEAD hashes to `5651052030\u2026`, and most other entries also differ. Re-run the benchmark against the committed sources and regenerate the hashes, or the results cannot be tied to the code this PR ships.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471264,
+      "thread": "PRRT_kwDOS5ka5863WfHP",
+      "path": "bench/variant-decimal-oracle.mjs",
+      "finding": "P2: The filter silently drops any selected case that is absent from `cases.json`, so the oracle report can omit cases without any failure. Assert that the matched count equals `selected.size` before iterating.",
+      "status": "fixed and verified in first review-repair batch"
+    },
+    {
+      "comment": 4570471268,
+      "thread": "PRRT_kwDOS5ka5863WfHS",
+      "path": "docs/benchmarks/json-output-2026-11-13.json",
+      "finding": "P2: The committed numbers show the owned JSON encoding path is slower than legacy for small payloads (~8x), ASCII (~2.4x), and nested rows (~1.6x). The regression is not called out in the PR description or the audit doc. Either document it as an accepted tradeoff with its reason, or fix the small-payload admission overhead before merging.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471275,
+      "thread": "PRRT_kwDOS5ka5863WfHX",
+      "path": "docs/benchmarks/json-output-2026-11-13.json",
+      "finding": "P2: This benchmark artifact does not match the current code or its generator. The recorded source sha256 values differ from the current `json-output-encoding.ts`, `json-output-size.ts`, and `evaluator.ts`. It also omits the `decimal` and `fractional` cases and most source hashes that `bench/json-output.mjs` emits. Regenerate the file with the current script so the reported numbers match the code under review.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471281,
+      "thread": "PRRT_kwDOS5ka5863WfHb",
+      "path": "bench/dictionary-extent-oracle.mjs",
+      "finding": "P2: `assert.rejects` accepts any rejection here, so the script does not confirm the baseline fails for the dictionary-extent reason. Pass a validator (an error class or a `{ message: /.../ }` pattern) so an unrelated failure cannot satisfy the oracle.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471297,
+      "thread": "PRRT_kwDOS5ka5863WfHk",
+      "path": "docs/benchmarks/variant-decimal-oracle-2026-11-13.json",
+      "finding": "P2: This oracle snapshot was generated before several later decimal commits and never regenerated, so its outcomes and peak-byte figures may not reflect HEAD. Rerun `node bench/variant-decimal-oracle.mjs` after the build and commit the refreshed JSON so the conformance evidence matches the code.",
+      "status": "fixed and verified in first review-repair batch"
+    },
+    {
+      "comment": 4570471303,
+      "thread": "PRRT_kwDOS5ka5863WfHo",
+      "path": "docs/benchmarks/csv-output-bulk-2026-11-13.json",
+      "finding": "P2: This benchmark's `sources` hashes match the pre-`2de6ea6` implementation, not HEAD. The `owned` vs `legacy` numbers therefore describe code that no longer ships. Re-run the bulk benchmark on the current sources and update the hashes, or stop citing it in `docs/validation/stream-lifetime-2026-11-13.json`.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471308,
+      "thread": "PRRT_kwDOS5ka5863WfHq",
+      "path": "docs/benchmarks/json-output-scalar-admitted-2026-11-13.json",
+      "finding": "P2: The `sources` hashes do not match the source files at the commit that added this benchmark. `json-output-encoding.ts`, `json-scalar-output.ts`, `json-output-size.ts` and `interval.ts` hash to values absent from their history, so the timings may come from an uncommitted tree. Regenerate the artifact from the committed sources, or record the commit it was measured at.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471313,
+      "thread": "PRRT_kwDOS5ka5863WfHr",
+      "path": "docs/validation/conformance-value-parity-2026-11-13.json",
+      "finding": "P2: This change makes the parity comparator treat Date and TimestampValue as equal, so seven disagreements become passes without any reader fix. The top-level description says no failures are reclassified, which conflicts with this. Either record this as a comparator relaxation in the description, or keep these disagreements failing until the carrier contract is decided.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471319,
+      "thread": "PRRT_kwDOS5ka5863WfHv",
+      "path": "docs/validation/conformance-value-parity-2026-11-13.json",
+      "finding": "P2: The headline `result` block is a stale checkpoint (456 passed / 29 failed), and the later sections report several different totals. The final section says 30 failures, while the PR description says 18. Mark the current gate status in one place, and make the top-level result and the PR description match it.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471325,
+      "thread": "PRRT_kwDOS5ka5863WfHx",
+      "path": "packages/parquet/src/logical-values.ts",
+      "finding": "P2: Moving the JSON check out of the `scope !== undefined` guard changes unscoped output. Unscoped callers now get parsed JSON objects instead of the upstream `convert()` result, and the audit doc says unscoped conversion keeps its existing representation. Keep the JSON branch scoped.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471335,
+      "thread": "PRRT_kwDOS5ka5863WfH6",
+      "path": "packages/parquet/src/dictionary-column-extent.ts",
+      "finding": "P2: The recovery walk issues one `preparePageWindow` call per data page, and each call does its own ranged header read. On remote stores, a legacy column with many pages costs one sequential round trip per page. Batch the header reads over a bounded range, or cache the walk result per chunk, rather than awaiting a read for every page.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471341,
+      "thread": "PRRT_kwDOS5ka5863WfH9",
+      "path": "bench/int96-spark-oracle.mjs",
+      "finding": "P2: Only the owned reader's mismatches are asserted. The public reader's mismatches are only recorded, so the script exits 0 even if the public path returns wrong microseconds. Assert the public mismatches as well, or state in the conclusion that they are informational.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471345,
+      "thread": "PRRT_kwDOS5ka5863WfIA",
+      "path": "docs/validation/schema-validation-2026-11-13.json",
+      "finding": "P2: The conformance block cites 18 failures as 'unchanged known failures', but the PR's latest checkpoint records 29\u201330 failures. Record the current run (or the commit it was taken at) and state that the release gate is still failing.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471349,
+      "thread": "PRRT_kwDOS5ka5863WfID",
+      "path": "packages/core/src/decimal-arithmetic.ts",
+      "finding": "P2: Zero operands return a different `scale` than the general path. For example, `add(5 at scale 0, 0.00 at scale 2)` returns scale 0, but `add(5.00 at scale 2, 0.01 at scale 2)` returns scale 2. Either make the shortcuts return the general-path scale, or document that the result scale is not canonical and add a test for it.",
+      "status": "fixed and verified in first review-repair batch"
+    },
+    {
+      "comment": 4570471354,
+      "thread": "PRRT_kwDOS5ka5863WfIF",
+      "path": "packages/core/src/decimal-arithmetic.ts",
+      "finding": "P2: The negation charge uses `b`, but the allocated value holds `-b`. For positive `b` the extra sign character is not admitted, so the reservation is 2 bytes short. Charge `decimalValueAllocationBytes(-b)` instead.",
+      "status": "fixed and verified in first review-repair batch"
+    },
+    {
+      "comment": 4570471359,
+      "thread": "PRRT_kwDOS5ka5863WfII",
+      "path": "packages/parquet/src/scan-adapter.ts",
+      "finding": "P2: With a memory budget, this owned branch ignores a legacy `metadataCache` (for example `encodedParquetMetadataCache` or `memoryCache`). Warm planning re-reads footers and never records cache hits. Gate the owned path on the cache supporting `acquireOwned`/`setOwned`, and fall back to `readCachedParquetMetadata` otherwise. The same gap applies to the matching branch in `planTask`.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471363,
+      "thread": "PRRT_kwDOS5ka5863WfIN",
+      "path": "packages/parquet/src/nested-values.ts",
+      "finding": "P2: The new JSON branch re-walks values that `convertJsonValues` has already parsed. For JSON array columns it copies every array and charges extra budget reservations for no change. If the values are already converted, consider not normalizing JSON leaves here, or only normalizing when the value is still a raw byte or text value.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471369,
+      "thread": "PRRT_kwDOS5ka5863WfIS",
+      "path": "packages/parquet/src/vector-batches.ts",
+      "finding": "P2: Each corrected row group copies the entire `row_groups` array and charges it to `options.allocationScope`, which stays charged until the scope is disposed. Charges therefore grow quadratically with row-group count and can exhaust the budget on legacy files that otherwise fit. Consider copying only the selected row group, or releasing the recovery allocations once the group has been read.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471377,
+      "thread": "PRRT_kwDOS5ka5863WfIX",
+      "path": "packages/parquet/src/vector-batches.ts",
+      "finding": "P2: This runs a full physical-boundary scan and dictionary page-header walk for every legacy dictionary column in every row group. Groups that need no correction are not memoized, so the cost repeats on each read and grows with row-group count. For files with many row groups this is quadratic CPU and sequential I/O. Consider inspecting each row group once per file or caching the proven extents.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471382,
+      "thread": "PRRT_kwDOS5ka5863WfIa",
+      "path": "docs/benchmarks/csv-output-decimal-2026-11-13.json",
+      "finding": "P2: The `decimal-value.ts` hash in this manifest is stale: it matches the file as of 1afe68b, but commit 2b54222 changed that file afterwards. Regenerate the benchmark with `bench/csv-output.mjs` so the timings and the source manifest match HEAD. Updating only the hash would make the manifest look current without re-measuring.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471388,
+      "thread": "PRRT_kwDOS5ka5863WfIe",
+      "path": "packages/parquet/src/owned-vector-batches.ts",
+      "finding": "P2: This recovery call re-enumerates every row group of the file for each legacy dictionary column in each selected row group. For indexed sources, each pass acquires and releases every group. Consider computing the physical column boundaries once per file, or limiting the enumeration to the column boundaries needed for the selected row group.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471393,
+      "thread": "PRRT_kwDOS5ka5863WfIj",
+      "path": "packages/core/src/decimal-arithmetic.ts",
+      "finding": "P2: The exact decimal kernel is unreachable from production query data: Parquet decimal conversion still emits `number`/`Float64Array`, and no production code constructs or calls `DecimalValue` or `decimalArithmetic`. Integrate the kernel into decimal conversion and evaluator paths, or remove this dead implementation until that integration exists.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471396,
+      "thread": "PRRT_kwDOS5ka5863WfIk",
+      "path": "docs/benchmarks/cloud-task-oracle-refresh-2026-11-13.json",
+      "finding": "P2: The four-job cached cold case issues the same footer range four times, bypassing the shared metadata read/cache path shown by the equivalent benchmark artifacts. Share the footer cache/pending-read key across jobs or correct the benchmark setup, then regenerate this report before using it as evidence of deduplicated planning.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471400,
+      "thread": "PRRT_kwDOS5ka5863WfIm",
+      "path": "packages/parquet/src/recover-column-extents.ts",
+      "finding": "P2: Boundary discovery scans every physical row group once per recoverable column and restarts the indexed iterator each time. Build the physical offset boundaries once per recovery/read instead of performing O(N\u00b2\u00b7C) metadata work.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471403,
+      "thread": "PRRT_kwDOS5ka5863WfIo",
+      "path": "bench/csv-output.mjs",
+      "finding": "P3: The report's source hashes describe `src/*.ts`, but the measured code is `dist/*.js`. Hash the dist outputs that are actually imported, or assert that the build is fresh, so the provenance matches the timed code.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471409,
+      "thread": "PRRT_kwDOS5ka5863WfIt",
+      "path": "packages/parquet/src/dictionary-recovery-http.test.ts",
+      "finding": "P3: This assertion can never fail, since `MemoryBudget` rejects reservations above `maxBytes`. Assert that the pool was actually charged, for example `expect(pool.peakBytes).toBeGreaterThan(0)`, so the test proves the budget was exercised.",
+      "status": "fixed and verified in first review-repair batch"
+    },
+    {
+      "comment": 4570471417,
+      "thread": "PRRT_kwDOS5ka5863WfIx",
+      "path": "packages/parquet/src/temporal-values.ts",
+      "finding": "P3: The doc comment still says conversion reserves before invoking parsers, but the new `if (scope === undefined) return decode();` path parses with no reservation. Update the comment to state that reservation applies only when a scope is supplied.",
+      "status": "fixed and verified in first review-repair batch"
+    },
+    {
+      "comment": 4570471421,
+      "thread": "PRRT_kwDOS5ka5863WfI0",
+      "path": "packages/core/src/utf8-size.ts",
+      "finding": "P3: The fast path reuses `isPlainJsonAscii`, a JSON-escaping predicate, so it skips ASCII strings containing `\\\"`, `\\\\`, or control characters, which need no special handling for UTF-8 sizing. Test for non-ASCII code units directly instead, so those strings also return `value.length`.",
+      "status": "fixed and verified in first review-repair batch"
+    },
+    {
+      "comment": 4570471427,
+      "thread": "PRRT_kwDOS5ka5863WfI4",
+      "path": "bench/json-output.mjs",
+      "finding": "P3: The `sources` fingerprint omits the admission and release code this benchmark times. `memory-scope.ts` and `memory-budget.ts` are not hashed, and neither are `allocation-charges.ts` or `errors.ts`, which `json-output-encoding.ts` imports. Add these files to the list so the report's source hashes cover the code that produced the timings.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471432,
+      "thread": "PRRT_kwDOS5ka5863WfI6",
+      "path": "bench/cloud-task-planning.mjs",
+      "finding": "P3: The comment calls this an \"independent\" oracle, but it uses the same `readParquetMetadataFromFile` and `planRowGroupsFromMetadata` that the library's `planTasks` path uses. Parity only checks the cached/indexed transport path against that shared logic, so a planner bug would pass. Either rename the comment to say it checks transport parity, or source the expected ranges from a separate reference (e.g. a hyparquet-based computation).",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471435,
+      "thread": "PRRT_kwDOS5ka5863WfI8",
+      "path": "bench/dictionary-extent-oracle.mjs",
+      "finding": "P3: This bench reaches into `packages/parquet/node_modules/hyparquet/src/*` and `dist/` directly, so it breaks on any dependency-layout or build change. Import these through the package's public `parquet` entry points, or document the required build and fixture setup at the top of the script.",
+      "status": "pending current-source review"
+    },
+    {
+      "comment": 4570471440,
+      "thread": "PRRT_kwDOS5ka5863WfJA",
+      "path": "docs/validation/schema-validation-2026-11-13.json",
+      "finding": "P3: The workspace claim omits the selection Set, which grows with the number of selected columns. State it as O(depth) plus O(selected columns) so the bound matches what the code admits.",
+      "status": "pending current-source review"
+    }
+  ],
+  "verification": {
+    "regularPassed": 4116,
+    "regularSkipped": 645,
+    "workerPassed": 95,
+    "requiredConformancePassed": 520,
+    "conformanceGuardSkipped": 1,
+    "referencePassed": 120,
+    "coverage": "4116 passed; unchanged coverage thresholds passed",
+    "checks": [
+      "build",
+      "types",
+      "lint",
+      "package consumer install",
+      "fixture checksums",
+      "compatibility",
+      "native R2 and HTTP runtime harness smoke",
+      "packed-concat-planning from /tmp",
+      "variant decimal oracle",
+      "stage admission benchmark"
+    ]
+  },
+  "sourceSha256": {
+    "packages/core/src/vector-aggregate-snapshot.ts": "af02bfcfafcdb2e9232d48290847c998dd9026fc0b594dddf10f471ebb0522c7",
+    "packages/core/src/decimal-arithmetic.ts": "9921933bb0c5a93639f4691adc14d3db791ca798eba8bcc3dc47f4331d4d80ac",
+    "packages/parquet/src/index.ts": "46001e8e6c1476b422aa937ecd5535fafbba891bc802be067815425b1edf57eb",
+    "packages/parquet/src/decoded-rows.ts": "0d77aa4e3ec65ddfd516f60e923b037f22f75a108cf6b8a5ce16d896e5347128"
+  },
+  "counts": {
+    "unresolvedAtInventory": 156,
+    "fixedInThisBatch": 21,
+    "pending": 135
+  }
+}

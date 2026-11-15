@@ -37,6 +37,7 @@ it.each([
     if (address === null || typeof address === "string") throw Error("No server port");
     const pool = new MemoryBudget(4 * 1024 * 1024);
     const lake = createParquetLake({
+      scanRangeCache: { maxBytes: 0 },
       memoryPool: pool,
       store: new HttpObjectStore({
         baseUrl: `http://127.0.0.1:${address.port}`,

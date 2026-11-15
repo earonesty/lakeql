@@ -66,7 +66,7 @@ export function bufferedAppendBytes(
 function rejectAppend(metric: string, limit: number, actual: number): never {
   throw new LakeqlError(
     "LAKEQL_BUDGET_EXCEEDED",
-    `Query exceeded ${metric} budget (${actual} > ${limit})`,
+    `Query exceeded ${metric} budget (${actual} > ${limit}). Add a partition filter, date filter, h3 filter, or limit.`,
     { metric, limit, actual },
   );
 }

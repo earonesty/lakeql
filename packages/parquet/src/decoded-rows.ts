@@ -17,8 +17,13 @@ function normalizeDecodedValue(value: unknown): unknown {
   if (value && typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [key, nested] of value instanceof Map ? value : Object.entries(value)) {
+      const normalized = normalizeDecodedValue(nested);
+      if (key !== "__proto__") {
+        out[key] = normalized;
+        continue;
+      }
       Object.defineProperty(out, key, {
-        value: normalizeDecodedValue(nested),
+        value: normalized,
         enumerable: true,
         writable: true,
         configurable: true,

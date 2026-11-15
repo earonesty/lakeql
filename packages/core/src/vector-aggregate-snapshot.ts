@@ -67,8 +67,10 @@ export function vectorAggregateStateFromSnapshot(
     case "stddev_pop":
       return { op: snapshot.op, count: snapshot.count, mean: snapshot.mean, m2: snapshot.m2 };
     case "median":
+      validateBufferedValues(snapshot.values, true);
       return { op: "median", values: [...snapshot.values], memoryBytes: 0 };
     case "quantile":
+      validateBufferedValues(snapshot.values, false);
       return {
         op: "quantile",
         quantile: snapshot.quantile,
@@ -168,4 +170,15 @@ export function validateAggregateSnapshotScalar(value: VectorAggregateSnapshotVa
   if (isBigintSnapshot(value) && /^-?[0-9]+$/.test(value.value)) return;
   if (isTimestampSnapshot(value) && /^-?[0-9]+$/.test(value.epochNanoseconds)) return;
   throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Invalid aggregate checkpoint scalar");
+}
+
+function validateBufferedValues(values: readonly unknown[], allowStrings: boolean): void {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) continue;
+    if (allowStrings && typeof value === "string") continue;
+    throw new LakeqlError(
+      "LAKEQL_VALIDATION_ERROR",
+      "Invalid buffered aggregate checkpoint scalar",
+    );
+  }
 }

@@ -33,6 +33,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Fetch external fixtures used by package and regression checks
+        run: pnpm fixtures:external
+
       - name: Install the software WebGPU adapter
         run: sudo apt-get update && sudo apt-get install --yes mesa-vulkan-drivers
 

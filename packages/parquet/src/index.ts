@@ -1115,7 +1115,7 @@ export function createParquetLake(config: ParquetLakeConfig): Lake {
   const scanRangeSharedCache =
     scanRangeCache.sharedCache ??
     sharedCache ??
-    new SharedMemoryCache({ maxBytes: scanRangeCache.maxBytes });
+    new SharedMemoryCache({ maxBytes: scanRangeCache.maxBytes, memoryBudget: memoryPool });
   scannerOptions.scanRangeCache =
     config.cache !== undefined
       ? { ...scanRangeCache, sharedCache: scanRangeSharedCache, cacheOptions: config.cache }

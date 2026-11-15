@@ -24,9 +24,10 @@ for (const rows of [1, 128]) {
       scope.allocate(rows * 4, "indices", () => new Uint32Array(rows));
       scope.allocate(rows, "validity", () => new Uint8Array(rows));
       scope.dispose();
-      assert.equal(budget.usedBytes, 0);
     }
-    if (trial > 2) samples.push(performance.now() - start);
+    const elapsedMs = performance.now() - start;
+    assert.equal(budget.usedBytes, 0);
+    if (trial > 2) samples.push(elapsedMs);
     assert.equal(budget.peakBytes, rows * 13);
   }
   console.log(
@@ -36,6 +37,13 @@ for (const rows of [1, 128]) {
       medianMs: samples.sort((a, b) => a - b)[2],
       samples: 5,
       budgetSha256: hash,
+      scopeSha256: createHash("sha256")
+        .update(await readFile(new URL("../packages/core/dist/memory-scope.js", import.meta.url)))
+        .digest("hex"),
+      harnessSha256: createHash("sha256")
+        .update(await readFile(new URL(import.meta.url)))
+        .digest("hex"),
+      implementation: process.env.LAKEQL_STAGE_IMPLEMENTATION ?? "current",
       node: process.version,
       scope:
         "three output buffers per admitted scope; current runtime microbenchmark; excludes I/O, decoded inputs, heap-cap proof",

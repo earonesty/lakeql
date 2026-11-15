@@ -28,7 +28,10 @@ const store = httpStore({
       assert.equal(response.status, 206);
       if (!measuringStage) {
         metadataProbeRequests++;
-        metadataProbeBytes += Number(response.headers.get("content-length"));
+        const length = response.headers.get("content-length");
+        assert.notEqual(length, null, "Metadata probe must declare its byte extent");
+        assert.ok(Number.isSafeInteger(Number(length)) && Number(length) >= 0);
+        metadataProbeBytes += Number(length);
         return response;
       }
       assert.equal(response.headers.get("content-range")?.startsWith("bytes 0-4095/"), true);

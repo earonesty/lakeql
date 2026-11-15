@@ -1,4 +1,5 @@
-import { isPlainJsonAscii } from "./json-string-size.js";
+// biome-ignore lint/suspicious/noControlCharactersInRegex: ASCII includes control bytes.
+const nonAscii = /[^\x00-\x7f]/;
 
 /** Exact UTF-8 bytes without allocating. Undefined means encoding would replace a lone surrogate. */
 export function losslessUtf8Bytes(value: string): number | undefined {
@@ -11,7 +12,7 @@ export function utf8Bytes(value: string): number {
 }
 
 function measureUtf8(value: string, lossless: boolean): number | undefined {
-  if (isPlainJsonAscii(value)) return value.length;
+  if (!nonAscii.test(value)) return value.length;
   let bytes = 0;
   for (let i = 0; i < value.length; i++) {
     const code = value.charCodeAt(i);

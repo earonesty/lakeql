@@ -2209,6 +2209,21 @@ describe("createParquetLake", () => {
     expect(second.stats.cacheMisses).toBe(0);
   });
 
+  it("charges implicit range caches to the lake pool and reclaims them under sibling pressure", async () => {
+    const lake = createParquetLake({ store });
+    const run = () => lake.path(`data/${STATS.file}`).limit(3).run().toArray();
+    const expected = await run();
+    expect(expected).toHaveLength(3);
+    expect(lake.memoryPool.usedBytes).toBeGreaterThan(0);
+    const pressure = lake.memoryPool.reserve(lake.memoryPool.maxBytes, "implicit cache eviction");
+    pressure.release();
+    expect(lake.memoryPool.usedBytes).toBe(0);
+    expect(await run()).toEqual(expected);
+    const cleanup = lake.memoryPool.reserve(lake.memoryPool.maxBytes, "implicit cache cleanup");
+    cleanup.release();
+    expect(lake.memoryPool.usedBytes).toBe(0);
+  });
+
   it("reclaims default planning cache storage and rediscovers real fixtures under pressure", async () => {
     const taskStore = countingObjectStore(store);
     let heads = 0;

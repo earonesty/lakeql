@@ -8,6 +8,8 @@ export type ExactDecimalOperation = "add" | "subtract" | "multiply";
 
 /** Exact arithmetic requires a caller-owned budget. Admit aligned coefficients,
  * powers, result backing and the scalar before evaluating any arithmetic.
+ * Zero shortcuts preserve the nonzero operand scale (zero products use scale 0).
+ * Result scale is representational, not canonical; numeric value is exact.
  * Native BigInt implementation scratch/GC remains outside the explicit model.
  */
 export function decimalArithmetic(
@@ -24,7 +26,7 @@ export function decimalArithmetic(
 
   if (operation === "subtract" && a === 0n)
     return scope.allocate(
-      decimalValueAllocationBytes(b),
+      decimalValueAllocationBytes(-b),
       "decimal negation",
       () => new DecimalValue(-b, right.scale),
     ).value;

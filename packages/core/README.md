@@ -17,7 +17,7 @@ adapter, scan adapter, or lower-level integration.
 - Object storage: `ObjectStore`, `ConditionalObjectStore`, `memoryStore`, and
   read-control helpers.
 - Resource controls: `maxBytes`, `maxFiles`, `maxRowsDecoded`,
-  `maxRangeRequests`, `maxBufferedRows`, `maxMemoryBytes`,
+  `maxRangeRequests`, `maxBufferedRows`, `maxMemoryBytes`, `maxAllocatedMemoryBytes`,
   `maxConcurrentReads`, `maxElapsedMs`, and `signal`.
 - Manifests and resumability: output manifests, task checkpoints, bookmarks,
   and sidecar indexes.

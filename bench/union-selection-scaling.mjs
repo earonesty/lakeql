@@ -15,6 +15,8 @@ function input(pool, values) {
 }
 function depth(vector) {
   if (vector.type === "dict") return 1 + depth(vector.dictionary);
+  if (vector.type === "list") return depth(vector.child);
+  if (vector.type === "struct") return Math.max(0, ...Object.values(vector.fields).map(depth));
   if (vector.type !== "union") return 0;
   return 1 + Math.max(0, ...vector.children.map(depth));
 }

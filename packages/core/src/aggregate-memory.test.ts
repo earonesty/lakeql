@@ -103,9 +103,16 @@ describe("buffering aggregate memory", () => {
     expectSerialisedSizes(unbudgeted);
 
     // Restored from a snapshot, as in deployment fan-in.
-    const restored = restoreVectorAggregateStates(
-      JSON.parse(JSON.stringify(snapshotVectorAggregateStates(unbudgeted))),
-    );
+    const checkpoint = snapshotVectorAggregateStates(unbudgeted);
+    // Non-finite values serialize to null, which is not a valid numeric
+    // checkpoint entry. Keep this accounting lifecycle fixture serializable.
+    for (const state of Object.values(checkpoint)) {
+      if (state.op === "median" || state.op === "quantile")
+        state.values = state.values.map((value) =>
+          typeof value === "number" && !Number.isFinite(value) ? 0 : value,
+        ) as typeof state.values;
+    }
+    const restored = restoreVectorAggregateStates(JSON.parse(JSON.stringify(checkpoint)));
     updateVectorAggregateStates(restored, spec, batch(17, 13), undefined, options);
     expectSerialisedSizes(restored);
   });

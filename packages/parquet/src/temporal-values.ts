@@ -4,7 +4,8 @@ import { MATERIALIZATION_CHARGES as c, type MemoryScope } from "lakeql-core";
 import { int96EpochNanos, type TemporalColumnDecoder } from "./int96-interpretation.js";
 
 /** Known temporal conversions create one output array and per-value objects.
- * Reserve before invoking parsers; decoded physical input remains separately owned.
+ * With a scope, reserve before invoking parsers; unscoped callers use upstream
+ * allocation behavior. Decoded physical input remains separately owned.
  */
 export function convertTemporalValues(
   values: DecodedArray,
