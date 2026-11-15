@@ -4,7 +4,7 @@ import { DEFAULT_PARSERS } from "hyparquet/src/convert.js";
 import { convertMetadata } from "hyparquet/src/metadata.js";
 import type { ThriftObject, ThriftType } from "hyparquet/src/types.js";
 import { isLakeqlError, LakeqlError, MATERIALIZATION_CHARGES, type MemoryScope } from "lakeql-core";
-import { planCompactAllocation } from "./compact-allocation.js";
+import { consumeCompactRange, planCompactAllocation } from "./compact-allocation.js";
 import { type CompactProjection, readCompactHeader } from "./compact-header.js";
 import { convertDecimalValue, isDecimal, isIntegerDecimal } from "./decimal.js";
 import { columnRawAliasBytes, rowGroupRawAliasBytes } from "./metadata-aliases.js";
@@ -344,22 +344,14 @@ export function decodeRowGroupMetadata(
             // materializing it. Only the current column's raw tree needs admission.
             list: false,
             visitRange: (start, end, index) => {
-              const columnReader = { view, offset: start };
-              const columnScratch = scope.childStage(
-                planCompactAllocation(columnReader, COLUMN_CHUNK_PROJECTION),
-                "raw compact column metadata",
+              consumeCompactRange(
+                view,
+                start,
+                end,
+                COLUMN_CHUNK_PROJECTION,
+                scope,
+                (value, scratch) => append(value, index, scratch),
               );
-              try {
-                const value = readCompactHeader(columnReader, COLUMN_CHUNK_PROJECTION);
-                if (columnReader.offset !== end)
-                  throw new LakeqlError(
-                    "LAKEQL_PARQUET_READ_ERROR",
-                    "Invalid column metadata extent",
-                  );
-                append(value, index, columnScratch);
-              } finally {
-                columnScratch.dispose();
-              }
             },
           },
     ...ROW_GROUP_FIELDS_PROJECTION,

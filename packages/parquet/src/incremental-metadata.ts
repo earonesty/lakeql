@@ -2,10 +2,16 @@ import type { SchemaElement } from "hyparquet";
 import { ConvertedTypes, FieldRepetitionTypes, ParquetTypes } from "hyparquet/src/constants.js";
 import type { ThriftObject, ThriftType } from "hyparquet/src/types.js";
 import { LakeqlError, MATERIALIZATION_CHARGES, type MemoryScope } from "lakeql-core";
-import { readAdmittedCompactHeader } from "./compact-allocation.js";
-import { type CompactAllocation, readCompactHeader } from "./compact-header.js";
+import { consumeCompactRange, readAdmittedCompactHeader } from "./compact-allocation.js";
+import {
+  type CompactAllocation,
+  type CompactProjection,
+  type CompactStructListProjection,
+  readCompactHeader,
+} from "./compact-header.js";
 import { markGeoMetadata } from "./geo-metadata.js";
 import { convertLogicalMetadata } from "./logical-metadata.js";
+import { rawMetadataValueBytes } from "./metadata-aliases.js";
 import { decodeMetadataText } from "./metadata-text.js";
 import {
   COLUMN_CHUNK_PROJECTION,
@@ -49,12 +55,23 @@ export function readParquetFooterEnvelope(
       ? readCompactHeader
       : (reader, projection, counts, admit) =>
           readAdmittedCompactHeader(reader, scope, projection, counts, admit);
+  const entries = (
+    projection: CompactProjection,
+    consume: (value: ThriftObject, scratch?: MemoryScope) => void,
+  ): CompactStructListProjection =>
+    scope === undefined
+      ? { list: projection, visit: (value) => consume(value as ThriftObject) }
+      : {
+          list: false,
+          visitRange: (start, end) =>
+            consumeCompactRange(metadataView, start, end, projection, scope, consume, admitRaw),
+        };
   const raw = read(
     envelopeReader,
     {
       1: "i32",
-      2: {
-        list: {
+      2: entries(
+        {
           1: "i32",
           2: "i32",
           3: "i32",
@@ -66,9 +83,25 @@ export function readParquetFooterEnvelope(
           9: "i32",
           10: true,
         },
-        visit: (value) => {
-          const field = value as ThriftObject;
-          allocate(cost.arraySlot + cost.object + 10 * cost.property, () =>
+        (field, scratch) => {
+          allocate(cost.arraySlot + cost.object + 10 * cost.property, () => {
+            const rawLogical = object(field.field_10);
+            const logical = convertLogicalMetadata(rawLogical, scope);
+            // Unknown logical unions intentionally preserve their raw shape.
+            // Transfer this entry's admission before releasing its scratch.
+            if (
+              rawLogical !== undefined &&
+              logical === rawLogical &&
+              scope !== undefined &&
+              scratch !== undefined
+            )
+              scope.allocateReserved(
+                scratch.reserve(
+                  rawMetadataValueBytes(rawLogical),
+                  "retained unknown logical metadata",
+                ),
+                () => undefined,
+              );
             schema.push({
               type: ParquetTypes[field.field_1 as number],
               type_length: field.field_2,
@@ -79,11 +112,11 @@ export function readParquetFooterEnvelope(
               scale: field.field_7,
               precision: field.field_8,
               field_id: field.field_9,
-              logical_type: convertLogicalMetadata(object(field.field_10), scope),
-            } as SchemaElement),
-          );
+              logical_type: logical,
+            } as SchemaElement);
+          });
         },
-      },
+      ),
       3: "i64",
       4: {
         list: false,
@@ -92,18 +125,14 @@ export function readParquetFooterEnvelope(
             throw new LakeqlError("LAKEQL_PARQUET_READ_ERROR", "Duplicate footer row-group list");
         },
       },
-      5: {
-        list: { 1: "binary", 2: "binary" },
-        visit: (value) => {
-          const kv = value as ThriftObject;
-          allocate(cost.arraySlot + cost.object + 2 * cost.property, () =>
-            keyValues.push({
-              key: text(kv.field_1, scope),
-              value: text(kv.field_2, scope),
-            } as NonNullable<ParquetMetadata["key_value_metadata"]>[number]),
-          );
-        },
-      },
+      5: entries({ 1: "binary", 2: "binary" }, (kv) => {
+        allocate(cost.arraySlot + cost.object + 2 * cost.property, () =>
+          keyValues.push({
+            key: text(kv.field_1, scope),
+            value: text(kv.field_2, scope),
+          } as NonNullable<ParquetMetadata["key_value_metadata"]>[number]),
+        );
+      }),
       6: "binary",
     },
     undefined,

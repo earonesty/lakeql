@@ -1,0 +1,35 @@
+{
+  "status": "validated; broader audit remains open",
+  "baseline": "ba8ce18",
+  "contract": "Owned footer schema and key/value entries are decoded and converted one at a time using consumeCompactRange. Raw scratch releases after each entry. Column metadata uses the same helper. Unknown logical unions preserve their raw representation by transferring explicitly sized raw aliases into the output scope before scratch release. Borrowed conversion remains unchanged.",
+  "memory": "128-column/key-value fixture retained modeled bytes fall from 361786 to 150966 (58.27%). One-entry reservation maximum stays constant for 8/32/128-entry fixtures; output metadata still scales with input size. Footer backing and VM/parser-stack overhead are not included in this envelope-only model.",
+  "performance": "Repeated envelope width-matrix sums: 2.2856 \u2192 2.3954 ms and 2.5113 \u2192 2.5636 ms (about 2\u20135% CPU overhead). Complete metadata-enabled cold/warm Parquet query medians: 305.93 \u2192 301.78 ms and 307.59 \u2192 317.10 ms; direction varies, with about 3% overhead in the repeat. No speedup claim. All variants check metadata/rows, warm reuse and zero final charges.",
+  "tests": [
+    "Generated real Parquet schemas and key/value metadata match independent hyparquet metadata conversion at 8/32/128 columns",
+    "Exact measured peak and one byte short, output transfer and zero cleanup",
+    "Encoded unknown logical union retains binary and bigint-list aliases after scratch/output-scope disposal",
+    "Shared helper rejects invalid range extents and releases scratch on conversion failure"
+  ],
+  "remaining": ["Broader parser/converter allocation integration and whole-runtime acceptance"],
+  "cloud": {
+    "scenarios": 52,
+    "queryHeadroomBytes": 524288,
+    "peakIncrementalChargedBytes": 384214
+  },
+  "completeQueryPeakBytes": {
+    "prior": 2614821,
+    "current": 2612309
+  },
+  "validation": {
+    "regularPassed": 4071,
+    "regularSkipped": 645,
+    "workerPassed": 95,
+    "conformancePassed": 520,
+    "conformanceGuardSkipped": 1,
+    "referencePassed": 120,
+    "releaseChecks": "build, types, compatibility, large files, package consumers, changeset, fixtures and lint passed",
+    "rerun": "Initial regular run had one unchanged gzip timeout; --maxWorkers=4 passed with unchanged timeouts/assertions."
+  },
+  "negativeControl": "Per-entry scratch regression fails on ba8ce18 incremental-metadata.ts. Candidate restored byte-for-byte; focused envelope/helper tests pass.",
+  "limits": "Reported admission savings concern root-budget envelope decoding. Fixed parent-stage extents retain their existing monotonic consumption contract. Footer backing, VM/parser-stack overhead and delayed GC are not total-heap guarantees."
+}

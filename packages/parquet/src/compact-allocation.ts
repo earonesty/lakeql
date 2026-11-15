@@ -48,3 +48,36 @@ export function readAdmittedCompactHeader(
     readCompactHeader(reader, projection, counts, admit),
   ).value;
 }
+
+/** Consume a previously validated compact struct range with one raw-entry stage.
+ * Consumers convert into their output scope and transfer any surviving raw aliases
+ * from scratch before returning. Sibling entries do not retain raw trees.
+ */
+export function consumeCompactRange<T>(
+  view: DataView,
+  start: number,
+  end: number,
+  projection: CompactProjection,
+  scope: MemoryScope,
+  consume: (value: ThriftObject, scratch: MemoryScope) => T,
+  admit?: (allocation: CompactAllocation) => void,
+): T {
+  if (
+    !Number.isSafeInteger(start) ||
+    !Number.isSafeInteger(end) ||
+    start < 0 ||
+    end <= start ||
+    end > view.byteLength
+  )
+    throw new LakeqlError("LAKEQL_PARQUET_READ_ERROR", "Invalid compact metadata range");
+  const reader = { view, offset: start };
+  const scratch = scope.childStage(planCompactAllocation(reader, projection), "raw compact entry");
+  try {
+    const value = readCompactHeader(reader, projection, undefined, admit);
+    if (reader.offset !== end)
+      throw new LakeqlError("LAKEQL_PARQUET_READ_ERROR", "Invalid compact metadata extent");
+    return consume(value, scratch);
+  } finally {
+    scratch.dispose();
+  }
+}

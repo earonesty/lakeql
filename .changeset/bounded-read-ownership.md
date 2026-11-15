@@ -478,3 +478,5 @@ keys before read-ahead. Private cache identities omit redundant paths; shared
 identities preserve file boundaries. Private `maxBytes` now includes retained
 entry metadata, and its configured allocation pool is honored. Tiny cache budgets
 may decline retention/read-ahead while demanded reads use exact ranges.
+
+Owned footer schema and key/value conversion releases raw metadata scratch per entry. Column conversion shares the same range helper; unknown logical metadata retains its raw aliases under the output owner.

@@ -1,6 +1,10 @@
 import { MATERIALIZATION_CHARGES, MemoryBudget, MemoryScope } from "lakeql-core";
 import { expect, it } from "vitest";
-import { planCompactAllocation, readAdmittedCompactHeader } from "./compact-allocation.js";
+import {
+  consumeCompactRange,
+  planCompactAllocation,
+  readAdmittedCompactHeader,
+} from "./compact-allocation.js";
 import type { CompactProjection } from "./compact-header.js";
 
 const reader = (bytes: number[]) => ({
@@ -80,5 +84,32 @@ it("validates malformed extents before admission and does not charge borrowed by
   const small = planCompactAllocation(reader([0x18, 1, 42, 0]));
   const large = planCompactAllocation(reader([0x18, 100, ...Array(100).fill(42), 0]));
   expect(large).toBe(small);
+  scope.dispose();
+});
+
+it("releases entry scratch on conversion failure and rejected range extents", () => {
+  const input = reader([0x15, 2, 0]);
+  const scope = new MemoryScope(new MemoryBudget(4096));
+  expect(consumeCompactRange(input.view, 0, 3, { 1: "i32" }, scope, (raw) => raw.field_1)).toBe(1);
+  expect(scope.budget.usedBytes).toBe(0);
+  expect(() =>
+    consumeCompactRange(input.view, 0, 3, { 1: "i32" }, scope, () => {
+      throw new Error("conversion failed");
+    }),
+  ).toThrow("conversion failed");
+  expect(scope.budget.usedBytes).toBe(0);
+  for (const [start, end] of [
+    [-1, 3],
+    [0, 0],
+    [0, 4],
+    [0, 2],
+  ]) {
+    expect(() =>
+      consumeCompactRange(input.view, start as number, end as number, { 1: "i32" }, scope, () => {
+        throw new Error("must not convert");
+      }),
+    ).toThrow(/compact metadata/);
+    expect(scope.budget.usedBytes).toBe(0);
+  }
   scope.dispose();
 });

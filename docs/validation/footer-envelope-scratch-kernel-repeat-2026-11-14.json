@@ -1,0 +1,338 @@
+{
+  "baseline": "ba8ce18",
+  "benchmarkName": "footer-envelope-query.mjs",
+  "moduleName": "parquet/compact-allocation,parquet/incremental-metadata,parquet/row-group-metadata",
+  "modules": [
+    {
+      "name": "parquet/compact-allocation",
+      "baselineSourceSha256": "cddf4353ebd43b60fe4f68080268fb9ab20c610c1656c74ffaa946e8f5aad6a2",
+      "currentSourceSha256": "38f8a4a67c05a3b952abd02f5d9c9889ef3fd159e77e59f040af21888e79a8c5"
+    },
+    {
+      "name": "parquet/incremental-metadata",
+      "baselineSourceSha256": "8e27cb8af3ef98727da5bea7e930842c3569bcac1900df216d8e0111d75cd82a",
+      "currentSourceSha256": "54b2aa6f4fcf49e92226c4c724e5d89d3269fee2e9d7ce1f48d091f13c7f18f8"
+    },
+    {
+      "name": "parquet/row-group-metadata",
+      "baselineSourceSha256": "bd1499eb77682929e11afde75f675810d2c87c84c64bc177a4bf2a296892cdd2",
+      "currentSourceSha256": "04034a83f9d40046dc188a088fa265155f4bae7bd7f84c167dc515de076c68e1"
+    }
+  ],
+  "node": "v24.18.1",
+  "warmupPairs": 1,
+  "measuredPairs": 4,
+  "scope": "Alternating fresh Node processes; the named modules are replaced together by their prior implementations, with current dependencies. The recorded benchmark identifies its fixture and checks; these are local queries, not cloud throughput. Source store/runtime overhead excluded from pool metrics. Value parity is covered by external conformance; benchmark checks count and release.",
+  "priorMedianMs": 2.511257675,
+  "currentMedianMs": 2.5636414750000016,
+  "runs": {
+    "prior": [
+      {
+        "cases": [
+          {
+            "width": 1,
+            "fixtureSha256": "fec659e884132c348bae44e6f41ced9e735f51260b688963532dc68d0fded08d",
+            "elapsedMs": 0.035516450000000074,
+            "peakBytes": 6694,
+            "retainedBytes": 6694,
+            "afterReleaseBytes": 0
+          },
+          {
+            "width": 8,
+            "fixtureSha256": "4907a836804333f0492933a8d4313b9ecc1eb8324c6281a5d7a18e6603d0e135",
+            "elapsedMs": 0.19765005000000002,
+            "peakBytes": 26266,
+            "retainedBytes": 26266,
+            "afterReleaseBytes": 0
+          },
+          {
+            "width": 32,
+            "fixtureSha256": "d0802dbfe1568c34b266c12f91f1d7aeb2f8b9291cfcfacc888fb9d9bbbf0995",
+            "elapsedMs": 0.5437559500000007,
+            "peakBytes": 93370,
+            "retainedBytes": 93370,
+            "afterReleaseBytes": 0
+          },
+          {
+            "width": 128,
+            "fixtureSha256": "e923d0b9cc0da1afb97931e53922cce9000ea59182682f1561690d0ff603376f",
+            "elapsedMs": 1.7880187000000007,
+            "peakBytes": 361786,
+            "retainedBytes": 361786,
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 2.5649411500000014,
+        "scope": "Generated valid Parquet footer envelope decoding, matching all schema/key-value metadata. Fixed 16 MiB pool; fixture backing/runtime excluded. Local CPU and modeled admission, not cloud throughput or total heap."
+      },
+      {
+        "cases": [
+          {
+            "width": 1,
+            "fixtureSha256": "fec659e884132c348bae44e6f41ced9e735f51260b688963532dc68d0fded08d",
+            "elapsedMs": 0.033587299999999945,
+            "peakBytes": 6694,
+            "retainedBytes": 6694,
+            "afterReleaseBytes": 0
+          },
+          {
+            "width": 8,
+            "fixtureSha256": "4907a836804333f0492933a8d4313b9ecc1eb8324c6281a5d7a18e6603d0e135",
+            "elapsedMs": 0.1784999499999998,
+            "peakBytes": 26266,
+            "retainedBytes": 26266,
+            "afterReleaseBytes": 0
+          },
+          {
+            "width": 32,
+            "fixtureSha256": "d0802dbfe1568c34b266c12f91f1d7aeb2f8b9291cfcfacc888fb9d9bbbf0995",
+            "elapsedMs": 0.5308310500000004,
+            "peakBytes": 93370,
+            "retainedBytes": 93370,
+            "afterReleaseBytes": 0
+          },
+          {
+            "width": 128,
+            "fixtureSha256": "e923d0b9cc0da1afb97931e53922cce9000ea59182682f1561690d0ff603376f",
+            "elapsedMs": 1.5952949499999989,
+            "peakBytes": 361786,
+            "retainedBytes": 361786,
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 2.338213249999999,
+        "scope": "Generated valid Parquet footer envelope decoding, matching all schema/key-value metadata. Fixed 16 MiB pool; fixture backing/runtime excluded. Local CPU and modeled admission, not cloud throughput or total heap."
+      },
+      {
+        "cases": [
+          {
+            "width": 1,
+            "fixtureSha256": "fec659e884132c348bae44e6f41ced9e735f51260b688963532dc68d0fded08d",
+            "elapsedMs": 0.035577049999999846,
+            "peakBytes": 6694,
+            "retainedBytes": 6694,
+            "afterReleaseBytes": 0
+          },
+          {
+            "width": 8,
+            "fixtureSha256": "4907a836804333f0492933a8d4313b9ecc1eb8324c6281a5d7a18e6603d0e135",
+            "elapsedMs": 0.19727585000000047,
+            "peakBytes": 26266,
+            "retainedBytes": 26266,
+            "afterReleaseBytes": 0
+          },
+          {
+            "width": 32,
+            "fixtureSha256": "d0802dbfe1568c34b266c12f91f1d7aeb2f8b9291cfcfacc888fb9d9bbbf0995",
+            "elapsedMs": 0.4843529500000002,
+            "peakBytes": 93370,
+            "retainedBytes": 93370,
+            "afterReleaseBytes": 0
+          },
+          {
+            "width": 128,
+            "fixtureSha256": "e923d0b9cc0da1afb97931e53922cce9000ea59182682f1561690d0ff603376f",
+            "elapsedMs": 1.7880468000000007,
+            "peakBytes": 361786,
+            "retainedBytes": 361786,
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 2.505252650000001,
+        "scope": "Generated valid Parquet footer envelope decoding, matching all schema/key-value metadata. Fixed 16 MiB pool; fixture backing/runtime excluded. Local CPU and modeled admission, not cloud throughput or total heap."
+      },
+      {
+        "cases": [
+          {
+            "width": 1,
+            "fixtureSha256": "fec659e884132c348bae44e6f41ced9e735f51260b688963532dc68d0fded08d",
+            "elapsedMs": 0.055049250000000424,
+            "peakBytes": 6694,
+            "retainedBytes": 6694,
+            "afterReleaseBytes": 0
+          },
+          {
+            "width": 8,
+            "fixtureSha256": "4907a836804333f0492933a8d4313b9ecc1eb8324c6281a5d7a18e6603d0e135",
+            "elapsedMs": 0.18864204999999998,
+            "peakBytes": 26266,
+            "retainedBytes": 26266,
+            "afterReleaseBytes": 0
+          },
+          {
+            "width": 32,
+            "fixtureSha256": "d0802dbfe1568c34b266c12f91f1d7aeb2f8b9291cfcfacc888fb9d9bbbf0995",
+            "elapsedMs": 0.47883704999999993,
+            "peakBytes": 93370,
+            "retainedBytes": 93370,
+            "afterReleaseBytes": 0
+          },
+          {
+            "width": 128,
+            "fixtureSha256": "e923d0b9cc0da1afb97931e53922cce9000ea59182682f1561690d0ff603376f",
+            "elapsedMs": 1.7947343499999988,
+            "peakBytes": 361786,
+            "retainedBytes": 361786,
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 2.517262699999999,
+        "scope": "Generated valid Parquet footer envelope decoding, matching all schema/key-value metadata. Fixed 16 MiB pool; fixture backing/runtime excluded. Local CPU and modeled admission, not cloud throughput or total heap."
+      }
+    ],
+    "current": [
+      {
+        "cases": [
+          {
+            "width": 1,
+            "fixtureSha256": "fec659e884132c348bae44e6f41ced9e735f51260b688963532dc68d0fded08d",
+            "elapsedMs": 0.056577649999999834,
+            "peakBytes": 4408,
+            "retainedBytes": 4408,
+            "afterReleaseBytes": 0
+          },
+          {
+            "width": 8,
+            "fixtureSha256": "4907a836804333f0492933a8d4313b9ecc1eb8324c6281a5d7a18e6603d0e135",
+            "elapsedMs": 0.15620195000000053,
+            "peakBytes": 12486,
+            "retainedBytes": 12486,
+            "afterReleaseBytes": 0
+          },
+          {
+            "width": 32,
+            "fixtureSha256": "d0802dbfe1568c34b266c12f91f1d7aeb2f8b9291cfcfacc888fb9d9bbbf0995",
+            "elapsedMs": 0.6593497999999997,
+            "peakBytes": 40182,
+            "retainedBytes": 40182,
+            "afterReleaseBytes": 0
+          },
+          {
+            "width": 128,
+            "fixtureSha256": "e923d0b9cc0da1afb97931e53922cce9000ea59182682f1561690d0ff603376f",
+            "elapsedMs": 1.784042199999999,
+            "peakBytes": 150966,
+            "retainedBytes": 150966,
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 2.656171599999999,
+        "scope": "Generated valid Parquet footer envelope decoding, matching all schema/key-value metadata. Fixed 16 MiB pool; fixture backing/runtime excluded. Local CPU and modeled admission, not cloud throughput or total heap."
+      },
+      {
+        "cases": [
+          {
+            "width": 1,
+            "fixtureSha256": "fec659e884132c348bae44e6f41ced9e735f51260b688963532dc68d0fded08d",
+            "elapsedMs": 0.062168200000000694,
+            "peakBytes": 4408,
+            "retainedBytes": 4408,
+            "afterReleaseBytes": 0
+          },
+          {
+            "width": 8,
+            "fixtureSha256": "4907a836804333f0492933a8d4313b9ecc1eb8324c6281a5d7a18e6603d0e135",
+            "elapsedMs": 0.21347489999999994,
+            "peakBytes": 12486,
+            "retainedBytes": 12486,
+            "afterReleaseBytes": 0
+          },
+          {
+            "width": 32,
+            "fixtureSha256": "d0802dbfe1568c34b266c12f91f1d7aeb2f8b9291cfcfacc888fb9d9bbbf0995",
+            "elapsedMs": 0.7497672499999993,
+            "peakBytes": 40182,
+            "retainedBytes": 40182,
+            "afterReleaseBytes": 0
+          },
+          {
+            "width": 128,
+            "fixtureSha256": "e923d0b9cc0da1afb97931e53922cce9000ea59182682f1561690d0ff603376f",
+            "elapsedMs": 1.578443200000001,
+            "peakBytes": 150966,
+            "retainedBytes": 150966,
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 2.603853550000001,
+        "scope": "Generated valid Parquet footer envelope decoding, matching all schema/key-value metadata. Fixed 16 MiB pool; fixture backing/runtime excluded. Local CPU and modeled admission, not cloud throughput or total heap."
+      },
+      {
+        "cases": [
+          {
+            "width": 1,
+            "fixtureSha256": "fec659e884132c348bae44e6f41ced9e735f51260b688963532dc68d0fded08d",
+            "elapsedMs": 0.06778475000000057,
+            "peakBytes": 4408,
+            "retainedBytes": 4408,
+            "afterReleaseBytes": 0
+          },
+          {
+            "width": 8,
+            "fixtureSha256": "4907a836804333f0492933a8d4313b9ecc1eb8324c6281a5d7a18e6603d0e135",
+            "elapsedMs": 0.19628244999999964,
+            "peakBytes": 12486,
+            "retainedBytes": 12486,
+            "afterReleaseBytes": 0
+          },
+          {
+            "width": 32,
+            "fixtureSha256": "d0802dbfe1568c34b266c12f91f1d7aeb2f8b9291cfcfacc888fb9d9bbbf0995",
+            "elapsedMs": 0.6418408,
+            "peakBytes": 40182,
+            "retainedBytes": 40182,
+            "afterReleaseBytes": 0
+          },
+          {
+            "width": 128,
+            "fixtureSha256": "e923d0b9cc0da1afb97931e53922cce9000ea59182682f1561690d0ff603376f",
+            "elapsedMs": 1.5707762500000002,
+            "peakBytes": 150966,
+            "retainedBytes": 150966,
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 2.4766842500000004,
+        "scope": "Generated valid Parquet footer envelope decoding, matching all schema/key-value metadata. Fixed 16 MiB pool; fixture backing/runtime excluded. Local CPU and modeled admission, not cloud throughput or total heap."
+      },
+      {
+        "cases": [
+          {
+            "width": 1,
+            "fixtureSha256": "fec659e884132c348bae44e6f41ced9e735f51260b688963532dc68d0fded08d",
+            "elapsedMs": 0.06712150000000036,
+            "peakBytes": 4408,
+            "retainedBytes": 4408,
+            "afterReleaseBytes": 0
+          },
+          {
+            "width": 8,
+            "fixtureSha256": "4907a836804333f0492933a8d4313b9ecc1eb8324c6281a5d7a18e6603d0e135",
+            "elapsedMs": 0.16107259999999995,
+            "peakBytes": 12486,
+            "retainedBytes": 12486,
+            "afterReleaseBytes": 0
+          },
+          {
+            "width": 32,
+            "fixtureSha256": "d0802dbfe1568c34b266c12f91f1d7aeb2f8b9291cfcfacc888fb9d9bbbf0995",
+            "elapsedMs": 0.6294995499999999,
+            "peakBytes": 40182,
+            "retainedBytes": 40182,
+            "afterReleaseBytes": 0
+          },
+          {
+            "width": 128,
+            "fixtureSha256": "e923d0b9cc0da1afb97931e53922cce9000ea59182682f1561690d0ff603376f",
+            "elapsedMs": 1.6657357500000018,
+            "peakBytes": 150966,
+            "retainedBytes": 150966,
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 2.523429400000002,
+        "scope": "Generated valid Parquet footer envelope decoding, matching all schema/key-value metadata. Fixed 16 MiB pool; fixture backing/runtime excluded. Local CPU and modeled admission, not cloud throughput or total heap."
+      }
+    ]
+  }
+}
