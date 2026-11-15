@@ -1,6 +1,7 @@
 import { type MemoryBudget, MemoryScope, type OwnedMemory, throwIfAborted } from "lakeql-core";
 import { parquetBatchSize } from "./batch-size.js";
 import { readOwnedParquetColumnBatches } from "./column-batches.js";
+import { prefixDecodedCacheKey } from "./decoded-column-cache.js";
 import { iterateIndexedGroups } from "./indexed-row-group-plan.js";
 import { canReadNestedRowGroupBatches } from "./nested-read-capability.js";
 import { readNestedRowGroupBatches } from "./nested-row-group-read.js";
@@ -132,7 +133,10 @@ export async function* readOwnedParquetVectorBatches(
             ...(options.decodedColumnCacheKey === undefined
               ? {}
               : {
-                  decodedColumnCacheKey: `owned-row-group:${rowGroupStart}:${options.decodedColumnCacheKey}`,
+                  decodedColumnCacheKey: prefixDecodedCacheKey(
+                    `owned-row-group:${rowGroupStart}:`,
+                    options.decodedColumnCacheKey,
+                  ),
                 }),
             allocationScope: stage.allocations,
             pageAllocationLifetime: "iteration" as const,

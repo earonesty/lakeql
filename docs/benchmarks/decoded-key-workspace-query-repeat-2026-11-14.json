@@ -1,0 +1,272 @@
+{
+  "baseline": "9155bcd",
+  "benchmarkName": "decoded-cache-query.mjs",
+  "moduleName": "core/object-store-cache,parquet/decoded-column-cache,parquet/column-batches,parquet/vector-batches,parquet/numeric-page-alignment,parquet/owned-vector-batches,parquet/nested-column-pages,parquet/nested-page-cache-key,parquet/cached-page-window",
+  "modules": [
+    {
+      "name": "core/object-store-cache",
+      "baselineSourceSha256": "b7468973eedc3edcc6e7b2d0b3ba38837edf735202aa00d780c69ee6f361a0a7",
+      "currentSourceSha256": "406d8a9704ecba60cf9909854d0053d2e189143a9c1ae88bf94ec2f4e9b4daed"
+    },
+    {
+      "name": "parquet/decoded-column-cache",
+      "baselineSourceSha256": "82adb399e62819a8bf9e7990714ef145db51c6a0a04f923e1f86fd2a346fbc63",
+      "currentSourceSha256": "c5a56c3c811bcb965560b1dd2a5cb947d3874df454e23fdb04d8e54649bfd370"
+    },
+    {
+      "name": "parquet/column-batches",
+      "baselineSourceSha256": "a0301a22bd8e751eb22cf49dd561717aa664b9d967f6a739aee0bcc68cf73408",
+      "currentSourceSha256": "7b11ad00afd2a522eb90b2772118499459c7689889e737ebcac070e6fa6014c5"
+    },
+    {
+      "name": "parquet/vector-batches",
+      "baselineSourceSha256": "0da3d564eb4760eee8a9e3e80c8c324afb5a3c76a4d2b26c94ad069c0b73edbe",
+      "currentSourceSha256": "6860259de094b0d96b3964a7664ecac3e373cc35b64677a92717ca8650e25463"
+    },
+    {
+      "name": "parquet/numeric-page-alignment",
+      "baselineSourceSha256": "c3ab3e2d88170551bc2f595c875f0eb6f29341db27edaa8fbcc008a8265a2a35",
+      "currentSourceSha256": "19779e5f7e1d25198826a77b3bbb57f1ff0e41fb13e3bebb2455204b520e5f10"
+    },
+    {
+      "name": "parquet/owned-vector-batches",
+      "baselineSourceSha256": "9ac405d3fc76ecd11652f6f1c5f552a6adc4b30e0411d4fb3073e36065c84fff",
+      "currentSourceSha256": "04f0b8cc9749e50cbb11455cced7cc20037762c8a5daf308819dd8a383adaa4d"
+    },
+    {
+      "name": "parquet/nested-column-pages",
+      "baselineSourceSha256": "64f0ec2685a4680468c5f68dcf806d6e0b05d67711188b5b9c5572d960d77c66",
+      "currentSourceSha256": "210aca021cd59c6b267ba2114fa390b0ba11875201d5be7f97062f8de981a1bc"
+    },
+    {
+      "name": "parquet/nested-page-cache-key",
+      "baselineSourceSha256": "1c82dc8e63cbcd0d33b670f6174bed042e03a384eb766ca519696a93ea8a8814",
+      "currentSourceSha256": "8b1abc11b694d60771950fd1390f8b2a688c00867366173730c18418e1c9f4da"
+    },
+    {
+      "name": "parquet/cached-page-window",
+      "baselineSourceSha256": "f901372b03963d831e869d86db41977b14e0998e583799c46d92e24f2d03f7f9",
+      "currentSourceSha256": "ba4c9def08edd916ab81ced7e7cd4e87d78c70aa36d2300eb99f4cf0caca54f0"
+    }
+  ],
+  "node": "v24.18.1",
+  "warmupPairs": 1,
+  "measuredPairs": 4,
+  "scope": "Alternating fresh Node processes; the named modules are replaced together by their prior implementations, with current dependencies. The recorded benchmark identifies its fixture and checks; these are local queries, not cloud throughput. Source store/runtime overhead excluded from pool metrics. Value parity is covered by external conformance; benchmark checks count and release.",
+  "priorMedianMs": 297.81390300000004,
+  "currentMedianMs": 301.32987499999996,
+  "runs": {
+    "prior": [
+      {
+        "fixtureSha256": "8121df53dafa145cfdd37fa7b103ad6241fb2d00d4f6d698a31eaa51a7222d4d",
+        "rowsPerQuery": 512,
+        "poolBytes": 67108864,
+        "cacheCapacityBytes": 16777216,
+        "runs": [
+          {
+            "temperature": "cold",
+            "elapsedMs": 196.18478000000005,
+            "requests": 2,
+            "decodedHits": 0,
+            "retainedBytes": 2932522
+          },
+          {
+            "temperature": "warm",
+            "elapsedMs": 101.555702,
+            "requests": 0,
+            "decodedHits": 1024,
+            "retainedBytes": 2932522
+          }
+        ],
+        "elapsedMs": 297.74048200000004,
+        "peakBytes": 3124138,
+        "afterReleaseBytes": 0,
+        "scope": "Decoded-cache-enabled cold/warm owned queries over a real external many-page Parquet fixture in memoryStore; source storage, oracle copy and runtime heap excluded. No cloud-throughput claim."
+      },
+      {
+        "fixtureSha256": "8121df53dafa145cfdd37fa7b103ad6241fb2d00d4f6d698a31eaa51a7222d4d",
+        "rowsPerQuery": 512,
+        "poolBytes": 67108864,
+        "cacheCapacityBytes": 16777216,
+        "runs": [
+          {
+            "temperature": "cold",
+            "elapsedMs": 192.63512099999997,
+            "requests": 2,
+            "decodedHits": 0,
+            "retainedBytes": 2932522
+          },
+          {
+            "temperature": "warm",
+            "elapsedMs": 97.43868800000001,
+            "requests": 0,
+            "decodedHits": 1024,
+            "retainedBytes": 2932522
+          }
+        ],
+        "elapsedMs": 290.073809,
+        "peakBytes": 3124138,
+        "afterReleaseBytes": 0,
+        "scope": "Decoded-cache-enabled cold/warm owned queries over a real external many-page Parquet fixture in memoryStore; source storage, oracle copy and runtime heap excluded. No cloud-throughput claim."
+      },
+      {
+        "fixtureSha256": "8121df53dafa145cfdd37fa7b103ad6241fb2d00d4f6d698a31eaa51a7222d4d",
+        "rowsPerQuery": 512,
+        "poolBytes": 67108864,
+        "cacheCapacityBytes": 16777216,
+        "runs": [
+          {
+            "temperature": "cold",
+            "elapsedMs": 196.09754,
+            "requests": 2,
+            "decodedHits": 0,
+            "retainedBytes": 2932522
+          },
+          {
+            "temperature": "warm",
+            "elapsedMs": 101.789784,
+            "requests": 0,
+            "decodedHits": 1024,
+            "retainedBytes": 2932522
+          }
+        ],
+        "elapsedMs": 297.88732400000004,
+        "peakBytes": 3124138,
+        "afterReleaseBytes": 0,
+        "scope": "Decoded-cache-enabled cold/warm owned queries over a real external many-page Parquet fixture in memoryStore; source storage, oracle copy and runtime heap excluded. No cloud-throughput claim."
+      },
+      {
+        "fixtureSha256": "8121df53dafa145cfdd37fa7b103ad6241fb2d00d4f6d698a31eaa51a7222d4d",
+        "rowsPerQuery": 512,
+        "poolBytes": 67108864,
+        "cacheCapacityBytes": 16777216,
+        "runs": [
+          {
+            "temperature": "cold",
+            "elapsedMs": 198.04033100000004,
+            "requests": 2,
+            "decodedHits": 0,
+            "retainedBytes": 2932522
+          },
+          {
+            "temperature": "warm",
+            "elapsedMs": 106.80929599999996,
+            "requests": 0,
+            "decodedHits": 1024,
+            "retainedBytes": 2932522
+          }
+        ],
+        "elapsedMs": 304.849627,
+        "peakBytes": 3124138,
+        "afterReleaseBytes": 0,
+        "scope": "Decoded-cache-enabled cold/warm owned queries over a real external many-page Parquet fixture in memoryStore; source storage, oracle copy and runtime heap excluded. No cloud-throughput claim."
+      }
+    ],
+    "current": [
+      {
+        "fixtureSha256": "8121df53dafa145cfdd37fa7b103ad6241fb2d00d4f6d698a31eaa51a7222d4d",
+        "rowsPerQuery": 512,
+        "poolBytes": 67108864,
+        "cacheCapacityBytes": 16777216,
+        "runs": [
+          {
+            "temperature": "cold",
+            "elapsedMs": 204.555197,
+            "requests": 2,
+            "decodedHits": 0,
+            "retainedBytes": 2422570
+          },
+          {
+            "temperature": "warm",
+            "elapsedMs": 99.45476500000001,
+            "requests": 0,
+            "decodedHits": 1024,
+            "retainedBytes": 2422570
+          }
+        ],
+        "elapsedMs": 304.009962,
+        "peakBytes": 2614030,
+        "afterReleaseBytes": 0,
+        "scope": "Decoded-cache-enabled cold/warm owned queries over a real external many-page Parquet fixture in memoryStore; source storage, oracle copy and runtime heap excluded. No cloud-throughput claim."
+      },
+      {
+        "fixtureSha256": "8121df53dafa145cfdd37fa7b103ad6241fb2d00d4f6d698a31eaa51a7222d4d",
+        "rowsPerQuery": 512,
+        "poolBytes": 67108864,
+        "cacheCapacityBytes": 16777216,
+        "runs": [
+          {
+            "temperature": "cold",
+            "elapsedMs": 195.58622699999995,
+            "requests": 2,
+            "decodedHits": 0,
+            "retainedBytes": 2422570
+          },
+          {
+            "temperature": "warm",
+            "elapsedMs": 104.42204900000002,
+            "requests": 0,
+            "decodedHits": 1024,
+            "retainedBytes": 2422570
+          }
+        ],
+        "elapsedMs": 300.00827599999997,
+        "peakBytes": 2614030,
+        "afterReleaseBytes": 0,
+        "scope": "Decoded-cache-enabled cold/warm owned queries over a real external many-page Parquet fixture in memoryStore; source storage, oracle copy and runtime heap excluded. No cloud-throughput claim."
+      },
+      {
+        "fixtureSha256": "8121df53dafa145cfdd37fa7b103ad6241fb2d00d4f6d698a31eaa51a7222d4d",
+        "rowsPerQuery": 512,
+        "poolBytes": 67108864,
+        "cacheCapacityBytes": 16777216,
+        "runs": [
+          {
+            "temperature": "cold",
+            "elapsedMs": 203.36773899999997,
+            "requests": 2,
+            "decodedHits": 0,
+            "retainedBytes": 2422570
+          },
+          {
+            "temperature": "warm",
+            "elapsedMs": 99.28373499999998,
+            "requests": 0,
+            "decodedHits": 1024,
+            "retainedBytes": 2422570
+          }
+        ],
+        "elapsedMs": 302.65147399999995,
+        "peakBytes": 2614030,
+        "afterReleaseBytes": 0,
+        "scope": "Decoded-cache-enabled cold/warm owned queries over a real external many-page Parquet fixture in memoryStore; source storage, oracle copy and runtime heap excluded. No cloud-throughput claim."
+      },
+      {
+        "fixtureSha256": "8121df53dafa145cfdd37fa7b103ad6241fb2d00d4f6d698a31eaa51a7222d4d",
+        "rowsPerQuery": 512,
+        "poolBytes": 67108864,
+        "cacheCapacityBytes": 16777216,
+        "runs": [
+          {
+            "temperature": "cold",
+            "elapsedMs": 199.831257,
+            "requests": 2,
+            "decodedHits": 0,
+            "retainedBytes": 2422570
+          },
+          {
+            "temperature": "warm",
+            "elapsedMs": 94.38539300000002,
+            "requests": 0,
+            "decodedHits": 1024,
+            "retainedBytes": 2422570
+          }
+        ],
+        "elapsedMs": 294.21665,
+        "peakBytes": 2614030,
+        "afterReleaseBytes": 0,
+        "scope": "Decoded-cache-enabled cold/warm owned queries over a real external many-page Parquet fixture in memoryStore; source storage, oracle copy and runtime heap excluded. No cloud-throughput claim."
+      }
+    ]
+  }
+}

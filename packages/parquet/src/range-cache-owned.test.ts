@@ -1,4 +1,5 @@
 import {
+  MATERIALIZATION_CHARGES as c,
   LakeqlError,
   MemoryBudget,
   MemoryScope,
@@ -543,7 +544,10 @@ it("deduplicates in-flight reads across separate job budgets in a shared pool", 
 it.each([
   8, 32,
 ])("preserves higher-priority decoded backing during speculative reads (pool=%s)", async (poolBytes) => {
-  const root = new MemoryBudget(poolBytes + sharedCacheMetadataBytes("decoded-vector:hot-page"));
+  const keyWorkspace = c.string + "decoded-vector:hot-page".length * c.stringCodeUnit;
+  const root = new MemoryBudget(
+    poolBytes + sharedCacheMetadataBytes("decoded-vector:hot-page") + keyWorkspace,
+  );
   const shared = new SharedMemoryCache({
     memoryBudget: root,
     maxBytes: 8 + sharedCacheMetadataBytes("decoded-vector:hot-page"),
@@ -553,7 +557,7 @@ it.each([
   const values = producer.allocate(8, "decoded values", () =>
     Uint8Array.of(1, 2, 3, 4, 5, 6, 7, 8),
   );
-  decoded.setVector("hot-page", { type: "u8", values: values.value }, producer);
+  expect(decoded.setVector("hot-page", { type: "u8", values: values.value }, producer)).toBe(true);
   producer.dispose();
   const input = source();
   const ranges = cachedRangeBuffer(

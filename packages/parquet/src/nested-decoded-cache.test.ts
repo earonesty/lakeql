@@ -142,7 +142,9 @@ it("does not attach replacement dictionary backing to a cached nested page", asy
     warm.release();
     const dictionaryKey = dictionaryReads.mock.calls[0]?.[0];
     expect(dictionaryKey).toBeDefined();
-    shared.delete(`decoded-vector:${dictionaryKey}`);
+    shared.delete(
+      `decoded-vector:${typeof dictionaryKey === "string" ? dictionaryKey : dictionaryKey?.build()}`,
+    );
     dictionaryReads.mockClear();
     pageReads.mockClear();
     const replaced = await run();
@@ -250,7 +252,7 @@ it("decodes real nested pages without constructing oversized optional lookup key
   };
   const expected = await run();
   const stringify = vi.spyOn(JSON, "stringify");
-  const get = vi.spyOn(cache, "getValue");
+  const get = vi.spyOn(shared, "get");
   try {
     expect(await run("x".repeat(128 * 1024))).toEqual(expected);
     expect(expected).toHaveLength(3);

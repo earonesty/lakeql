@@ -13,7 +13,11 @@ import {
 } from "lakeql-core";
 import { parquetBatchSize } from "./batch-size.js";
 import { cachedPageWindow } from "./cached-page-window.js";
-import { type DecodedColumnCache, decodedColumnPageCacheKey } from "./decoded-column-cache.js";
+import {
+  type DecodedCacheKey,
+  type DecodedColumnCache,
+  planDecodedColumnPageCacheKey,
+} from "./decoded-column-cache.js";
 import { type NumericPageGroupEntry, planNumericPageGroup } from "./numeric-page-group.js";
 import { preparePageWindow } from "./page-window.js";
 import { validateParquetReadConcurrency } from "./read-concurrency.js";
@@ -41,7 +45,7 @@ export async function* readAlignedNumericPageGroups(
     onCacheLookup?: (hit: boolean) => void;
     rowStart?: number;
     rowEnd?: number;
-    decodedCache?: { cache: DecodedColumnCache; path: string; rowGroupStart: number };
+    decodedCache?: { cache: DecodedColumnCache; path: DecodedCacheKey; rowGroupStart: number };
   } = {},
 ): AsyncIterable<OwnedMemory<ParquetVectorBatch>> {
   validateParquetReadConcurrency(options);
@@ -107,7 +111,8 @@ export async function* readAlignedNumericPageGroups(
       }
       if (replacements.length > 0) {
         const owners: OwnedMemory<Vector>[] = [];
-        const missing: { index: number; page: PreparedNumericColumnPage; key?: string }[] = [];
+        const missing: { index: number; page: PreparedNumericColumnPage; key?: DecodedCacheKey }[] =
+          [];
         try {
           if (scope.disposed)
             throw new LakeqlError("LAKEQL_ABORTED", "Numeric alignment scope disposed");
@@ -118,7 +123,7 @@ export async function* readAlignedNumericPageGroups(
             const key =
               cached === undefined
                 ? undefined
-                : decodedColumnPageCacheKey({
+                : planDecodedColumnPageCacheKey({
                     path: cached.path,
                     byteLength: file.byteLength,
                     ...(file.etag === undefined ? {} : { etag: file.etag }),
@@ -304,7 +309,7 @@ export async function* prepareNumericColumnPages(
   extent: { start: number; end: number },
   scope: MemoryScope,
   rows: { start: number; end: number },
-  cache?: { cache: DecodedColumnCache; path: string },
+  cache?: { cache: DecodedColumnCache; path: DecodedCacheKey },
 ): AsyncIterable<PreparedNumericColumnPage> {
   if (
     !Number.isSafeInteger(rows.start) ||

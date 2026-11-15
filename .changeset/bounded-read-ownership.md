@@ -449,3 +449,9 @@ Old internal key formats become cold entries until normal eviction.
 Admit retained shared-cache keys and directory records independently of payload
 pins. Bound empty entries, reclaim metadata at eviction, simplify planning-cache
 ownership, and include metadata when selecting retainable range prefetches.
+
+Admit temporary decoded-cache identity workspace before serializing batch, page,
+dictionary, nested-page and page-header keys. Compose row-group identities lazily,
+skip optional caching when workspace cannot fit, and release scratch separately
+from retained payloads. Preserve existing key identities and consumer payload-only
+limits while charging workspace to the configured shared cache pool.

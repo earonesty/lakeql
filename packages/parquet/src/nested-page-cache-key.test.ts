@@ -1,6 +1,12 @@
-import { MemoryBudget, MemoryScope } from "lakeql-core";
+import {
+  MATERIALIZATION_CHARGES as c,
+  MemoryBudget,
+  MemoryScope,
+  SharedMemoryCache,
+} from "lakeql-core";
 import { expect, it, vi } from "vitest";
-import { type NestedPageKeyParts, nestedPageCacheKey } from "./nested-page-cache-key.js";
+import { DecodedColumnCache } from "./decoded-column-cache.js";
+import { type NestedPageKeyParts, planNestedPageCacheKey } from "./nested-page-cache-key.js";
 
 const parts: NestedPageKeyParts = {
   shape: "compact",
@@ -26,39 +32,41 @@ const expected = () =>
     parts.previousDefinition,
   ]);
 
-it("preserves key identity and admits before construction at an exact workspace boundary", () => {
-  const scope = new MemoryScope(new MemoryBudget(1024 * 1024));
-  expect(nestedPageCacheKey(scope, parts)).toBe(expected());
-  const bytes = scope.budget.peakBytes;
-  scope.dispose();
+it("preserves nested identity and admits before construction at an exact workspace boundary", () => {
+  const plan = planNestedPageCacheKey(parts);
+  const wanted = expected();
+  const bytes =
+    plan.workspaceBytes + c.string + ("decoded-value:".length + plan.characters) * c.stringCodeUnit;
   for (const shortage of [0, 1]) {
     const pool = new MemoryBudget(bytes - shortage);
-    const target = new MemoryScope(pool);
-    let reclaimed = 0;
-    const detach = pool.registerReclaimer(() => {
-      reclaimed++;
-    });
+    const shared = new SharedMemoryCache({ memoryBudget: pool });
+    const cache = new DecodedColumnCache(shared, {});
+    const lookup = vi.spyOn(shared, "get");
+    const reclaim = vi.fn();
+    const detach = pool.registerReclaimer(reclaim);
     const stringify = vi.spyOn(JSON, "stringify");
     try {
-      const key = nestedPageCacheKey(target, parts);
-      expect(stringify).toHaveBeenCalledTimes(shortage === 0 ? 1 : 0);
-      expect(key !== undefined).toBe(shortage === 0);
-      expect(reclaimed).toBe(0);
-      expect(pool.usedBytes).toBe(shortage === 0 ? bytes : 0);
+      expect(cache.getValue(plan)).toBeUndefined();
+      expect(stringify).toHaveBeenCalledTimes(shortage ? 0 : 1);
+      if (!shortage) expect(lookup).toHaveBeenCalledWith(`decoded-value:${wanted}`);
+      expect(reclaim).not.toHaveBeenCalled();
+      expect(pool.peakBytes).toBe(shortage ? 0 : bytes);
     } finally {
       stringify.mockRestore();
+      lookup.mockRestore();
       detach();
-      target.dispose();
     }
     expect(pool.usedBytes).toBe(0);
   }
 });
 
-it("keeps key scratch out of retained page payload", () => {
+it("releases nested key scratch before subsequent decoding and payload retention", () => {
   const root = new MemoryScope(new MemoryBudget(1024 * 1024));
-  const scratch = root.childScope();
-  const key = nestedPageCacheKey(scratch, { ...parts, path: new Array(1000).fill("\u0000") });
-  expect(key).toBeDefined();
+  const cache = new DecodedColumnCache(new SharedMemoryCache({ memoryBudget: root.budget }), {});
+  const key = planNestedPageCacheKey({ ...parts, path: new Array(1000).fill("\u0000") });
+  cache.getValue(key, root);
+  expect(root.budget.peakBytes).toBeGreaterThan(64);
+  expect(root.budget.usedBytes).toBe(0);
   root.allocate(64, "page descriptor", () => undefined);
   const page = root.retainAllocations({ values: [1] });
   root.dispose();
@@ -67,19 +75,22 @@ it("keeps key scratch out of retained page payload", () => {
   expect(root.budget.usedBytes).toBe(0);
 });
 
-it("preserves nonrefundable stage admission for mandatory page decoding", () => {
-  const root = new MemoryScope(new MemoryBudget(65536));
-  const stage = root.childStage(32768, "mandatory decode extent");
-  const scratch = stage.childScope();
-  const stringify = vi.spyOn(JSON, "stringify");
-  try {
-    expect(nestedPageCacheKey(scratch, parts)).toBeUndefined();
-    expect(stringify).not.toHaveBeenCalled();
-    expect(stage.availableAllocationBytes).toBe(32768);
-    stage.allocate(32768, "mandatory decode", () => undefined);
-  } finally {
-    stringify.mockRestore();
-    root.dispose();
+it("preserves mandatory stage admission while using only spare cache-pool workspace", () => {
+  for (const spare of [0, 32768]) {
+    const root = new MemoryScope(new MemoryBudget(32768 + spare));
+    const stage = root.childStage(32768, "mandatory decode extent");
+    const cache = new DecodedColumnCache(new SharedMemoryCache({ memoryBudget: root.budget }), {});
+    const key = planNestedPageCacheKey(parts);
+    const stringify = vi.spyOn(JSON, "stringify");
+    try {
+      cache.getValue(key, stage);
+      expect(stringify).toHaveBeenCalledTimes(spare ? 1 : 0);
+      expect(stage.availableAllocationBytes).toBe(32768);
+      stage.allocate(32768, "mandatory decode", () => undefined);
+    } finally {
+      stringify.mockRestore();
+      root.dispose();
+    }
+    expect(root.budget.usedBytes).toBe(0);
   }
-  expect(root.budget.usedBytes).toBe(0);
 });

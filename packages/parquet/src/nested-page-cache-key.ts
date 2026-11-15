@@ -1,9 +1,18 @@
-import { MATERIALIZATION_CHARGES as c, type MemoryScope } from "lakeql-core";
+import { jsonStringUtf8Bytes } from "lakeql-core";
+import {
+  buildDecodedCacheKey,
+  type DecodedCacheKey,
+  type DecodedCacheKeyPlan,
+  decodedCacheKeyJsonCharacters,
+  decodedCacheKeyPlan,
+  decodedCacheKeyWorkspaceBytes,
+  decodedCacheNumberCharacters,
+} from "./decoded-column-cache.js";
 
 export interface NestedPageKeyParts {
   shape: "dictionary" | "compact" | "leaf-slots";
   interpretation: string;
-  parentKey: string;
+  parentKey: DecodedCacheKey;
   byteLength: number;
   etag?: string | undefined;
   path: readonly string[];
@@ -12,39 +21,37 @@ export interface NestedPageKeyParts {
   previousDefinition?: number | undefined;
 }
 
-/** Optional lookup workspace. JSON escaping needs at most six UTF-16 units per
- * input unit. Keep the existing key format; decline without evicting cached data
- * when workspace cannot fit. The caller owns this scratch through cache insertion. */
-export function nestedPageCacheKey(
-  scope: MemoryScope,
-  parts: NestedPageKeyParts,
-): string | undefined {
-  // Optional lookup work cannot spend a nonrefundable stage extent reserved for
-  // later mandatory decode/output. Use direct reading in that ownership context.
-  if (scope.hasAdmission) return undefined;
-  let units =
-    parts.shape.length +
-    parts.interpretation.length +
-    parts.parentKey.length +
-    (parts.etag?.length ?? 0);
-  for (const field of parts.path) units += field.length;
-  // Fixed marker, quotes/separators, four numeric/nullable scalars and nested
-  // path punctuation. Every JS finite number needs fewer than 32 JSON units.
-  const characters = 6 * units + 384 + 3 * parts.path.length;
-  const bytes = c.array + 10 * c.arraySlot + c.string + characters * c.stringCodeUnit;
-  if (!Number.isSafeInteger(bytes) || bytes > scope.availableAllocationBytes) return undefined;
-  return scope.allocate(bytes, "nested page cache key workspace", () =>
-    JSON.stringify([
-      "nested-page-v3",
-      parts.shape,
-      parts.interpretation,
-      parts.parentKey,
-      parts.byteLength,
-      parts.etag,
-      parts.path,
-      parts.start,
-      parts.end,
-      parts.previousDefinition,
-    ]),
-  ).value;
+/** Defer optional serialization until the cache admits short-lived workspace.
+ * Borrowed parts stay immutable for the page's lookup and insertion operations. */
+export function planNestedPageCacheKey(parts: NestedPageKeyParts): DecodedCacheKeyPlan {
+  let path = parts.path.length === 0 ? 2 : parts.path.length + 1;
+  for (const field of parts.path) path += jsonStringUtf8Bytes(field);
+  const characters =
+    27 +
+    jsonStringUtf8Bytes(parts.shape) +
+    jsonStringUtf8Bytes(parts.interpretation) +
+    decodedCacheKeyJsonCharacters(parts.parentKey) +
+    decodedCacheNumberCharacters(parts.byteLength) +
+    (parts.etag === undefined ? 4 : jsonStringUtf8Bytes(parts.etag)) +
+    path +
+    decodedCacheNumberCharacters(parts.start) +
+    decodedCacheNumberCharacters(parts.end) +
+    decodedCacheNumberCharacters(parts.previousDefinition);
+  return decodedCacheKeyPlan(
+    characters,
+    () =>
+      JSON.stringify([
+        "nested-page-v3",
+        parts.shape,
+        parts.interpretation,
+        buildDecodedCacheKey(parts.parentKey),
+        parts.byteLength,
+        parts.etag,
+        parts.path,
+        parts.start,
+        parts.end,
+        parts.previousDefinition,
+      ]),
+    decodedCacheKeyWorkspaceBytes(parts.parentKey),
+  );
 }

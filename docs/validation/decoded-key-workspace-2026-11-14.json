@@ -1,0 +1,59 @@
+{
+  "status": "validated; full audit remains open",
+  "baseline": "9155bcd",
+  "negativeControl": {
+    "tests": 2,
+    "baselineFailures": 2,
+    "candidatePasses": 2,
+    "fixture": "writeParquet INT32 [1,2,3], column and owned vector readers",
+    "identityBytes": 131072,
+    "poolBytes": 65536,
+    "failure": "Baseline serializes optional identity despite exceeding pool; both versions return correct rows. Candidate skips serialization and releases charged bytes to zero."
+  },
+  "focused": {
+    "initialTests": 142,
+    "additionalSizingTests": 3,
+    "rangeAndSizingTests": 30
+  },
+  "benchmark": "../benchmarks/decoded-key-workspace-query-2026-11-14.json",
+  "remaining": [
+    "Raw range/metadata key workspace",
+    "Remaining decoder/operator allocation integration",
+    "Total-runtime memory limits",
+    "Full audit acceptance"
+  ],
+  "gates": {
+    "regularPassed": 4041,
+    "regularSkipped": 645,
+    "workerPassed": 95,
+    "conformancePassed": 520,
+    "conformanceGuardSkipped": 1,
+    "referencePassed": 120,
+    "release": [
+      "build",
+      "typecheck",
+      "compatibility",
+      "large-files",
+      "package-install",
+      "changeset",
+      "deterministic-fixtures",
+      "lint"
+    ],
+    "coverage": {
+      "branches": 85.61,
+      "functions": 95.93,
+      "lines": 93.2
+    }
+  },
+  "cloud": {
+    "scenarios": 52,
+    "ordinaryScenarios": 40,
+    "maxReads": 4,
+    "maxIncrementalChargedBytes": 420180,
+    "headroomBytes": 524288,
+    "warmOrdinaryRequests": 0,
+    "artifact": "../benchmarks/decoded-key-workspace-public-r2-2026-11-14.json"
+  },
+  "repeatBenchmark": "../benchmarks/decoded-key-workspace-query-repeat-2026-11-14.json",
+  "interpretation": "Additional key workspace accounting costs about 1\u20132% in these two local cold/warm comparisons; modeled peak falls 510108 bytes (16.3%) by releasing temporary header identity storage instead of retaining it with payload. Not a cloud throughput or runtime heap claim."
+}

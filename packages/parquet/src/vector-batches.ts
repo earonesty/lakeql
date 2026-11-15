@@ -49,10 +49,11 @@ import {
   decodedStringValue,
 } from "./decoded-array.js";
 import {
+  type DecodedCacheKey,
   type DecodedColumnCache,
-  decodedColumnCacheKey,
-  decodedColumnPageCacheKey,
-  decodedDictionaryPageCacheKey,
+  planDecodedColumnCacheKey,
+  planDecodedColumnPageCacheKey,
+  planDecodedDictionaryPageCacheKey,
 } from "./decoded-column-cache.js";
 import { logicalPageVector } from "./logical-page-vector.js";
 import { convertDecodedValues } from "./logical-values.js";
@@ -664,7 +665,7 @@ async function* readNestedColumnVectorBatches(
     const key =
       cache === undefined || options.decodedColumnCacheKey === undefined
         ? undefined
-        : decodedColumnCacheKey({
+        : planDecodedColumnCacheKey({
             path: options.decodedColumnCacheKey,
             byteLength: file.byteLength,
             ...(file.etag === undefined ? {} : { etag: file.etag }),
@@ -810,7 +811,7 @@ async function* readColumnVectorBatches(
         const key =
           cache === undefined || options.decodedColumnCacheKey === undefined
             ? undefined
-            : decodedColumnPageCacheKey({
+            : planDecodedColumnPageCacheKey({
                 path: options.decodedColumnCacheKey,
                 byteLength: file.byteLength,
                 ...(file.etag === undefined ? {} : { etag: file.etag }),
@@ -913,7 +914,7 @@ async function* readColumnWindowVectorBatches(
         : undefined;
     let transportPin: OwnedMemory<PageWindow> | undefined;
     try {
-      let pageCacheKey: string | undefined;
+      let pageCacheKey: DecodedCacheKey | undefined;
       let cachedPageVector: Vector | undefined;
       let cachedDictionary: ParquetDictionary | undefined;
       const page = await readPageWindow(
@@ -947,7 +948,7 @@ async function* readColumnWindowVectorBatches(
           )
             return false;
           if (options.decodedColumnCache && options.decodedColumnCacheKey !== undefined) {
-            pageCacheKey = decodedColumnPageCacheKey({
+            pageCacheKey = planDecodedColumnPageCacheKey({
               path: options.decodedColumnCacheKey,
               byteLength: file.byteLength,
               ...(file.etag === undefined ? {} : { etag: file.etag }),
@@ -1082,7 +1083,7 @@ async function* readColumnWindowVectorBatches(
 
 function cachePageVector(
   cache: DecodedColumnCache,
-  key: string,
+  key: DecodedCacheKey,
   vector: Vector,
   pageScope: MemoryScope | undefined,
   inputScope: MemoryScope | undefined,
@@ -1113,7 +1114,7 @@ async function readPageWindow(
   offset: number,
   shouldReadBody: (prepared: PreparedPageWindow) => boolean,
   scope?: MemoryScope,
-  cache?: { cache: DecodedColumnCache; path: string },
+  cache?: { cache: DecodedColumnCache; path: DecodedCacheKey },
 ): Promise<PageWindow | undefined> {
   const prepared =
     scope && cache
@@ -1141,13 +1142,13 @@ function dictionaryCacheKey(
   pageOffset: number,
   file: StoreAsyncBuffer,
   options: ReadParquetBatchOptions,
-): string | undefined {
+): DecodedCacheKey | undefined {
   const dictionaryHeader = header.dictionary_page_header;
   const cache = options.decodedColumnCache;
   if (!dictionaryHeader) return undefined;
   return cache === undefined || options.decodedColumnCacheKey === undefined
     ? undefined
-    : decodedDictionaryPageCacheKey({
+    : planDecodedDictionaryPageCacheKey({
         path: options.decodedColumnCacheKey,
         byteLength: file.byteLength,
         ...(file.etag === undefined ? {} : { etag: file.etag }),

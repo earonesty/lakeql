@@ -8,7 +8,13 @@ import type {
   SharedMemoryCache,
   Vector,
 } from "lakeql-core";
-import { isLakeqlError, retainedBatchBytes, retainedVectorBytes } from "lakeql-core";
+import {
+  MATERIALIZATION_CHARGES as c,
+  isLakeqlError,
+  jsonStringUtf8Bytes,
+  retainedBatchBytes,
+  retainedVectorBytes,
+} from "lakeql-core";
 
 export class DecodedColumnCache {
   constructor(
@@ -16,49 +22,45 @@ export class DecodedColumnCache {
     private readonly options: ObjectStoreCacheOptions,
   ) {}
 
-  acquireOwned(key: string, budget?: MemoryBudget): OwnedMemory<Batch> | undefined {
-    return this.cache.acquireOwned<Batch>(decodedKey(key), budget);
+  acquireOwned(key: DecodedCacheKey, budget?: MemoryBudget): OwnedMemory<Batch> | undefined {
+    return this.acquireKey<Batch>("decoded-column:", key, budget);
   }
 
-  setOwned(key: string, owner: OwnedMemory<Batch>): boolean {
-    return this.cache.setOwned(decodedKey(key), owner, {
-      priority: decodedPriority(this.options.policy ?? "balanced"),
-    });
+  setOwned(key: DecodedCacheKey, owner: OwnedMemory<Batch>): boolean {
+    return this.retainKey("decoded-column:", key, owner);
   }
 
-  acquireVectorOwned(key: string, budget?: MemoryBudget): OwnedMemory<Vector> | undefined {
-    return this.cache.acquireOwned<Vector>(decodedVectorKey(key), budget);
+  acquireVectorOwned(key: DecodedCacheKey, budget?: MemoryBudget): OwnedMemory<Vector> | undefined {
+    return this.acquireKey<Vector>("decoded-vector:", key, budget);
   }
 
-  setVectorOwned(key: string, owner: OwnedMemory<Vector>): boolean {
+  setVectorOwned(key: DecodedCacheKey, owner: OwnedMemory<Vector>): boolean {
     if (!this.shouldAdmitDecodedWorkProduct(owner.bytes)) return false;
-    return this.cache.setOwned(decodedVectorKey(key), owner, {
-      priority: decodedPriority(this.options.policy ?? "balanced"),
-    });
+    return this.retainKey("decoded-vector:", key, owner);
   }
 
-  acquireValueOwned<T>(key: string, budget?: MemoryBudget): OwnedMemory<T> | undefined {
-    return this.cache.acquireOwned<T>(decodedValueKey(key), budget);
+  acquireValueOwned<T>(key: DecodedCacheKey, budget?: MemoryBudget): OwnedMemory<T> | undefined {
+    return this.acquireKey<T>("decoded-value:", key, budget);
   }
 
-  setValueOwned<T>(key: string, owner: OwnedMemory<T>): boolean {
+  setValueOwned<T>(key: DecodedCacheKey, owner: OwnedMemory<T>): boolean {
     if (!this.shouldAdmitDecodedWorkProduct(owner.bytes)) return false;
-    return this.cache.setOwned(decodedValueKey(key), owner, {
-      priority: decodedPriority(this.options.policy ?? "balanced"),
-    });
+    return this.retainKey("decoded-value:", key, owner);
   }
 
-  get(key: string, scope?: MemoryScope): Batch | undefined {
+  get(key: DecodedCacheKey, scope?: MemoryScope): Batch | undefined {
     if (scope !== undefined) {
       const owner = optionalCachePin(() => this.acquireOwned(key, scope.budget));
       return adoptCachedOwner(scope, owner);
     }
-    const entry = this.cache.get<Batch>(decodedKey(key));
-    if (entry === undefined) return undefined;
-    return entry.value;
+    return this.withKey(
+      "decoded-column:",
+      key,
+      (qualified) => this.cache.get<Batch>(qualified)?.value,
+    );
   }
 
-  set(key: string, batch: Batch, scope?: MemoryScope): void {
+  set(key: DecodedCacheKey, batch: Batch, scope?: MemoryScope): void {
     if (scope !== undefined) {
       const owner = scope.retainAllocations(batch);
       try {
@@ -68,22 +70,26 @@ export class DecodedColumnCache {
       }
       return;
     }
-    this.cache.set(decodedKey(key), batch, retainedBatchBytes(batch), {
-      priority: decodedPriority(this.options.policy ?? "balanced"),
-    });
+    this.withKey("decoded-column:", key, (qualified) =>
+      this.cache.set(qualified, batch, retainedBatchBytes(batch), {
+        priority: decodedPriority(this.options.policy ?? "balanced"),
+      }),
+    );
   }
 
-  getVector(key: string, scope?: MemoryScope): Vector | undefined {
+  getVector(key: DecodedCacheKey, scope?: MemoryScope): Vector | undefined {
     if (scope !== undefined) {
       const owner = optionalCachePin(() => this.acquireVectorOwned(key, scope.budget));
       return adoptCachedOwner(scope, owner);
     }
-    const entry = this.cache.get<Vector>(decodedVectorKey(key));
-    if (entry === undefined) return undefined;
-    return entry.value;
+    return this.withKey(
+      "decoded-vector:",
+      key,
+      (qualified) => this.cache.get<Vector>(qualified)?.value,
+    );
   }
 
-  setVector(key: string, vector: Vector, scope?: MemoryScope): boolean {
+  setVector(key: DecodedCacheKey, vector: Vector, scope?: MemoryScope): boolean {
     if (scope !== undefined) {
       const owner = scope.retainAllocations(vector);
       try {
@@ -94,22 +100,24 @@ export class DecodedColumnCache {
     }
     const bytes = retainedVectorBytes(vector);
     if (!this.shouldAdmitDecodedVector(bytes)) return false;
-    return this.cache.setAllocated(decodedVectorKey(key), bytes, () => vector, {
-      priority: decodedPriority(this.options.policy ?? "balanced"),
-    });
+    return (
+      this.withKey("decoded-vector:", key, (qualified) =>
+        this.cache.setAllocated(qualified, bytes, () => vector, {
+          priority: decodedPriority(this.options.policy ?? "balanced"),
+        }),
+      ) ?? false
+    );
   }
 
-  getValue<T>(key: string, scope?: MemoryScope): T | undefined {
+  getValue<T>(key: DecodedCacheKey, scope?: MemoryScope): T | undefined {
     if (scope !== undefined) {
       const owner = optionalCachePin(() => this.acquireValueOwned<T>(key, scope.budget));
       return adoptCachedOwner(scope, owner);
     }
-    const entry = this.cache.get<T>(decodedValueKey(key));
-    if (entry === undefined) return undefined;
-    return entry.value;
+    return this.withKey("decoded-value:", key, (qualified) => this.cache.get<T>(qualified)?.value);
   }
 
-  setValue<T>(key: string, value: T, bytes: number, scope?: MemoryScope): void {
+  setValue<T>(key: DecodedCacheKey, value: T, bytes: number, scope?: MemoryScope): void {
     if (scope !== undefined) {
       const owner = scope.retainAllocations(value);
       try {
@@ -120,9 +128,57 @@ export class DecodedColumnCache {
       return;
     }
     if (!this.shouldAdmitDecodedWorkProduct(bytes)) return;
-    this.cache.set(decodedValueKey(key), value, bytes, {
-      priority: decodedPriority(this.options.policy ?? "balanced"),
-    });
+    this.withKey("decoded-value:", key, (qualified) =>
+      this.cache.set(qualified, value, bytes, {
+        priority: decodedPriority(this.options.policy ?? "balanced"),
+      }),
+    );
+  }
+
+  private acquireKey<T>(
+    prefix: string,
+    key: DecodedCacheKey,
+    budget?: MemoryBudget,
+  ): OwnedMemory<T> | undefined {
+    return this.withKey(
+      prefix,
+      key,
+      (qualified) => this.cache.acquireOwned<T>(qualified, budget),
+      budget,
+    );
+  }
+
+  private retainKey<T>(prefix: string, key: DecodedCacheKey, owner: OwnedMemory<T>): boolean {
+    return (
+      this.withKey(
+        prefix,
+        key,
+        (qualified) =>
+          this.cache.setOwned(qualified, owner, {
+            priority: decodedPriority(this.options.policy ?? "balanced"),
+          }),
+        owner.budget,
+      ) ?? false
+    );
+  }
+
+  private withKey<T>(
+    prefix: string,
+    key: DecodedCacheKey,
+    use: (key: string) => T,
+    budget?: MemoryBudget,
+  ): T | undefined {
+    const characters = typeof key === "string" ? key.length : key.characters;
+    const bytes =
+      c.string +
+      (prefix.length + characters) * c.stringCodeUnit +
+      (typeof key === "string" ? 0 : key.workspaceBytes);
+    return this.cache.withOptionalKey(
+      bytes,
+      () => prefix + (typeof key === "string" ? key : key.build()),
+      use,
+      budget,
+    );
   }
 
   private shouldAdmitDecodedVector(bytes: number): boolean {
@@ -141,7 +197,7 @@ export class DecodedColumnCache {
 }
 
 export function decodedColumnCacheKey(options: {
-  path: string;
+  path: DecodedCacheKey;
   byteLength: number;
   etag?: string;
   columns: readonly string[];
@@ -150,7 +206,7 @@ export function decodedColumnCacheKey(options: {
 }): string {
   return JSON.stringify([
     "column-v2",
-    options.path,
+    buildDecodedCacheKey(options.path),
     options.byteLength,
     options.etag ?? null,
     options.rowStart,
@@ -160,7 +216,7 @@ export function decodedColumnCacheKey(options: {
 }
 
 export function decodedColumnPageCacheKey(options: {
-  path: string;
+  path: DecodedCacheKey;
   byteLength: number;
   etag?: string;
   column: string;
@@ -172,7 +228,7 @@ export function decodedColumnPageCacheKey(options: {
 }): string {
   return JSON.stringify([
     "page-v2",
-    options.path,
+    buildDecodedCacheKey(options.path),
     options.byteLength,
     options.etag ?? null,
     options.column,
@@ -185,7 +241,7 @@ export function decodedColumnPageCacheKey(options: {
 }
 
 export function decodedDictionaryPageCacheKey(options: {
-  path: string;
+  path: DecodedCacheKey;
   byteLength: number;
   etag?: string;
   column: string;
@@ -196,7 +252,7 @@ export function decodedDictionaryPageCacheKey(options: {
 }): string {
   return JSON.stringify([
     "dictionary-v2",
-    options.path,
+    buildDecodedCacheKey(options.path),
     options.byteLength,
     options.etag ?? null,
     options.column,
@@ -207,16 +263,131 @@ export function decodedDictionaryPageCacheKey(options: {
   ]);
 }
 
-function decodedKey(key: string): string {
-  return `decoded-column:${key}`;
+/** A borrowed immutable identity plan; variable-sized serialization happens only
+ * inside an admitted, synchronous cache operation, never across page decoding. */
+export interface DecodedCacheKeyPlan {
+  readonly characters: number;
+  readonly jsonCharacters: number;
+  readonly workspaceBytes: number;
+  readonly build: () => string;
+}
+export type DecodedCacheKey = string | DecodedCacheKeyPlan;
+
+export function decodedCacheKeyCharacters(key: DecodedCacheKey): number {
+  return typeof key === "string" ? key.length : key.characters;
 }
 
-function decodedVectorKey(key: string): string {
-  return `decoded-vector:${key}`;
+/** UTF8 escaped length bounds UTF16 code units without serializing the string. */
+export function decodedCacheKeyJsonCharacters(key: DecodedCacheKey): number {
+  return typeof key === "string" ? jsonStringUtf8Bytes(key) : key.jsonCharacters;
 }
 
-function decodedValueKey(key: string): string {
-  return `decoded-value:${key}`;
+export function decodedCacheNumberCharacters(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value)) return 4;
+  // File/page offsets are safe integers. Bound unusual finite numeric inputs
+  // without allocating a decimal formatting string before admission.
+  if (!Number.isSafeInteger(value)) return 32;
+  let digits = value < 0 ? 1 : 0;
+  let remaining = Math.abs(value);
+  do {
+    digits++;
+    remaining = Math.floor(remaining / 10);
+  } while (remaining >= 1);
+  return digits;
+}
+
+export function decodedCacheKeyWorkspaceBytes(key: DecodedCacheKey): number {
+  return typeof key === "string" ? 0 : key.workspaceBytes;
+}
+
+export function buildDecodedCacheKey(key: DecodedCacheKey): string {
+  return typeof key === "string" ? key : key.build();
+}
+
+/** Compose immutable identity parts without constructing a variable-sized string. */
+export function prefixDecodedCacheKey(prefix: string, key: DecodedCacheKey): DecodedCacheKeyPlan {
+  const characters = prefix.length + decodedCacheKeyCharacters(key);
+  return {
+    characters,
+    jsonCharacters: jsonStringUtf8Bytes(prefix) + decodedCacheKeyJsonCharacters(key) - 2,
+    workspaceBytes: c.string + characters * c.stringCodeUnit + decodedCacheKeyWorkspaceBytes(key),
+    build: () => prefix + buildDecodedCacheKey(key),
+  };
+}
+
+export function decodedCacheKeyPlan(
+  characters: number,
+  build: () => string,
+  extraWorkspaceBytes = 0,
+): DecodedCacheKeyPlan {
+  return {
+    characters,
+    jsonCharacters: 6 * characters + 2,
+    workspaceBytes:
+      c.array + 10 * c.arraySlot + c.string + characters * c.stringCodeUnit + extraWorkspaceBytes,
+    build,
+  };
+}
+
+export function planDecodedColumnCacheKey(
+  options: Parameters<typeof decodedColumnCacheKey>[0],
+): DecodedCacheKeyPlan {
+  let columns = options.columns.length === 0 ? 2 : options.columns.length + 1;
+  for (const column of options.columns) columns += jsonStringUtf8Bytes(column);
+  const characters =
+    19 +
+    decodedCacheKeyJsonCharacters(options.path) +
+    decodedCacheNumberCharacters(options.byteLength) +
+    (options.etag === undefined ? 4 : jsonStringUtf8Bytes(options.etag)) +
+    decodedCacheNumberCharacters(options.rowStart) +
+    decodedCacheNumberCharacters(options.rowEnd) +
+    columns;
+  return decodedCacheKeyPlan(
+    characters,
+    () => decodedColumnCacheKey(options),
+    decodedCacheKeyWorkspaceBytes(options.path),
+  );
+}
+
+export function planDecodedColumnPageCacheKey(
+  options: Parameters<typeof decodedColumnPageCacheKey>[0],
+): DecodedCacheKeyPlan {
+  const characters =
+    20 +
+    decodedCacheKeyJsonCharacters(options.path) +
+    decodedCacheNumberCharacters(options.byteLength) +
+    (options.etag === undefined ? 4 : jsonStringUtf8Bytes(options.etag)) +
+    jsonStringUtf8Bytes(options.column) +
+    decodedCacheNumberCharacters(options.rowGroupStart) +
+    decodedCacheNumberCharacters(options.pageRowStart) +
+    decodedCacheNumberCharacters(options.pageRowEnd) +
+    decodedCacheNumberCharacters(options.pageOffset) +
+    decodedCacheNumberCharacters(options.compressedPageSize);
+  return decodedCacheKeyPlan(
+    characters,
+    () => decodedColumnPageCacheKey(options),
+    decodedCacheKeyWorkspaceBytes(options.path),
+  );
+}
+
+export function planDecodedDictionaryPageCacheKey(
+  options: Parameters<typeof decodedDictionaryPageCacheKey>[0],
+): DecodedCacheKeyPlan {
+  const characters =
+    25 +
+    decodedCacheKeyJsonCharacters(options.path) +
+    decodedCacheNumberCharacters(options.byteLength) +
+    (options.etag === undefined ? 4 : jsonStringUtf8Bytes(options.etag)) +
+    jsonStringUtf8Bytes(options.column) +
+    decodedCacheNumberCharacters(options.rowGroupStart) +
+    decodedCacheNumberCharacters(options.pageOffset) +
+    decodedCacheNumberCharacters(options.compressedPageSize) +
+    decodedCacheNumberCharacters(options.values);
+  return decodedCacheKeyPlan(
+    characters,
+    () => decodedDictionaryPageCacheKey(options),
+    decodedCacheKeyWorkspaceBytes(options.path),
+  );
 }
 
 function decodedPriority(policy: CachePolicy): number {

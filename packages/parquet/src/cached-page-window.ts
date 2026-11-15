@@ -1,5 +1,18 @@
-import { MATERIALIZATION_CHARGES as c, isLakeqlError, type MemoryScope } from "lakeql-core";
-import type { DecodedColumnCache } from "./decoded-column-cache.js";
+import {
+  MATERIALIZATION_CHARGES as c,
+  isLakeqlError,
+  jsonStringUtf8Bytes,
+  type MemoryScope,
+} from "lakeql-core";
+import {
+  buildDecodedCacheKey,
+  type DecodedCacheKey,
+  type DecodedColumnCache,
+  decodedCacheKeyJsonCharacters,
+  decodedCacheKeyPlan,
+  decodedCacheKeyWorkspaceBytes,
+  decodedCacheNumberCharacters,
+} from "./decoded-column-cache.js";
 import { type PreparedPageWindow, preparePageWindow } from "./page-window.js";
 import type { StoreAsyncBuffer } from "./types.js";
 
@@ -10,24 +23,33 @@ export async function cachedPageWindow(
   extent: { start: number; end: number },
   offset: number,
   scope: MemoryScope,
-  cache: { cache: DecodedColumnCache; path: string },
+  cache: { cache: DecodedColumnCache; path: DecodedCacheKey },
 ): Promise<PreparedPageWindow | undefined> {
   const scratch = scope.childScope();
   try {
-    const key = scratch.allocate(
-      c.string + c.stringCodeUnit * (6 * (cache.path.length + (file.etag?.length ?? 0)) + 256),
-      "page header cache key",
+    const path = cache.path;
+    const { byteLength, etag } = file;
+    const { start, end } = extent;
+    const key = decodedCacheKeyPlan(
+      21 +
+        decodedCacheKeyJsonCharacters(path) +
+        decodedCacheNumberCharacters(byteLength) +
+        (etag === undefined ? 4 : jsonStringUtf8Bytes(etag)) +
+        decodedCacheNumberCharacters(start) +
+        decodedCacheNumberCharacters(end) +
+        decodedCacheNumberCharacters(offset),
       () =>
         JSON.stringify([
           "page-header",
-          cache.path,
-          file.byteLength,
-          file.etag ?? null,
-          extent.start,
-          extent.end,
+          buildDecodedCacheKey(path),
+          byteLength,
+          etag ?? null,
+          start,
+          end,
           offset,
         ]),
-    ).value;
+      decodedCacheKeyWorkspaceBytes(path),
+    );
     try {
       const hit = cache.cache.acquireValueOwned<PreparedPageWindow>(key, scope.budget);
       if (hit) {

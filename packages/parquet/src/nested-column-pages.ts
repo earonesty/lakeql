@@ -5,7 +5,7 @@ import { dictionaryPageOffset } from "./dictionary-offset.js";
 import type { TemporalColumnDecoder } from "./int96-interpretation.js";
 import { decodeCompactNestedColumnPage, decodeNestedColumnPage } from "./nested-column-page.js";
 import { decodeNestedDictionaryPage } from "./nested-dictionary-page.js";
-import { nestedPageCacheKey } from "./nested-page-cache-key.js";
+import { planNestedPageCacheKey } from "./nested-page-cache-key.js";
 import { preparePageWindow, readPreparedPageBody } from "./page-window.js";
 import type { ReadParquetBatchOptions, StoreAsyncBuffer } from "./types.js";
 
@@ -114,7 +114,7 @@ async function* readNestedPages<Page extends CompactPage>(
         const cache = options.decodedColumnCache;
         const key =
           cache && options.decodedColumnCacheKey !== undefined
-            ? nestedPageCacheKey(pageScope.childScope(), {
+            ? planNestedPageCacheKey({
                 shape: header.type === "DICTIONARY_PAGE" ? "dictionary" : shape,
                 interpretation:
                   (decoder as TemporalColumnDecoder).int96Interpretation ?? "julian-nanos",

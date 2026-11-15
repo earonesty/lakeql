@@ -1,4 +1,5 @@
 import {
+  MATERIALIZATION_CHARGES as c,
   MemoryBudget,
   MemoryScope,
   SharedMemoryCache,
@@ -12,6 +13,10 @@ import {
   decodedColumnPageCacheKey,
   decodedDictionaryPageCacheKey,
 } from "./decoded-column-cache.js";
+
+function keyWorkspaceBytes(key: string): number {
+  return c.string + key.length * c.stringCodeUnit;
+}
 
 describe("DecodedColumnCache", () => {
   const vector: Vector = { type: "f64", values: new Float64Array([1, 2, 3]) };
@@ -188,7 +193,11 @@ it("rejects a short decoded view retaining an oversized backing buffer", () => {
 });
 
 it("charges shared batch backing once and reports failed pool admission", () => {
-  const budget = new MemoryBudget(16 + sharedCacheMetadataBytes("decoded-column:batch"));
+  const budget = new MemoryBudget(
+    16 +
+      sharedCacheMetadataBytes("decoded-column:batch") +
+      keyWorkspaceBytes("decoded-column:batch"),
+  );
   const shared = new SharedMemoryCache({
     maxBytes: 32 + sharedCacheMetadataBytes("decoded-column:batch"),
     memoryBudget: budget,
@@ -211,7 +220,9 @@ it("charges shared batch backing once and reports failed pool admission", () => 
 });
 
 it("retains decoded vector and dictionary ownership across producer disposal and eviction", () => {
-  const budget = new MemoryBudget(12 + sharedCacheMetadataBytes("decoded-vector:page"));
+  const budget = new MemoryBudget(
+    12 + sharedCacheMetadataBytes("decoded-vector:page") + keyWorkspaceBytes("decoded-vector:page"),
+  );
   const producer = new MemoryScope(budget);
   const shared = new SharedMemoryCache({
     memoryBudget: budget,
@@ -230,7 +241,9 @@ it("retains decoded vector and dictionary ownership across producer disposal and
   expect(cache.setVectorOwned("page", vector)).toBe(true);
   producer.dispose();
   expect(budget.usedBytes).toBe(12 + sharedCacheMetadataBytes("decoded-vector:page"));
-  expect(budget.peakBytes).toBe(12 + sharedCacheMetadataBytes("decoded-vector:page"));
+  expect(budget.peakBytes).toBe(
+    12 + sharedCacheMetadataBytes("decoded-vector:page") + keyWorkspaceBytes("decoded-vector:page"),
+  );
   const pinned = cache.acquireVectorOwned("page");
   shared.deleteWhere(() => true);
   expect(budget.usedBytes).toBe(12);
@@ -240,7 +253,11 @@ it("retains decoded vector and dictionary ownership across producer disposal and
 });
 
 it("preserves admission policy and requires real ownership for decoded cache hits", () => {
-  const budget = new MemoryBudget(8 + sharedCacheMetadataBytes("decoded-value:dictionary"));
+  const budget = new MemoryBudget(
+    8 +
+      sharedCacheMetadataBytes("decoded-value:dictionary") +
+      keyWorkspaceBytes("decoded-value:dictionary"),
+  );
   const scope = new MemoryScope(budget);
   const shared = new SharedMemoryCache({
     memoryBudget: budget,
@@ -271,7 +288,9 @@ it("preserves admission policy and requires real ownership for decoded cache hit
 });
 
 it("releases an acquired pin if the receiving decode scope is already closed", () => {
-  const root = new MemoryBudget(8 + sharedCacheMetadataBytes("decoded-vector:page"));
+  const root = new MemoryBudget(
+    8 + sharedCacheMetadataBytes("decoded-vector:page") + keyWorkspaceBytes("decoded-vector:page"),
+  );
   const producer = new MemoryScope(root.child());
   const shared = new SharedMemoryCache({
     memoryBudget: root,

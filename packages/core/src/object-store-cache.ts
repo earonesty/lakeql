@@ -130,6 +130,30 @@ export class SharedMemoryCache {
     return Math.max(0, this.maxBytes - protectedBytes);
   }
 
+  /** Synchronous optional cache operation with admitted key-construction scratch.
+   * Decline before constructing a key when workspace cannot fit; do not evict
+   * reusable entries for lookup scratch. The callback must not retain scratch
+   * except through separately admitted cache ownership.
+   */
+  withOptionalKey<T>(
+    bytes: number,
+    create: () => string,
+    use: (key: string) => T,
+    fallbackBudget?: MemoryBudget,
+  ): T | undefined {
+    // Like retained entry metadata, lookup scratch belongs to the configured
+    // cache domain. A consumer only pins payload in its own child budget.
+    const budget = this.memoryBudget ?? fallbackBudget;
+    if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > this.maxBytes) return undefined;
+    if (budget !== undefined && bytes > budget.availableBytes) return undefined;
+    const reservation = budget?.reserve(bytes, "cache key workspace");
+    try {
+      return use(create());
+    } finally {
+      reservation?.release();
+    }
+  }
+
   /** Borrow for immediate use. Use acquire when retaining across cache mutation. */
   get<T>(key: string): SharedCacheEntry<T> | undefined {
     const entry = this.entries.get(key);

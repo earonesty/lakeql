@@ -10,7 +10,7 @@ import {
 import { parquetBatchSize } from "./batch-size.js";
 import { lakeqlParquetCompressors, scopedParquetCompressors } from "./compressors.js";
 import { normalizeDecimalColumns, rawDecimalMetadata } from "./decimal.js";
-import { decodedColumnCacheKey } from "./decoded-column-cache.js";
+import { planDecodedColumnCacheKey } from "./decoded-column-cache.js";
 import { nestedValueNormalizer } from "./nested-values.js";
 import { parquetParsersForMetadata } from "./parsers.js";
 import {
@@ -120,7 +120,7 @@ async function readColumnBatchPlan(
   const key =
     cache === undefined || options.decodedColumnCacheKey === undefined
       ? undefined
-      : decodedColumnCacheKey({
+      : planDecodedColumnCacheKey({
           path: options.decodedColumnCacheKey,
           byteLength: file.byteLength,
           ...(file.etag === undefined ? {} : { etag: file.etag }),
