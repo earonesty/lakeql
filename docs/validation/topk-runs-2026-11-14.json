@@ -1,0 +1,414 @@
+{
+  "baselineCommit": "b6286378fa98e6a30b0a3d2c7eab6689724a136b",
+  "implementation": "Size-balanced adjacent top-k runs with parent-owned payloads and admitted logarithmic directory. Exact legacy serialized-memory/buffered-row prefix limits use eager reduction. No new vector representation or backend capability is implied; per-batch physical placement and existing admitted concat/top-k operators remain in use.",
+  "invariants": [
+    "After append, run sizes decrease by more than a factor of two and each is at most k rows; retained candidate rows are below 2k. Transient merge overlap remains subject to allocation admission.",
+    "Adjacent older/newer merge order preserves stable ties across unequal batches.",
+    "Parent disposal, reduction failure and finalization release all internal owners. Final output ownership survives parent disposal."
+  ],
+  "runtimeScope": "Inspector managed-heap and backing-storage counters are separate, non-additive sampled observations. Diagnostic GC is post-measurement only. Final measurements overlapped release tests; elapsed times are not controlled throughput benchmarks. Lower sampled peaks do not prove a Cloudflare runtime cap.",
+  "scenarios": [
+    {
+      "case": "id-native",
+      "poolMiB": 64,
+      "jobs": 1,
+      "baseline": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "ok": 4
+        },
+        "maxSampledManagedHeapBytes": 50944940,
+        "maxSampledBackingStorageBytes": 101893495,
+        "finalAdmissionBytes": 0
+      },
+      "candidate": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "ok": 4
+        },
+        "maxSampledManagedHeapBytes": 55850960,
+        "maxSampledBackingStorageBytes": 85637850,
+        "finalAdmissionBytes": 0
+      }
+    },
+    {
+      "case": "id-native",
+      "poolMiB": 64,
+      "jobs": 4,
+      "baseline": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "budget": 12,
+          "ok": 4
+        },
+        "maxSampledManagedHeapBytes": 54226340,
+        "maxSampledBackingStorageBytes": 513609163,
+        "finalAdmissionBytes": 0
+      },
+      "candidate": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "budget": 12,
+          "ok": 4
+        },
+        "maxSampledManagedHeapBytes": 79088960,
+        "maxSampledBackingStorageBytes": 282726596,
+        "finalAdmissionBytes": 0
+      }
+    },
+    {
+      "case": "id-native",
+      "poolMiB": 128,
+      "jobs": 1,
+      "baseline": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "ok": 4
+        },
+        "maxSampledManagedHeapBytes": 51425064,
+        "maxSampledBackingStorageBytes": 151398738,
+        "finalAdmissionBytes": 0
+      },
+      "candidate": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "ok": 4
+        },
+        "maxSampledManagedHeapBytes": 45461756,
+        "maxSampledBackingStorageBytes": 69336238,
+        "finalAdmissionBytes": 0
+      }
+    },
+    {
+      "case": "id-native",
+      "poolMiB": 128,
+      "jobs": 4,
+      "baseline": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "ok": 16
+        },
+        "maxSampledManagedHeapBytes": 98166148,
+        "maxSampledBackingStorageBytes": 251173173,
+        "finalAdmissionBytes": 0
+      },
+      "candidate": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "ok": 16
+        },
+        "maxSampledManagedHeapBytes": 101381840,
+        "maxSampledBackingStorageBytes": 125693053,
+        "finalAdmissionBytes": 0
+      }
+    },
+    {
+      "case": "text-native",
+      "poolMiB": 64,
+      "jobs": 1,
+      "baseline": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "ok": 4
+        },
+        "maxSampledManagedHeapBytes": 44817364,
+        "maxSampledBackingStorageBytes": 181573982,
+        "finalAdmissionBytes": 0
+      },
+      "candidate": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "ok": 4
+        },
+        "maxSampledManagedHeapBytes": 48810760,
+        "maxSampledBackingStorageBytes": 54143902,
+        "finalAdmissionBytes": 0
+      }
+    },
+    {
+      "case": "text-native",
+      "poolMiB": 64,
+      "jobs": 4,
+      "baseline": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "budget": 12,
+          "ok": 4
+        },
+        "maxSampledManagedHeapBytes": 62646412,
+        "maxSampledBackingStorageBytes": 712852467,
+        "finalAdmissionBytes": 0
+      },
+      "candidate": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "budget": 12,
+          "ok": 4
+        },
+        "maxSampledManagedHeapBytes": 48723416,
+        "maxSampledBackingStorageBytes": 138880951,
+        "finalAdmissionBytes": 0
+      }
+    },
+    {
+      "case": "text-native",
+      "poolMiB": 128,
+      "jobs": 1,
+      "baseline": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "ok": 4
+        },
+        "maxSampledManagedHeapBytes": 41679392,
+        "maxSampledBackingStorageBytes": 127114920,
+        "finalAdmissionBytes": 0
+      },
+      "candidate": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "ok": 4
+        },
+        "maxSampledManagedHeapBytes": 31633220,
+        "maxSampledBackingStorageBytes": 98382192,
+        "finalAdmissionBytes": 0
+      }
+    },
+    {
+      "case": "text-native",
+      "poolMiB": 128,
+      "jobs": 4,
+      "baseline": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "ok": 16
+        },
+        "maxSampledManagedHeapBytes": 144455160,
+        "maxSampledBackingStorageBytes": 388892198,
+        "finalAdmissionBytes": 0
+      },
+      "candidate": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "ok": 16
+        },
+        "maxSampledManagedHeapBytes": 61655908,
+        "maxSampledBackingStorageBytes": 93196018,
+        "finalAdmissionBytes": 0
+      }
+    },
+    {
+      "case": "id-heap64",
+      "poolMiB": 64,
+      "jobs": 1,
+      "baseline": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "ok": 4
+        },
+        "maxSampledManagedHeapBytes": 49509156,
+        "maxSampledBackingStorageBytes": 793402998,
+        "finalAdmissionBytes": 0
+      },
+      "candidate": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "ok": 4
+        },
+        "maxSampledManagedHeapBytes": 27866836,
+        "maxSampledBackingStorageBytes": 125297528,
+        "finalAdmissionBytes": 0
+      }
+    },
+    {
+      "case": "id-heap64",
+      "poolMiB": 64,
+      "jobs": 4,
+      "baseline": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "budget": 12,
+          "ok": 4
+        },
+        "maxSampledManagedHeapBytes": 55160640,
+        "maxSampledBackingStorageBytes": 1189989396,
+        "finalAdmissionBytes": 0
+      },
+      "candidate": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "budget": 12,
+          "ok": 4
+        },
+        "maxSampledManagedHeapBytes": 52300916,
+        "maxSampledBackingStorageBytes": 828095864,
+        "finalAdmissionBytes": 0
+      }
+    },
+    {
+      "case": "id-heap64",
+      "poolMiB": 128,
+      "jobs": 1,
+      "baseline": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "ok": 4
+        },
+        "maxSampledManagedHeapBytes": 37386060,
+        "maxSampledBackingStorageBytes": 398094972,
+        "finalAdmissionBytes": 0
+      },
+      "candidate": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "ok": 4
+        },
+        "maxSampledManagedHeapBytes": 17894260,
+        "maxSampledBackingStorageBytes": 101764876,
+        "finalAdmissionBytes": 0
+      }
+    },
+    {
+      "case": "id-heap64",
+      "poolMiB": 128,
+      "jobs": 4,
+      "baseline": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "ok": 16
+        },
+        "maxSampledManagedHeapBytes": 56697972,
+        "maxSampledBackingStorageBytes": 484757985,
+        "finalAdmissionBytes": 0
+      },
+      "candidate": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "ok": 16
+        },
+        "maxSampledManagedHeapBytes": 57800524,
+        "maxSampledBackingStorageBytes": 318235960,
+        "finalAdmissionBytes": 0
+      }
+    },
+    {
+      "case": "text-heap64",
+      "poolMiB": 64,
+      "jobs": 1,
+      "baseline": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "ok": 4
+        },
+        "maxSampledManagedHeapBytes": 24047612,
+        "maxSampledBackingStorageBytes": 288519634,
+        "finalAdmissionBytes": 0
+      },
+      "candidate": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "ok": 4
+        },
+        "maxSampledManagedHeapBytes": 28874228,
+        "maxSampledBackingStorageBytes": 125576320,
+        "finalAdmissionBytes": 0
+      }
+    },
+    {
+      "case": "text-heap64",
+      "poolMiB": 64,
+      "jobs": 4,
+      "baseline": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "budget": 12,
+          "ok": 4
+        },
+        "maxSampledManagedHeapBytes": 51157632,
+        "maxSampledBackingStorageBytes": 1264245421,
+        "finalAdmissionBytes": 0
+      },
+      "candidate": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "budget": 12,
+          "ok": 4
+        },
+        "maxSampledManagedHeapBytes": 47034488,
+        "maxSampledBackingStorageBytes": 544717316,
+        "finalAdmissionBytes": 0
+      }
+    },
+    {
+      "case": "text-heap64",
+      "poolMiB": 128,
+      "jobs": 1,
+      "baseline": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "ok": 4
+        },
+        "maxSampledManagedHeapBytes": 45648888,
+        "maxSampledBackingStorageBytes": 663949768,
+        "finalAdmissionBytes": 0
+      },
+      "candidate": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "ok": 4
+        },
+        "maxSampledManagedHeapBytes": 17031816,
+        "maxSampledBackingStorageBytes": 90321486,
+        "finalAdmissionBytes": 0
+      }
+    },
+    {
+      "case": "text-heap64",
+      "poolMiB": 128,
+      "jobs": 4,
+      "baseline": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "ok": 16
+        },
+        "maxSampledManagedHeapBytes": 58175376,
+        "maxSampledBackingStorageBytes": 452141537,
+        "finalAdmissionBytes": 0
+      },
+      "candidate": {
+        "status": "complete",
+        "primaryOutcomes": {
+          "ok": 16
+        },
+        "maxSampledManagedHeapBytes": 50113016,
+        "maxSampledBackingStorageBytes": 201181964,
+        "finalAdmissionBytes": 0
+      }
+    }
+  ],
+  "validation": {
+    "unitCases": 14,
+    "regularTestsPassed": 4110,
+    "regularTestsSkipped": 645,
+    "workerTestsPassed": 95,
+    "publicR2Artifact": "topk-runs-public-r2-2026-11-14.json",
+    "coverageTestsPassed": 4110,
+    "coverage": {
+      "statements": 91.45,
+      "branches": 85.63,
+      "functions": 95.88,
+      "lines": 93.23
+    },
+    "referenceTestsPassed": 120,
+    "publicR2Scenarios": 52,
+    "publicR2HeadroomBytes": 524288,
+    "publicR2MaximumIncrementalAdmissionBytes": 396118,
+    "releaseChecks": "Build, types, lint, clean package consumers, compatibility, fixtures, changeset, large files and unchanged coverage thresholds passed.",
+    "requiredConformancePassed": 520,
+    "conformanceGuardSkipped": 1,
+    "reruns": "Worker dynamic-import timeout passed with serialized file startup. One large conformance fixture timed out during concurrent coverage; required conformance passed without concurrent coverage load, with unchanged timeout."
+  },
+  "sourceSha256": {
+    "packages/core/src/owned-top-k-runs.ts": "14e532bbc1243951b06f4c219f74299e3e7f2401c22f2bf98914c325f30d4ef4",
+    "packages/core/src/query.ts": "867e6ba0037f54e3e2700aa35b3ec4688e5b59667e27909ef91e26db2029e814"
+  }
+}

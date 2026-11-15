@@ -69,6 +69,7 @@ import {
   snapshotScalarSerializedBytes,
   snapshotScalarWithAdmission,
 } from "./owned-snapshot-rows.js";
+import { OwnedTopKRuns } from "./owned-top-k-runs.js";
 import {
   type AcceleratorPolicy,
   CpuPhysicalBackend,
@@ -2912,8 +2913,21 @@ export class QueryResult {
         config.scanner.scanOwnedVectorBatches === undefined
       )
         return undefined;
-      let retained: Batch | undefined;
       let retainedOwner: OwnedMemory<Batch> | undefined;
+      const runs = new OwnedTopKRuns(
+        planning,
+        topK,
+        (older, newer) => {
+          const joined = concatOwnedBatches([older, newer]);
+          try {
+            return vectorTopKOwnedBatch(joined, orderBy, { limit: topK });
+          } finally {
+            joined.release();
+          }
+        },
+        config.budget.maxMemoryBytes !== undefined || config.budget.maxBufferedRows !== undefined,
+      );
+      let candidateRows = 0;
       try {
         for await (const { batch, sourceIdentity, owner } of this.columnBatches(
           projectedReadColumns(config.select, config.where, orderBy, config.projections, planning),
@@ -2955,35 +2969,35 @@ export class QueryResult {
                 owner === undefined
                   ? detachOwnedBatch(candidates, this.memoryBudget)
                   : stage.retainAllocations(candidates);
-              if (retainedOwner === undefined) {
-                retainedOwner = candidateOwner;
-              } else {
+              try {
+                runs.append(candidateOwner);
+              } finally {
+                candidateOwner.release();
+              }
+              candidateRows = Math.min(topK, candidateRows + candidates.rowCount);
+            }
+            enforceBufferedRowsBudget(config.budget, candidateRows);
+            // A legacy serialized-size limit applies to each prefix's exact
+            // winners. Without that limit, balanced runs avoid whole-state scans.
+            if (config.budget.maxMemoryBytes !== undefined) {
+              const retained = runs.prefix;
+              if (retained !== undefined) {
+                const sizing = new MemoryScope(this.memoryBudget);
                 try {
-                  const joined = concatOwnedBatches([retainedOwner, candidateOwner]);
-                  try {
-                    const next = vectorTopKOwnedBatch(joined, orderBy, { limit: topK });
-                    retainedOwner.release();
-                    retainedOwner = next;
-                  } finally {
-                    joined.release();
-                  }
+                  enforceOperatorMemoryBudget(
+                    config.budget,
+                    serializedBatchBytes(retained, sizing),
+                  );
                 } finally {
-                  candidateOwner.release();
+                  sizing.dispose();
                 }
               }
-              retained = retainedOwner.value;
-            }
-            enforceBufferedRowsBudget(config.budget, retained.rowCount);
-            const sizing = new MemoryScope(this.memoryBudget);
-            try {
-              enforceOperatorMemoryBudget(config.budget, serializedBatchBytes(retained, sizing));
-            } finally {
-              sizing.dispose();
             }
           } finally {
             stage.dispose();
           }
         }
+        retainedOwner = runs.finish();
         if (retainedOwner === undefined) {
           if (!ownedOutput) return [];
           const empty = new MemoryScope(this.memoryBudget);
@@ -3034,6 +3048,7 @@ export class QueryResult {
         }
       } finally {
         retainedOwner?.release();
+        runs.dispose();
       }
     } finally {
       planning.dispose();
