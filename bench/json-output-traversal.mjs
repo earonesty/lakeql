@@ -61,6 +61,13 @@ try {
       ),
       20,
     ],
+    ...[1, 8, 31, 32, 33, 256, 4096].flatMap((length) =>
+      ["x", "雪", '"', "\ud800"].map((token) => [
+        `string-${token.charCodeAt(0)}-${length}`,
+        Array.from({ length: 32 }, () => token.repeat(length)),
+        length >= 256 ? 4 : 20,
+      ]),
+    ),
     ["deep-20000", deep, 2],
   ];
   const results = [];

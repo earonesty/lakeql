@@ -1,0 +1,17 @@
+{
+  "source": "b65f87d",
+  "decision": "Reject short-string ASCII precheck bypass; production encoder restored exactly.",
+  "experiment": "Use the general escaped UTF8 loop directly for strings shorter than 32 UTF16 units; retain native ASCII precheck for longer strings. No allocation or memory policy changes.",
+  "evidence": [
+    "json-short-string-profile-2026-11-14.json",
+    "json-short-string-initial-2026-11-14.json",
+    "json-short-string-expanded-2026-11-14.json"
+  ],
+  "findings": [
+    "Profile assigns 23.88% sampled self time to cursor advancement and own-key generator, 10.16% to ASCII precheck; inlining and sampling limit attribution.",
+    "Row-array median improvement varies from 9.1% to 1.0%; small-row median worsens in both comparisons. Expanded cases show 16% overhead for eight-character ASCII and 8.9% for 31-character ASCII. No durable aggregate improvement established.",
+    "Expanded benchmark checks actual JSON bytes and zero budget charges for 1/8/31/32/33/256/4096-character ASCII, Unicode, escaped quotes and lone surrogates, plus mixed structures and 20000-level nesting."
+  ],
+  "validation": "Candidate JSON encoding/size/standard semantics suites passed; production code restored and rebuilt. No whole-runtime or cloud-throughput inference.",
+  "next": "Investigate cursor/generator overhead with a generic admitted traversal contract; retain depth safety and exact-byte oracle. Avoid another frame reset/pooling experiment without new evidence."
+}
