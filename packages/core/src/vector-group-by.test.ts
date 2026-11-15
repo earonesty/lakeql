@@ -566,6 +566,13 @@ it("checks high-cardinality group budgets without revisiting existing groups", (
       yield entry;
     }
   };
+  const values = state.groups.values.bind(state.groups);
+  state.groups.values = function* () {
+    for (const group of values()) {
+      visits++;
+      yield group;
+    }
+  };
   updateVectorGroupByState(
     state,
     batchFromColumns({

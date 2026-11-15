@@ -1407,6 +1407,14 @@ it("executes nested scalar, aggregate-argument and bigint-correlated CLI queries
     ],
     ["SELECT SUM(amount + (SELECT MAX(bonus) FROM input)) AS total FROM input", [{ total: 75 }]],
     [
+      "SELECT a.amount, (SELECT MAX(p.amount) FROM input p WHERE p.group_id = a.group_id AND p.amount > (SELECT AVG(amount) FROM input)) AS maximum FROM input a ORDER BY a.amount",
+      [
+        { amount: 10, maximum: null },
+        { amount: 20, maximum: null },
+        { amount: 30, maximum: 30 },
+      ],
+    ],
+    [
       "SELECT a.amount, (SELECT MAX(p.amount) FROM input p WHERE p.group_id = a.group_id) AS maximum FROM input a ORDER BY a.amount",
       [
         { amount: 10, maximum: 20 },

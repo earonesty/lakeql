@@ -121,7 +121,9 @@ export async function resolveSqlScalarSubqueries(
       value: values.get(id) as string | number | boolean | null,
     })),
   );
-  delete out.scalarSubqueries;
+  // Correlated lookup preparation is a later stage and may still need scalar
+  // dependencies from this shared registry. It resolves its own plan on demand.
+  if (Object.keys(out.correlatedScalarSubqueries ?? {}).length === 0) delete out.scalarSubqueries;
   return out;
 }
 
@@ -255,13 +257,15 @@ export async function resolveSqlCorrelatedLookups(
         : { hiddenAggregates: subquery.hiddenAggregates }),
       ...(subquery.where === undefined ? {} : { where: subquery.where }),
       ...(subquery.having === undefined ? {} : { having: subquery.having }),
+      ...(ast.scalarSubqueries === undefined ? {} : { scalarSubqueries: ast.scalarSubqueries }),
     };
     const result = await memo.getOrCompute(
       `sql:lookup:${sqlMemoKey(query)}`,
       async () => {
         const rows = new Map<string, Row>();
         const usage = new RunningCounter();
-        for (const row of await execute(query)) {
+        const resolved = await resolveSqlScalarSubqueries(query, execute, memo);
+        for (const row of await execute(resolved)) {
           const key = sqlCorrelationKey(row, subquery.rightKey);
           if (key === undefined) continue;
           const previous = rows.get(key);

@@ -140,3 +140,25 @@ it("uses typed correlation keys and excludes null matches", async () => {
   expect(rows?.get(key(1) ?? "")?.max).toBe(20);
   expect(rows?.get(key("1") ?? "")?.max).toBe(30);
 });
+
+it("resolves correlated residual scalar dependencies with or without prior root resolution", async () => {
+  const correlated =
+    "(SELECT MAX(p.amount) FROM purchases p WHERE p.id = a.id AND p.amount > (SELECT AVG(amount) FROM purchases))";
+  for (const resolveRoot of [false, true]) {
+    const ast = parseSql(`SELECT a.id, ${correlated} AS x, ${correlated} AS y FROM accounts a`);
+    const execute = vi.fn(async (query: SqlQueryAst) => {
+      expect(query.scalarSubqueries).toBeUndefined();
+      if (query.where === undefined) return [{ avg: 20 }];
+      expect(query.where).toMatchObject({ right: { kind: "literal", value: 20 } });
+      return [{ id: 1n, max: 30 }];
+    });
+    const memo = new SharedMemoryCache();
+    const root = resolveRoot ? await resolveSqlScalarSubqueries(ast, execute, memo) : ast;
+    const lookups = await resolveSqlCorrelatedLookups(root, execute, memo);
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(lookups.size).toBe(2);
+    const values = [...lookups.values()];
+    expect(values[0]?.rows).toBe(values[1]?.rows);
+    expect(values[0]?.rows.get(sqlCorrelationKey({ id: 1n }, ["id"]) ?? "")?.max).toBe(30);
+  }
+});

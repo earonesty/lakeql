@@ -470,6 +470,15 @@ it("runs SQL over named Iceberg table bindings", async () => {
       .toArray(),
   ).resolves.toEqual([{ id: 3 }]);
 
+  await expect(
+    lake
+      .sql(
+        "select p.id, (select max(q.id) from places q where q.nation = p.nation and q.id > (select min(id) from places where id < 10)) as maximum from places p where p.id = 0",
+        { icebergTables },
+      )
+      .toArray(),
+  ).resolves.toEqual([{ id: 0, maximum: 203 }]);
+
   const leakedTempObjects = [];
   for await (const object of store.list("__lakeql_sql_iceberg/"))
     leakedTempObjects.push(object.path);
@@ -1523,6 +1532,18 @@ it("executes nested scalar, aggregate-argument and bigint-correlated queries ove
       .sql(`SELECT SUM(amount + (SELECT MAX(bonus) FROM ${table})) AS total FROM ${table}`)
       .toArray(),
   ).resolves.toEqual([{ total: 75 }]);
+  const correlated = `(SELECT MAX(p.amount) FROM ${table} p WHERE p.group_id = a.group_id AND p.amount > (SELECT AVG(amount) FROM ${table}))`;
+  await expect(
+    lake
+      .sql(
+        `SELECT a.amount, ${correlated} AS x, ${correlated} AS y FROM ${table} a ORDER BY a.amount`,
+      )
+      .toArray(),
+  ).resolves.toEqual([
+    { amount: 10, x: null, y: null },
+    { amount: 20, x: null, y: null },
+    { amount: 30, x: 30, y: 30 },
+  ]);
   await expect(
     lake
       .sql(
