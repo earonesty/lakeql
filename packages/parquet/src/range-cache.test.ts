@@ -1,11 +1,12 @@
 import {
+  MATERIALIZATION_CHARGES as c,
   MemoryBudget,
   MemoryScope,
   SharedMemoryCache,
   sharedCacheMetadataBytes,
 } from "lakeql-core";
 import { describe, expect, it, vi } from "vitest";
-import { fileCacheKey } from "./file-cache-key.js";
+import { fileCacheKey, pendingFileCacheKeyBytes } from "./file-cache-key.js";
 import { cachedRangeBuffer } from "./range-cache.js";
 import type { StoreAsyncBuffer } from "./types.js";
 
@@ -53,8 +54,13 @@ describe("cachedRangeBuffer", () => {
       },
       "tiny",
     );
-    const pool = new MemoryBudget(capacity + 64);
-    const scope = new MemoryScope(pool);
+    // Keep the original payload/cache child cap; the shared parent explicitly
+    // covers 64 selected identities plus two active reads and the directory.
+    const planning = owned
+      ? c.object + 8 * c.property + 66 * pendingFileCacheKeyBytes("tiny", undefined)
+      : 0;
+    const pool = new MemoryBudget(capacity + 64 + planning);
+    const scope = new MemoryScope(pool.child(capacity + 64));
     const ranges = Array.from({ length: 64 }, (_, index) => ({
       start: index * 2,
       end: index * 2 + 1,
@@ -74,6 +80,7 @@ describe("cachedRangeBuffer", () => {
       expect(new Uint8Array(await cache.slice(42, 43))).toEqual(Uint8Array.of(42));
     }
     expect(started).toBe(64);
+    expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
     scope.dispose();
   });
 

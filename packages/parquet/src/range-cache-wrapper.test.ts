@@ -6,6 +6,7 @@ import {
   SharedMemoryCache,
 } from "lakeql-core";
 import { expect, it } from "vitest";
+import { pendingFileCacheKeyBytes } from "./file-cache-key.js";
 import { cachedRangeBuffer } from "./range-cache.js";
 import { asyncBufferFromObjectInfo } from "./store-buffer.js";
 
@@ -45,7 +46,9 @@ it.each([
   cancelAll,
   admitted,
 }) => {
-  const root = new MemoryBudget(admitted ? 20 : 100);
+  const payloadBytes = admitted ? 20 : 100;
+  const pool = new MemoryBudget(payloadBytes + 2 * pendingFileCacheKeyBytes("file", "v1"));
+  const root = pool.child(payloadBytes);
   const cache = new SharedMemoryCache({ maxBytes: 16, memoryBudget: root });
   let finish: () => void = () => {};
   const gate = new Promise<void>((resolve) => {
@@ -107,10 +110,12 @@ it.each([
   for (const scope of scopes) scope.dispose();
   cache.deleteWhere(() => true);
   expect(root.usedBytes).toBe(0);
+  expect(pool.usedBytes).toBe(0);
 });
 
 it("clears shared pending failure so another wrapper can retry", async () => {
-  const root = new MemoryBudget(100);
+  const pool = new MemoryBudget(100 + 2 * pendingFileCacheKeyBytes("file", "v1"));
+  const root = pool.child(100);
   const cache = new SharedMemoryCache({ maxBytes: 16, memoryBudget: root });
   let reads = 0;
   let rejectFirst = true;
@@ -144,6 +149,7 @@ it("clears shared pending failure so another wrapper can retry", async () => {
   expect(failed.map((result) => result.status)).toEqual(["rejected", "rejected"]);
   expect(reads).toBe(1);
   expect(root.usedBytes).toBe(0);
+  expect(pool.usedBytes).toBe(0);
   rejectFirst = false;
   const outputs = await Promise.all([
     makeFile("v1").sliceOwned?.(0, 2, first),
@@ -158,4 +164,5 @@ it("clears shared pending failure so another wrapper can retry", async () => {
   second.dispose();
   cache.deleteWhere(() => true);
   expect(root.usedBytes).toBe(0);
+  expect(pool.usedBytes).toBe(0);
 });

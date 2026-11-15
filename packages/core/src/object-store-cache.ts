@@ -130,6 +130,18 @@ export class SharedMemoryCache {
     return Math.max(0, this.maxBytes - protectedBytes);
   }
 
+  /** Forecast optional retention without evicting reusable entries. */
+  canRetainOwnedBytes(
+    source: MemoryBudget,
+    payload: number,
+    metadata: number,
+    admitted: boolean,
+  ): boolean {
+    if (this.memoryBudget === undefined || !this.memoryBudget.sharesPoolWith(source)) return false;
+    const bytes = metadata + (admitted && this.memoryBudget.accountsFor(source) ? 0 : payload);
+    return Number.isSafeInteger(bytes) && bytes >= 0 && bytes <= this.memoryBudget.availableBytes;
+  }
+
   /** Synchronous optional cache operation with admitted key-construction scratch.
    * Decline before constructing a key when workspace cannot fit; do not evict
    * reusable entries for lookup scratch. The callback must not retain scratch

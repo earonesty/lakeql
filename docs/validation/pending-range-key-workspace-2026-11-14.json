@@ -1,0 +1,65 @@
+{
+  "status": "validated; full audit remains open",
+  "baseline": "0fe61cf",
+  "implemented": "Pending range identities/records and prefetch selection keys/directories reserve shared-root workspace before construction. Reservations outlive initiating-scope cancellation and release after settlement. Optional demand sharing falls back to exact owned reads when workspace cannot fit; prefetch declines instead. Retention forecasts check the configured cache budget as well as the allocation root, distinguishing ancestor from sibling admission.",
+  "passingEvidence": {
+    "newTests": 7,
+    "baselineFailures": 6,
+    "rangeFocusedTests": 57,
+    "checks": [
+      "Oversized demand and prefetch identities are not serialized",
+      "Key reservations remain charged through canceled non-abortable settlement",
+      "Exact root boundary and one-byte-short prefetch admission, ordinary and staged",
+      "Concurrent demand deduplication and surviving consumer after initiator cancellation",
+      "Sibling cache budget cannot reuse query-only admitted capacity",
+      "Small total pool limits selected prefetches while every demanded byte remains correct",
+      "Existing payload/cache child caps remain unchanged; explicit parent allowance covers pending/planning workspace and tests verify its release"
+    ],
+    "build": "tsc -b passes",
+    "newBaselineFailures": 6
+  },
+  "integration": {
+    "rangeTests": 24,
+    "failures": 0,
+    "wrapperTests": 5,
+    "tinyRangeConcurrency": "All 64 selected ranges execute with exactly two active callbacks when their planning workspace is explicitly available; total-root pressure separately verifies smaller selection."
+  },
+  "remaining": [
+    "Metadata and borrowed raw-range temporary key admission",
+    "Broader allocation/runtime audit"
+  ],
+  "gates": {
+    "regularPassed": 4054,
+    "regularSkipped": 645,
+    "workerPassed": 95,
+    "conformancePassed": 520,
+    "conformanceGuardSkipped": 1,
+    "referencePassed": 120,
+    "release": [
+      "build",
+      "typecheck",
+      "compatibility",
+      "large-files",
+      "package-install",
+      "changeset",
+      "deterministic-fixtures",
+      "lint"
+    ]
+  },
+  "cloud": {
+    "scenarios": 52,
+    "maxReads": 4,
+    "maxIncrementalChargedBytes": 420310,
+    "headroomBytes": 524288,
+    "warmOrdinaryRequests": 0,
+    "artifact": "../benchmarks/pending-range-key-workspace-public-r2-2026-11-14.json"
+  },
+  "benchmarks": {
+    "first": "../benchmarks/pending-range-key-workspace-query-2026-11-14.json",
+    "repeat": "../benchmarks/pending-range-key-workspace-query-repeat-2026-11-14.json",
+    "mediansMs": [[297.326674, 300.7760165], [307.950615, 303.7475735]],
+    "modeledPeakBytes": [2614074, 2614371],
+    "checks": "512 matching cold/warm external Parquet rows, 1024 warm decoded hits, zero warm requests, zero final charges",
+    "interpretation": "Timing direction varies across the two comparisons; no speedup or regression claim. Local execution only; modeled allocation is not runtime heap."
+  }
+}

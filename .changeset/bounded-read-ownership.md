@@ -460,3 +460,9 @@ Separate raw-range and Parquet-metadata file identity fields with one versioned
 structured-key contract. Prevent distinct paths/version tags from sharing cached
 bytes, metadata or pending reads, and distinguish absent from empty version tags.
 Prior internal cache keys become cold entries until eviction.
+
+Admit owned range-cache pending identities and prefetch selection directories before
+construction. Keep key workspace charged until asynchronous reads settle, preserve
+shared-reader cancellation, and automatically decline optional sharing/read-ahead
+when workspace cannot fit. Forecast retained payload/metadata against both the
+shared root and the configured cache child budget, including admitted stages.

@@ -74,6 +74,11 @@ export class MemoryBudget {
     return this.root();
   }
 
+  /** Whether allocations charged to source already count against this budget. */
+  accountsFor(source: MemoryBudget): boolean {
+    return source.chain.includes(this);
+  }
+
   sharesPoolWith(other: MemoryBudget): boolean {
     return this.root() === other.root();
   }

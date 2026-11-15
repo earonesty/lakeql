@@ -6,11 +6,30 @@ import {
   SharedMemoryCache,
   sharedCacheMetadataBytes,
 } from "lakeql-core";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { DecodedColumnCache } from "./decoded-column-cache.js";
-import { fileCacheKey } from "./file-cache-key.js";
+import { fileCacheKey, pendingFileCacheKeyBytes } from "./file-cache-key.js";
 import { cachedRangeBuffer } from "./range-cache.js";
 import type { StoreAsyncBuffer } from "./types.js";
+
+// These fixtures exercise exact payload/cache-metadata child limits. Pending
+// identity workspace belongs to the shared parent and must not consume a
+// nonrefundable payload extent. Root limits are tested separately.
+const payloadBudgets: MemoryBudget[] = [];
+afterEach(() => {
+  for (const budget of payloadBudgets) {
+    expect(budget.allocationPool.usedBytes).toBe(budget.usedBytes);
+    expect(budget.allocationPool.peakBytes).toBeLessThanOrEqual(budget.allocationPool.maxBytes);
+  }
+  payloadBudgets.length = 0;
+});
+
+function payloadBudget(bytes: number): MemoryBudget {
+  const workspace = 8 * pendingFileCacheKeyBytes("x".repeat(64), undefined);
+  const budget = new MemoryBudget(bytes + workspace).child(bytes);
+  payloadBudgets.push(budget);
+  return budget;
+}
 
 function entryBytes(key: string, size = 16, start = 0, end = 8): number {
   return sharedCacheMetadataBytes(
@@ -40,7 +59,7 @@ function source() {
 
 describe("owned range cache", () => {
   it("admits delayed adapter scratch after the initiating consumer cancels", async () => {
-    const root = new MemoryBudget(10);
+    const root = payloadBudget(10);
     const first = new MemoryScope(root.child());
     const second = new MemoryScope(root.child());
     first.admit(8, "copy plus range plus adapter scratch");
@@ -93,7 +112,7 @@ describe("owned range cache", () => {
   });
 
   it("consumes one admitted extent for coalesced transport, copies and a warm hit", async () => {
-    const budget = new MemoryBudget(14 + entryBytes("admitted"));
+    const budget = payloadBudget(14 + entryBytes("admitted"));
     const scope = new MemoryScope(budget);
     scope.admit(14, "eight-byte transport plus three two-byte outputs");
     const cache = new SharedMemoryCache({
@@ -128,7 +147,7 @@ describe("owned range cache", () => {
   it.each([
     4, 3,
   ])("uses exact demand when coalescing exceeds admission at extent %s", async (extent) => {
-    const budget = new MemoryBudget(extent);
+    const budget = payloadBudget(extent);
     const scope = new MemoryScope(budget);
     scope.admit(extent, "demand");
     const cache = new SharedMemoryCache({ maxBytes: 8, memoryBudget: budget });
@@ -158,7 +177,7 @@ describe("owned range cache", () => {
   });
 
   it("deduplicates coalesced prefetch and demand, pins copies, and reuses cached bytes", async () => {
-    const budget = new MemoryBudget(24 + entryBytes("file"));
+    const budget = payloadBudget(24 + entryBytes("file"));
     const scope = new MemoryScope(budget);
     const cache = new SharedMemoryCache({
       maxBytes: 16 + entryBytes("file"),
@@ -198,7 +217,7 @@ describe("owned range cache", () => {
   });
 
   it("releases pending ownership when even exact input plus output cannot fit", async () => {
-    const budget = new MemoryBudget(8);
+    const budget = payloadBudget(8);
     const scope = new MemoryScope(budget);
     const input = source();
     const file = cachedRangeBuffer(input.file, { maxBytes: 8, coalesceBytes: 8 }, "file");
@@ -217,7 +236,7 @@ describe("owned range cache", () => {
   });
 
   it("closing one waiter does not invalidate another waiter sharing its read", async () => {
-    const budget = new MemoryBudget(16);
+    const budget = payloadBudget(16);
     const first = new MemoryScope(budget);
     const second = new MemoryScope(budget);
     const input = source();
@@ -241,7 +260,7 @@ describe("owned range cache", () => {
 });
 
 it("shrinks read-ahead to exact demand using current shared-pool headroom", async () => {
-  const pool = new MemoryBudget(12);
+  const pool = payloadBudget(12);
   const budget = pool.child(16);
   const scope = new MemoryScope(budget);
   const competing = pool.reserve(8, "other job");
@@ -260,7 +279,7 @@ it("shrinks read-ahead to exact demand using current shared-pool headroom", asyn
 });
 
 it("does not issue an I/O for an empty demand or an invalid owned range", async () => {
-  const scope = new MemoryScope(new MemoryBudget(0));
+  const scope = new MemoryScope(payloadBudget(0));
   const input = source();
   const file = cachedRangeBuffer(input.file, { maxBytes: 8 }, "empty");
   const empty = await file.sliceOwned?.(16, 16, scope);
@@ -280,7 +299,7 @@ it("does not issue an I/O for an empty demand or an invalid owned range", async 
 });
 
 it("settles every in-flight prefetch before reporting an error", async () => {
-  const budget = new MemoryBudget(16 + entryBytes("failure") + entryBytes("failure", 16, 8, 16));
+  const budget = payloadBudget(16 + entryBytes("failure") + entryBytes("failure", 16, 8, 16));
   const scope = new MemoryScope(budget);
   const cache = new SharedMemoryCache({ memoryBudget: budget });
   let finish: (() => void) | undefined;
@@ -343,7 +362,7 @@ it("settles every in-flight prefetch before reporting an error", async () => {
 });
 
 it("aborts the shared I/O only after its last active waiter leaves and permits a new read", async () => {
-  const budget = new MemoryBudget(32);
+  const budget = payloadBudget(32);
   const first = new MemoryScope(budget);
   const second = new MemoryScope(budget);
   const retry = new MemoryScope(budget);
@@ -400,7 +419,7 @@ it("aborts the shared I/O only after its last active waiter leaves and permits a
 });
 
 it("declines speculative allocation under pressure while allowing small demand", async () => {
-  const budget = new MemoryBudget(4);
+  const budget = payloadBudget(4);
   const scope = new MemoryScope(budget);
   const input = source();
   const cache = new SharedMemoryCache({ memoryBudget: budget });
@@ -432,7 +451,7 @@ it("does not suppress physical-read budgets or transport failures during prefetc
     new LakeqlError("LAKEQL_BUDGET_EXCEEDED", "too many reads", { metric: "range requests" }),
     new Error("network failure"),
   ]) {
-    const scope = new MemoryScope(new MemoryBudget(16 + entryBytes("failure")));
+    const scope = new MemoryScope(payloadBudget(16 + entryBytes("failure")));
     const file = cachedRangeBuffer(
       {
         byteLength: 16,
@@ -453,7 +472,7 @@ it("does not suppress physical-read budgets or transport failures during prefetc
 });
 
 it("tolerates allocation pressure arriving after prefetch admission", async () => {
-  const budget = new MemoryBudget(8 + entryBytes("racing-admission", 8));
+  const budget = payloadBudget(8 + entryBytes("racing-admission", 8));
   const scope = new MemoryScope(budget);
   let attempted = false;
   const file = cachedRangeBuffer(
@@ -482,7 +501,7 @@ it("tolerates allocation pressure arriving after prefetch admission", async () =
 });
 
 it("reuses owned ranges across job budgets and shrinks oversized cached windows for small readers", async () => {
-  const pool = new MemoryBudget(32 + entryBytes("jobs"));
+  const pool = payloadBudget(32 + entryBytes("jobs"));
   const cache = new SharedMemoryCache({ maxBytes: 16 + entryBytes("jobs"), memoryBudget: pool });
   const input = source();
   const file = cachedRangeBuffer(
@@ -513,7 +532,7 @@ it("reuses owned ranges across job budgets and shrinks oversized cached windows 
 });
 
 it("deduplicates in-flight reads across separate job budgets in a shared pool", async () => {
-  const pool = new MemoryBudget(16 + entryBytes("concurrent-jobs"));
+  const pool = payloadBudget(16 + entryBytes("concurrent-jobs"));
   const first = new MemoryScope(pool.child(10));
   const second = new MemoryScope(pool.child(10));
   const cache = new SharedMemoryCache({
@@ -548,7 +567,7 @@ it.each([
   8, 32,
 ])("preserves higher-priority decoded backing during speculative reads (pool=%s)", async (poolBytes) => {
   const keyWorkspace = c.string + "decoded-vector:hot-page".length * c.stringCodeUnit;
-  const root = new MemoryBudget(
+  const root = payloadBudget(
     poolBytes + sharedCacheMetadataBytes("decoded-vector:hot-page") + keyWorkspace,
   );
   const shared = new SharedMemoryCache({
@@ -591,7 +610,7 @@ it.each([
   false,
   true,
 ])("uses post-expiry allocation headroom without ignoring live pins (pinned=%s)", async (pinned) => {
-  const root = new MemoryBudget(8 + entryBytes("expiry"));
+  const root = payloadBudget(8 + entryBytes("expiry"));
   const shared = new SharedMemoryCache({
     memoryBudget: root,
     maxBytes: 8 + entryBytes("expiry"),
@@ -624,9 +643,9 @@ it.each([
   false,
   true,
 ])("avoids unusable read-ahead for incompatible owned caches (unrelated=%s)", async (unrelated) => {
-  const budget = new MemoryBudget(32);
+  const budget = payloadBudget(32);
   const scope = new MemoryScope(budget);
-  const cacheBudget = new MemoryBudget(32);
+  const cacheBudget = payloadBudget(32);
   const cache = new SharedMemoryCache({
     maxBytes: 16,
     ...(unrelated ? { memoryBudget: cacheBudget } : {}),
@@ -672,7 +691,7 @@ it.each([
 ])("admits prefetch payload plus entry metadata before reading (stage=%s)", async (stage) => {
   const metadata = entryBytes("admission");
   for (const shortage of ["none", "pool", "cache"] as const) {
-    const pool = new MemoryBudget(8 + metadata - (shortage === "pool" ? 1 : 0));
+    const pool = payloadBudget(8 + metadata - (shortage === "pool" ? 1 : 0));
     const root = new MemoryScope(pool);
     const scope = stage ? root.childStage(8, "input extent") : new MemoryScope(pool.child(8));
     const maxBytes = 8 + metadata - (shortage === "cache" ? 1 : 0);
