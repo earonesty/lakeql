@@ -1285,6 +1285,7 @@ export class QueryResult {
     }
 
     const selectedRefs = refs.slice(config.offset ?? 0, maxRefs);
+    refs.length = 0;
     const rowsByRef = await this.materializeRowRefs(
       selectedRefs,
       outputColumns,
@@ -2057,10 +2058,9 @@ export class QueryResult {
         enforceBudget(config.budget, this.stats, config.now, startedAt);
       }
     }
-    const ranked = retained.finish();
     const limit = config.limit;
     if (limit === undefined) return undefined;
-    const selected = ranked.slice(config.offset ?? 0, (config.offset ?? 0) + limit);
+    const selected = retained.finish().slice(config.offset ?? 0, (config.offset ?? 0) + limit);
     const rowsByRef = await this.materializeRowRefs(
       selected,
       outputColumns,
@@ -2088,10 +2088,29 @@ export class QueryResult {
     const scanVectorBatches = vectorBatchScanner(this.config.scanner);
     if (scanVectorBatches === undefined) return new Map();
     const rows = new Map<string, Row>();
-    for (const ref of refs) rows.set(rowRefKey(ref), { ...ref.keys });
+    if (refs.length === 0) return rows;
+    const budget = this.config.budget;
+    const measured = budget.maxMemoryBytes !== undefined;
+    // Both references and result entries remain live during deferred reads.
+    // Charge their serialized lists, including entry keys, without rescanning
+    // all retained rows when one payload is materialized.
+    const referenceBytes = measured ? estimateOperatorMemoryBytes(refs) : 0;
+    const usage = new RunningCounter();
+    const itemBytes = (key: string, row: Row) =>
+      measured ? estimateOperatorMemoryBytes([key, row]) : 0;
+    const retain = (key: string, row: Row) => {
+      const previous = rows.get(key);
+      if (previous !== undefined) usage.remove(itemBytes(key, previous));
+      usage.add(itemBytes(key, row));
+      enforceBufferedRowsBudget(budget, usage.items);
+      enforceOperatorMemoryBudget(budget, referenceBytes + usage.listBytes);
+      rows.set(key, row);
+    };
+    for (const ref of refs) retain(rowRefKey(ref), { ...ref.keys });
     const lateColumns = columns.filter((column) => !rankColumns.includes(column));
     if (lateColumns.length === 0) return rows;
     for (const window of materializationWindows(refs, maxWindowRows)) {
+      enforceBudget(budget, this.stats, this.config.now, startedAt);
       const scanOptions: ScanOptions = {
         ...(window.object === undefined ? {} : { object: window.object }),
         columns: lateColumns,
@@ -2108,6 +2127,7 @@ export class QueryResult {
         window.path,
         scanOptions,
       )) {
+        enforceBudget(budget, this.stats, this.config.now, startedAt);
         for (let index = 0; index < batch.rowCount; index += 1) {
           const rowIndex = rowOffset + index;
           const key = rowRefKey({ path: window.path, rowIndex });
@@ -2118,7 +2138,7 @@ export class QueryResult {
             const vector = batch.columns[column];
             if (vector !== undefined) row[column] = vectorValue(vector, index);
           }
-          rows.set(key, { ...existing, ...row });
+          retain(key, { ...existing, ...row });
         }
       }
     }
