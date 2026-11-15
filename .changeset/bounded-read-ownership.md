@@ -440,3 +440,8 @@ Admit nested Parquet page cache-key workspace before constructing escaped JSON
 keys. Skip optional decoded-cache lookup when workspace is unavailable or would
 consume a nonrefundable stage extent, and release key scratch independently of
 retained page output.
+
+Prevent decoded Parquet cache-key collisions with versioned structured keys.
+Preserve column-list boundaries and distinguish file-identity fields containing
+control characters, so warm projections cannot receive another projection's data.
+Old internal key formats become cold entries until normal eviction.

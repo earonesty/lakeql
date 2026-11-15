@@ -134,7 +134,7 @@ describe("DecodedColumnCache", () => {
         rowStart: 2,
         rowEnd: 4,
       }),
-    ).toBe("flights.parquet\u001f10\u001fabc\u001f2\u001f4\u001fa\u001fb");
+    ).toBe('["column-v2","flights.parquet",10,"abc",2,4,["a","b"]]');
     expect(
       decodedColumnCacheKey({
         path: "flights.parquet",
@@ -143,7 +143,7 @@ describe("DecodedColumnCache", () => {
         rowStart: 2,
         rowEnd: 4,
       }),
-    ).toBe("flights.parquet\u001f10\u001f\u001f2\u001f4\u001fa");
+    ).toBe('["column-v2","flights.parquet",10,null,2,4,["a"]]');
     expect(
       decodedColumnPageCacheKey({
         path: "flights.parquet",
@@ -156,7 +156,7 @@ describe("DecodedColumnCache", () => {
         pageOffset: 8,
         compressedPageSize: 9,
       }),
-    ).toBe("flights.parquet\u001f10\u001fabc\u001fdelay\u001f5\u001f6\u001f7\u001f8\u001f9");
+    ).toBe('["page-v2","flights.parquet",10,"abc","delay",5,6,7,8,9]');
     expect(
       decodedDictionaryPageCacheKey({
         path: "flights.parquet",
@@ -167,7 +167,7 @@ describe("DecodedColumnCache", () => {
         compressedPageSize: 9,
         values: 3,
       }),
-    ).toBe("flights.parquet\u001f10\u001f\u001fdelay\u001f5\u001f8\u001f9\u001f3");
+    ).toBe('["dictionary-v2","flights.parquet",10,null,"delay",5,8,9,3]');
   });
 });
 

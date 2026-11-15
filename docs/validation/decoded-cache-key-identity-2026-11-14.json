@@ -1,0 +1,50 @@
+{
+  "baseline": "fdf086f",
+  "status": "all focused, local, Worker, conformance, reference, release and public-R2 gates passed",
+  "problem": "Delimiter joining did not preserve string-field or column-list boundaries. Real cached Parquet projections with different delimiter-bearing names received the previous projection columns and values.",
+  "negativeControls": {
+    "failedTests": 3,
+    "realFixture": "Projection [a<US>b,c] was cached; [a,b<US>c] returned the first projection on the next read.",
+    "pageAndDictionary": "path=x<US>7, byteLength=8, etag=tag collided with path=x, byteLength=7, etag=8<US>tag."
+  },
+  "contract": [
+    "Versioned structured JSON tuple keys distinguish column batches, scalar pages, and dictionary pages.",
+    "Column names remain a nested ordered array, preserving arity and boundaries.",
+    "Absent version tags use null, distinct from an empty string; escaping preserves control characters, lone surrogates and literal escape sequences.",
+    "Old key formats are not reused; cache contents under those keys are cold until ordinary eviction."
+  ],
+  "validation": {
+    "focusedPassed": 25,
+    "realFixture": "Two distinct two-row projections each have a cold miss followed by a warm hit, correct values, and zero pool usage after cache clear.",
+    "cases": [
+      "column-list delimiters and arity",
+      "file identity field boundaries",
+      "missing versus empty etag",
+      "empty columns versus empty names",
+      "control characters versus escape text",
+      "lone surrogates versus escape text",
+      "Unicode",
+      "column order"
+    ],
+    "regularPassed": 4012,
+    "regularSkipped": 645,
+    "workerPassed": 95,
+    "conformancePassed": 520,
+    "conformanceSkipped": 1,
+    "referencePassed": 120,
+    "releaseChecks": "build, types, package consumers, lint, compatibility, large files, changeset, deterministic fixtures",
+    "publicR2": {
+      "scenarios": 52,
+      "ordinaryQueries": 40,
+      "headroomBytes": 524288,
+      "maximumConcurrentReads": 4,
+      "maximumIncrementalChargedBytes": 415448,
+      "maximumWarmOrdinaryRequests": 0,
+      "artifact": "../benchmarks/decoded-cache-key-identity-public-r2-2026-11-14.json"
+    }
+  },
+  "remaining": [
+    "Scoped admission for other decoded key constructors and prefix concatenations remains an M1 item.",
+    "This correctness fix does not establish total runtime memory caps or complete the broader audit."
+  ]
+}

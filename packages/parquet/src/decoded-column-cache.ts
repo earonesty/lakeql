@@ -148,14 +148,15 @@ export function decodedColumnCacheKey(options: {
   rowStart: number;
   rowEnd: number;
 }): string {
-  return [
+  return JSON.stringify([
+    "column-v2",
     options.path,
     options.byteLength,
-    options.etag ?? "",
+    options.etag ?? null,
     options.rowStart,
     options.rowEnd,
-    ...options.columns,
-  ].join("\u001f");
+    options.columns,
+  ]);
 }
 
 export function decodedColumnPageCacheKey(options: {
@@ -169,17 +170,18 @@ export function decodedColumnPageCacheKey(options: {
   pageOffset: number;
   compressedPageSize: number;
 }): string {
-  return [
+  return JSON.stringify([
+    "page-v2",
     options.path,
     options.byteLength,
-    options.etag ?? "",
+    options.etag ?? null,
     options.column,
     options.rowGroupStart,
     options.pageRowStart,
     options.pageRowEnd,
     options.pageOffset,
     options.compressedPageSize,
-  ].join("\u001f");
+  ]);
 }
 
 export function decodedDictionaryPageCacheKey(options: {
@@ -192,16 +194,17 @@ export function decodedDictionaryPageCacheKey(options: {
   compressedPageSize: number;
   values: number;
 }): string {
-  return [
+  return JSON.stringify([
+    "dictionary-v2",
     options.path,
     options.byteLength,
-    options.etag ?? "",
+    options.etag ?? null,
     options.column,
     options.rowGroupStart,
     options.pageOffset,
     options.compressedPageSize,
     options.values,
-  ].join("\u001f");
+  ]);
 }
 
 function decodedKey(key: string): string {
