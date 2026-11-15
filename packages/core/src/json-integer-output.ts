@@ -22,3 +22,9 @@ export function writeJsonInteger(value: number, buffer: Uint8Array, offset: numb
   } while (remaining !== 0);
   return end;
 }
+
+/** Allocation-free upper bound for a JSON number (or an absent tuple field). */
+export function jsonNumberCharacters(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value)) return 4;
+  return Number.isSafeInteger(value) ? jsonIntegerBytes(value) : 32;
+}

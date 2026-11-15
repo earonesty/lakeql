@@ -6,9 +6,35 @@ import {
   sharedCacheMetadataBytes,
 } from "lakeql-core";
 import { describe, expect, it, vi } from "vitest";
-import { fileCacheKey, pendingFileCacheKeyBytes } from "./file-cache-key.js";
+import { borrowedRangeKeyBytes, fileCacheKey, pendingFileCacheKeyBytes } from "./file-cache-key.js";
 import { cachedRangeBuffer } from "./range-cache.js";
 import type { StoreAsyncBuffer } from "./types.js";
+
+// Retained cache capacity includes entry bookkeeping; the separate pool also
+// covers selected descriptors and active key workspace.
+function borrowedOptions(
+  payload: number,
+  entries: number,
+  path: string,
+  size: number,
+  coalesceBytes: number,
+) {
+  const maxBytes =
+    payload +
+    entries *
+      sharedCacheMetadataBytes(fileCacheKey("scan-range-v2", path, size, undefined, size, size));
+  const directory = 2 * c.array + c.object + 2 * c.property;
+  const selection = c.object + 3 * c.property + c.string + 65 * c.stringCodeUnit + 4 * c.arraySlot;
+  const planning =
+    directory +
+    entries * selection +
+    Math.min(entries, 4) * borrowedRangeKeyBytes(path, size, undefined, size, size);
+  return {
+    maxBytes,
+    coalesceBytes,
+    cacheOptions: { memoryBudget: new MemoryBudget(maxBytes + planning) },
+  };
+}
 
 describe("cachedRangeBuffer", () => {
   it.each([false, true])("bounds tiny-range read-ahead callbacks, owned=%s", async (owned) => {
@@ -34,33 +60,43 @@ describe("cachedRangeBuffer", () => {
           } satisfies Partial<StoreAsyncBuffer>)
         : {}),
     };
-    const capacity = owned
-      ? Array.from(
-          { length: 64 },
-          (_, i) =>
-            1 +
-            sharedCacheMetadataBytes(
-              fileCacheKey("owned-scan-range-v2", "tiny", 128, undefined, i * 2, i * 2 + 1),
-            ),
-        ).reduce((sum, bytes) => sum + bytes, 0)
-      : 64;
+    const capacity = Array.from(
+      { length: 64 },
+      (_, i) =>
+        1 +
+        sharedCacheMetadataBytes(
+          fileCacheKey(
+            owned ? "owned-scan-range-v2" : "scan-range-v2",
+            "tiny",
+            128,
+            undefined,
+            i * 2,
+            i * 2 + 1,
+          ),
+        ),
+    ).reduce((sum, bytes) => sum + bytes, 0);
+    // Keep the original payload/cache child cap; the shared parent explicitly
+    // covers 64 selected identities plus two active reads and the directory.
+    const planning = owned
+      ? c.object + 8 * c.property + 66 * pendingFileCacheKeyBytes("tiny", undefined)
+      : 2 * c.array +
+        c.object +
+        2 * c.property +
+        64 * (c.object + 3 * c.property + c.string + 65 * c.stringCodeUnit + 4 * c.arraySlot) +
+        2 * borrowedRangeKeyBytes("tiny", 128, undefined, 128, 128);
+    const pool = new MemoryBudget(capacity + 64 + planning);
+    const scope = new MemoryScope(pool.child(capacity + 64));
     const cache = cachedRangeBuffer(
       file,
       {
         maxBytes: capacity,
+        ...(!owned ? { cacheOptions: { memoryBudget: pool } } : {}),
         maxEntryBytes: 1,
         coalesceBytes: 0,
         maxConcurrentPrefetchReads: 2,
       },
       "tiny",
     );
-    // Keep the original payload/cache child cap; the shared parent explicitly
-    // covers 64 selected identities plus two active reads and the directory.
-    const planning = owned
-      ? c.object + 8 * c.property + 66 * pendingFileCacheKeyBytes("tiny", undefined)
-      : 0;
-    const pool = new MemoryBudget(capacity + 64 + planning);
-    const scope = new MemoryScope(pool.child(capacity + 64));
     const ranges = Array.from({ length: 64 }, (_, index) => ({
       start: index * 2,
       end: index * 2 + 1,
@@ -95,9 +131,7 @@ describe("cachedRangeBuffer", () => {
   });
 
   it("pins shared cache hits across async handoff and releases after copying", async () => {
-    const pool = new MemoryBudget(
-      8 + sharedCacheMetadataBytes(fileCacheKey("scan-range-v2", "pins", 8, undefined, 0, 8)),
-    );
+    const pool = borrowedOptions(8, 1, "pins", 8, 8).cacheOptions.memoryBudget;
     const sharedCache = new SharedMemoryCache({
       maxBytes:
         8 + sharedCacheMetadataBytes(fileCacheKey("scan-range-v2", "pins", 8, undefined, 0, 8)),
@@ -137,12 +171,19 @@ describe("cachedRangeBuffer", () => {
         return payload;
       },
     };
+    const config = borrowedOptions(16, 2, "copy-test", 16, 8);
     const cache = cachedRangeBuffer(
       file,
       {
-        maxBytes: 16,
-        coalesceBytes: 8,
-        ...(shared ? { sharedCache: new SharedMemoryCache({ maxBytes: 16 }) } : {}),
+        ...config,
+        ...(shared
+          ? {
+              sharedCache: new SharedMemoryCache({
+                maxBytes: config.maxBytes,
+                memoryBudget: config.cacheOptions.memoryBudget,
+              }),
+            }
+          : {}),
       },
       "copy-test",
     );
@@ -173,12 +214,19 @@ describe("cachedRangeBuffer", () => {
         return new ArrayBuffer(8);
       },
     };
+    const config = borrowedOptions(8, 2, "failure-test", 8, 8);
     const cache = cachedRangeBuffer(
       file,
       {
-        maxBytes: 8,
-        coalesceBytes: 8,
-        ...(shared ? { sharedCache: new SharedMemoryCache({ maxBytes: 8 }) } : {}),
+        ...config,
+        ...(shared
+          ? {
+              sharedCache: new SharedMemoryCache({
+                maxBytes: config.maxBytes,
+                memoryBudget: config.cacheOptions.memoryBudget,
+              }),
+            }
+          : {}),
       },
       "failure-test",
     );
@@ -201,7 +249,7 @@ describe("cachedRangeBuffer", () => {
         return source.buffer.slice(start, end);
       },
     };
-    const cached = cachedRangeBuffer(file, { maxBytes: 6, coalesceBytes: 0 }, "local");
+    const cached = cachedRangeBuffer(file, borrowedOptions(6, 2, "local", 6, 0), "local");
 
     await expect(bytes(cached.slice(1, 4))).resolves.toEqual([2, 3, 4]);
     await expect(bytes(cached.slice(1, 4))).resolves.toEqual([2, 3, 4]);
@@ -220,7 +268,7 @@ describe("cachedRangeBuffer", () => {
         return source.buffer.slice(start, end);
       },
     };
-    const cached = cachedRangeBuffer(file, { maxBytes: 8, coalesceBytes: 4 }, "local");
+    const cached = cachedRangeBuffer(file, borrowedOptions(8, 2, "local", 8, 4), "local");
 
     await expect(bytes(cached.slice(1, 2))).resolves.toEqual([2]);
     await expect(bytes(cached.slice(2, 4))).resolves.toEqual([3, 4]);
@@ -243,7 +291,7 @@ describe("cachedRangeBuffer", () => {
         return source.buffer.slice(start, end);
       },
     };
-    const cached = cachedRangeBuffer(file, { maxBytes: 4, coalesceBytes: 4 }, "local");
+    const cached = cachedRangeBuffer(file, borrowedOptions(4, 2, "local", 4, 4), "local");
 
     const first = bytes(cached.slice(0, 1));
     const second = bytes(cached.slice(1, 3));
@@ -270,7 +318,7 @@ describe("cachedRangeBuffer", () => {
         return source.buffer.slice(start, end);
       },
     };
-    const cached = cachedRangeBuffer(file, { maxBytes: 8, coalesceBytes: 4 }, "prefetch");
+    const cached = cachedRangeBuffer(file, borrowedOptions(8, 2, "prefetch", 8, 4), "prefetch");
 
     await cached.prefetch?.([
       { start: 1, end: 2 },
@@ -289,7 +337,11 @@ describe("cachedRangeBuffer", () => {
     const file = storeBuffer([1, 2, 3, 4, 5, 6, 7, 8], () => {
       slices += 1;
     });
-    const cached = cachedRangeBuffer(file, { maxBytes: 4, coalesceBytes: 4 }, "bounded-prefetch");
+    const cached = cachedRangeBuffer(
+      file,
+      borrowedOptions(4, 1, "bounded-prefetch", 8, 4),
+      "bounded-prefetch",
+    );
 
     await cached.prefetch?.([
       { start: 0, end: 1 },

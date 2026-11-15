@@ -11,7 +11,7 @@ export interface ObjectStoreCacheOptions {
   ttlMs?: number;
   /** How LakeQL should spend the cache budget. Defaults to balanced. */
   policy?: CachePolicy;
-  /** Shared allocation pool for retained cache payloads. */
+  /** Shared allocation pool for retained cache entries and temporary key workspace. */
   memoryBudget?: MemoryBudget;
 }
 
@@ -86,6 +86,8 @@ export interface SharedOwnedCacheSetOptions extends SharedCacheSetOptions {
   cacheBytes?: number;
 }
 
+const unbudgetedKeyWorkspace = { release() {} };
+
 export class SharedMemoryCache {
   private readonly maxBytes: number;
   private readonly ttlMs: number | undefined;
@@ -153,8 +155,8 @@ export class SharedMemoryCache {
     use: (key: string) => T,
     fallbackBudget?: MemoryBudget,
   ): T | undefined {
-    const reservation = this.keyWorkspace(bytes, fallbackBudget);
-    if (reservation === false) return undefined;
+    const reservation = this.tryReserveKeyWorkspace(bytes, fallbackBudget);
+    if (reservation === undefined) return undefined;
     try {
       return use(create());
     } finally {
@@ -169,8 +171,8 @@ export class SharedMemoryCache {
     use: (key: string) => Promise<T>,
     fallbackBudget?: MemoryBudget,
   ): Promise<T | undefined> {
-    const reservation = this.keyWorkspace(bytes, fallbackBudget);
-    if (reservation === false) return undefined;
+    const reservation = this.tryReserveKeyWorkspace(bytes, fallbackBudget);
+    if (reservation === undefined) return undefined;
     try {
       return await use(create());
     } finally {
@@ -178,16 +180,21 @@ export class SharedMemoryCache {
     }
   }
 
-  private keyWorkspace(
+  /** Aggregate allocation headroom for planning key leases, without reclamation.
+   * Each individual lease is also bounded by this cache's retained capacity. */
+  get availableKeyWorkspaceBytes(): number {
+    return this.memoryBudget?.availableBytes ?? this.maxBytes;
+  }
+
+  /** Caller must retain this lease until every reference to temporary keys ends. */
+  tryReserveKeyWorkspace(
     bytes: number,
     fallbackBudget?: MemoryBudget,
-  ): MemoryReservation | undefined | false {
-    // Like retained entry metadata, lookup scratch belongs to the configured
-    // cache domain. A consumer only pins payload in its own child budget.
+  ): Pick<MemoryReservation, "release"> | undefined {
     const budget = this.memoryBudget ?? fallbackBudget;
-    if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > this.maxBytes) return false;
-    if (budget !== undefined && bytes > budget.availableBytes) return false;
-    return budget?.reserve(bytes, "cache key workspace");
+    if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > this.maxBytes) return undefined;
+    if (budget !== undefined && bytes > budget.availableBytes) return undefined;
+    return budget?.reserve(bytes, "cache key workspace") ?? unbudgetedKeyWorkspace;
   }
 
   /** Borrow for immediate use. Use acquire when retaining across cache mutation. */

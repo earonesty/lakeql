@@ -10,6 +10,7 @@ export * from "./expr-utils.js";
 export * from "./in-memory.js";
 export * from "./interval.js";
 export * from "./join.js";
+export { jsonNumberCharacters } from "./json-integer-output.js";
 export * from "./json-string-size.js";
 export * from "./manifest.js";
 export {

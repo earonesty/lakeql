@@ -11,6 +11,7 @@ import type {
 import {
   MATERIALIZATION_CHARGES as c,
   isLakeqlError,
+  jsonNumberCharacters,
   jsonStringUtf8Bytes,
   retainedBatchBytes,
   retainedVectorBytes,
@@ -283,17 +284,7 @@ export function decodedCacheKeyJsonCharacters(key: DecodedCacheKey): number {
 }
 
 export function decodedCacheNumberCharacters(value: number | undefined): number {
-  if (value === undefined || !Number.isFinite(value)) return 4;
-  // File/page offsets are safe integers. Bound unusual finite numeric inputs
-  // without allocating a decimal formatting string before admission.
-  if (!Number.isSafeInteger(value)) return 32;
-  let digits = value < 0 ? 1 : 0;
-  let remaining = Math.abs(value);
-  do {
-    digits++;
-    remaining = Math.floor(remaining / 10);
-  } while (remaining >= 1);
-  return digits;
+  return jsonNumberCharacters(value);
 }
 
 export function decodedCacheKeyWorkspaceBytes(key: DecodedCacheKey): number {

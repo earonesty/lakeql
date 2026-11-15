@@ -471,3 +471,10 @@ Admit optional Parquet metadata cache-key workspace before serialization and
 release it between cache lookup and footer decoding. Bound owned custom-adapter
 keys through the caller budget, and hold shared borrowed-cache key workspace until
 asynchronous adapter operations settle. Avoid constructing unused no-cache keys.
+
+Unify private and shared borrowed range caches around bounded entry accounting and
+key workspace leases. Admit prefetch planning and forecast metadata plus active
+keys before read-ahead. Private cache identities omit redundant paths; shared
+identities preserve file boundaries. Private `maxBytes` now includes retained
+entry metadata, and its configured allocation pool is honored. Tiny cache budgets
+may decline retention/read-ahead while demanded reads use exact ranges.

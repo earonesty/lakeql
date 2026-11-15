@@ -1,6 +1,7 @@
 // Read-only validation against the project's public R2 fixture. Run after pnpm build.
 import assert from "node:assert/strict";
 import {
+  MATERIALIZATION_CHARGES as c,
   col,
   gt,
   MemoryBudget,
@@ -12,7 +13,7 @@ import {
   withObjectStoreReadControls,
 } from "../packages/core/dist/index.js";
 import { httpStore } from "../packages/http/dist/index.js";
-import { fileCacheKey } from "../packages/parquet/dist/file-cache-key.js";
+import { borrowedRangeKeyBytes, fileCacheKey } from "../packages/parquet/dist/file-cache-key.js";
 import { asyncBufferFromStore, createParquetLake } from "../packages/parquet/dist/index.js";
 import { readParquetMetadataFromFile } from "../packages/parquet/dist/metadata-cache.js";
 import { readParquetObjectBatchesFromFile } from "../packages/parquet/dist/object-batches.js";
@@ -160,12 +161,31 @@ for (const maxConcurrentReads of [1, 4]) {
   );
   assert.ok(file.byteLength >= 4096);
   const cacheCapacityBytes = fourWindowCapacity(file, false);
+  const directoryBytes = 2 * c.array + c.object + 2 * c.property;
+  const selectionBytes =
+    c.object + 3 * c.property + c.string + 65 * c.stringCodeUnit + 4 * c.arraySlot;
+  const planningWorkspaceBytes =
+    directoryBytes +
+    4 * selectionBytes +
+    5 *
+      borrowedRangeKeyBytes(
+        `${baseUrl}${path}`,
+        file.byteLength,
+        file.etag,
+        file.byteLength,
+        file.byteLength,
+      );
+  const cachePool = new MemoryBudget(cacheCapacityBytes + planningWorkspaceBytes);
+  const sharedCache = new SharedMemoryCache({
+    maxBytes: cacheCapacityBytes,
+    memoryBudget: cachePool,
+  });
   const cached = cachedRangeBuffer(
     file,
     {
       maxBytes: cacheCapacityBytes,
       coalesceBytes: 1024,
-      sharedCache: new SharedMemoryCache({ maxBytes: cacheCapacityBytes }),
+      sharedCache,
     },
     `${baseUrl}${path}`,
   );
@@ -191,8 +211,13 @@ for (const maxConcurrentReads of [1, 4]) {
     maxConcurrentReads,
     payloadCapacityBytes: 4096,
     cacheCapacityBytes,
+    planningWorkspaceBytes,
+    cachePoolCapacityBytes: cachePool.maxBytes,
+    cachePoolPeakBytes: cachePool.peakBytes,
     ...metrics,
   });
+  sharedCache.deleteWhere(() => true);
+  assert.equal(cachePool.usedBytes, 0);
 }
 
 for (const memoryMiB of [64, 128]) {

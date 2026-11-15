@@ -1,0 +1,402 @@
+{
+  "baseline": "bb4d44b",
+  "benchmarkName": "borrowed-range-query.mjs",
+  "moduleName": "core/object-store-cache,parquet/file-cache-key,parquet/range-cache",
+  "modules": [
+    {
+      "name": "core/object-store-cache",
+      "baselineSourceSha256": "e297cf95df43108f0183528044a1c86bb3b50546876bcc9b03d3de409702eadf",
+      "currentSourceSha256": "98bc5023e921dc4eff0d987c4060ada248dd9263f22166367a7ca428b39dcaaf"
+    },
+    {
+      "name": "parquet/file-cache-key",
+      "baselineSourceSha256": "6a17a136904896a2e9430ef16c3ebf8ac27dcde51b1c26bb3dc558c47eb724b4",
+      "currentSourceSha256": "4e4d13597fecb33d858798f915829e875d7668a63987c77648c6f586c7c4455f"
+    },
+    {
+      "name": "parquet/range-cache",
+      "baselineSourceSha256": "eea21d0b64429a36c6fb80e83d34c1d6f13eac26c33f7740e40fb03dd4ffc25b",
+      "currentSourceSha256": "1d0db583074423e067da9414a90e6ef0c3bb8e07e3c1624206a973877426cbf8"
+    }
+  ],
+  "node": "v24.18.1",
+  "warmupPairs": 1,
+  "measuredPairs": 4,
+  "scope": "Alternating fresh Node processes; the named modules are replaced together by their prior implementations, with current dependencies. The recorded benchmark identifies its fixture and checks; these are local queries, not cloud throughput. Source store/runtime overhead excluded from pool metrics. Value parity is covered by external conformance; benchmark checks count and release.",
+  "priorMedianMs": 33.4539,
+  "currentMedianMs": 38.89013050000001,
+  "runs": {
+    "prior": [
+      {
+        "fixtureSha256": "8121df53dafa145cfdd37fa7b103ad6241fb2d00d4f6d698a31eaa51a7222d4d",
+        "rowsPerQuery": 512,
+        "poolBytes": 67108864,
+        "cacheCapacityBytes": 16777216,
+        "cases": [
+          {
+            "shared": false,
+            "runs": [
+              {
+                "temperature": "cold",
+                "elapsedMs": 15.619039,
+                "requests": 2,
+                "retainedBytes": 0
+              },
+              {
+                "temperature": "warm",
+                "elapsedMs": 7.56824499999999,
+                "requests": 0,
+                "retainedBytes": 0
+              }
+            ],
+            "afterReleaseBytes": 0
+          },
+          {
+            "shared": true,
+            "runs": [
+              {
+                "temperature": "cold",
+                "elapsedMs": 7.896603999999996,
+                "requests": 2,
+                "retainedBytes": 132584
+              },
+              {
+                "temperature": "warm",
+                "elapsedMs": 4.813842999999991,
+                "requests": 0,
+                "retainedBytes": 132584
+              }
+            ],
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 35.89773099999998,
+        "scope": "Borrowed reads over a real external Parquet fixture, private and shared caches; all cold/warm values and zero warm requests checked. Source/returned rows and transport buffers are caller-managed. Pool statistics cover cache/key accounting, not process memory or cloud throughput. Private cache cleanup uses root reclamation; its forced full-pool reservation is excluded from timing and no peak metric is reported."
+      },
+      {
+        "fixtureSha256": "8121df53dafa145cfdd37fa7b103ad6241fb2d00d4f6d698a31eaa51a7222d4d",
+        "rowsPerQuery": 512,
+        "poolBytes": 67108864,
+        "cacheCapacityBytes": 16777216,
+        "cases": [
+          {
+            "shared": false,
+            "runs": [
+              {
+                "temperature": "cold",
+                "elapsedMs": 12.38011499999999,
+                "requests": 2,
+                "retainedBytes": 0
+              },
+              {
+                "temperature": "warm",
+                "elapsedMs": 6.474592999999999,
+                "requests": 0,
+                "retainedBytes": 0
+              }
+            ],
+            "afterReleaseBytes": 0
+          },
+          {
+            "shared": true,
+            "runs": [
+              {
+                "temperature": "cold",
+                "elapsedMs": 8.514037000000016,
+                "requests": 2,
+                "retainedBytes": 132584
+              },
+              {
+                "temperature": "warm",
+                "elapsedMs": 4.975328000000019,
+                "requests": 0,
+                "retainedBytes": 132584
+              }
+            ],
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 32.34407300000002,
+        "scope": "Borrowed reads over a real external Parquet fixture, private and shared caches; all cold/warm values and zero warm requests checked. Source/returned rows and transport buffers are caller-managed. Pool statistics cover cache/key accounting, not process memory or cloud throughput. Private cache cleanup uses root reclamation; its forced full-pool reservation is excluded from timing and no peak metric is reported."
+      },
+      {
+        "fixtureSha256": "8121df53dafa145cfdd37fa7b103ad6241fb2d00d4f6d698a31eaa51a7222d4d",
+        "rowsPerQuery": 512,
+        "poolBytes": 67108864,
+        "cacheCapacityBytes": 16777216,
+        "cases": [
+          {
+            "shared": false,
+            "runs": [
+              {
+                "temperature": "cold",
+                "elapsedMs": 12.190978000000001,
+                "requests": 2,
+                "retainedBytes": 0
+              },
+              {
+                "temperature": "warm",
+                "elapsedMs": 6.513737000000006,
+                "requests": 0,
+                "retainedBytes": 0
+              }
+            ],
+            "afterReleaseBytes": 0
+          },
+          {
+            "shared": true,
+            "runs": [
+              {
+                "temperature": "cold",
+                "elapsedMs": 7.6710489999999965,
+                "requests": 2,
+                "retainedBytes": 132584
+              },
+              {
+                "temperature": "warm",
+                "elapsedMs": 4.981077999999997,
+                "requests": 0,
+                "retainedBytes": 132584
+              }
+            ],
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 31.356842,
+        "scope": "Borrowed reads over a real external Parquet fixture, private and shared caches; all cold/warm values and zero warm requests checked. Source/returned rows and transport buffers are caller-managed. Pool statistics cover cache/key accounting, not process memory or cloud throughput. Private cache cleanup uses root reclamation; its forced full-pool reservation is excluded from timing and no peak metric is reported."
+      },
+      {
+        "fixtureSha256": "8121df53dafa145cfdd37fa7b103ad6241fb2d00d4f6d698a31eaa51a7222d4d",
+        "rowsPerQuery": 512,
+        "poolBytes": 67108864,
+        "cacheCapacityBytes": 16777216,
+        "cases": [
+          {
+            "shared": false,
+            "runs": [
+              {
+                "temperature": "cold",
+                "elapsedMs": 12.319750999999997,
+                "requests": 2,
+                "retainedBytes": 0
+              },
+              {
+                "temperature": "warm",
+                "elapsedMs": 6.548622999999992,
+                "requests": 0,
+                "retainedBytes": 0
+              }
+            ],
+            "afterReleaseBytes": 0
+          },
+          {
+            "shared": true,
+            "runs": [
+              {
+                "temperature": "cold",
+                "elapsedMs": 7.518551000000002,
+                "requests": 2,
+                "retainedBytes": 132584
+              },
+              {
+                "temperature": "warm",
+                "elapsedMs": 8.17680199999998,
+                "requests": 0,
+                "retainedBytes": 132584
+              }
+            ],
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 34.56372699999997,
+        "scope": "Borrowed reads over a real external Parquet fixture, private and shared caches; all cold/warm values and zero warm requests checked. Source/returned rows and transport buffers are caller-managed. Pool statistics cover cache/key accounting, not process memory or cloud throughput. Private cache cleanup uses root reclamation; its forced full-pool reservation is excluded from timing and no peak metric is reported."
+      }
+    ],
+    "current": [
+      {
+        "fixtureSha256": "8121df53dafa145cfdd37fa7b103ad6241fb2d00d4f6d698a31eaa51a7222d4d",
+        "rowsPerQuery": 512,
+        "poolBytes": 67108864,
+        "cacheCapacityBytes": 16777216,
+        "cases": [
+          {
+            "shared": false,
+            "runs": [
+              {
+                "temperature": "cold",
+                "elapsedMs": 18.081830999999994,
+                "requests": 2,
+                "retainedBytes": 132524
+              },
+              {
+                "temperature": "warm",
+                "elapsedMs": 9.221981999999997,
+                "requests": 0,
+                "retainedBytes": 132524
+              }
+            ],
+            "afterReleaseBytes": 0
+          },
+          {
+            "shared": true,
+            "runs": [
+              {
+                "temperature": "cold",
+                "elapsedMs": 8.516681999999975,
+                "requests": 2,
+                "retainedBytes": 132584
+              },
+              {
+                "temperature": "warm",
+                "elapsedMs": 5.542817000000014,
+                "requests": 0,
+                "retainedBytes": 132584
+              }
+            ],
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 41.36331199999998,
+        "scope": "Borrowed reads over a real external Parquet fixture, private and shared caches; all cold/warm values and zero warm requests checked. Source/returned rows and transport buffers are caller-managed. Pool statistics cover cache/key accounting, not process memory or cloud throughput. Private cache cleanup uses root reclamation; its forced full-pool reservation is excluded from timing and no peak metric is reported."
+      },
+      {
+        "fixtureSha256": "8121df53dafa145cfdd37fa7b103ad6241fb2d00d4f6d698a31eaa51a7222d4d",
+        "rowsPerQuery": 512,
+        "poolBytes": 67108864,
+        "cacheCapacityBytes": 16777216,
+        "cases": [
+          {
+            "shared": false,
+            "runs": [
+              {
+                "temperature": "cold",
+                "elapsedMs": 19.134985999999998,
+                "requests": 2,
+                "retainedBytes": 132524
+              },
+              {
+                "temperature": "warm",
+                "elapsedMs": 8.467829999999992,
+                "requests": 0,
+                "retainedBytes": 132524
+              }
+            ],
+            "afterReleaseBytes": 0
+          },
+          {
+            "shared": true,
+            "runs": [
+              {
+                "temperature": "cold",
+                "elapsedMs": 6.194946000000016,
+                "requests": 2,
+                "retainedBytes": 132584
+              },
+              {
+                "temperature": "warm",
+                "elapsedMs": 5.3856110000000115,
+                "requests": 0,
+                "retainedBytes": 132584
+              }
+            ],
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 39.18337300000002,
+        "scope": "Borrowed reads over a real external Parquet fixture, private and shared caches; all cold/warm values and zero warm requests checked. Source/returned rows and transport buffers are caller-managed. Pool statistics cover cache/key accounting, not process memory or cloud throughput. Private cache cleanup uses root reclamation; its forced full-pool reservation is excluded from timing and no peak metric is reported."
+      },
+      {
+        "fixtureSha256": "8121df53dafa145cfdd37fa7b103ad6241fb2d00d4f6d698a31eaa51a7222d4d",
+        "rowsPerQuery": 512,
+        "poolBytes": 67108864,
+        "cacheCapacityBytes": 16777216,
+        "cases": [
+          {
+            "shared": false,
+            "runs": [
+              {
+                "temperature": "cold",
+                "elapsedMs": 16.878852999999992,
+                "requests": 2,
+                "retainedBytes": 132524
+              },
+              {
+                "temperature": "warm",
+                "elapsedMs": 8.164567999999989,
+                "requests": 0,
+                "retainedBytes": 132524
+              }
+            ],
+            "afterReleaseBytes": 0
+          },
+          {
+            "shared": true,
+            "runs": [
+              {
+                "temperature": "cold",
+                "elapsedMs": 6.190207000000015,
+                "requests": 2,
+                "retainedBytes": 132584
+              },
+              {
+                "temperature": "warm",
+                "elapsedMs": 6.146504999999991,
+                "requests": 0,
+                "retainedBytes": 132584
+              }
+            ],
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 37.38013299999999,
+        "scope": "Borrowed reads over a real external Parquet fixture, private and shared caches; all cold/warm values and zero warm requests checked. Source/returned rows and transport buffers are caller-managed. Pool statistics cover cache/key accounting, not process memory or cloud throughput. Private cache cleanup uses root reclamation; its forced full-pool reservation is excluded from timing and no peak metric is reported."
+      },
+      {
+        "fixtureSha256": "8121df53dafa145cfdd37fa7b103ad6241fb2d00d4f6d698a31eaa51a7222d4d",
+        "rowsPerQuery": 512,
+        "poolBytes": 67108864,
+        "cacheCapacityBytes": 16777216,
+        "cases": [
+          {
+            "shared": false,
+            "runs": [
+              {
+                "temperature": "cold",
+                "elapsedMs": 16.488817999999995,
+                "requests": 2,
+                "retainedBytes": 132524
+              },
+              {
+                "temperature": "warm",
+                "elapsedMs": 8.326363999999998,
+                "requests": 0,
+                "retainedBytes": 132524
+              }
+            ],
+            "afterReleaseBytes": 0
+          },
+          {
+            "shared": true,
+            "runs": [
+              {
+                "temperature": "cold",
+                "elapsedMs": 8.164148000000012,
+                "requests": 2,
+                "retainedBytes": 132584
+              },
+              {
+                "temperature": "warm",
+                "elapsedMs": 5.6175580000000025,
+                "requests": 0,
+                "retainedBytes": 132584
+              }
+            ],
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 38.59688800000001,
+        "scope": "Borrowed reads over a real external Parquet fixture, private and shared caches; all cold/warm values and zero warm requests checked. Source/returned rows and transport buffers are caller-managed. Pool statistics cover cache/key accounting, not process memory or cloud throughput. Private cache cleanup uses root reclamation; its forced full-pool reservation is excluded from timing and no peak metric is reported."
+      }
+    ]
+  }
+}

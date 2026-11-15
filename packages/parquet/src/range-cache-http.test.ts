@@ -1,17 +1,20 @@
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import {
+  MATERIALIZATION_CHARGES as c,
   MemoryBudget,
   MemoryScope,
   materializeBatchRows,
   memoryStore,
   SharedMemoryCache,
+  sharedCacheMetadataBytes,
   withObjectStoreReadControls,
 } from "lakeql-core";
 import { fixturePath, SALES } from "lakeql-fixtures";
 import { describe, expect, it } from "vitest";
 import { HttpObjectStore } from "../../http/src/index.js";
 import { DecodedColumnCache } from "./decoded-column-cache.js";
+import { borrowedRangeKeyBytes, fileCacheKey } from "./file-cache-key.js";
 import { readParquetMetadataFromFile } from "./metadata-cache.js";
 import { readParquetObjectBatchesFromFile } from "./object-batches.js";
 import { readOwnedParquetVectorBatches } from "./owned-vector-batches.js";
@@ -96,12 +99,48 @@ describe("range cache over HTTP", () => {
         { maxConcurrentReads: 2 },
       );
       const source = await asyncBufferFromStore(store, "sales.parquet");
+      const identity = shared ? url : "";
+      const cacheBytes =
+        1024 +
+        [0, 128, 256].reduce(
+          (sum, start) =>
+            sum +
+            sharedCacheMetadataBytes(
+              fileCacheKey(
+                "scan-range-v2",
+                identity,
+                source.byteLength,
+                source.etag,
+                start,
+                start + 128,
+              ),
+            ),
+          0,
+        );
+      const directory = 2 * c.array + c.object + 2 * c.property;
+      const selection =
+        c.object + 3 * c.property + c.string + 65 * c.stringCodeUnit + 4 * c.arraySlot;
+      const planning =
+        directory +
+        3 * selection +
+        4 *
+          borrowedRangeKeyBytes(
+            identity,
+            source.byteLength,
+            source.etag,
+            source.byteLength,
+            source.byteLength,
+          );
+      const pool = new MemoryBudget(cacheBytes + planning);
       const cached = cachedRangeBuffer(
         source,
         {
-          maxBytes: 1024,
+          maxBytes: cacheBytes,
           coalesceBytes: 128,
-          ...(shared ? { sharedCache: new SharedMemoryCache({ maxBytes: 1024 }) } : {}),
+          cacheOptions: { memoryBudget: pool },
+          ...(shared
+            ? { sharedCache: new SharedMemoryCache({ maxBytes: cacheBytes, memoryBudget: pool }) }
+            : {}),
         },
         url,
       );
@@ -129,6 +168,10 @@ describe("range cache over HTTP", () => {
       expect(actual).toEqual(await decode(local));
       expect(fullGets).toBe(0);
       expect(peak).toBe(2);
+      expect(pool.peakBytes).toBeLessThanOrEqual(pool.maxBytes);
+      const cleanup = pool.reserve(pool.maxBytes, "release fixture cache");
+      cleanup.release();
+      expect(pool.usedBytes).toBe(0);
     } finally {
       server.closeAllConnections();
       await new Promise<void>((resolve, reject) =>

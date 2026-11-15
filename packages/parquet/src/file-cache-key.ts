@@ -1,4 +1,8 @@
-import { MATERIALIZATION_CHARGES as c, jsonStringUtf8Bytes } from "lakeql-core";
+import {
+  MATERIALIZATION_CHARGES as c,
+  jsonNumberCharacters,
+  jsonStringUtf8Bytes,
+} from "lakeql-core";
 
 /** Preserve file identity field boundaries, including absent versus empty tags.
  * Versioned namespaces keep prior delimiter-joined entries cold until eviction. */
@@ -49,5 +53,43 @@ export function metadataFileCacheKeyBytes(
     c.string +
     characters * c.stringCodeUnit +
     (owned ? c.string + ("owned:".length + characters) * c.stringCodeUnit : 0)
+  );
+}
+
+/** Allocation-free character bound for a structured borrowed range identity. */
+export function borrowedRangeKeyCharacters(
+  path: string,
+  byteLength: number,
+  etag: string | undefined,
+  start: number,
+  end: number,
+): number {
+  const characters =
+    7 +
+    jsonStringUtf8Bytes("scan-range-v2") +
+    jsonStringUtf8Bytes(path) +
+    jsonNumberCharacters(byteLength) +
+    (etag === undefined ? 4 : jsonStringUtf8Bytes(etag)) +
+    jsonNumberCharacters(start) +
+    jsonNumberCharacters(end);
+  return characters;
+}
+
+/** Serialized borrowed range identity plus its pending promise/map entry. */
+export function borrowedRangeKeyBytes(
+  path: string,
+  byteLength: number,
+  etag: string | undefined,
+  start: number,
+  end: number,
+): number {
+  const characters = borrowedRangeKeyCharacters(path, byteLength, etag, start, end);
+  return (
+    c.array +
+    6 * c.arraySlot +
+    c.string +
+    characters * c.stringCodeUnit +
+    2 * c.object +
+    2 * c.property
   );
 }

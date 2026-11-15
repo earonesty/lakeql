@@ -1,0 +1,56 @@
+{
+  "status": "validated; broader audit remains open",
+  "baseline": "bb4d44b",
+  "contract": "Borrowed private and shared range caches use SharedMemoryCache for retained entry accounting, eviction and optional key leases. Key/pending workspace lasts through asynchronous settlement. Prefetch admits selection descriptors before construction and forecasts retained payload, metadata and concurrent key leases; demand falls back to exact borrowed reads when optional caching cannot fit.",
+  "simplification": "Removes the independent payload-only private cache implementation. Private caches identify their file intrinsically and use an empty path field, avoiding duplicated caller paths. Shared caches retain complete identities. JSON numeric-size forecasting is shared with decoded keys.",
+  "negativeControl": {
+    "tests": 5,
+    "baselineFailures": 5,
+    "candidatePasses": 5,
+    "checks": [
+      "Private cache configured with a pool now charges retained storage instead of reporting zero",
+      "Oversized shared key declines before serialization and real Parquet rows remain correct",
+      "Both pending identities remain charged through a deduplicated read",
+      "Exact total-pool prefetch boundary and one byte short",
+      "Tiny unretainable cache skips read-ahead while exact demand remains correct"
+    ]
+  },
+  "httpFixture": "Retains original 1024-byte payload allowance plus explicit entry metadata and planning workspace. Three requested ranges, 384 fetched bytes, two concurrent reads and real rows matching local decode remain asserted; cleanup returns pool charges to zero.",
+  "compatibility": "Private range maxBytes now includes retained keys/directory records as shared caches already do; cacheOptions.memoryBudget is honored. Tiny capacities may disable retention/read-ahead while preserving exact demand. Borrowed transport/output buffers remain caller-managed.",
+  "remaining": [
+    "Custom borrowed metadata adapter memory contracts",
+    "Broader parser/operator/runtime acceptance",
+    "Borrowed-path local accounting overhead remains 16\u201318%; whole-runtime caps unproven"
+  ],
+  "benchmarks": [
+    {
+      "artifact": "borrowed-range-key-workspace-query-2026-11-14.json",
+      "priorMedianMs": 33.4539,
+      "currentMedianMs": 38.89013050000001
+    },
+    {
+      "artifact": "borrowed-range-key-workspace-query-repeat-2026-11-14.json",
+      "priorMedianMs": 33.86170800000001,
+      "currentMedianMs": 39.946211000000005
+    }
+  ],
+  "performanceTradeoff": "Two alternating fresh-process comparisons show 16.2% and 18.0% aggregate local cold/warm overhead. This is accounting correctness and cache consolidation, not a speedup. Private baseline ignored its configured pool; candidate charges 132524 retained bytes. Both versions preserve identical rows, two cold requests per case, zero warm requests, and zero final charges. Borrowed buffers remain caller-managed; this does not prove whole-runtime caps.",
+  "optimizations": "Synchronous cache hits release key leases before async handoff; static file identity sizing is calculated once per wrapper. Pending reads retain key workspace through settlement.",
+  "cloud": {
+    "artifact": "borrowed-range-key-workspace-public-r2-2026-11-14.json",
+    "scenarios": 52,
+    "queryHeadroomBytes": 524288,
+    "peakIncrementalChargedBytes": 420310,
+    "diagnosticCachePoolPeakBytes": 11036,
+    "diagnosticCachePoolCapacityBytes": 14180
+  },
+  "validation": {
+    "regularPassed": 4068,
+    "regularSkipped": 645,
+    "workerPassed": 95,
+    "conformancePassed": 520,
+    "conformanceGuardSkipped": 1,
+    "referencePassed": 120,
+    "releaseGates": "build, types, compatibility, large files, package consumers, changeset, fixtures, lint passed"
+  }
+}
