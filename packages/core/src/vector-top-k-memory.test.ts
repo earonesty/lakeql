@@ -8,6 +8,7 @@ import { timestampFromEpoch } from "./timestamp.js";
 import { vectorTopKBatch, vectorTopKOwnedBatch } from "./vector-sort.js";
 
 const orderBytes = c.array + c.object + 3 * c.property + c.arraySlot;
+const textProbeBytes = c.object + c.property;
 
 it.each([
   "bigint",
@@ -21,8 +22,11 @@ it.each([
   let scalarBytes: number;
   if (kind === "packed text") {
     const data = scope.allocate(512, "packed source", () => new Uint8Array(512)).value;
-    for (const [index, character] of [122, 98, 109, 97].entries())
+    for (const [index, character] of [122, 98, 109, 97].entries()) {
       data.fill(character, index * 128, (index + 1) * 128);
+      // A malformed UTF8 prefix still requires admitted scalar decoding.
+      data.set([0xc0, 0x80], index * 128);
+    }
     batch = {
       rowCount: 4,
       columns: { key: { type: "utf8-view", data, fixedLength: 128, length: 4 } },
@@ -51,6 +55,7 @@ it.each([
   const gather = sharedGatherPlan(batch, [0, 1]);
   const required =
     input.bytes +
+    (kind === "packed text" ? textProbeBytes : 0) +
     orderBytes +
     c.view +
     8 +
@@ -77,13 +82,16 @@ it("rejects packed text scalar allocation before decoding when the first read ca
   const budget = new MemoryBudget(65536);
   const scope = new MemoryScope(budget);
   const data = scope.allocate(512, "packed source", () => new Uint8Array(512)).value;
+  for (let row = 0; row < 4; row++) data.set([0xc0, 0x80], row * 128);
   const batch: Batch = {
     rowCount: 4,
     columns: { key: { type: "utf8-view", data, fixedLength: 128, length: 4 } },
   };
   const input = scope.retainAllocations(batch);
   scope.dispose();
-  const child = budget.child(input.bytes + orderBytes + c.view + 8 + c.view + c.string + 256 - 1);
+  const child = budget.child(
+    input.bytes + orderBytes + textProbeBytes + c.view + 8 + c.view + c.string + 256 - 1,
+  );
   const pin = input.retainIn(child);
   const decode = vi.spyOn(TextDecoder.prototype, "decode");
   try {

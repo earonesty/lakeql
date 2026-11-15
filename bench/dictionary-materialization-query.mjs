@@ -9,13 +9,17 @@ import { createParquetLake } from "../packages/parquet/dist/index.js";
 
 const mode = process.env.LAKEQL_DICTIONARY_QUERY_MODE ?? "materialize";
 assert.ok(["materialize", "topk"].includes(mode));
+const prefixKind = process.env.LAKEQL_DICTIONARY_QUERY_PREFIX ?? "none";
+assert.ok(["none", "ascii", "unicode"].includes(prefixKind));
+const prefix =
+  prefixKind === "ascii" ? "x".repeat(32) : prefixKind === "unicode" ? "雪".repeat(32) : "";
 const rows = 8192;
 const cases = [];
 for (const cardinality of [16, 1024, 8192]) {
   for (const batchSize of [128, 2048]) {
     const expected = Array.from({ length: rows }, (_, id) => ({
       id,
-      text: id % 11 === 0 ? null : `${id % cardinality}:界`.padEnd(128, "x"),
+      text: id % 11 === 0 ? null : `${prefix}${id % cardinality}:界`.padEnd(128, "x"),
     }));
     const directory = await mkdtemp(join(tmpdir(), "lakeql-dictionary-query-"));
     const path = join(directory, "fixture.parquet");
@@ -24,7 +28,7 @@ for (const cardinality of [16, 1024, 8192]) {
     let bytes;
     try {
       await connection.run(`COPY (SELECT i::INTEGER AS id,
-        CASE WHEN i % 11 = 0 THEN NULL ELSE rpad((i % ${cardinality})::VARCHAR || ':界', 128, 'x') END AS text
+        CASE WHEN i % 11 = 0 THEN NULL ELSE rpad('${prefix}' || (i % ${cardinality})::VARCHAR || ':界', 128, 'x') END AS text
         FROM range(${rows}) t(i)) TO '${path.replaceAll("'", "''")}'
         (FORMAT PARQUET, COMPRESSION SNAPPY, ROW_GROUP_SIZE 4096)`);
       bytes = await readFile(path);
@@ -66,6 +70,7 @@ for (const cardinality of [16, 1024, 8192]) {
     }
     assert.equal(pool.usedBytes, 0);
     cases.push({
+      prefixKind,
       cardinality,
       batchSize,
       rows,

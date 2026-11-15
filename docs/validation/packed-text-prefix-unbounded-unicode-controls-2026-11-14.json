@@ -1,0 +1,920 @@
+{
+  "baseline": "0436bc3",
+  "benchmarkName": "packed-text-order.mjs",
+  "moduleName": "core/vector-sort",
+  "modules": [
+    {
+      "name": "core/vector-sort",
+      "baselineSourceSha256": "a2a775442a6d8159418e0b248d24d67ebc9cb9143b49a71df7263f7fe0afa04a",
+      "currentSourceSha256": "f167d7774b85ae86c0d6e140d91335f1d8aa2b52fd80f4fdb63cf2dfa9f2a6d6"
+    }
+  ],
+  "node": "v24.18.1",
+  "warmupPairs": 1,
+  "measuredPairs": 4,
+  "scope": "Alternating fresh Node processes; the named modules are replaced together by their prior implementations, with current dependencies. The recorded benchmark identifies its fixture and checks; these are local queries, not cloud throughput. Source store/runtime overhead excluded from pool metrics. Value parity is covered by external conformance; benchmark checks count and release.",
+  "priorMedianMs": 53.35234350000021,
+  "currentMedianMs": 86.3922379999998,
+  "runs": {
+    "prior": [
+      {
+        "warmupRounds": 24,
+        "measuredRounds": 6,
+        "cases": [
+          {
+            "kind": "numeric",
+            "width": 0,
+            "rows": 2048,
+            "elapsedMs": 0.2504120000000114,
+            "incrementalPeakBytes": 1900,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 1.7964249999999993,
+            "incrementalPeakBytes": 3052,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 3.9719350000000304,
+            "incrementalPeakBytes": 67564,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 2.1243430000000103,
+            "incrementalPeakBytes": 3180,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 5.992964000000029,
+            "incrementalPeakBytes": 67692,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii-unicode-tail",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 2.0201170000000275,
+            "incrementalPeakBytes": 3180,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii-unicode-tail",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 5.976030999999921,
+            "incrementalPeakBytes": 67692,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "common-prefix",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 4.145322000000078,
+            "incrementalPeakBytes": 3052,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "common-prefix",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 3.6766879999997855,
+            "incrementalPeakBytes": 67564,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode-prefix",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 3.3622060000000147,
+            "incrementalPeakBytes": 4332,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode-prefix",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 15.822047000000111,
+            "incrementalPeakBytes": 197868,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "dictionary",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 1.9507860000001074,
+            "incrementalPeakBytes": 3052,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "dictionary",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 3.2718959999999697,
+            "incrementalPeakBytes": 67564,
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 54.361172000000096,
+        "scope": "Owned top-k over numeric and packed/dictionary vector fixtures, stable selection parity checked. Fixture creation excluded; incremental modeled workspace, not process heap or cloud throughput."
+      },
+      {
+        "warmupRounds": 24,
+        "measuredRounds": 6,
+        "cases": [
+          {
+            "kind": "numeric",
+            "width": 0,
+            "rows": 2048,
+            "elapsedMs": 0.24850800000000106,
+            "incrementalPeakBytes": 1900,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 1.6586670000000083,
+            "incrementalPeakBytes": 3052,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 3.7982279999999946,
+            "incrementalPeakBytes": 67564,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 3.0001740000000154,
+            "incrementalPeakBytes": 3180,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 6.561815000000024,
+            "incrementalPeakBytes": 67692,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii-unicode-tail",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 1.8361899999999878,
+            "incrementalPeakBytes": 3180,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii-unicode-tail",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 6.391845999999987,
+            "incrementalPeakBytes": 67692,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "common-prefix",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 3.331709000000046,
+            "incrementalPeakBytes": 3052,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "common-prefix",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 3.2361379999999826,
+            "incrementalPeakBytes": 67564,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode-prefix",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 2.2093340000001263,
+            "incrementalPeakBytes": 4332,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode-prefix",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 15.42662200000018,
+            "incrementalPeakBytes": 197868,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "dictionary",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 2.0955489999998917,
+            "incrementalPeakBytes": 3052,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "dictionary",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 3.063081999999895,
+            "incrementalPeakBytes": 67564,
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 52.85786200000014,
+        "scope": "Owned top-k over numeric and packed/dictionary vector fixtures, stable selection parity checked. Fixture creation excluded; incremental modeled workspace, not process heap or cloud throughput."
+      },
+      {
+        "warmupRounds": 24,
+        "measuredRounds": 6,
+        "cases": [
+          {
+            "kind": "numeric",
+            "width": 0,
+            "rows": 2048,
+            "elapsedMs": 0.26599099999999964,
+            "incrementalPeakBytes": 1900,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 1.8317619999999977,
+            "incrementalPeakBytes": 3052,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 3.814147000000048,
+            "incrementalPeakBytes": 67564,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 3.665157000000022,
+            "incrementalPeakBytes": 3180,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 7.1030960000000505,
+            "incrementalPeakBytes": 67692,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii-unicode-tail",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 2.6896189999999933,
+            "incrementalPeakBytes": 3180,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii-unicode-tail",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 5.630951999999979,
+            "incrementalPeakBytes": 67692,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "common-prefix",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 3.3335720000000038,
+            "incrementalPeakBytes": 3052,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "common-prefix",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 2.7609929999998712,
+            "incrementalPeakBytes": 67564,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode-prefix",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 3.2101689999999508,
+            "incrementalPeakBytes": 4332,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode-prefix",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 14.816121000000066,
+            "incrementalPeakBytes": 197868,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "dictionary",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 1.2482219999999415,
+            "incrementalPeakBytes": 3052,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "dictionary",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 2.117821000000049,
+            "incrementalPeakBytes": 67564,
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 52.48762199999997,
+        "scope": "Owned top-k over numeric and packed/dictionary vector fixtures, stable selection parity checked. Fixture creation excluded; incremental modeled workspace, not process heap or cloud throughput."
+      },
+      {
+        "warmupRounds": 24,
+        "measuredRounds": 6,
+        "cases": [
+          {
+            "kind": "numeric",
+            "width": 0,
+            "rows": 2048,
+            "elapsedMs": 0.4475529999999992,
+            "incrementalPeakBytes": 1900,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 3.2131949999999847,
+            "incrementalPeakBytes": 3052,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 5.468995999999947,
+            "incrementalPeakBytes": 67564,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 2.8806690000000117,
+            "incrementalPeakBytes": 3180,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 6.367650000000026,
+            "incrementalPeakBytes": 67692,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii-unicode-tail",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 3.1784400000000232,
+            "incrementalPeakBytes": 3180,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii-unicode-tail",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 5.313945000000103,
+            "incrementalPeakBytes": 67692,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "common-prefix",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 3.3327200000001085,
+            "incrementalPeakBytes": 3052,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "common-prefix",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 2.5888689999999315,
+            "incrementalPeakBytes": 67564,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode-prefix",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 2.7303450000001703,
+            "incrementalPeakBytes": 4332,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode-prefix",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 14.694142000000056,
+            "incrementalPeakBytes": 197868,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "dictionary",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 1.451174999999921,
+            "incrementalPeakBytes": 3052,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "dictionary",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 2.1791259999999966,
+            "incrementalPeakBytes": 67564,
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 53.84682500000028,
+        "scope": "Owned top-k over numeric and packed/dictionary vector fixtures, stable selection parity checked. Fixture creation excluded; incremental modeled workspace, not process heap or cloud throughput."
+      }
+    ],
+    "current": [
+      {
+        "warmupRounds": 24,
+        "measuredRounds": 6,
+        "cases": [
+          {
+            "kind": "numeric",
+            "width": 0,
+            "rows": 2048,
+            "elapsedMs": 0.3629940000000005,
+            "incrementalPeakBytes": 1900,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 0.2780139999999989,
+            "incrementalPeakBytes": 3052,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 0.3315249999999992,
+            "incrementalPeakBytes": 67564,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 0.2957970000000216,
+            "incrementalPeakBytes": 3180,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 0.2644080000000031,
+            "incrementalPeakBytes": 67692,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii-unicode-tail",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 0.3940120000000036,
+            "incrementalPeakBytes": 3180,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii-unicode-tail",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 0.5081279999999992,
+            "incrementalPeakBytes": 67692,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "common-prefix",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 0.23839900000001535,
+            "incrementalPeakBytes": 3052,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "common-prefix",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 7.489042999999981,
+            "incrementalPeakBytes": 67564,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode-prefix",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 1.0309129999999413,
+            "incrementalPeakBytes": 4332,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode-prefix",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 84.17654100000027,
+            "incrementalPeakBytes": 197868,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "dictionary",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 0.3981909999997697,
+            "incrementalPeakBytes": 3052,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "dictionary",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 0.38265099999989616,
+            "incrementalPeakBytes": 67564,
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 96.1506159999999,
+        "scope": "Owned top-k over numeric and packed/dictionary vector fixtures, stable selection parity checked. Fixture creation excluded; incremental modeled workspace, not process heap or cloud throughput."
+      },
+      {
+        "warmupRounds": 24,
+        "measuredRounds": 6,
+        "cases": [
+          {
+            "kind": "numeric",
+            "width": 0,
+            "rows": 2048,
+            "elapsedMs": 0.3390490000000028,
+            "incrementalPeakBytes": 1900,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 0.37630900000002043,
+            "incrementalPeakBytes": 3052,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 0.5831489999999917,
+            "incrementalPeakBytes": 67564,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 0.4599969999999871,
+            "incrementalPeakBytes": 3180,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 0.4724109999999939,
+            "incrementalPeakBytes": 67692,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii-unicode-tail",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 0.43963899999999967,
+            "incrementalPeakBytes": 3180,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii-unicode-tail",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 0.4404700000000048,
+            "incrementalPeakBytes": 67692,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "common-prefix",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 0.27826500000003307,
+            "incrementalPeakBytes": 3052,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "common-prefix",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 9.476368999999977,
+            "incrementalPeakBytes": 67564,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode-prefix",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 1.552816000000007,
+            "incrementalPeakBytes": 4332,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode-prefix",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 67.95795799999996,
+            "incrementalPeakBytes": 197868,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "dictionary",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 0.187963999999738,
+            "incrementalPeakBytes": 3052,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "dictionary",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 0.2084429999999884,
+            "incrementalPeakBytes": 67564,
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 82.7728389999997,
+        "scope": "Owned top-k over numeric and packed/dictionary vector fixtures, stable selection parity checked. Fixture creation excluded; incremental modeled workspace, not process heap or cloud throughput."
+      },
+      {
+        "warmupRounds": 24,
+        "measuredRounds": 6,
+        "cases": [
+          {
+            "kind": "numeric",
+            "width": 0,
+            "rows": 2048,
+            "elapsedMs": 0.21282100000000526,
+            "incrementalPeakBytes": 1900,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 0.2729540000000128,
+            "incrementalPeakBytes": 3052,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 0.3029009999999914,
+            "incrementalPeakBytes": 67564,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 0.2882930000000101,
+            "incrementalPeakBytes": 3180,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 0.27286399999999844,
+            "incrementalPeakBytes": 67692,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii-unicode-tail",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 0.23218800000000783,
+            "incrementalPeakBytes": 3180,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii-unicode-tail",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 0.3284280000000024,
+            "incrementalPeakBytes": 67692,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "common-prefix",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 0.35138200000000097,
+            "incrementalPeakBytes": 3052,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "common-prefix",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 8.074906999999996,
+            "incrementalPeakBytes": 67564,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode-prefix",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 0.8720829999999751,
+            "incrementalPeakBytes": 4332,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode-prefix",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 78.161787,
+            "incrementalPeakBytes": 197868,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "dictionary",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 0.28988699999990786,
+            "incrementalPeakBytes": 3052,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "dictionary",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 0.35114199999998164,
+            "incrementalPeakBytes": 67564,
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 90.0116369999999,
+        "scope": "Owned top-k over numeric and packed/dictionary vector fixtures, stable selection parity checked. Fixture creation excluded; incremental modeled workspace, not process heap or cloud throughput."
+      },
+      {
+        "warmupRounds": 24,
+        "measuredRounds": 6,
+        "cases": [
+          {
+            "kind": "numeric",
+            "width": 0,
+            "rows": 2048,
+            "elapsedMs": 0.2662819999999897,
+            "incrementalPeakBytes": 1900,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 0.2664620000000042,
+            "incrementalPeakBytes": 3052,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 0.400905999999992,
+            "incrementalPeakBytes": 67564,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 0.28603899999998816,
+            "incrementalPeakBytes": 3180,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 0.30279999999999063,
+            "incrementalPeakBytes": 67692,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii-unicode-tail",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 0.2654399999999839,
+            "incrementalPeakBytes": 3180,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "ascii-unicode-tail",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 0.27397600000000466,
+            "incrementalPeakBytes": 67692,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "common-prefix",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 0.2356849999999895,
+            "incrementalPeakBytes": 3052,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "common-prefix",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 6.896886999999992,
+            "incrementalPeakBytes": 67564,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode-prefix",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 0.8363560000000234,
+            "incrementalPeakBytes": 4332,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "unicode-prefix",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 65.99888599999986,
+            "incrementalPeakBytes": 197868,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "dictionary",
+            "width": 16,
+            "rows": 2048,
+            "elapsedMs": 0.18426799999997456,
+            "incrementalPeakBytes": 3052,
+            "afterReleaseBytes": 0
+          },
+          {
+            "kind": "dictionary",
+            "width": 1024,
+            "rows": 2048,
+            "elapsedMs": 0.17684300000018993,
+            "incrementalPeakBytes": 67564,
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 76.39082999999998,
+        "scope": "Owned top-k over numeric and packed/dictionary vector fixtures, stable selection parity checked. Fixture creation excluded; incremental modeled workspace, not process heap or cloud throughput."
+      }
+    ]
+  }
+}

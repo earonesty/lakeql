@@ -482,3 +482,10 @@ may decline retention/read-ahead while demanded reads use exact ranges.
 Owned footer schema and key/value conversion releases raw metadata scratch per entry. Column conversion shares the same range helper; unknown logical metadata retains its raw aliases under the output owner.
 
 ASCII fingerprinting uses exact two-word arithmetic without per-byte BigInt work or an encoded copy. Non-ASCII input continues through the established UTF8 hash path, preserving all existing fingerprints.
+
+Packed text ordering compares bounded valid UTF8 prefixes directly in UTF16 order,
+including supplementary characters, without allocating decoded keys. Malformed or
+long shared prefixes retain the scalar decoder path. A budgeted operation-local
+probe stops speculative work after repeated unresolved text comparisons; nulls and
+non-text secondary keys do not disable it. Ordering direction, null placement and
+stable ties remain unchanged.

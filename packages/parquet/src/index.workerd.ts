@@ -713,7 +713,9 @@ it.each([64, 128])("owns deferred top-k over native R2 with a %s MiB shared pool
   const bucket = (env as unknown as { MEMORY_TEST_BUCKET: R2BucketLike }).MEMORY_TEST_BUCKET;
   const store = new R2ObjectStore(bucket);
   const path = `deferred-top-k-${mib}.parquet`;
-  const text = Array.from({ length: 100 }, (_, id) => `${id}:`.padEnd(1024, "x"));
+  const text = Array.from({ length: 100 }, (_, id) =>
+    `${id % 3 === 0 ? "雪" : id % 3 === 1 ? "😀" : ""}${id}:`.padEnd(1024, "x"),
+  );
   await writeParquet(store, path, {
     codec: "UNCOMPRESSED",
     rowGroupSize: Array(10).fill(10),

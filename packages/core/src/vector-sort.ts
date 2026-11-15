@@ -28,6 +28,7 @@ import {
   concatScalarDictionaries,
   packedGatherLeaf,
 } from "./packed-gather.js";
+import { PackedTextOrderProbe, supportsPackedTextOrder } from "./packed-text-order.js";
 import type { OrderByTerm } from "./query.js";
 import { setRecordValue } from "./record-value.js";
 import { validateRowLimits } from "./row-limits.js";
@@ -75,7 +76,8 @@ export function vectorSortIndices(
   const normalized = normalizeVectorOrderBy(orderBy);
   validateOrderColumns(batch, normalized);
   const indices = selectedIndices(batch.rowCount, selection);
-  indices.sort((left, right) => compareBatchRows(batch, left, right, normalized));
+  const probe = createPackedTextOrderProbe(batch, normalized);
+  indices.sort((left, right) => compareBatchRows(batch, left, right, normalized, probe));
   return indices;
 }
 
@@ -120,8 +122,9 @@ export function vectorTopKOwnedBatch(
             ).value;
       return gatherOwnedBatch(input, indices);
     };
+    const probe = capacity > 0 ? createPackedTextOrderProbe(batch, normalized, scope) : undefined;
     const compare = (left: number, right: number) =>
-      compareBatchRows(batch, left, right, normalized, scope, reader);
+      compareBatchRows(batch, left, right, normalized, probe, scope, reader);
     // Detect monotonic selected input without allocating sort keys. Stop as soon
     // as both directions occur; mixed input uses the bounded heap below.
     let direction = 0;
@@ -223,7 +226,9 @@ export function vectorTopKIndices(
   const normalized = normalizeVectorOrderBy(orderBy);
   validateOrderColumns(batch, normalized);
   if (topK === 0) return [];
-  const compare = (left: number, right: number) => compareBatchRows(batch, left, right, normalized);
+  const probe = createPackedTextOrderProbe(batch, normalized);
+  const compare = (left: number, right: number) =>
+    compareBatchRows(batch, left, right, normalized, probe);
   const trimAt = topK * 2 + 64;
   const kept: number[] = [];
   for (let index = 0; index < batch.rowCount; index += 1) {
@@ -653,11 +658,31 @@ function validateOrderColumns(batch: Batch, orderBy: readonly OrderByTerm[]): vo
   }
 }
 
+function createPackedTextOrderProbe(
+  batch: Batch,
+  orderBy: readonly OrderByTerm[],
+  scope?: MemoryScope,
+): PackedTextOrderProbe | undefined {
+  for (const term of orderBy) {
+    const vector = batch.columns[term.column];
+    if (vector !== undefined && supportsPackedTextOrder(vector))
+      return scope === undefined
+        ? new PackedTextOrderProbe()
+        : scope.allocate(
+            c.object + c.property,
+            "packed text comparison policy",
+            () => new PackedTextOrderProbe(),
+          ).value;
+  }
+  return undefined;
+}
+
 function compareBatchRows(
   batch: Batch,
   leftIndex: number,
   rightIndex: number,
   orderBy: readonly OrderByTerm[],
+  probe: PackedTextOrderProbe | undefined,
   scope?: MemoryScope,
   reader?: ScalarReadWorkspace,
 ): number {
@@ -667,6 +692,12 @@ function compareBatchRows(
       throw new LakeqlError("LAKEQL_UNKNOWN_COLUMN", `Unknown column ${term.column}`, {
         column: term.column,
       });
+    }
+    const packedComparison = probe?.compare(vector, leftIndex, rightIndex);
+    if (packedComparison !== undefined) {
+      if (packedComparison !== 0)
+        return term.direction === "desc" ? -packedComparison : packedComparison;
+      continue;
     }
     const read = scope === undefined ? vectorValue : scalarVectorValue;
     const comparison =

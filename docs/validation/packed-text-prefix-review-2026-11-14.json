@@ -1,0 +1,267 @@
+{
+  "status": "validated; broader audit remains open",
+  "baseline": "0436bc3",
+  "contract": "Flat packed UTF8 and one dictionary indirection compare valid scalar prefixes in UTF16 order, including supplementary characters. Probe starting positions are bounded to the first 16 bytes; a final scalar may read up to three more bytes. Malformed or unresolved long prefixes use the existing admitted scalar path. One explicitly admitted operation-local counter stops probes after eight consecutive unresolved non-null text comparisons; successful comparisons reset it. Nulls and unsupported shapes do not count as unsuccessful probes. Numeric-only and zero-capacity owned operations allocate no probe. No retained decoded keys.",
+  "rejectedExperiments": [
+    "ASCII-only preflight regressed Unicode-first kernels by 21\u201361%.",
+    "An early Unicode byte check and separated scalar helper did not resolve that regression.",
+    "Unbounded valid Unicode comparison accelerated short prefixes but substantially regressed long shared prefixes.",
+    "A static bounded prefix still repeated speculative work; feedback now stops it after repeated misses.",
+    "Counting null and numeric comparisons as misses disabled useful text probing; these are excluded.",
+    "Allocating policy state for numeric-only operators broke an exact-budget physical execution test; capability-based construction removes that state."
+  ],
+  "sourceSha256": {
+    "packages/core/src/packed-text-order.ts": "02942b14a92b98ab58ead07e884576c5cbb0751d4d44c12ea365d31b21bbfd5d",
+    "packages/core/src/vector-sort.ts": "4cb633544652b8bb4e7bb4cd68c0fcc2566ffe8de881a518096466c409ac48bd",
+    "bench/packed-text-order.mjs": "d5a200d28c89be793d9cc1529a4e2b2232df06e2f7e2e9d6cd431fa2aad903e6",
+    "bench/dictionary-materialization-query.mjs": "858c4a55eb18b4817ee9fac8fdf3b263b7bed43ebe07e80ca640e33f690dd283"
+  },
+  "kernel": [
+    {
+      "kind": "numeric",
+      "storage": "numeric",
+      "width": 0,
+      "priorMedianMs": 0.29266700000000867,
+      "currentMedianMs": 0.26793499999999426,
+      "speedup": 1.0923059697315205
+    },
+    {
+      "kind": "ascii",
+      "storage": "flat",
+      "width": 16,
+      "priorMedianMs": 1.9704715000000164,
+      "currentMedianMs": 0.21096300000000667,
+      "speedup": 9.340365372126648
+    },
+    {
+      "kind": "ascii",
+      "storage": "flat",
+      "width": 1024,
+      "priorMedianMs": 3.3680575000000204,
+      "currentMedianMs": 0.23116099999998596,
+      "speedup": 14.57018052353219
+    },
+    {
+      "kind": "ascii",
+      "storage": "dictionary",
+      "width": 16,
+      "priorMedianMs": 2.105871499999978,
+      "currentMedianMs": 0.25317250000000513,
+      "speedup": 8.317931449900504
+    },
+    {
+      "kind": "ascii",
+      "storage": "dictionary",
+      "width": 1024,
+      "priorMedianMs": 3.5537924999999575,
+      "currentMedianMs": 0.2495605000000154,
+      "speedup": 14.240204279121649
+    },
+    {
+      "kind": "unicode",
+      "storage": "flat",
+      "width": 16,
+      "priorMedianMs": 2.078404999999975,
+      "currentMedianMs": 0.3089879999999994,
+      "speedup": 6.726490996414033
+    },
+    {
+      "kind": "unicode",
+      "storage": "flat",
+      "width": 1024,
+      "priorMedianMs": 4.731914999999958,
+      "currentMedianMs": 0.361732499999988,
+      "speedup": 13.081254794634473
+    },
+    {
+      "kind": "unicode",
+      "storage": "dictionary",
+      "width": 16,
+      "priorMedianMs": 2.638646499999936,
+      "currentMedianMs": 0.28949050000001364,
+      "speedup": 9.114794786011327
+    },
+    {
+      "kind": "unicode",
+      "storage": "dictionary",
+      "width": 1024,
+      "priorMedianMs": 5.444834000000014,
+      "currentMedianMs": 0.326335499999999,
+      "speedup": 16.684773798744025
+    },
+    {
+      "kind": "ascii-unicode-tail",
+      "storage": "flat",
+      "width": 16,
+      "priorMedianMs": 2.214531500000021,
+      "currentMedianMs": 0.19913550000001123,
+      "speedup": 11.120726841773044
+    },
+    {
+      "kind": "ascii-unicode-tail",
+      "storage": "flat",
+      "width": 1024,
+      "priorMedianMs": 5.260125499999958,
+      "currentMedianMs": 0.2893205000000023,
+      "speedup": 18.180963671775476
+    },
+    {
+      "kind": "ascii-unicode-tail",
+      "storage": "dictionary",
+      "width": 16,
+      "priorMedianMs": 2.1903365000000576,
+      "currentMedianMs": 0.198599999999999,
+      "speedup": 11.028884692850296
+    },
+    {
+      "kind": "ascii-unicode-tail",
+      "storage": "dictionary",
+      "width": 1024,
+      "priorMedianMs": 5.695296499999927,
+      "currentMedianMs": 0.27019450000000234,
+      "speedup": 21.078506409271387
+    },
+    {
+      "kind": "common-prefix",
+      "storage": "flat",
+      "width": 16,
+      "priorMedianMs": 1.658868499999926,
+      "currentMedianMs": 0.28900499999997464,
+      "speedup": 5.739930105015731
+    },
+    {
+      "kind": "common-prefix",
+      "storage": "flat",
+      "width": 1024,
+      "priorMedianMs": 2.3597204999999803,
+      "currentMedianMs": 2.5721759999999847,
+      "speedup": 0.9174024250284563
+    },
+    {
+      "kind": "common-prefix",
+      "storage": "dictionary",
+      "width": 16,
+      "priorMedianMs": 1.9847979999999552,
+      "currentMedianMs": 0.277428499999985,
+      "speedup": 7.154268577309335
+    },
+    {
+      "kind": "common-prefix",
+      "storage": "dictionary",
+      "width": 1024,
+      "priorMedianMs": 3.1672585000000026,
+      "currentMedianMs": 2.9497880000000123,
+      "speedup": 1.073724111698871
+    },
+    {
+      "kind": "unicode-prefix",
+      "storage": "flat",
+      "width": 16,
+      "priorMedianMs": 1.9833455000000413,
+      "currentMedianMs": 2.510846000000015,
+      "speedup": 0.7899112490371888
+    },
+    {
+      "kind": "unicode-prefix",
+      "storage": "flat",
+      "width": 1024,
+      "priorMedianMs": 13.581896000000143,
+      "currentMedianMs": 13.780921000000035,
+      "speedup": 0.985557931868277
+    },
+    {
+      "kind": "unicode-prefix",
+      "storage": "dictionary",
+      "width": 16,
+      "priorMedianMs": 2.4131064999999126,
+      "currentMedianMs": 2.573423499999876,
+      "speedup": 0.9377028304902122
+    },
+    {
+      "kind": "unicode-prefix",
+      "storage": "dictionary",
+      "width": 1024,
+      "priorMedianMs": 13.674705999999787,
+      "currentMedianMs": 15.263026500000024,
+      "speedup": 0.8959367265725291
+    },
+    {
+      "kind": "dictionary",
+      "storage": "flat",
+      "width": 16,
+      "priorMedianMs": 1.3553860000001805,
+      "currentMedianMs": 0.2958325000000741,
+      "speedup": 4.581599384786462
+    },
+    {
+      "kind": "dictionary",
+      "storage": "flat",
+      "width": 1024,
+      "priorMedianMs": 2.104684500000076,
+      "currentMedianMs": 0.8196605000000545,
+      "speedup": 2.567751526394081
+    },
+    {
+      "kind": "dictionary",
+      "storage": "dictionary",
+      "width": 16,
+      "priorMedianMs": 1.3898165000000517,
+      "currentMedianMs": 0.23400149999986297,
+      "speedup": 5.9393486793925065
+    },
+    {
+      "kind": "dictionary",
+      "storage": "dictionary",
+      "width": 1024,
+      "priorMedianMs": 2.138768999999911,
+      "currentMedianMs": 0.2763965000000326,
+      "speedup": 7.738046610574515
+    }
+  ],
+  "query": {
+    "priorCombinedMedianMs": 518.817013,
+    "currentCombinedMedianMs": 352.69633400000004,
+    "fixture": "DuckDB-generated Parquet; six cardinality/batch-size cases; all output rows independently checked",
+    "scope": "Local complete-query timing, not cloud throughput"
+  },
+  "validation": {
+    "focusedTests": 52,
+    "postCapabilityFocusedTests": 30,
+    "negativeControl": "All four no-decode budget cases fail with LAKEQL_BUDGET_EXCEEDED against 0436bc3; restored candidate passes.",
+    "release": {
+      "regularPassed": 4085,
+      "regularSkipped": 645,
+      "workerPassed": 95,
+      "conformancePassed": 520,
+      "conformanceGuardSkipped": 1,
+      "referencePassed": 120,
+      "checks": "build, types, clean package consumers, compatibility, fixtures, changeset, large files, lint and unchanged coverage thresholds passed"
+    },
+    "nativeR2": "Existing four-job deferred top-k fixture now includes ASCII, BMP Unicode and supplementary Unicode ordering keys at both 64/128 MiB pools, with cache eviction and owned-output lifetime checks."
+  },
+  "memory": "Modeled admission is not whole-process heap. Probe metadata is explicitly admitted only for supported ordering shapes. Fallback allocation exact/one-byte-short checks remain in place.",
+  "remaining": [
+    "Broader allocation integration, complete F5/M1 acceptance review and whole-runtime caps"
+  ],
+  "longPrefixQueryControls": {
+    "ascii": {
+      "priorCombinedMedianMs": 501.2448429999999,
+      "currentCombinedMedianMs": 501.061779,
+      "fixture": "32-character shared prefix; independent output parity; six cardinality/batch-size cases"
+    },
+    "unicode": {
+      "priorCombinedMedianMs": 509.01554799999997,
+      "currentCombinedMedianMs": 497.375759,
+      "fixture": "32-character shared prefix; independent output parity; six cardinality/batch-size cases"
+    }
+  },
+  "performanceLimitations": "Per-kernel fallback ratios vary; final long-prefix controls include regressions up to about 27% in isolated cases. Complete long-prefix queries are near parity in the recorded run. Host timing is variable; no cloud-throughput or whole-runtime memory claim.",
+  "publicR2": {
+    "scenarios": 52,
+    "ordinaryQueries": 40,
+    "headroomBytes": 524288,
+    "peakIncrementalChargedBytes": 384214,
+    "warmRequests": 0,
+    "maxPeakReads": 4
+  }
+}
