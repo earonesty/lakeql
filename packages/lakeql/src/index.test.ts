@@ -1532,6 +1532,20 @@ it("executes nested scalar, aggregate-argument and bigint-correlated queries ove
       .sql(`SELECT SUM(amount + (SELECT MAX(bonus) FROM ${table})) AS total FROM ${table}`)
       .toArray(),
   ).resolves.toEqual([{ total: 75 }]);
+  for (const [scalar, expected] of [
+    [`SELECT amount FROM ${table} ORDER BY amount LIMIT 1`, [20, 20, 30]],
+    [`SELECT amount FROM ${table} ORDER BY amount DESC LIMIT 1 OFFSET 1`, [null, null, 30]],
+    [`SELECT amount FROM ${table} WHERE amount > 100 LIMIT 1`, [null, null, null]],
+  ] as const) {
+    const lookup = `(SELECT MAX(p.amount) FROM ${table} p WHERE p.group_id = a.group_id AND p.amount > (${scalar}))`;
+    await expect(
+      lake
+        .sql(`SELECT a.amount, ${lookup} AS x, ${lookup} AS y FROM ${table} a ORDER BY a.amount`)
+        .toArray(),
+    ).resolves.toEqual(
+      expected.map((value, index) => ({ amount: (index + 1) * 10, x: value, y: value })),
+    );
+  }
   const correlated = `(SELECT MAX(p.amount) FROM ${table} p WHERE p.group_id = a.group_id AND p.amount > (SELECT AVG(amount) FROM ${table}))`;
   await expect(
     lake

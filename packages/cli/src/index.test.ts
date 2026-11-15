@@ -1400,6 +1400,26 @@ it("executes nested scalar, aggregate-argument and bigint-correlated CLI queries
   if (bytes === null) throw Error("missing Parquet fixture");
   await writeFile(path, bytes);
   const nested = "(SELECT MAX(amount) FROM input WHERE amount > (SELECT AVG(amount) FROM input))";
+  for (const [scalar, expected] of [
+    ["SELECT amount FROM input ORDER BY amount LIMIT 1", [20, 20, 30]],
+    ["SELECT amount FROM input ORDER BY amount DESC LIMIT 1 OFFSET 1", [null, null, 30]],
+    ["SELECT amount FROM input WHERE amount > 100 LIMIT 1", [null, null, null]],
+  ] as const) {
+    const lookup = `(SELECT MAX(p.amount) FROM input p WHERE p.group_id = a.group_id AND p.amount > (${scalar}))`;
+    const result = await runCli([
+      "query",
+      "--path",
+      path,
+      "--sql",
+      `SELECT a.amount, ${lookup} AS x, ${lookup} AS y FROM input a ORDER BY a.amount`,
+      "--format",
+      "json",
+    ]);
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    expect(JSON.parse(result.stdout)).toEqual(
+      expected.map((value, index) => ({ amount: (index + 1) * 10, x: value, y: value })),
+    );
+  }
   for (const [sql, expected] of [
     [
       `SELECT amount, ${nested} AS a, ${nested} AS b FROM input LIMIT 1`,

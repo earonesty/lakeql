@@ -342,19 +342,21 @@ async function materializeCteIfNeeded(
   return { ...rest, source: `${prefix}/*.parquet` };
 }
 
+function subqueryRowsFromAst(
+  lake: ReturnType<typeof createParquetLake>,
+  ast: ReturnType<typeof parseSql>,
+): Promise<Row[]> {
+  return hasAggregation(ast)
+    ? aggregateRowsFromAst(lake.path(ast.source), ast)
+    : builderFromAst(lake.path(ast.source), ast).toArray();
+}
+
 async function resolveScalarSubqueries(
   lake: ReturnType<typeof createParquetLake>,
   ast: ReturnType<typeof parseSql>,
   memo: SharedMemoryCache,
 ): Promise<ReturnType<typeof parseSql>> {
-  return resolveSqlScalarSubqueries(
-    ast,
-    (query) =>
-      hasAggregation(query)
-        ? aggregateRowsFromAst(lake.path(query.source), query)
-        : builderFromAst(lake.path(query.source), query).toArray(),
-    memo,
-  );
+  return resolveSqlScalarSubqueries(ast, (query) => subqueryRowsFromAst(lake, query), memo);
 }
 
 async function joinRowsFromAst(
@@ -904,11 +906,7 @@ async function correlatedScalarLookups(
   ast: ReturnType<typeof parseSql>,
   memo: SharedMemoryCache,
 ): Promise<Map<string, CorrelatedScalarLookup>> {
-  return resolveSqlCorrelatedLookups(
-    ast,
-    (query) => aggregateRowsFromAst(lake.path(query.source), query),
-    memo,
-  );
+  return resolveSqlCorrelatedLookups(ast, (query) => subqueryRowsFromAst(lake, query), memo);
 }
 
 function resolveCorrelatedScalarExpr(

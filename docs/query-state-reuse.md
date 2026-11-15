@@ -55,8 +55,9 @@ pool shared with every reader and operator.
   regression verifies that budget checks do not revisit existing groups.
 - Review regressions cover TTL expiry under priority-protected capacity, nested
   scalar dependency resolution through shared parser registries, aggregate-argument
-  substitutions, scalar dependencies inside correlated predicates and bigint
-  correlation keys. Library and CLI tests execute real
+  substitutions, aggregate and LIMIT scalar dependencies inside correlated
+  predicates, and bigint correlation keys. LIMIT regressions include ordering,
+  offset and empty results. Library and CLI tests execute real
   Parquet INT64 fixtures; the Iceberg fixture verifies nested source planning and
   temporary-object cleanup.
 - Real Parquet tests use actual HTTP 206 and range-ignoring HTTP 200 responses,

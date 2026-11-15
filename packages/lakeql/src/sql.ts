@@ -993,19 +993,18 @@ function safeTempName(name: string): string {
   return name.replaceAll(/[^A-Za-z0-9_-]/gu, "_");
 }
 
+function subqueryRowsFromAst(lake: ParquetLake, ast: SqlQueryAst): Promise<Row[]> {
+  return hasAggregation(ast)
+    ? aggregateRowsFromAst(lake.path(ast.source), ast)
+    : builderFromAst(lake.path(ast.source), ast).toArray();
+}
+
 async function resolveScalarSubqueries(
   lake: ParquetLake,
   ast: SqlQueryAst,
   memo: SharedMemoryCache,
 ): Promise<SqlQueryAst> {
-  return resolveSqlScalarSubqueries(
-    ast,
-    (query) =>
-      hasAggregation(query)
-        ? aggregateRowsFromAst(lake.path(query.source), query)
-        : builderFromAst(lake.path(query.source), query).toArray(),
-    memo,
-  );
+  return resolveSqlScalarSubqueries(ast, (query) => subqueryRowsFromAst(lake, query), memo);
 }
 
 async function joinRowsFromAst(
@@ -1828,11 +1827,7 @@ async function correlatedScalarLookups(
   ast: SqlQueryAst,
   memo: SharedMemoryCache,
 ): Promise<Map<string, CorrelatedScalarLookup>> {
-  return resolveSqlCorrelatedLookups(
-    ast,
-    (query) => aggregateRowsFromAst(lake.path(query.source), query),
-    memo,
-  );
+  return resolveSqlCorrelatedLookups(ast, (query) => subqueryRowsFromAst(lake, query), memo);
 }
 
 function resolveCorrelatedScalarExpr(
