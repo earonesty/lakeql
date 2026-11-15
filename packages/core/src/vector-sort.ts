@@ -103,11 +103,20 @@ export function vectorTopKOwnedBatch(
   }
   const capacity = options.limit === 0 ? 0 : Math.min(selectedRows, offset + options.limit);
   const scope = new MemoryScope(input.budget);
-  const reader = new ScalarReadWorkspace(scope);
+  let reader: ScalarReadWorkspace | undefined;
   try {
     scope.adopt(input.retain());
     const normalized = normalizeVectorOrderBy(orderBy, scope);
     validateOrderColumns(batch, normalized);
+    if (capacity > 0) {
+      for (const term of normalized) {
+        const vector = batch.columns[term.column];
+        if (vector !== undefined && !scalarReadAllocationFree(vector)) {
+          reader = ScalarReadWorkspace.create(scope);
+          break;
+        }
+      }
+    }
     const heap = scope.allocate(
       c.view + capacity * 4,
       "top-k candidate indices",
@@ -155,7 +164,7 @@ export function vectorTopKOwnedBatch(
           ordinal++;
         }
       }
-      reader.dispose();
+      reader?.dispose();
       return gather();
     }
     let size = 0;
@@ -200,10 +209,10 @@ export function vectorTopKOwnedBatch(
       }
       heap[index] = value;
     }
-    reader.dispose();
+    reader?.dispose();
     return gather();
   } finally {
-    reader.dispose();
+    reader?.dispose();
     scope.dispose();
   }
 }

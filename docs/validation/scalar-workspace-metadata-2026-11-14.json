@@ -1,0 +1,55 @@
+{
+  "status": "validated; broader audit remains open",
+  "baseline": "6ded69c",
+  "contract": "Reusable scalar comparison state admits its modeled 512-byte object/seven-property metadata before construction. Metadata remains charged while the workspace exists, including consumer failures and reuse, and releases on disposal or after an active comparison observes closed scope/reader state. Owned top-k creates the workspace only for allocation-producing scalar shapes when candidate capacity is nonzero. Allocation-free shapes retain their prior budget boundary.",
+  "sourceSha256": {
+    "packages/core/src/scalar-read-workspace.ts": "1fd457d43bc4db1ba4180a1e6220efd27fc601a883994c6169969bd5ebe93d9f",
+    "packages/core/src/vector-sort.ts": "a50ca74a319b2ec97923a9dde38a4dc66d2b0b8d9a78979317a07b9b4ec917fa"
+  },
+  "validation": {
+    "focusedPassed": 44,
+    "negativeControl": "Setting only metadata admission to zero causes both new boundary/integration tests to fail because expected budget rejection does not occur. Restoring the implementation passes all 30 workspace/top-k tests.",
+    "cases": [
+      "Exact metadata capacity and one byte below",
+      "Reclamation closing the scope during workspace creation",
+      "Input owner retained after workspace admission failure",
+      "Consumer failure and subsequent reuse retain metadata but release scalar payloads",
+      "Active decoder/comparator disposal and parent-stage disposal retain metadata and payload through settlement",
+      "Existing same-entry reuse, union leaves, fixed-stage growth and allocation-free physical execution boundaries"
+    ],
+    "release": {
+      "regularPassed": 4088,
+      "regularSkipped": 645,
+      "workerPassed": 95,
+      "conformancePassed": 520,
+      "conformanceGuardSkipped": 1,
+      "referencePassed": 120,
+      "checks": "build, types, package consumers, compatibility, changeset, deterministic fixtures, large files, lint and unchanged coverage thresholds passed"
+    },
+    "cloudFixtures": "Native R2 four-job owned top-k fixtures at 64/128 MiB pools include ASCII, BMP and supplementary Unicode keys, cache eviction and retained owners. Existing real HTTP fixture coverage passes in the regular suite."
+  },
+  "performance": {
+    "fastPrefixQuery": {
+      "priorCombinedMedianMs": 288.599745,
+      "currentCombinedMedianMs": 286.816522
+    },
+    "unicodeFallbackQuery": {
+      "priorCombinedMedianMs": 479.42531399999996,
+      "currentCombinedMedianMs": 499.34597150000013
+    },
+    "scope": "Local real DuckDB-generated Parquet, six cardinality/batch-size cases, every output row checked. Fallback runs move in opposite timing directions; no speedup or cloud-throughput claim. Overall fixture peaks remain unchanged because larger allocations dominate.",
+    "unicodeFallbackRepeat": {
+      "priorCombinedMedianMs": 668.9887450000001,
+      "currentCombinedMedianMs": 565.6423145000001
+    }
+  },
+  "remaining": ["Broader operator/parser/codec ownership and runtime headroom"],
+  "publicR2": {
+    "scenarios": 52,
+    "ordinaryQueries": 40,
+    "headroomBytes": 524288,
+    "peakIncrementalChargedBytes": 384214,
+    "warmRequests": 0,
+    "maxPeakReads": 4
+  }
+}

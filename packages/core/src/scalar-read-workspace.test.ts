@@ -3,7 +3,10 @@ import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import type { Vector } from "./batch.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope } from "./memory-scope.js";
-import { ScalarReadWorkspace } from "./scalar-read-workspace.js";
+import {
+  SCALAR_READ_WORKSPACE_BYTES as metadataBytes,
+  ScalarReadWorkspace,
+} from "./scalar-read-workspace.js";
 
 function packed(lengths: number[]): Vector {
   const data = new Uint8Array(lengths.reduce((sum, length) => sum + length, 0)).fill(97);
@@ -21,8 +24,8 @@ const bytes = (length: number) => c.view + c.string + length * c.stringCodeUnit;
 
 it("reuses admission and grows only by the live pair's additional extent", () => {
   const vector = packed([1, 2, 200, 400]);
-  const scope = new MemoryScope(new MemoryBudget(bytes(1) + bytes(400)));
-  const reader = new ScalarReadWorkspace(scope);
+  const scope = new MemoryScope(new MemoryBudget(metadataBytes + bytes(1) + bytes(400)));
+  const reader = ScalarReadWorkspace.create(scope);
   for (const [left, right, capacity] of [
     [0, 1, bytes(1) + bytes(2)],
     [2, 1, bytes(200) + bytes(2)],
@@ -32,7 +35,7 @@ it("reuses admission and grows only by the live pair's additional extent", () =>
     expect(reader.consume(vector, left, right, (a, b) => String(a).length - String(b).length)).toBe(
       ([1, 2, 200, 400][left] ?? 0) - ([1, 2, 200, 400][right] ?? 0),
     );
-    expect(scope.budget.usedBytes).toBe(capacity);
+    expect(scope.budget.usedBytes).toBe(metadataBytes + (capacity as number));
   }
   expect(scope.budget.peakBytes).toBe(scope.budget.maxBytes);
   reader.dispose();
@@ -42,13 +45,13 @@ it("reuses admission and grows only by the live pair's additional extent", () =>
 
 it("rejects a one-byte-short second scalar before decoding and releases the first", () => {
   const vector = packed([1, 200]);
-  const scope = new MemoryScope(new MemoryBudget(bytes(1) + bytes(200) - 1));
-  const reader = new ScalarReadWorkspace(scope);
+  const scope = new MemoryScope(new MemoryBudget(metadataBytes + bytes(1) + bytes(200) - 1));
+  const reader = ScalarReadWorkspace.create(scope);
   const decode = vi.spyOn(TextDecoder.prototype, "decode");
   try {
     expect(() => reader.consume(vector, 0, 1, () => 0)).toThrow(/budget/i);
     expect(decode).toHaveBeenCalledTimes(1);
-    expect(scope.budget.usedBytes).toBe(0);
+    expect(scope.budget.usedBytes).toBe(metadataBytes);
   } finally {
     decode.mockRestore();
     reader.dispose();
@@ -59,13 +62,13 @@ it("rejects a one-byte-short second scalar before decoding and releases the firs
 it("releases reservations on consumer failure and rejects closed scope reuse", () => {
   const vector = packed([1, 2]);
   const scope = new MemoryScope(new MemoryBudget(4096));
-  const reader = new ScalarReadWorkspace(scope);
+  const reader = ScalarReadWorkspace.create(scope);
   expect(() =>
     reader.consume(vector, 0, 1, () => {
       throw new Error("consumer failure");
     }),
   ).toThrow("consumer failure");
-  expect(scope.budget.usedBytes).toBe(0);
+  expect(scope.budget.usedBytes).toBe(metadataBytes);
   reader.consume(vector, 0, 1, () => 0);
   scope.dispose();
   expect(() => reader.consume(vector, 0, 1, () => 0)).toThrow(/disposed/);
@@ -75,10 +78,10 @@ it("releases reservations on consumer failure and rejects closed scope reuse", (
 
 it("keeps active values admitted until a disposing consumer returns", () => {
   const scope = new MemoryScope(new MemoryBudget(4096));
-  const reader = new ScalarReadWorkspace(scope);
+  const reader = ScalarReadWorkspace.create(scope);
   reader.consume(packed([1, 2]), 0, 1, () => {
     reader.dispose();
-    expect(scope.budget.usedBytes).toBe(bytes(1) + bytes(2));
+    expect(scope.budget.usedBytes).toBe(metadataBytes + bytes(1) + bytes(2));
     return 0;
   });
   expect(scope.budget.usedBytes).toBe(0);
@@ -87,10 +90,10 @@ it("keeps active values admitted until a disposing consumer returns", () => {
 });
 
 it("cleans up when reclamation closes the scope during pair growth", () => {
-  const pool = new MemoryBudget(bytes(1) + bytes(2));
+  const pool = new MemoryBudget(metadataBytes + bytes(1) + bytes(2));
   const peer = pool.reserve(64, "reclaimable peer");
   const scope = new MemoryScope(pool);
-  const reader = new ScalarReadWorkspace(scope);
+  const reader = ScalarReadWorkspace.create(scope);
   const detach = pool.registerReclaimer(() => {
     peer.release();
     scope.dispose();
@@ -103,7 +106,7 @@ it("cleans up when reclamation closes the scope during pair growth", () => {
 
 it("does not create per-comparison scopes or repeatedly reserve stable scalar extents", () => {
   const scope = new MemoryScope(new MemoryBudget(4096));
-  const reader = new ScalarReadWorkspace(scope);
+  const reader = ScalarReadWorkspace.create(scope);
   const vector: Vector = {
     type: "dict",
     indices: Uint32Array.of(0, 1),
@@ -126,10 +129,10 @@ it("handles union leaves and reversed extents within one admitted stage", () => 
     offsets: Uint32Array.of(0, 0),
     children: [packed([1]), packed([200])],
   };
-  const pool = new MemoryBudget(bytes(1) + bytes(200));
+  const pool = new MemoryBudget(metadataBytes + bytes(1) + bytes(200));
   const parent = new MemoryScope(pool);
   const stage = parent.childStage(pool.maxBytes, "comparison stage");
-  const reader = new ScalarReadWorkspace(stage);
+  const reader = ScalarReadWorkspace.create(stage);
   expect(reader.consume(vector, 0, 1, (a, b) => String(a).length - String(b).length)).toBe(-199);
   expect(reader.consume(vector, 1, 0, (a, b) => String(a).length - String(b).length)).toBe(199);
   reader.dispose();
@@ -140,10 +143,10 @@ it("handles union leaves and reversed extents within one admitted stage", () => 
 });
 
 it("keeps a borrowed pair charged when its parent scope closes inside comparison", () => {
-  const pool = new MemoryBudget(bytes(1) + bytes(2));
+  const pool = new MemoryBudget(metadataBytes + bytes(1) + bytes(2));
   const parent = new MemoryScope(pool);
   const stage = parent.childStage(pool.maxBytes, "comparison stage");
-  const reader = new ScalarReadWorkspace(stage);
+  const reader = ScalarReadWorkspace.create(stage);
   expect(
     reader.consume(packed([1, 2]), 0, 1, (left, right) => {
       parent.dispose();
@@ -160,9 +163,9 @@ it("keeps a borrowed pair charged when its parent scope closes inside comparison
 });
 
 it("holds scalar admission through a decoder callback that closes its scope", () => {
-  const pool = new MemoryBudget(bytes(1));
+  const pool = new MemoryBudget(metadataBytes + bytes(1));
   const scope = new MemoryScope(pool);
-  const reader = new ScalarReadWorkspace(scope);
+  const reader = ScalarReadWorkspace.create(scope);
   const original = TextDecoder.prototype.decode;
   let calls = 0;
   const decode = vi.spyOn(TextDecoder.prototype, "decode").mockImplementation(function (...args) {
@@ -185,9 +188,9 @@ it("holds scalar admission through a decoder callback that closes its scope", ()
 
 it("decodes a shared immutable dictionary operand once while still calling the comparator", () => {
   const vector: Vector = { type: "dict", indices: Uint32Array.of(0, 0), dictionary: packed([200]) };
-  const pool = new MemoryBudget(bytes(200));
+  const pool = new MemoryBudget(metadataBytes + bytes(200));
   const scope = new MemoryScope(pool);
-  const reader = new ScalarReadWorkspace(scope);
+  const reader = ScalarReadWorkspace.create(scope);
   const decode = vi.spyOn(TextDecoder.prototype, "decode");
   const compare = vi.fn((left, right) => {
     expect(left).toBe(right);
@@ -197,7 +200,7 @@ it("decodes a shared immutable dictionary operand once while still calling the c
     expect(reader.consume(vector, 0, 1, compare)).toBe(7);
     expect(compare).toHaveBeenCalledTimes(1);
     expect(decode).toHaveBeenCalledTimes(1);
-    expect(pool.peakBytes).toBe(bytes(200));
+    expect(pool.peakBytes).toBe(metadataBytes + bytes(200));
   } finally {
     decode.mockRestore();
     reader.dispose();
@@ -214,7 +217,7 @@ it("preserves different outer null states and rejects invalid right indices", ()
     dictionary: packed([2]),
   };
   const scope = new MemoryScope(new MemoryBudget(4096));
-  const reader = new ScalarReadWorkspace(scope);
+  const reader = ScalarReadWorkspace.create(scope);
   try {
     expect(
       reader.consume(vector, 0, 1, (left, right) => {
@@ -231,9 +234,50 @@ it("preserves different outer null states and rejects invalid right indices", ()
       }),
     ).toBe(1);
     expect(() => reader.consume(vector, 0, 2, () => 0)).toThrow(/bounds/);
-    expect(scope.budget.usedBytes).toBe(0);
+    expect(scope.budget.usedBytes).toBe(metadataBytes);
   } finally {
     reader.dispose();
+    scope.dispose();
+  }
+});
+
+it("admits fixed workspace metadata at the exact boundary before scalar reads", () => {
+  const short = new MemoryScope(new MemoryBudget(metadataBytes - 1));
+  expect(() => ScalarReadWorkspace.create(short)).toThrow(/budget/i);
+  expect(short.budget.usedBytes).toBe(0);
+  short.dispose();
+  const exact = new MemoryScope(new MemoryBudget(metadataBytes));
+  const reader = ScalarReadWorkspace.create(exact);
+  expect(exact.budget.usedBytes).toBe(metadataBytes);
+  expect(
+    reader.consume(
+      { type: "i32", values: Int32Array.of(1, 2) },
+      0,
+      1,
+      (left, right) => Number(left) - Number(right),
+    ),
+  ).toBe(-1);
+  expect(exact.budget.peakBytes).toBe(metadataBytes);
+  reader.dispose();
+  reader.dispose();
+  exact.dispose();
+  expect(exact.budget.usedBytes).toBe(0);
+});
+
+it("releases metadata admission if reclamation closes the scope during creation", () => {
+  const pool = new MemoryBudget(metadataBytes);
+  const scope = new MemoryScope(pool);
+  const peer = pool.reserve(metadataBytes, "reclaimable peer");
+  const detach = pool.registerReclaimer(() => {
+    peer.release();
+    scope.dispose();
+  });
+  try {
+    expect(() => ScalarReadWorkspace.create(scope)).toThrow(/disposed/);
+    expect(pool.usedBytes).toBe(0);
+  } finally {
+    detach();
+    peer.release();
     scope.dispose();
   }
 });

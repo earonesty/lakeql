@@ -489,3 +489,7 @@ long shared prefixes retain the scalar decoder path. A budgeted operation-local
 probe stops speculative work after repeated unresolved text comparisons; nulls and
 non-text secondary keys do not disable it. Ordering direction, null placement and
 stable ties remain unchanged.
+
+Admit reusable scalar comparison workspace metadata before construction and retain
+its charge through active comparisons, including reentrant disposal. Allocation-free scalar shapes
+and zero-capacity owned top-k operations avoid constructing the workspace.

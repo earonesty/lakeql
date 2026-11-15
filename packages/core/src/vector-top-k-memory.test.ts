@@ -4,6 +4,7 @@ import { type Batch, batchFromColumns, materializeBatchRows } from "./batch.js";
 import { sharedGatherPlan } from "./gather-plan.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope } from "./memory-scope.js";
+import { SCALAR_READ_WORKSPACE_BYTES } from "./scalar-read-workspace.js";
 import { timestampFromEpoch } from "./timestamp.js";
 import { vectorTopKBatch, vectorTopKOwnedBatch } from "./vector-sort.js";
 
@@ -59,7 +60,7 @@ it.each([
     orderBytes +
     c.view +
     8 +
-    Math.max(2 * scalarBytes, gather.typedBytes + gather.viewBytes);
+    Math.max(SCALAR_READ_WORKSPACE_BYTES + 2 * scalarBytes, gather.typedBytes + gather.viewBytes);
   const tight = budget.child(required - 1);
   const tightPin = input.retainIn(tight);
   expect(() => vectorTopKOwnedBatch(tightPin, order, { limit: 2 })).toThrow(/budget/i);
@@ -90,7 +91,16 @@ it("rejects packed text scalar allocation before decoding when the first read ca
   const input = scope.retainAllocations(batch);
   scope.dispose();
   const child = budget.child(
-    input.bytes + orderBytes + textProbeBytes + c.view + 8 + c.view + c.string + 256 - 1,
+    input.bytes +
+      orderBytes +
+      textProbeBytes +
+      SCALAR_READ_WORKSPACE_BYTES +
+      c.view +
+      8 +
+      c.view +
+      c.string +
+      256 -
+      1,
   );
   const pin = input.retainIn(child);
   const decode = vi.spyOn(TextDecoder.prototype, "decode");
@@ -306,4 +316,23 @@ it.each([
     scope.dispose();
   }
   expect(scope.budget.usedBytes).toBe(0);
+});
+
+it("preserves the input owner when scalar-workspace metadata cannot fit", () => {
+  const pool = new MemoryBudget(65536);
+  const scope = new MemoryScope(pool);
+  const batch = batchFromColumns({ key: [3n, 1n, 2n] }, scope);
+  const input = scope.retainAllocations(batch);
+  scope.dispose();
+  const child = pool.child(input.bytes + orderBytes + SCALAR_READ_WORKSPACE_BYTES - 1);
+  const pin = input.retainIn(child);
+  try {
+    expect(() => vectorTopKOwnedBatch(pin, [{ column: "key" }], { limit: 2 })).toThrow(/budget/i);
+    expect(child.usedBytes).toBe(input.bytes);
+    expect(materializeBatchRows(pin.value)).toEqual([{ key: 3n }, { key: 1n }, { key: 2n }]);
+  } finally {
+    pin.release();
+    input.release();
+  }
+  expect(pool.usedBytes).toBe(0);
 });

@@ -1,9 +1,12 @@
+import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { scalarVectorValue, type Vector } from "./batch.js";
 import { LakeqlError } from "./errors.js";
 import type { Scalar } from "./expr.js";
 import type { MemoryReservation } from "./memory-budget.js";
 import type { MemoryScope } from "./memory-scope.js";
 import type { VectorAllocator } from "./vector-buffer.js";
+
+export const SCALAR_READ_WORKSPACE_BYTES = c.object + 7 * c.property;
 
 /** Reusable storage admission for two synchronous borrowed scalar reads. Each
  * scalar leaf admits one payload; dictionary/union reads delegate to that leaf.
@@ -16,7 +19,20 @@ export class ScalarReadWorkspace implements VectorAllocator {
   private active = false;
   private closed = false;
 
-  constructor(private readonly scope: MemoryScope) {}
+  private constructor(
+    private readonly scope: MemoryScope,
+    private readonly metadata: MemoryReservation,
+  ) {}
+
+  static create(scope: MemoryScope): ScalarReadWorkspace {
+    const metadata = scope.reserve(SCALAR_READ_WORKSPACE_BYTES, "scalar comparison metadata");
+    try {
+      return new ScalarReadWorkspace(scope, metadata);
+    } catch (error) {
+      metadata.release();
+      throw error;
+    }
+  }
 
   consume(
     vector: Vector,
@@ -48,7 +64,10 @@ export class ScalarReadWorkspace implements VectorAllocator {
     } finally {
       this.active = false;
       this.used = 0;
-      if (this.closed || this.scope.disposed) this.release();
+      if (this.closed || this.scope.disposed) {
+        this.release();
+        this.metadata.release();
+      }
     }
   }
 
@@ -77,12 +96,18 @@ export class ScalarReadWorkspace implements VectorAllocator {
 
   dispose(): void {
     this.closed = true;
-    if (!this.active) this.release();
+    if (!this.active) {
+      this.release();
+      this.metadata.release();
+    }
   }
 
   private requireOpen(): void {
     if (this.closed || this.scope.disposed) {
-      if (!this.active) this.release();
+      if (!this.active) {
+        this.release();
+        this.metadata.release();
+      }
       throw new LakeqlError("LAKEQL_ABORTED", "Scalar read workspace has been disposed");
     }
   }
