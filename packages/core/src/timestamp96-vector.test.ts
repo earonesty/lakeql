@@ -9,6 +9,7 @@ import {
 } from "./batch.js";
 import { planConcat } from "./concat-plan.js";
 import { gte } from "./expr.js";
+import { sharedGatherPlan } from "./gather-plan.js";
 import { allocateInt96Storage, readInt96, writeInt96 } from "./int96-storage.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope } from "./memory-scope.js";
@@ -49,18 +50,22 @@ it("preserves wide timestamp scalar access, borrowed slices, ordering and predic
 
 it("admits wide gather exactly and retains detached output after input release", () => {
   const vector = wide([-(1n << 95n), (1n << 95n) - 1n]);
-  for (const cap of [35 + 2 * c.view, 36 + 2 * c.view]) {
+  const descriptors = sharedGatherPlan(
+    { rowCount: 2, columns: { at: vector } },
+    [1, 0, 1],
+  ).descriptorBytes;
+  for (const cap of [35 + 2 * c.view + descriptors, 36 + 2 * c.view + descriptors]) {
     const scope = new MemoryScope(new MemoryBudget(cap));
     const input = scope.retainAllocations(batchFromVectors({ at: vector }));
     try {
-      if (cap === 35 + 2 * c.view) {
+      if (cap === 35 + 2 * c.view + descriptors) {
         expect(() => gatherOwnedBatch(input, [1, 0, 1])).toThrow(/budget/);
         expect(scope.budget.peakBytes).toBe(0);
       } else {
         const output = gatherOwnedBatch(input, [1, 0, 1]);
         input.release();
         scope.dispose();
-        expect(scope.budget.usedBytes).toBe(36 + 2 * c.view);
+        expect(scope.budget.usedBytes).toBe(36 + 2 * c.view + descriptors);
         expect(vectorValue(output.value.columns.at ?? vector, 1)).toMatchObject({
           epochNanoseconds: -(1n << 95n),
         });

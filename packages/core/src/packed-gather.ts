@@ -1,6 +1,11 @@
 import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { type Batch, type PackedByteVector, type Vector, vectorLength } from "./batch.js";
 import { LakeqlError } from "./errors.js";
+import {
+  GATHER_DESCRIPTOR_BASE_BYTES,
+  gatherColumnEntryBytes,
+  gatherVectorDescriptorBytes,
+} from "./gather-descriptors.js";
 import type { MemoryReservation } from "./memory-budget.js";
 import type { MemoryScope, OwnedMemory } from "./memory-scope.js";
 import { packedByteLength, packedByteStart } from "./packed-byte-range.js";
@@ -427,14 +432,17 @@ function payloadBytes(
 export function compactGatherPlan(
   batch: Batch,
   indices: readonly number[] | Uint32Array,
-): { typedBytes: number; viewBytes: number } | undefined {
+): { typedBytes: number; viewBytes: number; descriptorBytes: number } | undefined {
   let bytes = 0;
   let viewBytes = 0;
+  let descriptorBytes = GATHER_DESCRIPTOR_BASE_BYTES;
   for (const name in batch.columns) {
     if (!Object.hasOwn(batch.columns, name)) continue;
     const vector = batch.columns[name];
     if (vector === undefined) continue;
     const validity = indices.some((index) => resolvedIndex(vector, index) < 0) ? indices.length : 0;
+    descriptorBytes +=
+      gatherColumnEntryBytes(name) + gatherVectorDescriptorBytes(vector, validity > 0, true);
     const scalarLeaf = dictionaryLeaf(vector);
     const leaf = packedGatherLeaf(vector);
     if (leaf !== undefined) {
@@ -455,7 +463,9 @@ export function compactGatherPlan(
       return undefined;
     }
   }
-  return Number.isSafeInteger(bytes + viewBytes) ? { typedBytes: bytes, viewBytes } : undefined;
+  return Number.isSafeInteger(bytes + viewBytes + descriptorBytes)
+    ? { typedBytes: bytes, viewBytes, descriptorBytes }
+    : undefined;
 }
 
 export function compactPackedGather(

@@ -60,7 +60,10 @@ it.each([
     orderBytes +
     c.view +
     8 +
-    Math.max(SCALAR_READ_WORKSPACE_BYTES + 2 * scalarBytes, gather.typedBytes + gather.viewBytes);
+    Math.max(
+      SCALAR_READ_WORKSPACE_BYTES + 2 * scalarBytes,
+      gather.typedBytes + gather.viewBytes + gather.descriptorBytes,
+    );
   const tight = budget.child(required - 1);
   const tightPin = input.retainIn(tight);
   expect(() => vectorTopKOwnedBatch(tightPin, order, { limit: 2 })).toThrow(/budget/i);
@@ -188,12 +191,13 @@ it("sizes the admitted heap from actual selected rows rather than an oversized l
   scope.dispose();
   const selected = new Uint8Array(128);
   selected[73] = 1;
-  // Candidate and output views overlap during the gather.
-  const child = root.child(input.bytes + orderBytes + 2 * c.view + 4 + 8);
+  const descriptorBytes = sharedGatherPlan(batch, [73]).descriptorBytes;
+  // Candidate and output views and descriptors overlap during the gather.
+  const child = root.child(input.bytes + orderBytes + 2 * c.view + 4 + 8 + descriptorBytes);
   const pin = input.retainIn(child);
   const output = vectorTopKOwnedBatch(pin, [{ column: "id" }], { limit: 1000000 }, selected);
   expect(materializeBatchRows(output.value)).toEqual([{ id: 73 }]);
-  expect(child.peakBytes).toBe(input.bytes + orderBytes + 2 * c.view + 4 + 8);
+  expect(child.peakBytes).toBe(input.bytes + orderBytes + 2 * c.view + 4 + 8 + descriptorBytes);
   output.release();
   pin.release();
   expect(child.usedBytes).toBe(0);

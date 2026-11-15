@@ -12,6 +12,8 @@ import {
   planPhysicalFragment,
 } from "./physical.js";
 
+const idGatherDescriptors = 3 * c.object + 5 * c.property + c.string + 2 * c.stringCodeUnit;
+
 it.each([
   false,
   true,
@@ -42,7 +44,7 @@ it.each([
       if (result.output.kind !== "batch") throw new Error("missing batch");
       const output = scope.retainAllocations(result.output.batch);
       scope.dispose();
-      expect(budget.usedBytes).toBe(48 + c.view); // Input plus result; no selection mask survives.
+      expect(budget.usedBytes).toBe(48 + c.view + idGatherDescriptors); // Input plus result; no selection mask survives.
       expect(materializeBatchRows(output.value)).toEqual([{ id: 1 }, { id: 3 }]);
       output.release();
       return budget.peakBytes;
@@ -100,9 +102,9 @@ it("propagates projection allocation scopes through fused top-k execution", asyn
   const scope = new MemoryScope(
     new MemoryBudget(
       Math.max(
-        40 + c.view + descriptors,
+        40 + c.view + descriptors + idGatherDescriptors,
         24 + orderingScratch,
-        48 + 2 * c.view + c.array + c.object + 3 * c.property + c.arraySlot,
+        48 + 2 * c.view + c.array + c.object + 3 * c.property + c.arraySlot + idGatherDescriptors,
       ),
     ),
   );
@@ -132,7 +134,7 @@ it("propagates projection allocation scopes through fused top-k execution", asyn
       { id: 2, copy: 2 },
     ]);
     expect(result.output.batch.columns.copy).toBe(result.output.batch.columns.id);
-    expect(scope.budget.usedBytes).toBe(40 + c.view + descriptors);
+    expect(scope.budget.usedBytes).toBe(40 + c.view + descriptors + idGatherDescriptors);
   } finally {
     scope.dispose();
   }

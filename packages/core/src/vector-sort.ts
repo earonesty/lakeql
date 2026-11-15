@@ -13,6 +13,7 @@ import {
 import { type CollectionVector, collectionConcatInputs } from "./collection-concat.js";
 import { type ConcatColumnPlan, type ConcatPlan, planConcat } from "./concat-plan.js";
 import { LakeqlError } from "./errors.js";
+import { ownGatherDescriptors } from "./gather-descriptors.js";
 import { sharedGatherPlan } from "./gather-plan.js";
 import { gatherInt96Storage } from "./int96-storage.js";
 import type { MemoryBudget } from "./memory-budget.js";
@@ -262,9 +263,19 @@ export function gatherBatch(
   if (scope === undefined) return gatherBatchStorage(batch, indices, undefined, false, 0);
   validateGatherIndices(batch, indices);
   const plan = sharedGatherPlan(batch, indices);
-  const stage = scope.childStage(plan.typedBytes + plan.viewBytes, "gather output and views");
+  const stage = scope.childStage(
+    plan.typedBytes + plan.viewBytes + plan.descriptorBytes,
+    "gather output and descriptors",
+  );
   try {
-    const output = gatherBatchStorage(batch, indices, stage, false, plan.viewBytes);
+    const output = gatherBatchStorage(
+      batch,
+      indices,
+      stage,
+      false,
+      plan.viewBytes,
+      plan.descriptorBytes,
+    );
     scope.adopt(stage.retainAllocations(output));
     return output;
   } finally {
@@ -299,6 +310,27 @@ function validateGatherIndices(batch: Batch, indices: readonly number[] | Uint32
 }
 
 function gatherBatchStorage(
+  batch: Batch,
+  indices: readonly number[] | Uint32Array,
+  scope: MemoryScope | undefined,
+  compact: boolean,
+  viewBytes: number,
+  descriptorBytes = 0,
+): Batch {
+  // Keep the entire descriptor extent independently pinned until construction
+  // settles, even if a backing allocator reentrantly disposes the parent stage.
+  const metadata = scope?.reserve(descriptorBytes, "gather descriptor construction");
+  try {
+    const output = buildGatherBatchStorage(batch, indices, scope, compact, viewBytes);
+    if (scope !== undefined && metadata !== undefined)
+      ownGatherDescriptors(scope, output, metadata);
+    return output;
+  } finally {
+    metadata?.release();
+  }
+}
+
+function buildGatherBatchStorage(
   batch: Batch,
   indices: readonly number[] | Uint32Array,
   scope: MemoryScope | undefined,
@@ -394,19 +426,35 @@ export function gatherOwnedBatch(
     // Keep source storage admitted throughout output construction, including overlap.
     const source = scope.adopt(input.retainIn(budget));
     validateGatherIndices(input.value, indices);
+    const sharedPlan = sharedGatherPlan(input.value, indices);
+    const sharedRetainedBytes =
+      (sharedPlan.retainsInput ? input.bytes : 0) +
+      sharedPlan.typedBytes +
+      sharedPlan.viewBytes +
+      sharedPlan.descriptorBytes;
     const compactPlan = compactGatherPlan(input.value, indices);
     const compactBytes =
-      compactPlan === undefined ? undefined : compactPlan.typedBytes + compactPlan.viewBytes;
+      compactPlan === undefined
+        ? undefined
+        : compactPlan.typedBytes + compactPlan.viewBytes + compactPlan.descriptorBytes;
     const compact =
       compactBytes !== undefined &&
-      compactBytes < input.bytes &&
+      compactBytes < sharedRetainedBytes &&
       compactBytes <= budget.availableBytes;
     const plan =
-      compact && compactPlan !== undefined
-        ? { ...compactPlan, retainsInput: false }
-        : sharedGatherPlan(input.value, indices);
-    scope.admit(plan.typedBytes + plan.viewBytes, "gather typed output and views");
-    const batch = gatherBatchStorage(input.value, indices, scope, compact, plan.viewBytes);
+      compact && compactPlan !== undefined ? { ...compactPlan, retainsInput: false } : sharedPlan;
+    scope.admit(
+      plan.typedBytes + plan.viewBytes + plan.descriptorBytes,
+      "gather typed output and descriptors",
+    );
+    const batch = gatherBatchStorage(
+      input.value,
+      indices,
+      scope,
+      compact,
+      plan.viewBytes,
+      plan.descriptorBytes,
+    );
     if (!plan.retainsInput) source.release();
     return scope.retainAllocations(batch);
   } finally {

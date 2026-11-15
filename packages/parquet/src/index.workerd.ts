@@ -311,7 +311,6 @@ it.each([
   if (adapter.scanOwnedVectorBatches === undefined) throw new Error("Missing owned scanner");
   const root = new MemoryBudget(65536);
   const producer = root.child();
-  const consumer = root.child();
   const iterator = adapter
     .scanOwnedVectorBatches("gather-owned.parquet", {
       ...(direct ? { columns: ["raw", "id"] } : {}),
@@ -345,6 +344,18 @@ it.each([
   if (next.done) throw new Error("Missing batch");
   const bridge = new MemoryScope(producer);
   const input = bridge.retainBacking(next.value.value.batch, [next.value]);
+  let consumerLimit: number | undefined;
+  if (rows === 9) {
+    const probe = gatherOwnedBatch(input, [2, 0, 1, 0]);
+    try {
+      expect(probe.value.columns.raw?.type).toBe("binary-view");
+      consumerLimit = input.bytes + probe.bytes - 1;
+    } finally {
+      probe.release();
+    }
+  }
+  // One byte below detached overlap must preserve the shared fallback.
+  const consumer = root.child(consumerLimit);
   const output = gatherOwnedBatch(input, [2, 0, 1, 0], consumer);
   bridge.dispose();
   next.value.release();

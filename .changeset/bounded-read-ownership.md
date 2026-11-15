@@ -493,3 +493,10 @@ stable ties remain unchanged.
 Admit reusable scalar comparison workspace metadata before construction and retain
 its charge through active comparisons, including reentrant disposal. Allocation-free scalar shapes
 and zero-capacity owned top-k operations avoid constructing the workspace.
+
+Gather plans admit batch, column-directory and vector descriptors alongside backing
+and typed views. Construction holds descriptor admission through reentrant scope
+disposal, then transfers independently owned containers to the result. Existing
+compaction provenance releases obsolete descriptors without losing payload aliases.
+Compact-versus-shared selection compares complete retained costs and still requires
+available capacity for input/output overlap.

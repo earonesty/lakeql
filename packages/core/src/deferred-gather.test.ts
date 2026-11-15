@@ -17,7 +17,8 @@ function input(pool: MemoryBudget, offset = 100): OwnedMemory<PositionedBatch> {
 }
 
 it("joins sparse selected positions across bounded windows and fetched batch boundaries", async () => {
-  const pool = new MemoryBudget(4096);
+  // Retained results include each gathered batch, directory and vector descriptor.
+  const pool = new MemoryBudget(16384);
   const source = input(pool);
   const windows: number[][] = [];
   const retained: OwnedMemory<import("./batch.js").Batch>[] = [];

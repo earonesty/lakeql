@@ -46,7 +46,8 @@ for (const leaf of leaves) {
       for (const indices of [[], [0], [1], [2, 0, 2, 1]]) {
         const batch = { rowCount: 3, columns: { value: vector } };
         const plan = compactGatherPlan(batch, indices);
-        const expectedBytes = plan === undefined ? undefined : plan.typedBytes + plan.viewBytes;
+        const expectedBytes =
+          plan === undefined ? undefined : plan.typedBytes + plan.viewBytes + plan.descriptorBytes;
         expect(expectedBytes).toBeDefined();
         if (expectedBytes === undefined) throw new Error("Missing shape estimate");
         // Borrowed vector fixtures; owned padding forces the detachable path.

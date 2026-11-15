@@ -1,0 +1,578 @@
+{
+  "baseline": "b7f35aa",
+  "benchmarkName": "dictionary-materialization-query.mjs",
+  "moduleName": "core/vector-sort,core/gather-plan,core/packed-gather",
+  "modules": [
+    {
+      "name": "core/vector-sort",
+      "baselineSourceSha256": "a50ca74a319b2ec97923a9dde38a4dc66d2b0b8d9a78979317a07b9b4ec917fa",
+      "currentSourceSha256": "58c2f5617ace8ffe8948903a4d1e2509f9062ad6ca38bbe57102779ef2e4f9d2"
+    },
+    {
+      "name": "core/gather-plan",
+      "baselineSourceSha256": "4bcc67343b0f6a217bcd429f8d9fd2471a8ac2a19a48c6f2ab09664b8f90e192",
+      "currentSourceSha256": "b1d77f7e1fdc2946879c951f6ea882a0fda7520f75f484536d844ce70e281ef3"
+    },
+    {
+      "name": "core/packed-gather",
+      "baselineSourceSha256": "20983b59bc9002f947eda1ad6d52d2f05660324a001bf6befd2b3339dd762ee4",
+      "currentSourceSha256": "1cac8f02725d42c41490b99dfa7800aa288708f65d82a0565096f507d7fd488c"
+    }
+  ],
+  "node": "v24.18.1",
+  "warmupPairs": 1,
+  "measuredPairs": 4,
+  "scope": "Alternating fresh Node processes; the named modules are replaced together by their prior implementations, with current dependencies. The recorded benchmark identifies its fixture and checks; these are local queries, not cloud throughput. Source store/runtime overhead excluded from pool metrics. Value parity is covered by external conformance; benchmark checks count and release.",
+  "priorMedianMs": 287.8056315,
+  "currentMedianMs": 307.266725,
+  "runs": {
+    "prior": [
+      {
+        "scope": "Local real Parquet dictionary fixtures; output parity checked row by row. Fixture construction excluded from timing and admission. No cloud or total-heap claim.",
+        "node": "v24.18.1",
+        "mode": "topk",
+        "elapsedMs": 276.6199949999999,
+        "cases": [
+          {
+            "prefixKind": "none",
+            "cardinality": 16,
+            "batchSize": 128,
+            "rows": 8192,
+            "elapsedMs": 151.283262,
+            "peakBytes": 190147,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "a0b6bdc7675117f14f35e21b7a3985ed0ed4118ab8c8f3a7fcdb2cbff33b7372"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 16,
+            "batchSize": 2048,
+            "rows": 8192,
+            "elapsedMs": 12.489004999999963,
+            "peakBytes": 190147,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "a0b6bdc7675117f14f35e21b7a3985ed0ed4118ab8c8f3a7fcdb2cbff33b7372"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 1024,
+            "batchSize": 128,
+            "rows": 8192,
+            "elapsedMs": 63.849425999999994,
+            "peakBytes": 786267,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "562add0c4d0a885147249fc9fce28c7e064ca11e8def20442b427bfdf11c1b1f"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 1024,
+            "batchSize": 2048,
+            "rows": 8192,
+            "elapsedMs": 8.696075000000008,
+            "peakBytes": 786267,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "562add0c4d0a885147249fc9fce28c7e064ca11e8def20442b427bfdf11c1b1f"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 8192,
+            "batchSize": 128,
+            "rows": 8192,
+            "elapsedMs": 34.242317999999955,
+            "peakBytes": 787461,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "2997a3795f5813d508cbedcf430bcd8eac5f7ebc9970436a776a2629d1531020"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 8192,
+            "batchSize": 2048,
+            "rows": 8192,
+            "elapsedMs": 6.059908999999948,
+            "peakBytes": 787461,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "2997a3795f5813d508cbedcf430bcd8eac5f7ebc9970436a776a2629d1531020"
+          }
+        ]
+      },
+      {
+        "scope": "Local real Parquet dictionary fixtures; output parity checked row by row. Fixture construction excluded from timing and admission. No cloud or total-heap claim.",
+        "node": "v24.18.1",
+        "mode": "topk",
+        "elapsedMs": 291.32269799999995,
+        "cases": [
+          {
+            "prefixKind": "none",
+            "cardinality": 16,
+            "batchSize": 128,
+            "rows": 8192,
+            "elapsedMs": 159.955031,
+            "peakBytes": 190147,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "a0b6bdc7675117f14f35e21b7a3985ed0ed4118ab8c8f3a7fcdb2cbff33b7372"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 16,
+            "batchSize": 2048,
+            "rows": 8192,
+            "elapsedMs": 14.023571000000004,
+            "peakBytes": 190147,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "a0b6bdc7675117f14f35e21b7a3985ed0ed4118ab8c8f3a7fcdb2cbff33b7372"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 1024,
+            "batchSize": 128,
+            "rows": 8192,
+            "elapsedMs": 69.59322800000001,
+            "peakBytes": 786267,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "562add0c4d0a885147249fc9fce28c7e064ca11e8def20442b427bfdf11c1b1f"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 1024,
+            "batchSize": 2048,
+            "rows": 8192,
+            "elapsedMs": 8.426095999999973,
+            "peakBytes": 786267,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "562add0c4d0a885147249fc9fce28c7e064ca11e8def20442b427bfdf11c1b1f"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 8192,
+            "batchSize": 128,
+            "rows": 8192,
+            "elapsedMs": 32.92574300000001,
+            "peakBytes": 787461,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "2997a3795f5813d508cbedcf430bcd8eac5f7ebc9970436a776a2629d1531020"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 8192,
+            "batchSize": 2048,
+            "rows": 8192,
+            "elapsedMs": 6.399028999999928,
+            "peakBytes": 787461,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "2997a3795f5813d508cbedcf430bcd8eac5f7ebc9970436a776a2629d1531020"
+          }
+        ]
+      },
+      {
+        "scope": "Local real Parquet dictionary fixtures; output parity checked row by row. Fixture construction excluded from timing and admission. No cloud or total-heap claim.",
+        "node": "v24.18.1",
+        "mode": "topk",
+        "elapsedMs": 287.1556800000001,
+        "cases": [
+          {
+            "prefixKind": "none",
+            "cardinality": 16,
+            "batchSize": 128,
+            "rows": 8192,
+            "elapsedMs": 154.423538,
+            "peakBytes": 190147,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "a0b6bdc7675117f14f35e21b7a3985ed0ed4118ab8c8f3a7fcdb2cbff33b7372"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 16,
+            "batchSize": 2048,
+            "rows": 8192,
+            "elapsedMs": 12.136809999999969,
+            "peakBytes": 190147,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "a0b6bdc7675117f14f35e21b7a3985ed0ed4118ab8c8f3a7fcdb2cbff33b7372"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 1024,
+            "batchSize": 128,
+            "rows": 8192,
+            "elapsedMs": 69.58301900000004,
+            "peakBytes": 786267,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "562add0c4d0a885147249fc9fce28c7e064ca11e8def20442b427bfdf11c1b1f"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 1024,
+            "batchSize": 2048,
+            "rows": 8192,
+            "elapsedMs": 8.51163699999995,
+            "peakBytes": 786267,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "562add0c4d0a885147249fc9fce28c7e064ca11e8def20442b427bfdf11c1b1f"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 8192,
+            "batchSize": 128,
+            "rows": 8192,
+            "elapsedMs": 34.96264700000006,
+            "peakBytes": 787461,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "2997a3795f5813d508cbedcf430bcd8eac5f7ebc9970436a776a2629d1531020"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 8192,
+            "batchSize": 2048,
+            "rows": 8192,
+            "elapsedMs": 7.538029000000051,
+            "peakBytes": 787461,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "2997a3795f5813d508cbedcf430bcd8eac5f7ebc9970436a776a2629d1531020"
+          }
+        ]
+      },
+      {
+        "scope": "Local real Parquet dictionary fixtures; output parity checked row by row. Fixture construction excluded from timing and admission. No cloud or total-heap claim.",
+        "node": "v24.18.1",
+        "mode": "topk",
+        "elapsedMs": 288.455583,
+        "cases": [
+          {
+            "prefixKind": "none",
+            "cardinality": 16,
+            "batchSize": 128,
+            "rows": 8192,
+            "elapsedMs": 154.741718,
+            "peakBytes": 190147,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "a0b6bdc7675117f14f35e21b7a3985ed0ed4118ab8c8f3a7fcdb2cbff33b7372"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 16,
+            "batchSize": 2048,
+            "rows": 8192,
+            "elapsedMs": 13.756306999999993,
+            "peakBytes": 190147,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "a0b6bdc7675117f14f35e21b7a3985ed0ed4118ab8c8f3a7fcdb2cbff33b7372"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 1024,
+            "batchSize": 128,
+            "rows": 8192,
+            "elapsedMs": 67.969964,
+            "peakBytes": 786267,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "562add0c4d0a885147249fc9fce28c7e064ca11e8def20442b427bfdf11c1b1f"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 1024,
+            "batchSize": 2048,
+            "rows": 8192,
+            "elapsedMs": 10.355256999999995,
+            "peakBytes": 786267,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "562add0c4d0a885147249fc9fce28c7e064ca11e8def20442b427bfdf11c1b1f"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 8192,
+            "batchSize": 128,
+            "rows": 8192,
+            "elapsedMs": 35.19944399999997,
+            "peakBytes": 787461,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "2997a3795f5813d508cbedcf430bcd8eac5f7ebc9970436a776a2629d1531020"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 8192,
+            "batchSize": 2048,
+            "rows": 8192,
+            "elapsedMs": 6.4328930000000355,
+            "peakBytes": 787461,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "2997a3795f5813d508cbedcf430bcd8eac5f7ebc9970436a776a2629d1531020"
+          }
+        ]
+      }
+    ],
+    "current": [
+      {
+        "scope": "Local real Parquet dictionary fixtures; output parity checked row by row. Fixture construction excluded from timing and admission. No cloud or total-heap claim.",
+        "node": "v24.18.1",
+        "mode": "topk",
+        "elapsedMs": 313.479474,
+        "cases": [
+          {
+            "prefixKind": "none",
+            "cardinality": 16,
+            "batchSize": 128,
+            "rows": 8192,
+            "elapsedMs": 161.47062200000002,
+            "peakBytes": 193255,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "a0b6bdc7675117f14f35e21b7a3985ed0ed4118ab8c8f3a7fcdb2cbff33b7372"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 16,
+            "batchSize": 2048,
+            "rows": 8192,
+            "elapsedMs": 12.572291999999948,
+            "peakBytes": 193255,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "a0b6bdc7675117f14f35e21b7a3985ed0ed4118ab8c8f3a7fcdb2cbff33b7372"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 1024,
+            "batchSize": 128,
+            "rows": 8192,
+            "elapsedMs": 64.96834900000005,
+            "peakBytes": 789375,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "562add0c4d0a885147249fc9fce28c7e064ca11e8def20442b427bfdf11c1b1f"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 1024,
+            "batchSize": 2048,
+            "rows": 8192,
+            "elapsedMs": 13.732553000000053,
+            "peakBytes": 789375,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "562add0c4d0a885147249fc9fce28c7e064ca11e8def20442b427bfdf11c1b1f"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 8192,
+            "batchSize": 128,
+            "rows": 8192,
+            "elapsedMs": 55.271282999999926,
+            "peakBytes": 790569,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "2997a3795f5813d508cbedcf430bcd8eac5f7ebc9970436a776a2629d1531020"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 8192,
+            "batchSize": 2048,
+            "rows": 8192,
+            "elapsedMs": 5.464375000000018,
+            "peakBytes": 790569,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "2997a3795f5813d508cbedcf430bcd8eac5f7ebc9970436a776a2629d1531020"
+          }
+        ]
+      },
+      {
+        "scope": "Local real Parquet dictionary fixtures; output parity checked row by row. Fixture construction excluded from timing and admission. No cloud or total-heap claim.",
+        "node": "v24.18.1",
+        "mode": "topk",
+        "elapsedMs": 301.05397600000003,
+        "cases": [
+          {
+            "prefixKind": "none",
+            "cardinality": 16,
+            "batchSize": 128,
+            "rows": 8192,
+            "elapsedMs": 162.760676,
+            "peakBytes": 193255,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "a0b6bdc7675117f14f35e21b7a3985ed0ed4118ab8c8f3a7fcdb2cbff33b7372"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 16,
+            "batchSize": 2048,
+            "rows": 8192,
+            "elapsedMs": 12.90703400000001,
+            "peakBytes": 193255,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "a0b6bdc7675117f14f35e21b7a3985ed0ed4118ab8c8f3a7fcdb2cbff33b7372"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 1024,
+            "batchSize": 128,
+            "rows": 8192,
+            "elapsedMs": 71.95621899999998,
+            "peakBytes": 789375,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "562add0c4d0a885147249fc9fce28c7e064ca11e8def20442b427bfdf11c1b1f"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 1024,
+            "batchSize": 2048,
+            "rows": 8192,
+            "elapsedMs": 8.099288000000001,
+            "peakBytes": 789375,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "562add0c4d0a885147249fc9fce28c7e064ca11e8def20442b427bfdf11c1b1f"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 8192,
+            "batchSize": 128,
+            "rows": 8192,
+            "elapsedMs": 39.908844000000045,
+            "peakBytes": 790569,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "2997a3795f5813d508cbedcf430bcd8eac5f7ebc9970436a776a2629d1531020"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 8192,
+            "batchSize": 2048,
+            "rows": 8192,
+            "elapsedMs": 5.421915000000013,
+            "peakBytes": 790569,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "2997a3795f5813d508cbedcf430bcd8eac5f7ebc9970436a776a2629d1531020"
+          }
+        ]
+      },
+      {
+        "scope": "Local real Parquet dictionary fixtures; output parity checked row by row. Fixture construction excluded from timing and admission. No cloud or total-heap claim.",
+        "node": "v24.18.1",
+        "mode": "topk",
+        "elapsedMs": 324.702325,
+        "cases": [
+          {
+            "prefixKind": "none",
+            "cardinality": 16,
+            "batchSize": 128,
+            "rows": 8192,
+            "elapsedMs": 162.463655,
+            "peakBytes": 193255,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "a0b6bdc7675117f14f35e21b7a3985ed0ed4118ab8c8f3a7fcdb2cbff33b7372"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 16,
+            "batchSize": 2048,
+            "rows": 8192,
+            "elapsedMs": 15.011295999999959,
+            "peakBytes": 193255,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "a0b6bdc7675117f14f35e21b7a3985ed0ed4118ab8c8f3a7fcdb2cbff33b7372"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 1024,
+            "batchSize": 128,
+            "rows": 8192,
+            "elapsedMs": 68.27010000000001,
+            "peakBytes": 789375,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "562add0c4d0a885147249fc9fce28c7e064ca11e8def20442b427bfdf11c1b1f"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 1024,
+            "batchSize": 2048,
+            "rows": 8192,
+            "elapsedMs": 13.743471999999997,
+            "peakBytes": 789375,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "562add0c4d0a885147249fc9fce28c7e064ca11e8def20442b427bfdf11c1b1f"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 8192,
+            "batchSize": 128,
+            "rows": 8192,
+            "elapsedMs": 59.57909500000005,
+            "peakBytes": 790569,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "2997a3795f5813d508cbedcf430bcd8eac5f7ebc9970436a776a2629d1531020"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 8192,
+            "batchSize": 2048,
+            "rows": 8192,
+            "elapsedMs": 5.634706999999935,
+            "peakBytes": 790569,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "2997a3795f5813d508cbedcf430bcd8eac5f7ebc9970436a776a2629d1531020"
+          }
+        ]
+      },
+      {
+        "scope": "Local real Parquet dictionary fixtures; output parity checked row by row. Fixture construction excluded from timing and admission. No cloud or total-heap claim.",
+        "node": "v24.18.1",
+        "mode": "topk",
+        "elapsedMs": 299.29659699999996,
+        "cases": [
+          {
+            "prefixKind": "none",
+            "cardinality": 16,
+            "batchSize": 128,
+            "rows": 8192,
+            "elapsedMs": 155.68406700000003,
+            "peakBytes": 193255,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "a0b6bdc7675117f14f35e21b7a3985ed0ed4118ab8c8f3a7fcdb2cbff33b7372"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 16,
+            "batchSize": 2048,
+            "rows": 8192,
+            "elapsedMs": 12.696537000000035,
+            "peakBytes": 193255,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "a0b6bdc7675117f14f35e21b7a3985ed0ed4118ab8c8f3a7fcdb2cbff33b7372"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 1024,
+            "batchSize": 128,
+            "rows": 8192,
+            "elapsedMs": 69.50780599999996,
+            "peakBytes": 789375,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "562add0c4d0a885147249fc9fce28c7e064ca11e8def20442b427bfdf11c1b1f"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 1024,
+            "batchSize": 2048,
+            "rows": 8192,
+            "elapsedMs": 16.234063999999933,
+            "peakBytes": 789375,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "562add0c4d0a885147249fc9fce28c7e064ca11e8def20442b427bfdf11c1b1f"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 8192,
+            "batchSize": 128,
+            "rows": 8192,
+            "elapsedMs": 39.78013099999998,
+            "peakBytes": 790569,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "2997a3795f5813d508cbedcf430bcd8eac5f7ebc9970436a776a2629d1531020"
+          },
+          {
+            "prefixKind": "none",
+            "cardinality": 8192,
+            "batchSize": 2048,
+            "rows": 8192,
+            "elapsedMs": 5.393992000000026,
+            "peakBytes": 790569,
+            "afterReleaseBytes": 0,
+            "fixtureSha256": "2997a3795f5813d508cbedcf430bcd8eac5f7ebc9970436a776a2629d1531020"
+          }
+        ]
+      }
+    ]
+  }
+}

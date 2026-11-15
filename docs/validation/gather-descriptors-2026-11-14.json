@@ -1,0 +1,61 @@
+{
+  "status": "validated; broader audit remains open",
+  "baseline": "b7f35aa",
+  "contract": "Shared and compact gather forecasts include batch, column-directory/key and vector descriptors. The complete output extent is admitted before construction. Descriptor admission is independently pinned through construction/reentrant disposal, then partitioned into container-only owners. Existing compaction metadata provenance drops obsolete batch/directory/vector containers while preserving reachable vectors and payload aliases. Compact selection compares complete retained shared-versus-compact costs and independently enforces construction overlap headroom.",
+  "sourceSha256": {
+    "packages/core/src/gather-descriptors.ts": "3fdf07d41bbaad75d37fd31de01fd3e1973c9b9eebbef5ae2b0f9d8163bc4d37",
+    "packages/core/src/gather-plan.ts": "49d4a4cba71942667d6844fb0a80fca6c6c2bddb32098982f3a8569f22e2e1a1",
+    "packages/core/src/packed-gather.ts": "25bb9fdbff78fd7d35dbcfca0db032bf791d960e0c381e59a8140ba69c470c6a",
+    "packages/core/src/vector-sort.ts": "109911d49fc0fb377f89af36dee157c964248f7e7dffc379f7389ceb9a91fdbf"
+  },
+  "validation": {
+    "corePassedBeforeFinalAddedControl": 2349,
+    "newTestsPassed": 8,
+    "negativeControl": "The empty-gather container-boundary test fails against published b7f35aa because it allocates below the required 256-byte batch/directory extent; restored implementation passes.",
+    "cases": [
+      "0/1/32/256-column fixtures with zero or repeated selected rows; exact capacity and one byte below before backing construction",
+      "Independent actual output property/key counts match descriptor forecasts",
+      "Shared and compact ownership transfer, repeated compaction and zero final charge",
+      "Parent-stage disposal inside a backing allocator keeps descriptor admission live until construction settles",
+      "Existing compact scalar/packed matrix across zero/one/two dictionary indirections",
+      "512-iteration concat/selection tests preserve their original 4 KiB/16 KiB retained-memory ceilings after registering descriptor provenance",
+      "Numeric-dictionary headroom test now includes descriptor costs in the copy-versus-view boundary; exact and one-byte-below remain covered"
+    ],
+    "parquetFixtureUpdate": "The complete retained-cost policy now chooses compact output by default for the nine-row fixture. Local and native R2 fixtures first verify that default, then constrain the consumer to one byte below detached overlap to preserve explicit shared-fallback coverage through scanner shutdown. Four local direct/general scanner cases and all native R2 variants pass within the 95-test Worker suite.",
+    "release": {
+      "regularPassed": 4096,
+      "regularSkipped": 645,
+      "workerPassed": 95,
+      "conformancePassed": 520,
+      "conformanceGuardSkipped": 1,
+      "referencePassed": 120,
+      "checks": "build, types, clean package consumers, compatibility, changeset, deterministic fixtures, large files, lint and unchanged coverage thresholds passed"
+    }
+  },
+  "performance": {
+    "query": {
+      "priorCombinedMedianMs": 287.8056315,
+      "currentCombinedMedianMs": 307.266725,
+      "priorMaxModeledPeakBytes": 787461,
+      "currentMaxModeledPeakBytes": 790569
+    },
+    "fallback-query": {
+      "priorCombinedMedianMs": 457.65108050000003,
+      "currentCombinedMedianMs": 460.1117870000002,
+      "priorMaxModeledPeakBytes": 1071438,
+      "currentMaxModeledPeakBytes": 1074546
+    }
+  },
+  "scope": "Real DuckDB-generated local Parquet; all output rows checked; no cloud-throughput, speedup or total-runtime-memory claim. Modeled peaks include previously untracked containers.",
+  "remaining": [
+    "Descriptor coverage in other constructors, planning and temporary copy views, codec workspace and runtime bookkeeping/headroom"
+  ],
+  "publicR2": {
+    "scenarios": 52,
+    "ordinaryQueries": 40,
+    "queryHeadroomBytes": 524288,
+    "peakIncrementalChargedBytes": 396118,
+    "warmRequests": 0,
+    "maxPeakReads": 4
+  }
+}

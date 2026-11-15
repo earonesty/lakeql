@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
 import { type Batch, materializeBatchRows } from "./batch.js";
+import { sharedGatherPlan } from "./gather-plan.js";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope } from "./memory-scope.js";
 import { gatherSelectedBatch } from "./vector-sort.js";
@@ -17,18 +18,20 @@ const input: Batch = {
   },
 };
 
+const descriptors = sharedGatherPlan(input, [0, 2]).descriptorBytes;
+
 it("releases temporary indices while retaining independent dictionary output indices", () => {
-  const budget = new MemoryBudget(2 * c.view + 16);
+  const budget = new MemoryBudget(2 * c.view + 16 + descriptors);
   const scope = new MemoryScope(budget);
   try {
     const output = gatherSelectedBatch(input, new Uint8Array([1, 0, 1]), scope);
-    expect(budget.peakBytes).toBe(2 * c.view + 16); // Temporary and output index buffers overlap.
-    expect(budget.usedBytes).toBe(c.view + 8);
+    expect(budget.peakBytes).toBe(2 * c.view + 16 + descriptors); // Temporary and output index buffers overlap.
+    expect(budget.usedBytes).toBe(c.view + 8 + descriptors);
     expect(materializeBatchRows(output)).toEqual([{ text: "one" }, { text: "three" }]);
     const owner = scope.retainAllocations(output);
     scope.dispose();
     try {
-      expect(budget.usedBytes).toBe(c.view + 8);
+      expect(budget.usedBytes).toBe(c.view + 8 + descriptors);
       expect(materializeBatchRows(owner.value)).toEqual([{ text: "one" }, { text: "three" }]);
     } finally {
       owner.release();
@@ -40,7 +43,7 @@ it("releases temporary indices while retaining independent dictionary output ind
 });
 
 it("releases index workspace when output admission fails one byte below overlap", () => {
-  const budget = new MemoryBudget(2 * c.view + 15);
+  const budget = new MemoryBudget(2 * c.view + 15 + descriptors);
   const scope = new MemoryScope(budget);
   try {
     expect(() => gatherSelectedBatch(input, new Uint8Array([1, 0, 1]), scope)).toThrow();

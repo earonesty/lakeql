@@ -48,15 +48,16 @@ it("preserves union values through traversal, slices, gathers, and admitted mate
   expect(plan).toEqual({
     typedBytes: 12,
     viewBytes: c.view,
+    descriptorBytes: 1028,
     retainsInput: true,
     createsJavaScriptArrays: false,
   });
-  const gatherScope = new MemoryScope(new MemoryBudget(12 + c.view));
+  const gatherScope = new MemoryScope(new MemoryBudget(12 + c.view + plan.descriptorBytes));
   const gathered = gatherBatch(batch, indices, gatherScope);
   expect(materializeBatchRows(gathered)).toEqual(
     indices.map((row) => ({ a: values[row], b: values[row] })),
   );
-  expect(gatherScope.budget.usedBytes).toBe(12 + c.view);
+  expect(gatherScope.budget.usedBytes).toBe(12 + c.view + plan.descriptorBytes);
   gatherScope.dispose();
   const materialization = planBatchMaterialization({ rowCount: 4, columns: { value: vector } });
   const output = materialization.execute(scope);
