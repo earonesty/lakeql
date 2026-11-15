@@ -33,9 +33,7 @@ export function vectorTopKBatch(
   const offset = options.offset ?? 0;
   const topK = offset + options.limit;
   if (topK === 0) return gatherBatch(batch, []);
-  const indices = vectorTopKIndices(batch, orderBy, topK, selection).sort((left, right) =>
-    compareBatchRows(batch, left, right, normalizeVectorOrderBy(orderBy)),
-  );
+  const indices = vectorTopKIndices(batch, orderBy, topK, selection);
   return gatherBatch(batch, indices.slice(offset, offset + options.limit));
 }
 
