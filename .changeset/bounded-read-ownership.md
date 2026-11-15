@@ -455,3 +455,8 @@ dictionary, nested-page and page-header keys. Compose row-group identities lazil
 skip optional caching when workspace cannot fit, and release scratch separately
 from retained payloads. Preserve existing key identities and consumer payload-only
 limits while charging workspace to the configured shared cache pool.
+
+Separate raw-range and Parquet-metadata file identity fields with one versioned
+structured-key contract. Prevent distinct paths/version tags from sharing cached
+bytes, metadata or pending reads, and distinguish absent from empty version tags.
+Prior internal cache keys become cold entries until eviction.

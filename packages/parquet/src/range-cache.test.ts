@@ -5,6 +5,7 @@ import {
   sharedCacheMetadataBytes,
 } from "lakeql-core";
 import { describe, expect, it, vi } from "vitest";
+import { fileCacheKey } from "./file-cache-key.js";
 import { cachedRangeBuffer } from "./range-cache.js";
 import type { StoreAsyncBuffer } from "./types.js";
 
@@ -36,7 +37,10 @@ describe("cachedRangeBuffer", () => {
       ? Array.from(
           { length: 64 },
           (_, i) =>
-            1 + sharedCacheMetadataBytes(`owned-scan-range:tiny:128::${i * 2}:${i * 2 + 1}`),
+            1 +
+            sharedCacheMetadataBytes(
+              fileCacheKey("owned-scan-range-v2", "tiny", 128, undefined, i * 2, i * 2 + 1),
+            ),
         ).reduce((sum, bytes) => sum + bytes, 0)
       : 64;
     const cache = cachedRangeBuffer(
@@ -84,9 +88,12 @@ describe("cachedRangeBuffer", () => {
   });
 
   it("pins shared cache hits across async handoff and releases after copying", async () => {
-    const pool = new MemoryBudget(8 + sharedCacheMetadataBytes("scan-range:pins:8::0:8"));
+    const pool = new MemoryBudget(
+      8 + sharedCacheMetadataBytes(fileCacheKey("scan-range-v2", "pins", 8, undefined, 0, 8)),
+    );
     const sharedCache = new SharedMemoryCache({
-      maxBytes: 8 + sharedCacheMetadataBytes("scan-range:pins:8::0:8"),
+      maxBytes:
+        8 + sharedCacheMetadataBytes(fileCacheKey("scan-range-v2", "pins", 8, undefined, 0, 8)),
       memoryBudget: pool,
     });
     const cache = cachedRangeBuffer(
@@ -329,7 +336,9 @@ describe("cachedRangeBuffer", () => {
     });
     file.etag = "etag-a";
     const sharedCache = new SharedMemoryCache({
-      maxBytes: 8 + 2 * sharedCacheMetadataBytes("scan-range:path-a:4:etag-a:1:4"),
+      maxBytes:
+        8 +
+        2 * sharedCacheMetadataBytes(fileCacheKey("scan-range-v2", "path-a", 4, "etag-a", 1, 4)),
     });
     const first = cachedRangeBuffer(file, { maxBytes: 8, sharedCache, coalesceBytes: 0 }, "path-a");
     const sameIdentity = cachedRangeBuffer(
@@ -353,7 +362,8 @@ describe("cachedRangeBuffer", () => {
   it("shares cache budget with policy-specific range priorities", async () => {
     const ioFile = countedBuffer([1, 2, 3, 4]);
     const ioShared = new SharedMemoryCache({
-      maxBytes: 4 + sharedCacheMetadataBytes("scan-range:io:4::0:2"),
+      maxBytes:
+        4 + sharedCacheMetadataBytes(fileCacheKey("scan-range-v2", "io", 4, undefined, 0, 2)),
     });
     const ioCached = cachedRangeBuffer(
       ioFile,
@@ -367,7 +377,8 @@ describe("cachedRangeBuffer", () => {
 
     const latencyFile = countedBuffer([1, 2, 3, 4]);
     const latencyShared = new SharedMemoryCache({
-      maxBytes: 4 + sharedCacheMetadataBytes("scan-range:latency:4::0:2"),
+      maxBytes:
+        4 + sharedCacheMetadataBytes(fileCacheKey("scan-range-v2", "latency", 4, undefined, 0, 2)),
     });
     const latencyCached = cachedRangeBuffer(
       latencyFile,

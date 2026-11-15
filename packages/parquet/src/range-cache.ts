@@ -5,6 +5,7 @@ import {
   type ObjectStoreCacheOptions,
   type SharedMemoryCache,
 } from "lakeql-core";
+import { fileCacheKey } from "./file-cache-key.js";
 import { withOwnedRangeCache } from "./range-cache-owned.js";
 import type { StoreAsyncBuffer } from "./types.js";
 
@@ -272,7 +273,7 @@ function sharedRangeKey(
   start: number,
   end: number,
 ): string {
-  return ["scan-range", cacheKey, file.byteLength, file.etag ?? "", start, end].join(":");
+  return fileCacheKey("scan-range-v2", cacheKey, file.byteLength, file.etag, start, end);
 }
 
 function scanRangePriority(policy: CachePolicy): number {

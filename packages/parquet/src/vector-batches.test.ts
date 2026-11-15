@@ -13,6 +13,7 @@ import {
 } from "lakeql-core";
 import { describe, expect, it } from "vitest";
 import { DecodedColumnCache } from "./decoded-column-cache.js";
+import { fileCacheKey } from "./file-cache-key.js";
 import { createParquetLake, readParquetMetadata, writeParquet } from "./index.js";
 import { ParquetReadScope } from "./read-scope.js";
 import { asyncBufferFromStore } from "./store-buffer.js";
@@ -910,7 +911,7 @@ describe("direct Parquet vector batches", () => {
     const head = await store.head(path);
     if (head === null) throw new Error(`missing ${path}`);
     const metadataCache = memoryCache<typeof metadata>();
-    await metadataCache.set(`parquet-metadata:${path}:${head.size}:${head.etag ?? "no-etag"}`, {
+    await metadataCache.set(fileCacheKey("parquet-metadata-v2", path, head.size, head.etag), {
       value: metadata,
     });
     const lake = createParquetLake({ store, metadataCache });

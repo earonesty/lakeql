@@ -1,0 +1,62 @@
+{
+  "status": "validated; full audit remains open",
+  "baseline": "69825d9",
+  "problem": "Delimiter-joined file path, length and version fields collide across distinct real Parquet files. This affects borrowed and owned range hits, shared pending reads, and borrowed/owned metadata caches. Missing version tags also alias empty or sentinel strings in prior formats.",
+  "change": "One internal structured fileCacheKey helper with versioned namespace and explicit null for absent version/range fields. Raw range and metadata cache callers share this identity contract.",
+  "negativeControl": {
+    "tests": 5,
+    "baselineFailures": 5,
+    "candidatePasses": 5,
+    "rangeEvidence": "Whole-file Uint8Array comparisons expose incorrect bytes for the second real INT32 Parquet file, including concurrent pending reads.",
+    "metadataEvidence": "Wrong metadata from the first real Parquet file causes the second file column projection to return no rows."
+  },
+  "focused": {
+    "tests": 106,
+    "files": 5,
+    "includes": "Absent/empty/sentinel/escaped tags, warm repeat, owned cleanup and existing range priority/cancellation fixtures."
+  },
+  "remaining": [
+    "Temporary raw-range/metadata key workspace and pending directory admission",
+    "Whole-runtime memory bounds"
+  ],
+  "gates": {
+    "regularPassed": 4047,
+    "regularSkipped": 645,
+    "workerPassed": 95,
+    "conformancePassed": 520,
+    "conformanceGuardSkipped": 1,
+    "referencePassed": 120,
+    "referenceRerun": "One 5000 ms timeout during coverage contention; unchanged reference command passes all 120 after coverage and Worker completion.",
+    "release": [
+      "build",
+      "typecheck",
+      "compatibility",
+      "large-files",
+      "package-install",
+      "changeset",
+      "deterministic-fixtures",
+      "lint"
+    ]
+  },
+  "cloud": {
+    "scenarios": 52,
+    "maxReads": 4,
+    "maxIncrementalChargedBytes": 420310,
+    "headroomBytes": 524288,
+    "warmOrdinaryRequests": 0,
+    "fourWindowBorrowedCacheBytes": 7874,
+    "artifact": "../benchmarks/file-cache-identity-public-r2-2026-11-14.json"
+  },
+  "benchmark": {
+    "artifact": "../benchmarks/file-cache-identity-query-2026-11-14.json",
+    "priorMedianMs": 292.3009995,
+    "currentMedianMs": 302.482397,
+    "priorPeakBytes": 2614030,
+    "currentPeakBytes": 2614074,
+    "scope": "512 matching cold/warm real external Parquet rows; 1024 decoded warm hits; zero warm requests and zero final charges. Local execution only.",
+    "repeatArtifact": "../benchmarks/file-cache-identity-query-repeat-2026-11-14.json",
+    "repeatPriorMedianMs": 305.3426315,
+    "repeatCurrentMedianMs": 298.8608625,
+    "interpretation": "Timing direction varies between runs; no speedup or regression claim. Correctness fix adds 44 modeled peak bytes in this fixture."
+  }
+}

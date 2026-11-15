@@ -8,6 +8,7 @@ import {
   SharedMemoryCache,
   sharedCacheMetadataBytes,
 } from "lakeql-core";
+import { fileCacheKey } from "./file-cache-key.js";
 import { coalescedRange, type RangeCacheOptions } from "./range-cache.js";
 import type { StoreAsyncBuffer } from "./types.js";
 
@@ -108,14 +109,14 @@ export function withOwnedRangeCache(
     }
   }
   const keyFor = (request: { start: number; end: number }) =>
-    [
-      "owned-scan-range",
+    fileCacheKey(
+      "owned-scan-range-v2",
       cacheKey,
       file.byteLength,
-      file.etag ?? "",
+      file.etag,
       request.start,
       request.end,
-    ].join(":");
+    );
   async function ensure(start: number, end: number, scope: MemoryScope, demand = false) {
     validateRange(start, end);
     const current = state(scope);

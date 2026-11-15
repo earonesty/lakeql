@@ -12,6 +12,7 @@ import {
   withObjectStoreReadControls,
 } from "../packages/core/dist/index.js";
 import { httpStore } from "../packages/http/dist/index.js";
+import { fileCacheKey } from "../packages/parquet/dist/file-cache-key.js";
 import { asyncBufferFromStore, createParquetLake } from "../packages/parquet/dist/index.js";
 import { readParquetMetadataFromFile } from "../packages/parquet/dist/metadata-cache.js";
 import { readParquetObjectBatchesFromFile } from "../packages/parquet/dist/object-batches.js";
@@ -137,14 +138,14 @@ function fourWindowCapacity(file, owned) {
       (sum, start) =>
         sum +
         sharedCacheMetadataBytes(
-          [
-            owned ? "owned-scan-range" : "scan-range",
+          fileCacheKey(
+            owned ? "owned-scan-range-v2" : "scan-range-v2",
             `${baseUrl}${path}`,
             file.byteLength,
-            file.etag ?? "",
+            file.etag,
             start,
             start + 1024,
-          ].join(":"),
+          ),
         ),
       0,
     )

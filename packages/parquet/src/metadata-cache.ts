@@ -11,6 +11,7 @@ import {
 } from "lakeql-core";
 import { inspectCompactStructure, readCompactHeader } from "./compact-header.js";
 import { convertDecimalValues, isDecimal, isIntegerDecimal } from "./decimal.js";
+import { fileCacheKey } from "./file-cache-key.js";
 import { incrementalParquetMetadata } from "./incremental-metadata.js";
 import { metadataTag, parquetMetadataCacheBytes } from "./metadata-size.js";
 import { decodeOwnedFullMetadata } from "./owned-full-metadata.js";
@@ -298,7 +299,7 @@ export async function readOwnedParquetMetadata(
 }
 
 function metadataCacheKey(path: string, byteLength: number, etag: string | undefined): string {
-  return `parquet-metadata:${path}:${byteLength}:${etag ?? "no-etag"}`;
+  return fileCacheKey("parquet-metadata-v2", path, byteLength, etag);
 }
 
 /**

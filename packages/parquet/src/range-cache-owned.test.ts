@@ -8,11 +8,14 @@ import {
 } from "lakeql-core";
 import { describe, expect, it } from "vitest";
 import { DecodedColumnCache } from "./decoded-column-cache.js";
+import { fileCacheKey } from "./file-cache-key.js";
 import { cachedRangeBuffer } from "./range-cache.js";
 import type { StoreAsyncBuffer } from "./types.js";
 
 function entryBytes(key: string, size = 16, start = 0, end = 8): number {
-  return sharedCacheMetadataBytes(["owned-scan-range", key, size, "", start, end].join(":"));
+  return sharedCacheMetadataBytes(
+    fileCacheKey("owned-scan-range-v2", key, size, undefined, start, end),
+  );
 }
 
 function source() {
