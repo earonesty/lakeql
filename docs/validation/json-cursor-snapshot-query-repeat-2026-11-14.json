@@ -1,0 +1,199 @@
+{
+  "baseline": "5ac8e35",
+  "benchmarkName": "json-query-output.mjs",
+  "moduleName": "core/json-container-entries,core/json-output-size,core/json-output-encoding,core/json-traversal-budget",
+  "modules": [
+    {
+      "name": "core/json-container-entries",
+      "baselineSourceSha256": "58e5ac98c8e1a73842b2f7508290fb5383e7d2cd67564b56fc4e93143b7c3ecc",
+      "currentSourceSha256": "573c873abfb1be6e0b3694c6f28ea5d3cbe787ce425f1d308e8943ecace1b7f0"
+    },
+    {
+      "name": "core/json-output-size",
+      "baselineSourceSha256": "eae141388758b6cf5f30e48f24a0ad28092d6a99d0dad22a8ad781c79f8e744d",
+      "currentSourceSha256": "51fa21963bb0edaeb7f326157f2ed46af88f17501d9296c8ce68426808ab8014"
+    },
+    {
+      "name": "core/json-output-encoding",
+      "baselineSourceSha256": "369be2bbca6beb2b815262a47afa0e059fa5dfe4587cb34905d52ad903c14f58",
+      "currentSourceSha256": "a3e3189a2db2b623b69eb70d645c32c663c086a8ab7e8b356423f6c9b6418fc6"
+    },
+    {
+      "name": "core/json-traversal-budget",
+      "baselineSourceSha256": "b4499b6350b10f1adc1293ade964dcd4fc6cdfcecdbab1fae99a14eb88e6fadd",
+      "currentSourceSha256": "30aeaf03a02ac99a8ff241f55cd823916b41ef1d95177ba7f802ab3259eaf889"
+    }
+  ],
+  "node": "v24.18.1",
+  "warmupPairs": 1,
+  "measuredPairs": 4,
+  "scope": "Alternating fresh Node processes; the named modules are replaced together by their prior implementations, with current dependencies. The recorded benchmark identifies its fixture and checks; these are local queries, not cloud throughput. Source store/runtime overhead excluded from pool metrics. Value parity is covered by external conformance; benchmark checks count and release.",
+  "priorMedianMs": 181.60328149999998,
+  "currentMedianMs": 182.93297250000006,
+  "runs": {
+    "prior": [
+      {
+        "fixtureSha256": "8121df53dafa145cfdd37fa7b103ad6241fb2d00d4f6d698a31eaa51a7222d4d",
+        "rows": 512,
+        "runs": [
+          {
+            "format": "json",
+            "elapsedMs": 102.93233700000002,
+            "peakBytes": 85448,
+            "afterReleaseBytes": 0
+          },
+          {
+            "format": "ndjson",
+            "elapsedMs": 87.680544,
+            "peakBytes": 85448,
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 190.61288100000002,
+        "scope": "Actual local Parquet queries and JSON/NDJSON output streams. Oracle decoding and consumer response accumulation are outside timing/pool accounting. No cloud-throughput or total-heap claim."
+      },
+      {
+        "fixtureSha256": "8121df53dafa145cfdd37fa7b103ad6241fb2d00d4f6d698a31eaa51a7222d4d",
+        "rows": 512,
+        "runs": [
+          {
+            "format": "json",
+            "elapsedMs": 100.68692400000003,
+            "peakBytes": 85448,
+            "afterReleaseBytes": 0
+          },
+          {
+            "format": "ndjson",
+            "elapsedMs": 80.43949299999997,
+            "peakBytes": 85448,
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 181.126417,
+        "scope": "Actual local Parquet queries and JSON/NDJSON output streams. Oracle decoding and consumer response accumulation are outside timing/pool accounting. No cloud-throughput or total-heap claim."
+      },
+      {
+        "fixtureSha256": "8121df53dafa145cfdd37fa7b103ad6241fb2d00d4f6d698a31eaa51a7222d4d",
+        "rows": 512,
+        "runs": [
+          {
+            "format": "json",
+            "elapsedMs": 99.44299899999999,
+            "peakBytes": 85448,
+            "afterReleaseBytes": 0
+          },
+          {
+            "format": "ndjson",
+            "elapsedMs": 82.63714699999997,
+            "peakBytes": 85448,
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 182.08014599999996,
+        "scope": "Actual local Parquet queries and JSON/NDJSON output streams. Oracle decoding and consumer response accumulation are outside timing/pool accounting. No cloud-throughput or total-heap claim."
+      },
+      {
+        "fixtureSha256": "8121df53dafa145cfdd37fa7b103ad6241fb2d00d4f6d698a31eaa51a7222d4d",
+        "rows": 512,
+        "runs": [
+          {
+            "format": "json",
+            "elapsedMs": 100.85015099999998,
+            "peakBytes": 85448,
+            "afterReleaseBytes": 0
+          },
+          {
+            "format": "ndjson",
+            "elapsedMs": 78.06287299999997,
+            "peakBytes": 85448,
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 178.91302399999995,
+        "scope": "Actual local Parquet queries and JSON/NDJSON output streams. Oracle decoding and consumer response accumulation are outside timing/pool accounting. No cloud-throughput or total-heap claim."
+      }
+    ],
+    "current": [
+      {
+        "fixtureSha256": "8121df53dafa145cfdd37fa7b103ad6241fb2d00d4f6d698a31eaa51a7222d4d",
+        "rows": 512,
+        "runs": [
+          {
+            "format": "json",
+            "elapsedMs": 99.43773800000002,
+            "peakBytes": 85448,
+            "afterReleaseBytes": 0
+          },
+          {
+            "format": "ndjson",
+            "elapsedMs": 81.20496700000001,
+            "peakBytes": 85448,
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 180.64270500000003,
+        "scope": "Actual local Parquet queries and JSON/NDJSON output streams. Oracle decoding and consumer response accumulation are outside timing/pool accounting. No cloud-throughput or total-heap claim."
+      },
+      {
+        "fixtureSha256": "8121df53dafa145cfdd37fa7b103ad6241fb2d00d4f6d698a31eaa51a7222d4d",
+        "rows": 512,
+        "runs": [
+          {
+            "format": "json",
+            "elapsedMs": 103.42907400000001,
+            "peakBytes": 85448,
+            "afterReleaseBytes": 0
+          },
+          {
+            "format": "ndjson",
+            "elapsedMs": 86.89637599999998,
+            "peakBytes": 85448,
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 190.32545,
+        "scope": "Actual local Parquet queries and JSON/NDJSON output streams. Oracle decoding and consumer response accumulation are outside timing/pool accounting. No cloud-throughput or total-heap claim."
+      },
+      {
+        "fixtureSha256": "8121df53dafa145cfdd37fa7b103ad6241fb2d00d4f6d698a31eaa51a7222d4d",
+        "rows": 512,
+        "runs": [
+          {
+            "format": "json",
+            "elapsedMs": 98.576976,
+            "peakBytes": 85448,
+            "afterReleaseBytes": 0
+          },
+          {
+            "format": "ndjson",
+            "elapsedMs": 80.341318,
+            "peakBytes": 85448,
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 178.918294,
+        "scope": "Actual local Parquet queries and JSON/NDJSON output streams. Oracle decoding and consumer response accumulation are outside timing/pool accounting. No cloud-throughput or total-heap claim."
+      },
+      {
+        "fixtureSha256": "8121df53dafa145cfdd37fa7b103ad6241fb2d00d4f6d698a31eaa51a7222d4d",
+        "rows": 512,
+        "runs": [
+          {
+            "format": "json",
+            "elapsedMs": 98.99836000000005,
+            "peakBytes": 85448,
+            "afterReleaseBytes": 0
+          },
+          {
+            "format": "ndjson",
+            "elapsedMs": 86.22488000000004,
+            "peakBytes": 85448,
+            "afterReleaseBytes": 0
+          }
+        ],
+        "elapsedMs": 185.2232400000001,
+        "scope": "Actual local Parquet queries and JSON/NDJSON output streams. Oracle decoding and consumer response accumulation are outside timing/pool accounting. No cloud-throughput or total-heap claim."
+      }
+    ]
+  }
+}

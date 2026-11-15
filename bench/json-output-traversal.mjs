@@ -68,6 +68,15 @@ try {
         length >= 256 ? 4 : 20,
       ]),
     ),
+    ...[16, 17, 128].map((width) => [
+      `object-width-${width}`,
+      Array.from({ length: 100 }, (_, row) =>
+        Object.fromEntries(
+          Array.from({ length: width }, (_, column) => [`c${column}`, row + column]),
+        ),
+      ),
+      20,
+    ]),
     ["deep-20000", deep, 2],
   ];
   const results = [];

@@ -1,0 +1,56 @@
+{
+  "status": "rejected; production restored to 5ac8e35",
+  "baseline": "5ac8e35",
+  "contract": "Experimental, not shipped: at most 16 own enumerable keys are snapshotted for each active object; wider objects stream with the existing generator. Count stops at 17 before Object.keys is allowed. Snapshot array capacity (320 modeled bytes) is admitted with traversal workspace before construction. Arrays use direct indexes and require no snapshot allowance. High-water workspace is reused across siblings and released at traversal end. Immutable inputs and no stateful custom serialization remain required.",
+  "tradeoff": "Additional 320 modeled bytes per active object depth; no additional snapshot charge for pure array depth. Tiny-object timing is worse in fresh-process microbenchmarks; row arrays and mixed siblings improve. Complete local Parquet JSON/NDJSON query timing remains near parity. No total-heap or cloud-throughput claim.",
+  "kernel": "Final comparison row-array 0.5901 to 0.4802 ms; mixed siblings 0.4054 to 0.3600 ms. Deep-array peak unchanged at 22080192 modeled bytes; row-array peak 41971 to 42291 bytes. Small-row 0.0058 to 0.0084 ms.",
+  "queryComparisons": [
+    {
+      "priorMedianMs": 181.4253475,
+      "currentMedianMs": 180.64192150000002
+    },
+    {
+      "priorMedianMs": 181.60328149999998,
+      "currentMedianMs": 182.93297250000006
+    }
+  ],
+  "tests": [
+    "0/1/16/17/10000 property boundaries and no Object.keys on wide objects",
+    "Exact and one-byte-short admission before constructing a key snapshot",
+    "Constant traversal workspace across 1 and 10000 sibling rows",
+    "Workspace increase at shallower depth after prior higher-depth admission",
+    "Existing every-UTF16-unit, cycle, ordering, alias, deep-object/array, immutable-value and standard-JSON fixtures"
+  ],
+  "diagnostic": "Unadmitted key-snapshot and direct-index experiments were disposable ceiling measurements only; neither is shipped or memory evidence. The bounded candidate adds preflight and admission costs.",
+  "cloud": {
+    "scenarios": 52,
+    "headroomBytes": 524288,
+    "peakIncrementalChargedBytes": 420310,
+    "scope": "Public R2 ordinary-query range-quality regression checks; JSON/NDJSON-specific real HTTP and native R2 fixtures run in regular/Worker suites."
+  },
+  "decision": "Do not publish the bounded snapshot runtime. Wider-object fallback regresses at the 16/17-property boundary; single-pass bounded collection does not resolve it. Keep the simpler existing streaming cursor.",
+  "validation": {
+    "candidateRegularPassed": 4076,
+    "candidateRegularSkipped": 645,
+    "candidateWorkerPassed": 95,
+    "candidateConformancePassed": 520,
+    "candidateConformanceGuardSkipped": 1,
+    "candidateReferencePassed": 120,
+    "candidateReleaseChecks": "all passed",
+    "sequencing": "An initial run raced package rebuilding and failed four Lance imports; the serial rerun passed. The later single-pass variant was benchmarked only, then rejected. Production restoration is byte-identical to HEAD, so candidate counts do not describe a published new runtime."
+  },
+  "boundaryResults": {
+    "twoPass": {
+      "width16Percent": -14.6,
+      "width17Percent": 13.8,
+      "width128Percent": 2.9
+    },
+    "singlePass": {
+      "width16Percent": -13.6,
+      "width17Percent": 16.2,
+      "width128Percent": 3.5
+    },
+    "convention": "negative means faster; local medians, not cloud throughput"
+  },
+  "next": "Prefer a traversal design that processes scalar properties without per-property suspension, while retaining an admitted explicit stack for nested containers; do not add retained per-object key arrays without stronger broad-workload evidence."
+}
