@@ -88,10 +88,22 @@ export async function resolveSqlScalarSubqueries(
 ): Promise<SqlQueryAst> {
   if (ast.scalarSubqueries === undefined) return ast;
   const values = new Map<string, unknown>();
-  for (const [id, subquery] of Object.entries(ast.scalarSubqueries)) {
+  // Registries are shared with parent queries. Resolve only placeholders used
+  // by this plan, then let each dependency resolve its own plan through the memo.
+  const dependencies = new Set<string>();
+  mapScalarExpressions(ast, (expr) =>
+    replaceScalarSubqueryExpr(expr, (id) => {
+      dependencies.add(id);
+      return { kind: "literal", value: null };
+    }),
+  );
+  for (const id of dependencies) {
+    const subquery = ast.scalarSubqueries[id];
+    if (subquery === undefined)
+      throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "Missing scalar subquery metadata");
     const rows = await memo.getOrCompute(
       `sql:rows:${sqlMemoKey(subquery.query)}`,
-      () => execute(subquery.query),
+      async () => execute(await resolveSqlScalarSubqueries(subquery.query, execute, memo)),
       sqlMemoBytes,
     );
     if (subquery.mode === "exists") {
@@ -103,108 +115,117 @@ export async function resolveSqlScalarSubqueries(
     }
     values.set(id, rows.length === 0 ? null : (rows[0]?.[subquery.column] ?? null));
   }
+  const out = mapScalarExpressions(ast, (expr) =>
+    replaceScalarSubqueryExpr(expr, (id) => ({
+      kind: "literal",
+      value: values.get(id) as string | number | boolean | null,
+    })),
+  );
+  delete out.scalarSubqueries;
+  return out;
+}
+
+function mapScalarExpressions(ast: SqlQueryAst, replace: (expr: Expr) => Expr): SqlQueryAst {
   const out = { ...ast };
-  if (ast.where !== undefined) out.where = replaceScalarSubqueryExpr(ast.where, values);
-  if (ast.having !== undefined) out.having = replaceScalarSubqueryExpr(ast.having, values);
+  if (ast.where !== undefined) out.where = replace(ast.where);
+  if (ast.having !== undefined) out.having = replace(ast.having);
   if (ast.projections !== undefined) {
     out.projections = Object.fromEntries(
-      Object.entries(ast.projections).map(([alias, expr]) => [
+      Object.entries(ast.projections).map(([alias, expr]) => [alias, replace(expr)]),
+    );
+  }
+  if (ast.aggregates !== undefined) {
+    out.aggregates = Object.fromEntries(
+      Object.entries(ast.aggregates).map(([alias, aggregate]) => [
         alias,
-        replaceScalarSubqueryExpr(expr, values),
+        aggregate.expr === undefined ? aggregate : { ...aggregate, expr: replace(aggregate.expr) },
       ]),
     );
   }
   if (ast.joins !== undefined) {
     out.joins = ast.joins.map((join) =>
-      join.predicate === undefined
-        ? join
-        : { ...join, predicate: replaceScalarSubqueryExpr(join.predicate, values) },
+      join.predicate === undefined ? join : { ...join, predicate: replace(join.predicate) },
     );
     const firstJoin = out.joins[0];
     if (firstJoin !== undefined) out.join = firstJoin;
   } else if (ast.join?.predicate !== undefined) {
-    out.join = { ...ast.join, predicate: replaceScalarSubqueryExpr(ast.join.predicate, values) };
+    out.join = { ...ast.join, predicate: replace(ast.join.predicate) };
   }
   if (ast.subqueryJoins !== undefined) {
     out.subqueryJoins = ast.subqueryJoins.map((join) => ({
       ...join,
-      ...(join.where === undefined ? {} : { where: replaceScalarSubqueryExpr(join.where, values) }),
-      ...(join.predicate === undefined
-        ? {}
-        : { predicate: replaceScalarSubqueryExpr(join.predicate, values) }),
+      ...(join.where === undefined ? {} : { where: replace(join.where) }),
+      ...(join.predicate === undefined ? {} : { predicate: replace(join.predicate) }),
     }));
     const firstSubqueryJoin = out.subqueryJoins[0];
     if (firstSubqueryJoin !== undefined) out.subqueryJoin = firstSubqueryJoin;
   } else if (ast.subqueryJoin?.where !== undefined || ast.subqueryJoin?.predicate !== undefined) {
     out.subqueryJoin = {
       ...ast.subqueryJoin,
-      ...(ast.subqueryJoin.where === undefined
-        ? {}
-        : { where: replaceScalarSubqueryExpr(ast.subqueryJoin.where, values) }),
+      ...(ast.subqueryJoin.where === undefined ? {} : { where: replace(ast.subqueryJoin.where) }),
       ...(ast.subqueryJoin.predicate === undefined
         ? {}
-        : { predicate: replaceScalarSubqueryExpr(ast.subqueryJoin.predicate, values) }),
+        : { predicate: replace(ast.subqueryJoin.predicate) }),
     };
   }
-  delete out.scalarSubqueries;
   return out;
 }
 
-function replaceScalarSubqueryExpr(expr: Expr, values: Map<string, unknown>): Expr {
+function replaceScalarSubqueryExpr(expr: Expr, replace: (id: string) => Expr): Expr {
   switch (expr.kind) {
     case "call":
       if (expr.fn === "__lakeql_scalar_subquery") {
         const id = expr.args[0];
-        if (id?.kind !== "literal" || typeof id.value !== "string" || !values.has(id.value)) {
+        if (id?.kind !== "literal" || typeof id.value !== "string") {
           throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "Invalid scalar subquery placeholder");
         }
-        return { kind: "literal", value: values.get(id.value) as string | number | boolean | null };
+        return replace(id.value);
       }
-      return { ...expr, args: expr.args.map((arg) => replaceScalarSubqueryExpr(arg, values)) };
+      return { ...expr, args: expr.args.map((arg) => replaceScalarSubqueryExpr(arg, replace)) };
     case "compare":
       return {
         ...expr,
-        left: replaceScalarSubqueryExpr(expr.left, values),
-        right: replaceScalarSubqueryExpr(expr.right, values),
+        left: replaceScalarSubqueryExpr(expr.left, replace),
+        right: replaceScalarSubqueryExpr(expr.right, replace),
       };
     case "between":
       return {
         ...expr,
-        target: replaceScalarSubqueryExpr(expr.target, values),
-        low: replaceScalarSubqueryExpr(expr.low, values),
-        high: replaceScalarSubqueryExpr(expr.high, values),
+        target: replaceScalarSubqueryExpr(expr.target, replace),
+        low: replaceScalarSubqueryExpr(expr.low, replace),
+        high: replaceScalarSubqueryExpr(expr.high, replace),
       };
     case "in":
       return {
         ...expr,
-        target: replaceScalarSubqueryExpr(expr.target, values),
-        values: expr.values.map((value) => replaceScalarSubqueryExpr(value, values)),
+        target: replaceScalarSubqueryExpr(expr.target, replace),
+        values: expr.values.map((value) => replaceScalarSubqueryExpr(value, replace)),
       };
     case "logical":
       return {
         ...expr,
-        operands: expr.operands.map((operand) => replaceScalarSubqueryExpr(operand, values)),
+        operands: expr.operands.map((operand) => replaceScalarSubqueryExpr(operand, replace)),
       };
     case "not":
-      return { ...expr, operand: replaceScalarSubqueryExpr(expr.operand, values) };
+      return { ...expr, operand: replaceScalarSubqueryExpr(expr.operand, replace) };
     case "null-check":
-      return { ...expr, target: replaceScalarSubqueryExpr(expr.target, values) };
+      return { ...expr, target: replaceScalarSubqueryExpr(expr.target, replace) };
     case "like":
-      return { ...expr, target: replaceScalarSubqueryExpr(expr.target, values) };
+      return { ...expr, target: replaceScalarSubqueryExpr(expr.target, replace) };
     case "arithmetic":
       return {
         ...expr,
-        left: replaceScalarSubqueryExpr(expr.left, values),
-        right: replaceScalarSubqueryExpr(expr.right, values),
+        left: replaceScalarSubqueryExpr(expr.left, replace),
+        right: replaceScalarSubqueryExpr(expr.right, replace),
       };
     case "case":
       return {
         ...expr,
         whens: expr.whens.map((branch) => ({
-          when: replaceScalarSubqueryExpr(branch.when, values),
-          value: replaceScalarSubqueryExpr(branch.value, values),
+          when: replaceScalarSubqueryExpr(branch.when, replace),
+          value: replaceScalarSubqueryExpr(branch.value, replace),
         })),
-        ...(expr.else === undefined ? {} : { else: replaceScalarSubqueryExpr(expr.else, values) }),
+        ...(expr.else === undefined ? {} : { else: replaceScalarSubqueryExpr(expr.else, replace) }),
       };
     case "column":
     case "literal":
@@ -241,7 +262,8 @@ export async function resolveSqlCorrelatedLookups(
         const rows = new Map<string, Row>();
         const usage = new RunningCounter();
         for (const row of await execute(query)) {
-          const key = JSON.stringify(subquery.rightKey.map((name) => row[name]));
+          const key = sqlCorrelationKey(row, subquery.rightKey);
+          if (key === undefined) continue;
           const previous = rows.get(key);
           if (previous !== undefined) usage.remove(sqlMemoBytes([key, previous]));
           usage.add(sqlMemoBytes([key, row]));
@@ -254,4 +276,15 @@ export async function resolveSqlCorrelatedLookups(
     lookups.set(id, { subquery, rows: result.rows });
   }
   return lookups;
+}
+
+/** Shared lookup identity for both correlation sides. SQL nulls never match. */
+export function sqlCorrelationKey(row: Row, columns: readonly string[]): string | undefined {
+  const values: unknown[] = [];
+  for (const column of columns) {
+    const value = row[column];
+    if (value === null || value === undefined) return undefined;
+    values.push([typeof value, typeof value === "bigint" ? String(value) : jsonSafeValue(value)]);
+  }
+  return stableStringify(values);
 }

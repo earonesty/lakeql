@@ -2394,6 +2394,7 @@ export {
   resolveSqlCorrelatedLookups,
   resolveSqlScalarSubqueries,
   type SqlCorrelatedLookup,
+  sqlCorrelationKey,
   sqlMemoBytes,
   sqlMemoKey,
 } from "./subquery-memo.js";

@@ -1380,3 +1380,43 @@ async function bucketsFixturePath(): Promise<string> {
   await writeFile(path, bytes);
   return path;
 }
+
+it("executes nested scalar, aggregate-argument and bigint-correlated CLI queries", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "lakeql-scalar-review-"));
+  const path = join(dir, "input.parquet");
+  const store = memoryStore();
+  await writeParquet(store, path, {
+    columnData: [
+      {
+        name: "group_id",
+        data: [9007199254740993n, 9007199254740993n, 9007199254740994n],
+        type: "INT64",
+      },
+      { name: "amount", data: [10, 20, 30], type: "INT32" },
+      { name: "bonus", data: [5, 5, 5], type: "INT32" },
+    ],
+  });
+  const bytes = await store.get(path);
+  if (bytes === null) throw Error("missing Parquet fixture");
+  await writeFile(path, bytes);
+  const nested = "(SELECT MAX(amount) FROM input WHERE amount > (SELECT AVG(amount) FROM input))";
+  for (const [sql, expected] of [
+    [
+      `SELECT amount, ${nested} AS a, ${nested} AS b FROM input LIMIT 1`,
+      [{ amount: 10, a: 30, b: 30 }],
+    ],
+    ["SELECT SUM(amount + (SELECT MAX(bonus) FROM input)) AS total FROM input", [{ total: 75 }]],
+    [
+      "SELECT a.amount, (SELECT MAX(p.amount) FROM input p WHERE p.group_id = a.group_id) AS maximum FROM input a ORDER BY a.amount",
+      [
+        { amount: 10, maximum: 20 },
+        { amount: 20, maximum: 20 },
+        { amount: 30, maximum: 30 },
+      ],
+    ],
+  ] as const) {
+    const result = await runCli(["query", "--path", path, "--sql", sql, "--format", "json"]);
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    expect(JSON.parse(result.stdout)).toEqual(expected);
+  }
+});

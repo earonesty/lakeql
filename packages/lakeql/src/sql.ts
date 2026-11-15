@@ -30,6 +30,7 @@ import {
   type SqlParameterValue,
   type SqlQueryAst,
   type SqlStatementAst,
+  sqlCorrelationKey,
 } from "lakeql-sql";
 import { loadTable, planFiles, scanRows } from "./engine.js";
 
@@ -318,14 +319,12 @@ function validateSourceBindings(options: SqlQueryOptions): void {
 function mapAstSources(
   ast: SqlQueryAst,
   bindSource: (source: string) => string,
-  seen = new WeakSet<SqlQueryAst>(),
+  seen = new WeakMap<SqlQueryAst, SqlQueryAst>(),
 ): SqlQueryAst {
+  const previous = seen.get(ast);
+  if (previous !== undefined) return previous;
   const out: SqlQueryAst = { ...ast, source: bindSource(ast.source) };
-  if (seen.has(ast)) {
-    delete out.scalarSubqueries;
-    return out;
-  }
-  seen.add(ast);
+  seen.set(ast, out);
   if (ast.join !== undefined) out.join = { ...ast.join, source: bindSource(ast.join.source) };
   if (ast.joins !== undefined) {
     out.joins = ast.joins.map((join) => ({ ...join, source: bindSource(join.source) }));
@@ -371,14 +370,13 @@ function mapAstSources(
 async function mapAstSourcesAsync(
   ast: SqlQueryAst,
   bindSource: (source: string) => Promise<string>,
-  seen = new WeakSet<SqlQueryAst>(),
+  seen = new WeakMap<SqlQueryAst, SqlQueryAst>(),
 ): Promise<SqlQueryAst> {
-  const out: SqlQueryAst = { ...ast, source: await bindSource(ast.source) };
-  if (seen.has(ast)) {
-    delete out.scalarSubqueries;
-    return out;
-  }
-  seen.add(ast);
+  const previous = seen.get(ast);
+  if (previous !== undefined) return previous;
+  const out: SqlQueryAst = { ...ast };
+  seen.set(ast, out);
+  out.source = await bindSource(ast.source);
   if (ast.join !== undefined) {
     out.join = { ...ast.join, source: await bindSource(ast.join.source) };
   }
@@ -587,7 +585,7 @@ interface IcebergPushdownContext {
   icebergTables: Record<string, SqlIcebergTableOptions>;
   predicates: Map<string, Expr>;
   sources: Map<string, SqlIcebergTableOptions>;
-  seen: WeakSet<SqlQueryAst>;
+  seen: WeakMap<SqlQueryAst, SqlQueryAst>;
   nextSourceId: number;
 }
 
@@ -605,7 +603,7 @@ function pushdownIcebergPredicates(
     icebergTables,
     predicates: new Map(),
     sources: new Map(),
-    seen: new WeakSet(),
+    seen: new WeakMap(),
     nextSourceId: 0,
   };
   return {
@@ -619,13 +617,14 @@ function pushdownIcebergPredicatesFromAst(
   ast: SqlQueryAst,
   context: IcebergPushdownContext,
 ): SqlQueryAst {
-  if (context.seen.has(ast)) return ast;
-  context.seen.add(ast);
+  const previous = context.seen.get(ast);
+  if (previous !== undefined) return previous;
 
   const out: SqlQueryAst = {
     ...ast,
     source: icebergOccurrenceSource(ast.source, context),
   };
+  context.seen.set(ast, out);
   if (ast.join !== undefined) {
     out.join = { ...ast.join, source: icebergOccurrenceSource(ast.join.source, context) };
   }
@@ -1924,22 +1923,9 @@ function correlatedScalarValue(
   if (lookup === undefined) {
     throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "Missing correlated scalar subquery metadata");
   }
-  const key = correlatedScalarLeftKey(row, lookup.subquery);
+  const key = sqlCorrelationKey(row, lookup.subquery.leftKey);
   if (key === undefined) return null;
   return lookup.rows.get(key)?.[lookup.subquery.column] ?? null;
-}
-
-function correlatedScalarLeftKey(
-  row: Row,
-  subquery: NonNullable<SqlQueryAst["correlatedScalarSubqueries"]>[string],
-): string | undefined {
-  const values: Row[string][] = [];
-  for (const key of subquery.leftKey) {
-    const value = row[key];
-    if (value === null || value === undefined) return undefined;
-    values.push(value);
-  }
-  return JSON.stringify(values);
 }
 
 async function aggregateRowsFromAst(builder: QueryBuilder, ast: SqlQueryAst): Promise<Row[]> {

@@ -4,6 +4,7 @@ import { parseSql, type SqlQueryAst } from "./index.js";
 import {
   resolveSqlCorrelatedLookups,
   resolveSqlScalarSubqueries,
+  sqlCorrelationKey,
   sqlMemoKey,
 } from "./subquery-memo.js";
 
@@ -33,8 +34,8 @@ it("deduplicates correlated preparation while keeping all correlation keys disti
   const values = [...lookups.values()];
   expect(values).toHaveLength(2);
   expect(values[0]?.rows).toBe(values[1]?.rows);
-  expect(values[0]?.rows.get("[1]")?.max).toBe(10);
-  expect(values[0]?.rows.get("[2]")?.max).toBe(99);
+  expect(values[0]?.rows.get(sqlCorrelationKey({ key: 1 }, ["key"]) ?? "")?.max).toBe(10);
+  expect(values[0]?.rows.get(sqlCorrelationKey({ key: 2 }, ["key"]) ?? "")?.max).toBe(99);
 });
 
 it("supports bound file paths and preserves typed parameter identity", () => {
@@ -80,4 +81,62 @@ it("includes actual nested dependencies in the key and rejects dependency cycles
   expect(sqlMemoKey(query)).not.toBe(before);
   dependency.query = query;
   expect(() => sqlMemoKey(query)).toThrow(/Cyclic/);
+});
+
+it("resolves only actual nested dependencies through shared parser registries", async () => {
+  const inner =
+    "(SELECT MAX(amount) FROM purchases WHERE amount > (SELECT AVG(amount) FROM purchases))";
+  const ast = parseSql(`SELECT ${inner} AS a, ${inner} AS b FROM accounts`);
+  const execute = vi.fn(async (query: SqlQueryAst) => {
+    expect(query.scalarSubqueries).toBeUndefined();
+    if (query.where === undefined) return [{ avg: 20 }];
+    expect(query.where).toMatchObject({ right: { kind: "literal", value: 20 } });
+    return [{ max: 30 }];
+  });
+  const out = await resolveSqlScalarSubqueries(ast, execute, new SharedMemoryCache());
+  expect(execute).toHaveBeenCalledTimes(2);
+  expect(out.projections).toMatchObject({
+    a: { kind: "literal", value: 30 },
+    b: { kind: "literal", value: 30 },
+  });
+});
+
+it("rewrites scalar subqueries in aggregate arguments", async () => {
+  const ast = parseSql(
+    "SELECT SUM(amount + (SELECT MAX(bonus) FROM bonuses)) AS total FROM purchases",
+  );
+  const out = await resolveSqlScalarSubqueries(
+    ast,
+    async () => [{ max: 5 }],
+    new SharedMemoryCache(),
+  );
+  expect(out.aggregates?.total?.expr).toMatchObject({ right: { kind: "literal", value: 5 } });
+  expect(out.scalarSubqueries).toBeUndefined();
+});
+
+it("uses typed correlation keys and excludes null matches", async () => {
+  const key = (value: unknown) => sqlCorrelationKey({ key: value }, ["key"]);
+  expect(
+    new Set([1n, 1, "1", "bigint:1", 9007199254740993n, "9007199254740993"].map(key)).size,
+  ).toBe(6);
+  expect(key(null)).toBeUndefined();
+  expect(key(undefined)).toBeUndefined();
+  const ast = parseSql(
+    "SELECT (SELECT MAX(p.amount) FROM purchases p WHERE p.id = a.id) AS x FROM accounts a",
+  );
+  const lookups = await resolveSqlCorrelatedLookups(
+    ast,
+    async () => [
+      { id: 1n, max: 10 },
+      { id: 1, max: 20 },
+      { id: "1", max: 30 },
+      { id: null, max: 40 },
+    ],
+    new SharedMemoryCache(),
+  );
+  const rows = [...lookups.values()][0]?.rows;
+  expect(rows?.size).toBe(3);
+  expect(rows?.get(key(1n) ?? "")?.max).toBe(10);
+  expect(rows?.get(key(1) ?? "")?.max).toBe(20);
+  expect(rows?.get(key("1") ?? "")?.max).toBe(30);
 });

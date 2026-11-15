@@ -130,6 +130,12 @@ export class SharedMemoryCache {
   }
 
   private evict(incomingBytes: number, incomingPriority: number): boolean {
+    if (this.ttlMs !== undefined && this.usage.bytes + incomingBytes > this.maxBytes) {
+      const now = Date.now();
+      for (const [key, entry] of this.entries) {
+        if (entry.expiresAt !== undefined && entry.expiresAt <= now) this.delete(key);
+      }
+    }
     while (this.usage.bytes + incomingBytes > this.maxBytes) {
       const evictKey = this.evictKey();
       if (evictKey === undefined) return false;

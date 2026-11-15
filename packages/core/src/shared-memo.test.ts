@@ -115,3 +115,21 @@ it("preserves cache priority and rejects invalid sizes", async () => {
   ).rejects.toThrow(/result size/);
   expect(empty.get("k")).toBeUndefined();
 });
+
+it("reclaims expired high-priority capacity before retaining a memo result", async () => {
+  const now = vi.spyOn(Date, "now");
+  try {
+    now.mockReturnValue(100);
+    const cache = new SharedMemoryCache({ maxBytes: 100, ttlMs: 5 });
+    cache.set("expired", "important", 100, { priority: 2 });
+    now.mockReturnValue(105);
+    const compute = vi.fn(() => 42);
+    expect(await cache.getOrCompute("k", compute, () => 8)).toBe(42);
+    expect(await cache.getOrCompute("k", compute, () => 8)).toBe(42);
+    expect(compute).toHaveBeenCalledTimes(1);
+    expect(cache.get("k")?.bytes).toBe(74);
+    expect(cache.get("expired")).toBeUndefined();
+  } finally {
+    now.mockRestore();
+  }
+});

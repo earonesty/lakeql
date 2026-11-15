@@ -461,6 +461,15 @@ it("runs SQL over named Iceberg table bindings", async () => {
       .toArray(),
   ).rejects.toMatchObject({ code: "LAKEQL_VALIDATION_ERROR" });
 
+  await expect(
+    lake
+      .sql(
+        "select id from places where id = (select max(id) from places where country = 'US' and id < 10 and id > (select min(id) from places where country = 'US'))",
+        { icebergTables },
+      )
+      .toArray(),
+  ).resolves.toEqual([{ id: 3 }]);
+
   const leakedTempObjects = [];
   for await (const object of store.list("__lakeql_sql_iceberg/"))
     leakedTempObjects.push(object.path);
@@ -1491,5 +1500,38 @@ it("loads, plans, and scans an Iceberg table through the unified engine surface"
     { id: 201, nation: "US" },
     { id: 202, nation: "US" },
     { id: 203, nation: "US" },
+  ]);
+});
+
+it("executes nested scalar, aggregate-argument and bigint-correlated queries over real Parquet", async () => {
+  const store = memoryStore();
+  await writePartitionedParquet(store, "sql/scalar-review", {
+    rows: [
+      { group_id: 9007199254740993n, amount: 10, bonus: 5 },
+      { group_id: 9007199254740993n, amount: 20, bonus: 5 },
+      { group_id: 9007199254740994n, amount: 30, bonus: 5 },
+    ],
+  });
+  const lake = createLake({ store });
+  const table = "read_parquet('sql/scalar-review/*.parquet')";
+  const nested = `(SELECT MAX(amount) FROM ${table} WHERE amount > (SELECT AVG(amount) FROM ${table}))`;
+  await expect(
+    lake.sql(`SELECT amount, ${nested} AS a, ${nested} AS b FROM ${table} LIMIT 1`).toArray(),
+  ).resolves.toEqual([{ amount: 10, a: 30, b: 30 }]);
+  await expect(
+    lake
+      .sql(`SELECT SUM(amount + (SELECT MAX(bonus) FROM ${table})) AS total FROM ${table}`)
+      .toArray(),
+  ).resolves.toEqual([{ total: 75 }]);
+  await expect(
+    lake
+      .sql(
+        `SELECT a.amount, (SELECT MAX(p.amount) FROM ${table} p WHERE p.group_id = a.group_id) AS maximum FROM ${table} a ORDER BY a.amount`,
+      )
+      .toArray(),
+  ).resolves.toEqual([
+    { amount: 10, maximum: 20 },
+    { amount: 20, maximum: 20 },
+    { amount: 30, maximum: 30 },
   ]);
 });

@@ -30,6 +30,7 @@ import {
   resolveSqlCorrelatedLookups,
   resolveSqlScalarSubqueries,
   type SqlCorrelatedLookup,
+  sqlCorrelationKey,
 } from "lakeql-sql";
 
 export const COMMANDS = ["query", "explain", "inspect", "write", "compact", "schema"] as const;
@@ -998,22 +999,9 @@ function correlatedScalarValue(
   if (lookup === undefined) {
     throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "Missing correlated scalar subquery metadata");
   }
-  const key = correlatedScalarLeftKey(row, lookup.subquery);
+  const key = sqlCorrelationKey(row, lookup.subquery.leftKey);
   if (key === undefined) return null;
   return lookup.rows.get(key)?.[lookup.subquery.column] ?? null;
-}
-
-function correlatedScalarLeftKey(
-  row: Row,
-  subquery: NonNullable<ReturnType<typeof parseSql>["correlatedScalarSubqueries"]>[string],
-): string | undefined {
-  const values: Row[string][] = [];
-  for (const key of subquery.leftKey) {
-    const value = row[key];
-    if (value === null || value === undefined) return undefined;
-    values.push(value);
-  }
-  return JSON.stringify(values);
 }
 
 async function aggregateRowsFromAst(
@@ -1228,16 +1216,16 @@ function isDescribeStatement(
 function applyDefaultSource(
   ast: ReturnType<typeof parseSql>,
   defaultSource: string,
-  includeScalarSubqueries = true,
-  seen = new WeakSet<object>(),
+  seen = new WeakMap<ReturnType<typeof parseSql>, ReturnType<typeof parseSql>>(),
 ): ReturnType<typeof parseSql> {
-  if (seen.has(ast)) return ast.cte === undefined ? { ...ast, source: defaultSource } : ast;
-  seen.add(ast);
+  const previous = seen.get(ast);
+  if (previous !== undefined) return previous;
   const out = { ...ast };
+  seen.set(ast, out);
   if (out.cte !== undefined) {
     out.cte = {
       ...out.cte,
-      query: applyDefaultSource(out.cte.query, defaultSource, includeScalarSubqueries, seen),
+      query: applyDefaultSource(out.cte.query, defaultSource, seen),
     };
   } else {
     out.source = defaultSource;
@@ -1255,11 +1243,11 @@ function applyDefaultSource(
     const firstSubqueryJoin = out.subqueryJoins[0];
     if (firstSubqueryJoin !== undefined) out.subqueryJoin = firstSubqueryJoin;
   }
-  if (includeScalarSubqueries && out.scalarSubqueries !== undefined) {
+  if (out.scalarSubqueries !== undefined) {
     out.scalarSubqueries = Object.fromEntries(
       Object.entries(out.scalarSubqueries).map(([id, subquery]) => [
         id,
-        { ...subquery, query: applyDefaultSource(subquery.query, defaultSource, false, seen) },
+        { ...subquery, query: applyDefaultSource(subquery.query, defaultSource, seen) },
       ]),
     );
   }
