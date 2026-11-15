@@ -153,17 +153,41 @@ export class SharedMemoryCache {
     use: (key: string) => T,
     fallbackBudget?: MemoryBudget,
   ): T | undefined {
-    // Like retained entry metadata, lookup scratch belongs to the configured
-    // cache domain. A consumer only pins payload in its own child budget.
-    const budget = this.memoryBudget ?? fallbackBudget;
-    if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > this.maxBytes) return undefined;
-    if (budget !== undefined && bytes > budget.availableBytes) return undefined;
-    const reservation = budget?.reserve(bytes, "cache key workspace");
+    const reservation = this.keyWorkspace(bytes, fallbackBudget);
+    if (reservation === false) return undefined;
     try {
       return use(create());
     } finally {
       reservation?.release();
     }
+  }
+
+  /** Keep optional key workspace charged until an asynchronous adapter settles. */
+  async withOptionalKeyAsync<T>(
+    bytes: number,
+    create: () => string,
+    use: (key: string) => Promise<T>,
+    fallbackBudget?: MemoryBudget,
+  ): Promise<T | undefined> {
+    const reservation = this.keyWorkspace(bytes, fallbackBudget);
+    if (reservation === false) return undefined;
+    try {
+      return await use(create());
+    } finally {
+      reservation?.release();
+    }
+  }
+
+  private keyWorkspace(
+    bytes: number,
+    fallbackBudget?: MemoryBudget,
+  ): MemoryReservation | undefined | false {
+    // Like retained entry metadata, lookup scratch belongs to the configured
+    // cache domain. A consumer only pins payload in its own child budget.
+    const budget = this.memoryBudget ?? fallbackBudget;
+    if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > this.maxBytes) return false;
+    if (budget !== undefined && bytes > budget.availableBytes) return false;
+    return budget?.reserve(bytes, "cache key workspace");
   }
 
   /** Borrow for immediate use. Use acquire when retaining across cache mutation. */

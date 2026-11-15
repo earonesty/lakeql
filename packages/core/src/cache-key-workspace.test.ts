@@ -115,3 +115,42 @@ it("charges configured cache scratch independently of a consumer's payload-only 
   consumer.dispose();
   expect(pool.usedBytes).toBe(0);
 });
+
+it.each([
+  false,
+  true,
+])("holds asynchronous key workspace through adapter settlement (reject=%s)", async (reject) => {
+  const pool = new MemoryBudget(128);
+  const cache = new SharedMemoryCache({ memoryBudget: pool });
+  let finish!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const failure = new Error("adapter failed");
+  const result = cache.withOptionalKeyAsync(
+    128,
+    () => "key",
+    async () => {
+      await gate;
+      if (reject) throw failure;
+      return "value";
+    },
+  );
+  expect(pool.usedBytes).toBe(128);
+  expect(pool.tryReserve(1, "competing query")).toBeUndefined();
+  finish();
+  if (reject) await expect(result).rejects.toBe(failure);
+  else expect(await result).toBe("value");
+  expect(pool.usedBytes).toBe(0);
+});
+
+it("declines asynchronous key construction one byte below workspace without invoking the adapter", async () => {
+  const pool = new MemoryBudget(127);
+  const cache = new SharedMemoryCache({ memoryBudget: pool });
+  const create = vi.fn(() => "key");
+  const use = vi.fn(async () => "value");
+  expect(await cache.withOptionalKeyAsync(128, create, use)).toBeUndefined();
+  expect(create).not.toHaveBeenCalled();
+  expect(use).not.toHaveBeenCalled();
+  expect(pool.usedBytes).toBe(0);
+});

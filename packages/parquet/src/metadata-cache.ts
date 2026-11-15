@@ -11,7 +11,7 @@ import {
 } from "lakeql-core";
 import { inspectCompactStructure, readCompactHeader } from "./compact-header.js";
 import { convertDecimalValues, isDecimal, isIntegerDecimal } from "./decimal.js";
-import { fileCacheKey } from "./file-cache-key.js";
+import { fileCacheKey, metadataFileCacheKeyBytes } from "./file-cache-key.js";
 import { incrementalParquetMetadata } from "./incremental-metadata.js";
 import { metadataTag, parquetMetadataCacheBytes } from "./metadata-size.js";
 import { decodeOwnedFullMetadata } from "./owned-full-metadata.js";
@@ -247,17 +247,35 @@ export async function readCachedParquetMetadata(
   metadataCache: CacheAdapter<ParquetMetadata> | undefined,
 ): Promise<{ metadata: ParquetMetadata; cached: boolean }> {
   if (!metadataCache) return { metadata: await readParquetMetadataFromFile(file), cached: false };
-  const key = metadataCacheKey(path, file.byteLength, file.etag);
-  const cached = await metadataCache.get(key);
+  const { byteLength, etag } = file;
+  const admittedCache = metadataCache as OwnedMetadataCache;
+  const withKey = <T>(use: (key: string) => Promise<T>): Promise<T | undefined> => {
+    const create = () => metadataCacheKey(path, byteLength, etag);
+    return admittedCache.withKeyAsync === undefined
+      ? use(create())
+      : admittedCache.withKeyAsync(metadataFileCacheKeyBytes(path, etag, false), create, use);
+  };
+  const cached = await withKey((key) => metadataCache.get(key));
   if (cached) return { metadata: cached.value, cached: true };
   const metadata = await readParquetMetadataFromFile(file);
-  await metadataCache.set(key, { value: metadata });
+  await withKey((key) => metadataCache.set(key, { value: metadata }));
   return { metadata, cached: false };
 }
 
 export interface OwnedMetadataCache extends CacheAdapter<ParquetMetadata> {
   acquireOwned?(key: string, budget: MemoryBudget): OwnedMemory<ParquetMetadata> | undefined;
   setOwned?(key: string, owner: OwnedMemory<ParquetMetadata>): boolean;
+  withKey?<T>(
+    bytes: number,
+    create: () => string,
+    use: (key: string) => T,
+    budget: MemoryBudget,
+  ): T | undefined;
+  withKeyAsync?<T>(
+    bytes: number,
+    create: () => string,
+    use: (key: string) => Promise<T>,
+  ): Promise<T | undefined>;
 }
 
 /** Own footer backing and admitted decoded metadata for the complete consumer lifetime. */
@@ -270,9 +288,25 @@ export async function readOwnedParquetMetadata(
 ): Promise<{ owner: OwnedMemory<ParquetMetadata>; cached: boolean }> {
   for (const signal of signals) throwIfAborted(signal);
   const ownedCache = cache as OwnedMetadataCache | undefined;
-  const key = `owned:${metadataCacheKey(path, file.byteLength, file.etag)}`;
+  const { byteLength, etag } = file;
+  const workspace = metadataFileCacheKeyBytes(path, etag, true);
+  const withKey = <T>(use: (key: string) => T): T | undefined => {
+    const create = () => `owned:${metadataCacheKey(path, byteLength, etag)}`;
+    if (ownedCache?.withKey !== undefined)
+      return ownedCache.withKey(workspace, create, use, budget);
+    if (workspace > budget.availableBytes) return undefined;
+    const reservation = budget.reserve(workspace, "metadata cache key workspace");
+    try {
+      return use(create());
+    } finally {
+      reservation.release();
+    }
+  };
   try {
-    const cached = ownedCache?.acquireOwned?.(key, budget);
+    const cached =
+      ownedCache?.acquireOwned === undefined
+        ? undefined
+        : withKey((key) => ownedCache.acquireOwned?.(key, budget));
     if (cached !== undefined) return { owner: cached, cached: true };
   } catch (error) {
     if (
@@ -287,7 +321,7 @@ export async function readOwnedParquetMetadata(
     const metadata = await readFooterMetadata(stage.file, stage.allocations);
     const owner = stage.retainInputBacking(metadata);
     try {
-      ownedCache?.setOwned?.(key, owner);
+      if (ownedCache?.setOwned !== undefined) withKey((key) => ownedCache.setOwned?.(key, owner));
       return { owner, cached: false };
     } catch (error) {
       owner.release();
@@ -335,6 +369,12 @@ export function encodedParquetMetadataCache(
 /** Keep parsed metadata in an existing bounded shared-memory cache. */
 export function sharedParquetMetadataCache(cache: SharedMemoryCache): OwnedMetadataCache {
   return {
+    withKey(bytes, create, use, budget) {
+      return cache.withOptionalKey(bytes, create, use, budget);
+    },
+    withKeyAsync(bytes, create, use) {
+      return cache.withOptionalKeyAsync(bytes, create, use);
+    },
     acquireOwned(key, budget) {
       return cache.acquireOwned<ParquetMetadata>(key, budget);
     },

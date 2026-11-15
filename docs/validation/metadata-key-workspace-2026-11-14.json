@@ -1,0 +1,69 @@
+{
+  "status": "validated; full audit remains open",
+  "baseline": "c9a9db1",
+  "contract": "Owned metadata cache identities construct only inside admitted synchronous cache operations; key scratch is released before footer decoding. Shared borrowed metadata operations hold admitted scratch through asynchronous adapter settlement. Shared caches use their configured allocation domain; owned custom adapters without key admission use the caller budget. No cache does not construct an identity.",
+  "negativeControl": {
+    "fixture": "Real three-row INT32 Parquet; 128 KiB optional identity and 64 KiB pool",
+    "tests": 6,
+    "baselineFailures": 4,
+    "candidatePasses": 6,
+    "failure": "Baseline serializes oversized identities in owned shared/custom/no-cache and borrowed shared paths; all four candidate paths skip serialization while returning identical actual rows."
+  },
+  "asyncWorkspaceTests": {
+    "added": 3,
+    "checks": [
+      "Exact 128-byte reservation remains charged until asynchronous success/rejection settles",
+      "Competing allocation is denied while key scratch is live",
+      "One-byte-short budget declines before key factory/adapter invocation"
+    ]
+  },
+  "gates": {
+    "regularPassed": 4063,
+    "regularSkipped": 645,
+    "workerPassed": 95,
+    "conformancePassed": 520,
+    "conformanceGuardSkipped": 1,
+    "referencePassed": 120,
+    "release": [
+      "build",
+      "typecheck",
+      "compatibility",
+      "large-files",
+      "package-install",
+      "changeset",
+      "deterministic-fixtures",
+      "lint"
+    ]
+  },
+  "remaining": [
+    "Borrowed raw-range key admission",
+    "Borrowed custom metadata adapters without an admission/budget contract remain caller-managed",
+    "Broader allocation and whole-runtime acceptance"
+  ],
+  "benchmarks": {
+    "query": {
+      "artifact": "../benchmarks/metadata-key-workspace-query-2026-11-14.json",
+      "priorMedianMs": 301.817412,
+      "currentMedianMs": 307.59454,
+      "priorPeakBytes": 2614821,
+      "currentPeakBytes": 2614821
+    },
+    "query-repeat": {
+      "artifact": "../benchmarks/metadata-key-workspace-query-repeat-2026-11-14.json",
+      "priorMedianMs": 305.95239949999996,
+      "currentMedianMs": 302.6002615,
+      "priorPeakBytes": 2614821,
+      "currentPeakBytes": 2614821
+    },
+    "checks": "Metadata-enabled cold/warm queries verify 512 matching rows, one warm metadata hit, 1024 warm decoded hits, zero warm requests and zero final charges; same 64 MiB pool and 16 MiB shared cache.",
+    "interpretation": "Timing direction varies; no speedup or regression claim. Modeled peak remains 2614821 bytes in both variants. Local timing and admission metrics do not establish cloud throughput or runtime heap caps."
+  },
+  "cloud": {
+    "scenarios": 52,
+    "maxReads": 4,
+    "maxIncrementalChargedBytes": 420310,
+    "headroomBytes": 524288,
+    "warmOrdinaryRequests": 0,
+    "artifact": "../benchmarks/metadata-key-workspace-public-r2-2026-11-14.json"
+  }
+}

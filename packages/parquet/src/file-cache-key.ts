@@ -27,3 +27,27 @@ export function pendingFileCacheKeyBytes(path: string, etag: string | undefined)
     2 * (c.string + characters * c.stringCodeUnit)
   );
 }
+
+/** Workspace for a structured metadata identity and its optional owned prefix.
+ * String sizing is allocation-free; 32 characters bounds JSON numeric output. */
+export function metadataFileCacheKeyBytes(
+  path: string,
+  etag: string | undefined,
+  owned: boolean,
+): number {
+  const characters =
+    7 +
+    jsonStringUtf8Bytes("parquet-metadata-v2") +
+    jsonStringUtf8Bytes(path) +
+    32 +
+    (etag === undefined ? 4 : jsonStringUtf8Bytes(etag)) +
+    4 +
+    4;
+  return (
+    c.array +
+    6 * c.arraySlot +
+    c.string +
+    characters * c.stringCodeUnit +
+    (owned ? c.string + ("owned:".length + characters) * c.stringCodeUnit : 0)
+  );
+}

@@ -466,3 +466,8 @@ construction. Keep key workspace charged until asynchronous reads settle, preser
 shared-reader cancellation, and automatically decline optional sharing/read-ahead
 when workspace cannot fit. Forecast retained payload/metadata against both the
 shared root and the configured cache child budget, including admitted stages.
+
+Admit optional Parquet metadata cache-key workspace before serialization and
+release it between cache lookup and footer decoding. Bound owned custom-adapter
+keys through the caller budget, and hold shared borrowed-cache key workspace until
+asynchronous adapter operations settle. Avoid constructing unused no-cache keys.
