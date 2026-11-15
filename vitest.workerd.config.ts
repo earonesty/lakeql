@@ -7,6 +7,7 @@ export default defineConfig({
       miniflare: {
         compatibilityDate: "2026-06-13",
         compatibilityFlags: ["nodejs_compat"],
+        r2Buckets: ["ORDERING_FIXTURES"],
       },
     }),
   ],

@@ -46,7 +46,7 @@ import {
 import { classifyPredicate, type PredicatePlan } from "./predicate-plan.js";
 import { parseJsonQuery } from "./query-json.js";
 import {
-  addOrderedMatch,
+  BoundedSelection,
   compareRows,
   flushSortRun,
   mergeSortRuns,
@@ -1323,7 +1323,6 @@ export class QueryResult {
     enforceOperatorMemoryBudget(config.budget, estimateOperatorMemoryBytes(matched));
     const startedAt = config.now();
     await this.collectOrderedMatches(matched, topK, startedAt);
-    matched.sort((left, right) => compareRows(left, right, orderBy));
     const start = config.offset ?? 0;
     const end = start + config.limit;
     const rows = matched
@@ -1865,7 +1864,6 @@ export class QueryResult {
         : (config.offset ?? 0) + config.limit;
     const startedAt = config.now();
     await this.collectOrderedMatches(matched, topK, startedAt);
-    matched.sort((left, right) => compareRows(left, right, config.orderBy ?? []));
     const batchSize = config.batchSize ?? 4096;
     let batch: Row[] = [];
     let offsetSkipped = 0;
@@ -1983,7 +1981,9 @@ export class QueryResult {
     const outputColumns = [...new Set([...config.select, ...orderBy.map((term) => term.column)])];
     if (outputColumns.every((column) => rankColumns.includes(column))) return undefined;
 
-    const retained: RankedRowRef[] = [];
+    const retained = new BoundedSelection<RankedRowRef>(topK, (a, b) =>
+      compareRankedRefs(a, b, orderBy),
+    );
     const scanVectorBatches = vectorBatchScanner(config.scanner);
     if (scanVectorBatches === undefined) return undefined;
     const { planned: paths, skipped: skippedFiles } = await this.planObjects();
@@ -2010,26 +2010,20 @@ export class QueryResult {
       )) {
         const selection = predicateSelection(batch, config.where);
         this.stats.rowsMatched += selectedRowCount(batch.rowCount, selection);
-        addRankedRefs(
-          retained,
-          object.path,
-          object,
-          rowOffset,
-          batch,
-          selection,
-          rankColumns,
-          orderBy,
-          topK,
-        );
-        enforceBufferedRowsBudget(config.budget, retained.length);
-        enforceOperatorMemoryBudget(config.budget, estimateOperatorMemoryBytes(retained));
+        addRankedRefs(retained, object.path, object, rowOffset, batch, selection, rankColumns);
+        enforceBufferedRowsBudget(config.budget, retained.size);
+        if (config.budget.maxMemoryBytes !== undefined)
+          enforceOperatorMemoryBudget(
+            config.budget,
+            estimateOperatorMemoryBytes([...retained.values()]),
+          );
         enforceBudget(config.budget, this.stats, config.now, startedAt);
       }
     }
-    retained.sort((left, right) => compareRankedRefs(left, right, orderBy));
+    const ranked = retained.finish();
     const limit = config.limit;
     if (limit === undefined) return undefined;
-    const selected = retained.slice(config.offset ?? 0, (config.offset ?? 0) + limit);
+    const selected = ranked.slice(config.offset ?? 0, (config.offset ?? 0) + limit);
     const rowsByRef = await this.materializeRowRefs(
       selected,
       outputColumns,
@@ -2140,6 +2134,14 @@ export class QueryResult {
     const { planned: paths, skipped: skippedFiles } = await this.planObjects();
     stats.filesSkipped = skippedFiles;
     const orderBy = config.orderBy ?? [];
+    const selection =
+      topK === undefined
+        ? undefined
+        : new BoundedSelection<Row>(topK, (a, b) => compareRows(a, b, orderBy));
+    if (selection !== undefined) {
+      for (const row of matched) selection.add(row);
+      matched.length = 0;
+    }
     const columns = projectedReadColumns(config.select, config.where, orderBy, config.projections);
     for (const object of paths) {
       stats.filesPlanned += 1;
@@ -2168,12 +2170,21 @@ export class QueryResult {
           if (!matches(config.where, row)) continue;
           stats.rowsMatched += 1;
           validateSortRow(row, orderBy);
-          addOrderedMatch(matched, row, orderBy, topK);
-          enforceBufferedRowsBudget(config.budget, matched.length);
-          enforceOperatorMemoryBudget(config.budget, estimateOperatorMemoryBytes(matched));
+          if (selection === undefined) matched.push(row);
+          else selection.add(row);
+          enforceBufferedRowsBudget(config.budget, selection?.size ?? matched.length);
+          if (config.budget.maxMemoryBytes !== undefined)
+            enforceOperatorMemoryBudget(
+              config.budget,
+              estimateOperatorMemoryBytes(
+                selection === undefined ? matched : [...selection.values()],
+              ),
+            );
         }
       }
     }
+    if (selection === undefined) matched.sort((a, b) => compareRows(a, b, orderBy));
+    else for (const row of selection.finish()) matched.push(row);
     stats.elapsedMs = config.now() - startedAt;
   }
 
@@ -3944,17 +3955,15 @@ function rankReadColumns(where: Expr | undefined, orderBy: readonly OrderByTerm[
 }
 
 function addRankedRefs(
-  retained: RankedRowRef[],
+  retained: BoundedSelection<RankedRowRef>,
   path: string,
   object: ObjectInfo | undefined,
   rowOffset: number,
   batch: Batch,
   selection: Uint8Array,
   rankColumns: readonly string[],
-  orderBy: readonly OrderByTerm[],
-  topK: number,
 ): void {
-  if (topK === 0) return;
+  if (retained.limit === 0) return;
   for (const index of selectedRowIndices(batch.rowCount, selection)) {
     const ref: RankedRowRef = {
       path,
@@ -3962,7 +3971,7 @@ function addRankedRefs(
       rowIndex: rowOffset + index,
       keys: rankKeyRow(batch, index, rankColumns),
     };
-    addRankedRef(retained, ref, orderBy, topK);
+    retained.add(ref);
   }
 }
 
@@ -3994,34 +4003,6 @@ function materializationWindows(
   return out;
 }
 
-function addRankedRef(
-  retained: RankedRowRef[],
-  ref: RankedRowRef,
-  orderBy: readonly OrderByTerm[],
-  topK: number,
-): void {
-  if (retained.length < topK) {
-    retained.push(ref);
-    return;
-  }
-  let worstIndex = 0;
-  for (let index = 1; index < retained.length; index += 1) {
-    const candidate = retained[index];
-    const worst = retained[worstIndex];
-    if (
-      candidate !== undefined &&
-      worst !== undefined &&
-      compareRankedRefs(candidate, worst, orderBy) > 0
-    ) {
-      worstIndex = index;
-    }
-  }
-  const worst = retained[worstIndex];
-  if (worst !== undefined && compareRankedRefs(ref, worst, orderBy) < 0) {
-    retained[worstIndex] = ref;
-  }
-}
-
 function rankKeyRow(batch: Batch, rowIndex: number, columns: readonly string[]): Row {
   const row: Row = {};
   for (const column of columns) {
@@ -4042,7 +4023,7 @@ function compareRankedRefs(
   orderBy: readonly OrderByTerm[],
 ): number {
   return (
-    compareRows(left.keys, right.keys, [...orderBy]) ||
+    compareRows(left.keys, right.keys, orderBy) ||
     left.path.localeCompare(right.path) ||
     left.rowIndex - right.rowIndex
   );

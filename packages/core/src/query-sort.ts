@@ -23,7 +23,7 @@ export function normalizeOrderBy(terms: OrderByTerm[]): OrderByTerm[] {
   });
 }
 
-export function compareRows(left: Row, right: Row, orderBy: OrderByTerm[]): number {
+export function compareRows(left: Row, right: Row, orderBy: readonly OrderByTerm[]): number {
   for (const term of orderBy) {
     const comparison = compareSortValues(
       valueForColumn(left, term.column),
@@ -35,35 +35,94 @@ export function compareRows(left: Row, right: Row, orderBy: OrderByTerm[]): numb
   return 0;
 }
 
-export function addOrderedMatch(
-  matched: Row[],
-  row: Row,
-  orderBy: OrderByTerm[],
-  topK: number | undefined,
-): void {
-  if (topK === undefined) {
-    matched.push(row);
-    return;
+/** A single heap implementation for bounded selection and sorted-run merging.
+ * The least value according to compare is at the root. */
+class PriorityQueue<T> {
+  private readonly items: T[] = [];
+  constructor(private readonly compare: (a: T, b: T) => number) {}
+  get size(): number {
+    return this.items.length;
   }
-  if (topK === 0) return;
-  if (matched.length < topK) {
-    matched.push(row);
-    return;
+  get first(): T | undefined {
+    return this.items[0];
   }
-  let worstIndex = 0;
-  for (let index = 1; index < matched.length; index += 1) {
-    const candidate = matched[index];
-    const worst = matched[worstIndex];
-    if (
-      candidate !== undefined &&
-      worst !== undefined &&
-      compareRows(candidate, worst, orderBy) > 0
-    ) {
-      worstIndex = index;
+  values(): Iterable<T> {
+    return this.items;
+  }
+  push(value: T): void {
+    this.items.push(value);
+    let index = this.items.length - 1;
+    while (index > 0) {
+      const parent = Math.floor((index - 1) / 2);
+      const previous = this.items[parent] as T;
+      if (this.compare(value, previous) >= 0) break;
+      this.items[index] = previous;
+      index = parent;
     }
+    this.items[index] = value;
   }
-  const worst = matched[worstIndex];
-  if (worst !== undefined && compareRows(row, worst, orderBy) < 0) matched[worstIndex] = row;
+  replaceFirst(value: T): void {
+    let index = 0;
+    while (index * 2 + 1 < this.items.length) {
+      let child = index * 2 + 1;
+      if (
+        child + 1 < this.items.length &&
+        this.compare(this.items[child + 1] as T, this.items[child] as T) < 0
+      )
+        child++;
+      const next = this.items[child] as T;
+      if (this.compare(value, next) <= 0) break;
+      this.items[index] = next;
+      index = child;
+    }
+    this.items[index] = value;
+  }
+  pop(): T | undefined {
+    const first = this.items[0];
+    const last = this.items.pop();
+    if (this.items.length > 0) this.replaceFirst(last as T);
+    return first;
+  }
+}
+
+/** Stable top-k with O(k) storage and O(log k) accepted-candidate updates.
+ * Earlier input wins equal keys. No per-row sort-key cache or input-sized index. */
+export class BoundedSelection<T> {
+  private ordinal = 0;
+  private readonly heap: PriorityQueue<{ value: T; ordinal: number }>;
+  constructor(
+    readonly limit: number,
+    private readonly compare: (a: T, b: T) => number,
+  ) {
+    if (!Number.isSafeInteger(limit) || limit < 0)
+      throw new LakeqlError("LAKEQL_TYPE_ERROR", "Top-k limit must be a non-negative safe integer");
+    this.heap = new PriorityQueue((a, b) => compare(b.value, a.value) || b.ordinal - a.ordinal);
+  }
+  get size(): number {
+    return this.heap.size;
+  }
+  *values(): Iterable<T> {
+    for (const item of this.heap.values()) yield item.value;
+  }
+  add(value: T): void {
+    if (this.limit === 0) return;
+    if (this.ordinal === Number.MAX_SAFE_INTEGER)
+      throw new LakeqlError(
+        "LAKEQL_TYPE_ERROR",
+        "Top-k encounter ordinal exceeded safe integer range",
+      );
+    const ordinal = this.ordinal++;
+    const worst = this.heap.first;
+    if (this.heap.size < this.limit) this.heap.push({ value, ordinal });
+    else if (worst !== undefined && this.compare(value, worst.value) < 0)
+      this.heap.replaceFirst({ value, ordinal });
+  }
+  finish(): T[] {
+    const result = new Array<T>(this.heap.size);
+    for (let index = result.length - 1; index >= 0; index--)
+      result[index] = (this.heap.pop() as { value: T }).value;
+    return result;
+  }
 }
 
 export function flushSortRun(runs: Row[][], currentRun: Row[], orderBy: OrderByTerm[]): void {
@@ -74,82 +133,23 @@ export function flushSortRun(runs: Row[][], currentRun: Row[], orderBy: OrderByT
 
 export function mergeSortRuns(runs: Row[][], orderBy: OrderByTerm[]): Row[] {
   const cursors = runs.map(() => 0);
-  const heap: { runIndex: number; row: Row }[] = [];
+  const heap = new PriorityQueue<{ runIndex: number; row: Row }>(
+    (a, b) => compareRows(a.row, b.row, orderBy) || a.runIndex - b.runIndex,
+  );
   const out: Row[] = [];
-  for (let runIndex = 0; runIndex < runs.length; runIndex += 1) {
+  for (let runIndex = 0; runIndex < runs.length; runIndex++) {
     const row = runs[runIndex]?.[0];
-    if (row !== undefined) heapPush(heap, { runIndex, row }, orderBy);
+    if (row !== undefined) heap.push({ runIndex, row });
   }
-  while (heap.length > 0) {
-    const next = heapPop(heap, orderBy);
+  while (heap.size > 0) {
+    const next = heap.pop();
     if (next === undefined) break;
     out.push(next.row);
     cursors[next.runIndex] = (cursors[next.runIndex] ?? 0) + 1;
     const row = runs[next.runIndex]?.[cursors[next.runIndex] ?? 0];
-    if (row !== undefined) heapPush(heap, { runIndex: next.runIndex, row }, orderBy);
+    if (row !== undefined) heap.push({ runIndex: next.runIndex, row });
   }
   return out;
-}
-
-function heapPush(
-  heap: { runIndex: number; row: Row }[],
-  item: { runIndex: number; row: Row },
-  orderBy: OrderByTerm[],
-): void {
-  heap.push(item);
-  for (let index = heap.length - 1; index > 0; ) {
-    const parent = Math.floor((index - 1) / 2);
-    if (compareRows(heap[index]?.row ?? {}, heap[parent]?.row ?? {}, orderBy) >= 0) break;
-    [heap[index], heap[parent]] = [
-      heap[parent] as { runIndex: number; row: Row },
-      heap[index] as { runIndex: number; row: Row },
-    ];
-    index = parent;
-  }
-}
-
-function heapPop(
-  heap: { runIndex: number; row: Row }[],
-  orderBy: OrderByTerm[],
-): { runIndex: number; row: Row } | undefined {
-  const root = heap[0];
-  const last = heap.pop();
-  if (root === undefined || last === undefined) return root;
-  if (heap.length > 0) {
-    heap[0] = last;
-    heapifyDown(heap, 0, orderBy);
-  }
-  return root;
-}
-
-function heapifyDown(
-  heap: { runIndex: number; row: Row }[],
-  start: number,
-  orderBy: OrderByTerm[],
-): void {
-  for (let index = start; ; ) {
-    const left = index * 2 + 1;
-    const right = left + 1;
-    let smallest = index;
-    if (
-      heap[left] !== undefined &&
-      compareRows(heap[left].row, heap[smallest]?.row ?? {}, orderBy) < 0
-    ) {
-      smallest = left;
-    }
-    if (
-      heap[right] !== undefined &&
-      compareRows(heap[right].row, heap[smallest]?.row ?? {}, orderBy) < 0
-    ) {
-      smallest = right;
-    }
-    if (smallest === index) return;
-    [heap[index], heap[smallest]] = [
-      heap[smallest] as { runIndex: number; row: Row },
-      heap[index] as { runIndex: number; row: Row },
-    ];
-    index = smallest;
-  }
 }
 
 export function validateSortRow(row: Row, orderBy: OrderByTerm[]): void {

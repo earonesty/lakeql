@@ -1,6 +1,9 @@
-import { eq, lt, memoryCache, memoryStore } from "lakeql-core";
+import { env } from "cloudflare:test";
+import { eq, gte, Lake, lt, memoryCache, memoryStore, SharedMemoryCache } from "lakeql-core";
 import { describe, expect, it } from "vitest";
+import { type R2BucketLike, r2Store } from "../../r2/src/index.js";
 import { createParquetLake, type ParquetMetadata, writeParquet } from "./index.js";
+import { ParquetScanAdapter } from "./scan-adapter.js";
 
 describe("parquet workerd runtime", () => {
   it("writes and scans Parquet through the real adapter in the Workers runtime", async () => {
@@ -49,4 +52,65 @@ describe("parquet workerd runtime", () => {
     expect(cached.stats.cacheMisses).toBe(0);
     expect(cached.stats.rangeRequests).toBe(0);
   });
+});
+
+it("orders concurrent real Parquet jobs through native R2 with bounded candidates and reusable ranges", async () => {
+  const bucket = (env as unknown as { ORDERING_FIXTURES: R2BucketLike }).ORDERING_FIXTURES;
+  const store = r2Store(bucket);
+  const rows = Array.from({ length: 256 }, (_, id) => ({
+    id,
+    score: id % 17,
+    payload: `${id}:`.padEnd(128, "x"),
+  }));
+  await writeParquet(store, "ordering.parquet", {
+    rowGroupSize: [64, 64, 64, 64],
+    columnData: [
+      { name: "id", data: rows.map((r) => r.id) },
+      { name: "score", data: rows.map((r) => r.score) },
+      { name: "payload", data: rows.map((r) => r.payload) },
+    ],
+  });
+  const scanner = new ParquetScanAdapter(store, {
+    scanRangeCache: {
+      maxBytes: 64 * 1024,
+      sharedCache: new SharedMemoryCache({ maxBytes: 64 * 1024 }),
+    },
+  });
+  const expected = [...rows]
+    .sort((a, b) => b.score - a.score)
+    .slice(3, 13)
+    .map(({ score, payload }) => ({ score, payload }));
+  for (const mib of [64, 128]) {
+    const deferred = new Lake({
+      store,
+      scanner,
+      budget: { maxMemoryBytes: mib * 1024 * 1024, maxBufferedRows: 13 },
+    });
+    const ordinary = new Lake({
+      store,
+      scanner: { scan: scanner.scan.bind(scanner) },
+      budget: { maxMemoryBytes: mib * 1024 * 1024, maxBufferedRows: 13 },
+    });
+    const run = (lake: Lake) =>
+      lake
+        .path("ordering.parquet")
+        .batchSize(31)
+        .select(["score", "payload"])
+        .where(gte("id", 0))
+        .orderBy([{ column: "score", direction: "desc" }])
+        .offset(3)
+        .limit(10)
+        .run();
+    const result = await Promise.all([
+      run(deferred).toArray(),
+      run(ordinary).toArray(),
+      run(deferred).toArray(),
+      run(ordinary).toArray(),
+    ]);
+    expect(result).toEqual([expected, expected, expected, expected]);
+    const warm = run(deferred);
+    expect(await warm.toArray()).toEqual(expected);
+    expect(warm.stats.rangeRequests).toBe(0);
+  }
+  await store.delete("ordering.parquet");
 });

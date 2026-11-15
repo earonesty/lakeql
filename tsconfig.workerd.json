@@ -7,7 +7,7 @@
       "lakeql": ["./packages/core/src/index.ts"],
       "lakeql-core": ["./packages/core/src/index.ts"]
     },
-    "types": ["@webgpu/types"]
+    "types": ["@webgpu/types", "@cloudflare/vitest-pool-workers/types"]
   },
   "include": ["packages/**/*.workerd.ts"]
 }
