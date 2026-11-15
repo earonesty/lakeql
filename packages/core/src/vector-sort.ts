@@ -759,9 +759,7 @@ function compareBatchRows(
     const read = scope === undefined ? vectorValue : scalarVectorValue;
     const comparison =
       reader !== undefined && !scalarReadAllocationFree(vector)
-        ? reader.consume(vector, leftIndex, rightIndex, (left, right) =>
-            compareOrderedScalars(left, right, term),
-          )
+        ? reader.consumeWithContext(vector, leftIndex, rightIndex, compareOrderedScalars, term)
         : compareOrderedScalars(
             read(vector, leftIndex, scope),
             read(vector, rightIndex, scope),

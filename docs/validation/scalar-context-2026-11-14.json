@@ -1,0 +1,386 @@
+{
+  "baselineCommit": "4165a2af07ede27d64a6f72cd9f0c36015256c3f",
+  "contract": "ScalarReadWorkspace accepts explicit borrowed comparison context; vector sorting passes compareOrderedScalars and its order term directly instead of capturing the loop binding in a per-comparison closure. The existing consume method delegates to the same lifetime implementation. Context is neither stored nor retained. Payload and workspace admission are unchanged.",
+  "sourceSha256": {
+    "packages/core/src/scalar-read-workspace.ts": "8f8c3ac148ed12cccd039dffdeb77e12f3626594c584ef251e23b9c370a08831",
+    "packages/core/src/vector-sort.ts": "8d34bb1a18481db01e28ddd69c3e5b015bec2227659dccb18a54edfde0efc443"
+  },
+  "profileScope": "Estimated managed allocation volume including collected objects. Not exact live bytes or peak backing storage; profiling changes timing.",
+  "profiles": [
+    {
+      "variant": "baseline",
+      "poolMiB": 64,
+      "jobs": 1,
+      "round": "cold",
+      "estimatedAllocatedBytes": 186564920,
+      "comparisonSiteEstimatedBytesInTopSites": 109020604
+    },
+    {
+      "variant": "baseline",
+      "poolMiB": 64,
+      "jobs": 1,
+      "round": "warm",
+      "estimatedAllocatedBytes": 180454880,
+      "comparisonSiteEstimatedBytesInTopSites": 108757420
+    },
+    {
+      "variant": "baseline",
+      "poolMiB": 64,
+      "jobs": 4,
+      "round": "cold",
+      "estimatedAllocatedBytes": 659556132,
+      "comparisonSiteEstimatedBytesInTopSites": 432582768
+    },
+    {
+      "variant": "baseline",
+      "poolMiB": 64,
+      "jobs": 4,
+      "round": "warm",
+      "estimatedAllocatedBytes": 642576076,
+      "comparisonSiteEstimatedBytesInTopSites": 427566660
+    },
+    {
+      "variant": "baseline",
+      "poolMiB": 128,
+      "jobs": 1,
+      "round": "cold",
+      "estimatedAllocatedBytes": 184507260,
+      "comparisonSiteEstimatedBytesInTopSites": 106758252
+    },
+    {
+      "variant": "baseline",
+      "poolMiB": 128,
+      "jobs": 1,
+      "round": "warm",
+      "estimatedAllocatedBytes": 169754208,
+      "comparisonSiteEstimatedBytesInTopSites": 107743408
+    },
+    {
+      "variant": "baseline",
+      "poolMiB": 128,
+      "jobs": 4,
+      "round": "cold",
+      "estimatedAllocatedBytes": 705359808,
+      "comparisonSiteEstimatedBytesInTopSites": 434341344
+    },
+    {
+      "variant": "baseline",
+      "poolMiB": 128,
+      "jobs": 4,
+      "round": "warm",
+      "estimatedAllocatedBytes": 683864724,
+      "comparisonSiteEstimatedBytesInTopSites": 430278652
+    },
+    {
+      "variant": "candidate",
+      "poolMiB": 64,
+      "jobs": 1,
+      "round": "cold",
+      "estimatedAllocatedBytes": 71672268,
+      "comparisonSiteEstimatedBytesInTopSites": 2371980
+    },
+    {
+      "variant": "candidate",
+      "poolMiB": 64,
+      "jobs": 1,
+      "round": "warm",
+      "estimatedAllocatedBytes": 66240876,
+      "comparisonSiteEstimatedBytesInTopSites": 0
+    },
+    {
+      "variant": "candidate",
+      "poolMiB": 64,
+      "jobs": 4,
+      "round": "cold",
+      "estimatedAllocatedBytes": 229387472,
+      "comparisonSiteEstimatedBytesInTopSites": 2133092
+    },
+    {
+      "variant": "candidate",
+      "poolMiB": 64,
+      "jobs": 4,
+      "round": "warm",
+      "estimatedAllocatedBytes": 217526128,
+      "comparisonSiteEstimatedBytesInTopSites": 0
+    },
+    {
+      "variant": "candidate",
+      "poolMiB": 128,
+      "jobs": 1,
+      "round": "cold",
+      "estimatedAllocatedBytes": 70008556,
+      "comparisonSiteEstimatedBytesInTopSites": 2046428
+    },
+    {
+      "variant": "candidate",
+      "poolMiB": 128,
+      "jobs": 1,
+      "round": "warm",
+      "estimatedAllocatedBytes": 68706328,
+      "comparisonSiteEstimatedBytesInTopSites": 0
+    },
+    {
+      "variant": "candidate",
+      "poolMiB": 128,
+      "jobs": 4,
+      "round": "cold",
+      "estimatedAllocatedBytes": 272403984,
+      "comparisonSiteEstimatedBytesInTopSites": 2593636
+    },
+    {
+      "variant": "candidate",
+      "poolMiB": 128,
+      "jobs": 4,
+      "round": "warm",
+      "estimatedAllocatedBytes": 264857932,
+      "comparisonSiteEstimatedBytesInTopSites": 0
+    }
+  ],
+  "runtime": [
+    {
+      "case": "id-native",
+      "poolMiB": 64,
+      "jobs": 1,
+      "status": "complete",
+      "primaryOutcomes": {
+        "ok": 4
+      },
+      "maxSampledManagedHeapBytes": 47346136,
+      "maxSampledBackingStorageBytes": 55621745,
+      "finalAdmissionBytes": 0
+    },
+    {
+      "case": "id-native",
+      "poolMiB": 64,
+      "jobs": 4,
+      "status": "complete",
+      "primaryOutcomes": {
+        "budget": 12,
+        "ok": 4
+      },
+      "maxSampledManagedHeapBytes": 45343536,
+      "maxSampledBackingStorageBytes": 169286352,
+      "finalAdmissionBytes": 0
+    },
+    {
+      "case": "id-native",
+      "poolMiB": 128,
+      "jobs": 1,
+      "status": "complete",
+      "primaryOutcomes": {
+        "ok": 4
+      },
+      "maxSampledManagedHeapBytes": 40948648,
+      "maxSampledBackingStorageBytes": 98858722,
+      "finalAdmissionBytes": 0
+    },
+    {
+      "case": "id-native",
+      "poolMiB": 128,
+      "jobs": 4,
+      "status": "complete",
+      "primaryOutcomes": {
+        "ok": 16
+      },
+      "maxSampledManagedHeapBytes": 93528512,
+      "maxSampledBackingStorageBytes": 87426302,
+      "finalAdmissionBytes": 0
+    },
+    {
+      "case": "text-native",
+      "poolMiB": 64,
+      "jobs": 1,
+      "status": "complete",
+      "primaryOutcomes": {
+        "ok": 4
+      },
+      "maxSampledManagedHeapBytes": 48295840,
+      "maxSampledBackingStorageBytes": 74626538,
+      "finalAdmissionBytes": 0
+    },
+    {
+      "case": "text-native",
+      "poolMiB": 64,
+      "jobs": 4,
+      "status": "complete",
+      "primaryOutcomes": {
+        "budget": 12,
+        "ok": 4
+      },
+      "maxSampledManagedHeapBytes": 54303700,
+      "maxSampledBackingStorageBytes": 147944960,
+      "finalAdmissionBytes": 0
+    },
+    {
+      "case": "text-native",
+      "poolMiB": 128,
+      "jobs": 1,
+      "status": "complete",
+      "primaryOutcomes": {
+        "ok": 4
+      },
+      "maxSampledManagedHeapBytes": 36456912,
+      "maxSampledBackingStorageBytes": 67644631,
+      "finalAdmissionBytes": 0
+    },
+    {
+      "case": "text-native",
+      "poolMiB": 128,
+      "jobs": 4,
+      "status": "complete",
+      "primaryOutcomes": {
+        "ok": 16
+      },
+      "maxSampledManagedHeapBytes": 105568728,
+      "maxSampledBackingStorageBytes": 104907595,
+      "finalAdmissionBytes": 0
+    },
+    {
+      "case": "id-heap64",
+      "poolMiB": 64,
+      "jobs": 1,
+      "status": "complete",
+      "primaryOutcomes": {
+        "ok": 4
+      },
+      "maxSampledManagedHeapBytes": 39822888,
+      "maxSampledBackingStorageBytes": 184927170,
+      "finalAdmissionBytes": 0
+    },
+    {
+      "case": "id-heap64",
+      "poolMiB": 64,
+      "jobs": 4,
+      "status": "complete",
+      "primaryOutcomes": {
+        "budget": 12,
+        "ok": 4
+      },
+      "maxSampledManagedHeapBytes": 55529688,
+      "maxSampledBackingStorageBytes": 802772633,
+      "finalAdmissionBytes": 0
+    },
+    {
+      "case": "id-heap64",
+      "poolMiB": 128,
+      "jobs": 1,
+      "status": "complete",
+      "primaryOutcomes": {
+        "ok": 4
+      },
+      "maxSampledManagedHeapBytes": 16754136,
+      "maxSampledBackingStorageBytes": 61828258,
+      "finalAdmissionBytes": 0
+    },
+    {
+      "case": "id-heap64",
+      "poolMiB": 128,
+      "jobs": 4,
+      "status": "complete",
+      "primaryOutcomes": {
+        "ok": 16
+      },
+      "maxSampledManagedHeapBytes": 50666560,
+      "maxSampledBackingStorageBytes": 227473757,
+      "finalAdmissionBytes": 0
+    },
+    {
+      "case": "text-heap64",
+      "poolMiB": 64,
+      "jobs": 1,
+      "status": "complete",
+      "primaryOutcomes": {
+        "ok": 4
+      },
+      "maxSampledManagedHeapBytes": 29465024,
+      "maxSampledBackingStorageBytes": 161729322,
+      "finalAdmissionBytes": 0
+    },
+    {
+      "case": "text-heap64",
+      "poolMiB": 64,
+      "jobs": 4,
+      "status": "complete",
+      "primaryOutcomes": {
+        "budget": 12,
+        "ok": 4
+      },
+      "maxSampledManagedHeapBytes": 48619532,
+      "maxSampledBackingStorageBytes": 593893648,
+      "finalAdmissionBytes": 0
+    },
+    {
+      "case": "text-heap64",
+      "poolMiB": 128,
+      "jobs": 1,
+      "status": "complete",
+      "primaryOutcomes": {
+        "ok": 4
+      },
+      "maxSampledManagedHeapBytes": 28269636,
+      "maxSampledBackingStorageBytes": 85812116,
+      "finalAdmissionBytes": 0
+    },
+    {
+      "case": "text-heap64",
+      "poolMiB": 128,
+      "jobs": 4,
+      "status": "complete",
+      "primaryOutcomes": {
+        "ok": 16
+      },
+      "maxSampledManagedHeapBytes": 53267476,
+      "maxSampledBackingStorageBytes": 304871314,
+      "finalAdmissionBytes": 0
+    }
+  ],
+  "validation": {
+    "regularPassed": 4111,
+    "regularSkipped": 645,
+    "targetedPassed": 48,
+    "coveragePassed": 4111,
+    "workerPassed": 95,
+    "requiredConformancePassed": 520,
+    "conformanceGuardSkipped": 1,
+    "referencePassed": 120,
+    "publicR2Scenarios": 52,
+    "publicR2HeadroomBytes": 524288,
+    "publicR2PeakIncrementalBytes": 396118,
+    "checks": "Build, types, lint, clean package consumers, compatibility, fixtures, changeset, large files and unchanged coverage thresholds passed.",
+    "restoration": "After the helper experiment, source SHA256 values exactly match the fully validated explicit-context candidate; restored build passed."
+  },
+  "runtimeScope": "Separate inspector counters; do not add their maxima or infer a process-memory cap. Post-run diagnostic GC is not a production remedy. HTTP runs overlapped release verification; no controlled latency claim.",
+  "status": "Validated explicit-context implementation selected; broader allocation/runtime audit remains open.",
+  "performance": {
+    "context-query": {
+      "priorMedianMs": 480.5847119999999,
+      "candidateMedianMs": 512.8170150000001
+    },
+    "context-fallback-query": {
+      "priorMedianMs": 765.5681770000001,
+      "candidateMedianMs": 790.953661
+    },
+    "callback-query": {
+      "priorMedianMs": 421.01387650000004,
+      "candidateMedianMs": 442.10867199999984
+    },
+    "callback-fallback-query": {
+      "priorMedianMs": 678.1006604999998,
+      "candidateMedianMs": 742.6941565
+    },
+    "isolatedKernels": {
+      "cases": 64,
+      "candidateFaster": 34,
+      "medianCandidateToBaselineRatio": 0.9732891012718636,
+      "ratioRange": [0.34908988572753136, 1.841031395791259],
+      "interpretation": "Mixed results, not a universal speedup. Baseline/current alternate within each case."
+    },
+    "pairedVectorMatrix": {
+      "priorMedianMs": 49.61381549999996,
+      "candidateMedianMs": 47.24980250000015,
+      "artifact": "../benchmarks/scalar-context-packed-comparison-2026-11-14.json",
+      "scope": "Alternating fresh processes, four measured pairs after warmup; numeric, ASCII, Unicode, dictionary and long-prefix vector cases. Not complete-query or cloud throughput."
+    }
+  },
+  "decision": "Prefer explicit context: numeric managed allocation falls by roughly 60%, with unchanged modeled admission. Complete text queries show approximately 3\u20137% latency overhead in this comparison. A smaller local callback helper retains similar numeric allocation savings but showed a larger long-prefix regression (about 10%) in its separate comparison; its patch and measurements are archived. No runtime-cap or universal speedup claim."
+}

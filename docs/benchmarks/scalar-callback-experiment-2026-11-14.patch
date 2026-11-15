@@ -1,0 +1,23 @@
+--- a/packages/core/src/vector-sort.ts
++++ b/packages/core/src/vector-sort.ts
+@@ -762,3 +762 @@
+-        ? reader.consume(vector, leftIndex, rightIndex, (left, right) =>
+-            compareOrderedScalars(left, right, term),
+-          )
++        ? compareAllocatedRows(reader, vector, leftIndex, rightIndex, term)
+@@ -772,0 +771,15 @@
++}
++
++// Keep the capturing callback inside the allocating scalar path. Capturing the
++// ordering loop binding creates a context even when a numeric/prefix comparison
++// never calls the reader.
++function compareAllocatedRows(
++  reader: ScalarReadWorkspace,
++  vector: Vector,
++  leftIndex: number,
++  rightIndex: number,
++  term: OrderByTerm,
++): number {
++  return reader.consume(vector, leftIndex, rightIndex, (left, right) =>
++    compareOrderedScalars(left, right, term),
++  );

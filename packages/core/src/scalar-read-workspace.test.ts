@@ -281,3 +281,37 @@ it("releases metadata admission if reclamation closes the scope during creation"
     scope.dispose();
   }
 });
+
+it("borrows explicit comparison context without retaining it between calls", () => {
+  const vector = packed([1, 2]);
+  const scope = new MemoryScope(new MemoryBudget(metadataBytes + bytes(1) + bytes(2)));
+  const reader = ScalarReadWorkspace.create(scope);
+  const first = { direction: 1 };
+  const second = { direction: -1 };
+  const seen: unknown[] = [];
+  const compare = (a: unknown, b: unknown, context: typeof first) => {
+    seen.push(context);
+    return context.direction * (String(a).length - String(b).length);
+  };
+  expect(reader.consumeWithContext(vector, 0, 1, compare, first)).toBe(-1);
+  expect(reader.consumeWithContext(vector, 0, 1, compare, second)).toBe(1);
+  expect(seen[0]).toBe(first);
+  expect(seen[1]).toBe(second);
+  expect(scope.budget.usedBytes).toBe(scope.budget.maxBytes);
+  expect(() =>
+    reader.consumeWithContext(
+      vector,
+      0,
+      1,
+      () => {
+        throw Error("context consumer");
+      },
+      first,
+    ),
+  ).toThrow("context consumer");
+  expect(scope.budget.usedBytes).toBe(metadataBytes);
+  expect(reader.consumeWithContext(vector, 0, 1, compare, second)).toBe(1);
+  reader.dispose();
+  scope.dispose();
+  expect(scope.budget.usedBytes).toBe(0);
+});

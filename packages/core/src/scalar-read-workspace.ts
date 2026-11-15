@@ -40,6 +40,18 @@ export class ScalarReadWorkspace implements VectorAllocator {
     right: number,
     compare: (left: Scalar, right: Scalar) => number,
   ): number {
+    return this.consumeWithContext(vector, left, right, compare, undefined);
+  }
+
+  /** Pass comparison state explicitly so callers need not capture a fresh closure
+   * for every comparison (or allocate a loop context on allocation-free paths). */
+  consumeWithContext<T>(
+    vector: Vector,
+    left: number,
+    right: number,
+    compare: (left: Scalar, right: Scalar, context: T) => number,
+    context: T,
+  ): number {
     this.requireOpen();
     if (this.active)
       throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Scalar reads cannot reenter");
@@ -57,7 +69,7 @@ export class ScalarReadWorkspace implements VectorAllocator {
         right < vector.indices.length &&
         vector.indices[left] === vector.indices[right] &&
         (vector.valid?.[left] === 0) === (vector.valid?.[right] === 0);
-      return compare(first, sameText ? first : scalarVectorValue(vector, right, this));
+      return compare(first, sameText ? first : scalarVectorValue(vector, right, this), context);
     } catch (error) {
       this.release();
       throw error;
