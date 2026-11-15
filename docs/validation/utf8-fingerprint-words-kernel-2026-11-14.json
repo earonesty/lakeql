@@ -1,0 +1,840 @@
+{
+  "baseline": "3bf0ba1",
+  "benchmarkName": "utf8-fingerprint-case.mjs",
+  "moduleName": "core/utf8-fingerprint",
+  "modules": [
+    {
+      "name": "core/utf8-fingerprint",
+      "baselineSourceSha256": "166a56f44b0f62895e55ee6b52aa30fcf7e86be639ea5a1a29b6080461e2f1bd",
+      "currentSourceSha256": "ca9525d1434ade5f0ad3233807a9a875010fa2e50cb1aa5dfb98fdb0aeaa428b"
+    }
+  ],
+  "node": "v24.18.1",
+  "warmupPairs": 1,
+  "measuredPairs": 4,
+  "scope": "Alternating fresh Node processes; the named modules are replaced together by their prior implementations, with current dependencies. The recorded benchmark identifies its fixture and checks; these are local queries, not cloud throughput. Source store/runtime overhead excluded from pool metrics. Value parity is covered by external conformance; benchmark checks count and release.",
+  "priorMedianMs": 0.854348144657467,
+  "currentMedianMs": 0.6752245697548909,
+  "runs": {
+    "prior": [
+      {
+        "cases": [
+          {
+            "kind": "ascii",
+            "codeUnits": 16,
+            "utf8Bytes": 16,
+            "iterations": 12500,
+            "digest": "2e373913e5ad677d",
+            "elapsedMs": 0.00007392888
+          },
+          {
+            "kind": "ascii",
+            "codeUnits": 1024,
+            "utf8Bytes": 1024,
+            "iterations": 195,
+            "digest": "b7970ec3ca629125",
+            "elapsedMs": 0.004162661538461539
+          },
+          {
+            "kind": "ascii",
+            "codeUnits": 65536,
+            "utf8Bytes": 65536,
+            "iterations": 4,
+            "digest": "a90624c5383da325",
+            "elapsedMs": 0.39685049999999933
+          },
+          {
+            "kind": "unicode",
+            "codeUnits": 4,
+            "utf8Bytes": 9,
+            "iterations": 50000,
+            "digest": "132ab21355d56174",
+            "elapsedMs": 0.000025119320000000017
+          },
+          {
+            "kind": "unicode",
+            "codeUnits": 256,
+            "utf8Bytes": 576,
+            "iterations": 781,
+            "digest": "9101cba364fffa65",
+            "elapsedMs": 0.001114930857874522
+          },
+          {
+            "kind": "unicode",
+            "codeUnits": 16384,
+            "utf8Bytes": 36864,
+            "iterations": 12,
+            "digest": "e1ce6260d7453325",
+            "elapsedMs": 0.07386416666666662
+          },
+          {
+            "kind": "mixed",
+            "codeUnits": 16,
+            "utf8Bytes": 20,
+            "iterations": 12500,
+            "digest": "2e0fdb12133d98e1",
+            "elapsedMs": 0.00007465103999999996
+          },
+          {
+            "kind": "mixed",
+            "codeUnits": 1024,
+            "utf8Bytes": 1280,
+            "iterations": 195,
+            "digest": "f3f63ebdff4f7125",
+            "elapsedMs": 0.004352764102564084
+          },
+          {
+            "kind": "mixed",
+            "codeUnits": 65536,
+            "utf8Bytes": 81920,
+            "iterations": 4,
+            "digest": "765e5d480c75a325",
+            "elapsedMs": 0.3351614999999981
+          },
+          {
+            "kind": "surrogates",
+            "codeUnits": 3,
+            "utf8Bytes": 7,
+            "iterations": 66666,
+            "digest": "6a651eddf5135bc3",
+            "elapsedMs": 0.00002236505865058649
+          },
+          {
+            "kind": "surrogates",
+            "codeUnits": 192,
+            "utf8Bytes": 448,
+            "iterations": 1041,
+            "digest": "cd20a268dd36d925",
+            "elapsedMs": 0.0010318482228626254
+          },
+          {
+            "kind": "surrogates",
+            "codeUnits": 12288,
+            "utf8Bytes": 28672,
+            "iterations": 16,
+            "digest": "2f3d0714ca0fa325",
+            "elapsedMs": 0.06324412499999887
+          }
+        ],
+        "elapsedMs": 0.8799785606870762,
+        "scope": "Local UTF8 hashing kernel; independent TextEncoder/BigInt oracle checks every case. No encoded copy is made by the implementation. No cloud throughput or total heap claim."
+      },
+      {
+        "cases": [
+          {
+            "kind": "ascii",
+            "codeUnits": 16,
+            "utf8Bytes": 16,
+            "iterations": 12500,
+            "digest": "2e373913e5ad677d",
+            "elapsedMs": 0.00007557279999999992
+          },
+          {
+            "kind": "ascii",
+            "codeUnits": 1024,
+            "utf8Bytes": 1024,
+            "iterations": 195,
+            "digest": "b7970ec3ca629125",
+            "elapsedMs": 0.004106969230769208
+          },
+          {
+            "kind": "ascii",
+            "codeUnits": 65536,
+            "utf8Bytes": 65536,
+            "iterations": 4,
+            "digest": "a90624c5383da325",
+            "elapsedMs": 0.36094250000000017
+          },
+          {
+            "kind": "unicode",
+            "codeUnits": 4,
+            "utf8Bytes": 9,
+            "iterations": 50000,
+            "digest": "132ab21355d56174",
+            "elapsedMs": 0.000032449740000000134
+          },
+          {
+            "kind": "unicode",
+            "codeUnits": 256,
+            "utf8Bytes": 576,
+            "iterations": 781,
+            "digest": "9101cba364fffa65",
+            "elapsedMs": 0.0010645019206146041
+          },
+          {
+            "kind": "unicode",
+            "codeUnits": 16384,
+            "utf8Bytes": 36864,
+            "iterations": 12,
+            "digest": "e1ce6260d7453325",
+            "elapsedMs": 0.06424858333333343
+          },
+          {
+            "kind": "mixed",
+            "codeUnits": 16,
+            "utf8Bytes": 20,
+            "iterations": 12500,
+            "digest": "2e0fdb12133d98e1",
+            "elapsedMs": 0.0000741420800000003
+          },
+          {
+            "kind": "mixed",
+            "codeUnits": 1024,
+            "utf8Bytes": 1280,
+            "iterations": 195,
+            "digest": "f3f63ebdff4f7125",
+            "elapsedMs": 0.004357441025641005
+          },
+          {
+            "kind": "mixed",
+            "codeUnits": 65536,
+            "utf8Bytes": 81920,
+            "iterations": 4,
+            "digest": "765e5d480c75a325",
+            "elapsedMs": 0.3311415000000011
+          },
+          {
+            "kind": "surrogates",
+            "codeUnits": 3,
+            "utf8Bytes": 7,
+            "iterations": 66666,
+            "digest": "6a651eddf5135bc3",
+            "elapsedMs": 0.00002244455944559431
+          },
+          {
+            "kind": "surrogates",
+            "codeUnits": 192,
+            "utf8Bytes": 448,
+            "iterations": 1041,
+            "digest": "cd20a268dd36d925",
+            "elapsedMs": 0.0010272382324687816
+          },
+          {
+            "kind": "surrogates",
+            "codeUnits": 12288,
+            "utf8Bytes": 28672,
+            "iterations": 16,
+            "digest": "2f3d0714ca0fa325",
+            "elapsedMs": 0.06427231249999998
+          }
+        ],
+        "elapsedMs": 0.8313656554222738,
+        "scope": "Local UTF8 hashing kernel; independent TextEncoder/BigInt oracle checks every case. No encoded copy is made by the implementation. No cloud throughput or total heap claim."
+      },
+      {
+        "cases": [
+          {
+            "kind": "ascii",
+            "codeUnits": 16,
+            "utf8Bytes": 16,
+            "iterations": 12500,
+            "digest": "2e373913e5ad677d",
+            "elapsedMs": 0.00007468391999999995
+          },
+          {
+            "kind": "ascii",
+            "codeUnits": 1024,
+            "utf8Bytes": 1024,
+            "iterations": 195,
+            "digest": "b7970ec3ca629125",
+            "elapsedMs": 0.004138256410256411
+          },
+          {
+            "kind": "ascii",
+            "codeUnits": 65536,
+            "utf8Bytes": 65536,
+            "iterations": 4,
+            "digest": "a90624c5383da325",
+            "elapsedMs": 0.3743604999999999
+          },
+          {
+            "kind": "unicode",
+            "codeUnits": 4,
+            "utf8Bytes": 9,
+            "iterations": 50000,
+            "digest": "132ab21355d56174",
+            "elapsedMs": 0.000028248620000000102
+          },
+          {
+            "kind": "unicode",
+            "codeUnits": 256,
+            "utf8Bytes": 576,
+            "iterations": 781,
+            "digest": "9101cba364fffa65",
+            "elapsedMs": 0.0011240128040973102
+          },
+          {
+            "kind": "unicode",
+            "codeUnits": 16384,
+            "utf8Bytes": 36864,
+            "iterations": 12,
+            "digest": "e1ce6260d7453325",
+            "elapsedMs": 0.06589416666666754
+          },
+          {
+            "kind": "mixed",
+            "codeUnits": 16,
+            "utf8Bytes": 20,
+            "iterations": 12500,
+            "digest": "2e0fdb12133d98e1",
+            "elapsedMs": 0.0001068292800000006
+          },
+          {
+            "kind": "mixed",
+            "codeUnits": 1024,
+            "utf8Bytes": 1280,
+            "iterations": 195,
+            "digest": "f3f63ebdff4f7125",
+            "elapsedMs": 0.005555441025641072
+          },
+          {
+            "kind": "mixed",
+            "codeUnits": 65536,
+            "utf8Bytes": 81920,
+            "iterations": 4,
+            "digest": "765e5d480c75a325",
+            "elapsedMs": 0.3606445000000029
+          },
+          {
+            "kind": "surrogates",
+            "codeUnits": 3,
+            "utf8Bytes": 7,
+            "iterations": 66666,
+            "digest": "6a651eddf5135bc3",
+            "elapsedMs": 0.000022477634776347885
+          },
+          {
+            "kind": "surrogates",
+            "codeUnits": 192,
+            "utf8Bytes": 448,
+            "iterations": 1041,
+            "digest": "cd20a268dd36d925",
+            "elapsedMs": 0.00102776753121997
+          },
+          {
+            "kind": "surrogates",
+            "codeUnits": 12288,
+            "utf8Bytes": 28672,
+            "iterations": 16,
+            "digest": "2f3d0714ca0fa325",
+            "elapsedMs": 0.06435374999999866
+          }
+        ],
+        "elapsedMs": 0.8773306338926602,
+        "scope": "Local UTF8 hashing kernel; independent TextEncoder/BigInt oracle checks every case. No encoded copy is made by the implementation. No cloud throughput or total heap claim."
+      },
+      {
+        "cases": [
+          {
+            "kind": "ascii",
+            "codeUnits": 16,
+            "utf8Bytes": 16,
+            "iterations": 12500,
+            "digest": "2e373913e5ad677d",
+            "elapsedMs": 0.00007490431999999998
+          },
+          {
+            "kind": "ascii",
+            "codeUnits": 1024,
+            "utf8Bytes": 1024,
+            "iterations": 195,
+            "digest": "b7970ec3ca629125",
+            "elapsedMs": 0.004079482051282049
+          },
+          {
+            "kind": "ascii",
+            "codeUnits": 65536,
+            "utf8Bytes": 65536,
+            "iterations": 4,
+            "digest": "a90624c5383da325",
+            "elapsedMs": 0.3323987500000012
+          },
+          {
+            "kind": "unicode",
+            "codeUnits": 4,
+            "utf8Bytes": 9,
+            "iterations": 50000,
+            "digest": "132ab21355d56174",
+            "elapsedMs": 0.00002528043999999994
+          },
+          {
+            "kind": "unicode",
+            "codeUnits": 256,
+            "utf8Bytes": 576,
+            "iterations": 781,
+            "digest": "9101cba364fffa65",
+            "elapsedMs": 0.0011546594110115338
+          },
+          {
+            "kind": "unicode",
+            "codeUnits": 16384,
+            "utf8Bytes": 36864,
+            "iterations": 12,
+            "digest": "e1ce6260d7453325",
+            "elapsedMs": 0.06753891666666571
+          },
+          {
+            "kind": "mixed",
+            "codeUnits": 16,
+            "utf8Bytes": 20,
+            "iterations": 12500,
+            "digest": "2e0fdb12133d98e1",
+            "elapsedMs": 0.0001154535199999998
+          },
+          {
+            "kind": "mixed",
+            "codeUnits": 1024,
+            "utf8Bytes": 1280,
+            "iterations": 195,
+            "digest": "f3f63ebdff4f7125",
+            "elapsedMs": 0.004492723076923073
+          },
+          {
+            "kind": "mixed",
+            "codeUnits": 65536,
+            "utf8Bytes": 81920,
+            "iterations": 4,
+            "digest": "765e5d480c75a325",
+            "elapsedMs": 0.33612850000000094
+          },
+          {
+            "kind": "surrogates",
+            "codeUnits": 3,
+            "utf8Bytes": 7,
+            "iterations": 66666,
+            "digest": "6a651eddf5135bc3",
+            "elapsedMs": 0.000022034440344403406
+          },
+          {
+            "kind": "surrogates",
+            "codeUnits": 192,
+            "utf8Bytes": 448,
+            "iterations": 1041,
+            "digest": "cd20a268dd36d925",
+            "elapsedMs": 0.0010150537944284288
+          },
+          {
+            "kind": "surrogates",
+            "codeUnits": 12288,
+            "utf8Bytes": 28672,
+            "iterations": 16,
+            "digest": "2f3d0714ca0fa325",
+            "elapsedMs": 0.06648837500000049
+          }
+        ],
+        "elapsedMs": 0.8135341327206579,
+        "scope": "Local UTF8 hashing kernel; independent TextEncoder/BigInt oracle checks every case. No encoded copy is made by the implementation. No cloud throughput or total heap claim."
+      }
+    ],
+    "current": [
+      {
+        "cases": [
+          {
+            "kind": "ascii",
+            "codeUnits": 16,
+            "utf8Bytes": 16,
+            "iterations": 12500,
+            "digest": "2e373913e5ad677d",
+            "elapsedMs": 0.00006890415999999988
+          },
+          {
+            "kind": "ascii",
+            "codeUnits": 1024,
+            "utf8Bytes": 1024,
+            "iterations": 195,
+            "digest": "b7970ec3ca629125",
+            "elapsedMs": 0.0035197641025640916
+          },
+          {
+            "kind": "ascii",
+            "codeUnits": 65536,
+            "utf8Bytes": 65536,
+            "iterations": 4,
+            "digest": "a90624c5383da325",
+            "elapsedMs": 0.2196940000000005
+          },
+          {
+            "kind": "unicode",
+            "codeUnits": 4,
+            "utf8Bytes": 9,
+            "iterations": 50000,
+            "digest": "132ab21355d56174",
+            "elapsedMs": 0.00002326823999999988
+          },
+          {
+            "kind": "unicode",
+            "codeUnits": 256,
+            "utf8Bytes": 576,
+            "iterations": 781,
+            "digest": "9101cba364fffa65",
+            "elapsedMs": 0.001036472471190784
+          },
+          {
+            "kind": "unicode",
+            "codeUnits": 16384,
+            "utf8Bytes": 36864,
+            "iterations": 12,
+            "digest": "e1ce6260d7453325",
+            "elapsedMs": 0.10705333333333418
+          },
+          {
+            "kind": "mixed",
+            "codeUnits": 16,
+            "utf8Bytes": 20,
+            "iterations": 12500,
+            "digest": "2e0fdb12133d98e1",
+            "elapsedMs": 0.00007238119999999981
+          },
+          {
+            "kind": "mixed",
+            "codeUnits": 1024,
+            "utf8Bytes": 1280,
+            "iterations": 195,
+            "digest": "f3f63ebdff4f7125",
+            "elapsedMs": 0.004945984615384611
+          },
+          {
+            "kind": "mixed",
+            "codeUnits": 65536,
+            "utf8Bytes": 81920,
+            "iterations": 4,
+            "digest": "765e5d480c75a325",
+            "elapsedMs": 0.3140767500000017
+          },
+          {
+            "kind": "surrogates",
+            "codeUnits": 3,
+            "utf8Bytes": 7,
+            "iterations": 66666,
+            "digest": "6a651eddf5135bc3",
+            "elapsedMs": 0.000022417214172141548
+          },
+          {
+            "kind": "surrogates",
+            "codeUnits": 192,
+            "utf8Bytes": 448,
+            "iterations": 1041,
+            "digest": "cd20a268dd36d925",
+            "elapsedMs": 0.0009644687800192016
+          },
+          {
+            "kind": "surrogates",
+            "codeUnits": 12288,
+            "utf8Bytes": 28672,
+            "iterations": 16,
+            "digest": "2f3d0714ca0fa325",
+            "elapsedMs": 0.060896624999999815
+          }
+        ],
+        "elapsedMs": 0.7123743691166671,
+        "scope": "Local UTF8 hashing kernel; independent TextEncoder/BigInt oracle checks every case. No encoded copy is made by the implementation. No cloud throughput or total heap claim."
+      },
+      {
+        "cases": [
+          {
+            "kind": "ascii",
+            "codeUnits": 16,
+            "utf8Bytes": 16,
+            "iterations": 12500,
+            "digest": "2e373913e5ad677d",
+            "elapsedMs": 0.00007026759999999996
+          },
+          {
+            "kind": "ascii",
+            "codeUnits": 1024,
+            "utf8Bytes": 1024,
+            "iterations": 195,
+            "digest": "b7970ec3ca629125",
+            "elapsedMs": 0.0034930923076923175
+          },
+          {
+            "kind": "ascii",
+            "codeUnits": 65536,
+            "utf8Bytes": 65536,
+            "iterations": 4,
+            "digest": "a90624c5383da325",
+            "elapsedMs": 0.21989425000000118
+          },
+          {
+            "kind": "unicode",
+            "codeUnits": 4,
+            "utf8Bytes": 9,
+            "iterations": 50000,
+            "digest": "132ab21355d56174",
+            "elapsedMs": 0.000022682920000000024
+          },
+          {
+            "kind": "unicode",
+            "codeUnits": 256,
+            "utf8Bytes": 576,
+            "iterations": 781,
+            "digest": "9101cba364fffa65",
+            "elapsedMs": 0.0010520973111395578
+          },
+          {
+            "kind": "unicode",
+            "codeUnits": 16384,
+            "utf8Bytes": 36864,
+            "iterations": 12,
+            "digest": "e1ce6260d7453325",
+            "elapsedMs": 0.06650699999999905
+          },
+          {
+            "kind": "mixed",
+            "codeUnits": 16,
+            "utf8Bytes": 20,
+            "iterations": 12500,
+            "digest": "2e0fdb12133d98e1",
+            "elapsedMs": 0.0000876788799999997
+          },
+          {
+            "kind": "mixed",
+            "codeUnits": 1024,
+            "utf8Bytes": 1280,
+            "iterations": 195,
+            "digest": "f3f63ebdff4f7125",
+            "elapsedMs": 0.00479297948717954
+          },
+          {
+            "kind": "mixed",
+            "codeUnits": 65536,
+            "utf8Bytes": 81920,
+            "iterations": 4,
+            "digest": "765e5d480c75a325",
+            "elapsedMs": 0.3014879999999991
+          },
+          {
+            "kind": "surrogates",
+            "codeUnits": 3,
+            "utf8Bytes": 7,
+            "iterations": 66666,
+            "digest": "6a651eddf5135bc3",
+            "elapsedMs": 0.000022268892688926876
+          },
+          {
+            "kind": "surrogates",
+            "codeUnits": 192,
+            "utf8Bytes": 448,
+            "iterations": 1041,
+            "digest": "cd20a268dd36d925",
+            "elapsedMs": 0.0009617444764649249
+          },
+          {
+            "kind": "surrogates",
+            "codeUnits": 12288,
+            "utf8Bytes": 28672,
+            "iterations": 16,
+            "digest": "2f3d0714ca0fa325",
+            "elapsedMs": 0.061120187500000256
+          }
+        ],
+        "elapsedMs": 0.6595122493751648,
+        "scope": "Local UTF8 hashing kernel; independent TextEncoder/BigInt oracle checks every case. No encoded copy is made by the implementation. No cloud throughput or total heap claim."
+      },
+      {
+        "cases": [
+          {
+            "kind": "ascii",
+            "codeUnits": 16,
+            "utf8Bytes": 16,
+            "iterations": 12500,
+            "digest": "2e373913e5ad677d",
+            "elapsedMs": 0.00006839368000000007
+          },
+          {
+            "kind": "ascii",
+            "codeUnits": 1024,
+            "utf8Bytes": 1024,
+            "iterations": 195,
+            "digest": "b7970ec3ca629125",
+            "elapsedMs": 0.0034377076923076855
+          },
+          {
+            "kind": "ascii",
+            "codeUnits": 65536,
+            "utf8Bytes": 65536,
+            "iterations": 4,
+            "digest": "a90624c5383da325",
+            "elapsedMs": 0.2191030000000005
+          },
+          {
+            "kind": "unicode",
+            "codeUnits": 4,
+            "utf8Bytes": 9,
+            "iterations": 50000,
+            "digest": "132ab21355d56174",
+            "elapsedMs": 0.000023844720000000024
+          },
+          {
+            "kind": "unicode",
+            "codeUnits": 256,
+            "utf8Bytes": 576,
+            "iterations": 781,
+            "digest": "9101cba364fffa65",
+            "elapsedMs": 0.0010910691421254814
+          },
+          {
+            "kind": "unicode",
+            "codeUnits": 16384,
+            "utf8Bytes": 36864,
+            "iterations": 12,
+            "digest": "e1ce6260d7453325",
+            "elapsedMs": 0.06627741666666746
+          },
+          {
+            "kind": "mixed",
+            "codeUnits": 16,
+            "utf8Bytes": 20,
+            "iterations": 12500,
+            "digest": "2e0fdb12133d98e1",
+            "elapsedMs": 0.00007633983999999941
+          },
+          {
+            "kind": "mixed",
+            "codeUnits": 1024,
+            "utf8Bytes": 1280,
+            "iterations": 195,
+            "digest": "f3f63ebdff4f7125",
+            "elapsedMs": 0.005027523076923082
+          },
+          {
+            "kind": "mixed",
+            "codeUnits": 65536,
+            "utf8Bytes": 81920,
+            "iterations": 4,
+            "digest": "765e5d480c75a325",
+            "elapsedMs": 0.3045912500000014
+          },
+          {
+            "kind": "surrogates",
+            "codeUnits": 3,
+            "utf8Bytes": 7,
+            "iterations": 66666,
+            "digest": "6a651eddf5135bc3",
+            "elapsedMs": 0.00002188490384903848
+          },
+          {
+            "kind": "surrogates",
+            "codeUnits": 192,
+            "utf8Bytes": 448,
+            "iterations": 1041,
+            "digest": "cd20a268dd36d925",
+            "elapsedMs": 0.0009939567723342866
+          },
+          {
+            "kind": "surrogates",
+            "codeUnits": 12288,
+            "utf8Bytes": 28672,
+            "iterations": 16,
+            "digest": "2f3d0714ca0fa325",
+            "elapsedMs": 0.07607837499999981
+          }
+        ],
+        "elapsedMs": 0.6767907614942087,
+        "scope": "Local UTF8 hashing kernel; independent TextEncoder/BigInt oracle checks every case. No encoded copy is made by the implementation. No cloud throughput or total heap claim."
+      },
+      {
+        "cases": [
+          {
+            "kind": "ascii",
+            "codeUnits": 16,
+            "utf8Bytes": 16,
+            "iterations": 12500,
+            "digest": "2e373913e5ad677d",
+            "elapsedMs": 0.0000687263200000001
+          },
+          {
+            "kind": "ascii",
+            "codeUnits": 1024,
+            "utf8Bytes": 1024,
+            "iterations": 195,
+            "digest": "b7970ec3ca629125",
+            "elapsedMs": 0.003468743589743603
+          },
+          {
+            "kind": "ascii",
+            "codeUnits": 65536,
+            "utf8Bytes": 65536,
+            "iterations": 4,
+            "digest": "a90624c5383da325",
+            "elapsedMs": 0.22001950000000114
+          },
+          {
+            "kind": "unicode",
+            "codeUnits": 4,
+            "utf8Bytes": 9,
+            "iterations": 50000,
+            "digest": "132ab21355d56174",
+            "elapsedMs": 0.00002311475999999999
+          },
+          {
+            "kind": "unicode",
+            "codeUnits": 256,
+            "utf8Bytes": 576,
+            "iterations": 781,
+            "digest": "9101cba364fffa65",
+            "elapsedMs": 0.0010673508322663092
+          },
+          {
+            "kind": "unicode",
+            "codeUnits": 16384,
+            "utf8Bytes": 36864,
+            "iterations": 12,
+            "digest": "e1ce6260d7453325",
+            "elapsedMs": 0.07397933333333384
+          },
+          {
+            "kind": "mixed",
+            "codeUnits": 16,
+            "utf8Bytes": 20,
+            "iterations": 12500,
+            "digest": "2e0fdb12133d98e1",
+            "elapsedMs": 0.0000735505599999999
+          },
+          {
+            "kind": "mixed",
+            "codeUnits": 1024,
+            "utf8Bytes": 1280,
+            "iterations": 195,
+            "digest": "f3f63ebdff4f7125",
+            "elapsedMs": 0.0048176923076922755
+          },
+          {
+            "kind": "mixed",
+            "codeUnits": 65536,
+            "utf8Bytes": 81920,
+            "iterations": 4,
+            "digest": "765e5d480c75a325",
+            "elapsedMs": 0.30805799999999905
+          },
+          {
+            "kind": "surrogates",
+            "codeUnits": 3,
+            "utf8Bytes": 7,
+            "iterations": 66666,
+            "digest": "6a651eddf5135bc3",
+            "elapsedMs": 0.00002270937209372069
+          },
+          {
+            "kind": "surrogates",
+            "codeUnits": 192,
+            "utf8Bytes": 448,
+            "iterations": 1041,
+            "digest": "cd20a268dd36d925",
+            "elapsedMs": 0.0009707819404419047
+          },
+          {
+            "kind": "surrogates",
+            "codeUnits": 12288,
+            "utf8Bytes": 28672,
+            "iterations": 16,
+            "digest": "2f3d0714ca0fa325",
+            "elapsedMs": 0.06108887500000115
+          }
+        ],
+        "elapsedMs": 0.6736583780155729,
+        "scope": "Local UTF8 hashing kernel; independent TextEncoder/BigInt oracle checks every case. No encoded copy is made by the implementation. No cloud throughput or total heap claim."
+      }
+    ]
+  }
+}

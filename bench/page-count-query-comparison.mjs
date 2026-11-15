@@ -9,7 +9,7 @@ import ts from "typescript";
 const baseline = process.env.LAKEQL_COMPARE_BASELINE ?? "c6a848a";
 const moduleName = process.env.LAKEQL_COMPARE_MODULE ?? "physical";
 const moduleNames = moduleName.split(",");
-if (moduleNames.some((name) => !/^(?:(?:core|parquet|http)\/)?[a-z-]+$/.test(name)))
+if (moduleNames.some((name) => !/^(?:(?:core|parquet|http)\/)?[a-z][a-z0-9-]*$/.test(name)))
   throw new Error("Invalid comparison module");
 const modules = await Promise.all(
   moduleNames.map(async (name) => {
@@ -46,7 +46,7 @@ registerHooks({load(url, context, next) { return sources.has(url) ? {format:"mod
 `,
   );
   const benchmarkName = process.env.LAKEQL_COMPARE_BENCHMARK ?? "page-count-query.mjs";
-  if (!/^[a-z-]+\.mjs$/.test(benchmarkName)) throw new Error("Invalid benchmark name");
+  if (!/^[a-z][a-z0-9-]*\.mjs$/.test(benchmarkName)) throw new Error("Invalid benchmark name");
   const benchmark = fileURLToPath(new URL(`./${benchmarkName}`, import.meta.url));
   const runs = { prior: [], current: [] };
   for (let round = 0; round < 5; round++) {

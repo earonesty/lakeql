@@ -1,0 +1,211 @@
+{
+  "baselineCommit": "3bf0ba1",
+  "sourceSha256": "5a421a3ba0950e701b1b4216bd906c42d0b5a8385d0b35bbad2ffee6e6a24972",
+  "scope": "Current hash candidate; four-round native R2 and constrained-heap HTTP matrices. Sparse counters are lower bounds on peaks and are not added. Diagnostic GC happens only after measured operation. No production total-memory-cap claim.",
+  "scenarios": [
+    {
+      "artifact": "docs/benchmarks/utf8-fingerprint-runtime-native-2026-11-14.json",
+      "transport": "native emulated R2",
+      "poolMiB": 64,
+      "jobs": 1,
+      "status": "complete",
+      "maxCounters": {
+        "usedSize": 44633828,
+        "totalSize": 81420288,
+        "embedderHeapUsedSize": 257936,
+        "backingStorageSize": 10740393
+      },
+      "finalAdmittedBytes": 0,
+      "postMeasurementGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 1194.00987,
+          "usedSize": 5139884,
+          "totalSize": 6017024,
+          "embedderHeapUsedSize": 1304,
+          "backingStorageSize": 366064
+        }
+      }
+    },
+    {
+      "artifact": "docs/benchmarks/utf8-fingerprint-runtime-native-2026-11-14.json",
+      "transport": "native emulated R2",
+      "poolMiB": 64,
+      "jobs": 4,
+      "status": "complete",
+      "maxCounters": {
+        "usedSize": 71285472,
+        "totalSize": 132562944,
+        "embedderHeapUsedSize": 257952,
+        "backingStorageSize": 33624754
+      },
+      "finalAdmittedBytes": 0,
+      "postMeasurementGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 2410.645163,
+          "usedSize": 5480384,
+          "totalSize": 6541312,
+          "embedderHeapUsedSize": 1304,
+          "backingStorageSize": 366064
+        }
+      }
+    },
+    {
+      "artifact": "docs/benchmarks/utf8-fingerprint-runtime-native-2026-11-14.json",
+      "transport": "native emulated R2",
+      "poolMiB": 128,
+      "jobs": 1,
+      "status": "complete",
+      "maxCounters": {
+        "usedSize": 44690840,
+        "totalSize": 80896000,
+        "embedderHeapUsedSize": 257936,
+        "backingStorageSize": 10740393
+      },
+      "finalAdmittedBytes": 0,
+      "postMeasurementGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 3043.411892,
+          "usedSize": 5139968,
+          "totalSize": 6017024,
+          "embedderHeapUsedSize": 1304,
+          "backingStorageSize": 366064
+        }
+      }
+    },
+    {
+      "artifact": "docs/benchmarks/utf8-fingerprint-runtime-native-2026-11-14.json",
+      "transport": "native emulated R2",
+      "poolMiB": 128,
+      "jobs": 4,
+      "status": "complete",
+      "maxCounters": {
+        "usedSize": 90700648,
+        "totalSize": 141643776,
+        "embedderHeapUsedSize": 257936,
+        "backingStorageSize": 11021774
+      },
+      "finalAdmittedBytes": 0,
+      "postMeasurementGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 4041.379517,
+          "usedSize": 5429224,
+          "totalSize": 6017024,
+          "embedderHeapUsedSize": 1304,
+          "backingStorageSize": 366064
+        }
+      }
+    },
+    {
+      "artifact": "docs/benchmarks/utf8-fingerprint-runtime-heap64-2026-11-14.json",
+      "transport": "localhost HTTP ranges",
+      "poolMiB": 64,
+      "jobs": 1,
+      "status": "complete",
+      "maxCounters": {
+        "usedSize": 51024804,
+        "totalSize": 56135680,
+        "embedderHeapUsedSize": 257936,
+        "backingStorageSize": 24364926
+      },
+      "finalAdmittedBytes": 0,
+      "postMeasurementGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 681.271824,
+          "usedSize": 5156100,
+          "totalSize": 5754880,
+          "embedderHeapUsedSize": 1264,
+          "backingStorageSize": 366064
+        }
+      }
+    },
+    {
+      "artifact": "docs/benchmarks/utf8-fingerprint-runtime-heap64-2026-11-14.json",
+      "transport": "localhost HTTP ranges",
+      "poolMiB": 64,
+      "jobs": 4,
+      "status": "complete",
+      "maxCounters": {
+        "usedSize": 57211156,
+        "totalSize": 61235200,
+        "embedderHeapUsedSize": 257936,
+        "backingStorageSize": 30782027
+      },
+      "finalAdmittedBytes": 0,
+      "postMeasurementGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 1604.288221,
+          "usedSize": 5504380,
+          "totalSize": 6803456,
+          "embedderHeapUsedSize": 1264,
+          "backingStorageSize": 366064
+        }
+      }
+    },
+    {
+      "artifact": "docs/benchmarks/utf8-fingerprint-runtime-heap64-2026-11-14.json",
+      "transport": "localhost HTTP ranges",
+      "poolMiB": 128,
+      "jobs": 1,
+      "status": "complete",
+      "maxCounters": {
+        "usedSize": 51006248,
+        "totalSize": 56922112,
+        "embedderHeapUsedSize": 257936,
+        "backingStorageSize": 26647464
+      },
+      "finalAdmittedBytes": 0,
+      "postMeasurementGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 1912.585494,
+          "usedSize": 5156436,
+          "totalSize": 6541312,
+          "embedderHeapUsedSize": 1264,
+          "backingStorageSize": 366064
+        }
+      }
+    },
+    {
+      "artifact": "docs/benchmarks/utf8-fingerprint-runtime-heap64-2026-11-14.json",
+      "transport": "localhost HTTP ranges",
+      "poolMiB": 128,
+      "jobs": 4,
+      "status": "complete",
+      "maxCounters": {
+        "usedSize": 49873360,
+        "totalSize": 54300672,
+        "embedderHeapUsedSize": 257936,
+        "backingStorageSize": 22942692
+      },
+      "finalAdmittedBytes": 0,
+      "postMeasurementGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 2606.834525,
+          "usedSize": 5467840,
+          "totalSize": 6541312,
+          "embedderHeapUsedSize": 1264,
+          "backingStorageSize": 366064
+        }
+      }
+    }
+  ],
+  "totals": {
+    "primary": {
+      "ok": 64,
+      "budget": 16
+    },
+    "pinnedRetry": {
+      "budget": 8
+    },
+    "afterReleaseRetry": {
+      "ok": 8
+    }
+  }
+}

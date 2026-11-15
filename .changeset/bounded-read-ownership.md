@@ -480,3 +480,5 @@ entry metadata, and its configured allocation pool is honored. Tiny cache budget
 may decline retention/read-ahead while demanded reads use exact ranges.
 
 Owned footer schema and key/value conversion releases raw metadata scratch per entry. Column conversion shares the same range helper; unknown logical metadata retains its raw aliases under the output owner.
+
+ASCII fingerprinting uses exact two-word arithmetic without per-byte BigInt work or an encoded copy. Non-ASCII input continues through the established UTF8 hash path, preserving all existing fingerprints.

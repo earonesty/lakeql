@@ -59,3 +59,25 @@ it("admits fingerprint serialization and retains only the digest, with transacti
     expect.objectContaining({ code: "LAKEQL_BUDGET_EXCEEDED" }),
   );
 });
+
+it("preserves carries and wrapping over deterministic mixed UTF16 sequences", () => {
+  let seed = 0x9e3779b9;
+  for (const length of [1, 7, 31, 255, 4097, 65536]) {
+    let text = "";
+    for (let i = 0; i < length; i++) {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      text += String.fromCharCode(seed >>> 16);
+    }
+    expect(fnv1a64Utf8(text)).toBe(reference(text));
+  }
+});
+
+it.each([
+  0, 1, 31, 1024, 65536,
+])("preserves carries across an ASCII/UTF8 transition after %i code units", (length) => {
+  const prefix = "\0\x7fAZ09".repeat(Math.ceil(length / 6)).slice(0, length);
+  for (const suffix of ["", "雪😀\ud800"]) {
+    const input = prefix + suffix;
+    expect(fnv1a64Utf8(input)).toBe(reference(input));
+  }
+});

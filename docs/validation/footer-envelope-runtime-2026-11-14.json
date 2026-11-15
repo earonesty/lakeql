@@ -1,0 +1,211 @@
+{
+  "runtimeSourceCommit": "3bf0ba13e9a639c466ee6c258cc6426d1c4a04c7",
+  "scope": "Measured before the current fingerprint experiment. Fresh native workerd/R2 and managed-heap-constrained localhost HTTP runs, four rounds per scenario. No GC during measured rounds; final diagnostic GC only. Sparse samples are lower bounds on peaks; counters are not added together and no total-runtime cap is established.",
+  "scenarios": [
+    {
+      "artifact": "docs/benchmarks/footer-envelope-runtime-native-2026-11-14.json",
+      "transport": "native emulated R2",
+      "poolMiB": 64,
+      "jobs": 1,
+      "status": "complete",
+      "maxCounters": {
+        "usedSize": 45044432,
+        "totalSize": 80367616,
+        "embedderHeapUsedSize": 257936,
+        "backingStorageSize": 10740393
+      },
+      "finalAdmittedBytes": 0,
+      "postMeasurementGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 1363.418273,
+          "usedSize": 5140264,
+          "totalSize": 6012928,
+          "embedderHeapUsedSize": 1304,
+          "backingStorageSize": 366064
+        }
+      }
+    },
+    {
+      "artifact": "docs/benchmarks/footer-envelope-runtime-native-2026-11-14.json",
+      "transport": "native emulated R2",
+      "poolMiB": 64,
+      "jobs": 4,
+      "status": "complete",
+      "maxCounters": {
+        "usedSize": 71597636,
+        "totalSize": 132296704,
+        "embedderHeapUsedSize": 257952,
+        "backingStorageSize": 22792197
+      },
+      "finalAdmittedBytes": 0,
+      "postMeasurementGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 2706.010251,
+          "usedSize": 5480224,
+          "totalSize": 7323648,
+          "embedderHeapUsedSize": 1304,
+          "backingStorageSize": 366064
+        }
+      }
+    },
+    {
+      "artifact": "docs/benchmarks/footer-envelope-runtime-native-2026-11-14.json",
+      "transport": "native emulated R2",
+      "poolMiB": 128,
+      "jobs": 1,
+      "status": "complete",
+      "maxCounters": {
+        "usedSize": 44992992,
+        "totalSize": 80367616,
+        "embedderHeapUsedSize": 257936,
+        "backingStorageSize": 10740393
+      },
+      "finalAdmittedBytes": 0,
+      "postMeasurementGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 3386.711393,
+          "usedSize": 5140460,
+          "totalSize": 6275072,
+          "embedderHeapUsedSize": 1304,
+          "backingStorageSize": 366064
+        }
+      }
+    },
+    {
+      "artifact": "docs/benchmarks/footer-envelope-runtime-native-2026-11-14.json",
+      "transport": "native emulated R2",
+      "poolMiB": 128,
+      "jobs": 4,
+      "status": "complete",
+      "maxCounters": {
+        "usedSize": 90276252,
+        "totalSize": 142426112,
+        "embedderHeapUsedSize": 257936,
+        "backingStorageSize": 11108427
+      },
+      "finalAdmittedBytes": 0,
+      "postMeasurementGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 4409.601801,
+          "usedSize": 5430136,
+          "totalSize": 6012928,
+          "embedderHeapUsedSize": 1304,
+          "backingStorageSize": 366064
+        }
+      }
+    },
+    {
+      "artifact": "docs/benchmarks/footer-envelope-runtime-heap64-2026-11-14.json",
+      "transport": "localhost HTTP ranges",
+      "poolMiB": 64,
+      "jobs": 1,
+      "status": "complete",
+      "maxCounters": {
+        "usedSize": 28608760,
+        "totalSize": 36184064,
+        "embedderHeapUsedSize": 257936,
+        "backingStorageSize": 14374332
+      },
+      "finalAdmittedBytes": 0,
+      "postMeasurementGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 682.690129,
+          "usedSize": 5156740,
+          "totalSize": 6275072,
+          "embedderHeapUsedSize": 1264,
+          "backingStorageSize": 366064
+        }
+      }
+    },
+    {
+      "artifact": "docs/benchmarks/footer-envelope-runtime-heap64-2026-11-14.json",
+      "transport": "localhost HTTP ranges",
+      "poolMiB": 64,
+      "jobs": 4,
+      "status": "complete",
+      "maxCounters": {
+        "usedSize": 59882392,
+        "totalSize": 63471616,
+        "embedderHeapUsedSize": 257936,
+        "backingStorageSize": 29994515
+      },
+      "finalAdmittedBytes": 0,
+      "postMeasurementGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 1610.590449,
+          "usedSize": 5504264,
+          "totalSize": 7061504,
+          "embedderHeapUsedSize": 1264,
+          "backingStorageSize": 366064
+        }
+      }
+    },
+    {
+      "artifact": "docs/benchmarks/footer-envelope-runtime-heap64-2026-11-14.json",
+      "transport": "localhost HTTP ranges",
+      "poolMiB": 128,
+      "jobs": 1,
+      "status": "complete",
+      "maxCounters": {
+        "usedSize": 51012480,
+        "totalSize": 56131584,
+        "embedderHeapUsedSize": 257936,
+        "backingStorageSize": 24348145
+      },
+      "finalAdmittedBytes": 0,
+      "postMeasurementGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 1943.983896,
+          "usedSize": 5156772,
+          "totalSize": 6537216,
+          "embedderHeapUsedSize": 1264,
+          "backingStorageSize": 366064
+        }
+      }
+    },
+    {
+      "artifact": "docs/benchmarks/footer-envelope-runtime-heap64-2026-11-14.json",
+      "transport": "localhost HTTP ranges",
+      "poolMiB": 128,
+      "jobs": 4,
+      "status": "complete",
+      "maxCounters": {
+        "usedSize": 50948976,
+        "totalSize": 55345152,
+        "embedderHeapUsedSize": 257936,
+        "backingStorageSize": 34969618
+      },
+      "finalAdmittedBytes": 0,
+      "postMeasurementGc": {
+        "status": "collected",
+        "heap": {
+          "atMs": 2638.450502,
+          "usedSize": 5468416,
+          "totalSize": 6799360,
+          "embedderHeapUsedSize": 1264,
+          "backingStorageSize": 366064
+        }
+      }
+    }
+  ],
+  "totals": {
+    "primary": {
+      "ok": 64,
+      "budget": 16
+    },
+    "pinnedRetry": {
+      "budget": 8
+    },
+    "afterReleaseRetry": {
+      "ok": 8
+    }
+  },
+  "finding": "All operation, ownership and recovery assertions pass, but native R2 with the 64 MiB pool/four jobs samples 71597636 managed-heap bytes. A 64 MiB pool remains different from a 64 MiB runtime cap. Current constrained HTTP managed heap peaks below its flag, with transport backing outside that constraint. GC-sensitive differences from earlier runs are not a measured causal heap reduction."
+}

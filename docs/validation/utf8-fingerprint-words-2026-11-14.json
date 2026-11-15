@@ -1,0 +1,40 @@
+{
+  "status": "validated; broader audit remains open",
+  "baseline": "3bf0ba1",
+  "sourceSha256": "5a421a3ba0950e701b1b4216bd906c42d0b5a8385d0b35bbad2ffee6e6a24972",
+  "contract": "FNV-1a fingerprints remain byte-for-byte compatible. ASCII prefix hashing uses two unsigned 32-bit words and exact carry arithmetic for the prime 2^40 + 435. After the first non-ASCII code unit, the established TextEncoder-compatible UTF8/BigInt loop continues from the exact intermediate digest. No encoded copy or input-sized workspace is introduced; behavior selects itself from content.",
+  "rejectedExperiments": [
+    "Captured two-word state was substantially slower than the published BigInt loop.",
+    "Register-local two-word arithmetic improved ASCII but regressed general Unicode; it is not shipped."
+  ],
+  "validationCases": [
+    "Every UTF16 code unit and surrogate boundary against independent TextEncoder/BigInt reference",
+    "Deterministic mixed UTF16 sequences through 65536 units",
+    "ASCII-to-Unicode transitions at 0/1/31/1024/65536 units, including NUL, DEL and lone surrogate",
+    "Existing exact/one-byte-short fingerprint serialization admission and zero cleanup"
+  ],
+  "runtimeEvidence": "utf8-fingerprint-runtime-2026-11-14.json",
+  "remaining": [
+    "Broader allocation integration and whole-runtime caps"
+  ],
+  "performance": {
+    "node": "Final sum of per-case medians 0.85435 \u2192 0.67522 ms; workload mix is diagnostic, not a real query. Large ASCII improved around 1.5\u20131.7x across runs; Unicode/mixed results vary around parity.",
+    "worker": "Native workerd host-timed comparison: about 1.20x for 1024-character ASCII, 1.00x for 65536-character ASCII. Unicode/mixed cases range around parity; dispatch overhead is included.",
+    "completeQueries": "Metadata-enabled real Parquet comparisons: 309.61 \u2192 308.08 ms and 296.89 \u2192 300.15 ms. Both check all 512 rows, metadata/decoded warm hits, zero warm requests and zero final charges. No end-to-end speedup claim."
+  },
+  "validation": {
+    "regularPassed": 4077,
+    "regularSkipped": 645,
+    "workerPassed": 95,
+    "conformancePassed": 520,
+    "conformanceGuardSkipped": 1,
+    "referencePassed": 120,
+    "releaseChecks": "build, types, package consumers, compatibility, changeset, fixtures, large files, lint passed"
+  },
+  "publicR2": {
+    "scenarios": 52,
+    "headroomBytes": 524288,
+    "peakIncrementalChargedBytes": 384214
+  },
+  "arithmeticProof": "For H = high*2^32 + low and P = 2^40 + 435, low*435 is below 2^41 and exactly representable. Its upper word is the carry; the new high word is high*435 + carry + low*256 modulo 2^32. Math.imul and bitwise truncation implement those modular terms, while division by 2^32 gives an exact carry before floor. UTF8 continuation starts from the reconstructed 64-bit digest."
+}
