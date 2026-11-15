@@ -461,6 +461,24 @@ it("runs SQL over named Iceberg table bindings", async () => {
       .toArray(),
   ).rejects.toMatchObject({ code: "LAKEQL_VALIDATION_ERROR" });
 
+  await expect(
+    lake
+      .sql(
+        "select id from places where id = (select max(id) from places where country = 'US' and id < 10 and id > (select min(id) from places where country = 'US'))",
+        { icebergTables },
+      )
+      .toArray(),
+  ).resolves.toEqual([{ id: 3 }]);
+
+  await expect(
+    lake
+      .sql(
+        "select p.id, (select max(q.id) from places q where q.nation = p.nation and q.id > (select min(id) from places where id < 10)) as maximum from places p where p.id = 0",
+        { icebergTables },
+      )
+      .toArray(),
+  ).resolves.toEqual([{ id: 0, maximum: 203 }]);
+
   const leakedTempObjects = [];
   for await (const object of store.list("__lakeql_sql_iceberg/"))
     leakedTempObjects.push(object.path);
@@ -1491,5 +1509,81 @@ it("loads, plans, and scans an Iceberg table through the unified engine surface"
     { id: 201, nation: "US" },
     { id: 202, nation: "US" },
     { id: 203, nation: "US" },
+  ]);
+});
+
+it("executes nested scalar, aggregate-argument and bigint-correlated queries over real Parquet", async () => {
+  const store = memoryStore();
+  await writePartitionedParquet(store, "sql/scalar-review", {
+    rows: [
+      { group_id: 9007199254740993n, amount: 10, bonus: 5 },
+      { group_id: 9007199254740993n, amount: 20, bonus: 5 },
+      { group_id: 9007199254740994n, amount: 30, bonus: 5 },
+    ],
+  });
+  const lake = createLake({ store });
+  const table = "read_parquet('sql/scalar-review/*.parquet')";
+  const nested = `(SELECT MAX(amount) FROM ${table} WHERE amount > (SELECT AVG(amount) FROM ${table}))`;
+  await expect(
+    lake.sql(`SELECT amount, ${nested} AS a, ${nested} AS b FROM ${table} LIMIT 1`).toArray(),
+  ).resolves.toEqual([{ amount: 10, a: 30, b: 30 }]);
+  await expect(
+    lake
+      .sql(`SELECT SUM(amount + (SELECT MAX(bonus) FROM ${table})) AS total FROM ${table}`)
+      .toArray(),
+  ).resolves.toEqual([{ total: 75 }]);
+  for (const [scalar, expected] of [
+    [`SELECT amount FROM ${table} ORDER BY amount LIMIT 1`, [20, 20, 30]],
+    [`SELECT amount FROM ${table} ORDER BY amount DESC LIMIT 1 OFFSET 1`, [null, null, 30]],
+    [`SELECT amount FROM ${table} WHERE amount > 100 LIMIT 1`, [null, null, null]],
+  ] as const) {
+    const lookup = `(SELECT MAX(p.amount) FROM ${table} p WHERE p.group_id = a.group_id AND p.amount > (${scalar}))`;
+    await expect(
+      lake
+        .sql(`SELECT a.amount, ${lookup} AS x, ${lookup} AS y FROM ${table} a ORDER BY a.amount`)
+        .toArray(),
+    ).resolves.toEqual(
+      expected.map((value, index) => ({ amount: (index + 1) * 10, x: value, y: value })),
+    );
+  }
+  await expect(
+    lake
+      .sql(
+        `SELECT amount, SUM(amount + (SELECT MAX(bonus) FROM ${table})) FILTER (WHERE amount > (SELECT MIN(amount) FROM ${table})) OVER (PARTITION BY (SELECT MAX(bonus) FROM ${table})) AS total FROM ${table} QUALIFY amount > (SELECT MIN(amount) FROM ${table}) ORDER BY amount`,
+      )
+      .toArray(),
+  ).resolves.toEqual([
+    { amount: 20, total: 60 },
+    { amount: 30, total: 60 },
+  ]);
+  await expect(
+    lake
+      .sql(
+        `SELECT amount FROM ${table} WHERE group_id IN (SELECT group_id FROM ${table} GROUP BY group_id HAVING MAX(amount + (SELECT MAX(bonus) FROM ${table})) > (SELECT MAX(amount) FROM ${table}))`,
+      )
+      .toArray(),
+  ).resolves.toEqual([{ amount: 30 }]);
+  const correlated = `(SELECT MAX(p.amount) FROM ${table} p WHERE p.group_id = a.group_id AND p.amount > (SELECT AVG(amount) FROM ${table}))`;
+  await expect(
+    lake
+      .sql(
+        `SELECT a.amount, ${correlated} AS x, ${correlated} AS y FROM ${table} a ORDER BY a.amount`,
+      )
+      .toArray(),
+  ).resolves.toEqual([
+    { amount: 10, x: null, y: null },
+    { amount: 20, x: null, y: null },
+    { amount: 30, x: 30, y: 30 },
+  ]);
+  await expect(
+    lake
+      .sql(
+        `SELECT a.amount, (SELECT MAX(p.amount) FROM ${table} p WHERE p.group_id = a.group_id) AS maximum FROM ${table} a ORDER BY a.amount`,
+      )
+      .toArray(),
+  ).resolves.toEqual([
+    { amount: 10, maximum: 20 },
+    { amount: 20, maximum: 20 },
+    { amount: 30, maximum: 30 },
   ]);
 });

@@ -1,3 +1,4 @@
+import { jsonListBytes } from "./aggregate-memory.js";
 import {
   type Batch,
   type BatchExprValues,
@@ -13,10 +14,12 @@ import { LakeqlError } from "./errors.js";
 import type { Scalar } from "./expr.js";
 import { isIntervalValue } from "./interval.js";
 import type { AggregateExpr, AggregateSpec, QueryBudget } from "./query.js";
+import { RunningCounter } from "./running-counter.js";
 import { isTimestampValue, TimestampValue } from "./timestamp.js";
 import type { Row } from "./types.js";
 import {
   createVectorAggregateStates,
+  enforceVectorAggregateStatesBudget,
   finalizeVectorAggregateStates,
   mergeVectorAggregateStates,
   restoreVectorAggregateStates,
@@ -28,6 +31,89 @@ import {
   type VectorAggregateStates,
   type VectorAggregateValue,
 } from "./vector-aggregate.js";
+import { inspectDistinctMemoryBytes } from "./vector-aggregate-distinct.js";
+
+// Counters contain no payload references, so holding one shared group does not
+// keep another directory's groups alive. Unbudgeted updates invalidate the byte
+// measurement epoch; enabling a byte budget initializes that epoch once.
+class GroupUsage extends RunningCounter {
+  unmeasured = false;
+}
+const groupOwners = new WeakMap<VectorGroup, Map<GroupUsage, number>>();
+
+class GroupDirectory extends Map<string, VectorGroup> {
+  readonly usage = new GroupUsage();
+
+  override set(key: string, group: VectorGroup): this {
+    if (this.has(key)) this.delete(key);
+    this.usage.add(groupBytes(key, group));
+    const owners = groupOwners.get(group) ?? new Map<GroupUsage, number>();
+    owners.set(this.usage, (owners.get(this.usage) ?? 0) + 1);
+    if (hasUnmeasuredState(group)) this.usage.unmeasured = true;
+    groupOwners.set(group, owners);
+    return super.set(key, group);
+  }
+
+  override delete(key: string): boolean {
+    const group = this.get(key);
+    if (group === undefined) return false;
+    this.usage.remove(groupBytes(key, group));
+    const owners = groupOwners.get(group);
+    const count = owners?.get(this.usage) ?? 0;
+    if (count <= 1) owners?.delete(this.usage);
+    else owners?.set(this.usage, count - 1);
+    if (owners?.size === 0) groupOwners.delete(group);
+    return super.delete(key);
+  }
+
+  measure(budget: QueryBudget): void {
+    if (!this.usage.unmeasured) return;
+    for (const group of this.values()) {
+      const before = groupStatesBytes(group);
+      try {
+        enforceVectorAggregateStatesBudget(group.states, { budget });
+      } finally {
+        groupSizeChanged(group, groupStatesBytes(group) - before);
+      }
+    }
+    this.usage.unmeasured = false;
+  }
+
+  override clear(): void {
+    for (const key of this.keys()) this.delete(key);
+    this.usage.unmeasured = false;
+  }
+}
+
+function groupBytes(key: string, group: VectorGroup, inspect = false): number {
+  let bytes = 64 + key.length * 2 + group.keyValues.length * 16;
+  for (const state of Object.values(group.states))
+    bytes += estimateAggregateStateBytes(state, inspect);
+  return bytes;
+}
+
+function groupStatesBytes(group: VectorGroup): number {
+  let bytes = 0;
+  for (const state of Object.values(group.states)) bytes += estimateAggregateStateBytes(state);
+  return bytes;
+}
+
+function hasUnmeasuredState(group: VectorGroup): boolean {
+  return Object.values(group.states).some(
+    (state) => "memoryBytes" in state && state.memoryBytes === 0,
+  );
+}
+
+function groupSizeChanged(group: VectorGroup, delta: number): void {
+  const owners = groupOwners.get(group);
+  if (owners === undefined) return;
+  const unmeasured = hasUnmeasuredState(group);
+  for (const [usage, count] of owners) {
+    if (delta > 0) usage.add(delta * count, 0);
+    else if (delta < 0) usage.remove(-delta * count, 0);
+    if (unmeasured) usage.unmeasured = true;
+  }
+}
 
 export interface VectorGroupByOptions extends VectorAggregateOptions {
   maxGroups?: number;
@@ -83,7 +169,7 @@ export function createVectorGroupByState(
   return {
     keys: [...keys],
     spec,
-    groups: new Map(),
+    groups: new GroupDirectory(),
   };
 }
 
@@ -312,7 +398,12 @@ export function updateVectorGroupAggregateValue(
       alias,
     });
   }
-  updateVectorAggregateStateValue(aggregateState, value, options);
+  const before = estimateAggregateStateBytes(aggregateState);
+  try {
+    updateVectorAggregateStateValue(aggregateState, value, options);
+  } finally {
+    groupSizeChanged(group, estimateAggregateStateBytes(aggregateState) - before);
+  }
 }
 
 export function enforceVectorGroupByBudget(state: VectorGroupByState, budget?: QueryBudget): void {
@@ -487,7 +578,12 @@ export function mergeVectorGroupByStates(
         ),
       });
     } else {
-      mergeVectorAggregateStates(targetGroup.states, sourceGroup.states, options);
+      const before = groupStatesBytes(targetGroup);
+      try {
+        mergeVectorAggregateStates(targetGroup.states, sourceGroup.states, options);
+      } finally {
+        groupSizeChanged(targetGroup, groupStatesBytes(targetGroup) - before);
+      }
     }
     enforceGroupByMemoryBudget(target, options.budget);
   }
@@ -709,7 +805,13 @@ function restoreGroupValue(value: VectorGroupBySnapshotValue): Scalar {
 
 function enforceGroupByMemoryBudget(state: VectorGroupByState, budget?: QueryBudget): void {
   if (budget?.maxMemoryBytes === undefined) return;
-  const actual = estimateVectorGroupByMemoryBytes(state);
+  if (state.groups instanceof GroupDirectory) state.groups.measure(budget);
+  // Factory-created directories maintain totals. A caller-supplied plain Map
+  // retains the compatible inspection path because it has no mutation hooks.
+  const actual =
+    state.groups instanceof GroupDirectory
+      ? state.groups.usage.bytes
+      : estimateVectorGroupByMemoryBytes(state);
   if (actual > budget.maxMemoryBytes) {
     throw new LakeqlError(
       "LAKEQL_BUDGET_EXCEEDED",
@@ -722,15 +824,12 @@ function enforceGroupByMemoryBudget(state: VectorGroupByState, budget?: QueryBud
 function estimateVectorGroupByMemoryBytes(state: VectorGroupByState): number {
   let bytes = 0;
   for (const [key, group] of state.groups) {
-    bytes += 64 + key.length * 2 + group.keyValues.length * 16;
-    for (const aggregateState of Object.values(group.states)) {
-      bytes += estimateAggregateStateBytes(aggregateState);
-    }
+    bytes += groupBytes(key, group, true);
   }
   return bytes;
 }
 
-function estimateAggregateStateBytes(state: VectorAggregateState): number {
+function estimateAggregateStateBytes(state: VectorAggregateState, inspect = false): number {
   switch (state.op) {
     case "count":
     case "sum":
@@ -747,11 +846,18 @@ function estimateAggregateStateBytes(state: VectorAggregateState): number {
       return 32;
     case "median":
     case "quantile":
-      return 32 + state.memoryBytes;
+      return (
+        32 + (inspect && state.memoryBytes === 0 ? jsonListBytes(state.values) : state.memoryBytes)
+      );
     case "count_distinct":
     case "approx_count_distinct":
-      return 32 + state.memoryBytes;
+      return 32 + (inspect ? inspectDistinctMemoryBytes(state) : state.memoryBytes);
     case "mode":
-      return 32 + state.memoryBytes;
+      return (
+        32 +
+        (inspect && state.memoryBytes === 0
+          ? jsonListBytes(state.values.keys())
+          : state.memoryBytes)
+      );
   }
 }

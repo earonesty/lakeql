@@ -6,6 +6,7 @@ import {
 } from "./aggregate-memory.js";
 import { LakeqlError } from "./errors.js";
 import type { QueryBudget } from "./query.js";
+import { RunningCounter } from "./running-counter.js";
 import type { VectorAggregateValue } from "./vector-aggregate.js";
 
 const sortedRunMergeMinValues = 1024;
@@ -140,6 +141,15 @@ export function distinctSnapshotValues(state: VectorDistinctAggregateState): str
   return state.sortedValues === undefined
     ? [...state.values].sort(compareDistinctKeys)
     : state.sortedValues;
+}
+
+/** Read-only accounting for compatibility callers; never expands runs into a Set. */
+export function inspectDistinctMemoryBytes(state: VectorDistinctAggregateState): number {
+  if (state.memoryBytes !== unmeasuredMemoryBytes) return state.memoryBytes;
+  if (state.sortedRuns === undefined) return jsonListBytes(state.sortedValues ?? state.values);
+  const usage = new RunningCounter();
+  visitSortedUniqueRuns(state.sortedRuns, (value) => usage.add(jsonItemBytes(value)));
+  return usage.listBytes;
 }
 
 export function cloneDistinctAggregateState(

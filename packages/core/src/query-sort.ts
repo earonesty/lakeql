@@ -93,6 +93,7 @@ export class BoundedSelection<T> {
   constructor(
     readonly limit: number,
     private readonly compare: (a: T, b: T) => number,
+    private readonly changed?: (added: T, removed?: T) => void,
   ) {
     if (!Number.isSafeInteger(limit) || limit < 0)
       throw new LakeqlError("LAKEQL_TYPE_ERROR", "Top-k limit must be a non-negative safe integer");
@@ -113,9 +114,13 @@ export class BoundedSelection<T> {
       );
     const ordinal = this.ordinal++;
     const worst = this.heap.first;
-    if (this.heap.size < this.limit) this.heap.push({ value, ordinal });
-    else if (worst !== undefined && this.compare(value, worst.value) < 0)
+    if (this.heap.size < this.limit) {
+      this.changed?.(value);
+      this.heap.push({ value, ordinal });
+    } else if (worst !== undefined && this.compare(value, worst.value) < 0) {
+      this.changed?.(value, worst.value);
       this.heap.replaceFirst({ value, ordinal });
+    }
   }
   finish(): T[] {
     const result = new Array<T>(this.heap.size);

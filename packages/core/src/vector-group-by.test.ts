@@ -555,3 +555,145 @@ describe("vector group-by kernels", () => {
     );
   });
 });
+
+it("checks high-cardinality group budgets without revisiting existing groups", () => {
+  const state = createVectorGroupByState(["key"], { total: { op: "sum", column: "value" } });
+  const iterate = state.groups[Symbol.iterator].bind(state.groups);
+  let visits = 0;
+  state.groups[Symbol.iterator] = function* () {
+    for (const entry of iterate()) {
+      visits++;
+      yield entry;
+    }
+  };
+  const values = state.groups.values.bind(state.groups);
+  state.groups.values = function* () {
+    for (const group of values()) {
+      visits++;
+      yield group;
+    }
+  };
+  const entries = state.groups.entries.bind(state.groups);
+  state.groups.entries = function* () {
+    for (const entry of entries()) {
+      visits++;
+      yield entry;
+    }
+  };
+  const forEach = state.groups.forEach.bind(state.groups);
+  state.groups.forEach = (callback, thisArg) => {
+    forEach((value, key, map) => {
+      visits++;
+      callback.call(thisArg, value, key, map);
+    });
+  };
+  updateVectorGroupByState(
+    state,
+    batchFromColumns({
+      key: Array.from({ length: 1000 }, (_, i) => i),
+      value: Array.from({ length: 1000 }, () => 1),
+    }),
+    undefined,
+    { budget: { maxMemoryBytes: 1024 * 1024 } },
+  );
+  expect(state.groups.size).toBe(1000);
+  expect(visits).toBe(0);
+});
+
+it("keeps exact group totals through sharing, mutation, deletion, restore and clear", () => {
+  const spec = { total: { op: "median", column: "value" } } as const;
+  const state = createVectorGroupByState(["key"], spec);
+  updateVectorGroupByState(state, batchFromColumns({ key: [1], value: [5] }));
+  const key = [...state.groups.keys()][0];
+  if (key === undefined) throw Error("missing fixture");
+  const group = state.groups.get(key);
+  if (group === undefined) throw Error("missing group");
+  const base = 64 + key.length * 2 + 16 + 32;
+  const assertCap = (target: typeof state, values: number[]) => {
+    const cap = base + new TextEncoder().encode(JSON.stringify(values)).length;
+    expect(() => enforceVectorGroupByBudget(target, { maxMemoryBytes: cap })).not.toThrow();
+    expect(() => enforceVectorGroupByBudget(target, { maxMemoryBytes: cap - 1 })).toThrow(/budget/);
+  };
+  const borrowed = { ...state, groups: new Map(state.groups) };
+  assertCap(borrowed, [5]);
+  assertCap(state, [5]);
+  const shared = createVectorGroupByState(["key"], spec);
+  shared.groups.set(key, group);
+  updateVectorGroupAggregateValue(group, "total", 10);
+  assertCap(state, [5, 10]);
+  assertCap(shared, [5, 10]);
+  assertCap(borrowed, [5, 10]);
+  const alias = `${key}:alias`;
+  shared.groups.set(alias, group);
+  updateVectorGroupAggregateValue(group, "total", 11);
+  const duplicateCap =
+    2 * base + 2 * (alias.length - key.length) + 2 * JSON.stringify([5, 10, 11]).length;
+  expect(() => enforceVectorGroupByBudget(shared, { maxMemoryBytes: duplicateCap })).not.toThrow();
+  expect(() => enforceVectorGroupByBudget(shared, { maxMemoryBytes: duplicateCap - 1 })).toThrow(
+    /budget/,
+  );
+  shared.groups.delete(alias);
+  shared.groups.set(key, group);
+  assertCap(shared, [5, 10, 11]);
+  state.groups.delete(key);
+  expect(() => enforceVectorGroupByBudget(state, { maxMemoryBytes: 0 })).not.toThrow();
+  updateVectorGroupAggregateValue(group, "total", 15, { budget: { maxMemoryBytes: 1024 } });
+  assertCap(shared, [5, 10, 11, 15]);
+  const restored = restoreVectorGroupByState(["key"], spec, snapshotVectorGroupByState(shared), {
+    budget: { maxMemoryBytes: 1024 },
+  });
+  assertCap(restored, [5, 10, 11, 15]);
+  mergeVectorGroupByStates(restored, shared, { budget: { maxMemoryBytes: 1024 } });
+  assertCap(restored, [5, 10, 11, 15, 5, 10, 11, 15]);
+  shared.groups.clear();
+  expect(() => enforceVectorGroupByBudget(shared, { maxMemoryBytes: 0 })).not.toThrow();
+});
+
+it.each([
+  "median",
+  "quantile",
+  "count_distinct",
+  "approx_count_distinct",
+  "mode",
+] as const)("inspects unmeasured %s on borrowed Maps without mutating their groups", (op) => {
+  const state = createVectorGroupByState(["key"], {
+    total: op === "quantile" ? { op, column: "value", quantile: 0.5 } : { op, column: "value" },
+  });
+  updateVectorGroupByState(state, batchFromColumns({ key: [1, 1, 1], value: [5, 10, 5] }));
+  const [key, group] = [...state.groups][0] ?? [];
+  if (key === undefined || group === undefined) throw Error("missing group");
+  const borrowed = { ...state, groups: new Map(state.groups) };
+  const before = structuredClone(group);
+  const values = op === "median" || op === "quantile" ? [5, 10, 5] : ["number:5", "number:10"];
+  const cap = 64 + key.length * 2 + 16 + 32 + JSON.stringify(values).length;
+  expect(() => enforceVectorGroupByBudget(borrowed, { maxMemoryBytes: cap })).not.toThrow();
+  expect(() => enforceVectorGroupByBudget(borrowed, { maxMemoryBytes: cap - 1 })).toThrow(/budget/);
+  expect(group).toEqual(before);
+});
+
+it("inspects borrowed distinct runs without materializing or modifying them", () => {
+  const group = {
+    keyValues: [1],
+    states: {
+      total: {
+        op: "count_distinct" as const,
+        values: new Set<string>(),
+        sortedRuns: [
+          ["a", "c"],
+          ["b", "c"],
+        ],
+        memoryBytes: 0,
+      },
+    },
+  };
+  const state = {
+    keys: ["key"],
+    spec: { total: { op: "count_distinct" as const, column: "value" } },
+    groups: new Map([["k", group]]),
+  };
+  const before = structuredClone(group);
+  const cap = 64 + 2 + 16 + 32 + JSON.stringify(["a", "b", "c"]).length;
+  expect(() => enforceVectorGroupByBudget(state, { maxMemoryBytes: cap })).not.toThrow();
+  expect(() => enforceVectorGroupByBudget(state, { maxMemoryBytes: cap - 1 })).toThrow(/budget/);
+  expect(group).toEqual(before);
+});

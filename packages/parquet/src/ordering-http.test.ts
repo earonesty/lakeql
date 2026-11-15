@@ -9,6 +9,7 @@ import {
 } from "lakeql-core";
 import { expect, it } from "vitest";
 import { httpStore } from "../../http/src/index.js";
+import { createLake } from "../../lakeql/src/sql.js";
 import { writeParquet } from "./index.js";
 import { ParquetScanAdapter } from "./scan-adapter.js";
 
@@ -120,6 +121,32 @@ it.each([
     await expect(run(cancelled).toArray()).rejects.toMatchObject({ code: "LAKEQL_ABORTED" });
     expect(requests).toBe(beforeCancel);
     expect(await run(deferredLake).toArray()).toEqual(expected);
+    const scalar = "(SELECT MAX(score) FROM input)";
+    const sqlRows = async (repeat: boolean, memoMaxBytes?: number) => {
+      const lake = createLake({ store, scanRangeCache: { maxBytes: 0 } });
+      return lake
+        .sql(`SELECT id, ${scalar} AS a${repeat ? `, ${scalar} AS b` : ""} FROM input LIMIT 2`, {
+          tables: { input: "fixture.parquet" },
+          ...(memoMaxBytes === undefined ? {} : { memoMaxBytes }),
+        })
+        .toArray();
+    };
+    const beforeSingle = requests;
+    expect(await sqlRows(false)).toEqual([
+      { id: 0, a: 22 },
+      { id: 1, a: 22 },
+    ]);
+    const singleReads = requests - beforeSingle;
+    const beforeRepeated = requests;
+    const repeatedRows = [
+      { id: 0, a: 22, b: 22 },
+      { id: 1, a: 22, b: 22 },
+    ];
+    expect(await sqlRows(true)).toEqual(repeatedRows);
+    expect(requests - beforeRepeated).toBe(singleReads);
+    const beforeDisabled = requests;
+    expect(await sqlRows(true, 0)).toEqual(repeatedRows);
+    expect(requests - beforeDisabled).toBeGreaterThan(singleReads);
     const first = await run(rowLake).topKWithState();
     const resumed = await new Lake({ store, scanner: { async *scan() {} } })
       .path("fixture.parquet")

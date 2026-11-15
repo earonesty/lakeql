@@ -1,6 +1,7 @@
 import { env } from "cloudflare:test";
 import { eq, gte, Lake, lt, memoryCache, memoryStore, SharedMemoryCache } from "lakeql-core";
 import { describe, expect, it } from "vitest";
+import { createLake } from "../../lakeql/src/sql.js";
 import { type R2BucketLike, r2Store } from "../../r2/src/index.js";
 import { createParquetLake, type ParquetMetadata, writeParquet } from "./index.js";
 import { ParquetScanAdapter } from "./scan-adapter.js";
@@ -112,5 +113,35 @@ it("orders concurrent real Parquet jobs through native R2 with bounded candidate
     expect(await warm.toArray()).toEqual(expected);
     expect(warm.stats.rangeRequests).toBe(0);
   }
+  let reads = 0;
+  const getRange = store.getRange.bind(store);
+  store.getRange = async (path, range) => {
+    reads++;
+    return getRange(path, range);
+  };
+  const scalar = "(SELECT MAX(score) FROM input)";
+  const sql = async (repeat: boolean, memoMaxBytes?: number) => {
+    const lake = createLake({ store, scanRangeCache: { maxBytes: 0 } });
+    return lake
+      .sql(`SELECT id, ${scalar} AS a${repeat ? `, ${scalar} AS b` : ""} FROM input LIMIT 2`, {
+        tables: { input: "ordering.parquet" },
+        ...(memoMaxBytes === undefined ? {} : { memoMaxBytes }),
+      })
+      .toArray();
+  };
+  expect(await sql(false)).toEqual([
+    { id: 0, a: 16 },
+    { id: 1, a: 16 },
+  ]);
+  const singleReads = reads;
+  reads = 0;
+  expect(await sql(true)).toEqual([
+    { id: 0, a: 16, b: 16 },
+    { id: 1, a: 16, b: 16 },
+  ]);
+  expect(reads).toBe(singleReads);
+  reads = 0;
+  await sql(true, 0);
+  expect(reads).toBeGreaterThan(singleReads);
   await store.delete("ordering.parquet");
 });

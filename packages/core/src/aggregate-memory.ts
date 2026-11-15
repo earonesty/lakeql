@@ -1,3 +1,5 @@
+import { RunningCounter } from "./running-counter.js";
+
 /**
  * Buffering aggregates (count_distinct, approx_count_distinct, mode, median, quantile) charge a
  * memory budget the UTF-8 bytes of `JSON.stringify` of the list they buffer. They keep that size
@@ -22,13 +24,9 @@ export function jsonItemBytes(value: string | number): number {
 
 /** UTF-8 bytes of `JSON.stringify(values)` for a whole list. */
 export function jsonListBytes(values: Iterable<string | number>): number {
-  let bytes = 2;
-  let count = 0;
-  for (const value of values) {
-    bytes += jsonItemBytes(value);
-    count += 1;
-  }
-  return count === 0 ? bytes : bytes + count - 1;
+  const usage = new RunningCounter();
+  for (const value of values) usage.add(jsonItemBytes(value));
+  return usage.listBytes;
 }
 
 /**
@@ -40,5 +38,5 @@ export function jsonListBytesAfterAppend(
   itemsBefore: number,
   itemBytes: number,
 ): number {
-  return itemsBefore === 0 ? 2 + itemBytes : listBytes + 1 + itemBytes;
+  return RunningCounter.appendListBytes(listBytes, itemsBefore, itemBytes);
 }

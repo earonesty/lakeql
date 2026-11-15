@@ -1,3 +1,5 @@
+import { LakeqlError } from "./errors.js";
+import { RunningCounter } from "./running-counter.js";
 import type { ListOptions, ObjectHead, ObjectInfo, ObjectStore } from "./store.js";
 
 export interface ObjectStoreCacheOptions {
@@ -31,11 +33,17 @@ export class SharedMemoryCache {
   private readonly maxBytes: number;
   private readonly ttlMs: number | undefined;
   private readonly entries = new Map<string, SharedCacheRecord>();
-  private cachedBytes = 0;
+  private readonly usage = new RunningCounter();
 
   constructor(options: ObjectStoreCacheOptions = {}) {
     this.maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
     this.ttlMs = options.ttlMs;
+    if (
+      !Number.isSafeInteger(this.maxBytes) ||
+      this.maxBytes < 0 ||
+      (this.ttlMs !== undefined && (!Number.isFinite(this.ttlMs) || this.ttlMs < 0))
+    )
+      throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Invalid shared cache capacity or lifetime");
   }
 
   get<T>(key: string): SharedCacheEntry<T> | undefined {
@@ -51,8 +59,14 @@ export class SharedMemoryCache {
   }
 
   set<T>(key: string, value: T, bytes: number, options: SharedCacheSetOptions = {}): void {
+    if (!Number.isSafeInteger(bytes) || bytes < 0)
+      throw new LakeqlError(
+        "LAKEQL_VALIDATION_ERROR",
+        "Cache byte size must be a non-negative safe integer",
+      );
     if (bytes > this.maxBytes) return;
     this.delete(key);
+    if (!this.evict(bytes, options.priority ?? 1)) return;
     const entry: SharedCacheRecord = {
       value,
       bytes,
@@ -61,22 +75,53 @@ export class SharedMemoryCache {
     const expiry = this.expiresAt();
     if (expiry !== undefined) entry.expiresAt = expiry;
     this.entries.set(key, entry);
-    this.cachedBytes += bytes;
-    this.evict();
+    this.usage.add(bytes);
+  }
+
+  /** Bounded memoization of completed and in-flight work. Use a query-owned
+   * cache for query lifetime, or ttlMs for timed reuse. Pending work occupies a
+   * modeled entry charge; capacity pressure may evict it and permit recomputation.
+   * Eviction/expiry/clear never cancels a caller's promise or resurrects entries.
+   * measure covers retained result bytes; key/entry metadata are added here.
+   * This bounds memo retention, not allocations made inside compute(). */
+  async getOrCompute<T>(
+    key: string,
+    compute: () => Promise<T> | T,
+    measure: (value: T) => number,
+  ): Promise<T> {
+    const cached = this.get<Promise<T>>(key);
+    if (cached !== undefined) return await cached.value;
+    const overhead = 64 + key.length * 2;
+    const pending = Promise.resolve().then(compute);
+    this.set(key, pending, overhead);
+    try {
+      const value = await pending;
+      const bytes = measure(value);
+      if (!Number.isSafeInteger(bytes) || bytes < 0 || !Number.isSafeInteger(bytes + overhead))
+        throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Invalid memoized result size");
+      if (this.get<Promise<T>>(key)?.value === pending) {
+        if (overhead + bytes > this.maxBytes) this.delete(key);
+        else this.set(key, pending, overhead + bytes);
+      }
+      return value;
+    } catch (error) {
+      if (this.get<Promise<T>>(key)?.value === pending) this.delete(key);
+      throw error;
+    }
   }
 
   delete(key: string): void {
     const entry = this.entries.get(key);
     if (!entry) return;
     this.entries.delete(key);
-    this.cachedBytes -= entry.bytes;
+    this.usage.remove(entry.bytes);
   }
 
   deleteWhere(predicate: (value: unknown) => boolean): void {
     for (const [key, entry] of this.entries) {
       if (!predicate(entry.value)) continue;
       this.entries.delete(key);
-      this.cachedBytes -= entry.bytes;
+      this.usage.remove(entry.bytes);
     }
   }
 
@@ -84,12 +129,20 @@ export class SharedMemoryCache {
     return this.ttlMs === undefined ? undefined : Date.now() + this.ttlMs;
   }
 
-  private evict(): void {
-    while (this.cachedBytes > this.maxBytes) {
+  private evict(incomingBytes: number, incomingPriority: number): boolean {
+    if (this.ttlMs !== undefined && this.usage.bytes + incomingBytes > this.maxBytes) {
+      const now = Date.now();
+      for (const [key, entry] of this.entries) {
+        if (entry.expiresAt !== undefined && entry.expiresAt <= now) this.delete(key);
+      }
+    }
+    while (this.usage.bytes + incomingBytes > this.maxBytes) {
       const evictKey = this.evictKey();
-      if (evictKey === undefined) return;
+      if (evictKey === undefined) return false;
+      if ((this.entries.get(evictKey)?.priority ?? 1) > incomingPriority) return false;
       this.delete(evictKey);
     }
+    return true;
   }
 
   private evictKey(): string | undefined {

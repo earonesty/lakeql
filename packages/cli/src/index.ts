@@ -14,6 +14,7 @@ import {
   memoryStore,
   type QueryBuilder,
   type Row,
+  SharedMemoryCache,
   writeOutputManifest,
 } from "lakeql-core";
 import {
@@ -23,7 +24,14 @@ import {
   type WriteParquetRowsOptions,
   writePartitionedParquet,
 } from "lakeql-parquet";
-import { parseSql, parseSqlStatement } from "lakeql-sql";
+import {
+  parseSql,
+  parseSqlStatement,
+  resolveSqlCorrelatedLookups,
+  resolveSqlScalarSubqueries,
+  type SqlCorrelatedLookup,
+  sqlCorrelationKey,
+} from "lakeql-sql";
 
 export const COMMANDS = ["query", "explain", "inspect", "write", "compact", "schema"] as const;
 
@@ -102,6 +110,15 @@ export function usage(): string {
 }
 
 async function query(args: ParsedArgs): Promise<string> {
+  const memo = new SharedMemoryCache();
+  try {
+    return await queryWithMemo(args, memo);
+  } finally {
+    memo.deleteWhere(() => true);
+  }
+}
+
+async function queryWithMemo(args: ParsedArgs, memo: SharedMemoryCache): Promise<string> {
   const sql = requireOption(args.sql, "--sql");
   const { store, key, preserveSqlSource } = await queryStore(args);
   const statement = parseCliSqlStatement(sql, key, preserveSqlSource);
@@ -112,15 +129,15 @@ async function query(args: ParsedArgs): Promise<string> {
   const lake = createParquetLake({ store });
   const executableAst = await materializeCteIfNeeded(store, lake, ast);
   const executableLake = createParquetLake({ store });
-  const resolvedAst = await resolveScalarSubqueries(executableLake, executableAst);
+  const resolvedAst = await resolveScalarSubqueries(executableLake, executableAst, memo);
   if (sqlSubqueryJoins(resolvedAst).length > 0) {
-    const rows = await subqueryJoinRowsFromAst(executableLake, resolvedAst, args);
+    const rows = await subqueryJoinRowsFromAst(executableLake, resolvedAst, args, memo);
     if (args.format === "json") return `${jsonStringify(rows)}\n`;
     if (args.format === "csv") return rowsToCsv(rows);
     return rows.map((row) => jsonStringify(row)).join("\n") + (rows.length > 0 ? "\n" : "");
   }
   if (sqlJoins(resolvedAst).length > 0) {
-    const rows = await joinRowsFromAst(executableLake, resolvedAst, args);
+    const rows = await joinRowsFromAst(executableLake, resolvedAst, args, memo);
     if (args.format === "json") return `${jsonStringify(rows)}\n`;
     if (args.format === "csv") return rowsToCsv(rows);
     return rows.map((row) => jsonStringify(row)).join("\n") + (rows.length > 0 ? "\n" : "");
@@ -132,7 +149,7 @@ async function query(args: ParsedArgs): Promise<string> {
     return rows.map((row) => jsonStringify(row)).join("\n") + (rows.length > 0 ? "\n" : "");
   }
   if (hasCorrelatedScalarSubqueries(resolvedAst)) {
-    const rows = await correlatedScalarRowsFromAst(executableLake, resolvedAst);
+    const rows = await correlatedScalarRowsFromAst(executableLake, resolvedAst, memo);
     if (args.format === "json") return `${jsonStringify(rows)}\n`;
     if (args.format === "csv") return rowsToCsv(rows);
     return rows.map((row) => jsonStringify(row)).join("\n") + (rows.length > 0 ? "\n" : "");
@@ -185,6 +202,15 @@ async function inspect(args: ParsedArgs): Promise<string> {
 }
 
 async function write(args: ParsedArgs): Promise<string> {
+  const memo = new SharedMemoryCache();
+  try {
+    return await writeWithMemo(args, memo);
+  } finally {
+    memo.deleteWhere(() => true);
+  }
+}
+
+async function writeWithMemo(args: ParsedArgs, memo: SharedMemoryCache): Promise<string> {
   const outputPrefix = requireOption(args.output, "--output");
   const sql = requireOption(args.sql, "--sql");
   const { store, key, preserveSqlSource } = await queryStore(args);
@@ -192,16 +218,16 @@ async function write(args: ParsedArgs): Promise<string> {
   const lake = createParquetLake({ store });
   const executableAst = await materializeCteIfNeeded(store, lake, ast);
   const executableLake = createParquetLake({ store });
-  const resolvedAst = await resolveScalarSubqueries(executableLake, executableAst);
+  const resolvedAst = await resolveScalarSubqueries(executableLake, executableAst, memo);
   const rows =
     sqlSubqueryJoins(resolvedAst).length > 0
-      ? await subqueryJoinRowsFromAst(executableLake, resolvedAst, args)
+      ? await subqueryJoinRowsFromAst(executableLake, resolvedAst, args, memo)
       : sqlJoins(resolvedAst).length > 0
-        ? await joinRowsFromAst(executableLake, resolvedAst, args)
+        ? await joinRowsFromAst(executableLake, resolvedAst, args, memo)
         : hasAggregation(resolvedAst)
           ? await aggregateRowsFromAst(executableLake.path(resolvedAst.source), resolvedAst)
           : hasCorrelatedScalarSubqueries(resolvedAst)
-            ? await correlatedScalarRowsFromAst(executableLake, resolvedAst)
+            ? await correlatedScalarRowsFromAst(executableLake, resolvedAst, memo)
             : await builderFromAst(executableLake.path(resolvedAst.source), resolvedAst).toArray();
   return writeRows(outputPrefix, rows, args);
 }
@@ -316,127 +342,28 @@ async function materializeCteIfNeeded(
   return { ...rest, source: `${prefix}/*.parquet` };
 }
 
+function subqueryRowsFromAst(
+  lake: ReturnType<typeof createParquetLake>,
+  ast: ReturnType<typeof parseSql>,
+): Promise<Row[]> {
+  return hasAggregation(ast)
+    ? aggregateRowsFromAst(lake.path(ast.source), ast)
+    : builderFromAst(lake.path(ast.source), ast).toArray();
+}
+
 async function resolveScalarSubqueries(
   lake: ReturnType<typeof createParquetLake>,
   ast: ReturnType<typeof parseSql>,
+  memo: SharedMemoryCache,
 ): Promise<ReturnType<typeof parseSql>> {
-  if (ast.scalarSubqueries === undefined) return ast;
-  const values = new Map<string, unknown>();
-  for (const [id, subquery] of Object.entries(ast.scalarSubqueries)) {
-    const rows = hasAggregation(subquery.query)
-      ? await aggregateRowsFromAst(lake.path(subquery.query.source), subquery.query)
-      : await builderFromAst(lake.path(subquery.query.source), subquery.query).toArray();
-    if (subquery.mode === "exists") {
-      values.set(id, rows.length > 0);
-      continue;
-    }
-    if (rows.length > 1) {
-      throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "Scalar subquery returned more than one row");
-    }
-    values.set(id, rows.length === 0 ? null : (rows[0]?.[subquery.column] ?? null));
-  }
-  const out = { ...ast };
-  if (ast.where !== undefined) out.where = replaceScalarSubqueryExpr(ast.where, values);
-  if (ast.having !== undefined) out.having = replaceScalarSubqueryExpr(ast.having, values);
-  if (ast.projections !== undefined) {
-    out.projections = Object.fromEntries(
-      Object.entries(ast.projections).map(([alias, expr]) => [
-        alias,
-        replaceScalarSubqueryExpr(expr, values),
-      ]),
-    );
-  }
-  if (ast.subqueryJoins !== undefined) {
-    out.subqueryJoins = ast.subqueryJoins.map((join) => ({
-      ...join,
-      ...(join.where === undefined ? {} : { where: replaceScalarSubqueryExpr(join.where, values) }),
-      ...(join.predicate === undefined
-        ? {}
-        : { predicate: replaceScalarSubqueryExpr(join.predicate, values) }),
-    }));
-    const firstSubqueryJoin = out.subqueryJoins[0];
-    if (firstSubqueryJoin !== undefined) out.subqueryJoin = firstSubqueryJoin;
-  } else if (ast.subqueryJoin?.where !== undefined || ast.subqueryJoin?.predicate !== undefined) {
-    out.subqueryJoin = {
-      ...ast.subqueryJoin,
-      ...(ast.subqueryJoin.where === undefined
-        ? {}
-        : { where: replaceScalarSubqueryExpr(ast.subqueryJoin.where, values) }),
-      ...(ast.subqueryJoin.predicate === undefined
-        ? {}
-        : { predicate: replaceScalarSubqueryExpr(ast.subqueryJoin.predicate, values) }),
-    };
-  }
-  delete out.scalarSubqueries;
-  return out;
-}
-
-function replaceScalarSubqueryExpr(expr: Expr, values: Map<string, unknown>): Expr {
-  switch (expr.kind) {
-    case "call":
-      if (expr.fn === "__lakeql_scalar_subquery") {
-        const id = expr.args[0];
-        if (id?.kind !== "literal" || typeof id.value !== "string" || !values.has(id.value)) {
-          throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "Invalid scalar subquery placeholder");
-        }
-        return { kind: "literal", value: values.get(id.value) as string | number | boolean | null };
-      }
-      return { ...expr, args: expr.args.map((arg) => replaceScalarSubqueryExpr(arg, values)) };
-    case "compare":
-      return {
-        ...expr,
-        left: replaceScalarSubqueryExpr(expr.left, values),
-        right: replaceScalarSubqueryExpr(expr.right, values),
-      };
-    case "between":
-      return {
-        ...expr,
-        target: replaceScalarSubqueryExpr(expr.target, values),
-        low: replaceScalarSubqueryExpr(expr.low, values),
-        high: replaceScalarSubqueryExpr(expr.high, values),
-      };
-    case "in":
-      return {
-        ...expr,
-        target: replaceScalarSubqueryExpr(expr.target, values),
-        values: expr.values.map((value) => replaceScalarSubqueryExpr(value, values)),
-      };
-    case "logical":
-      return {
-        ...expr,
-        operands: expr.operands.map((operand) => replaceScalarSubqueryExpr(operand, values)),
-      };
-    case "not":
-      return { ...expr, operand: replaceScalarSubqueryExpr(expr.operand, values) };
-    case "null-check":
-      return { ...expr, target: replaceScalarSubqueryExpr(expr.target, values) };
-    case "like":
-      return { ...expr, target: replaceScalarSubqueryExpr(expr.target, values) };
-    case "arithmetic":
-      return {
-        ...expr,
-        left: replaceScalarSubqueryExpr(expr.left, values),
-        right: replaceScalarSubqueryExpr(expr.right, values),
-      };
-    case "case":
-      return {
-        ...expr,
-        whens: expr.whens.map((branch) => ({
-          when: replaceScalarSubqueryExpr(branch.when, values),
-          value: replaceScalarSubqueryExpr(branch.value, values),
-        })),
-        ...(expr.else === undefined ? {} : { else: replaceScalarSubqueryExpr(expr.else, values) }),
-      };
-    case "column":
-    case "literal":
-      return expr;
-  }
+  return resolveSqlScalarSubqueries(ast, (query) => subqueryRowsFromAst(lake, query), memo);
 }
 
 async function joinRowsFromAst(
   lake: ReturnType<typeof createParquetLake>,
   ast: ReturnType<typeof parseSql>,
   args: ParsedArgs,
+  memo: SharedMemoryCache,
 ): Promise<Row[]> {
   const joins = sqlJoins(ast);
   const firstJoin = joins[0];
@@ -512,7 +439,7 @@ async function joinRowsFromAst(
   }
   if (ast.where !== undefined) rows = rows.filter((row) => matches(ast.where, row));
   if (ast.orderBy !== undefined) rows = sortRows(rows, ast.orderBy);
-  rows = await projectRows(lake, rows, ast);
+  rows = await projectRows(lake, rows, ast, memo);
   if (ast.distinct === true) rows = distinctRows(rows);
   const offset = ast.offset ?? 0;
   if (ast.limit !== undefined) rows = rows.slice(offset, offset + ast.limit);
@@ -679,6 +606,7 @@ async function subqueryJoinRowsFromAst(
   lake: ReturnType<typeof createParquetLake>,
   ast: ReturnType<typeof parseSql>,
   args: ParsedArgs,
+  memo: SharedMemoryCache,
 ): Promise<Row[]> {
   const joins = sqlSubqueryJoins(ast);
   if (joins.length === 0) {
@@ -696,7 +624,7 @@ async function subqueryJoinRowsFromAst(
   }
   if (ast.where !== undefined) rows = rows.filter((row) => matches(ast.where, row));
   if (ast.orderBy !== undefined) rows = sortRows(rows, ast.orderBy);
-  rows = await projectRows(lake, rows, ast);
+  rows = await projectRows(lake, rows, ast, memo);
   if (ast.distinct === true) rows = distinctRows(rows);
   const offset = ast.offset ?? 0;
   if (ast.limit !== undefined) rows = rows.slice(offset, offset + ast.limit);
@@ -922,19 +850,17 @@ function qualifyOnlyRow(row: Row, alias: string): Row {
   return Object.fromEntries(Object.entries(row).map(([key, value]) => [`${alias}.${key}`, value]));
 }
 
-interface CorrelatedScalarLookup {
-  subquery: NonNullable<ReturnType<typeof parseSql>["correlatedScalarSubqueries"]>[string];
-  rows: Map<string, Row>;
-}
+type CorrelatedScalarLookup = SqlCorrelatedLookup;
 
 async function correlatedScalarRowsFromAst(
   lake: ReturnType<typeof createParquetLake>,
   ast: ReturnType<typeof parseSql>,
+  memo: SharedMemoryCache,
 ): Promise<Row[]> {
   let rows = await lake.path(ast.source).toArray();
   if (ast.where !== undefined) rows = rows.filter((row) => matches(ast.where as Expr, row));
   if (ast.orderBy !== undefined) rows = sortRows(rows, ast.orderBy);
-  rows = await projectRows(lake, rows, ast);
+  rows = await projectRows(lake, rows, ast, memo);
   if (ast.distinct === true) rows = distinctRows(rows);
   const offset = ast.offset ?? 0;
   if (ast.limit !== undefined) rows = rows.slice(offset, offset + ast.limit);
@@ -953,8 +879,9 @@ async function projectRows(
   lake: ReturnType<typeof createParquetLake>,
   rows: Row[],
   ast: ReturnType<typeof parseSql>,
+  memo: SharedMemoryCache,
 ): Promise<Row[]> {
-  const lookups = await correlatedScalarLookups(lake, ast);
+  const lookups = await correlatedScalarLookups(lake, ast, memo);
   const hasWildcardProjection = ast.select?.includes("*") ?? false;
   return rows.map((row) => {
     if (hasWildcardProjection && ast.projections === undefined) return row;
@@ -977,26 +904,9 @@ async function projectRows(
 async function correlatedScalarLookups(
   lake: ReturnType<typeof createParquetLake>,
   ast: ReturnType<typeof parseSql>,
+  memo: SharedMemoryCache,
 ): Promise<Map<string, CorrelatedScalarLookup>> {
-  const lookups = new Map<string, CorrelatedScalarLookup>();
-  for (const [id, subquery] of Object.entries(ast.correlatedScalarSubqueries ?? {})) {
-    const rightRows = await aggregateRowsFromAst(lake.path(subquery.source), {
-      source: subquery.source,
-      select: subquery.rightKey,
-      groupBy: subquery.groupBy,
-      aggregates: subquery.aggregates,
-      ...(subquery.hiddenAggregates === undefined
-        ? {}
-        : { hiddenAggregates: subquery.hiddenAggregates }),
-      ...(subquery.where === undefined ? {} : { where: subquery.where }),
-      ...(subquery.having === undefined ? {} : { having: subquery.having }),
-    });
-    lookups.set(id, {
-      subquery,
-      rows: new Map(rightRows.map((row) => [correlatedScalarRightKey(row, subquery), row])),
-    });
-  }
-  return lookups;
+  return resolveSqlCorrelatedLookups(ast, (query) => subqueryRowsFromAst(lake, query), memo);
 }
 
 function resolveCorrelatedScalarExpr(
@@ -1087,29 +997,9 @@ function correlatedScalarValue(
   if (lookup === undefined) {
     throw new LakeqlError("LAKEQL_SQL_UNSUPPORTED", "Missing correlated scalar subquery metadata");
   }
-  const key = correlatedScalarLeftKey(row, lookup.subquery);
+  const key = sqlCorrelationKey(row, lookup.subquery.leftKey);
   if (key === undefined) return null;
   return lookup.rows.get(key)?.[lookup.subquery.column] ?? null;
-}
-
-function correlatedScalarLeftKey(
-  row: Row,
-  subquery: NonNullable<ReturnType<typeof parseSql>["correlatedScalarSubqueries"]>[string],
-): string | undefined {
-  const values: Row[string][] = [];
-  for (const key of subquery.leftKey) {
-    const value = row[key];
-    if (value === null || value === undefined) return undefined;
-    values.push(value);
-  }
-  return JSON.stringify(values);
-}
-
-function correlatedScalarRightKey(
-  row: Row,
-  subquery: NonNullable<ReturnType<typeof parseSql>["correlatedScalarSubqueries"]>[string],
-): string {
-  return JSON.stringify(subquery.rightKey.map((key) => row[key]));
 }
 
 async function aggregateRowsFromAst(
@@ -1324,16 +1214,16 @@ function isDescribeStatement(
 function applyDefaultSource(
   ast: ReturnType<typeof parseSql>,
   defaultSource: string,
-  includeScalarSubqueries = true,
-  seen = new WeakSet<object>(),
+  seen = new WeakMap<ReturnType<typeof parseSql>, ReturnType<typeof parseSql>>(),
 ): ReturnType<typeof parseSql> {
-  if (seen.has(ast)) return ast.cte === undefined ? { ...ast, source: defaultSource } : ast;
-  seen.add(ast);
+  const previous = seen.get(ast);
+  if (previous !== undefined) return previous;
   const out = { ...ast };
+  seen.set(ast, out);
   if (out.cte !== undefined) {
     out.cte = {
       ...out.cte,
-      query: applyDefaultSource(out.cte.query, defaultSource, includeScalarSubqueries, seen),
+      query: applyDefaultSource(out.cte.query, defaultSource, seen),
     };
   } else {
     out.source = defaultSource;
@@ -1351,11 +1241,11 @@ function applyDefaultSource(
     const firstSubqueryJoin = out.subqueryJoins[0];
     if (firstSubqueryJoin !== undefined) out.subqueryJoin = firstSubqueryJoin;
   }
-  if (includeScalarSubqueries && out.scalarSubqueries !== undefined) {
+  if (out.scalarSubqueries !== undefined) {
     out.scalarSubqueries = Object.fromEntries(
       Object.entries(out.scalarSubqueries).map(([id, subquery]) => [
         id,
-        { ...subquery, query: applyDefaultSource(subquery.query, defaultSource, false, seen) },
+        { ...subquery, query: applyDefaultSource(subquery.query, defaultSource, seen) },
       ]),
     );
   }

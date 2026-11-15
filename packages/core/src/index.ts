@@ -14,6 +14,7 @@ export * from "./object-store-json-cache.js";
 export * from "./physical.js";
 export * from "./predicate-plan.js";
 export * from "./query.js";
+export * from "./running-counter.js";
 export * from "./runtime.js";
 export * from "./sidecar-index.js";
 export * from "./store.js";
