@@ -108,7 +108,7 @@ it("enforces exact cache capacity including keys and directory records", async (
   await probe.set("a", { value: [{ path: "a", size: 1 }] });
   const pin = await probe.getOwnedEntry("a", pool);
   expect(pin).toBeDefined();
-  const bytes = pin?.bytes ?? 0;
+  const bytes = pool.usedBytes;
   pin?.release();
   probe.clear();
   for (const maxBytes of [bytes - 1, bytes]) {
@@ -128,7 +128,9 @@ it("treats cache entries too large for a child pin as misses", async () => {
   await cache.set("a", { value: [{ path: "a", size: 1 }] });
   const retained = pool.usedBytes;
   expect(retained).toBeGreaterThan(0);
-  const child = pool.child(retained - 1);
+  const probe = await cache.getOwnedEntry("a", pool);
+  const child = pool.child((probe?.bytes ?? 0) - 1);
+  probe?.release();
   expect(await cache.getOwnedEntry("a", child)).toBeUndefined();
   expect(child.usedBytes).toBe(0);
   cache.clear();

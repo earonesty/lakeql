@@ -1,4 +1,9 @@
-import { MemoryBudget, MemoryScope, withObjectStoreReadControls } from "lakeql-core";
+import {
+  MemoryBudget,
+  MemoryScope,
+  sharedCacheMetadataBytes,
+  withObjectStoreReadControls,
+} from "lakeql-core";
 import { describe, expect, it } from "vitest";
 import { MemoryStageScheduler } from "../../core/src/memory-stage-scheduler.js";
 import { httpStore } from "./index.js";
@@ -100,7 +105,7 @@ describe("bounded HTTP payload consumption", () => {
           return new Response(Uint8Array.of(1, 2, 3, 4));
         },
       });
-    const store = create(4);
+    const store = create(4 + sharedCacheMetadataBytes("a"));
     await store.getRange("a", { offset: 1, length: 2 });
     await store.getRange("a", { offset: 1, length: 2 });
     expect(requests).toBe(1);

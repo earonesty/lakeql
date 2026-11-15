@@ -1,5 +1,5 @@
 import { MATERIALIZATION_CHARGES as c } from "./allocation-charges.js";
-import { isLakeqlError, LakeqlError } from "./errors.js";
+import { isLakeqlError } from "./errors.js";
 import type { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope, type OwnedMemory } from "./memory-scope.js";
 import { cloneObjectInfos } from "./object-info.js";
@@ -23,21 +23,6 @@ export interface OwnedEntryCacheOptions<T> {
 export class OwnedEntryCache<T> implements CacheAdapter<T> {
   private readonly cache: SharedMemoryCache;
   constructor(private readonly options: OwnedEntryCacheOptions<T>) {
-    if (
-      options.maxBytes !== undefined &&
-      (!Number.isSafeInteger(options.maxBytes) || options.maxBytes < 0)
-    ) {
-      throw new LakeqlError(
-        "LAKEQL_VALIDATION_ERROR",
-        "Cache maxBytes must be a non-negative safe integer",
-      );
-    }
-    if (options.ttlMs !== undefined && (!Number.isFinite(options.ttlMs) || options.ttlMs < 0)) {
-      throw new LakeqlError(
-        "LAKEQL_VALIDATION_ERROR",
-        "Cache ttlMs must be finite and non-negative",
-      );
-    }
     this.cache = new SharedMemoryCache(options);
   }
 
@@ -69,34 +54,9 @@ export class OwnedEntryCache<T> implements CacheAdapter<T> {
       this.cache.delete(key);
       return;
     }
-    const scope = new MemoryScope(this.options.memoryBudget);
-    try {
-      // Count directory/key/record storage alongside retained payload, including
-      // zero-sized payloads, so cache entry count is also bounded.
-      scope.allocate(
-        c.object + 6 * c.property + c.string + key.length * c.stringCodeUnit,
-        "owned cache directory entry",
-        () => undefined,
-      );
-      const retained = entry.retainIn(scope.budget);
-      try {
-        scope.adopt(retained);
-      } catch (error) {
-        retained.release();
-        throw error;
-      }
-      const owner = scope.retainAllocations(entry.value);
-      try {
-        this.cache.setOwned(key, owner);
-      } finally {
-        owner.release();
-      }
-    } catch (error) {
-      if (!isLakeqlError(error) || error.code !== "LAKEQL_BUDGET_EXCEEDED") throw error;
-      // Cache insertion is optional; pressure must not fail a completed query.
-    } finally {
-      scope.dispose();
-    }
+    // The shared cache owns its directory metadata independently of reader pins.
+    // Retain the supplied payload directly; no wrapper scope or extra owner graph.
+    this.cache.setOwned(key, entry);
   }
 
   async get(key: string): Promise<CacheEntry<T> | undefined> {

@@ -7,6 +7,7 @@ import {
   MemoryScope,
   mul,
   SharedMemoryCache,
+  sharedCacheMetadataBytes,
   timestampFromEpoch,
   withObjectStoreReadControls,
 } from "../packages/core/dist/index.js";
@@ -129,6 +130,27 @@ for (const region of ["north", "south", "west"]) {
   }
 }
 
+function fourWindowCapacity(file, owned) {
+  return (
+    4096 +
+    [0, 1024, 2048, 3072].reduce(
+      (sum, start) =>
+        sum +
+        sharedCacheMetadataBytes(
+          [
+            owned ? "owned-scan-range" : "scan-range",
+            `${baseUrl}${path}`,
+            file.byteLength,
+            file.etag ?? "",
+            start,
+            start + 1024,
+          ].join(":"),
+        ),
+      0,
+    )
+  );
+}
+
 for (const maxConcurrentReads of [1, 4]) {
   const { store, metrics } = measuredStore();
   const file = await asyncBufferFromStore(
@@ -136,9 +158,14 @@ for (const maxConcurrentReads of [1, 4]) {
     path,
   );
   assert.ok(file.byteLength >= 4096);
+  const cacheCapacityBytes = fourWindowCapacity(file, false);
   const cached = cachedRangeBuffer(
     file,
-    { maxBytes: 4096, coalesceBytes: 1024, sharedCache: new SharedMemoryCache({ maxBytes: 4096 }) },
+    {
+      maxBytes: cacheCapacityBytes,
+      coalesceBytes: 1024,
+      sharedCache: new SharedMemoryCache({ maxBytes: cacheCapacityBytes }),
+    },
     `${baseUrl}${path}`,
   );
   await Promise.all([
@@ -158,7 +185,13 @@ for (const maxConcurrentReads of [1, 4]) {
   assert.equal(metrics.peak, maxConcurrentReads);
   await cached.prefetch([{ start: 0, end: 8 }]);
   assert.equal(metrics.requests, 4);
-  reports.push({ operation: "coalesced-prefetch-with-overlap", maxConcurrentReads, ...metrics });
+  reports.push({
+    operation: "coalesced-prefetch-with-overlap",
+    maxConcurrentReads,
+    payloadCapacityBytes: 4096,
+    cacheCapacityBytes,
+    ...metrics,
+  });
 }
 
 for (const memoryMiB of [64, 128]) {
@@ -193,14 +226,15 @@ for (const memoryMiB of [64, 128]) {
 for (const memoryMiB of [64, 128]) {
   const { store, metrics } = measuredStore();
   const budget = new MemoryBudget(memoryMiB * 1024 * 1024);
-  const cache = new SharedMemoryCache({ maxBytes: 4096, memoryBudget: budget });
   const file = await asyncBufferFromStore(
     withObjectStoreReadControls(store, { maxConcurrentReads: 4 }),
     path,
   );
+  const cacheCapacityBytes = fourWindowCapacity(file, true);
+  const cache = new SharedMemoryCache({ maxBytes: cacheCapacityBytes, memoryBudget: budget });
   const cached = cachedRangeBuffer(
     file,
-    { maxBytes: 4096, coalesceBytes: 1024, sharedCache: cache },
+    { maxBytes: cacheCapacityBytes, coalesceBytes: 1024, sharedCache: cache },
     `${baseUrl}${path}`,
   );
   const prefetchScope = new MemoryScope(budget.child(budget.maxBytes / 2));
@@ -217,7 +251,7 @@ for (const memoryMiB of [64, 128]) {
     assert.equal(metrics.requests, 4);
     assert.equal(metrics.bytes, 4096);
     assert.equal(metrics.peak, 4);
-    assert.equal(budget.usedBytes, 4098);
+    assert.equal(budget.usedBytes, cacheCapacityBytes + 2);
     output.release();
     prefetchScope.dispose();
     demandScope.dispose();
@@ -235,6 +269,8 @@ for (const memoryMiB of [64, 128]) {
     assert.equal(nextJob.budget.usedBytes, 0);
     reports.push({
       operation: "owned-coalesced-prefetch",
+      payloadCapacityBytes: 4096,
+      cacheCapacityBytes,
       allocationPoolMiB: memoryMiB,
       chargedBytes: budget.usedBytes,
       peakChargedBytes: budget.peakBytes,

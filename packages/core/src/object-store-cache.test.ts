@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { MemoryBudget } from "./memory-budget.js";
 import { MemoryScope } from "./memory-scope.js";
 import { memoryStore } from "./memory-store.js";
-import { cachedObjectStore, SharedMemoryCache } from "./object-store-cache.js";
+import {
+  cachedObjectStore,
+  SharedMemoryCache,
+  sharedCacheMetadataBytes,
+} from "./object-store-cache.js";
 import type { ObjectStore } from "./store.js";
 
 function countingStore(inner: ObjectStore): ObjectStore & {
@@ -41,31 +45,34 @@ function countingStore(inner: ObjectStore): ObjectStore & {
 
 describe("cachedObjectStore", () => {
   it("automatically reclaims cache space for queries while preserving pinned payloads", () => {
-    const pool = new MemoryBudget(64);
-    const cache = new SharedMemoryCache({ maxBytes: 64, memoryBudget: pool });
-    cache.set("pinned", new Uint8Array(32), 32);
+    const pool = new MemoryBudget(2048);
+    const cache = new SharedMemoryCache({ maxBytes: 2048, memoryBudget: pool });
+    cache.set("pinned", new Uint8Array(512), 512);
     const pin = cache.acquire("pinned");
-    cache.set("reusable", new Uint8Array(32), 32);
+    cache.set("reusable", new Uint8Array(512), 512);
     const query = pool.child();
-    const allocation = query.reserve(32, "decode");
+    const allocation = query.reserve(1536, "decode");
     expect(cache.get("reusable")).toBeUndefined();
-    expect(pool.usedBytes).toBe(64);
+    expect(pool.usedBytes).toBe(2048);
     expect(query.tryReserve(1, "optional sort keys")).toBeUndefined();
     pin?.release();
-    expect(pool.usedBytes).toBe(32);
-    const more = query.reserve(32, "next batch");
+    expect(pool.usedBytes).toBe(1536);
+    const more = query.reserve(512, "next batch");
     allocation.release();
     more.release();
     expect(pool.usedBytes).toBe(0);
-    cache.set("reused", new Uint8Array(64), 64);
-    const next = query.reserve(64, "new query");
+    cache.set("reused", new Uint8Array(1024), 1024);
+    const next = query.reserve(2048, "new query");
     expect(cache.get("reused")).toBeUndefined();
     next.release();
   });
 
   it("does not evict caches for allocations larger than the query capacity", () => {
-    const pool = new MemoryBudget(64);
-    const cache = new SharedMemoryCache({ maxBytes: 64, memoryBudget: pool });
+    const pool = new MemoryBudget(64 + sharedCacheMetadataBytes("warm"));
+    const cache = new SharedMemoryCache({
+      maxBytes: 64 + sharedCacheMetadataBytes("warm"),
+      memoryBudget: pool,
+    });
     cache.set("warm", new Uint8Array(64), 64);
     expect(pool.child(16).tryReserve(17, "too large")).toBeUndefined();
     expect(cache.get("warm")).toBeDefined();
@@ -73,11 +80,14 @@ describe("cachedObjectStore", () => {
   });
 
   it("reserves before cache allocation and keeps evicted reader payloads charged", () => {
-    const pool = new MemoryBudget(8);
-    const cache = new SharedMemoryCache({ maxBytes: 8, memoryBudget: pool });
+    const pool = new MemoryBudget(8 + sharedCacheMetadataBytes("a"));
+    const cache = new SharedMemoryCache({
+      maxBytes: 8 + sharedCacheMetadataBytes("a"),
+      memoryBudget: pool,
+    });
     expect(
       cache.setAllocated("a", 8, () => {
-        expect(pool.usedBytes).toBe(8);
+        expect(pool.usedBytes).toBe(8 + sharedCacheMetadataBytes("a"));
         return new Uint8Array(8);
       }),
     ).toBe(true);
@@ -102,9 +112,12 @@ describe("cachedObjectStore", () => {
   });
 
   it("shares admission with active queries and cleans up failed cache factories", () => {
-    const pool = new MemoryBudget(10);
+    const pool = new MemoryBudget(10 + sharedCacheMetadataBytes("a"));
     const query = pool.child().reserve(6, "query");
-    const cache = new SharedMemoryCache({ maxBytes: 10, memoryBudget: pool });
+    const cache = new SharedMemoryCache({
+      maxBytes: 10 + sharedCacheMetadataBytes("a"),
+      memoryBudget: pool,
+    });
     cache.set("a", new Uint8Array(4), 4);
     expect(() =>
       cache.setAllocated("b", 4, () => {
@@ -221,7 +234,9 @@ describe("cachedObjectStore", () => {
   });
 
   it("evicts lower-priority entries before higher-priority entries", () => {
-    const cache = new SharedMemoryCache({ maxBytes: 4 });
+    const cache = new SharedMemoryCache({
+      maxBytes: 4 + sharedCacheMetadataBytes("decoded") + sharedCacheMetadataBytes("range"),
+    });
 
     cache.set("decoded", "decoded", 2, { priority: 2 });
     cache.set("range", "range", 2, { priority: 3 });
@@ -271,14 +286,17 @@ describe("cachedObjectStore", () => {
 
 describe("cache allocation ownership", () => {
   it("retains existing buffers once and pins them beyond eviction", () => {
-    const budget = new MemoryBudget(8);
+    const budget = new MemoryBudget(8 + sharedCacheMetadataBytes("read"));
     const scope = new MemoryScope(budget);
-    const cache = new SharedMemoryCache({ maxBytes: 8, memoryBudget: budget });
+    const cache = new SharedMemoryCache({
+      maxBytes: 8 + sharedCacheMetadataBytes("read"),
+      memoryBudget: budget,
+    });
     const owner = scope.allocate(8, "read", () => Uint8Array.of(1, 2, 3, 4, 5, 6, 7, 8));
     expect(cache.setOwned("read", owner)).toBe(true);
     scope.dispose();
-    expect(budget.usedBytes).toBe(8);
-    expect(budget.peakBytes).toBe(8);
+    expect(budget.usedBytes).toBe(8 + sharedCacheMetadataBytes("read"));
+    expect(budget.peakBytes).toBe(8 + sharedCacheMetadataBytes("read"));
     const pin = cache.acquireOwned<Uint8Array>("read");
     const borrowed = cache.acquire<Uint8Array>("read");
     cache.delete("read");
@@ -291,15 +309,19 @@ describe("cache allocation ownership", () => {
   });
 
   it("reclaims unpinned owned cache entries under allocation pressure", () => {
-    const budget = new MemoryBudget(8);
+    const budget = new MemoryBudget(8 + sharedCacheMetadataBytes("read"));
     const scope = new MemoryScope(budget);
     const cache = new SharedMemoryCache({ memoryBudget: budget });
     const owner = scope.allocate(8, "read", () => new Uint8Array(8));
-    cache.setOwned("read", owner);
+    expect(cache.setOwned("read", owner)).toBe(true);
     owner.release();
-    const replacement = scope.allocate(8, "operator", () => new Uint8Array(8));
+    const replacement = scope.allocate(
+      8 + sharedCacheMetadataBytes("read"),
+      "operator",
+      () => new Uint8Array(8),
+    );
     expect(cache.acquireOwned("read")).toBeUndefined();
-    expect(budget.usedBytes).toBe(8);
+    expect(budget.usedBytes).toBe(8 + sharedCacheMetadataBytes("read"));
     replacement.release();
     expect(budget.usedBytes).toBe(0);
   });
@@ -320,7 +342,7 @@ describe("cache allocation ownership", () => {
   });
 
   it("replaces owned entries safely and does not invent ownership for ordinary entries", () => {
-    const budget = new MemoryBudget(16);
+    const budget = new MemoryBudget(16 + sharedCacheMetadataBytes("key"));
     const scope = new MemoryScope(budget);
     const cache = new SharedMemoryCache({ memoryBudget: budget });
     const first = scope.allocate(8, "first", () => new Uint8Array(8));
@@ -329,9 +351,9 @@ describe("cache allocation ownership", () => {
     first.release();
     cache.setOwned("key", second);
     second.release();
-    expect(budget.usedBytes).toBe(8);
+    expect(budget.usedBytes).toBe(8 + sharedCacheMetadataBytes("key"));
     cache.set("key", Uint8Array.of(1), 1);
-    expect(budget.usedBytes).toBe(1);
+    expect(budget.usedBytes).toBe(1 + sharedCacheMetadataBytes("key"));
     expect(cache.acquireOwned("key")).toBeUndefined();
     cache.delete("key");
     expect(budget.usedBytes).toBe(0);
@@ -374,7 +396,7 @@ it("preserves owned reads through caching and charges defensive output copies", 
 });
 
 it("releases a cache pin when defensive-copy admission fails", async () => {
-  const budget = new MemoryBudget(6);
+  const budget = new MemoryBudget(6 + sharedCacheMetadataBytes("range:a:0:4"));
   const cache = new SharedMemoryCache({ memoryBudget: budget });
   const base = countingStore(memoryStore());
   const store = cachedObjectStore(
@@ -393,38 +415,45 @@ it("releases a cache pin when defensive-copy admission fails", async () => {
   expect(budget.usedBytes).toBe(4);
   first?.release();
   cache.set("range:a:0:4", { kind: "range", path: "a", value: new Uint8Array(4) }, 4);
-  await expect(store.getRangeOwned?.("a", { offset: 0, length: 4 }, scope)).rejects.toMatchObject({
+  const reader = new MemoryScope(budget.child(3));
+  await expect(store.getRangeOwned?.("a", { offset: 0, length: 4 }, reader)).rejects.toMatchObject({
     code: "LAKEQL_BUDGET_EXCEEDED",
   });
-  // Reclamation may evict the cache record, but the pin stays charged until unwind.
+  // Clearing the entry exposes a leaked payload pin if failure did not unwind.
+  cache.deleteWhere(() => true);
+  reader.dispose();
+  scope.dispose();
   expect(budget.usedBytes).toBe(0);
-  expect(budget.peakBytes).toBe(4);
+  expect(budget.peakBytes).toBe(4 + sharedCacheMetadataBytes("range:a:0:4"));
 });
 
 it("reclaims cached child bytes when a sibling needs their shared parent pool", () => {
-  const pool = new MemoryBudget(8);
-  const cacheBudget = pool.child(16);
-  const queryBudget = pool.child(16);
+  const pool = new MemoryBudget(8 + sharedCacheMetadataBytes("cached"));
+  const cacheBudget = pool.child();
+  const queryBudget = pool.child();
   const cache = new SharedMemoryCache({ memoryBudget: cacheBudget });
-  cache.setAllocated("cached", 8, () => new Uint8Array(8));
-  const query = queryBudget.reserve(8, "sibling query");
+  expect(cache.setAllocated("cached", 8, () => new Uint8Array(8))).toBe(true);
+  const query = queryBudget.reserve(pool.maxBytes, "sibling query");
   expect(cache.get("cached")).toBeUndefined();
   expect(cacheBudget.usedBytes).toBe(0);
-  expect(queryBudget.usedBytes).toBe(8);
-  expect(pool.usedBytes).toBe(8);
+  expect(queryBudget.usedBytes).toBe(pool.maxBytes);
+  expect(pool.usedBytes).toBe(pool.maxBytes);
   query.release();
   expect(pool.usedBytes).toBe(0);
 });
 
 it("reuses cached owned backing across jobs while enforcing each reader's cap", () => {
-  const pool = new MemoryBudget(8);
+  const pool = new MemoryBudget(8 + sharedCacheMetadataBytes("data"));
   const producer = new MemoryScope(pool.child(8));
-  const cache = new SharedMemoryCache({ maxBytes: 8, memoryBudget: pool });
+  const cache = new SharedMemoryCache({
+    maxBytes: 8 + sharedCacheMetadataBytes("data"),
+    memoryBudget: pool,
+  });
   const original = producer.allocate(8, "decoded backing", () => new Uint8Array(8).fill(7));
   expect(cache.setOwned("data", original)).toBe(true);
   producer.dispose();
   expect(producer.budget.usedBytes).toBe(0);
-  expect(pool.usedBytes).toBe(8);
+  expect(pool.usedBytes).toBe(8 + sharedCacheMetadataBytes("data"));
   const tooSmall = pool.child(7);
   expect(() => cache.acquireOwned("data", tooSmall)).toThrow("Allocation exceeds memory budget");
   expect(tooSmall.usedBytes).toBe(0);
@@ -434,8 +463,8 @@ it("reuses cached owned backing across jobs while enforcing each reader's cap", 
   const adopted = consumer.adopt(hit);
   expect(adopted.value[0]).toBe(7);
   expect(consumer.budget.usedBytes).toBe(8);
-  expect(pool.usedBytes).toBe(8);
-  expect(pool.peakBytes).toBe(8);
+  expect(pool.usedBytes).toBe(8 + sharedCacheMetadataBytes("data"));
+  expect(pool.peakBytes).toBe(8 + sharedCacheMetadataBytes("data"));
   cache.delete("data");
   expect(pool.usedBytes).toBe(8);
   consumer.dispose();
@@ -448,13 +477,19 @@ it.each([64, 128])("bounds real shared buffers at %i MiB across two reader jobs"
   const outputBytes = capacity / 4;
   const pool = new MemoryBudget(capacity);
   const producer = new MemoryScope(pool.child(backingBytes));
-  const cache = new SharedMemoryCache({ maxBytes: backingBytes, memoryBudget: pool });
+  const cache = new SharedMemoryCache({
+    maxBytes: backingBytes + sharedCacheMetadataBytes("input"),
+    memoryBudget: pool,
+  });
   const backing = producer.allocate(backingBytes, "shared input", () =>
     new Uint8Array(backingBytes).fill(17),
   );
   expect(cache.setOwned("input", backing)).toBe(true);
   producer.dispose();
   expect(producer.budget.usedBytes).toBe(0);
+  expect(() => cache.acquireOwned("input", pool.child(backingBytes - 1))).toThrow(
+    "Allocation exceeds memory budget",
+  );
   const readers = [
     new MemoryScope(pool.child(backingBytes + outputBytes)),
     new MemoryScope(pool.child(backingBytes + outputBytes)),
@@ -472,9 +507,6 @@ it.each([64, 128])("bounds real shared buffers at %i MiB across two reader jobs"
   }
   expect(pool.usedBytes).toBe(capacity);
   expect(pool.peakBytes).toBe(capacity);
-  expect(() => cache.acquireOwned("input", pool.child(backingBytes - 1))).toThrow(
-    "Allocation exceeds memory budget",
-  );
   let allocated = false;
   const extra = new MemoryScope(pool.child());
   expect(() =>
@@ -495,13 +527,16 @@ it.each([64, 128])("bounds real shared buffers at %i MiB across two reader jobs"
 });
 
 it("forecasts speculative capacity by priority without allocating or evicting live entries", () => {
-  const root = new MemoryBudget(32);
-  const cache = new SharedMemoryCache({ maxBytes: 16, memoryBudget: root });
+  const root = new MemoryBudget(32 + 2 * sharedCacheMetadataBytes("high"));
+  const cache = new SharedMemoryCache({
+    maxBytes: 16 + 2 * sharedCacheMetadataBytes("high"),
+    memoryBudget: root,
+  });
   cache.set("high", "decoded", 8, { priority: 4 });
   cache.set("peer", "range", 4, { priority: 1 });
-  expect(cache.availableAdmissionBytes()).toBe(8);
-  expect(cache.availableAdmissionBytes(4)).toBe(16);
-  expect(root.usedBytes).toBe(12);
+  expect(cache.availableAdmissionBytes()).toBe(8 + sharedCacheMetadataBytes("peer"));
+  expect(cache.availableAdmissionBytes(4)).toBe(16 + 2 * sharedCacheMetadataBytes("high"));
+  expect(root.usedBytes).toBe(12 + 2 * sharedCacheMetadataBytes("high"));
   expect(cache.get("high")?.value).toBe("decoded");
   expect(cache.get("peer")?.value).toBe("range");
   cache.deleteWhere(() => true);
@@ -509,23 +544,30 @@ it("forecasts speculative capacity by priority without allocating or evicting li
 });
 
 it("drops expired backing when forecasting admission capacity", () => {
-  const root = new MemoryBudget(8);
-  const cache = new SharedMemoryCache({ maxBytes: 8, memoryBudget: root, ttlMs: 0 });
+  const root = new MemoryBudget(8 + sharedCacheMetadataBytes("expired"));
+  const cache = new SharedMemoryCache({
+    maxBytes: 8 + sharedCacheMetadataBytes("expired"),
+    memoryBudget: root,
+    ttlMs: 0,
+  });
   cache.set("expired", "decoded", 8, { priority: 4 });
-  expect(cache.availableAdmissionBytes()).toBe(8);
+  expect(cache.availableAdmissionBytes()).toBe(8 + sharedCacheMetadataBytes("expired"));
   expect(root.usedBytes).toBe(0);
   expect(cache.get("expired")).toBeUndefined();
 });
 
 it("uses owned entry eviction cost without misreporting its physical backing charge", () => {
-  const root = new MemoryBudget(100);
+  const root = new MemoryBudget(100 + sharedCacheMetadataBytes("metadata"));
   const scope = new MemoryScope(root);
   const owner = scope.allocate(8, "backing", () => new Uint8Array(8));
-  const cache = new SharedMemoryCache({ maxBytes: 32, memoryBudget: root });
+  const cache = new SharedMemoryCache({
+    maxBytes: 32 + sharedCacheMetadataBytes("metadata"),
+    memoryBudget: root,
+  });
   expect(cache.setOwned("metadata", owner, { priority: 4, cacheBytes: 24 })).toBe(true);
   expect(cache.get("metadata")?.bytes).toBe(24);
   expect(cache.availableAdmissionBytes(1)).toBe(8);
-  expect(root.usedBytes).toBe(8);
+  expect(root.usedBytes).toBe(8 + sharedCacheMetadataBytes("metadata"));
   const pin = cache.acquireOwned("metadata");
   expect(pin?.bytes).toBe(8);
   expect(cache.setOwned("too-large", owner, { cacheBytes: 33 })).toBe(false);
@@ -542,8 +584,8 @@ it("forecasts cold cache copies and preserves exact-buffer layout", async () => 
   const inner = memoryStore();
   await inner.put("file", Uint8Array.of(1, 2, 3, 4));
   const pool = new MemoryBudget(2048);
-  const cache = new SharedMemoryCache({ maxBytes: 1024, memoryBudget: pool });
-  const store = cachedObjectStore(inner, { maxBytes: 1024 }, cache);
+  const cache = new SharedMemoryCache({ maxBytes: 2048, memoryBudget: pool });
+  const store = cachedObjectStore(inner, { maxBytes: 2048 }, cache);
   const forecast = store.getRangeOwnedAllocation?.("file", { offset: 0, length: 4 });
   expect(forecast?.output).toBe("exact-buffer");
   expect(forecast?.bytes).toBeGreaterThan(8);
@@ -619,8 +661,11 @@ it("bounds missing objects, empty objects and empty ranges by metadata capacity"
 });
 
 it("invalidates rejected replacements while preserving already acquired pins", () => {
-  const pool = new MemoryBudget(64);
-  const cache = new SharedMemoryCache({ memoryBudget: pool, maxBytes: 8 });
+  const pool = new MemoryBudget(64 + sharedCacheMetadataBytes("key"));
+  const cache = new SharedMemoryCache({
+    memoryBudget: pool,
+    maxBytes: 8 + sharedCacheMetadataBytes("key"),
+  });
   cache.set("key", "old", 4);
   const pin = cache.acquire<string>("key");
   let allocated = false;

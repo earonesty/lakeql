@@ -9,14 +9,19 @@ import ts from "typescript";
 const baseline = process.env.LAKEQL_COMPARE_BASELINE ?? "c6a848a";
 const moduleName = process.env.LAKEQL_COMPARE_MODULE ?? "physical";
 const moduleNames = moduleName.split(",");
-if (moduleNames.some((name) => !/^[a-z-]+$/.test(name)))
+if (moduleNames.some((name) => !/^(?:(?:core|parquet|http)\/)?[a-z-]+$/.test(name)))
   throw new Error("Invalid comparison module");
 const modules = await Promise.all(
   moduleNames.map(async (name) => {
-    const source = execFileSync("git", ["show", `${baseline}:packages/core/src/${name}.ts`], {
-      encoding: "utf8",
-    });
-    const target = new URL(`../packages/core/dist/${name}.js`, import.meta.url);
+    const [packageName, sourceName] = name.includes("/") ? name.split("/") : ["core", name];
+    const source = execFileSync(
+      "git",
+      ["show", `${baseline}:packages/${packageName}/src/${sourceName}.ts`],
+      {
+        encoding: "utf8",
+      },
+    );
+    const target = new URL(`../packages/${packageName}/dist/${sourceName}.js`, import.meta.url);
     return {
       name,
       target: target.href,

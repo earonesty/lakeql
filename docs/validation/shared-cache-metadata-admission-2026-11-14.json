@@ -1,0 +1,110 @@
+{
+  "baseline": "47606b7",
+  "status": "all focused, local, Worker, conformance, reference, release and public-R2 gates passed",
+  "problem": "Generic SharedMemoryCache inserts charged payloads but omitted map-record and retained-key storage. Zero-byte payloads could accumulate unbounded entries, and decoded-cache keys remained retained after their construction scratch was released.",
+  "contract": [
+    "Account for record, directory slot and retained UTF-16 key in both configured cache capacity and its shared allocation pool.",
+    "Keep metadata ownership separate from payload ownership: eviction releases keys and records while independent readers continue to pin payloads.",
+    "Admit payload and metadata before ordinary allocation factories; release both on failure.",
+    "Owned insertion directly retains the payload and separately admits cache metadata; insertion remains optional.",
+    "Move metadata accounting out of the planning-cache wrapper and object-store payload forecasts into the generic cache.",
+    "Clean up reentrant same-key inserts before publishing an outer factory result.",
+    "Validate finite safe cache capacities and finite non-negative TTL centrally; zero capacity disables all retention.",
+    "Reject entries that cannot displace protected cache priorities before their metadata admission can reclaim those entries.",
+    "Read-ahead forecasts include payload, entry metadata, cache capacity, query extent and unreserved shared-pool headroom."
+  ],
+  "validation": {
+    "negativeControl": "All 12 generic-cache regressions fail against 47606b7 behavior. Only the candidate metadata-size formula was exposed to baseline tests; insertion/retention behavior was unchanged.",
+    "focusedCorePassed": 53,
+    "decodedHttpAndParquetIntegrationPassed": 91,
+    "build": "TypeScript project build passed",
+    "initialFullSuite": {
+      "passed": 3970,
+      "failed": 49,
+      "skipped": 645,
+      "note": "Intermediate diagnostic run; all reported integration failures were resolved before publication gates."
+    },
+    "cases": [
+      "zero-payload entry bounds with and without a pool",
+      "exact admission and one-byte-short rejection before factory",
+      "oversized keys preserve unrelated warm entries",
+      "owned payload pins fit original child budgets without inheriting key metadata",
+      "expiration, ordinary factory errors and failed owned metadata admission",
+      "throwing reclaimer cleanup",
+      "reentrant replacement cleanup",
+      "real 64/128 MiB shared-buffer pool bounds",
+      "real Parquet numeric groups and metadata warm reuse",
+      "central unsafe-bound rejection",
+      "protected-priority admission before allocation",
+      "prefetch pool/cache exact boundary and one-byte-short rejection, with and without a nonrefundable stage"
+    ],
+    "focusedRangeAndFixturePassed": 141,
+    "additionalPrefetchBoundaryCasesPassed": 2,
+    "regularPassed": 4026,
+    "regularSkipped": 645,
+    "workerPassed": 95,
+    "conformancePassed": 520,
+    "conformanceSkipped": 1,
+    "referencePassed": 120,
+    "releaseChecks": "build, types, package consumers, lint, compatibility, large files, changeset, deterministic fixtures",
+    "publicR2": {
+      "scenarios": 52,
+      "ordinaryQueries": 40,
+      "headroomBytes": 524288,
+      "maximumConcurrentReads": 4,
+      "maximumIncrementalChargedBytes": 420180,
+      "maximumWarmOrdinaryRequests": 0,
+      "artifact": "../benchmarks/shared-cache-metadata-public-r2-2026-11-14.json",
+      "fourWindowFixture": "4,096 payload bytes plus entry metadata: legacy capacity 7,770 bytes, owned capacity 7,818 bytes; original 64/128 MiB pool caps unchanged. Ordinary-query 512 KiB headroom is unchanged."
+    }
+  },
+  "remaining": [
+    "Transient key construction and prefix workspace admission remain separate from retained-key accounting.",
+    "Remaining parser/converter/codec and execution allocation matrix items and total runtime memory caps remain open."
+  ],
+  "measurements": {
+    "insertion": [
+      {
+        "artifact": "../benchmarks/shared-cache-metadata-insertion-2026-11-14.json",
+        "cases": 8,
+        "operationsPerCase": 512,
+        "sumOfCaseMedianMs": {
+          "baseline": 17.64653050000004,
+          "current": 21.891525499999858
+        }
+      },
+      {
+        "artifact": "../benchmarks/shared-cache-metadata-insertion-repeat-2026-11-14.json",
+        "cases": 8,
+        "operationsPerCase": 512,
+        "sumOfCaseMedianMs": {
+          "baseline": 12.153627500000027,
+          "current": 15.752079499999866
+        }
+      }
+    ],
+    "realParquetQuery": [
+      {
+        "artifact": "../benchmarks/shared-cache-metadata-query-2026-11-14.json",
+        "baselineMedianMs": 216.851087,
+        "currentMedianMs": 219.511777,
+        "baselinePeakBytes": 322500,
+        "currentPeakBytes": 323992,
+        "rowsPerQuery": 512,
+        "warmRequests": 0,
+        "finalPoolBytes": 0
+      },
+      {
+        "artifact": "../benchmarks/shared-cache-metadata-query-repeat-2026-11-14.json",
+        "baselineMedianMs": 224.52542049999997,
+        "currentMedianMs": 220.728815,
+        "baselinePeakBytes": 322500,
+        "currentPeakBytes": 323992,
+        "rowsPerQuery": 512,
+        "warmRequests": 0,
+        "finalPoolBytes": 0
+      }
+    ],
+    "scope": "No cloud-throughput or total-runtime-memory guarantee. Cache insertion is more fully accounted, not a speedup. Equal cache caps retain fewer entries when metadata is significant."
+  }
+}

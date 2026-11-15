@@ -24,7 +24,7 @@ export interface HttpStoreOptions {
   headers?: HeadersInit;
   /** Maximum decoded bytes per response, including full-response fallback. Default: 16 MiB. */
   maxResponseBytes?: number;
-  /** Maximum full-response fallback cache payload bytes. Default: 16 MiB. */
+  /** Maximum full-response fallback cache payload and entry metadata bytes. Default: 16 MiB. */
   maxFullObjectCacheBytes?: number;
   objects?: ObjectInfo[];
   /** Shared pool for retained full-response backing and owned probe reuse. */
@@ -371,32 +371,8 @@ export class HttpObjectStore implements ObjectStore {
   }
 
   private retainOwnedProbe(path: string, owner: OwnedMemory<Uint8Array>): void {
-    if (!this.fullObjectCache.supportsOwnedRetention(owner.budget)) return;
-    const scope = new MemoryScope(owner.budget);
-    try {
-      scope.allocate(
-        c.object + 6 * c.property + c.string + path.length * c.stringCodeUnit,
-        "HTTP full response cache entry",
-        () => undefined,
-      );
-      const retained = owner.retain();
-      try {
-        scope.adopt(retained);
-      } catch (error) {
-        retained.release();
-        throw error;
-      }
-      const entry = scope.retainAllocations(owner.value);
-      try {
-        this.fullObjectCache.setOwned(path, entry);
-      } finally {
-        entry.release();
-      }
-    } catch (error) {
-      if (!isLakeqlError(error) || error.code !== "LAKEQL_BUDGET_EXCEEDED") throw error;
-    } finally {
-      scope.dispose();
-    }
+    // The cache admits its own key/record separately from the shared response.
+    this.fullObjectCache.setOwned(path, owner);
   }
 
   private async fetchOwnedPath(

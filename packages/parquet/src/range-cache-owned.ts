@@ -6,6 +6,7 @@ import {
   mapConcurrent,
   type OwnedMemory,
   SharedMemoryCache,
+  sharedCacheMetadataBytes,
 } from "lakeql-core";
 import { coalescedRange, type RangeCacheOptions } from "./range-cache.js";
 import type { StoreAsyncBuffer } from "./types.js";
@@ -106,6 +107,15 @@ export function withOwnedRangeCache(
       throw error;
     }
   }
+  const keyFor = (request: { start: number; end: number }) =>
+    [
+      "owned-scan-range",
+      cacheKey,
+      file.byteLength,
+      file.etag ?? "",
+      request.start,
+      request.end,
+    ].join(":");
   async function ensure(start: number, end: number, scope: MemoryScope, demand = false) {
     validateRange(start, end);
     const current = state(scope);
@@ -114,15 +124,6 @@ export function withOwnedRangeCache(
     let request = current.cache.supportsOwnedRetention(scope.budget)
       ? coalescedRange(file.byteLength, start, end, coalesceBytes)
       : { start, end };
-    const keyFor = (request: { start: number; end: number }) =>
-      [
-        "owned-scan-range",
-        cacheKey,
-        file.byteLength,
-        file.etag ?? "",
-        request.start,
-        request.end,
-      ].join(":");
     let key = keyFor(request);
     const cached = acquire(current.cache, key, scope);
     if (cached !== undefined) {
@@ -234,20 +235,34 @@ export function withOwnedRangeCache(
       if (!cache.supportsOwnedRetention(scope.budget)) return;
       // Expiry during the cache forecast can release allocation headroom.
       const cacheCapacity = cache.availableAdmissionBytes();
-      const admissionBytes = Math.min(
-        options.maxBytes,
-        scope.availableAllocationBytes,
-        cacheCapacity,
-      );
+      const cacheBytes = Math.min(options.maxBytes, cacheCapacity);
+      const allocationBytes = scope.availableAllocationBytes;
+      const poolBytes = scope.budget.allocationPool.availableBytes;
       const selected = new Map<string, { start: number; end: number }>();
-      let bytes = 0;
+      let payloadBytes = 0;
+      let metadataBytes = 0;
       for (const range of ranges) {
         const request = coalescedRange(file.byteLength, range.start, range.end, coalesceBytes);
         const size = request.end - request.start;
-        const key = `${request.start}:${request.end}`;
-        if (size <= 0 || size > maxEntryBytes || bytes + size > admissionBytes || selected.has(key))
+        const key = keyFor(request);
+        const entryBytes = sharedCacheMetadataBytes(key);
+        const nextPayload = payloadBytes + size;
+        const nextMetadata = metadataBytes + entryBytes;
+        // Read-ahead is useful only when both its payload and cache entry fit.
+        // A stage already owns its payload extent; metadata still needs separate
+        // pool headroom because it must outlive that stage without pinning it.
+        const newPoolBytes = nextMetadata + (scope.hasAdmission ? 0 : nextPayload);
+        if (
+          size <= 0 ||
+          size > maxEntryBytes ||
+          selected.has(key) ||
+          nextPayload > allocationBytes ||
+          nextPayload + nextMetadata > cacheBytes ||
+          newPoolBytes > poolBytes
+        )
           continue;
-        bytes += size;
+        payloadBytes = nextPayload;
+        metadataBytes = nextMetadata;
         selected.set(key, request);
       }
       await mapConcurrent(

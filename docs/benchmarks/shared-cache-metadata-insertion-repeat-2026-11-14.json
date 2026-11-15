@@ -1,0 +1,909 @@
+{
+  "baseline": "47606b7",
+  "node": "v24.18.1",
+  "warmupRounds": 4,
+  "measuredRounds": 8,
+  "results": [
+    {
+      "owned": false,
+      "payloadLength": 64,
+      "keyLength": 16,
+      "operationsPerSample": 512,
+      "samples": {
+        "baseline": [
+          {
+            "elapsedMs": 0.7383619999999951,
+            "retainedBytes": 12288,
+            "peakBytes": 12288,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 0.6764749999999822,
+            "retainedBytes": 12288,
+            "peakBytes": 12288,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 0.6134959999999978,
+            "retainedBytes": 12288,
+            "peakBytes": 12288,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 0.6006320000000187,
+            "retainedBytes": 12288,
+            "peakBytes": 12288,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 0.6180550000000267,
+            "retainedBytes": 12288,
+            "peakBytes": 12288,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 2.9031420000000026,
+            "retainedBytes": 12288,
+            "peakBytes": 12288,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 3.291864999999973,
+            "retainedBytes": 12288,
+            "peakBytes": 12288,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 0.682106000000033,
+            "retainedBytes": 12288,
+            "peakBytes": 12288,
+            "retainedEntries": 64
+          }
+        ],
+        "current": [
+          {
+            "elapsedMs": 1.1989500000000248,
+            "retainedBytes": 55296,
+            "peakBytes": 55296,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 1.3404760000000238,
+            "retainedBytes": 55296,
+            "peakBytes": 55296,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 1.0322660000000496,
+            "retainedBytes": 55296,
+            "peakBytes": 55296,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 1.0330569999999852,
+            "retainedBytes": 55296,
+            "peakBytes": 55296,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 1.2151010000000042,
+            "retainedBytes": 55296,
+            "peakBytes": 55296,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 1.1390269999999987,
+            "retainedBytes": 55296,
+            "peakBytes": 55296,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 1.446706000000006,
+            "retainedBytes": 55296,
+            "peakBytes": 55296,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 1.1158229999999776,
+            "retainedBytes": 55296,
+            "peakBytes": 55296,
+            "retainedEntries": 64
+          }
+        ]
+      },
+      "medianMs": {
+        "baseline": 0.6792905000000076,
+        "current": 1.1689885000000118
+      }
+    },
+    {
+      "owned": false,
+      "payloadLength": 64,
+      "keyLength": 1024,
+      "operationsPerSample": 512,
+      "samples": {
+        "baseline": [
+          {
+            "elapsedMs": 0.598637999999994,
+            "retainedBytes": 12288,
+            "peakBytes": 12288,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 3.69208900000001,
+            "retainedBytes": 12288,
+            "peakBytes": 12288,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 3.734529000000009,
+            "retainedBytes": 12288,
+            "peakBytes": 12288,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 3.8139889999999923,
+            "retainedBytes": 12288,
+            "peakBytes": 12288,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 0.5145200000000045,
+            "retainedBytes": 12288,
+            "peakBytes": 12288,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 0.47240099999999074,
+            "retainedBytes": 12288,
+            "peakBytes": 12288,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 0.37879399999997077,
+            "retainedBytes": 12288,
+            "peakBytes": 12288,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 0.514870999999971,
+            "retainedBytes": 12288,
+            "peakBytes": 12288,
+            "retainedEntries": 64
+          }
+        ],
+        "current": [
+          {
+            "elapsedMs": 1.530704999999955,
+            "retainedBytes": 129600,
+            "peakBytes": 129600,
+            "retainedEntries": 45
+          },
+          {
+            "elapsedMs": 4.923179000000005,
+            "retainedBytes": 129600,
+            "peakBytes": 129600,
+            "retainedEntries": 45
+          },
+          {
+            "elapsedMs": 6.288543000000004,
+            "retainedBytes": 129600,
+            "peakBytes": 129600,
+            "retainedEntries": 45
+          },
+          {
+            "elapsedMs": 4.822028999999986,
+            "retainedBytes": 129600,
+            "peakBytes": 129600,
+            "retainedEntries": 45
+          },
+          {
+            "elapsedMs": 1.391793000000007,
+            "retainedBytes": 129600,
+            "peakBytes": 129600,
+            "retainedEntries": 45
+          },
+          {
+            "elapsedMs": 1.2228939999999966,
+            "retainedBytes": 129600,
+            "peakBytes": 129600,
+            "retainedEntries": 45
+          },
+          {
+            "elapsedMs": 1.2829679999999826,
+            "retainedBytes": 129600,
+            "peakBytes": 129600,
+            "retainedEntries": 45
+          },
+          {
+            "elapsedMs": 1.1156929999999647,
+            "retainedBytes": 129600,
+            "peakBytes": 129600,
+            "retainedEntries": 45
+          }
+        ]
+      },
+      "medianMs": {
+        "baseline": 0.5567544999999825,
+        "current": 1.461248999999981
+      }
+    },
+    {
+      "owned": false,
+      "payloadLength": 4096,
+      "keyLength": 16,
+      "operationsPerSample": 512,
+      "samples": {
+        "baseline": [
+          {
+            "elapsedMs": 1.590077000000008,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 2.6244760000000156,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 0.8607630000000199,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 0.8637280000000374,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 0.8331510000000435,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 0.8709210000000098,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 0.84370100000001,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 0.8735070000000178,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          }
+        ],
+        "current": [
+          {
+            "elapsedMs": 4.705638999999962,
+            "retainedBytes": 127296,
+            "peakBytes": 127296,
+            "retainedEntries": 26
+          },
+          {
+            "elapsedMs": 4.680430999999999,
+            "retainedBytes": 127296,
+            "peakBytes": 127296,
+            "retainedEntries": 26
+          },
+          {
+            "elapsedMs": 1.3297660000000064,
+            "retainedBytes": 127296,
+            "peakBytes": 127296,
+            "retainedEntries": 26
+          },
+          {
+            "elapsedMs": 2.254820000000052,
+            "retainedBytes": 127296,
+            "peakBytes": 127296,
+            "retainedEntries": 26
+          },
+          {
+            "elapsedMs": 1.3450849999999832,
+            "retainedBytes": 127296,
+            "peakBytes": 127296,
+            "retainedEntries": 26
+          },
+          {
+            "elapsedMs": 1.8550670000000196,
+            "retainedBytes": 127296,
+            "peakBytes": 127296,
+            "retainedEntries": 26
+          },
+          {
+            "elapsedMs": 1.9803019999999947,
+            "retainedBytes": 127296,
+            "peakBytes": 127296,
+            "retainedEntries": 26
+          },
+          {
+            "elapsedMs": 1.3050000000000068,
+            "retainedBytes": 127296,
+            "peakBytes": 127296,
+            "retainedEntries": 26
+          }
+        ]
+      },
+      "medianMs": {
+        "baseline": 0.8673245000000236,
+        "current": 1.9176845000000071
+      }
+    },
+    {
+      "owned": false,
+      "payloadLength": 4096,
+      "keyLength": 1024,
+      "operationsPerSample": 512,
+      "samples": {
+        "baseline": [
+          {
+            "elapsedMs": 1.749908000000005,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 1.0583349999999996,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 1.5301640000000134,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 1.1870869999999627,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 1.419965999999988,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 1.5468549999999937,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 1.1227859999999623,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 1.7010559999999941,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          }
+        ],
+        "current": [
+          {
+            "elapsedMs": 1.1846029999999814,
+            "retainedBytes": 124416,
+            "peakBytes": 124416,
+            "retainedEntries": 18
+          },
+          {
+            "elapsedMs": 1.1502380000000016,
+            "retainedBytes": 124416,
+            "peakBytes": 124416,
+            "retainedEntries": 18
+          },
+          {
+            "elapsedMs": 1.1613179999999943,
+            "retainedBytes": 124416,
+            "peakBytes": 124416,
+            "retainedEntries": 18
+          },
+          {
+            "elapsedMs": 1.1296289999999658,
+            "retainedBytes": 124416,
+            "peakBytes": 124416,
+            "retainedEntries": 18
+          },
+          {
+            "elapsedMs": 1.1600459999999657,
+            "retainedBytes": 124416,
+            "peakBytes": 124416,
+            "retainedEntries": 18
+          },
+          {
+            "elapsedMs": 1.1482839999999896,
+            "retainedBytes": 124416,
+            "peakBytes": 124416,
+            "retainedEntries": 18
+          },
+          {
+            "elapsedMs": 1.1401590000000397,
+            "retainedBytes": 124416,
+            "peakBytes": 124416,
+            "retainedEntries": 18
+          },
+          {
+            "elapsedMs": 1.1513400000000047,
+            "retainedBytes": 124416,
+            "peakBytes": 124416,
+            "retainedEntries": 18
+          }
+        ]
+      },
+      "medianMs": {
+        "baseline": 1.4750650000000007,
+        "current": 1.1507890000000032
+      }
+    },
+    {
+      "owned": true,
+      "payloadLength": 64,
+      "keyLength": 16,
+      "operationsPerSample": 512,
+      "samples": {
+        "baseline": [
+          {
+            "elapsedMs": 3.0577630000000227,
+            "retainedBytes": 12288,
+            "peakBytes": 12480,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 2.4372640000000274,
+            "retainedBytes": 12288,
+            "peakBytes": 12480,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 2.565345000000036,
+            "retainedBytes": 12288,
+            "peakBytes": 12480,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 1.3927249999999844,
+            "retainedBytes": 12288,
+            "peakBytes": 12480,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 1.389329000000032,
+            "retainedBytes": 12288,
+            "peakBytes": 12480,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 2.7279720000000225,
+            "retainedBytes": 12288,
+            "peakBytes": 12480,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 1.8723489999999856,
+            "retainedBytes": 12288,
+            "peakBytes": 12480,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 1.5862789999999904,
+            "retainedBytes": 12288,
+            "peakBytes": 12480,
+            "retainedEntries": 64
+          }
+        ],
+        "current": [
+          {
+            "elapsedMs": 1.6971189999999865,
+            "retainedBytes": 55296,
+            "peakBytes": 55488,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 2.1293229999999994,
+            "retainedBytes": 55296,
+            "peakBytes": 55488,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 3.764064000000019,
+            "retainedBytes": 55296,
+            "peakBytes": 55488,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 1.5645979999999895,
+            "retainedBytes": 55296,
+            "peakBytes": 55488,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 1.5201849999999695,
+            "retainedBytes": 55296,
+            "peakBytes": 55488,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 1.5152560000000221,
+            "retainedBytes": 55296,
+            "peakBytes": 55488,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 2.1617939999999862,
+            "retainedBytes": 55296,
+            "peakBytes": 55488,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 1.4957689999999957,
+            "retainedBytes": 55296,
+            "peakBytes": 55488,
+            "retainedEntries": 64
+          }
+        ]
+      },
+      "medianMs": {
+        "baseline": 2.1548065000000065,
+        "current": 1.630858499999988
+      }
+    },
+    {
+      "owned": true,
+      "payloadLength": 64,
+      "keyLength": 1024,
+      "operationsPerSample": 512,
+      "samples": {
+        "baseline": [
+          {
+            "elapsedMs": 1.3696320000000242,
+            "retainedBytes": 12288,
+            "peakBytes": 12480,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 2.474523999999974,
+            "retainedBytes": 12288,
+            "peakBytes": 12480,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 3.8430329999999913,
+            "retainedBytes": 12288,
+            "peakBytes": 12480,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 1.451565999999957,
+            "retainedBytes": 12288,
+            "peakBytes": 12480,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 1.6218860000000177,
+            "retainedBytes": 12288,
+            "peakBytes": 12480,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 1.3738700000000108,
+            "retainedBytes": 12288,
+            "peakBytes": 12480,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 1.2975659999999607,
+            "retainedBytes": 12288,
+            "peakBytes": 12480,
+            "retainedEntries": 64
+          },
+          {
+            "elapsedMs": 1.2998290000000452,
+            "retainedBytes": 12288,
+            "peakBytes": 12480,
+            "retainedEntries": 64
+          }
+        ],
+        "current": [
+          {
+            "elapsedMs": 2.161423999999897,
+            "retainedBytes": 129600,
+            "peakBytes": 129792,
+            "retainedEntries": 45
+          },
+          {
+            "elapsedMs": 4.243718000000058,
+            "retainedBytes": 129600,
+            "peakBytes": 129792,
+            "retainedEntries": 45
+          },
+          {
+            "elapsedMs": 4.23141499999997,
+            "retainedBytes": 129600,
+            "peakBytes": 129792,
+            "retainedEntries": 45
+          },
+          {
+            "elapsedMs": 4.412767000000031,
+            "retainedBytes": 129600,
+            "peakBytes": 129792,
+            "retainedEntries": 45
+          },
+          {
+            "elapsedMs": 2.087805000000003,
+            "retainedBytes": 129600,
+            "peakBytes": 129792,
+            "retainedEntries": 45
+          },
+          {
+            "elapsedMs": 2.0304069999999683,
+            "retainedBytes": 129600,
+            "peakBytes": 129792,
+            "retainedEntries": 45
+          },
+          {
+            "elapsedMs": 1.909048000000098,
+            "retainedBytes": 129600,
+            "peakBytes": 129792,
+            "retainedEntries": 45
+          },
+          {
+            "elapsedMs": 3.5373270000000048,
+            "retainedBytes": 129600,
+            "peakBytes": 129792,
+            "retainedEntries": 45
+          }
+        ]
+      },
+      "medianMs": {
+        "baseline": 1.412717999999984,
+        "current": 2.849375499999951
+      }
+    },
+    {
+      "owned": true,
+      "payloadLength": 4096,
+      "keyLength": 16,
+      "operationsPerSample": 512,
+      "samples": {
+        "baseline": [
+          {
+            "elapsedMs": 1.9274329999999509,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 2.3487870000000157,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 2.36099999999999,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 2.8562140000000227,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 3.8195990000000393,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 1.8511290000000145,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 1.843574999999987,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 1.8325439999999844,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          }
+        ],
+        "current": [
+          {
+            "elapsedMs": 2.151324999999929,
+            "retainedBytes": 127296,
+            "peakBytes": 127296,
+            "retainedEntries": 26
+          },
+          {
+            "elapsedMs": 2.2452019999999493,
+            "retainedBytes": 127296,
+            "peakBytes": 127296,
+            "retainedEntries": 26
+          },
+          {
+            "elapsedMs": 2.50019199999997,
+            "retainedBytes": 127296,
+            "peakBytes": 127296,
+            "retainedEntries": 26
+          },
+          {
+            "elapsedMs": 3.6990710000000036,
+            "retainedBytes": 127296,
+            "peakBytes": 127296,
+            "retainedEntries": 26
+          },
+          {
+            "elapsedMs": 3.057713000000035,
+            "retainedBytes": 127296,
+            "peakBytes": 127296,
+            "retainedEntries": 26
+          },
+          {
+            "elapsedMs": 2.0027750000000424,
+            "retainedBytes": 127296,
+            "peakBytes": 127296,
+            "retainedEntries": 26
+          },
+          {
+            "elapsedMs": 1.9094700000000557,
+            "retainedBytes": 127296,
+            "peakBytes": 127296,
+            "retainedEntries": 26
+          },
+          {
+            "elapsedMs": 1.8768470000001116,
+            "retainedBytes": 127296,
+            "peakBytes": 127296,
+            "retainedEntries": 26
+          }
+        ]
+      },
+      "medianMs": {
+        "baseline": 2.1381099999999833,
+        "current": 2.198263499999939
+      }
+    },
+    {
+      "owned": true,
+      "payloadLength": 4096,
+      "keyLength": 1024,
+      "operationsPerSample": 512,
+      "samples": {
+        "baseline": [
+          {
+            "elapsedMs": 1.8372020000000475,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 2.6813540000000557,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 3.0577630000000227,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 4.037899999999922,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 4.083035999999993,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 5.2357880000000705,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 2.4332460000000538,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          },
+          {
+            "elapsedMs": 1.8337760000000571,
+            "retainedBytes": 130944,
+            "peakBytes": 130944,
+            "retainedEntries": 31
+          }
+        ],
+        "current": [
+          {
+            "elapsedMs": 2.0708629999999175,
+            "retainedBytes": 124416,
+            "peakBytes": 128640,
+            "retainedEntries": 18
+          },
+          {
+            "elapsedMs": 2.382150000000024,
+            "retainedBytes": 124416,
+            "peakBytes": 128640,
+            "retainedEntries": 18
+          },
+          {
+            "elapsedMs": 4.3686440000000175,
+            "retainedBytes": 124416,
+            "peakBytes": 128640,
+            "retainedEntries": 18
+          },
+          {
+            "elapsedMs": 4.418497000000002,
+            "retainedBytes": 124416,
+            "peakBytes": 128640,
+            "retainedEntries": 18
+          },
+          {
+            "elapsedMs": 4.390684999999962,
+            "retainedBytes": 124416,
+            "peakBytes": 128640,
+            "retainedEntries": 18
+          },
+          {
+            "elapsedMs": 4.367591999999945,
+            "retainedBytes": 124416,
+            "peakBytes": 128640,
+            "retainedEntries": 18
+          },
+          {
+            "elapsedMs": 1.933373999999958,
+            "retainedBytes": 124416,
+            "peakBytes": 128640,
+            "retainedEntries": 18
+          },
+          {
+            "elapsedMs": 1.8967750000000478,
+            "retainedBytes": 124416,
+            "peakBytes": 128640,
+            "retainedEntries": 18
+          }
+        ]
+      },
+      "medianMs": {
+        "baseline": 2.869558500000039,
+        "current": 3.3748709999999846
+      }
+    }
+  ],
+  "limitations": [
+    "Cache insertion, acquisition and eviction kernel with current dependencies; not query or cloud throughput.",
+    "Equal 128 KiB modeled pools include retained metadata only in the candidate, so entry residency differs.",
+    "Caller-created keys and benchmark/runtime overhead are outside modeled pool metrics."
+  ]
+}

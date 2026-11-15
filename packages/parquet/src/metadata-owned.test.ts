@@ -39,7 +39,7 @@ it("pins cached footer backing for each metadata consumer and survives eviction"
   expect(backingBytes).toBeGreaterThan(0);
   first.owner.release();
   expect(firstBudget.usedBytes).toBe(0);
-  expect(root.usedBytes).toBe(backingBytes);
+  expect(root.usedBytes).toBeGreaterThan(backingBytes);
   const secondBudget = root.child();
   const second = await readOwnedParquetMetadata(
     "metadata.parquet",

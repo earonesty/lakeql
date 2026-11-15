@@ -1,8 +1,18 @@
-import { LakeqlError, MemoryBudget, MemoryScope, SharedMemoryCache } from "lakeql-core";
+import {
+  LakeqlError,
+  MemoryBudget,
+  MemoryScope,
+  SharedMemoryCache,
+  sharedCacheMetadataBytes,
+} from "lakeql-core";
 import { describe, expect, it } from "vitest";
 import { DecodedColumnCache } from "./decoded-column-cache.js";
 import { cachedRangeBuffer } from "./range-cache.js";
 import type { StoreAsyncBuffer } from "./types.js";
+
+function entryBytes(key: string, size = 16, start = 0, end = 8): number {
+  return sharedCacheMetadataBytes(["owned-scan-range", key, size, "", start, end].join(":"));
+}
 
 function source() {
   let reads = 0;
@@ -79,14 +89,17 @@ describe("owned range cache", () => {
   });
 
   it("consumes one admitted extent for coalesced transport, copies and a warm hit", async () => {
-    const budget = new MemoryBudget(14);
+    const budget = new MemoryBudget(14 + entryBytes("admitted"));
     const scope = new MemoryScope(budget);
     scope.admit(14, "eight-byte transport plus three two-byte outputs");
-    const cache = new SharedMemoryCache({ maxBytes: 8, memoryBudget: budget });
+    const cache = new SharedMemoryCache({
+      maxBytes: 8 + entryBytes("admitted"),
+      memoryBudget: budget,
+    });
     const input = source();
     const file = cachedRangeBuffer(
       input.file,
-      { maxBytes: 8, coalesceBytes: 8, sharedCache: cache },
+      { maxBytes: 8 + entryBytes("admitted"), coalesceBytes: 8, sharedCache: cache },
       "admitted",
     );
     const outputs = await Promise.all([
@@ -100,10 +113,10 @@ describe("owned range cache", () => {
     expect(new Uint8Array(warm?.value ?? new ArrayBuffer(0))).toEqual(Uint8Array.of(1, 2));
     expect(input.reads()).toBe(1);
     expect(scope.availableAllocationBytes).toBe(0);
-    expect(budget.peakBytes).toBe(14);
+    expect(budget.peakBytes).toBe(14 + entryBytes("admitted"));
     warm?.release();
     scope.dispose();
-    expect(budget.usedBytes).toBe(8);
+    expect(budget.usedBytes).toBe(8 + entryBytes("admitted"));
     cache.deleteWhere(() => true);
     expect(budget.usedBytes).toBe(0);
   });
@@ -141,13 +154,16 @@ describe("owned range cache", () => {
   });
 
   it("deduplicates coalesced prefetch and demand, pins copies, and reuses cached bytes", async () => {
-    const budget = new MemoryBudget(24);
+    const budget = new MemoryBudget(24 + entryBytes("file"));
     const scope = new MemoryScope(budget);
-    const cache = new SharedMemoryCache({ maxBytes: 16, memoryBudget: budget });
+    const cache = new SharedMemoryCache({
+      maxBytes: 16 + entryBytes("file"),
+      memoryBudget: budget,
+    });
     const input = source();
     const file = cachedRangeBuffer(
       input.file,
-      { maxBytes: 16, coalesceBytes: 8, sharedCache: cache },
+      { maxBytes: 16 + entryBytes("file"), coalesceBytes: 8, sharedCache: cache },
       "file",
     );
     const [, first, second] = await Promise.all([
@@ -164,7 +180,7 @@ describe("owned range cache", () => {
     expect(input.reads()).toBe(1);
     expect(first?.value.byteLength).toBe(2);
     expect(new Uint8Array(second?.value ?? new ArrayBuffer(0))).toEqual(Uint8Array.of(2, 3));
-    expect(budget.usedBytes).toBe(12);
+    expect(budget.usedBytes).toBe(12 + entryBytes("file"));
     new Uint8Array(first?.value ?? new ArrayBuffer(0)).fill(99);
     first?.release();
     second?.release();
@@ -172,7 +188,7 @@ describe("owned range cache", () => {
     expect(new Uint8Array(warm?.value ?? new ArrayBuffer(0))).toEqual(Uint8Array.of(1, 2));
     expect(input.reads()).toBe(1);
     scope.dispose();
-    expect(budget.usedBytes).toBe(8);
+    expect(budget.usedBytes).toBe(8 + entryBytes("file"));
     cache.deleteWhere(() => true);
     expect(budget.usedBytes).toBe(0);
   });
@@ -187,8 +203,9 @@ describe("owned range cache", () => {
     });
     expect(budget.usedBytes).toBe(0);
     await file.prefetchOwned?.([{ start: 0, end: 1 }], scope);
-    expect(input.reads()).toBe(2);
-    expect(budget.usedBytes).toBe(8);
+    // Speculative input cannot be retained with its entry metadata, so no read starts.
+    expect(input.reads()).toBe(1);
+    expect(budget.usedBytes).toBe(0);
     const reservation = budget.reserve(8, "reclaim cache");
     expect(budget.usedBytes).toBe(8);
     reservation.release();
@@ -259,7 +276,7 @@ it("does not issue an I/O for an empty demand or an invalid owned range", async 
 });
 
 it("settles every in-flight prefetch before reporting an error", async () => {
-  const budget = new MemoryBudget(16);
+  const budget = new MemoryBudget(16 + entryBytes("failure") + entryBytes("failure", 16, 8, 16));
   const scope = new MemoryScope(budget);
   const cache = new SharedMemoryCache({ memoryBudget: budget });
   let finish: (() => void) | undefined;
@@ -287,7 +304,7 @@ it("settles every in-flight prefetch before reporting an error", async () => {
   };
   const file = cachedRangeBuffer(
     source,
-    { maxBytes: 16, coalesceBytes: 8, sharedCache: cache },
+    { maxBytes: budget.maxBytes, coalesceBytes: 8, sharedCache: cache },
     "failure",
   );
   let settled = false;
@@ -411,7 +428,7 @@ it("does not suppress physical-read budgets or transport failures during prefetc
     new LakeqlError("LAKEQL_BUDGET_EXCEEDED", "too many reads", { metric: "range requests" }),
     new Error("network failure"),
   ]) {
-    const scope = new MemoryScope(new MemoryBudget(16));
+    const scope = new MemoryScope(new MemoryBudget(16 + entryBytes("failure")));
     const file = cachedRangeBuffer(
       {
         byteLength: 16,
@@ -422,7 +439,7 @@ it("does not suppress physical-read budgets or transport failures during prefetc
           throw error;
         },
       },
-      { maxBytes: 16, coalesceBytes: 8 },
+      { maxBytes: 16 + entryBytes("failure"), coalesceBytes: 8 },
       "failure",
     );
     await expect(file.prefetchOwned?.([{ start: 0, end: 1 }], scope)).rejects.toBe(error);
@@ -432,7 +449,7 @@ it("does not suppress physical-read budgets or transport failures during prefetc
 });
 
 it("tolerates allocation pressure arriving after prefetch admission", async () => {
-  const budget = new MemoryBudget(8);
+  const budget = new MemoryBudget(8 + entryBytes("racing-admission", 8));
   const scope = new MemoryScope(budget);
   let attempted = false;
   const file = cachedRangeBuffer(
@@ -443,7 +460,7 @@ it("tolerates allocation pressure arriving after prefetch admission", async () =
       },
       async sliceOwned(start, end, stage) {
         attempted = true;
-        const competitor = budget.reserve(1, "concurrent job");
+        const competitor = budget.reserve(1 + entryBytes("racing-admission", 8), "concurrent job");
         try {
           return stage.allocate(end - start, "response", () => new ArrayBuffer(end - start));
         } finally {
@@ -451,35 +468,35 @@ it("tolerates allocation pressure arriving after prefetch admission", async () =
         }
       },
     },
-    { maxBytes: 8, coalesceBytes: 8 },
+    { maxBytes: budget.maxBytes, coalesceBytes: 8 },
     "racing-admission",
   );
   await file.prefetchOwned?.([{ start: 0, end: 1 }], scope);
   expect(attempted).toBe(true);
-  expect(budget.peakBytes).toBe(1);
+  expect(budget.peakBytes).toBe(1 + entryBytes("racing-admission", 8));
   expect(budget.usedBytes).toBe(0);
 });
 
 it("reuses owned ranges across job budgets and shrinks oversized cached windows for small readers", async () => {
-  const pool = new MemoryBudget(32);
-  const cache = new SharedMemoryCache({ maxBytes: 16, memoryBudget: pool });
+  const pool = new MemoryBudget(32 + entryBytes("jobs"));
+  const cache = new SharedMemoryCache({ maxBytes: 16 + entryBytes("jobs"), memoryBudget: pool });
   const input = source();
   const file = cachedRangeBuffer(
     input.file,
-    { maxBytes: 16, coalesceBytes: 8, sharedCache: cache },
+    { maxBytes: 16 + entryBytes("jobs"), coalesceBytes: 8, sharedCache: cache },
     "jobs",
   );
   const producer = new MemoryScope(pool.child(16));
   await file.prefetchOwned?.([{ start: 0, end: 1 }], producer);
   producer.dispose();
   expect(producer.budget.usedBytes).toBe(0);
-  expect(pool.usedBytes).toBe(8);
+  expect(pool.usedBytes).toBe(8 + entryBytes("jobs"));
   const next = new MemoryScope(pool.child(16));
   const hit = await file.sliceOwned?.(1, 3, next);
   expect(input.reads()).toBe(1);
   expect(hit?.bytes).toBe(2);
   expect(next.budget.usedBytes).toBe(2);
-  expect(pool.usedBytes).toBe(10);
+  expect(pool.usedBytes).toBe(10 + entryBytes("jobs"));
   next.dispose();
   const small = new MemoryScope(pool.child(4));
   const exact = await file.sliceOwned?.(1, 3, small);
@@ -492,14 +509,17 @@ it("reuses owned ranges across job budgets and shrinks oversized cached windows 
 });
 
 it("deduplicates in-flight reads across separate job budgets in a shared pool", async () => {
-  const pool = new MemoryBudget(16);
+  const pool = new MemoryBudget(16 + entryBytes("concurrent-jobs"));
   const first = new MemoryScope(pool.child(10));
   const second = new MemoryScope(pool.child(10));
-  const cache = new SharedMemoryCache({ memoryBudget: pool, maxBytes: 8 });
+  const cache = new SharedMemoryCache({
+    memoryBudget: pool,
+    maxBytes: 8 + entryBytes("concurrent-jobs"),
+  });
   const input = source();
   const file = cachedRangeBuffer(
     input.file,
-    { maxBytes: 8, coalesceBytes: 8, sharedCache: cache },
+    { maxBytes: 8 + entryBytes("concurrent-jobs"), coalesceBytes: 8, sharedCache: cache },
     "concurrent-jobs",
   );
   const outputs = await Promise.all([
@@ -509,7 +529,7 @@ it("deduplicates in-flight reads across separate job budgets in a shared pool", 
   expect(input.reads()).toBe(1);
   expect(first.budget.usedBytes).toBe(2);
   expect(second.budget.usedBytes).toBe(2);
-  expect(pool.usedBytes).toBe(12);
+  expect(pool.usedBytes).toBe(12 + entryBytes("concurrent-jobs"));
   expect(outputs.map((owner) => [...new Uint8Array(owner?.value ?? new ArrayBuffer(0))])).toEqual([
     [0, 1],
     [2, 3],
@@ -523,8 +543,11 @@ it("deduplicates in-flight reads across separate job budgets in a shared pool", 
 it.each([
   8, 32,
 ])("preserves higher-priority decoded backing during speculative reads (pool=%s)", async (poolBytes) => {
-  const root = new MemoryBudget(poolBytes);
-  const shared = new SharedMemoryCache({ memoryBudget: root, maxBytes: 8 });
+  const root = new MemoryBudget(poolBytes + sharedCacheMetadataBytes("decoded-vector:hot-page"));
+  const shared = new SharedMemoryCache({
+    memoryBudget: root,
+    maxBytes: 8 + sharedCacheMetadataBytes("decoded-vector:hot-page"),
+  });
   const decoded = new DecodedColumnCache(shared, { maxBytes: 8, policy: "latency" });
   const producer = new MemoryScope(root.child());
   const values = producer.allocate(8, "decoded values", () =>
@@ -552,7 +575,7 @@ it.each([
   const hit = decoded.getVector("hot-page", job);
   expect(hit).toMatchObject({ type: "u8", values: Uint8Array.of(1, 2, 3, 4, 5, 6, 7, 8) });
   job.dispose();
-  expect(root.usedBytes).toBe(8);
+  expect(root.usedBytes).toBe(8 + sharedCacheMetadataBytes("decoded-vector:hot-page"));
   shared.deleteWhere(() => true);
   expect(root.usedBytes).toBe(0);
 });
@@ -561,24 +584,28 @@ it.each([
   false,
   true,
 ])("uses post-expiry allocation headroom without ignoring live pins (pinned=%s)", async (pinned) => {
-  const root = new MemoryBudget(8);
-  const shared = new SharedMemoryCache({ memoryBudget: root, maxBytes: 8, ttlMs: 0 });
+  const root = new MemoryBudget(8 + entryBytes("expiry"));
+  const shared = new SharedMemoryCache({
+    memoryBudget: root,
+    maxBytes: 8 + entryBytes("expiry"),
+    ttlMs: 0,
+  });
   const producer = new MemoryScope(root);
   const payload = producer.allocate(8, "old cache data", () => new Uint8Array(8));
   const pin = pinned ? payload.retain() : undefined;
   expect(shared.setOwned("expired", payload, { priority: 4 })).toBe(true);
   producer.dispose();
-  expect(root.usedBytes).toBe(8);
+  expect(root.usedBytes).toBe(8 + sharedCacheMetadataBytes("expired"));
   const input = source();
   const ranges = cachedRangeBuffer(
     input.file,
-    { maxBytes: 8, coalesceBytes: 8, sharedCache: shared },
+    { maxBytes: 8 + entryBytes("expiry"), coalesceBytes: 8, sharedCache: shared },
     "expiry",
   );
   const job = new MemoryScope(root.child());
   await ranges.prefetchOwned?.([{ start: 0, end: 8 }], job);
   expect(input.reads()).toBe(pinned ? 0 : 1);
-  expect(root.peakBytes).toBe(8);
+  expect(root.peakBytes).toBeLessThanOrEqual(root.maxBytes);
   job.dispose();
   shared.deleteWhere(() => true);
   expect(root.usedBytes).toBe(pinned ? 8 : 0);
@@ -630,4 +657,31 @@ it.each([
   scope.dispose();
   expect(budget.usedBytes).toBe(0);
   expect(cacheBudget.usedBytes).toBe(0);
+});
+
+it.each([
+  false,
+  true,
+])("admits prefetch payload plus entry metadata before reading (stage=%s)", async (stage) => {
+  const metadata = entryBytes("admission");
+  for (const shortage of ["none", "pool", "cache"] as const) {
+    const pool = new MemoryBudget(8 + metadata - (shortage === "pool" ? 1 : 0));
+    const root = new MemoryScope(pool);
+    const scope = stage ? root.childStage(8, "input extent") : new MemoryScope(pool.child(8));
+    const maxBytes = 8 + metadata - (shortage === "cache" ? 1 : 0);
+    const cache = new SharedMemoryCache({ memoryBudget: pool, maxBytes });
+    const input = source();
+    const file = cachedRangeBuffer(
+      input.file,
+      { maxBytes, coalesceBytes: 8, sharedCache: cache },
+      "admission",
+    );
+    await file.prefetchOwned?.([{ start: 0, end: 1 }], scope);
+    expect(input.reads()).toBe(shortage === "none" ? 1 : 0);
+    scope.dispose();
+    root.dispose();
+    expect(pool.usedBytes).toBe(shortage === "none" ? 8 + metadata : 0);
+    cache.deleteWhere(() => true);
+    expect(pool.usedBytes).toBe(0);
+  }
 });

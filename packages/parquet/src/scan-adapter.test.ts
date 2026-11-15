@@ -493,7 +493,10 @@ it("defaults lake task planning to indexed sources with reusable encoded ranges"
   const run = async (capacity: number) => {
     requests = 0;
     const pool = new MemoryBudget(capacity);
-    const sharedCache = new SharedMemoryCache({ maxBytes: bytes.byteLength, memoryBudget: pool });
+    const sharedCache = new SharedMemoryCache({
+      maxBytes: pool.maxBytes,
+      memoryBudget: pool,
+    });
     const lake = createParquetLake({
       store,
       memoryPool: pool,

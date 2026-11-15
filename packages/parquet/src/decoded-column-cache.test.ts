@@ -1,4 +1,10 @@
-import { MemoryBudget, MemoryScope, SharedMemoryCache, type Vector } from "lakeql-core";
+import {
+  MemoryBudget,
+  MemoryScope,
+  SharedMemoryCache,
+  sharedCacheMetadataBytes,
+  type Vector,
+} from "lakeql-core";
 import { describe, expect, it } from "vitest";
 import {
   DecodedColumnCache,
@@ -182,8 +188,11 @@ it("rejects a short decoded view retaining an oversized backing buffer", () => {
 });
 
 it("charges shared batch backing once and reports failed pool admission", () => {
-  const budget = new MemoryBudget(16);
-  const shared = new SharedMemoryCache({ maxBytes: 32, memoryBudget: budget });
+  const budget = new MemoryBudget(16 + sharedCacheMetadataBytes("decoded-column:batch"));
+  const shared = new SharedMemoryCache({
+    maxBytes: 32 + sharedCacheMetadataBytes("decoded-column:batch"),
+    memoryBudget: budget,
+  });
   const cache = new DecodedColumnCache(shared, { maxBytes: 32, policy: "latency" });
   const backing = new Uint8Array(16);
   cache.set("batch", {
@@ -194,7 +203,7 @@ it("charges shared batch backing once and reports failed pool admission", () => 
     },
   });
   expect(cache.get("batch")).toBeDefined();
-  expect(budget.usedBytes).toBe(16);
+  expect(budget.usedBytes).toBe(16 + sharedCacheMetadataBytes("decoded-column:batch"));
   expect(cache.setVector("too-large", { type: "u8", values: new Uint8Array(17) })).toBe(false);
   expect(cache.getVector("too-large")).toBeUndefined();
   shared.deleteWhere(() => true);
@@ -202,9 +211,12 @@ it("charges shared batch backing once and reports failed pool admission", () => 
 });
 
 it("retains decoded vector and dictionary ownership across producer disposal and eviction", () => {
-  const budget = new MemoryBudget(12);
+  const budget = new MemoryBudget(12 + sharedCacheMetadataBytes("decoded-vector:page"));
   const producer = new MemoryScope(budget);
-  const shared = new SharedMemoryCache({ memoryBudget: budget, maxBytes: 12 });
+  const shared = new SharedMemoryCache({
+    memoryBudget: budget,
+    maxBytes: 12 + sharedCacheMetadataBytes("decoded-vector:page"),
+  });
   const cache = new DecodedColumnCache(shared, { maxBytes: 12, policy: "latency" });
   const indices = producer.allocate(8, "indices", () => Uint32Array.of(0, 1));
   const dictionary = producer.allocate<Vector>(4, "dictionary", () => ({
@@ -217,8 +229,8 @@ it("retains decoded vector and dictionary ownership across producer disposal and
   );
   expect(cache.setVectorOwned("page", vector)).toBe(true);
   producer.dispose();
-  expect(budget.usedBytes).toBe(12);
-  expect(budget.peakBytes).toBe(12);
+  expect(budget.usedBytes).toBe(12 + sharedCacheMetadataBytes("decoded-vector:page"));
+  expect(budget.peakBytes).toBe(12 + sharedCacheMetadataBytes("decoded-vector:page"));
   const pinned = cache.acquireVectorOwned("page");
   shared.deleteWhere(() => true);
   expect(budget.usedBytes).toBe(12);
@@ -228,9 +240,12 @@ it("retains decoded vector and dictionary ownership across producer disposal and
 });
 
 it("preserves admission policy and requires real ownership for decoded cache hits", () => {
-  const budget = new MemoryBudget(8);
+  const budget = new MemoryBudget(8 + sharedCacheMetadataBytes("decoded-value:dictionary"));
   const scope = new MemoryScope(budget);
-  const shared = new SharedMemoryCache({ memoryBudget: budget, maxBytes: 8 });
+  const shared = new SharedMemoryCache({
+    memoryBudget: budget,
+    maxBytes: 8 + sharedCacheMetadataBytes("decoded-value:dictionary"),
+  });
   const balanced = new DecodedColumnCache(shared, { maxBytes: 8 });
   const latency = new DecodedColumnCache(shared, { maxBytes: 8, policy: "latency" });
   const vector = scope.allocate<Vector>(8, "decoded", () => ({
@@ -256,9 +271,12 @@ it("preserves admission policy and requires real ownership for decoded cache hit
 });
 
 it("releases an acquired pin if the receiving decode scope is already closed", () => {
-  const root = new MemoryBudget(8);
+  const root = new MemoryBudget(8 + sharedCacheMetadataBytes("decoded-vector:page"));
   const producer = new MemoryScope(root.child());
-  const shared = new SharedMemoryCache({ memoryBudget: root, maxBytes: 8 });
+  const shared = new SharedMemoryCache({
+    memoryBudget: root,
+    maxBytes: 8 + sharedCacheMetadataBytes("decoded-vector:page"),
+  });
   const cache = new DecodedColumnCache(shared, { maxBytes: 8, policy: "latency" });
   const value = producer.allocate<Vector>(8, "decoded", () => ({
     type: "u8",
@@ -271,16 +289,16 @@ it("releases an acquired pin if the receiving decode scope is already closed", (
   closed.dispose();
   expect(() => cache.getVector("page", closed)).toThrow();
   expect(readerBudget.usedBytes).toBe(0);
-  expect(root.usedBytes).toBe(8);
+  expect(root.usedBytes).toBe(8 + sharedCacheMetadataBytes("decoded-vector:page"));
   shared.deleteWhere(() => true);
   expect(root.usedBytes).toBe(0);
 });
 
 it("declines oversized cache pins so a smaller fresh decode can proceed", () => {
-  const root = new MemoryBudget(128);
+  const root = new MemoryBudget(4096);
   const producer = new MemoryScope(root.child());
-  const shared = new SharedMemoryCache({ memoryBudget: root, maxBytes: 1024 });
-  const cache = new DecodedColumnCache(shared, { maxBytes: 1024, policy: "latency" });
+  const shared = new SharedMemoryCache({ memoryBudget: root, maxBytes: 4096 });
+  const cache = new DecodedColumnCache(shared, { maxBytes: 4096, policy: "latency" });
   const input = producer.allocate(64, "retained input", () => new Uint8Array(64));
   const vector: Vector = { type: "u8", values: input.value.subarray(0, 4) };
   cache.setVector("page", vector, producer);
@@ -303,7 +321,7 @@ it("declines oversized cache pins so a smaller fresh decode can proceed", () => 
 });
 
 it("protects higher-priority cache entries while admitting small decoded pages when space returns", () => {
-  const shared = new SharedMemoryCache({ maxBytes: 1024 });
+  const shared = new SharedMemoryCache({ maxBytes: 1024 + sharedCacheMetadataBytes("encoded") });
   const cache = new DecodedColumnCache(shared, { maxBytes: 1024 });
   shared.set("encoded", "protected", 1008, { priority: 10 });
   const vector: Vector = { type: "f64", values: Float64Array.of(1, 2, 3) };
@@ -325,7 +343,7 @@ it.each([64, 128])("keeps owned decoded cache reuse within a shared %i MiB pool"
   }));
   expect(cache.setVectorOwned("page", page)).toBe(true);
   scope.dispose();
-  expect(pool.usedBytes).toBe(1024);
+  expect(pool.usedBytes).toBe(1024 + sharedCacheMetadataBytes("decoded-vector:page"));
   const job = pool.child(2048);
   const retained = cache.acquireVectorOwned("page", job);
   expect(retained?.value.type).toBe("u8");

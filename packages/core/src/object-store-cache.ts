@@ -19,6 +19,7 @@ export type CachePolicy = "balanced" | "io" | "latency";
 
 export interface SharedCacheEntry<T> {
   value: T;
+  /** Payload eviction cost; cache-owned key/record storage is accounted separately. */
   bytes: number;
 }
 
@@ -26,6 +27,8 @@ interface SharedCacheRecord {
   value: unknown;
   bytes: number;
   priority: number;
+  metadataBytes: number;
+  metadataReservation?: MemoryReservation;
   expiresAt?: number;
   reservation?: MemoryReservation;
   owner?: OwnedMemory<unknown>;
@@ -77,7 +80,8 @@ export interface SharedCacheSetOptions {
 
 export interface SharedOwnedCacheSetOptions extends SharedCacheSetOptions {
   /** Eviction cost including uninstrumented object storage. Must cover owned bytes.
-   * This controls cache capacity; it does not claim physical allocation admission.
+   * This controls payload eviction cost; it does not claim physical allocation admission.
+   * Cache-owned key/record storage is added separately.
    */
   cacheBytes?: number;
 }
@@ -91,6 +95,19 @@ export class SharedMemoryCache {
   private detachReclaimer: (() => void) | undefined;
 
   constructor(options: ObjectStoreCacheOptions = {}) {
+    if (
+      options.maxBytes !== undefined &&
+      (!Number.isSafeInteger(options.maxBytes) || options.maxBytes < 0)
+    )
+      throw new LakeqlError(
+        "LAKEQL_VALIDATION_ERROR",
+        "Cache maxBytes must be a non-negative safe integer",
+      );
+    if (options.ttlMs !== undefined && (!Number.isFinite(options.ttlMs) || options.ttlMs < 0))
+      throw new LakeqlError(
+        "LAKEQL_VALIDATION_ERROR",
+        "Cache ttlMs must be finite and non-negative",
+      );
     this.maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
     this.ttlMs = options.ttlMs;
     this.memoryBudget = options.memoryBudget;
@@ -108,7 +125,7 @@ export class SharedMemoryCache {
         this.delete(key);
         continue;
       }
-      if (entry.priority > priority) protectedBytes += entry.bytes;
+      if (entry.priority > priority) protectedBytes += entry.bytes + entry.metadataBytes;
     }
     return Math.max(0, this.maxBytes - protectedBytes);
   }
@@ -163,7 +180,12 @@ export class SharedMemoryCache {
     if (this.memoryBudget === undefined || !owner.budget.sharesPoolWith(this.memoryBudget))
       return false;
     this.delete(key);
-    if (cacheBytes > this.maxBytes) return false;
+    const metadataBytes = sharedCacheMetadataBytes(key);
+    if (
+      !Number.isSafeInteger(cacheBytes + metadataBytes) ||
+      !this.canAdmitEntry(cacheBytes + metadataBytes, options.priority ?? 1)
+    )
+      return false;
     let retained: OwnedMemory<T>;
     try {
       retained = owner.retainIn(this.memoryBudget);
@@ -171,7 +193,20 @@ export class SharedMemoryCache {
       if (isLakeqlError(error) && error.code === "LAKEQL_BUDGET_EXCEEDED") return false;
       throw error;
     }
+    let metadataReservation: MemoryReservation | undefined;
+    try {
+      metadataReservation = this.memoryBudget.tryReserve(metadataBytes, "cache entry metadata");
+    } catch (error) {
+      retained.release();
+      throw error;
+    }
+    if (metadataReservation === undefined) {
+      retained.release();
+      return false;
+    }
     return this.insert(key, {
+      metadataBytes,
+      metadataReservation,
       value: retained.value,
       bytes: cacheBytes,
       priority: options.priority ?? 1,
@@ -199,8 +234,11 @@ export class SharedMemoryCache {
       throw new LakeqlError("LAKEQL_VALIDATION_ERROR", "Invalid cache byte count", { bytes });
     }
     this.delete(key);
-    if (bytes > this.maxBytes) return false;
-    const reservation = this.memoryBudget?.tryReserve(bytes, "cache payload");
+    const metadataBytes = sharedCacheMetadataBytes(key);
+    const totalBytes = bytes + metadataBytes;
+    if (!Number.isSafeInteger(totalBytes) || !this.canAdmitEntry(totalBytes, options.priority ?? 1))
+      return false;
+    const reservation = this.memoryBudget?.tryReserve(totalBytes, "cache payload and entry");
     if (this.memoryBudget !== undefined && reservation === undefined) return false;
     let value: T;
     try {
@@ -209,20 +247,37 @@ export class SharedMemoryCache {
       reservation?.release();
       throw error;
     }
+    const [payloadReservation, metadataReservation] =
+      reservation?.partition([bytes, metadataBytes]) ?? [];
     const entry: SharedCacheRecord = {
+      metadataBytes,
+      ...(metadataReservation === undefined ? {} : { metadataReservation }),
       value,
       bytes,
       priority: options.priority ?? 1,
-      ...(reservation === undefined ? {} : { reservation }),
+      ...(payloadReservation === undefined ? {} : { reservation: payloadReservation }),
     };
     return this.insert(key, entry);
+  }
+
+  private canAdmitEntry(bytes: number, priority: number): boolean {
+    if (bytes > this.maxBytes) return false;
+    // Only inspect priorities when capacity requires eviction. Reject entries
+    // that would evict themselves before their allocation can reclaim a protected
+    // entry from the shared pool. Ordinary non-full insertion stays constant-time.
+    return (
+      this.cachedBytes + bytes <= this.maxBytes || bytes <= this.availableAdmissionBytes(priority)
+    );
   }
 
   private insert(key: string, entry: SharedCacheRecord): boolean {
     const expiry = this.expiresAt();
     if (expiry !== undefined) entry.expiresAt = expiry;
+    // Allocation factories may reenter and insert this same key. Replace that
+    // entry through normal cleanup rather than orphaning its reservations.
+    this.delete(key);
     this.entries.set(key, entry);
-    this.cachedBytes += entry.bytes;
+    this.cachedBytes += entry.bytes + entry.metadataBytes;
     if (this.detachReclaimer === undefined && this.memoryBudget !== undefined) {
       const budget = this.memoryBudget;
       this.detachReclaimer = budget.registerReclaimer((needed) => {
@@ -242,7 +297,8 @@ export class SharedMemoryCache {
     const entry = this.entries.get(key);
     if (!entry) return;
     this.entries.delete(key);
-    this.cachedBytes -= entry.bytes;
+    this.cachedBytes -= entry.bytes + entry.metadataBytes;
+    entry.metadataReservation?.release();
     entry.reservation?.release();
     entry.owner?.release();
     if (this.entries.size === 0) {
@@ -281,6 +337,13 @@ export class SharedMemoryCache {
   }
 }
 
+/** Directory slot, retained record and key. Separate from payload pins: readers
+ * do not retain the map key or record after eviction. These are modeled units,
+ * not exact JavaScript heap measurements. */
+export function sharedCacheMetadataBytes(key: string): number {
+  return c.object + 8 * c.property + c.string + key.length * c.stringCodeUnit;
+}
+
 type CacheValue =
   | { kind: "object"; path: string; value: Uint8Array | null }
   | { kind: "range"; path: string; value: Uint8Array }
@@ -300,7 +363,7 @@ export function cachedObjectStore(
   }
 
   function set(key: string, value: CacheValue): void {
-    const bytes = valueBytes(key, value);
+    const bytes = valueBytes(value);
     sharedCache.setAllocated(key, bytes, () => cloneValue(value), {
       priority: objectCachePriority(value, options),
     });
@@ -337,7 +400,8 @@ export function cachedObjectStore(
                 forecast.bytes +
                 range.length +
                 c.view +
-                cacheEntryBytes(rangeKey(path, range), path),
+                sharedCacheMetadataBytes(rangeKey(path, range)) +
+                cacheValueMetadataBytes(path),
               output: forecast.output,
             };
           },
@@ -455,14 +519,12 @@ function headKey(path: string): string {
   return `head:${path}`;
 }
 
-function cacheEntryBytes(key: string, path: string): number {
-  return (
-    2 * c.object + 8 * c.property + 2 * c.string + (key.length + path.length) * c.stringCodeUnit
-  );
+function cacheValueMetadataBytes(path: string): number {
+  return c.object + 3 * c.property + c.string + path.length * c.stringCodeUnit;
 }
 
-function valueBytes(key: string, value: CacheValue): number {
-  const entry = cacheEntryBytes(key, value.path);
+function valueBytes(value: CacheValue): number {
+  const entry = cacheValueMetadataBytes(value.path);
   if (value.kind === "object")
     return entry + (value.value === null ? 0 : c.view + value.value.byteLength);
   if (value.kind === "range") return entry + c.view + value.value.byteLength;

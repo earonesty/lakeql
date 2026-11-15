@@ -5,6 +5,7 @@ import {
   materializeBatchRows,
   memoryStore,
   SharedMemoryCache,
+  sharedCacheMetadataBytes,
 } from "lakeql-core";
 import { expect, it, vi } from "vitest";
 import { DecodedColumnCache } from "./decoded-column-cache.js";
@@ -495,7 +496,8 @@ it.each([
   const root = new MemoryBudget(mib * 1024 * 1024);
   const cache = new SharedMemoryCache({ memoryBudget: root, maxBytes: root.maxBytes });
   const producer = new MemoryScope(root.child());
-  const backgroundBytes = root.maxBytes - probe.peakBytes;
+  const entryBytes = sharedCacheMetadataBytes("shared-data");
+  const backgroundBytes = root.maxBytes - probe.peakBytes - entryBytes;
   const background = producer.allocate(backgroundBytes, "live cache payload", () => {
     const bytes = new Uint8Array(backgroundBytes);
     bytes.fill(7);
@@ -505,6 +507,11 @@ it.each([
   const activeCacheReader = cache.acquireOwned<Uint8Array>("shared-data");
   if (!activeCacheReader) throw new Error("missing cache pin");
   producer.dispose();
+  // Replace the reclaimable cache metadata with a live sibling allocation so
+  // the same exact user pool boundary continues to exercise pinned pressure.
+  cache.delete("shared-data");
+  const sibling = new MemoryScope(root.child());
+  sibling.allocate(entryBytes, "live sibling", () => new Uint8Array(entryBytes));
   const firstBudget = root.child();
   const firstIterator = readOwnedParquetVectorBatches(source, metadata, firstBudget, options)[
     Symbol.asyncIterator
@@ -543,6 +550,7 @@ it.each([
   expect(rows).toEqual(values.map((id) => ({ id })));
   expect(secondBudget.usedBytes).toBe(0);
   activeCacheReader.release();
+  sibling.dispose();
   cache.deleteWhere(() => true);
   expect(root.usedBytes).toBe(0);
 });

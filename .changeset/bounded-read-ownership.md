@@ -445,3 +445,7 @@ Prevent decoded Parquet cache-key collisions with versioned structured keys.
 Preserve column-list boundaries and distinguish file-identity fields containing
 control characters, so warm projections cannot receive another projection's data.
 Old internal key formats become cold entries until normal eviction.
+
+Admit retained shared-cache keys and directory records independently of payload
+pins. Bound empty entries, reclaim metadata at eviction, simplify planning-cache
+ownership, and include metadata when selecting retainable range prefetches.
