@@ -304,3 +304,46 @@ it("reports a later oversized row after a valid streamed prefix and stops future
   expect(f.payloadRows).not.toContain(2);
   expect(first.value).toEqual([rows[0]]);
 });
+
+it("does not open a ranking scan for ordered LIMIT zero", async () => {
+  const store = memoryStore();
+  await store.put("input", new Uint8Array(1));
+  let scans = 0;
+  const lake = new Lake({
+    store,
+    budget: { maxRowsDecoded: 0, maxFiles: 0 },
+    scanner: {
+      async *scan() {
+        scans++;
+        yield [];
+      },
+      async *scanVectorBatches() {
+        scans++;
+        yield { rowOffset: 0, batch: batchFromColumns({ score: [1] }) };
+      },
+    },
+  });
+  expect(
+    await lake
+      .path("input")
+      .select(["score", "payload"])
+      .orderBy([{ column: "score" }])
+      .limit(0)
+      .toArray(),
+  ).toEqual([]);
+  expect(scans).toBe(0);
+});
+
+it("coalesces measured zero-byte decoded columns instead of probing each row", async () => {
+  const rows = Array.from({ length: 32 }, (_, score) => ({ score, payload: null }));
+  const f = await fixture(rows, 16384);
+  expect(
+    await f.lake
+      .path("input")
+      .select(["score", "payload"])
+      .orderBy([{ column: "score" }])
+      .limit(rows.length)
+      .toArray(),
+  ).toEqual(rows);
+  expect(f.closed).toBe(2);
+});

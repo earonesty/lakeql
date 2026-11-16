@@ -127,7 +127,7 @@ export interface QueryBudget {
   /** Maximum rows a single window partition may retain during window evaluation. */
   maxWindowPartitionRows?: number;
   /** Maximum deterministic serialized bytes an in-memory operator may retain.
-   * Deferred reads also charge their modeled live decoded batches. */
+   * Deferred payload reads also charge their modeled live decoded batches. */
   maxMemoryBytes?: number;
   /** Maximum object-store reads allowed to be in flight at once. */
   maxConcurrentReads?: number;
@@ -824,6 +824,7 @@ export class QueryResult {
   }
 
   async *batches(): AsyncIterable<Row[]> {
+    if (this.config.limit === 0) return;
     if (
       (this.config.windows !== undefined && Object.keys(this.config.windows).length > 0) ||
       this.config.qualify !== undefined
@@ -1228,6 +1229,7 @@ export class QueryResult {
       config.limit === undefined ||
       config.where === undefined ||
       config.select === undefined ||
+      config.select.includes("*") ||
       config.scanner.scanVectorBatches === undefined ||
       !vectorExprSupported(config.where) ||
       !Object.values(config.projections ?? {}).every(vectorExprSupported)
@@ -2015,6 +2017,7 @@ export class QueryResult {
       config.physicalExecution.acceleratorPolicy === "required" ||
       vectorBatchScanner(config.scanner) === undefined ||
       config.select === undefined ||
+      config.select.includes("*") ||
       config.select.length === 0
     )
       return undefined;
@@ -2125,25 +2128,25 @@ export class QueryResult {
           window = refs
             .slice(start, start + count)
             .filter((ref): ref is RankedRowRef => ref !== undefined);
+          let span = columnarBatchSize(config.batchSize);
+          if (measured && observedEntryBytes === 0 && observedDecodedBytes === 0) {
+            span = 1;
+          } else if (measured && observedDecodedBytes > 0) {
+            span = Math.min(
+              span,
+              Math.max(
+                1,
+                Math.floor((available - count * (observedEntryBytes + 1)) / observedDecodedBytes),
+              ),
+            );
+          }
           try {
             rows = await this.materializeRowRefs(
               window,
               columns,
               rankColumns,
               startedAt,
-              Math.min(
-                columnarBatchSize(config.batchSize),
-                measured
-                  ? observedDecodedBytes === 0
-                    ? 1
-                    : Math.max(
-                        1,
-                        Math.floor(
-                          (available - count * (observedEntryBytes + 1)) / observedDecodedBytes,
-                        ),
-                      )
-                  : columnarBatchSize(config.batchSize),
-              ),
+              span,
               measured ? remaining.listBytes : 0,
               (entryBytes, decodedPerRow) => {
                 observedEntryBytes = Math.max(observedEntryBytes, entryBytes);

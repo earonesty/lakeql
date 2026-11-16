@@ -122,6 +122,30 @@ it.each([
     expect(results).toEqual([expected, expected]);
     expect(requests).toBeGreaterThan(0);
     expect(peak).toBe(2);
+    expect(
+      await deferredLake
+        .path("fixture.parquet")
+        .select(["*"])
+        .orderBy([{ column: "score", direction: "desc" }])
+        .limit(1)
+        .toArray(),
+    ).toEqual([[...rows].sort((a, b) => b.score - a.score)[0]]);
+    expect(
+      await deferredLake
+        .path("fixture.parquet")
+        .select(["*"])
+        .project({
+          twice: {
+            kind: "arithmetic",
+            op: "mul",
+            left: { kind: "column", name: "score" },
+            right: { kind: "literal", value: 2 },
+          },
+        })
+        .where(gte("id", 0))
+        .limit(2)
+        .toArray(),
+    ).toEqual(rows.slice(0, 2).map((row) => ({ ...row, twice: row.score * 2 })));
     const before = requests;
     expect(await run(deferredLake).toArray()).toEqual(expected);
     // Planning probes can remain; cached data ranges must not be refetched.

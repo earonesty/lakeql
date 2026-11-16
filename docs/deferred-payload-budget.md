@@ -61,6 +61,30 @@ zero warm data-range reads. Variable-width retries may add reads or decoding; th
 fixtures establish correctness and request behavior, not a throughput or peak-heap
 claim.
 
-Final local validation passes build, lint, types, 969 regular tests (97 skipped),
+Final local validation passes build, lint, types, 971 regular tests (97 skipped),
 10 native Worker/R2 tests, 81 reference comparisons and coverage thresholds
-(91.20% statements, 84.75% branches).
+(91.19% statements, 84.76% branches).
+
+## Self-review
+
+A second review of the stack reproduced and fixed three additional cases:
+
+- Wildcard projections cannot be pruned to a known deferred column list. They now
+  use the full-column execution path, preserving all columns, including with
+  computed projections. Real HTTP 206/200 regressions cover both forms.
+- Row iteration with LIMIT zero now returns before opening a scan or spending a
+  file/read budget.
+- A decoded width of zero is a valid measurement, not a perpetually unknown sample.
+  The all-null regression coalesces 32 rows into two payload scans instead of 32.
+
+The review also traced cleanup across yields and errors, retry termination and
+read accounting, stable ordering and decoded/output overlap. The remaining
+whole-reader/heap limits described above are unchanged; this is not an independent
+external review or a claim of a process-memory ceiling.
+
+An additional 64 deterministic checks compared the compiled public query API with
+an independent stable full-sort oracle across variable widths, null/binary values,
+two files, output batch sizes and decoder batch boundaries; all passed. Selection
+still uses the scanner's existing ranking/predicate input-batch policy. The decoded
+overlap charge in this change applies to payload materialization, not a new global
+reservation for every scanner or encoded reader allocation.
