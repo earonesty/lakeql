@@ -4,6 +4,7 @@ import { jsonSafeValue } from "./evaluator.js";
 import { gt } from "./expr.js";
 import { stableStringify } from "./manifest.js";
 import { memoryStore } from "./memory-store.js";
+import { estimateBatchBytes } from "./physical.js";
 import { Lake, type ScanOptions } from "./query.js";
 import type { ObjectInfo } from "./store.js";
 import type { Row } from "./types.js";
@@ -11,7 +12,7 @@ import type { Row } from "./types.js";
 const bytes = (value: unknown) =>
   new TextEncoder().encode(stableStringify(jsonSafeValue(value))).length;
 
-async function fixture(rows: Row[], maxMemoryBytes?: number) {
+async function fixture(rows: Row[], maxMemoryBytes?: number, signal?: AbortSignal) {
   const store = memoryStore();
   await store.put("input", new Uint8Array(1));
   let object: ObjectInfo | undefined;
@@ -20,7 +21,10 @@ async function fixture(rows: Row[], maxMemoryBytes?: number) {
   let closed = 0;
   const lake = new Lake({
     store,
-    budget: { ...(maxMemoryBytes === undefined ? {} : { maxMemoryBytes }) },
+    budget: {
+      ...(maxMemoryBytes === undefined ? {} : { maxMemoryBytes }),
+      ...(signal === undefined ? {} : { signal }),
+    },
     scanner: {
       async *scan() {
         yield [];
@@ -88,7 +92,7 @@ it.each([
 it.each([
   false,
   true,
-])("enforces exact reference-plus-result caps with Unicode and binary payloads (ordered=%s)", async (ordered) => {
+])("enforces exact live-reference/output/decoded-batch caps with Unicode and binary payloads (ordered=%s)", async (ordered) => {
   const rows = [0, 1, 2, 3].map((score) => ({
     score,
     payload: "雪🙂\n".repeat(256),
@@ -102,7 +106,15 @@ it.each([
     keys: { score: rowIndex },
   }));
   const entries = [1, 2].map((index) => [`input\u001f${index}`, rows[index]]);
-  const cap = bytes(refs) + bytes(entries);
+  const cap =
+    bytes(refs) +
+    bytes([entries[0]]) +
+    estimateBatchBytes(
+      batchFromColumns({
+        payload: [rows[1]?.payload],
+        blob: [rows[1]?.blob],
+      }),
+    );
   const run = async (maxMemoryBytes?: number) => {
     const next = await fixture(rows, maxMemoryBytes);
     let query = next.lake
@@ -138,4 +150,157 @@ it.each([
     expect(await query.toArray()).toEqual([]);
     expect(f.payloadRows).toEqual([]);
   }
+});
+
+it.each([
+  false,
+  true,
+])("streams a total result larger than its live allowance with backpressure (ordered=%s)", async (ordered) => {
+  const rows = Array.from({ length: 20 }, (_, score) => ({ score, payload: "x".repeat(1500) }));
+  const f = await fixture(rows, 12000);
+  let query = f.lake
+    .path("input")
+    .select(["score", "payload"])
+    .where(gt("score", -1))
+    .batchSize(4)
+    .limit(20);
+  if (ordered) query = query.orderBy([{ column: "score", direction: "desc" }]);
+  const iterator = query.run().batches()[Symbol.asyncIterator]();
+  const first = await iterator.next();
+  expect(first.done).toBe(false);
+  expect(first.value).toEqual([rows[ordered ? 19 : 0]]);
+  expect(f.payloadRows).toHaveLength(1);
+  await Promise.resolve();
+  expect(f.payloadRows).toHaveLength(1);
+  const out = [...(first.value ?? [])];
+  for (;;) {
+    const next = await iterator.next();
+    if (next.done) break;
+    expect(next.value.length).toBeLessThanOrEqual(4);
+    out.push(...next.value);
+  }
+  expect(out).toEqual(ordered ? [...rows].reverse() : rows);
+  expect(bytes(out)).toBeGreaterThan(12000);
+});
+
+it.each([
+  false,
+  true,
+])("closes without fetching future payloads on consumer return or paused abort (ordered=%s)", async (ordered) => {
+  for (const abort of [false, true]) {
+    const controller = new AbortController();
+    const f = await fixture(
+      Array.from({ length: 12 }, (_, score) => ({ score, payload: "x".repeat(1000) })),
+      10000,
+      controller.signal,
+    );
+    let query = f.lake.path("input").select(["score", "payload"]).where(gt("score", -1)).limit(12);
+    if (ordered) query = query.orderBy([{ column: "score" }]);
+    const iterator = query.run().batches()[Symbol.asyncIterator]();
+    await iterator.next();
+    const reads = f.payloadRows.length;
+    if (abort) {
+      controller.abort("paused");
+      await expect(iterator.next()).rejects.toMatchObject({ code: "LAKEQL_ABORTED" });
+    } else await iterator.return?.();
+    expect(f.payloadRows).toHaveLength(reads);
+    expect(f.closed).toBe(1);
+  }
+});
+
+it("shrinks unexpectedly wide windows without losing or duplicating output", async () => {
+  const rows = [16, 1400, 1400, 1400].map((width, score) => ({
+    score,
+    payload: "x".repeat(width),
+  }));
+  const f = await fixture(rows, 6000);
+  const out = await f.lake
+    .path("input")
+    .select(["score", "payload"])
+    .orderBy([{ column: "score" }])
+    .batchSize(4)
+    .limit(4)
+    .toArray();
+  expect(out).toEqual(rows);
+  expect(f.payloadRows.filter((index) => index === 1).length).toBeGreaterThan(1);
+});
+
+it("preserves global order and stable ties while windows cross source files", async () => {
+  const store = memoryStore();
+  const sources: Record<string, Row[]> = {
+    "input/a": [
+      { score: 5, payload: "a5" },
+      { score: 1, payload: "a1" },
+    ],
+    "input/b": [
+      { score: 4, payload: "b4" },
+      { score: 1, payload: "b1" },
+    ],
+  };
+  for (const path of Object.keys(sources)) await store.put(path, new Uint8Array(1));
+  const lake = new Lake({
+    store,
+    budget: { maxMemoryBytes: 4096 },
+    scanner: {
+      async *scan() {
+        yield [];
+        throw Error("expected vector path");
+      },
+      async *scanVectorBatches(path, options) {
+        const rows = sources[path] ?? [];
+        for (let index = options.rowStart ?? 0; index < (options.rowEnd ?? rows.length); index++) {
+          const row = rows[index];
+          if (row === undefined) throw Error("missing row");
+          yield {
+            rowOffset: index,
+            batch: batchFromColumns(
+              Object.fromEntries((options.columns ?? []).map((name) => [name, [row[name]]])),
+            ),
+          };
+        }
+      },
+    },
+  });
+  expect(
+    await lake
+      .path("input/*")
+      .select(["payload"])
+      .batchSize(2)
+      .orderBy([{ column: "score", direction: "desc" }])
+      .limit(4)
+      .toArray(),
+  ).toEqual([{ payload: "a5" }, { payload: "b4" }, { payload: "a1" }, { payload: "b1" }]);
+});
+
+it("charges computed projection output while it overlaps the decoded input", async () => {
+  const f = await fixture([{ score: 0, payload: "x".repeat(1000) }], 3500);
+  await expect(
+    f.lake
+      .path("input")
+      .select(["score", "payload"])
+      .project({
+        upper: { kind: "call", fn: "upper", args: [{ kind: "column", name: "payload" }] },
+      })
+      .where(gt("score", -1))
+      .limit(1)
+      .toArray(),
+  ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+});
+
+it("reports a later oversized row after a valid streamed prefix and stops future payload reads", async () => {
+  const rows = [16, 10000, 16].map((width, score) => ({ score, payload: "x".repeat(width) }));
+  const f = await fixture(rows, 6000);
+  const iterator = f.lake
+    .path("input")
+    .select(["score", "payload"])
+    .orderBy([{ column: "score" }])
+    .limit(3)
+    .run()
+    .batches()
+    [Symbol.asyncIterator]();
+  const first = await iterator.next();
+  expect(first.value).toEqual([rows[0]]);
+  await expect(iterator.next()).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  expect(f.payloadRows).not.toContain(2);
+  expect(first.value).toEqual([rows[0]]);
 });

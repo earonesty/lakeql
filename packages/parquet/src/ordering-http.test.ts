@@ -31,12 +31,12 @@ it.each([
       { name: "payload", data: rows.map((r) => r.payload) },
     ],
   });
-  const wideRows = Array.from({ length: 4 }, (_, score) => ({
+  const wideRows = Array.from({ length: 12 }, (_, score) => ({
     score,
     payload: "雪🙂".repeat(1024),
   }));
   await writeParquet(source, "wide.parquet", {
-    rowGroupSize: [1, 1, 1, 1],
+    rowGroupSize: Array(12).fill(1),
     columnData: [
       { name: "score", data: wideRows.map((r) => r.score) },
       { name: "payload", data: wideRows.map((r) => r.payload) },
@@ -125,7 +125,8 @@ it.each([
     const before = requests;
     expect(await run(deferredLake).toArray()).toEqual(expected);
     // Planning probes can remain; cached data ranges must not be refetched.
-    expect(ranges.slice(before)).toEqual(["bytes=0-1", "bytes=0-1", "bytes=0-1"]);
+    // One additional metadata probe establishes the measured payload width.
+    expect(ranges.slice(before)).toEqual(Array(4).fill("bytes=0-1"));
     const controller = new AbortController();
     controller.abort("cancelled ordering");
     const cancelledStore = withObjectStoreReadControls(store, { signal: controller.signal });
@@ -186,6 +187,60 @@ it.each([
       });
       expect(await wideQuery(32 * 1024).toArray()).toEqual(wideRows.slice(1, 3));
     }
+    for (const ordered of [false, true]) {
+      const streamed = new Lake({
+        store,
+        scanner: wideScanner,
+        budget: { maxMemoryBytes: 32 * 1024, maxConcurrentReads: 2 },
+      });
+      let query = streamed
+        .path("wide.parquet")
+        .select(["score", "payload"])
+        .where(gte("score", 0))
+        .batchSize(3)
+        .limit(wideRows.length);
+      if (ordered) query = query.orderBy([{ column: "score", direction: "desc" }]);
+      const iterator = query.run().batches()[Symbol.asyncIterator]();
+      const first = await iterator.next();
+      expect(first.value).toEqual([wideRows[ordered ? wideRows.length - 1 : 0]]);
+      const pausedReads = requests;
+      await delay(10);
+      expect(requests).toBe(pausedReads);
+      const output = [...(first.value ?? [])];
+      for (;;) {
+        const next = await iterator.next();
+        if (next.done) break;
+        expect(next.value.length).toBeLessThanOrEqual(3);
+        output.push(...next.value);
+      }
+      expect(output).toEqual(ordered ? [...wideRows].reverse() : wideRows);
+      expect(new TextEncoder().encode(JSON.stringify(output)).length).toBeGreaterThan(32 * 1024);
+      const stopped = query.run().batches()[Symbol.asyncIterator]();
+      await stopped.next();
+      const beforeStop = requests;
+      await stopped.return?.();
+      await delay(10);
+      expect(requests).toBe(beforeStop);
+    }
+    const pausedAbort = new AbortController();
+    const pausedQuery = new Lake({
+      store,
+      scanner: wideScanner,
+      budget: { maxMemoryBytes: 32 * 1024, signal: pausedAbort.signal },
+    })
+      .path("wide.parquet")
+      .select(["score", "payload"])
+      .orderBy([{ column: "score" }])
+      .limit(wideRows.length)
+      .run()
+      .batches()
+      [Symbol.asyncIterator]();
+    await pausedQuery.next();
+    const pausedRequests = requests;
+    pausedAbort.abort("paused output");
+    await expect(pausedQuery.next()).rejects.toMatchObject({ code: "LAKEQL_ABORTED" });
+    await delay(10);
+    expect(requests).toBe(pausedRequests);
     const duringPayload = new AbortController();
     const abortStore = withObjectStoreReadControls(store, { signal: duringPayload.signal });
     const abortScanner = new ParquetScanAdapter(abortStore, { scanRangeCache: { maxBytes: 0 } });

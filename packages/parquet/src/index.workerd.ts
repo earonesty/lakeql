@@ -158,9 +158,9 @@ it("orders concurrent real Parquet jobs through native R2 with bounded candidate
 it("bounds wide deferred payloads across concurrent native R2 jobs", async () => {
   const bucket = (env as unknown as { ORDERING_FIXTURES: R2BucketLike }).ORDERING_FIXTURES;
   const store = withObjectStoreReadControls(r2Store(bucket), { maxConcurrentReads: 2 });
-  const rows = Array.from({ length: 4 }, (_, score) => ({ score, payload: "雪🙂".repeat(1024) }));
+  const rows = Array.from({ length: 12 }, (_, score) => ({ score, payload: "雪🙂".repeat(1024) }));
   await writeParquet(store, "payload-budget.parquet", {
-    rowGroupSize: [1, 1, 1, 1],
+    rowGroupSize: Array(12).fill(1),
     columnData: [
       { name: "score", data: rows.map((r) => r.score) },
       { name: "payload", data: rows.map((r) => r.payload) },
@@ -186,6 +186,25 @@ it("bounds wide deferred payloads across concurrent native R2 jobs", async () =>
       }),
       expect(run(32 * 1024, ordered)).resolves.toEqual(rows.slice(1, 3)),
     ]),
+  );
+  await Promise.all(
+    [false, true].map(async (ordered) => {
+      const lake = new Lake({
+        store,
+        scanner,
+        budget: { maxMemoryBytes: 32 * 1024, maxConcurrentReads: 2 },
+      });
+      let query = lake
+        .path("payload-budget.parquet")
+        .select(["score", "payload"])
+        .where(gte("score", 0))
+        .batchSize(3)
+        .limit(rows.length);
+      if (ordered) query = query.orderBy([{ column: "score", direction: "desc" }]);
+      const output = await query.toArray();
+      expect(output).toEqual(ordered ? [...rows].reverse() : rows);
+      expect(new TextEncoder().encode(JSON.stringify(output)).length).toBeGreaterThan(32 * 1024);
+    }),
   );
   expect(await run(32 * 1024, true)).toEqual(rows.slice(1, 3));
 });

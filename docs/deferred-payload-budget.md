@@ -1,46 +1,66 @@
-# Deferred payload retention
+# Streaming deferred payloads
 
-Ordered top-k and filtered LIMIT queries can first select narrow row references,
-then fetch projected payload columns. Their common materialization helper now
-checks retained payload bytes as rows arrive, using the existing `maxMemoryBytes`
-and `maxBufferedRows` limits. No new option or execution strategy is introduced.
+This change is stacked on PR #25; the two should be reviewed together. Eligible projected ordered
+top-k and filtered LIMIT queries select narrow references, then materialize payload
+columns through the existing asynchronous batch API. The payload phase no longer
+collects the complete selected result before yielding it.
 
-The materialization byte metric is the sum of two serialized lists:
+## Retention and backpressure
 
-- Selected references, including their source identity, row index and ranking keys.
-- Retained `[referenceKey, row]` entries, including currently materialized payload.
+The query retains bounded selected references and one output window. Ranking still
+needs up to `offset + limit` references; its row and byte limits are enforced as
+references are admitted. Filtered reference accounting is incremental too.
 
-The helper measures the selected reference list once. A shared running counter
-updates only the changed result entry, with UTF-8 sizing and the existing JSON-safe
-representation for binary and other scalar values. Limit checks happen before the
-entry is retained. A rejected payload stops the scan; subsequent payload windows
-are not opened. Discarded offset references are released before materialization.
-Only the selected references and result entries are charged during this phase;
-the ranking phase retains its own existing checks.
+When a byte allowance is configured, payload materialization starts with one row.
+It measures output-entry size and decoded bytes per row, then sizes subsequent
+windows using the remaining allowance. Physical reads coalesce nearby references
+within a measured byte allowance and the existing row-span ceiling. A window may
+read files in physical order; the emitted rows preserve result order and stable ties.
 
-A query that previously passed because only narrow ranking keys were charged can
-now fail when its selected payload exceeds the operator allowance. Reducing LIMIT
-or projected columns, or increasing the allowance, changes that outcome.
+The producer yields the completed window and opens no next payload window until
+the consumer requests another batch. On resumption it releases completed entries
+and references. Consumer return, cancellation and failures stop future reads.
+Computed projections are applied before output retention is charged.
 
-These remain serialized operator-state limits, not whole-runtime memory limits.
-The scanner has already decoded the current batch when rows are charged. Reader
-buffers, caches, decoded batches and caller-held output have separate lifetimes;
-this change does not establish a combined heap ceiling or change range concurrency,
-row-window sizing, or decoder allocation behavior.
+If widths increase unexpectedly, an oversized window is discarded and retried at
+a smaller size. Reads and decoding performed by retries remain in query statistics
+and count against their normal limits. A single row that cannot fit alongside the
+remaining references and its decoded input still raises `LAKEQL_BUDGET_EXCEEDED`.
+No user tuning flag is required.
 
-## Verification
+## What the byte allowance measures
 
-Core regressions cover ordered and filtered LIMIT paths, exact byte caps and one
-byte below, offsets, Unicode and binary values, empty results, zero limits, and
-iterator closure without consuming the next payload row after failure. The wide-row
-failure tests reproduced the missing enforcement before the fix.
+The live charge combines serialized remaining references, serialized
+`[referenceKey, projectedRow]` entries, and the current decoded batch's existing
+physical-engine byte estimate. Counters update changed entries and released
+references; there is no repeated scan of all retained output rows. Decoded overlap
+is checked when the scanner supplies a batch and while output is materialized.
 
-Real Parquet fixtures exercise both HTTP 206 range responses and HTTP 200 responses
-that ignore ranges, plus concurrent native R2 jobs. They check oversized rejection,
-success under a sufficient allowance, healthy reuse after failure, and HTTP
-cancellation during payload materialization. Existing warm-cache and read-concurrency
-checks remain in place. The fixtures do not measure peak heap usage.
+This is deterministic modeled operator accounting, not an allocator or whole-heap
+ceiling. Decoding can allocate before returning a batch. Encoded reader buffers,
+caches and caller-held results have separate policies and lifetimes. In particular,
+the HTTP store's range-ignoring 200 fallback can still buffer an entire object;
+small request windows do not bound that response allocation.
 
-Validated locally with build, lint, types, 961 regular tests (97 skipped), 10 native
-Worker tests, 81 reference comparisons and coverage. Coverage thresholds pass
-(91.16% statements, 84.72% branches).
+`rows()` and `batches()` support bounded consumption. `toArray()` intentionally
+collects caller-visible output and can therefore allocate more than the operator
+allowance. Streaming can expose a valid prefix before a later read or budget error.
+
+## Verification and cost
+
+Core tests cover output larger than the live allowance, exact live-byte boundaries,
+Unicode/binary values, offsets, computed projection charges, shrinking windows,
+consumer backpressure/return, paused cancellation, cross-file ordering and ties,
+empty results and zero limits. Real Parquet fixtures cover HTTP 206 and
+range-ignoring HTTP 200 responses, payload-phase/paused cancellation, recovery and
+concurrent native R2 jobs.
+
+The warm HTTP ordering fixture now makes four tiny `bytes=0-1` probes instead of
+three: the additional probe establishes the first payload width. It still makes
+zero warm data-range reads. Variable-width retries may add reads or decoding; the
+fixtures establish correctness and request behavior, not a throughput or peak-heap
+claim.
+
+Final local validation passes build, lint, types, 969 regular tests (97 skipped),
+10 native Worker/R2 tests, 81 reference comparisons and coverage thresholds
+(91.20% statements, 84.75% branches).
