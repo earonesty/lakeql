@@ -138,7 +138,7 @@ export async function searchSpatialIndex(
   ];
   if (
     file.fields.length !== schema.length ||
-    file.columns.length !== schema.length ||
+    file.columns.length !== (file.fieldColumns?.size ?? schema.length) ||
     schema.some(
       ([name, type], i) => file.fields[i]?.name !== name || file.fields[i]?.logicalType !== type,
     )
@@ -149,7 +149,8 @@ export async function searchSpatialIndex(
     file.fields.slice(1, 5).some((child) => child.parentId !== file.fields[0]?.id) ||
     file.fields[0]?.parentId !== -1 ||
     file.fields[5]?.parentId !== -1 ||
-    file.columns[0]?.pages.some((page) => page.encoding.kind !== "struct")
+    (file.columns.length === schema.length &&
+      file.columns[0]?.pages.some((page) => page.encoding.kind !== "struct"))
   ) {
     corrupt("Invalid R-tree bounding-box structure");
   }
@@ -186,7 +187,9 @@ export async function searchSpatialIndex(
   let pagesVisited = 0;
   let candidatesExamined = 0;
   const selections = file.fields.flatMap((field, columnIndex) =>
-    columnIndex === 0 ? [] : [{ field, columnIndex }],
+    columnIndex === 0
+      ? []
+      : [{ field, columnIndex: file.fieldColumns?.get(field.id) ?? columnIndex }],
   );
   const visit = async (levelIndex: number, page: number): Promise<void> => {
     options.context.check();

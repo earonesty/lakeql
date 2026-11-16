@@ -2,8 +2,9 @@
 
 `lakeql-lance` performs bounded, projection-aware random reads from immutable
 [Lance](https://lancedb.github.io/lance/) datasets in Cloudflare Workers, browsers, and Node.js.
-It is intended for applications that already have stable Lance row IDs from a search index and
-need to materialize the corresponding records without scanning a key column.
+It materializes snapshot-pinned row IDs from search indexes without scanning a key column,
+and supports indexed scalar, vector, and spatial queries. Both stable IDs and the default
+physical row addresses are supported.
 
 ```ts
 import { openLanceDataset } from "lakeql-lance";
@@ -138,14 +139,25 @@ from IDs that never belonged to the snapshot.
 
 ## Compatibility
 
-The current reader supports stable-row-ID datasets written with Lance storage version 2.0 and V2
-manifest paths. The checked-in compatibility fixtures were produced by the official
-`pylance 8.0.0` writer. Supported projected leaf types are UTF-8 strings, binary values, booleans,
-signed and unsigned integers, 32/64-bit floats, dates, and second/millisecond/microsecond/nanosecond
-timestamps using uncompressed flat and nullable encodings. Struct projections recursively decode
-children when the parent uses the storage 2.0 SimpleStruct encoding. Low-cardinality UTF-8 columns using
-Lance's dictionary encoding are supported, including its null sentinel. Sparse Arrow-array
-deletion files are supported, including Zstandard-compressed buffers.
+The reader supports Lance storage versions 2.0 and 2.1 with V2 manifest paths.
+The official `pylance 8.0.0` fixtures cover both stable IDs and default physical
+row addresses. `dataset.storageVersion` and `dataset.rowIdMode` report these
+properties. Physical addresses remain meaningful only for the pinned snapshot.
+
+Supported projected leaf types are UTF-8 strings, binary values, booleans, signed
+and unsigned integers, 32/64-bit floats, dates, and timestamps. Storage 2.0 supports
+uncompressed flat/nullable pages, dictionary strings, and SimpleStruct parents.
+Storage 2.1 supports primitive/struct mini-block, full-zip, and all-null layouts;
+flat values, inline/out-of-line bitpacking, RLE, FSST, variable strings/binary, and
+page dictionaries are decoded with bounded range reads. Definition levels preserve
+null leaves and parent structs. Sparse Arrow deletion files, including
+Zstandard-compressed buffers, retain their existing support.
+
+The exact GeoParquet conversion from issue #24 works with unchanged
+`lance.write_dataset(reader, destination, mode="overwrite")` defaults and
+`ds.create_scalar_index("geometry", "RTREE")`. Its source and generated objects
+are checked in through Git LFS under `fixtures/spatial-default`. See the spatial
+benchmark document for reproduction, supported shapes, and budget semantics.
 
 Official version-0 BTree indexes over the supported scalar key types are supported for exact
 equality and bounded range lookup. Null-key lookup, bitmap/label-list index variants, and index
@@ -155,8 +167,8 @@ Official vector index format V3 IVF_FLAT indexes (`index_version` 1) are support
 fixed-size-list columns. IVF_PQ, IVF_SQ, IVF_RQ, and HNSW layouts remain explicit unsupported
 boundaries; there is no brute-force dataset fallback when an unsupported index is selected.
 
-The reader deliberately rejects unsupported storage versions, compressed data pages, list-based nested
-fields, Roaring-bitmap deletion files, and unknown encodings. It never silently scans a column,
+The reader rejects unsupported storage versions, compression/layout variants, list-based
+nested fields, Roaring-bitmap deletion files, and unknown encodings. It never silently scans a column,
 index, Lance data file, or dataset, and it rejects a data range that would read an entire Lance
 data file. Arrow deletion vectors are resolved only for fragments containing requested row IDs;
 the reader range-loads their footer, record-batch metadata, and value buffer without downloading

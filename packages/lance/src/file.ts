@@ -18,6 +18,8 @@ import {
   parseFileDescriptor,
 } from "./proto.js";
 
+import { readStructuralColumn } from "./structural.js";
+
 const DATA_FILE_FOOTER_BYTES = 40;
 const DATA_FILE_METADATA_TAIL_BYTES = 64 * 1024;
 const MAGIC = "LANC";
@@ -30,6 +32,8 @@ export interface InspectedLanceFile {
   globalBuffers: ByteRange[];
   columns: LanceColumnMetadata[];
   rowCount: number;
+  /** Physical columns omit struct parents in storage 2.1. */
+  fieldColumns?: ReadonlyMap<number, number>;
 }
 
 export async function inspectLanceFile(
@@ -99,7 +103,11 @@ export async function inspectLanceFile(
     try {
       const descriptor = parseFileDescriptor(metadataLease.slice(descriptorRange));
       const columns = columnRanges.map((range) => parseColumnMetadata(metadataLease.slice(range)));
-      if (descriptor.fields.length !== columns.length) {
+      const physicalFields =
+        footer.majorVersion === 2
+          ? descriptor.fields.filter((field) => field.logicalType !== "struct")
+          : descriptor.fields;
+      if (physicalFields.length !== columns.length) {
         corrupt("Self-describing Lance schema and column tables have different lengths", {
           path,
           fields: descriptor.fields.length,
@@ -119,6 +127,7 @@ export async function inspectLanceFile(
         globalBuffers,
         columns,
         rowCount,
+        fieldColumns: new Map(physicalFields.map((field, index) => [field.id, index])),
       };
     } finally {
       if (metadataLease !== metadataTail.lease) metadataLease.release();
@@ -218,7 +227,16 @@ export async function materializeFragmentRows(options: {
     const location = locateField(fragment, field.id);
     const alias = `field:${field.id}`;
     if (location === undefined) {
-      for (const row of rows.values()) row[alias] = null;
+      const folded =
+        field.logicalType === "struct" &&
+        fragment.files.some((file) => file.fileMajorVersion === 2 && file.fileMinorVersion === 1) &&
+        children(field).some(
+          (child) =>
+            locateField(fragment, child.id) !== undefined || child.logicalType === "struct",
+        );
+      for (const row of rows.values()) row[alias] = folded ? {} : null;
+      if (folded)
+        for (const child of children(field)) add(child, new Set([...ancestors, field.id]));
       return;
     }
     const selections = fileSelections.get(location.file) ?? [];
@@ -246,6 +264,7 @@ export async function materializeFragmentRows(options: {
         root: options.root,
         file,
         selections,
+        fields: options.fields,
         rowOffsets,
       });
       for (const [rowOffset, valuesByColumn] of values) {
@@ -274,6 +293,7 @@ async function materializeDataFile(options: {
   context: LanceReadContext;
   root: string;
   file: LanceDataFile;
+  fields: readonly LanceField[];
   selections: readonly { field: LanceField; columnIndex: number }[];
   rowOffsets: readonly number[];
 }): Promise<Map<number, Row>> {
@@ -345,7 +365,7 @@ async function materializeDataFile(options: {
         });
       }
     }
-    return await executeCellPlans(options.context, path, fileSize, cellPlans);
+    return await executeCellPlans(options.context, path, fileSize, cellPlans, options.fields);
   } catch (cause) {
     metadataTail.lease.release();
     throw cause;
@@ -391,6 +411,7 @@ async function executeCellPlans(
   path: string,
   fileSize: number,
   cellPlans: readonly CellPlan[],
+  schema?: readonly LanceField[],
 ): Promise<Map<number, Row>> {
   const output = new Map<number, Row>();
   const fixed: FixedCellPlan[] = [];
@@ -398,7 +419,14 @@ async function executeCellPlans(
   const binary: BinaryCellPlan[] = [];
   const dictionaries: DictionaryCellPlan[] = [];
   const phaseOneRanges: ByteRange[] = [];
+  const structural = new Map<LancePage, CellPlan[]>();
   for (const plan of cellPlans) {
+    if (plan.page.encoding.kind === "structural") {
+      const plans = structural.get(plan.page) ?? [];
+      plans.push(plan);
+      structural.set(plan.page, plans);
+      continue;
+    }
     const resolved = resolveCellEncoding(plan.page.encoding);
     if (resolved.kind === "struct") {
       context.accountDecodedMemory(64);
@@ -505,6 +533,56 @@ async function executeCellPlans(
     phaseOneRanges.push(flatRange(plan.page, resolved.indices, plan.rowInPage));
     if (plan.rowInPage > 0) {
       phaseOneRanges.push(flatRange(plan.page, resolved.indices, plan.rowInPage - 1));
+    }
+  }
+  for (const [page, plans] of structural) {
+    if (page.encoding.kind !== "structural") corrupt("Missing structural layout");
+    // A page can be selected under multiple aliases. Group each physical field
+    // separately so columns sharing a metadata object cannot overwrite values.
+    const byField = new Map<number, CellPlan[]>();
+    for (const plan of plans) {
+      const values = byField.get(plan.field.id) ?? [];
+      values.push(plan);
+      byField.set(plan.field.id, values);
+    }
+    for (const values of byField.values()) {
+      const first = values[0];
+      if (first === undefined) continue;
+      const byRow = new Map(values.map((plan) => [plan.rowInPage, plan]));
+      await readStructuralColumn(
+        {
+          context,
+          path,
+          fileSize,
+          page,
+          layout: page.encoding,
+          rows: [...byRow.keys()],
+          logicalType: first.field.logicalType,
+          retainValues: true,
+          decodeFixed: decodeFixedValue,
+        },
+        (row, value, definition, layers) => {
+          const plan = byRow.get(row);
+          if (plan === undefined) corrupt("Unexpected structural row");
+          assignCell(output, plan.rowOffset, plan.field.name, value);
+          if (schema !== undefined) {
+            let parentId = plan.field.parentId;
+            let threshold = layers[0] === 3 ? 1 : 0;
+            for (let i = 1; i < layers.length; i++) {
+              const parent = schema.find((field) => field.id === parentId);
+              if (parent === undefined || parent.logicalType !== "struct")
+                corrupt("Definition layers disagree with schema");
+              if (layers[i] === 3) {
+                if (definition > threshold)
+                  assignCell(output, plan.rowOffset, `field:${parent.id}`, null);
+                threshold++;
+              }
+              parentId = parent.parentId;
+            }
+            if (parentId !== -1) corrupt("Missing struct definition layers");
+          }
+        },
+      );
     }
   }
   const phaseOne = await context.readRanges(path, phaseOneRanges, "data", fileSize);
@@ -933,6 +1011,18 @@ function decodeFixedValue(
   rowInPage: number,
   logicalType: string,
 ): unknown {
+  const expectedBits = bitsForLogicalType(logicalType);
+  if (
+    expectedBits !== undefined &&
+    bitsPerValue !== expectedBits &&
+    !(logicalType === "bool" && bitsPerValue === 8)
+  ) {
+    corrupt("Primitive physical width does not match logical type", {
+      logicalType,
+      expectedBits,
+      bitsPerValue,
+    });
+  }
   if (logicalType === "bool") {
     return ((bytes[0] ?? 0) & (1 << (rowInPage % 8))) !== 0;
   }
@@ -1124,7 +1214,12 @@ function parseFooter(bytes: Uint8Array, fileSize: number): FileFooter {
     minorVersion: view.getUint16(34, true),
   };
   if (decodeAscii(bytes.subarray(36, 40)) !== MAGIC) corrupt("Invalid Lance data-file magic");
-  if (footer.majorVersion !== 0 || footer.minorVersion !== 3) {
+  if (
+    !(
+      (footer.majorVersion === 0 && footer.minorVersion === 3) ||
+      (footer.majorVersion === 2 && footer.minorVersion === 1)
+    )
+  ) {
     unsupported("Unsupported Lance v2 container version", {
       majorVersion: footer.majorVersion,
       minorVersion: footer.minorVersion,
@@ -1146,8 +1241,8 @@ async function resolveFileSize(
   path: string,
   file: LanceDataFile,
 ): Promise<number> {
-  if (file.fileMajorVersion !== 2 || file.fileMinorVersion !== 0) {
-    unsupported("Only Lance data storage version 2.0 files are supported", {
+  if (file.fileMajorVersion !== 2 || ![0, 1].includes(file.fileMinorVersion)) {
+    unsupported("Only Lance data storage versions 2.0 and 2.1 are supported", {
       path,
       fileMajorVersion: file.fileMajorVersion,
       fileMinorVersion: file.fileMinorVersion,
@@ -1280,9 +1375,10 @@ function corrupt(message: string, details: Record<string, unknown> = {}): never 
 }
 
 /**
- * Zero-copy fixed-width range projection. Its vector-shape capability is a
- * contiguous row span of non-null numeric primitive columns; nullable, nested,
- * compressed and variable-width encodings remain the cell materializer's job.
+ * Fixed-width numeric range projection. Its vector-shape capability is a
+ * contiguous row span of non-null numeric primitive columns. Storage 2.0 spans
+ * are leased without copies; storage 2.1 mini-blocks populate admitted typed
+ * vectors. Nullable output and variable-width types use the cell materializer.
  * Values are valid only during the synchronous consumer call.
  */
 export async function withInspectedNumericRange(
@@ -1305,6 +1401,78 @@ export async function withInspectedNumericRange(
     end > file.rowCount
   ) {
     corrupt("Numeric Lance range is outside file rows");
+  }
+  if (
+    options.selections.some((selection) =>
+      file.columns[selection.columnIndex]?.pages.some(
+        (page) => page.encoding.kind === "structural",
+      ),
+    )
+  ) {
+    const memory = context.leaseDecodedMemory(rowCount * options.selections.length * 8);
+    try {
+      const vectors: (Float64Array | BigInt64Array | BigUint64Array)[] = [];
+      context.reserveDecodedRows(rowCount);
+      for (const selection of options.selections) {
+        const type = selection.field.logicalType;
+        if (!["int32", "uint32", "int64", "uint64", "float", "double"].includes(type))
+          unsupported("Numeric range projection requires numeric primitive columns");
+        const vector =
+          type === "int64"
+            ? new BigInt64Array(rowCount)
+            : type === "uint64"
+              ? new BigUint64Array(rowCount)
+              : new Float64Array(rowCount);
+        vectors.push(vector);
+        const column = file.columns[selection.columnIndex];
+        if (column === undefined) corrupt("Numeric range column is missing");
+        let cursor = rowStart;
+        while (cursor < end) {
+          const located = findPage(column.pages, cursor);
+          const page = located.page;
+          if (page.encoding.kind !== "structural")
+            unsupported("Mixed numeric structural encodings are unsupported");
+          const count = Math.min(end, page.rowStart + page.length) - cursor;
+          const planning = context.leaseDecodedMemory(64);
+          try {
+            await readStructuralColumn(
+              {
+                context,
+                path: file.path,
+                fileSize: file.fileSize,
+                page,
+                layout: page.encoding,
+                rowRange: { start: cursor - page.rowStart, count },
+                logicalType: type,
+                retainValues: false,
+                decodeFixed: decodeFixedValue,
+              },
+              (row, value, definition) => {
+                if (definition !== 0 || (typeof value !== "number" && typeof value !== "bigint"))
+                  unsupported("Numeric range projection requires non-null numeric values");
+                const offset = page.rowStart + row - rowStart;
+                if (vector instanceof Float64Array) vector[offset] = Number(value);
+                else vector[offset] = BigInt(value);
+              },
+            );
+          } finally {
+            planning.release();
+          }
+          context.stats.pages.add(`${file.path}:${selection.columnIndex}:${located.index}`);
+          cursor += count;
+        }
+      }
+      consume((column, row) => {
+        if (row < rowStart || row >= end || !Number.isSafeInteger(row))
+          corrupt("Numeric range value is outside projected span");
+        const value = vectors[column]?.[row - rowStart];
+        if (value === undefined) corrupt("Numeric range column is missing");
+        return typeof value === "bigint" ? numberOrBigInt(value) : value;
+      });
+    } finally {
+      memory.release();
+    }
+    return;
   }
   const spans: {
     start: number;

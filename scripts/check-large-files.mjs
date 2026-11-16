@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { readFile, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 
 const maxRegularBlobBytes = Number(process.env.LAKEQL_MAX_GIT_BLOB_BYTES ?? 1024 * 1024);
 
@@ -31,6 +31,13 @@ function git(args) {
 }
 
 async function isLfsPointer(file) {
-  const head = await readFile(file, { encoding: "utf8", flag: "r" }).catch(() => "");
-  return head.startsWith("version https://git-lfs.github.com/spec/v1\n");
+  // Checkout hydrates LFS objects. Inspect the staged Git blob rather than
+  // treating the hydrated payload as an oversized ordinary Git object.
+  const object = `:${file}`;
+  const size = Number(git(["cat-file", "-s", object]).stdout.trim());
+  if (!Number.isSafeInteger(size) || size > 1024) return false;
+  const pointer = git(["show", object]).stdout;
+  return /^version https:\/\/git-lfs\.github\.com\/spec\/v1\noid sha256:[0-9a-f]{64}\nsize [0-9]+\n$/u.test(
+    pointer,
+  );
 }

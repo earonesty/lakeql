@@ -1,0 +1,822 @@
+{
+  "batchSize": 100000,
+  "datasetPath": "dataset.lance",
+  "datasetVersion": 2,
+  "fragmented": [
+    {
+      "_rowid": 0,
+      "category": "north",
+      "geometry": {
+        "x": 10.0,
+        "y": 10.0
+      },
+      "label": "point-5130",
+      "note": "\u96ea\ud83d\ude42 note-5130",
+      "score": -60406,
+      "serial": 5130
+    },
+    {
+      "_rowid": 1,
+      "category": null,
+      "geometry": {
+        "x": 11.0,
+        "y": 10.0
+      },
+      "label": "point-5131",
+      "note": "\u96ea\ud83d\ude42 note-5131",
+      "score": -60405,
+      "serial": 5131
+    },
+    {
+      "_rowid": 4294967296,
+      "category": null,
+      "geometry": {
+        "x": 10.0,
+        "y": 11.0
+      },
+      "label": "point-5642",
+      "note": "\u96ea\ud83d\ude42 note-5642",
+      "score": -59894,
+      "serial": 5642
+    },
+    {
+      "_rowid": 4294967297,
+      "category": "south",
+      "geometry": {
+        "x": 11.0,
+        "y": 11.0
+      },
+      "label": "point-5643",
+      "note": "\u96ea\ud83d\ude42 note-5643",
+      "score": -59893,
+      "serial": 5643
+    }
+  ],
+  "layouts": [
+    {
+      "blob": [
+        0,
+        255
+      ],
+      "flag": true,
+      "id": 1,
+      "large": "9223372036854775809",
+      "left": {
+        "x": 1,
+        "y": null
+      },
+      "none": null,
+      "right": null,
+      "text": "abcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabc",
+      "value": 1.234
+    },
+    {
+      "blob": null,
+      "flag": false,
+      "id": 2,
+      "large": "0",
+      "left": null,
+      "none": null,
+      "right": {
+        "x": 6,
+        "y": 7
+      },
+      "text": null,
+      "value": 4.32
+    },
+    {
+      "blob": [],
+      "flag": null,
+      "id": 3,
+      "large": null,
+      "left": {
+        "x": null,
+        "y": 3
+      },
+      "none": null,
+      "right": {
+        "x": 8,
+        "y": null
+      },
+      "text": "\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42\u96ea\ud83d\ude42",
+      "value": null
+    },
+    {
+      "blob": [
+        255,
+        1
+      ],
+      "flag": true,
+      "id": 4,
+      "large": "18446744073709551615",
+      "left": {
+        "x": 4,
+        "y": 5
+      },
+      "none": null,
+      "right": {
+        "x": 9,
+        "y": 10
+      },
+      "text": "short",
+      "value": -0.7
+    }
+  ],
+  "numeric": [
+    {
+      "deep": null,
+      "f32": 0.0,
+      "small": 0,
+      "tiny": 0
+    },
+    {
+      "deep": {
+        "v": null
+      },
+      "f32": 0.125,
+      "small": 1,
+      "tiny": 1
+    },
+    {
+      "deep": {
+        "v": {
+          "v": null
+        }
+      },
+      "f32": 0.25,
+      "small": 2,
+      "tiny": 2
+    },
+    {
+      "deep": {
+        "v": {
+          "v": {
+            "v": null
+          }
+        }
+      },
+      "f32": 0.375,
+      "small": 3,
+      "tiny": 3
+    },
+    {
+      "deep": {
+        "v": {
+          "v": {
+            "v": {
+              "v": null
+            }
+          }
+        }
+      },
+      "f32": 0.5,
+      "small": 4,
+      "tiny": 4
+    },
+    {
+      "deep": {
+        "v": {
+          "v": {
+            "v": {
+              "v": {
+                "v": null
+              }
+            }
+          }
+        }
+      },
+      "f32": 0.625,
+      "small": 5,
+      "tiny": 5
+    },
+    {
+      "deep": {
+        "v": {
+          "v": {
+            "v": {
+              "v": {
+                "v": {
+                  "v": null
+                }
+              }
+            }
+          }
+        }
+      },
+      "f32": 0.75,
+      "small": 6,
+      "tiny": 6
+    },
+    {
+      "deep": {
+        "v": {
+          "v": {
+            "v": {
+              "v": {
+                "v": {
+                  "v": 7
+                }
+              }
+            }
+          }
+        }
+      },
+      "f32": 0.875,
+      "small": 7,
+      "tiny": 7
+    },
+    {
+      "deep": {
+        "v": {
+          "v": {
+            "v": {
+              "v": {
+                "v": {
+                  "v": 1023
+                }
+              }
+            }
+          }
+        }
+      },
+      "f32": 127.875,
+      "small": 1023,
+      "tiny": 7
+    },
+    {
+      "deep": null,
+      "f32": 128.0,
+      "small": 1024,
+      "tiny": 8
+    },
+    {
+      "deep": {
+        "v": {
+          "v": {
+            "v": {
+              "v": {
+                "v": {
+                  "v": 2047
+                }
+              }
+            }
+          }
+        }
+      },
+      "f32": 255.875,
+      "small": 2047,
+      "tiny": 15
+    }
+  ],
+  "numericOffsets": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    1023,
+    1024,
+    2047
+  ],
+  "producer": {
+    "package": "pylance",
+    "pyarrow": "26.0.1",
+    "version": "8.0.0"
+  },
+  "queries": {
+    "hole": [
+      {
+        "_rowid": 5130,
+        "category": "north",
+        "label": "point-5130",
+        "note": "\u96ea\ud83d\ude42 note-5130",
+        "score": -60406,
+        "serial": 5130
+      },
+      {
+        "_rowid": 5131,
+        "category": null,
+        "label": "point-5131",
+        "note": "\u96ea\ud83d\ude42 note-5131",
+        "score": -60405,
+        "serial": 5131
+      },
+      {
+        "_rowid": 5132,
+        "category": "north",
+        "label": "point-5132",
+        "note": "\u96ea\ud83d\ude42 note-5132",
+        "score": -60404,
+        "serial": 5132
+      },
+      {
+        "_rowid": 5133,
+        "category": "south",
+        "label": "point-5133",
+        "note": "\u96ea\ud83d\ude42 note-5133",
+        "score": -60403,
+        "serial": 5133
+      },
+      {
+        "_rowid": 5134,
+        "category": "north",
+        "label": "point-5134",
+        "note": null,
+        "score": -60402,
+        "serial": 5134
+      },
+      {
+        "_rowid": 5642,
+        "category": null,
+        "label": "point-5642",
+        "note": "\u96ea\ud83d\ude42 note-5642",
+        "score": -59894,
+        "serial": 5642
+      },
+      {
+        "_rowid": 5643,
+        "category": "south",
+        "label": "point-5643",
+        "note": "\u96ea\ud83d\ude42 note-5643",
+        "score": -59893,
+        "serial": 5643
+      },
+      {
+        "_rowid": 5644,
+        "category": "north",
+        "label": "point-5644",
+        "note": null,
+        "score": -59892,
+        "serial": 5644
+      },
+      {
+        "_rowid": 5645,
+        "category": "south",
+        "label": "point-5645",
+        "note": "\u96ea\ud83d\ude42 note-5645",
+        "score": -59891,
+        "serial": 5645
+      },
+      {
+        "_rowid": 5646,
+        "category": "north",
+        "label": "point-5646",
+        "note": "\u96ea\ud83d\ude42 note-5646",
+        "score": -59890,
+        "serial": 5646
+      },
+      {
+        "_rowid": 6154,
+        "category": "north",
+        "label": "point-6154",
+        "note": null,
+        "score": -59382,
+        "serial": 6154
+      },
+      {
+        "_rowid": 6155,
+        "category": "south",
+        "label": "point-6155",
+        "note": "\u96ea\ud83d\ude42 note-6155",
+        "score": -59381,
+        "serial": 6155
+      },
+      {
+        "_rowid": 6157,
+        "category": "south",
+        "label": "point-6157",
+        "note": "\u96ea\ud83d\ude42 note-6157",
+        "score": -59379,
+        "serial": 6157
+      },
+      {
+        "_rowid": 6158,
+        "category": "north",
+        "label": "point-6158",
+        "note": "\u96ea\ud83d\ude42 note-6158",
+        "score": -59378,
+        "serial": 6158
+      },
+      {
+        "_rowid": 6666,
+        "category": "north",
+        "label": "point-6666",
+        "note": "\u96ea\ud83d\ude42 note-6666",
+        "score": -58870,
+        "serial": 6666
+      },
+      {
+        "_rowid": 6667,
+        "category": "south",
+        "label": "point-6667",
+        "note": "\u96ea\ud83d\ude42 note-6667",
+        "score": -58869,
+        "serial": 6667
+      },
+      {
+        "_rowid": 6668,
+        "category": "north",
+        "label": "point-6668",
+        "note": "\u96ea\ud83d\ude42 note-6668",
+        "score": -58868,
+        "serial": 6668
+      },
+      {
+        "_rowid": 6669,
+        "category": "south",
+        "label": "point-6669",
+        "note": "\u96ea\ud83d\ude42 note-6669",
+        "score": -58867,
+        "serial": 6669
+      },
+      {
+        "_rowid": 6670,
+        "category": "north",
+        "label": "point-6670",
+        "note": "\u96ea\ud83d\ude42 note-6670",
+        "score": -58866,
+        "serial": 6670
+      },
+      {
+        "_rowid": 7178,
+        "category": "north",
+        "label": "point-7178",
+        "note": "\u96ea\ud83d\ude42 note-7178",
+        "score": -58358,
+        "serial": 7178
+      },
+      {
+        "_rowid": 7179,
+        "category": "south",
+        "label": "point-7179",
+        "note": "\u96ea\ud83d\ude42 note-7179",
+        "score": -58357,
+        "serial": 7179
+      },
+      {
+        "_rowid": 7180,
+        "category": "north",
+        "label": "point-7180",
+        "note": "\u96ea\ud83d\ude42 note-7180",
+        "score": -58356,
+        "serial": 7180
+      },
+      {
+        "_rowid": 7181,
+        "category": "south",
+        "label": "point-7181",
+        "note": "\u96ea\ud83d\ude42 note-7181",
+        "score": -58355,
+        "serial": 7181
+      },
+      {
+        "_rowid": 7182,
+        "category": null,
+        "label": "point-7182",
+        "note": "\u96ea\ud83d\ude42 note-7182",
+        "score": -58354,
+        "serial": 7182
+      }
+    ],
+    "intersects": [
+      {
+        "_rowid": 5130,
+        "category": "north",
+        "label": "point-5130",
+        "note": "\u96ea\ud83d\ude42 note-5130",
+        "score": -60406,
+        "serial": 5130
+      },
+      {
+        "_rowid": 5131,
+        "category": null,
+        "label": "point-5131",
+        "note": "\u96ea\ud83d\ude42 note-5131",
+        "score": -60405,
+        "serial": 5131
+      },
+      {
+        "_rowid": 5132,
+        "category": "north",
+        "label": "point-5132",
+        "note": "\u96ea\ud83d\ude42 note-5132",
+        "score": -60404,
+        "serial": 5132
+      },
+      {
+        "_rowid": 5133,
+        "category": "south",
+        "label": "point-5133",
+        "note": "\u96ea\ud83d\ude42 note-5133",
+        "score": -60403,
+        "serial": 5133
+      },
+      {
+        "_rowid": 5134,
+        "category": "north",
+        "label": "point-5134",
+        "note": null,
+        "score": -60402,
+        "serial": 5134
+      },
+      {
+        "_rowid": 5642,
+        "category": null,
+        "label": "point-5642",
+        "note": "\u96ea\ud83d\ude42 note-5642",
+        "score": -59894,
+        "serial": 5642
+      },
+      {
+        "_rowid": 5643,
+        "category": "south",
+        "label": "point-5643",
+        "note": "\u96ea\ud83d\ude42 note-5643",
+        "score": -59893,
+        "serial": 5643
+      },
+      {
+        "_rowid": 5644,
+        "category": "north",
+        "label": "point-5644",
+        "note": null,
+        "score": -59892,
+        "serial": 5644
+      },
+      {
+        "_rowid": 5645,
+        "category": "south",
+        "label": "point-5645",
+        "note": "\u96ea\ud83d\ude42 note-5645",
+        "score": -59891,
+        "serial": 5645
+      },
+      {
+        "_rowid": 5646,
+        "category": "north",
+        "label": "point-5646",
+        "note": "\u96ea\ud83d\ude42 note-5646",
+        "score": -59890,
+        "serial": 5646
+      },
+      {
+        "_rowid": 6154,
+        "category": "north",
+        "label": "point-6154",
+        "note": null,
+        "score": -59382,
+        "serial": 6154
+      },
+      {
+        "_rowid": 6155,
+        "category": "south",
+        "label": "point-6155",
+        "note": "\u96ea\ud83d\ude42 note-6155",
+        "score": -59381,
+        "serial": 6155
+      },
+      {
+        "_rowid": 6156,
+        "category": "north",
+        "label": "point-6156",
+        "note": "\u96ea\ud83d\ude42 note-6156",
+        "score": -59380,
+        "serial": 6156
+      },
+      {
+        "_rowid": 6157,
+        "category": "south",
+        "label": "point-6157",
+        "note": "\u96ea\ud83d\ude42 note-6157",
+        "score": -59379,
+        "serial": 6157
+      },
+      {
+        "_rowid": 6158,
+        "category": "north",
+        "label": "point-6158",
+        "note": "\u96ea\ud83d\ude42 note-6158",
+        "score": -59378,
+        "serial": 6158
+      },
+      {
+        "_rowid": 6666,
+        "category": "north",
+        "label": "point-6666",
+        "note": "\u96ea\ud83d\ude42 note-6666",
+        "score": -58870,
+        "serial": 6666
+      },
+      {
+        "_rowid": 6667,
+        "category": "south",
+        "label": "point-6667",
+        "note": "\u96ea\ud83d\ude42 note-6667",
+        "score": -58869,
+        "serial": 6667
+      },
+      {
+        "_rowid": 6668,
+        "category": "north",
+        "label": "point-6668",
+        "note": "\u96ea\ud83d\ude42 note-6668",
+        "score": -58868,
+        "serial": 6668
+      },
+      {
+        "_rowid": 6669,
+        "category": "south",
+        "label": "point-6669",
+        "note": "\u96ea\ud83d\ude42 note-6669",
+        "score": -58867,
+        "serial": 6669
+      },
+      {
+        "_rowid": 6670,
+        "category": "north",
+        "label": "point-6670",
+        "note": "\u96ea\ud83d\ude42 note-6670",
+        "score": -58866,
+        "serial": 6670
+      },
+      {
+        "_rowid": 7178,
+        "category": "north",
+        "label": "point-7178",
+        "note": "\u96ea\ud83d\ude42 note-7178",
+        "score": -58358,
+        "serial": 7178
+      },
+      {
+        "_rowid": 7179,
+        "category": "south",
+        "label": "point-7179",
+        "note": "\u96ea\ud83d\ude42 note-7179",
+        "score": -58357,
+        "serial": 7179
+      },
+      {
+        "_rowid": 7180,
+        "category": "north",
+        "label": "point-7180",
+        "note": "\u96ea\ud83d\ude42 note-7180",
+        "score": -58356,
+        "serial": 7180
+      },
+      {
+        "_rowid": 7181,
+        "category": "south",
+        "label": "point-7181",
+        "note": "\u96ea\ud83d\ude42 note-7181",
+        "score": -58355,
+        "serial": 7181
+      },
+      {
+        "_rowid": 7182,
+        "category": null,
+        "label": "point-7182",
+        "note": "\u96ea\ud83d\ude42 note-7182",
+        "score": -58354,
+        "serial": 7182
+      }
+    ],
+    "within": [
+      {
+        "_rowid": 5643,
+        "category": "south",
+        "label": "point-5643",
+        "note": "\u96ea\ud83d\ude42 note-5643",
+        "score": -59893,
+        "serial": 5643
+      },
+      {
+        "_rowid": 5644,
+        "category": "north",
+        "label": "point-5644",
+        "note": null,
+        "score": -59892,
+        "serial": 5644
+      },
+      {
+        "_rowid": 5645,
+        "category": "south",
+        "label": "point-5645",
+        "note": "\u96ea\ud83d\ude42 note-5645",
+        "score": -59891,
+        "serial": 5645
+      },
+      {
+        "_rowid": 6155,
+        "category": "south",
+        "label": "point-6155",
+        "note": "\u96ea\ud83d\ude42 note-6155",
+        "score": -59381,
+        "serial": 6155
+      },
+      {
+        "_rowid": 6156,
+        "category": "north",
+        "label": "point-6156",
+        "note": "\u96ea\ud83d\ude42 note-6156",
+        "score": -59380,
+        "serial": 6156
+      },
+      {
+        "_rowid": 6157,
+        "category": "south",
+        "label": "point-6157",
+        "note": "\u96ea\ud83d\ude42 note-6157",
+        "score": -59379,
+        "serial": 6157
+      },
+      {
+        "_rowid": 6667,
+        "category": "south",
+        "label": "point-6667",
+        "note": "\u96ea\ud83d\ude42 note-6667",
+        "score": -58869,
+        "serial": 6667
+      },
+      {
+        "_rowid": 6668,
+        "category": "north",
+        "label": "point-6668",
+        "note": "\u96ea\ud83d\ude42 note-6668",
+        "score": -58868,
+        "serial": 6668
+      },
+      {
+        "_rowid": 6669,
+        "category": "south",
+        "label": "point-6669",
+        "note": "\u96ea\ud83d\ude42 note-6669",
+        "score": -58867,
+        "serial": 6669
+      }
+    ]
+  },
+  "rowCount": 131072,
+  "sha256": {
+    "dataset.lance/_indices/00b5eeea-ac56-4225-b5ee-6a59c2154534/nulls.lance": "69db2105a769e1f237862b72e02f50a405495dfc4d854b5bd9afee353dee2355",
+    "dataset.lance/_indices/00b5eeea-ac56-4225-b5ee-6a59c2154534/page_data.lance": "7c61f165bf93359e995ec9319afd996f752c4afc429faa3006111455ae641c2c",
+    "dataset.lance/_transactions/0-347ee4f1-773f-44ba-8d32-a7d1f5560174.txn": "6bfc435d78f4341d642243c69951e27c670c79c5da865f5f62640c74d774ee53",
+    "dataset.lance/_transactions/1-a20c8657-b891-41c4-874b-d7b3fee10020.txn": "66ddd7496a6ccd57c31ffd6d859a0543f79582d37d4f7a71aa2ddda3437da75e",
+    "dataset.lance/_versions/18446744073709551613.manifest": "5c37a7db57e4202c484832715c57c0a33be583a366d0d80c6286194ef8fd8143",
+    "dataset.lance/_versions/18446744073709551614.manifest": "eb8d085049fdde6c0771e75d63cb6a300e533dfcf51dc7376d194a8cec471a1e",
+    "dataset.lance/_versions/latest_version_hint.json": "732322c128ed67841ef5aa42c7cd04ffcd74a61b2d17d710cd502b713d62930d",
+    "dataset.lance/data/1111111111100101010100113273734dfd926f95f845f5e642.lance": "9469698966c9d810af9d08d74cd20bb4f3d21275ccd46cd811bb543e9a5dc4f5",
+    "fragmented.lance/_indices/4e917cb2-a7d7-4bef-8b06-83089ffc4668/nulls.lance": "c0dc2d99e112ce6743c548eec70e5b943d4a849c3d9b118608268fd55cd8adb7",
+    "fragmented.lance/_indices/4e917cb2-a7d7-4bef-8b06-83089ffc4668/page_data.lance": "10f506c28887d811a6f63f04b31a7551a9d46dfa1ec93033fdc3ac2e48baf6e6",
+    "fragmented.lance/_transactions/0-c6228fbd-4a18-4c9d-a46a-a342a3d75ca8.txn": "0872b447a91c5ab7c8a7ba2dd4979219acaa3e6685c092f0bff6a8a5349badd7",
+    "fragmented.lance/_transactions/1-da20a602-ff7d-4291-b9ca-792c9cc690fe.txn": "cb77b28382505d2cc141bac1dc276d8253a49c1499f95f3fb44d56c2273bb2e6",
+    "fragmented.lance/_transactions/2-afba96b3-fa99-4090-a29c-1147105f9954.txn": "f1ba1043bfe014d5cefc3b3a2d12777dd1e38d732ba89227d1c6d20f8fa9533f",
+    "fragmented.lance/_versions/18446744073709551612.manifest": "6cf9c2cd86d5776e339ec3246b62494e01ea17468a282e8462c2fecefb0cc2f0",
+    "fragmented.lance/_versions/18446744073709551613.manifest": "97a47f5d540618cbe39e05e2f64427c93f75125806e160b94ba1d4d4638f0724",
+    "fragmented.lance/_versions/18446744073709551614.manifest": "73e0b8b1df7c168f863f6be6410e2bbf38946b2287f36d6eca8d90fe9fbadf45",
+    "fragmented.lance/_versions/latest_version_hint.json": "9af23cea10a478f3bb916ff35c07a36debe444adf9b56814ab63861ec674ab8b",
+    "fragmented.lance/data/101010101001000001010100d882af47d8bcb63913e03d7452.lance": "261a4ff22398d7cb83e355c0c26bfb55aaab934eaf04c4fff2aa7876f1199fba",
+    "fragmented.lance/data/110110001110100000110111485a7543378ab55032fccfc16a.lance": "8c68ce06434ded15091a7ded3f166611ff123fe0e5db7579bdf8e00de370ec61",
+    "layouts.lance/_transactions/0-785f90e2-c516-4bfb-a11e-c4606e94208b.txn": "fa1a554c217e82f532ae6474e0e76cc08aee1b6717aee8cc0b7694b090a0f85c",
+    "layouts.lance/_versions/18446744073709551614.manifest": "139325403e37ed0de0d9cd1267008825985d7016fe7fa2a013d699e5dc7270ef",
+    "layouts.lance/_versions/latest_version_hint.json": "2430f1a2ad2982d0067885488a4c89e21ad1d7c83b115ba8f1b20acc88dfaea8",
+    "layouts.lance/data/11100001001011111111101115233e4758acb93479aa08ba4a.lance": "5eb5e4bb57e3784fdcc03371dcdf313f9e7a001742864fcc9c85a428e86ecf7e",
+    "numeric.lance/_transactions/0-a92ce12a-6e67-406a-9ba5-6cb379d7785c.txn": "4c4b036e483898d1ff0157619d28466408740d2ac22d530ba2976df85ce6f399",
+    "numeric.lance/_versions/18446744073709551614.manifest": "f0cff6822c978415b835b0978318d0f3cab0072f4eb667d2c8c51d924fb8466f",
+    "numeric.lance/_versions/latest_version_hint.json": "2430f1a2ad2982d0067885488a4c89e21ad1d7c83b115ba8f1b20acc88dfaea8",
+    "numeric.lance/data/10000000110100001110010161f8de4efcac254c13a64857ac.lance": "9de7761a78b765d4a440612bbaf458f43eef513b9ea92db3da711a31ac94af70",
+    "source.parquet": "9295874a1469c436050656303644ad1b0b8f094383d08bc7d42c1ffdc2f45b87"
+  },
+  "storageVersion": "2.1",
+  "take": [
+    {
+      "category": null,
+      "geometry": null,
+      "label": "point-0",
+      "note": null,
+      "score": -65536,
+      "serial": 0
+    },
+    {
+      "category": "north",
+      "geometry": {
+        "x": 10.0,
+        "y": 10.0
+      },
+      "label": "point-5130",
+      "note": "\u96ea\ud83d\ude42 note-5130",
+      "score": -60406,
+      "serial": 5130
+    },
+    {
+      "category": "south",
+      "geometry": null,
+      "label": "point-131071",
+      "note": "\u96ea\ud83d\ude42 note-131071",
+      "score": 65535,
+      "serial": 131071
+    }
+  ]
+}

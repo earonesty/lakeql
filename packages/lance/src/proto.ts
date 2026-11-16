@@ -3,6 +3,7 @@
 // table/file structures needed by the supported read-only storage 2.0 contract.
 
 import { LakeqlError } from "lakeql";
+import { type Layout21, parseLayout21 } from "./encoding21.js";
 
 export interface LanceField {
   id: number;
@@ -109,7 +110,8 @@ export type LanceArrayEncoding =
   | LanceBinaryEncoding
   | LanceDictionaryEncoding
   | LanceConstantEncoding
-  | { kind: "struct" };
+  | { kind: "struct" }
+  | Layout21;
 
 export interface LanceFlatEncoding {
   kind: "flat";
@@ -802,6 +804,10 @@ function parseEncodingAny(bytes: Uint8Array): LanceArrayEncoding {
     else if (key.field === 2) value = reader.bytesValue(key.wire);
     else reader.skip(key.wire);
   }
+  if (typeUrl === "/lance.encodings21.PageLayout") {
+    if (value === undefined) corrupt("Lance PageLayout payload is absent");
+    return parseLayout21(value);
+  }
   if (typeUrl !== "/lance.encodings.ArrayEncoding") {
     unsupported("Unsupported Lance page encoding type", { typeUrl });
   }
@@ -1139,7 +1145,7 @@ function parseU64Array(bytes: Uint8Array): bigint[] {
   return values;
 }
 
-class ProtoReader {
+export class ProtoReader {
   private offset = 0;
 
   constructor(private readonly source: Uint8Array) {}

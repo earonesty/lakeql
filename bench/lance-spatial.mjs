@@ -4,14 +4,15 @@ import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { openLanceDataset } from "../packages/lance/dist/index.js";
 
-const root = resolve(process.argv[2] ?? "packages/lance/fixtures/spatial-rtree-v2.0.lance");
+const root = resolve(process.argv[2] ?? "packages/lance/fixtures/spatial-default");
 const expected = JSON.parse(await readFile(resolve(root, "expected.json"), "utf8"));
+const dataRoot = resolve(root, expected.datasetPath ?? ".");
 const store = {
   async head(path) {
-    return { size: (await stat(resolve(root, path.replace(/^dataset\//u, "")))).size };
+    return { size: (await stat(resolve(dataRoot, path.replace(/^dataset\//u, "")))).size };
   },
   async getRange(path, { offset, length }) {
-    const file = await open(resolve(root, path.replace(/^dataset\//u, "")), "r");
+    const file = await open(resolve(dataRoot, path.replace(/^dataset\//u, "")), "r");
     try {
       const buffer = new Uint8Array(length);
       const { bytesRead } = await file.read(buffer, 0, length, offset);
@@ -74,7 +75,12 @@ for (let trial = 0; trial < 5; trial++) {
     },
   });
   const serials = result.rows.map((row) => row.serial).sort((a, b) => a - b);
-  if (JSON.stringify(serials) !== JSON.stringify(expected.queries.intersects))
+  if (
+    JSON.stringify(serials) !==
+    JSON.stringify(
+      expected.queries.intersects.map((row) => (typeof row === "number" ? row : row.serial)),
+    )
+  )
     throw new Error("Result differs from pylance ground truth");
   const after = process.memoryUsage();
   trials.push({
