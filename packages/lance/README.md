@@ -103,6 +103,33 @@ top-k, and materializes projected fields in distance order. L2, cosine, and Lanc
 semantics are supported. `nprobes` is explicit: searching every partition is exact, while fewer
 partitions trades recall for object-storage I/O.
 
+Official R-tree indexes support exact spatial queries over native GeoArrow XY points:
+
+```ts
+const indexes = await dataset.spatialIndexes();
+const result = await dataset.spatialRows({
+  snapshotId: dataset.snapshotId,
+  index: indexes[0].name,
+  query: {
+    predicate: "within", // also "intersects" and "contains"
+    geometry: {
+      type: "Polygon",
+      coordinates: [[[10, 10], [14, 10], [14, 14], [10, 14], [10, 10]]],
+    },
+  },
+  select: ["serial", "geometry"],
+});
+```
+
+Traversal prunes branches by envelope, refines the indexed point against the exact
+query geometry, and materializes only matches. Polygon holes and boundary semantics
+are preserved. Numeric range buffers and active traversal state obey the same
+operation budgets as payload reads. The index must cover all active fragments.
+Native XY points and R-tree version 0 are supported; other indexed geometry shapes
+and newer physical-address index versions fail explicitly. Writer options, memory
+accounting, reproducible fixtures, and million-point results are documented in
+[`docs/lance-spatial-benchmark.md`](../../docs/lance-spatial-benchmark.md).
+
 Store `dataset.snapshotId` with every external index generation. `takeRows` requires it and returns
 a typed `LAKEQL_LANCE_SNAPSHOT_MISMATCH` error before reading data if it does not match. Duplicate
 IDs and caller order are preserved. Missing and snapshot-deleted IDs throw by default; use
@@ -115,7 +142,8 @@ The current reader supports stable-row-ID datasets written with Lance storage ve
 manifest paths. The checked-in compatibility fixtures were produced by the official
 `pylance 8.0.0` writer. Supported projected leaf types are UTF-8 strings, binary values, booleans,
 signed and unsigned integers, 32/64-bit floats, dates, and second/millisecond/microsecond/nanosecond
-timestamps using uncompressed flat and nullable encodings. Low-cardinality UTF-8 columns using
+timestamps using uncompressed flat and nullable encodings. Struct projections recursively decode
+children when the parent uses the storage 2.0 SimpleStruct encoding. Low-cardinality UTF-8 columns using
 Lance's dictionary encoding are supported, including its null sentinel. Sparse Arrow-array
 deletion files are supported, including Zstandard-compressed buffers.
 
@@ -127,7 +155,7 @@ Official vector index format V3 IVF_FLAT indexes (`index_version` 1) are support
 fixed-size-list columns. IVF_PQ, IVF_SQ, IVF_RQ, and HNSW layouts remain explicit unsupported
 boundaries; there is no brute-force dataset fallback when an unsupported index is selected.
 
-The reader deliberately rejects unsupported storage versions, compressed data pages, nested
+The reader deliberately rejects unsupported storage versions, compressed data pages, list-based nested
 fields, Roaring-bitmap deletion files, and unknown encodings. It never silently scans a column,
 index, Lance data file, or dataset, and it rejects a data range that would read an entire Lance
 data file. Arrow deletion vectors are resolved only for fragments containing requested row IDs;

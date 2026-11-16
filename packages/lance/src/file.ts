@@ -5,7 +5,7 @@ import {
   type TimestampUnit,
   timestampFromEpoch,
 } from "lakeql";
-import type { ByteRange, LanceReadContext, RangeLease } from "./io.js";
+import type { ByteRange, LanceReadContext, MemoryLease, RangeLease } from "./io.js";
 import {
   type LanceArrayEncoding,
   type LanceColumnMetadata,
@@ -201,8 +201,34 @@ export async function materializeFragmentRows(options: {
   const { context, fragment, fragmentIndex, rowOffsets } = options;
   context.stats.fragments.add(fragmentIndex);
   const rows = new Map<number, Row>(rowOffsets.map((offset) => [offset, {}]));
-  const fieldByName = new Map(options.fields.map((field) => [field.name, field]));
+  const fieldByName = new Map(
+    options.fields.filter((field) => field.parentId === -1).map((field) => [field.name, field]),
+  );
+  const projected: LanceField[] = [];
+  const childrenByParent = new Map<number, LanceField[]>();
+  for (const field of options.fields) {
+    const siblings = childrenByParent.get(field.parentId) ?? [];
+    siblings.push(field);
+    childrenByParent.set(field.parentId, siblings);
+  }
+  const children = (field: LanceField) => childrenByParent.get(field.id) ?? [];
   const fileSelections = new Map<LanceDataFile, { field: LanceField; columnIndex: number }[]>();
+  const add = (field: LanceField, ancestors: Set<number>): void => {
+    if (ancestors.has(field.id)) corrupt("Cyclic Lance field hierarchy");
+    const location = locateField(fragment, field.id);
+    const alias = `field:${field.id}`;
+    if (location === undefined) {
+      for (const row of rows.values()) row[alias] = null;
+      return;
+    }
+    const selections = fileSelections.get(location.file) ?? [];
+    selections.push({ field: { ...field, name: alias }, columnIndex: location.columnIndex });
+    fileSelections.set(location.file, selections);
+    if (field.logicalType === "struct") {
+      const next = new Set([...ancestors, field.id]);
+      for (const child of children(field)) add(child, next);
+    }
+  };
   for (const name of options.select) {
     const field = fieldByName.get(name);
     if (field === undefined) {
@@ -210,20 +236,8 @@ export async function materializeFragmentRows(options: {
         column: name,
       });
     }
-    if (field.parentId !== -1) {
-      unsupported("Nested Lance projections are not supported", {
-        column: name,
-        logicalType: field.logicalType,
-      });
-    }
-    const location = locateField(fragment, field.id);
-    if (location === undefined) {
-      for (const row of rows.values()) row[name] = null;
-      continue;
-    }
-    const selections = fileSelections.get(location.file) ?? [];
-    selections.push({ field, columnIndex: location.columnIndex });
-    fileSelections.set(location.file, selections);
+    projected.push(field);
+    add(field, new Set());
   }
   await Promise.all(
     [...fileSelections].map(async ([file, selections]) => {
@@ -242,7 +256,18 @@ export async function materializeFragmentRows(options: {
       }
     }),
   );
-  return rows;
+  const build = (row: Row, field: LanceField): unknown => {
+    const value = row[`field:${field.id}`];
+    if (field.logicalType !== "struct" || value === null) return value;
+    context.accountDecodedMemory(64);
+    return Object.fromEntries(children(field).map((child) => [child.name, build(row, child)]));
+  };
+  return new Map(
+    [...rows].map(([offset, row]) => [
+      offset,
+      Object.fromEntries(projected.map((field) => [field.name, build(row, field)])),
+    ]),
+  );
 }
 
 async function materializeDataFile(options: {
@@ -375,6 +400,11 @@ async function executeCellPlans(
   const phaseOneRanges: ByteRange[] = [];
   for (const plan of cellPlans) {
     const resolved = resolveCellEncoding(plan.page.encoding);
+    if (resolved.kind === "struct") {
+      context.accountDecodedMemory(64);
+      assignCell(output, plan.rowOffset, plan.field.name, {});
+      continue;
+    }
     if (resolved.kind === "all_nulls") {
       assignCell(output, plan.rowOffset, plan.field.name, null);
       continue;
@@ -693,6 +723,7 @@ async function executeCellPlans(
 }
 
 type ResolvedCellEncoding =
+  | { kind: "struct" }
   | { kind: "all_nulls" }
   | { kind: "fixed"; flat: LanceFlatEncoding; validity?: LanceFlatEncoding }
   | {
@@ -721,6 +752,10 @@ function resolveCellEncoding(
   encoding: LanceArrayEncoding,
   validity?: LanceFlatEncoding,
 ): ResolvedCellEncoding {
+  if (encoding.kind === "struct") {
+    if (validity !== undefined) unsupported("Struct parent validity is not supported");
+    return { kind: "struct" };
+  }
   if (encoding.kind === "nullable") {
     if (encoding.mode === "all_nulls") return { kind: "all_nulls" };
     if (encoding.mode === "no_nulls") return resolveCellEncoding(encoding.values, validity);
@@ -1242,4 +1277,110 @@ function unsupported(message: string, details: Record<string, unknown> = {}): ne
 
 function corrupt(message: string, details: Record<string, unknown> = {}): never {
   throw new LakeqlError("LAKEQL_LANCE_READ_ERROR", message, details);
+}
+
+/**
+ * Zero-copy fixed-width range projection. Its vector-shape capability is a
+ * contiguous row span of non-null numeric primitive columns; nullable, nested,
+ * compressed and variable-width encodings remain the cell materializer's job.
+ * Values are valid only during the synchronous consumer call.
+ */
+export async function withInspectedNumericRange(
+  options: {
+    context: LanceReadContext;
+    file: InspectedLanceFile;
+    selections: readonly { field: LanceField; columnIndex: number }[];
+    rowStart: number;
+    rowCount: number;
+  },
+  consume: (value: (column: number, row: number) => number | bigint) => void,
+): Promise<void> {
+  const { context, file, rowStart, rowCount } = options;
+  const end = rowStart + rowCount;
+  if (
+    !Number.isSafeInteger(rowStart) ||
+    !Number.isSafeInteger(rowCount) ||
+    rowStart < 0 ||
+    rowCount <= 0 ||
+    end > file.rowCount
+  ) {
+    corrupt("Numeric Lance range is outside file rows");
+  }
+  const spans: {
+    start: number;
+    end: number;
+    page: LancePage;
+    flat: LanceFlatEncoding;
+    field: LanceField;
+    range: ByteRange;
+    column: number;
+  }[] = [];
+  const scratch: MemoryLease[] = [];
+  try {
+    for (const [column, selection] of options.selections.entries()) {
+      if (
+        !["int32", "uint32", "int64", "uint64", "float", "double"].includes(
+          selection.field.logicalType,
+        )
+      ) {
+        unsupported("Numeric range projection requires numeric primitive columns");
+      }
+      const metadata = file.columns[selection.columnIndex];
+      if (metadata === undefined) corrupt("Numeric range column is missing");
+      let cursor = rowStart;
+      while (cursor < end) {
+        const located = findPage(metadata.pages, cursor);
+        const resolved = resolveCellEncoding(located.page.encoding);
+        if (resolved.kind !== "fixed" || resolved.validity !== undefined) {
+          unsupported("Numeric range projection requires non-null fixed-width pages");
+        }
+        validateFlat(resolved.flat, located.page, selection.field.logicalType);
+        const spanEnd = Math.min(end, located.page.rowStart + located.page.length);
+        const range = flatRangeSpan(
+          located.page,
+          resolved.flat,
+          cursor - located.page.rowStart,
+          spanEnd - cursor,
+        );
+        scratch.push(context.leaseDecodedMemory(192));
+        spans.push({
+          start: cursor,
+          end: spanEnd,
+          page: located.page,
+          flat: resolved.flat,
+          field: selection.field,
+          range,
+          column,
+        });
+        context.stats.pages.add(`${file.path}:${selection.columnIndex}:${located.index}`);
+        cursor = spanEnd;
+      }
+    }
+    context.reserveDecodedRows(rowCount);
+    const lease = await context.readRanges(
+      file.path,
+      spans.map((span) => span.range),
+      "data",
+      file.fileSize,
+    );
+    try {
+      consume((column, row) => {
+        const span = spans.find(
+          (span) => span.column === column && row >= span.start && row < span.end,
+        );
+        if (span === undefined) corrupt("Numeric range value is outside projected span");
+        const range = flatRange(span.page, span.flat, row - span.page.rowStart);
+        return decodeFixedValue(
+          lease.slice(range),
+          span.flat.bitsPerValue,
+          row - span.page.rowStart,
+          span.field.logicalType,
+        ) as number | bigint;
+      });
+    } finally {
+      lease.release();
+    }
+  } finally {
+    for (const lease of scratch) lease.release();
+  }
 }

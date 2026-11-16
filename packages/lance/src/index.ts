@@ -32,12 +32,35 @@ import {
   rangeScalarRowIds,
 } from "./scalar.js";
 import {
+  type LanceSpatialIndexInfo,
+  type LanceSpatialLimits,
+  type LanceSpatialQuery,
+  loadSpatialIndexes,
+  searchSpatialIndex,
+} from "./spatial.js";
+import {
   type LanceVectorIndexInfo,
   type LanceVectorLimits,
   type LanceVectorMetric,
   loadVectorIndexes,
   searchVectorIndex,
 } from "./vector.js";
+
+export type { LanceSpatialIndexInfo, LanceSpatialLimits, LanceSpatialQuery };
+
+export interface SpatialLanceRowsOptions {
+  snapshotId: string;
+  index: string;
+  query: LanceSpatialQuery;
+  select: readonly string[];
+  limits?: Partial<LanceSpatialLimits>;
+}
+
+export interface LanceSpatialSearchResult extends LanceScalarRangeResult {
+  index: LanceSpatialIndexInfo;
+  pagesVisited: number;
+  candidatesExamined: number;
+}
 
 export const PACKAGE = "lakeql-lance" as const;
 export const SUPPORTED_LANCE_STORAGE_VERSION = "2.0" as const;
@@ -344,6 +367,63 @@ export class LanceDataset {
         rowIds: retained.map(({ rowId }) => rowId),
         rows: retained.map(({ row }) => row),
         stats: materialized.stats,
+      };
+    } finally {
+      context.releaseDecodedMemory();
+    }
+  }
+
+  async spatialIndexes(): Promise<LanceSpatialIndexInfo[]> {
+    const stats = cloneStats(this.options.openStats);
+    const context = this.context(stats, this.options.now());
+    try {
+      return await loadSpatialIndexes({ ...this.options, context });
+    } finally {
+      context.releaseDecodedMemory();
+    }
+  }
+
+  async spatialRows(options: SpatialLanceRowsOptions): Promise<LanceSpatialSearchResult> {
+    if (options.snapshotId !== this.snapshotId) {
+      snapshotMismatch(this.snapshotId, options.snapshotId, this.version);
+    }
+    const stats = cloneStats(this.options.openStats);
+    const startedAt = this.options.now();
+    const context = this.context(stats, startedAt);
+    try {
+      const search = await searchSpatialIndex({
+        ...this.options,
+        context,
+        indexName: options.index,
+        query: options.query,
+        ...(options.limits === undefined ? {} : { limits: options.limits }),
+      });
+      const materialized = await this.takeRowsWithStats(
+        {
+          snapshotId: this.snapshotId,
+          rowIds: search.rowIds,
+          select: options.select,
+          onMissing: "null",
+        },
+        stats,
+        context,
+        startedAt,
+      );
+      const rows: Row[] = [];
+      const rowIds: string[] = [];
+      for (const [i, row] of materialized.rows.entries()) {
+        if (row !== null) {
+          rows.push(row);
+          rowIds.push(String(search.rowIds[i]));
+        }
+      }
+      return {
+        index: search.index,
+        rows,
+        rowIds,
+        stats: materialized.stats,
+        pagesVisited: search.pagesVisited,
+        candidatesExamined: search.candidatesExamined,
       };
     } finally {
       context.releaseDecodedMemory();
@@ -839,13 +919,13 @@ function validateManifest(manifest: LanceManifest, requestedVersion: bigint): vo
   const ids = new Set<number>();
   for (const field of manifest.fields) {
     if (field.name === "" || field.logicalType === "") corrupt("Lance field is incomplete");
-    if (names.has(field.name) || ids.has(field.id)) {
+    if (names.has(`${field.parentId}:${field.name}`) || ids.has(field.id)) {
       corrupt("Lance manifest has duplicate field identity", {
         name: field.name,
         id: field.id,
       });
     }
-    names.add(field.name);
+    names.add(`${field.parentId}:${field.name}`);
     ids.add(field.id);
   }
   for (const fragment of manifest.fragments) {
