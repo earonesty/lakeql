@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { batchFromColumns } from "./batch.js";
 import { jsonSafeValue } from "./evaluator.js";
-import { gt } from "./expr.js";
+import { gt, isNotNull } from "./expr.js";
 import { stableStringify } from "./manifest.js";
 import { memoryStore } from "./memory-store.js";
 import { estimateBatchBytes } from "./physical.js";
@@ -108,6 +108,7 @@ it.each([
   const entries = [1, 2].map((index) => [`input\u001f${index}`, rows[index]]);
   const cap =
     bytes(refs) +
+    refs.length * Float64Array.BYTES_PER_ELEMENT +
     bytes([entries[0]]) +
     estimateBatchBytes(
       batchFromColumns({
@@ -346,4 +347,117 @@ it("coalesces measured zero-byte decoded columns instead of probing each row", a
       .toArray(),
   ).toEqual(rows);
   expect(f.closed).toBe(2);
+});
+
+it.each([
+  "resume",
+  "return",
+  "abort",
+] as const)("releases the original reference charge after caller list mutation (%s)", async (action) => {
+  const rows = Array.from({ length: 3 }, (_, score) => ({
+    tags: [`tag-${score}`],
+    payload: `value-${score}`,
+  }));
+  const controller = new AbortController();
+  const f = await fixture(rows, 8000, controller.signal);
+  const iterator = f.lake
+    .path("input")
+    .select(["tags", "payload"])
+    .where(isNotNull("tags"))
+    .batchSize(1)
+    .limit(rows.length)
+    .run()
+    .batches()
+    [Symbol.asyncIterator]();
+  const first = await iterator.next();
+  const tags = first.value?.[0]?.tags;
+  if (!Array.isArray(tags)) throw Error("missing yielded tags");
+  tags.push("x".repeat(12000));
+  expect(rows[0]?.tags).toEqual(["tag-0"]);
+  if (action === "resume") {
+    const remaining: Row[] = [];
+    for (;;) {
+      const next = await iterator.next();
+      if (next.done) break;
+      remaining.push(...next.value);
+    }
+    expect(remaining).toEqual(rows.slice(1));
+  } else if (action === "return") {
+    await expect(iterator.return?.()).resolves.toMatchObject({ done: true });
+    expect(f.payloadRows).toEqual([0]);
+  } else {
+    controller.abort("after output mutation");
+    await expect(iterator.next()).rejects.toMatchObject({ code: "LAKEQL_ABORTED" });
+    expect(f.payloadRows).toEqual([0]);
+  }
+});
+
+it("never serializes caller-owned cyclic output during reference release", async () => {
+  const rows = [
+    { tags: ["first"], payload: "a" },
+    { tags: ["second"], payload: "b" },
+  ];
+  const f = await fixture(rows, 8000);
+  const iterator = f.lake
+    .path("input")
+    .select(["tags", "payload"])
+    .where(isNotNull("tags"))
+    .batchSize(1)
+    .limit(2)
+    .run()
+    .batches()
+    [Symbol.asyncIterator]();
+  const first = await iterator.next();
+  const tags = first.value?.[0]?.tags;
+  if (!Array.isArray(tags)) throw Error("missing tags");
+  tags.push(tags);
+  expect((await iterator.next()).value).toEqual([rows[1]]);
+  expect((await iterator.next()).done).toBe(true);
+});
+
+it("releases the full admission charge when a caller shrinks a yielded list", async () => {
+  const rows = [
+    { tags: ["t".repeat(1000)], payload: "small" },
+    { tags: ["second"], payload: "x".repeat(2000) },
+  ];
+  const f = await fixture(rows, 7000);
+  const iterator = f.lake
+    .path("input")
+    .select(["tags", "payload"])
+    .where(isNotNull("tags"))
+    .batchSize(1)
+    .limit(2)
+    .run()
+    .batches()
+    [Symbol.asyncIterator]();
+  const first = await iterator.next();
+  const tags = first.value?.[0]?.tags;
+  if (!Array.isArray(tags)) throw Error("missing tags");
+  tags.length = 0;
+  expect((await iterator.next()).value).toEqual([rows[1]]);
+  expect((await iterator.next()).done).toBe(true);
+});
+
+it("uses admission charges for mutable predicate keys in ordered top-k streams too", async () => {
+  const rows = [
+    { score: 1, tags: ["one"], payload: "a" },
+    { score: 2, tags: ["two"], payload: "b" },
+  ];
+  const f = await fixture(rows, 8000);
+  const iterator = f.lake
+    .path("input")
+    .select(["score", "tags", "payload"])
+    .where(isNotNull("tags"))
+    .orderBy([{ column: "score" }])
+    .batchSize(1)
+    .limit(2)
+    .run()
+    .batches()
+    [Symbol.asyncIterator]();
+  const first = await iterator.next();
+  const tags = first.value?.[0]?.tags;
+  if (!Array.isArray(tags)) throw Error("missing tags");
+  tags.push("x".repeat(12000));
+  expect((await iterator.next()).value).toEqual([rows[1]]);
+  expect((await iterator.next()).done).toBe(true);
 });

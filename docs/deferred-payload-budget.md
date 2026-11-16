@@ -30,7 +30,8 @@ No user tuning flag is required.
 
 ## What the byte allowance measures
 
-The live charge combines serialized remaining references, serialized
+The live charge combines serialized remaining references, their fixed numeric
+charge ledger, serialized
 `[referenceKey, projectedRow]` entries, and the current decoded batch's existing
 physical-engine byte estimate. Counters update changed entries and released
 references; there is no repeated scan of all retained output rows. Decoded overlap
@@ -61,7 +62,7 @@ zero warm data-range reads. Variable-width retries may add reads or decoding; th
 fixtures establish correctness and request behavior, not a throughput or peak-heap
 claim.
 
-Final local validation passes build, lint, types, 971 regular tests (97 skipped),
+Final local validation passes build, lint, types, 977 regular tests (97 skipped),
 10 native Worker/R2 tests, 81 reference comparisons and coverage thresholds
 (91.19% statements, 84.76% branches).
 
@@ -88,3 +89,9 @@ two files, output batch sizes and decoder batch boundaries; all passed. Selectio
 still uses the scanner's existing ranking/predicate input-batch policy. The decoded
 overlap charge in this change applies to payload materialization, not a new global
 reservation for every scanner or encoded reader allocation.
+
+Reference charges are captured once before output can escape. Cleanup subtracts
+the original charge without reading yielded values again, so caller mutations
+(including cyclic lists) cannot underflow the counter or mask cancellation. The
+ledger uses eight bytes per actual selected reference, exists only for byte-budgeted
+execution, and its own byte length is included in the live allowance.

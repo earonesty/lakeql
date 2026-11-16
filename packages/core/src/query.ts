@@ -2098,8 +2098,18 @@ export class QueryResult {
     const config = this.config;
     const measured = config.budget.maxMemoryBytes !== undefined;
     const remaining = new RunningCounter();
-    for (const ref of refs)
-      if (ref !== undefined) remaining.add(measured ? estimateOperatorMemoryBytes(ref) : 0);
+    // Output may share nested values with a reference. Once yielded, those values
+    // belong to the caller: cleanup must release the admission charge, not size
+    // caller-mutated data again. The numeric ledger is bounded by selected refs.
+    const charges = measured ? new Float64Array(refs.length) : undefined;
+    for (let index = 0; index < refs.length; index++) {
+      const ref = refs[index];
+      if (ref === undefined) continue;
+      const charge = measured ? estimateOperatorMemoryBytes(ref) : 0;
+      if (charges !== undefined) charges[index] = charge;
+      remaining.add(charge);
+    }
+    const referenceBytes = () => (measured ? remaining.listBytes + (charges?.byteLength ?? 0) : 0);
     const maxRows = Math.max(
       1,
       Math.min(config.batchSize ?? 4096, config.budget.maxBufferedRows ?? Infinity),
@@ -2110,8 +2120,7 @@ export class QueryResult {
       for (let start = 0; start < refs.length; ) {
         throwIfAborted(config.budget.signal);
         enforceBudget(config.budget, this.stats, config.now, startedAt);
-        const available =
-          (config.budget.maxMemoryBytes ?? Infinity) - (measured ? remaining.listBytes : 0) - 2;
+        const available = (config.budget.maxMemoryBytes ?? Infinity) - referenceBytes() - 2;
         let count = Math.min(
           refs.length - start,
           maxRows,
@@ -2147,7 +2156,7 @@ export class QueryResult {
               rankColumns,
               startedAt,
               span,
-              measured ? remaining.listBytes : 0,
+              referenceBytes(),
               (entryBytes, decodedPerRow) => {
                 observedEntryBytes = Math.max(observedEntryBytes, entryBytes);
                 observedDecodedBytes = Math.max(observedDecodedBytes, decodedPerRow);
@@ -2179,8 +2188,8 @@ export class QueryResult {
           rows.clear();
           for (let index = start; index < start + count; index++) {
             const ref = refs[index];
-            if (ref !== undefined)
-              remaining.remove(measured ? estimateOperatorMemoryBytes(ref) : 0);
+            if (ref !== undefined) remaining.remove(charges?.[index] ?? 0);
+            if (charges !== undefined) charges[index] = 0;
             refs[index] = undefined;
           }
           window.length = 0;
