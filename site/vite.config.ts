@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
+import { sampleUrl } from "./playground-sample.mjs";
 
 const require = createRequire(import.meta.url);
 const lakeqlPackage = require("../packages/lakeql/package.json") as { version: string };
@@ -11,12 +12,15 @@ export default defineConfig({
   base: "./",
   define: {
     __LAKEQL_VERSION__: JSON.stringify(lakeqlPackage.version),
+    __PLAYGROUND_SAMPLE_URL__: JSON.stringify(sampleUrl),
   },
   plugins: [
     {
       name: "inject-lakeql-version",
       transformIndexHtml(html) {
-        return html.replaceAll("__LAKEQL_VERSION__", lakeqlPackage.version);
+        return html
+          .replaceAll("__LAKEQL_VERSION__", lakeqlPackage.version)
+          .replaceAll("__PLAYGROUND_SAMPLE_URL__", sampleUrl);
       },
     },
   ],
