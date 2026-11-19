@@ -347,7 +347,10 @@ it.each([
       });
       response.end(bytes.subarray(start, end));
     })().catch((error) => {
-      response.writeHead(500);
+      response.writeHead(500, {
+        "content-type": "text/plain; charset=utf-8",
+        "x-content-type-options": "nosniff",
+      });
       response.end(String(error));
     });
   });
