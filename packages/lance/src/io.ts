@@ -36,6 +36,8 @@ export class LanceReadContext {
   readonly store: ObjectStore;
   private memoryBytes = 0;
   private decodedMemoryBytes = 0;
+  private readonly metadataLeases: RangeLease[] = [];
+  private readonly sharedMetadata = new Map<string, Promise<RangeLease>>();
 
   constructor(
     store: ObjectStore,
@@ -46,11 +48,56 @@ export class LanceReadContext {
     readonly planning: LanceRangePlanningOptions,
   ) {
     this.store = withObjectStoreReadControls(store, {
-      ...(budget.maxConcurrentReads === undefined
-        ? {}
-        : { maxConcurrentReads: budget.maxConcurrentReads }),
+      maxConcurrentReads: budget.maxConcurrentReads ?? 4,
       ...(budget.signal === undefined ? {} : { signal: budget.signal }),
     });
+  }
+
+  /** Headroom for planning bounded waves; every allocation still requires admission. */
+  get availableMemoryBytes(): number {
+    return (this.budget.maxMemoryBytes ?? Infinity) - this.memoryBytes;
+  }
+
+  /** Share immutable page directories within an operation, including pending reads. */
+  async readSharedMetadata(path: string, range: ByteRange, fileSize: number): Promise<RangeLease> {
+    const key = JSON.stringify([path, range.offset, range.length]);
+    let pending = this.sharedMetadata.get(key);
+    if (pending === undefined) {
+      this.accountDecodedMemory(64 + key.length * 2);
+      pending = this.readRange(path, range, "file_metadata", fileSize).then((lease) => {
+        this.metadataLeases.push(lease);
+        return lease;
+      });
+      this.sharedMetadata.set(key, pending);
+    }
+    const lease = await pending;
+    return new RangeLease([{ ...range, bytes: lease.slice(range) }], () => {});
+  }
+
+  /** Drain started work before releasing operation memory, including on failure. */
+  async runTasks<T>(
+    values: readonly T[],
+    run: (value: T, index: number) => Promise<void>,
+    concurrency = this.budget.maxConcurrentReads ?? 4,
+  ): Promise<void> {
+    let cursor = 0;
+    let failed = false;
+    let failure: unknown;
+    await Promise.all(
+      Array.from({ length: Math.min(values.length, concurrency) }, async () => {
+        while (!failed && cursor < values.length) {
+          const index = cursor++;
+          try {
+            this.check();
+            await run(values[index] as T, index);
+          } catch (error) {
+            if (!failed) failure = error;
+            failed = true;
+          }
+        }
+      }),
+    );
+    if (failed) throw failure;
   }
 
   async readRange(
@@ -114,25 +161,24 @@ export class LanceReadContext {
     this.reserveReads(physical.length, physicalBytes, logicalBytes);
     this.reserveMemory(physicalBytes);
     try {
-      const values = await Promise.all(
-        physical.map(async (range) => {
-          const bytes = await this.store.getRange(path, range);
-          if (bytes.byteLength !== range.length) {
-            throw new LakeqlError(
-              "LAKEQL_LANCE_READ_ERROR",
-              "Lance object store returned a truncated range",
-              {
-                path,
-                offset: range.offset,
-                expectedLength: range.length,
-                actualLength: bytes.byteLength,
-              },
-            );
-          }
-          this.check();
-          return { ...range, bytes };
-        }),
-      );
+      const values: (ByteRange & { bytes: Uint8Array })[] = [];
+      await this.runTasks(physical, async (range, index) => {
+        const bytes = await this.store.getRange(path, range);
+        if (bytes.byteLength !== range.length) {
+          throw new LakeqlError(
+            "LAKEQL_LANCE_READ_ERROR",
+            "Lance object store returned a truncated range",
+            {
+              path,
+              offset: range.offset,
+              expectedLength: range.length,
+              actualLength: bytes.byteLength,
+            },
+          );
+        }
+        this.check();
+        values[index] = { ...range, bytes };
+      });
       if (category === "snapshot") this.stats.snapshotMetadataBytes += physicalBytes;
       else if (category === "file_metadata") this.stats.dataMetadataBytes += physicalBytes;
       return new RangeLease(values, () => this.releaseMemory(physicalBytes));
@@ -161,6 +207,9 @@ export class LanceReadContext {
   }
 
   releaseDecodedMemory(): void {
+    for (const lease of this.metadataLeases) lease.release();
+    this.metadataLeases.length = 0;
+    this.sharedMetadata.clear();
     this.releaseMemory(this.decodedMemoryBytes);
     this.decodedMemoryBytes = 0;
   }

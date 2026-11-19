@@ -180,7 +180,9 @@ describe("issue #24 default GeoParquet conversion", () => {
   });
   it("enforces the exact observed memory boundary for default R-tree traversal", async () => {
     const run = async (maxMemoryBytes = budget.maxMemoryBytes) => {
-      const { dataset } = await fixture({ maxMemoryBytes });
+      // A single read worker makes the exact active allocation boundary deterministic.
+      // Parallel execution has separate hard-ceiling and overlap checks.
+      const { dataset } = await fixture({ maxMemoryBytes, maxConcurrentReads: 1 });
       return dataset.spatialRows({
         snapshotId: dataset.snapshotId,
         index: "geometry_idx",

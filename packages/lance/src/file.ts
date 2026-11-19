@@ -2,6 +2,7 @@ import {
   LakeqlError,
   type ObjectHead,
   type Row,
+  type SharedMemoryCache,
   type TimestampUnit,
   timestampFromEpoch,
 } from "lakeql";
@@ -257,24 +258,21 @@ export async function materializeFragmentRows(options: {
     projected.push(field);
     add(field, new Set());
   }
-  await Promise.all(
-    [...fileSelections].map(async ([file, selections]) => {
-      const values = await materializeDataFile({
-        context,
-        root: options.root,
-        file,
-        selections,
-        fields: options.fields,
-        rowOffsets,
-      });
-      for (const [rowOffset, valuesByColumn] of values) {
-        const row = rows.get(rowOffset);
-        if (row === undefined)
-          corrupt("Materialized an unexpected Lance row offset", { rowOffset });
-        Object.assign(row, valuesByColumn);
-      }
-    }),
-  );
+  await context.runTasks([...fileSelections], async ([file, selections]) => {
+    const values = await materializeDataFile({
+      context,
+      root: options.root,
+      file,
+      selections,
+      fields: options.fields,
+      rowOffsets,
+    });
+    for (const [rowOffset, valuesByColumn] of values) {
+      const row = rows.get(rowOffset);
+      if (row === undefined) corrupt("Materialized an unexpected Lance row offset", { rowOffset });
+      Object.assign(row, valuesByColumn);
+    }
+  });
   const build = (row: Row, field: LanceField): unknown => {
     const value = row[`field:${field.id}`];
     if (field.logicalType !== "struct" || value === null) return value;
@@ -535,6 +533,7 @@ async function executeCellPlans(
       phaseOneRanges.push(flatRange(plan.page, resolved.indices, plan.rowInPage - 1));
     }
   }
+  const structuralTasks: (() => Promise<void>)[] = [];
   for (const [page, plans] of structural) {
     if (page.encoding.kind !== "structural") corrupt("Missing structural layout");
     // A page can be selected under multiple aliases. Group each physical field
@@ -549,42 +548,46 @@ async function executeCellPlans(
       const first = values[0];
       if (first === undefined) continue;
       const byRow = new Map(values.map((plan) => [plan.rowInPage, plan]));
-      await readStructuralColumn(
-        {
-          context,
-          path,
-          fileSize,
-          page,
-          layout: page.encoding,
-          rows: [...byRow.keys()],
-          logicalType: first.field.logicalType,
-          retainValues: true,
-          decodeFixed: decodeFixedValue,
-        },
-        (row, value, definition, layers) => {
-          const plan = byRow.get(row);
-          if (plan === undefined) corrupt("Unexpected structural row");
-          assignCell(output, plan.rowOffset, plan.field.name, value);
-          if (schema !== undefined) {
-            let parentId = plan.field.parentId;
-            let threshold = layers[0] === 3 ? 1 : 0;
-            for (let i = 1; i < layers.length; i++) {
-              const parent = schema.find((field) => field.id === parentId);
-              if (parent === undefined || parent.logicalType !== "struct")
-                corrupt("Definition layers disagree with schema");
-              if (layers[i] === 3) {
-                if (definition > threshold)
-                  assignCell(output, plan.rowOffset, `field:${parent.id}`, null);
-                threshold++;
+      const layout = page.encoding;
+      structuralTasks.push(async () => {
+        await readStructuralColumn(
+          {
+            context,
+            path,
+            fileSize,
+            page,
+            layout,
+            rows: [...byRow.keys()],
+            logicalType: first.field.logicalType,
+            retainValues: true,
+            decodeFixed: decodeFixedValue,
+          },
+          (row, value, definition, layers) => {
+            const plan = byRow.get(row);
+            if (plan === undefined) corrupt("Unexpected structural row");
+            assignCell(output, plan.rowOffset, plan.field.name, value);
+            if (schema !== undefined) {
+              let parentId = plan.field.parentId;
+              let threshold = layers[0] === 3 ? 1 : 0;
+              for (let i = 1; i < layers.length; i++) {
+                const parent = schema.find((field) => field.id === parentId);
+                if (parent === undefined || parent.logicalType !== "struct")
+                  corrupt("Definition layers disagree with schema");
+                if (layers[i] === 3) {
+                  if (definition > threshold)
+                    assignCell(output, plan.rowOffset, `field:${parent.id}`, null);
+                  threshold++;
+                }
+                parentId = parent.parentId;
               }
-              parentId = parent.parentId;
+              if (parentId !== -1) corrupt("Missing struct definition layers");
             }
-            if (parentId !== -1) corrupt("Missing struct definition layers");
-          }
-        },
-      );
+          },
+        );
+      });
     }
   }
+  await context.runTasks(structuralTasks, (task) => task());
   const phaseOne = await context.readRanges(path, phaseOneRanges, "data", fileSize);
   const binaryValues: {
     plan: BinaryCellPlan;
@@ -1388,6 +1391,7 @@ export async function withInspectedNumericRange(
     selections: readonly { field: LanceField; columnIndex: number }[];
     rowStart: number;
     rowCount: number;
+    cache?: { store: SharedMemoryCache; namespace: string };
   },
   consume: (value: (column: number, row: number) => number | bigint) => void,
 ): Promise<void> {
@@ -1402,6 +1406,50 @@ export async function withInspectedNumericRange(
   ) {
     corrupt("Numeric Lance range is outside file rows");
   }
+  const cacheKey =
+    options.cache === undefined
+      ? undefined
+      : JSON.stringify([
+          options.cache.namespace,
+          file.path,
+          rowStart,
+          rowCount,
+          options.selections.map(({ field, columnIndex }) => [
+            field.id,
+            field.logicalType,
+            columnIndex,
+          ]),
+        ]);
+  type Vectors = (Float64Array | BigInt64Array | BigUint64Array)[];
+  const cached = cacheKey === undefined ? undefined : options.cache?.store.get<Vectors>(cacheKey);
+  const consumeVectors = (vectors: Vectors) =>
+    consume((column, row) => {
+      if (row < rowStart || row >= end || !Number.isSafeInteger(row))
+        corrupt("Numeric range value is outside projected span");
+      const value = vectors[column]?.[row - rowStart];
+      if (value === undefined) corrupt("Numeric range column is missing");
+      return typeof value === "bigint" ? numberOrBigInt(value) : value;
+    });
+  if (cached !== undefined) {
+    context.stats.cacheHits++;
+    const memory = context.leaseDecodedMemory(cached.value.reduce((n, v) => n + v.byteLength, 0));
+    try {
+      context.check();
+      consumeVectors(cached.value);
+    } finally {
+      memory.release();
+    }
+    return;
+  }
+  if (cacheKey !== undefined) context.stats.cacheMisses++;
+  const retain = (vectors: Vectors) => {
+    if (cacheKey !== undefined)
+      options.cache?.store.set(
+        cacheKey,
+        vectors,
+        vectors.reduce((n, v) => n + v.byteLength + 64, 128 + cacheKey.length * 2),
+      );
+  };
   if (
     options.selections.some((selection) =>
       file.columns[selection.columnIndex]?.pages.some(
@@ -1413,7 +1461,8 @@ export async function withInspectedNumericRange(
     try {
       const vectors: (Float64Array | BigInt64Array | BigUint64Array)[] = [];
       context.reserveDecodedRows(rowCount);
-      for (const selection of options.selections) {
+      const tasks: (() => Promise<void>)[] = [];
+      for (const [columnIndex, selection] of options.selections.entries()) {
         const type = selection.field.logicalType;
         if (!["int32", "uint32", "int64", "uint64", "float", "double"].includes(type))
           unsupported("Numeric range projection requires numeric primitive columns");
@@ -1423,7 +1472,7 @@ export async function withInspectedNumericRange(
             : type === "uint64"
               ? new BigUint64Array(rowCount)
               : new Float64Array(rowCount);
-        vectors.push(vector);
+        vectors[columnIndex] = vector;
         const column = file.columns[selection.columnIndex];
         if (column === undefined) corrupt("Numeric range column is missing");
         let cursor = rowStart;
@@ -1433,42 +1482,42 @@ export async function withInspectedNumericRange(
           if (page.encoding.kind !== "structural")
             unsupported("Mixed numeric structural encodings are unsupported");
           const count = Math.min(end, page.rowStart + page.length) - cursor;
-          const planning = context.leaseDecodedMemory(64);
-          try {
-            await readStructuralColumn(
-              {
-                context,
-                path: file.path,
-                fileSize: file.fileSize,
-                page,
-                layout: page.encoding,
-                rowRange: { start: cursor - page.rowStart, count },
-                logicalType: type,
-                retainValues: false,
-                decodeFixed: decodeFixedValue,
-              },
-              (row, value, definition) => {
-                if (definition !== 0 || (typeof value !== "number" && typeof value !== "bigint"))
-                  unsupported("Numeric range projection requires non-null numeric values");
-                const offset = page.rowStart + row - rowStart;
-                if (vector instanceof Float64Array) vector[offset] = Number(value);
-                else vector[offset] = BigInt(value);
-              },
-            );
-          } finally {
-            planning.release();
-          }
+          const firstRow = cursor;
+          const layout = page.encoding;
+          tasks.push(async () => {
+            const planning = context.leaseDecodedMemory(64);
+            try {
+              await readStructuralColumn(
+                {
+                  context,
+                  path: file.path,
+                  fileSize: file.fileSize,
+                  page,
+                  layout,
+                  rowRange: { start: firstRow - page.rowStart, count },
+                  logicalType: type,
+                  retainValues: false,
+                  decodeFixed: decodeFixedValue,
+                },
+                (row, value, definition) => {
+                  if (definition !== 0 || (typeof value !== "number" && typeof value !== "bigint"))
+                    unsupported("Numeric range projection requires non-null numeric values");
+                  const offset = page.rowStart + row - rowStart;
+                  if (vector instanceof Float64Array) vector[offset] = Number(value);
+                  else vector[offset] = BigInt(value);
+                },
+              );
+            } finally {
+              planning.release();
+            }
+          });
           context.stats.pages.add(`${file.path}:${selection.columnIndex}:${located.index}`);
           cursor += count;
         }
       }
-      consume((column, row) => {
-        if (row < rowStart || row >= end || !Number.isSafeInteger(row))
-          corrupt("Numeric range value is outside projected span");
-        const value = vectors[column]?.[row - rowStart];
-        if (value === undefined) corrupt("Numeric range column is missing");
-        return typeof value === "bigint" ? numberOrBigInt(value) : value;
-      });
+      await context.runTasks(tasks, (task) => task());
+      consumeVectors(vectors);
+      retain(vectors);
     } finally {
       memory.release();
     }
@@ -1532,7 +1581,7 @@ export async function withInspectedNumericRange(
       file.fileSize,
     );
     try {
-      consume((column, row) => {
+      const valueAt = (column: number, row: number) => {
         const span = spans.find(
           (span) => span.column === column && row >= span.start && row < span.end,
         );
@@ -1544,7 +1593,32 @@ export async function withInspectedNumericRange(
           row - span.page.rowStart,
           span.field.logicalType,
         ) as number | bigint;
-      });
+      };
+      consume(valueAt);
+      // Retention is optional: do not reject a direct-span query just to copy it into a cache.
+      const cacheBytes = rowCount * options.selections.length * 8;
+      if (cacheKey !== undefined && cacheBytes <= context.availableMemoryBytes) {
+        const memory = context.leaseDecodedMemory(cacheBytes);
+        try {
+          const vectors: Vectors = options.selections.map(({ field }, column) => {
+            const vector =
+              field.logicalType === "uint64"
+                ? new BigUint64Array(rowCount)
+                : field.logicalType === "int64"
+                  ? new BigInt64Array(rowCount)
+                  : new Float64Array(rowCount);
+            for (let i = 0; i < rowCount; i++) {
+              const value = valueAt(column, rowStart + i);
+              if (vector instanceof Float64Array) vector[i] = Number(value);
+              else vector[i] = BigInt(value);
+            }
+            return vector;
+          });
+          retain(vectors);
+        } finally {
+          memory.release();
+        }
+      }
     } finally {
       lease.release();
     }

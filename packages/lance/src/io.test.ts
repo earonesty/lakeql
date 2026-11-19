@@ -161,6 +161,80 @@ describe("Lance physical range planning", () => {
       expect.objectContaining({ code: "LAKEQL_LANCE_READ_ERROR" }),
     );
   });
+  it("shares pending directories and releases their memory at operation cleanup", async () => {
+    const store = memoryStore();
+    await store.put("page", new Uint8Array(8));
+    const read = vi.fn(store.getRange.bind(store));
+    const context = new LanceReadContext(
+      { ...store, getRange: read },
+      { maxMemoryBytes: 1024 },
+      emptyStats(),
+      0,
+      () => 0,
+      { coalesceGapBytes: 0, maxCoalescedRangeBytes: 100 },
+    );
+    const leases = await Promise.all(
+      [0, 1].map(() => context.readSharedMetadata("page", { offset: 2, length: 4 }, 8)),
+    );
+    expect(read).toHaveBeenCalledOnce();
+    for (const lease of leases) {
+      expect(lease.slice({ offset: 2, length: 4 })).toEqual(new Uint8Array(4));
+      lease.release();
+    }
+    expect(context.availableMemoryBytes).toBeLessThan(1024);
+    context.releaseDecodedMemory();
+    expect(context.availableMemoryBytes).toBe(1024);
+  });
+
+  it("drains in-flight ranges on failure before releasing their admitted memory", async () => {
+    const store = memoryStore();
+    let release!: () => void;
+    const wait = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started!: () => void;
+    const secondStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const context = new LanceReadContext(
+      {
+        ...store,
+        getRange: async (_path, range) => {
+          if (range.offset === 0) throw new Error("broken transport");
+          started();
+          await wait;
+          return new Uint8Array(range.length);
+        },
+      },
+      { maxMemoryBytes: 4, maxConcurrentReads: 2 },
+      emptyStats(),
+      0,
+      () => 0,
+      { coalesceGapBytes: 0, maxCoalescedRangeBytes: 100 },
+    );
+    let settled = false;
+    const result = context.readRanges(
+      "page",
+      [
+        { offset: 0, length: 2 },
+        { offset: 4, length: 2 },
+      ],
+      "data",
+      8,
+    );
+    const checked = expect(result)
+      .rejects.toThrow("broken transport")
+      .then(() => {
+        settled = true;
+      });
+    await secondStarted;
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(context.availableMemoryBytes).toBe(0);
+    release();
+    await checked;
+    expect(context.availableMemoryBytes).toBe(4);
+  });
 });
 
 function emptyStats(): MutableLanceReadStats {

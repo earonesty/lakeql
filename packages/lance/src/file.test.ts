@@ -1,4 +1,4 @@
-import { memoryStore, type ObjectStore } from "lakeql";
+import { memoryStore, type ObjectStore, SharedMemoryCache } from "lakeql";
 import { describe, expect, it } from "vitest";
 import {
   type InspectedLanceFile,
@@ -123,7 +123,7 @@ describe("Lance physical page materialization", () => {
     const numericStats = emptyStats();
     const numericContext = new LanceReadContext(
       store,
-      { maxBytes: 96, maxMemoryBytes: 2048, maxRowsDecoded: 6 },
+      { maxBytes: 96, maxMemoryBytes: 832, maxRowsDecoded: 6 },
       numericStats,
       performance.now(),
       performance.now.bind(performance),
@@ -140,6 +140,7 @@ describe("Lance physical page materialization", () => {
         ],
         rowStart: 1,
         rowCount: 4,
+        cache: { store: new SharedMemoryCache(), namespace: "fixture" },
       },
       (value) => {
         for (let row = 1; row < 5; row++) numericRows.push([value(0, row), value(1, row)]);
@@ -154,7 +155,9 @@ describe("Lance physical page materialization", () => {
     expect(numericStats.physicalBytesRequested).toBe(64);
     expect(numericStats.rowsDecoded).toBe(4);
     // All encoded and scratch leases have been released after consumption.
-    numericContext.leaseDecodedMemory(2048).release();
+    // The exact direct-span budget leaves no room for an optional cache copy.
+    expect(numericStats.peakMemoryBytes).toBe(832);
+    numericContext.leaseDecodedMemory(832).release();
   });
 });
 

@@ -83,7 +83,7 @@ export interface OpenLanceDatasetOptions {
   /** Pin a manifest version. Omit to resolve the latest-version hint. */
   version?: LanceRowIdInput;
   metadataCache?: CacheAdapter<Uint8Array>;
-  /** Snapshot-scoped decoded scalar-index state and page cache. */
+  /** Snapshot-scoped decoded scalar/spatial index state and page cache. */
   indexCache?: SharedMemoryCache;
   /** Maximum bytes retained by the default decoded index cache. Defaults to 8 MiB. */
   indexCacheBytes?: number;
@@ -401,6 +401,8 @@ export class LanceDataset {
         context,
         indexName: options.index,
         query: options.query,
+        ...(this.indexCache === undefined ? {} : { indexCache: this.indexCache }),
+        cacheNamespace: `${this.options.root}:${this.snapshotId}`,
         ...(options.limits === undefined ? {} : { limits: options.limits }),
       });
       const materialized = await this.takeRowsWithStats(
@@ -563,18 +565,16 @@ export class LanceDataset {
       offsets.add(address.rowOffset);
       candidateOffsets.set(address.fragmentIndex, offsets);
     }
-    const deletedOffsetsByFragment = new Map<number, Set<number>>(
-      await Promise.all(
-        [...candidateOffsets].map(async ([fragmentIndex, offsets]) => {
-          const fragment = this.options.manifest.fragments[fragmentIndex];
-          if (fragment === undefined) corrupt("Resolved Lance row references a missing fragment");
-          return [
-            fragmentIndex,
-            await readDeletedRowOffsets(context, this.options.root, fragment, offsets),
-          ] as const;
-        }),
-      ),
-    );
+    const deletedOffsets: [number, Set<number>][] = [];
+    await context.runTasks([...candidateOffsets], async ([fragmentIndex, offsets], i) => {
+      const fragment = this.options.manifest.fragments[fragmentIndex];
+      if (fragment === undefined) corrupt("Resolved Lance row references a missing fragment");
+      deletedOffsets[i] = [
+        fragmentIndex,
+        await readDeletedRowOffsets(context, this.options.root, fragment, offsets),
+      ];
+    });
+    const deletedOffsetsByFragment = new Map(deletedOffsets);
     const deleted = new Set<string>();
     for (const [rowId, address] of addresses) {
       if (deletedOffsetsByFragment.get(address.fragmentIndex)?.has(address.rowOffset)) {
@@ -604,33 +604,31 @@ export class LanceDataset {
       fragmentOffsets.set(address.fragmentIndex, offsets);
     }
     const materialized = new Map<string, Row>();
-    await Promise.all(
-      [...fragmentOffsets].map(async ([fragmentIndex, offsets]) => {
-        const fragment = this.options.manifest.fragments[fragmentIndex];
-        if (fragment === undefined) corrupt("Resolved Lance row references a missing fragment");
-        const rows = await materializeFragmentRows({
-          context,
-          root: this.options.root,
-          fragment,
-          fragmentIndex,
-          fields: this.options.manifest.fields,
-          select,
-          rowOffsets: [...offsets],
-        });
-        for (const [rowIdText, address] of addresses) {
-          if (address.fragmentIndex !== fragmentIndex) continue;
-          const row = rows.get(address.rowOffset);
-          if (row === undefined) {
-            corrupt("Lance row address did not materialize", {
-              rowId: rowIdText,
-              fragmentIndex,
-              rowOffset: address.rowOffset,
-            });
-          }
-          materialized.set(rowIdText, row);
+    await context.runTasks([...fragmentOffsets], async ([fragmentIndex, offsets]) => {
+      const fragment = this.options.manifest.fragments[fragmentIndex];
+      if (fragment === undefined) corrupt("Resolved Lance row references a missing fragment");
+      const rows = await materializeFragmentRows({
+        context,
+        root: this.options.root,
+        fragment,
+        fragmentIndex,
+        fields: this.options.manifest.fields,
+        select,
+        rowOffsets: [...offsets],
+      });
+      for (const [rowIdText, address] of addresses) {
+        if (address.fragmentIndex !== fragmentIndex) continue;
+        const row = rows.get(address.rowOffset);
+        if (row === undefined) {
+          corrupt("Lance row address did not materialize", {
+            rowId: rowIdText,
+            fragmentIndex,
+            rowOffset: address.rowOffset,
+          });
         }
-      }),
-    );
+        materialized.set(rowIdText, row);
+      }
+    });
     const rows = rowIds.map((rowId) => materialized.get(rowId.toString()) ?? null);
     context.check();
     return {
