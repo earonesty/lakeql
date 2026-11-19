@@ -21,3 +21,8 @@
 *.woff filter=lfs diff=lfs merge=lfs -text
 *.woff2 filter=lfs diff=lfs merge=lfs -text
 *.zip filter=lfs diff=lfs merge=lfs -text
+
+# Default-writer spatial compatibility artifacts (source GeoParquet is covered above).
+packages/lance/fixtures/spatial-default/**/*.lance filter=lfs diff=lfs merge=lfs -text
+packages/lance/fixtures/spatial-default/**/*.manifest filter=lfs diff=lfs merge=lfs -text
+packages/lance/fixtures/spatial-default/**/*.txn filter=lfs diff=lfs merge=lfs -text

@@ -1,6 +1,10 @@
 import { memoryStore, type ObjectStore } from "lakeql";
 import { describe, expect, it } from "vitest";
-import { type InspectedLanceFile, materializeInspectedLanceFileRows } from "./file.js";
+import {
+  type InspectedLanceFile,
+  materializeInspectedLanceFileRows,
+  withInspectedNumericRange,
+} from "./file.js";
 import { LanceReadContext, type MutableLanceReadStats } from "./io.js";
 import type { LanceArrayEncoding, LanceField, LancePage } from "./proto.js";
 
@@ -116,6 +120,41 @@ describe("Lance physical page materialization", () => {
       new Set([`${PATH}:0:0`, `${PATH}:0:1`, `${PATH}:0:2`, `${PATH}:1:0`, `${PATH}:1:1`]),
     );
     expect(fullObjectGets).toBe(0);
+    const numericStats = emptyStats();
+    const numericContext = new LanceReadContext(
+      store,
+      { maxBytes: 96, maxMemoryBytes: 2048, maxRowsDecoded: 6 },
+      numericStats,
+      performance.now(),
+      performance.now.bind(performance),
+      { coalesceGapBytes: 0, maxCoalescedRangeBytes: 32 },
+    );
+    const numericRows: unknown[] = [];
+    await withInspectedNumericRange(
+      {
+        context: numericContext,
+        file,
+        selections: [
+          { field: VALUES, columnIndex: 0 },
+          { field: IDS, columnIndex: 1 },
+        ],
+        rowStart: 1,
+        rowCount: 4,
+      },
+      (value) => {
+        for (let row = 1; row < 5; row++) numericRows.push([value(0, row), value(1, row)]);
+      },
+    );
+    expect(numericRows).toEqual([
+      [11, 101],
+      [12, 102],
+      [13, 103],
+      [14, 104],
+    ]);
+    expect(numericStats.physicalBytesRequested).toBe(64);
+    expect(numericStats.rowsDecoded).toBe(4);
+    // All encoded and scratch leases have been released after consumption.
+    numericContext.leaseDecodedMemory(2048).release();
   });
 });
 

@@ -32,6 +32,13 @@ import {
   rangeScalarRowIds,
 } from "./scalar.js";
 import {
+  type LanceSpatialIndexInfo,
+  type LanceSpatialLimits,
+  type LanceSpatialQuery,
+  loadSpatialIndexes,
+  searchSpatialIndex,
+} from "./spatial.js";
+import {
   type LanceVectorIndexInfo,
   type LanceVectorLimits,
   type LanceVectorMetric,
@@ -39,8 +46,25 @@ import {
   searchVectorIndex,
 } from "./vector.js";
 
+export type { LanceSpatialIndexInfo, LanceSpatialLimits, LanceSpatialQuery };
+
+export interface SpatialLanceRowsOptions {
+  snapshotId: string;
+  index: string;
+  query: LanceSpatialQuery;
+  select: readonly string[];
+  limits?: Partial<LanceSpatialLimits>;
+}
+
+export interface LanceSpatialSearchResult extends LanceScalarRangeResult {
+  index: LanceSpatialIndexInfo;
+  pagesVisited: number;
+  candidatesExamined: number;
+}
+
 export const PACKAGE = "lakeql-lance" as const;
 export const SUPPORTED_LANCE_STORAGE_VERSION = "2.0" as const;
+export const SUPPORTED_LANCE_STORAGE_VERSIONS = ["2.0", "2.1"] as const;
 export const SUPPORTED_LANCE_PRODUCER = "pylance 8.0.0" as const;
 
 const MAX_U64 = (1n << 64n) - 1n;
@@ -177,7 +201,8 @@ export interface LanceReadStats {
 export class LanceDataset {
   readonly snapshotId: string;
   readonly version: string;
-  readonly storageVersion = SUPPORTED_LANCE_STORAGE_VERSION;
+  readonly storageVersion: "2.0" | "2.1";
+  readonly rowIdMode: "stable" | "address";
   private readonly indexCache: SharedMemoryCache | undefined;
 
   constructor(
@@ -198,6 +223,9 @@ export class LanceDataset {
       indexCache: SharedMemoryCache | undefined;
     },
   ) {
+    this.storageVersion = options.manifest.dataStorageVersion as "2.0" | "2.1";
+    this.rowIdMode =
+      (options.manifest.readerFeatureFlags & STABLE_ROW_IDS_FLAG) === 0n ? "address" : "stable";
     this.snapshotId = options.snapshotId;
     this.version = options.manifest.version.toString();
     this.indexCache = options.indexCache;
@@ -350,6 +378,63 @@ export class LanceDataset {
     }
   }
 
+  async spatialIndexes(): Promise<LanceSpatialIndexInfo[]> {
+    const stats = cloneStats(this.options.openStats);
+    const context = this.context(stats, this.options.now());
+    try {
+      return await loadSpatialIndexes({ ...this.options, context });
+    } finally {
+      context.releaseDecodedMemory();
+    }
+  }
+
+  async spatialRows(options: SpatialLanceRowsOptions): Promise<LanceSpatialSearchResult> {
+    if (options.snapshotId !== this.snapshotId) {
+      snapshotMismatch(this.snapshotId, options.snapshotId, this.version);
+    }
+    const stats = cloneStats(this.options.openStats);
+    const startedAt = this.options.now();
+    const context = this.context(stats, startedAt);
+    try {
+      const search = await searchSpatialIndex({
+        ...this.options,
+        context,
+        indexName: options.index,
+        query: options.query,
+        ...(options.limits === undefined ? {} : { limits: options.limits }),
+      });
+      const materialized = await this.takeRowsWithStats(
+        {
+          snapshotId: this.snapshotId,
+          rowIds: search.rowIds,
+          select: options.select,
+          onMissing: "null",
+        },
+        stats,
+        context,
+        startedAt,
+      );
+      const rows: Row[] = [];
+      const rowIds: string[] = [];
+      for (const [i, row] of materialized.rows.entries()) {
+        if (row !== null) {
+          rows.push(row);
+          rowIds.push(String(search.rowIds[i]));
+        }
+      }
+      return {
+        index: search.index,
+        rows,
+        rowIds,
+        stats: materialized.stats,
+        pagesVisited: search.pagesVisited,
+        candidatesExamined: search.candidatesExamined,
+      };
+    } finally {
+      context.releaseDecodedMemory();
+    }
+  }
+
   async vectorIndexes(): Promise<LanceVectorIndexInfo[]> {
     const stats = cloneStats(this.options.openStats);
     const context = this.context(stats, this.options.now());
@@ -440,21 +525,37 @@ export class LanceDataset {
     const uniqueRowIds = [...new Map(rowIds.map((rowId) => [rowId.toString(), rowId])).values()];
     context.reserveDecodedRows(uniqueRowIds.length);
     const addresses = new Map<string, { fragmentIndex: number; rowOffset: number }>();
-    let unresolved = uniqueRowIds;
-    for (const [fragmentIndex, fragment] of this.options.manifest.fragments.entries()) {
-      if (unresolved.length === 0) break;
-      const resolved = resolveRequestedRowIds(unresolved, [
-        {
-          physicalRows: fragment.physicalRows,
-          segments: parseRowIdSequence(
-            await readFragmentRowIds(context, this.options.root, fragment),
-          ),
-        },
-      ]);
-      for (const [rowId, address] of resolved) {
-        addresses.set(rowId, { fragmentIndex, rowOffset: address.rowOffset });
+    if ((this.options.manifest.readerFeatureFlags & STABLE_ROW_IDS_FLAG) === 0n) {
+      const fragments = new Map(
+        this.options.manifest.fragments.map((fragment, index) => [
+          fragment.id,
+          { fragment, index },
+        ]),
+      );
+      for (const rowId of uniqueRowIds) {
+        const located = fragments.get(rowId >> 32n);
+        const rowOffset = Number(rowId & 0xffff_ffffn);
+        if (located !== undefined && rowOffset < located.fragment.physicalRows) {
+          addresses.set(rowId.toString(), { fragmentIndex: located.index, rowOffset });
+        }
       }
-      unresolved = unresolved.filter((rowId) => !resolved.has(rowId.toString()));
+    } else {
+      let unresolved = uniqueRowIds;
+      for (const [fragmentIndex, fragment] of this.options.manifest.fragments.entries()) {
+        if (unresolved.length === 0) break;
+        const resolved = resolveRequestedRowIds(unresolved, [
+          {
+            physicalRows: fragment.physicalRows,
+            segments: parseRowIdSequence(
+              await readFragmentRowIds(context, this.options.root, fragment),
+            ),
+          },
+        ]);
+        for (const [rowId, address] of resolved) {
+          addresses.set(rowId, { fragmentIndex, rowOffset: address.rowOffset });
+        }
+        unresolved = unresolved.filter((rowId) => !resolved.has(rowId.toString()));
+      }
     }
     const candidateOffsets = new Map<number, Set<number>>();
     for (const address of addresses.values()) {
@@ -488,7 +589,7 @@ export class LanceDataset {
     if (missingRowIds.length > 0 && (options.onMissing ?? "error") === "error") {
       throw new LakeqlError(
         "LAKEQL_OBJECT_NOT_FOUND",
-        "One or more stable Lance row IDs are absent from the snapshot",
+        "One or more Lance row identifiers are absent from the snapshot",
         {
           snapshotId: this.snapshotId,
           missingRowIds,
@@ -817,9 +918,6 @@ function validateManifest(manifest: LanceManifest, requestedVersion: bigint): vo
       readerFeatureFlags: manifest.readerFeatureFlags.toString(),
     });
   }
-  if ((manifest.readerFeatureFlags & STABLE_ROW_IDS_FLAG) === 0n) {
-    unsupported("Lance dataset does not enable stable row IDs");
-  }
   if ((manifest.readerFeatureFlags & BASE_PATHS_FLAG) !== 0n) {
     unsupported("Lance datasets with external base paths are not supported");
   }
@@ -828,9 +926,9 @@ function validateManifest(manifest: LanceManifest, requestedVersion: bigint): vo
       dataFileFormat: manifest.dataFileFormat,
     });
   }
-  if (manifest.dataStorageVersion !== SUPPORTED_LANCE_STORAGE_VERSION) {
+  if (!SUPPORTED_LANCE_STORAGE_VERSIONS.includes(manifest.dataStorageVersion as "2.0" | "2.1")) {
     unsupported("Unsupported Lance data storage version", {
-      supported: SUPPORTED_LANCE_STORAGE_VERSION,
+      supported: SUPPORTED_LANCE_STORAGE_VERSIONS,
       actual: manifest.dataStorageVersion,
     });
   }
@@ -839,13 +937,13 @@ function validateManifest(manifest: LanceManifest, requestedVersion: bigint): vo
   const ids = new Set<number>();
   for (const field of manifest.fields) {
     if (field.name === "" || field.logicalType === "") corrupt("Lance field is incomplete");
-    if (names.has(field.name) || ids.has(field.id)) {
+    if (names.has(`${field.parentId}:${field.name}`) || ids.has(field.id)) {
       corrupt("Lance manifest has duplicate field identity", {
         name: field.name,
         id: field.id,
       });
     }
-    names.add(field.name);
+    names.add(`${field.parentId}:${field.name}`);
     ids.add(field.id);
   }
   for (const fragment of manifest.fragments) {

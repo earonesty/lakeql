@@ -3,6 +3,7 @@
 // table/file structures needed by the supported read-only storage 2.0 contract.
 
 import { LakeqlError } from "lakeql";
+import { type Layout21, parseLayout21 } from "./encoding21.js";
 
 export interface LanceField {
   id: number;
@@ -10,6 +11,7 @@ export interface LanceField {
   parentId: number;
   logicalType: string;
   nullable: boolean;
+  metadata?: Record<string, Uint8Array>;
 }
 
 export interface LanceDataFile {
@@ -65,6 +67,7 @@ export interface LanceIndexMetadata {
   fields: number[];
   name: string;
   datasetVersion: bigint;
+  fragmentBitmap?: Uint8Array;
   detailsTypeUrl: string;
   details?: Uint8Array;
   indexVersion?: number;
@@ -106,7 +109,9 @@ export type LanceArrayEncoding =
   | LanceFixedSizeListEncoding
   | LanceBinaryEncoding
   | LanceDictionaryEncoding
-  | LanceConstantEncoding;
+  | LanceConstantEncoding
+  | { kind: "struct" }
+  | Layout21;
 
 export interface LanceFlatEncoding {
   kind: "flat";
@@ -380,6 +385,7 @@ function parseIndexMetadata(bytes: Uint8Array): LanceIndexMetadata {
   const fields: number[] = [];
   let name = "";
   let datasetVersion = 0n;
+  let fragmentBitmap: Uint8Array | undefined;
   let detailsTypeUrl = "";
   let details: Uint8Array | undefined;
   let indexVersion: number | undefined;
@@ -399,6 +405,9 @@ function parseIndexMetadata(bytes: Uint8Array): LanceIndexMetadata {
       case 4:
         datasetVersion = reader.varint(key.wire);
         break;
+      case 5:
+        fragmentBitmap = reader.bytesValue(key.wire);
+        break;
       case 6:
         ({ typeUrl: detailsTypeUrl, value: details } = parseAny(reader.message(key.wire)));
         break;
@@ -417,6 +426,7 @@ function parseIndexMetadata(bytes: Uint8Array): LanceIndexMetadata {
     fields,
     name,
     datasetVersion,
+    ...(fragmentBitmap === undefined ? {} : { fragmentBitmap }),
     detailsTypeUrl,
     ...(details === undefined ? {} : { details }),
     ...(indexVersion === undefined ? {} : { indexVersion }),
@@ -504,6 +514,7 @@ function parseField(bytes: Uint8Array): LanceField {
   let parentId = 0;
   let logicalType = "";
   let nullable = false;
+  const metadata: Record<string, Uint8Array> = {};
   while (!reader.done) {
     const { field, wire } = reader.key();
     switch (field) {
@@ -522,11 +533,23 @@ function parseField(bytes: Uint8Array): LanceField {
       case 6:
         nullable = reader.varint(wire) !== 0n;
         break;
+      case 10: {
+        const entry = parseBytesMapEntry(reader.message(wire));
+        metadata[entry.key] = entry.value;
+        break;
+      }
       default:
         reader.skip(wire);
     }
   }
-  return { id, name, parentId, logicalType, nullable };
+  return {
+    id,
+    name,
+    parentId,
+    logicalType,
+    nullable,
+    ...(Object.keys(metadata).length === 0 ? {} : { metadata }),
+  };
 }
 
 function parseFragment(bytes: Uint8Array): LanceFragment {
@@ -781,6 +804,10 @@ function parseEncodingAny(bytes: Uint8Array): LanceArrayEncoding {
     else if (key.field === 2) value = reader.bytesValue(key.wire);
     else reader.skip(key.wire);
   }
+  if (typeUrl === "/lance.encodings21.PageLayout") {
+    if (value === undefined) corrupt("Lance PageLayout payload is absent");
+    return parseLayout21(value);
+  }
   if (typeUrl !== "/lance.encodings.ArrayEncoding") {
     unsupported("Unsupported Lance page encoding type", { typeUrl });
   }
@@ -802,6 +829,10 @@ function parseArrayEncoding(bytes: Uint8Array): LanceArrayEncoding {
         break;
       case 3:
         encoding = parseFixedSizeList(reader.message(key.wire));
+        break;
+      case 5:
+        reader.message(key.wire);
+        encoding = { kind: "struct" };
         break;
       case 6:
         encoding = parseBinary(reader.message(key.wire));
@@ -1114,7 +1145,7 @@ function parseU64Array(bytes: Uint8Array): bigint[] {
   return values;
 }
 
-class ProtoReader {
+export class ProtoReader {
   private offset = 0;
 
   constructor(private readonly source: Uint8Array) {}
