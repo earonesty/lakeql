@@ -132,20 +132,42 @@ describe("Lance spatial network work contracts", () => {
   });
 
   it("retains decoded tree pages without a byte cache, including nearby viewports", async () => {
-    const { dataset, trace } = await fixture(8);
+    const { dataset, trace, expected } = await fixture(8);
     const first = await query(dataset);
     trace.reset();
     const repeat = await query(dataset);
+    expect(repeat.rowIds).toEqual(first.rowIds);
     expect(repeat.rows).toEqual(first.rows);
     expect(trace.requests.filter((r) => r.path.includes("/_indices/"))).toEqual([]);
     expect(repeat.stats.cacheHits).toBeGreaterThanOrEqual(3);
     trace.reset();
-    await dataset.spatialRows({
+    const nearby = await dataset.spatialRows({
       snapshotId: dataset.snapshotId,
       index: "geometry_idx",
       select,
       query: box(11, 10, 15, 14),
     });
+    // Independent oracle from generate_spatial_default_fixture.py's source grid
+    // and attribute formulas, including the newly exposed x=15 column.
+    const nearbyOracle = Array.from({ length: 5 }, (_, y) =>
+      Array.from({ length: 5 }, (_, x) => {
+        const serial = (y + 10) * 512 + x + 11;
+        return {
+          _rowid: serial,
+          serial,
+          label: `point-${serial}`,
+          note: serial % 17 === 0 ? null : `雪🙂 note-${serial}`,
+          score: serial - expected.rowCount / 2,
+          category: serial % 7 === 0 ? null : serial % 2 === 0 ? "north" : "south",
+        };
+      }),
+    ).flat();
+    expect(nearby.rowIds).toHaveLength(nearbyOracle.length);
+    expect(
+      nearby.rows
+        .map((row, i) => ({ ...row, _rowid: Number(nearby.rowIds[i]) }))
+        .sort((a, b) => Number(a.serial) - Number(b.serial)),
+    ).toEqual(nearbyOracle);
     expect(trace.requests.filter((r) => r.path.includes("/_indices/"))).toEqual([]);
   });
 
