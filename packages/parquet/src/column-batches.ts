@@ -2,6 +2,7 @@ import type { ColumnData } from "hyparquet";
 import { parquetRead, parquetSchema } from "hyparquet";
 import { getSchemaPath } from "hyparquet/src/schema.js";
 import { type Batch, batchFromColumns } from "lakeql-core";
+import { bufferCacheIdentity } from "./buffer-identity.js";
 import { lakeqlParquetCompressors } from "./compressors.js";
 import { normalizeIntegerDecimalColumns, rawIntegerDecimalMetadata } from "./decimal.js";
 import { decodedColumnCacheKey } from "./decoded-column-cache.js";
@@ -55,7 +56,7 @@ export async function* readParquetColumnBatchesFromFile(
           : decodedColumnCacheKey({
               path: options.decodedColumnCacheKey,
               byteLength: file.byteLength,
-              ...(file.etag === undefined ? {} : { etag: file.etag }),
+              etag: bufferCacheIdentity(file),
               columns: readColumns,
               rowStart,
               rowEnd,

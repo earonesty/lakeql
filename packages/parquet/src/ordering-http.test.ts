@@ -148,9 +148,9 @@ it.each([
     ).toEqual(rows.slice(0, 2).map((row) => ({ ...row, twice: row.score * 2 })));
     const before = requests;
     expect(await run(deferredLake).toArray()).toEqual(expected);
-    // Planning probes can remain; cached data ranges must not be refetched.
-    // One additional metadata probe establishes the measured payload width.
-    expect(ranges.slice(before)).toEqual(Array(4).fill("bytes=0-1"));
+    // Only the fresh planning probe remains. Scans reuse its versioned identity,
+    // and cached data ranges must not be refetched.
+    expect(ranges.slice(before)).toEqual(["bytes=0-1"]);
     const controller = new AbortController();
     controller.abort("cancelled ordering");
     const cancelledStore = withObjectStoreReadControls(store, { signal: controller.signal });
@@ -304,6 +304,85 @@ it.each([
       .limit(10)
       .topKWithState({ operatorState: first.operatorState });
     expect(resumed.rows).toEqual(expected);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
+
+it.each([
+  false,
+  true,
+])("refreshes cached HTTP plans and bytes after an overwrite (ignoreRange=%s)", async (ignoreRange) => {
+  const backing = memoryStore();
+  async function replace(ids: number[], label: string) {
+    await writeParquet(backing, "mutable.parquet", {
+      rowGroupSize: 2,
+      columnData: [
+        { name: "id", type: "INT32", data: ids },
+        { name: "payload", type: "STRING", data: ids.map((id) => `${label}:${id}`) },
+      ],
+    });
+  }
+  await replace([1, 2], "old");
+  const server = createServer((request, response) => {
+    void (async () => {
+      const bytes = await backing.get("mutable.parquet");
+      const head = await backing.head("mutable.parquet");
+      if (bytes === null || head === null) {
+        response.writeHead(404);
+        response.end();
+        return;
+      }
+      const match = /^bytes=(\d+)-(\d+)$/.exec(request.headers.range ?? "");
+      const start = ignoreRange || match === null ? 0 : Number(match[1]);
+      const end =
+        ignoreRange || match === null ? bytes.length : Math.min(bytes.length, Number(match[2]) + 1);
+      response.writeHead(ignoreRange ? 200 : 206, {
+        "content-length": end - start,
+        ...(ignoreRange ? {} : { "content-range": `bytes ${start}-${end - 1}/${bytes.length}` }),
+        etag: head.etag ?? "unversioned",
+      });
+      response.end(bytes.subarray(start, end));
+    })().catch((error) => {
+      response.writeHead(500, {
+        "content-type": "text/plain; charset=utf-8",
+        "x-content-type-options": "nosniff",
+      });
+      response.end(String(error));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw Error("missing server address");
+  try {
+    const store = httpStore({
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      maxFullObjectCacheBytes: 0,
+    });
+    const lake = createLake({ store, cache: { maxBytes: 1024 * 1024 } });
+    const query = lake
+      .path("mutable.parquet")
+      .select(["id", "payload"])
+      .where(gte("id", 0))
+      .orderBy([{ column: "id" }])
+      .limit(5);
+    const old = await query.taskManifest("old");
+    expect(await query.toArray()).toEqual([
+      { id: 1, payload: "old:1" },
+      { id: 2, payload: "old:2" },
+    ]);
+    await replace([10, 20, 30], "updated wider payload");
+    const updated = await query.taskManifest("updated");
+    expect(updated.tasks[0]?.input.size).not.toBe(old.tasks[0]?.input.size);
+    expect(updated.tasks[0]?.input.etag).not.toBe(old.tasks[0]?.input.etag);
+    expect(await query.toArray()).toEqual(
+      [10, 20, 30].map((id) => ({ id, payload: `updated wider payload:${id}` })),
+    );
+    await backing.delete("mutable.parquet");
+    await expect(query.toArray()).rejects.toMatchObject({ code: "LAKEQL_OBJECT_NOT_FOUND" });
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) =>

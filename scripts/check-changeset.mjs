@@ -48,7 +48,18 @@ function hasChangeset() {
 }
 
 function hasVersionedRelease(packageChanges, baseRef) {
-  const packages = changedPackageNames(packageChanges);
+  // Private workspace sources ship inside the public lakeql bundle. Their
+  // release is the host's version/changelog, not an unpublished internal bump.
+  const packages = [
+    ...new Set(
+      changedPackageNames(packageChanges).map((name) => {
+        const manifestPath = resolve(root, `packages/${name}/package.json`);
+        if (!existsSync(manifestPath)) return name;
+        const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+        return manifest.private === true ? "lakeql" : name;
+      }),
+    ),
+  ];
   if (packages.length === 0) return false;
   return packages.every((packageName) => packageVersionChanged(packageName, baseRef));
 }

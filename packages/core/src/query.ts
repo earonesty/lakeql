@@ -64,7 +64,7 @@ import type {
 } from "./runtime.js";
 import { pruneFilesWithIndex, type SidecarFileIndex } from "./sidecar-index.js";
 import type { ObjectInfo, ObjectStore } from "./store.js";
-import { throwIfAborted } from "./store.js";
+import { throwIfAborted, withObjectStoreReadControls } from "./store.js";
 import type { Bookmark, BookmarkQuery, QueryStats, Row, SliceResult } from "./types.js";
 import {
   createVectorAggregateStates,
@@ -3955,10 +3955,48 @@ async function expandPaths(
     if (budget.maxFiles !== undefined && cached.value.length > budget.maxFiles) {
       throwBudget("files", budget.maxFiles, cached.value.length);
     }
-    return cloneObjectInfos(cached.value);
+    // A cached expansion saves listing work, not object identity validation.
+    // Refresh before pruning or planTask so every consumer sees this query's version.
+    const fresh = new Array<ObjectInfo>(cached.value.length);
+    const readable = withObjectStoreReadControls(store, budget);
+    let cursor = 0;
+    let missing = false;
+    let failed = false;
+    await Promise.all(
+      Array.from(
+        { length: Math.min(cached.value.length, budget.maxConcurrentReads ?? 1) },
+        async () => {
+          try {
+            while (!missing && !failed && cursor < cached.value.length) {
+              const index = cursor++;
+              throwIfAborted(budget.signal);
+              const prior = cached.value[index];
+              if (prior === undefined) continue;
+              const object = await headObject(readable, prior.path);
+              if (object === undefined) missing = true;
+              else fresh[index] = object;
+            }
+          } catch (error) {
+            failed = true;
+            throw error;
+          }
+        },
+      ),
+    );
+    if (!missing) {
+      await planningCache?.set(cacheKey, { ...cached, value: cloneObjectInfos(fresh) });
+      return fresh;
+    }
+    // A removed member invalidates the expansion; relist rather than executing
+    // a partly stale plan. Direct-file sources retain their not-found error.
+    await planningCache?.delete(cacheKey);
   }
 
-  const paths = await expandPathsUncached(store, pattern, budget);
+  const paths = await expandPathsUncached(
+    withObjectStoreReadControls(store, budget),
+    pattern,
+    budget,
+  );
   await planningCache?.set(cacheKey, { value: cloneObjectInfos(paths) });
   return paths;
 }
@@ -3972,19 +4010,25 @@ async function expandPathsUncached(
     if (isPrefixSource(pattern)) {
       return listMatchingObjects(store, pattern, budget, (path) => path.endsWith(".parquet"));
     }
-    const head = await store.head(pattern);
-    if (!head) {
+    const object = await headObject(store, pattern);
+    if (object === undefined) {
       throw new LakeqlError("LAKEQL_OBJECT_NOT_FOUND", `No object at ${pattern}`, {
         path: pattern,
       });
     }
-    const object: ObjectInfo = { path: pattern, size: head.size };
-    if (head.etag !== undefined) object.etag = head.etag;
-    if (head.lastModified !== undefined) object.lastModified = head.lastModified;
     return [object];
   }
   const prefix = globPrefix(pattern);
   return listMatchingObjects(store, prefix, budget, globMatcher(pattern));
+}
+
+async function headObject(store: ObjectStore, path: string): Promise<ObjectInfo | undefined> {
+  const head = await store.head(path);
+  if (head === null) return undefined;
+  const object: ObjectInfo = { path, size: head.size };
+  if (head.etag !== undefined) object.etag = head.etag;
+  if (head.lastModified !== undefined) object.lastModified = head.lastModified;
+  return object;
 }
 
 async function listMatchingObjects(

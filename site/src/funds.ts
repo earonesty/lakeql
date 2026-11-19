@@ -1,4 +1,4 @@
-import { eq } from "lakeql-core";
+import { eq, SharedMemoryCache } from "lakeql-core";
 import { httpStore } from "lakeql-http";
 import { createParquetLake } from "lakeql-parquet";
 import "./funds.css";
@@ -11,6 +11,9 @@ const DATASET_KEY = "amfi_nav_master.parquet";
 const MANIFEST_URL = "https://api.tigzig.com/mf/v1/downloads/manifest";
 const SEARCH_URL = "https://api.tigzig.com/mf/v1/search";
 const SOURCE_URL = "https://api.tigzig.com/mf/v1/schemes";
+
+// Reuse version-keyed metadata and byte ranges across fund selections.
+const rangeCache = new SharedMemoryCache({ maxBytes: 8 * 1024 * 1024 });
 
 interface FundRow {
   scheme_code: number;
@@ -41,6 +44,7 @@ interface WireStats {
 
 let datasetBytes = 178_528_643;
 let activeRun = 0;
+let activeQuery: AbortController | undefined;
 let searchTimer: number | undefined;
 let searchAbort: AbortController | undefined;
 
@@ -50,12 +54,17 @@ function element<T extends Element = HTMLElement>(id: string): T {
   return found as T;
 }
 
-function measuredStore(): { store: ReturnType<typeof httpStore>; stats: WireStats } {
+function measuredStore(signal: AbortSignal): {
+  store: ReturnType<typeof httpStore>;
+  stats: WireStats;
+} {
   const stats: WireStats = { bytes: 0, requests: 0, fullRequests: 0 };
   const measuredFetch: typeof fetch = async (input, init) => {
     const headers = new Headers(init?.headers);
     if (!headers.has("range")) stats.fullRequests += 1;
-    const response = await fetch(input, init);
+    // Chrome can serialize same-URL partial-cache fills. Range reuse is already
+    // bounded by the page-owned Parquet cache; let independent reads reach the wire.
+    const response = await fetch(input, { ...init, cache: "no-store", signal });
     stats.requests += 1;
     const contentLength = Number(response.headers.get("content-length") ?? 0);
     if (Number.isFinite(contentLength)) stats.bytes += contentLength;
@@ -69,12 +78,15 @@ function measuredStore(): { store: ReturnType<typeof httpStore>; stats: WireStat
 
 async function loadFund(schemeCode: number, announcedName?: string): Promise<void> {
   const run = ++activeRun;
+  activeQuery?.abort("superseded fund query");
+  const controller = new AbortController();
+  activeQuery = controller;
   setLoading(true, announcedName);
-  const { store, stats } = measuredStore();
+  const { store, stats } = measuredStore(controller.signal);
   const lake = createParquetLake({
     store,
-    budget: { maxOutputRows: 12_000, maxConcurrentReads: 4 },
-    scanRangeCache: { maxBytes: 8 * 1024 * 1024 },
+    budget: { maxOutputRows: 12_000, maxConcurrentReads: 4, signal: controller.signal },
+    scanRangeCache: { maxBytes: 8 * 1024 * 1024, sharedCache: rangeCache },
   });
   const started = performance.now();
 
@@ -97,7 +109,10 @@ async function loadFund(schemeCode: number, announcedName?: string): Promise<voi
     if (run !== activeRun) return;
     showError(error);
   } finally {
-    if (run === activeRun) setLoading(false);
+    if (run === activeRun) {
+      activeQuery = undefined;
+      setLoading(false);
+    }
   }
 }
 

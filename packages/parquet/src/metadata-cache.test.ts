@@ -9,6 +9,36 @@ import {
 import { countingObjectStore } from "./test-helpers.js";
 
 describe("encoded Parquet metadata cache", () => {
+  it("does not persist or consult metadata entries without a source validator", async () => {
+    const store = memoryStore();
+    await writeParquet(store, "unversioned.parquet", {
+      columnData: [{ name: "id", type: "INT32", data: [1, 2] }],
+    });
+    const head = store.head.bind(store);
+    store.head = async (path) => {
+      const value = await head(path);
+      if (value !== null) delete value.etag;
+      return value;
+    };
+    let gets = 0;
+    let sets = 0;
+    const metadataCache = {
+      async get() {
+        gets++;
+        return undefined;
+      },
+      async set() {
+        sets++;
+      },
+      async delete() {},
+    };
+    const lake = createParquetLake({ store, metadataCache });
+    expect(await lake.path("unversioned.parquet").toArray()).toEqual([{ id: 1 }, { id: 2 }]);
+    expect(await lake.path("unversioned.parquet").toArray()).toEqual([{ id: 1 }, { id: 2 }]);
+    expect(gets).toBe(0);
+    expect(sets).toBe(0);
+  });
+
   it("preserves parsed metadata across lake instances through a byte cache", async () => {
     const store = countingObjectStore(memoryStore());
     await writeParquet(store, "data/cache.parquet", {

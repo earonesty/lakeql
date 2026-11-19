@@ -1,0 +1,106 @@
+# Funds demo range-read measurements
+
+Measured November 18, 2026 against the released `fccf7bc` build and this change.
+Chromium loaded the built UI and read the real TigZig Parquet endpoint directly;
+no HTTP responses were mocked. Cold comparisons used fresh browser contexts and
+alternated the two builds. These are network samples, not a universal speed guarantee.
+
+## Findings and changes
+
+- The old range cache required identical range keys. A 457,038-byte column-chunk
+  prefetch was followed by a 457,015-byte fetch starting 23 bytes later, despite
+  already retaining those bytes. Covering retained/in-flight ranges now serve
+  subranges, with the same TTL, LRU, priority, byte and entry limits. The local
+  and shared variants now use one implementation; no separate range index can
+  outlive cache eviction.
+- Aligning known column chunks to 256 KiB fetched unrelated columns. Prefetching
+  now merges only overlapping/touching chunks that fit the configured retention
+  and entry budgets. Metadata tail reads no longer round backwards into data.
+- Deferred scanners repeated head probes after planning had already established
+  a versioned object. They now reuse that planned size/ETag. Unversioned or
+  mismatched listing hints still refresh head; abort and read budgets remain active.
+- Chrome queued same-URL HTTP range-cache fills: sendStart for later requests
+  followed earlier response headers. Disabling the HTTP cache allowed independent
+  requests onto the wire together. The demo uses `cache: no-store` and shares one
+  bounded 8 MiB Parquet byte/metadata cache across selections. Each query starts
+  with a fresh version probe; changed ETags cannot hit the previous version's keys.
+  Superseded selections abort their query and fetches.
+
+The browser read cap remains four. The selected fund's phases have at most two
+independent reads after adjacent chunks are merged; issuing four just to occupy
+slots would add unnecessary work. The native read-concurrency regression also
+continues to verify parallel execution stays within the configured four-read cap.
+
+## Results
+
+For scheme 122639, fresh-context pairs were 8.97 s vs 4.45 s and 7.67 s vs 4.33 s.
+Transfer fell from 2,100,628 bytes to 815,074 bytes (about 61% less), with 10 vs 6
+requests and zero full downloads. A separate same-page selection sequence gave:
+
+| Selection | Released time | Updated time | Released transfer / requests | Updated transfer / requests |
+| --- | --- | --- | --- | --- |
+| Parag Parikh (first) | 8.44 s | 4.34 s | 2.00 MiB / 10 | 796.0 KiB / 6 |
+| HDFC Flexi Cap | 8.65 s | 2.07 s | 2.44 MiB / 12 | 647.9 KiB / 3 |
+| Aditya Birla | 4.06 s | 1.93 s | 2.52 MiB / 12 | 649.5 KiB / 3 |
+| Franklin India | 3.58 s | 2.39 s | 2.53 MiB / 12 | 655.0 KiB / 3 |
+| Parag Parikh (repeat) | 4.39 s | 699 ms | 2.00 MiB / 10 | 2 bytes / 1 |
+
+Observation counts, latest NAVs, fund names, chart paths, and displayed ledger
+rows matched for every selection. Rapid switching cancelled the superseded fetch
+and rendered the final selected fund without stale output or page errors.
+The source was 179,257,059 bytes during these measurements and refreshes regularly.
+
+## Validation and bounds
+
+Full `pnpm check` passes: 1,038 regular tests (97 skipped), 10 native Worker/R2
+checks, 7 external conformance tests (1 skipped), 81 reference comparisons,
+coverage, fixture verification, package-install smoke, lint, build and types.
+Site build passes. Regressions cover covering/in-flight reads, failed retries,
+truncated bodies, overlapping chunks, eviction, TTL, ETag/path isolation, versioned
+planning, cancellation, physical read budgets and real HTTP 206/200 behavior.
+
+The cache limit accounts for retained raw ranges and encoded metadata, not total
+browser/Worker heap. Decoded batches and caller-held results have separate lives.
+The demo still caps output at 12,000 rows. Arbitrary range-ignoring HTTP servers
+can still incur the existing full-response fallback; this change does not claim
+a whole-process memory ceiling or alter that fallback.
+
+## Review follow-up: range integrity and plan freshness
+
+A backend response must contain the complete requested physical extent before
+it can be returned, cached, or shared with pending readers. A short response now
+fails the owner and every waiter with `LAKEQL_PARQUET_READ_ERROR`; failed work is
+removed so a later call can retry. Returned extents are checked before slicing.
+
+Planning caches retain caller-controlled path-list membership, but cached sizes
+and validators are revalidated before pruning, task planning, or scanning.
+Validation uses a bounded worker pool honoring `maxConcurrentReads` and abort.
+A missing cached member invalidates and re-expands the list. Newly added members
+remain subject to the caller's planning-cache lifetime/invalidation policy.
+Updating identities preserves that cache entry's existing expiration time.
+
+The byte-store cache now treats `head()` and fresh list entries as validation
+boundaries, invalidating retained bytes when a source version changes or its
+previous validator expired. Validator records themselves consume cache capacity,
+so observing listings does not create an unbounded zero-byte index. The cache
+does not answer a validation request from a cached head. The same-size-overwrite and deletion regressions include object caching,
+real Parquet task manifests and reads, and local HTTP 206/200 servers. This keeps
+one fresh validation at the query boundary while retaining reuse during the query.
+
+Further review coverage isolates every unversioned buffer observation across raw
+range, metadata and decoded caches. An opaque read identity is inherited by its
+wrappers; ETag-backed readers retain shared reuse. Weak ownership avoids a retained per-path index. Unversioned read identities
+are used only by bounded in-memory caches; unversioned metadata is not written
+to external/persistent cache adapters because it cannot be safely reused. Equal-size writes with changed lastModified and no ETag are tested with
+and without decoded/object caching.
+
+Byte-store invalidation also fences active get/getRange completions, including
+wrappers sharing one cache. An old completion can finish for its original caller
+but cannot repopulate the newer cache generation. Per-path fence state exists only
+while reads are active and is released on completion/failure. After a validation
+head fails, peer workers finish their already-started reads without starting more;
+the original error is preserved. These cases have failing-before regressions.
+
+Without an ETag the byte-store cache likewise does not preserve bytes across a
+new head/list observation, even when size and lastModified are unchanged. A coarse
+timestamp is not a reliable version key. ETag-backed cache reuse is unchanged.

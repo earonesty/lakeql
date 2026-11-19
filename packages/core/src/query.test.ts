@@ -1207,6 +1207,78 @@ describe("Lake query runtime", () => {
     ]);
   });
 
+  it("refreshes cached identities with bounded parallel heads and relists removed members", async () => {
+    const planningCache = memoryCache<ObjectInfo[]>();
+    const { lake, store } = await makeLake({
+      planningCache,
+      budget: { maxConcurrentReads: 2 },
+      rowsByPath: {
+        "data/a.parquet": [{ id: 1 }],
+        "data/b.parquet": [{ id: 2 }],
+        "data/c.parquet": [{ id: 3 }],
+      },
+    });
+    const query = lake.path("data/*.parquet");
+    const first = await query.planTasks();
+    const originalHead = store.head.bind(store);
+    let active = 0;
+    let peak = 0;
+    store.head = async (path) => {
+      active++;
+      peak = Math.max(peak, active);
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        return await originalHead(path);
+      } finally {
+        active--;
+      }
+    };
+    await store.put("data/a.parquet", Uint8Array.from([1, 2, 3, 4, 5]));
+    const second = await query.planTasks();
+    expect(second[0]?.size).toBe(5);
+    expect(second[0]?.etag).not.toBe(first[0]?.etag);
+    expect(peak).toBe(2);
+    await store.delete("data/b.parquet");
+    await store.put("data/d.parquet", Uint8Array.from([1]));
+    expect((await query.planTasks()).map((t) => t.path)).toEqual([
+      "data/a.parquet",
+      "data/c.parquet",
+      "data/d.parquet",
+    ]);
+  });
+
+  it("stops cached-plan workers from starting more heads after a peer fails", async () => {
+    const { lake, store } = await makeLake({
+      planningCache: memoryCache<ObjectInfo[]>(),
+      budget: { maxConcurrentReads: 2 },
+      rowsByPath: {
+        "data/a.parquet": [{ id: 1 }],
+        "data/b.parquet": [{ id: 2 }],
+        "data/c.parquet": [{ id: 3 }],
+        "data/d.parquet": [{ id: 4 }],
+      },
+    });
+    const query = lake.path("data/*.parquet");
+    await query.planTasks();
+    const original = store.head.bind(store);
+    const calls: string[] = [];
+    let release: (() => void) | undefined;
+    const failure = new Error("head failed");
+    store.head = async (path) => {
+      calls.push(path);
+      if (path.endsWith("a.parquet")) throw failure;
+      if (path.endsWith("b.parquet"))
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      return original(path);
+    };
+    await expect(query.planTasks()).rejects.toBe(failure);
+    release?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(calls).toEqual(["data/a.parquet", "data/b.parquet"]);
+  });
+
   it("uses sidecar indexes to prune planned objects before scanning", async () => {
     const { lake, scanner } = await makeLake({
       rowsByPath: {
