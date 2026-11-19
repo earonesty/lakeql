@@ -100,6 +100,23 @@ describe("official Lance R-tree spatial queries", () => {
     expect(result.stats.rangeRequests).toBeLessThan(20);
     expect(result.stats.rowsMaterialized).toBe(f.expected.queries[name].length);
   });
+  it("reuses decoded storage 2.0 tree pages without a raw byte cache", async () => {
+    const f = await fixture();
+    const ds = await openLanceDataset({ store: f.store, path: PATH, version: 2, budget });
+    const options = {
+      snapshotId: ds.snapshotId,
+      index: "geometry_idx",
+      query: { geometry: polygon, predicate: "intersects" as const },
+      select: ["serial"],
+    };
+    const cold = await ds.spatialRows(options);
+    f.ranges.length = 0;
+    const repeat = await ds.spatialRows(options);
+    expect(repeat.rows).toEqual(cold.rows);
+    expect(repeat.rowIds).toEqual(cold.rowIds);
+    expect(f.ranges.some((range) => range.path.includes("/_indices/"))).toBe(false);
+    expect(repeat.stats.cacheHits).toBeGreaterThanOrEqual(3);
+  });
   it("verifies every official fixture file against its recorded digest", async () => {
     const f = await fixture();
     for (const [path, hash] of Object.entries(f.expected.sha256)) {

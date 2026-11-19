@@ -201,12 +201,7 @@ export async function readStructuralColumn(
     const data = bufferRange(page, 1);
     if (meta.length === 0 || meta.length % 2 !== 0)
       corrupt21("Invalid mini-block directory length");
-    const directory = await context.readRange(
-      options.path,
-      meta,
-      "file_metadata",
-      options.fileSize,
-    );
+    const directory = await context.readSharedMetadata(options.path, meta, options.fileSize);
     const chunks: { range: ByteRange; start: number; count: number; first: number; end: number }[] =
       [];
     try {

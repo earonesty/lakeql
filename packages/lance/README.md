@@ -49,11 +49,15 @@ snapshot-safe projected materializer. It retains the BTree lookup state, loads e
 retrieval, and result materialization share one cumulative byte, request, memory, decoded-row,
 concurrency, cancellation, and elapsed-time budget.
 
-Decoded BTree lookup state and leaves use a separate snapshot-scoped LRU cache. `indexCacheBytes`
+Decoded BTree lookup state/leaves and R-tree metadata/numeric pages use a separate
+snapshot-scoped LRU cache. `indexCacheBytes`
 sets its byte ceiling and defaults to 8 MiB; set it to `0` to disable decoded-index caching. Supply
 an explicitly sized `SharedMemoryCache` as `indexCache` to share immutable index state across
 separately opened handles for the same snapshot. Cache population remains subject to the query
-budgets, while hits consume neither range/byte budget nor decoded-row budget.
+budgets, while hits consume neither range/byte budget nor decoded-row budget. Active cached
+numeric vectors are charged against operation memory. Spatial traversal and structural
+column/page reads execute concurrently under one operation-wide read limit; page directories
+are shared within the operation. See [network performance contracts](../../docs/lance-spatial-benchmark.md#network-latency-regression-contract).
 
 Ordered range retrieval uses the same index without decoding intervening key pages:
 

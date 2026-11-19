@@ -7,9 +7,10 @@ import {
   type GeoJsonGeometry,
   LakeqlError,
   parseGeometry,
+  type SharedMemoryCache,
   toGeometry,
 } from "lakeql";
-import { inspectLanceFile, withInspectedNumericRange } from "./file.js";
+import { type InspectedLanceFile, inspectLanceFile, withInspectedNumericRange } from "./file.js";
 import type { LanceReadContext } from "./io.js";
 import type { LanceIndexMetadata, LanceManifest } from "./proto.js";
 import { roaringContains } from "./roaring.js";
@@ -41,6 +42,8 @@ type Source = {
   manifestFileSize: number;
   manifest: LanceManifest;
   indexMetadata?: readonly LanceIndexMetadata[];
+  indexCache?: SharedMemoryCache | undefined;
+  cacheNamespace?: string;
 };
 
 export async function loadSpatialIndexes(options: Source): Promise<LanceSpatialIndexInfo[]> {
@@ -123,11 +126,32 @@ export async function searchSpatialIndex(
   await ensureGeoBackendForExprs([expr]);
   const fileMetadata = selected.files.find((file) => file.path === "page_data.lance");
   if (fileMetadata === undefined) corrupt("R-tree page_data.lance is missing");
-  const file = await inspectLanceFile(
-    options.context,
-    `${options.root}/_indices/${index.uuid}/page_data.lance`,
-    fileMetadata.sizeBytes,
-  );
+  const cacheKey =
+    options.indexCache === undefined || options.cacheNamespace === undefined
+      ? undefined
+      : JSON.stringify([options.cacheNamespace, "rtree", index.uuid, "metadata"]);
+  const cached =
+    cacheKey === undefined ? undefined : options.indexCache?.get<InspectedLanceFile>(cacheKey);
+  if (cacheKey !== undefined) {
+    if (cached === undefined) options.context.stats.cacheMisses++;
+    else options.context.stats.cacheHits++;
+  }
+  const file =
+    cached?.value ??
+    (await inspectLanceFile(
+      options.context,
+      `${options.root}/_indices/${index.uuid}/page_data.lance`,
+      fileMetadata.sizeBytes,
+    ));
+  if (cached === undefined && cacheKey !== undefined) {
+    // Charge modeled decoded metadata, including nested codec descriptions.
+    const bytes =
+      JSON.stringify(file, (_key, value) => (typeof value === "bigint" ? String(value) : value))
+        .length *
+        2 +
+      256;
+    options.indexCache?.set(cacheKey, file, bytes, { priority: 4 });
+  }
   const schema = [
     ["bbox", "struct"],
     ["xmin", "double"],
@@ -186,12 +210,16 @@ export async function searchSpatialIndex(
   const maxRows = options.context.budget.maxOutputRows ?? Infinity;
   let pagesVisited = 0;
   let candidatesExamined = 0;
+  let matchesFound = 0;
   const selections = file.fields.flatMap((field, columnIndex) =>
     columnIndex === 0
       ? []
       : [{ field, columnIndex: file.fieldColumns?.get(field.id) ?? columnIndex }],
   );
-  const visit = async (levelIndex: number, page: number): Promise<void> => {
+  const visit = async (
+    levelIndex: number,
+    page: number,
+  ): Promise<{ next: number[]; matches: bigint[] }> => {
     options.context.check();
     if (++pagesVisited > limits.maxPagesVisited)
       exceeded("spatial pages visited", limits.maxPagesVisited);
@@ -204,7 +232,7 @@ export async function searchSpatialIndex(
     const matches: bigint[] = [];
     // Admission covers retained child IDs and per-entry transient refinement
     // state. Encoded columns are leased directly, with no row-object expansion.
-    const stackLease = options.context.leaseDecodedMemory(length * 64);
+    const stackLease = options.context.leaseDecodedMemory(length * 16 + 64);
     try {
       await withInspectedNumericRange(
         {
@@ -213,6 +241,11 @@ export async function searchSpatialIndex(
           selections,
           rowStart: level.start + local,
           rowCount: length,
+          ...(options.indexCache === undefined || options.cacheNamespace === undefined
+            ? {}
+            : {
+                cache: { store: options.indexCache, namespace: options.cacheNamespace },
+              }),
         },
         (value) => {
           for (let entry = 0; entry < length; entry++) {
@@ -249,21 +282,57 @@ export async function searchSpatialIndex(
               if (!overlaps(bbox, bounds)) continue;
               const point = JSON.stringify({ type: "Point", coordinates: [bbox.minx, bbox.miny] });
               if (evaluate(expr, { point }) === true) {
-                if (rowIds.length + matches.length >= maxRows) exceeded("output rows", maxRows);
+                if (matchesFound >= maxRows) exceeded("output rows", maxRows);
+                matchesFound++;
+                options.context.accountDecodedMemory(64);
                 matches.push(BigInt(id));
               }
             }
           }
         },
       );
-      options.context.accountDecodedMemory(matches.length * 64);
-      for (const id of matches) rowIds.push(id);
-      for (const child of next) await visit(levelIndex - 1, child);
+      options.context.accountDecodedMemory(next.length * 8);
+      return { next, matches };
     } finally {
       stackLease.release();
     }
   };
-  if (levels.length > 0) await visit(levels.length - 1, pages - 1);
+  let frontier = levels.length > 0 ? [pages - 1] : [];
+  for (let level = levels.length - 1; level >= 0; level--) {
+    const next: number[] = [];
+    if (pagesVisited + frontier.length > limits.maxPagesVisited)
+      exceeded("spatial pages visited", limits.maxPagesVisited);
+    for (let first = 0; first < frontier.length; ) {
+      // A numeric span owns five 8-byte vectors, retained IDs, and encoded/codec
+      // workspace. Use headroom to size each wave; all actual allocations are admitted.
+      // Small budgets still execute a single page rather than expanding the whole level.
+      const concurrency = Math.max(
+        1,
+        Math.min(
+          options.context.budget.maxConcurrentReads ?? 4,
+          Math.floor(options.context.availableMemoryBytes / (size * 128 + 64)),
+        ),
+      );
+      const batch = frontier.slice(first, first + concurrency);
+      const results: { next: number[]; matches: bigint[] }[] = [];
+      await options.context.runTasks(
+        batch,
+        async (page, i) => {
+          results[i] = await visit(level, page);
+        },
+        concurrency,
+      );
+      first += batch.length;
+      for (const result of results) {
+        for (const child of result.next) next.push(child);
+        for (const id of result.matches) {
+          if (rowIds.length >= maxRows) exceeded("output rows", maxRows);
+          rowIds.push(id);
+        }
+      }
+    }
+    frontier = next;
+  }
   return { index, rowIds, pagesVisited, candidatesExamined };
 }
 
