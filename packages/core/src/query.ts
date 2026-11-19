@@ -64,6 +64,7 @@ import type {
 } from "./runtime.js";
 import { pruneFilesWithIndex, type SidecarFileIndex } from "./sidecar-index.js";
 import type { ObjectInfo, ObjectStore } from "./store.js";
+import { throwIfAborted } from "./store.js";
 import type { Bookmark, BookmarkQuery, QueryStats, Row, SliceResult } from "./types.js";
 import {
   createVectorAggregateStates,
@@ -125,7 +126,8 @@ export interface QueryBudget {
   maxBufferedRows?: number;
   /** Maximum rows a single window partition may retain during window evaluation. */
   maxWindowPartitionRows?: number;
-  /** Maximum deterministic serialized bytes an in-memory operator may retain. */
+  /** Maximum deterministic serialized bytes an in-memory operator may retain.
+   * Deferred payload reads also charge their modeled live decoded batches. */
   maxMemoryBytes?: number;
   /** Maximum object-store reads allowed to be in flight at once. */
   maxConcurrentReads?: number;
@@ -822,6 +824,7 @@ export class QueryResult {
   }
 
   async *batches(): AsyncIterable<Row[]> {
+    if (this.config.limit === 0) return;
     if (
       (this.config.windows !== undefined && Object.keys(this.config.windows).length > 0) ||
       this.config.qualify !== undefined
@@ -958,9 +961,9 @@ export class QueryResult {
     const lateMaterialized =
       config.physicalExecution.acceleratorPolicy === "required"
         ? undefined
-        : await this.lateMaterializedLimitRows(startedAt);
+        : this.tryLateMaterializedLimitBatches(startedAt);
     if (lateMaterialized !== undefined) {
-      yield* rowsAsBatches(lateMaterialized, config.batchSize ?? 4096);
+      yield* lateMaterialized;
       return;
     }
     let offsetSkipped = 0;
@@ -1220,12 +1223,13 @@ export class QueryResult {
     );
   }
 
-  private async lateMaterializedLimitRows(startedAt: number): Promise<Row[] | undefined> {
+  private tryLateMaterializedLimitBatches(startedAt: number): AsyncIterable<Row[]> | undefined {
     const config = this.config;
     if (
       config.limit === undefined ||
       config.where === undefined ||
       config.select === undefined ||
+      config.select.includes("*") ||
       config.scanner.scanVectorBatches === undefined ||
       !vectorExprSupported(config.where) ||
       !Object.values(config.projections ?? {}).every(vectorExprSupported)
@@ -1238,7 +1242,24 @@ export class QueryResult {
     const lateColumns = outputColumns.filter((column) => !predicateColumns.includes(column));
     if (lateColumns.length === 0) return undefined;
 
+    return this.lateMaterializedLimitBatches(predicateColumns, outputColumns, startedAt);
+  }
+
+  private async *lateMaterializedLimitBatches(
+    predicateColumns: string[],
+    outputColumns: string[],
+    startedAt: number,
+  ): AsyncIterable<Row[]> {
+    const config = this.config;
+    if (
+      config.limit === undefined ||
+      config.limit === 0 ||
+      config.where === undefined ||
+      config.scanner.scanVectorBatches === undefined
+    )
+      return;
     const refs: RankedRowRef[] = [];
+    const usage = new RunningCounter();
     const maxRefs = (config.offset ?? 0) + config.limit;
     const scanVectorBatches = config.scanner.scanVectorBatches;
     const { planned: paths, skipped: skippedFiles } = await this.planObjects();
@@ -1268,14 +1289,18 @@ export class QueryResult {
         const selected = [...selectedRowIndices(batch.rowCount, selection)];
         this.stats.rowsMatched += selected.length;
         for (const index of selected) {
-          refs.push({
+          const ref: RankedRowRef = {
             path: object.path,
             object,
             rowIndex: rowOffset + index,
             keys: rankKeyRow(batch, index, predicateColumns),
-          });
+          };
+          usage.add(
+            config.budget.maxMemoryBytes === undefined ? 0 : estimateOperatorMemoryBytes(ref),
+          );
+          refs.push(ref);
           enforceBufferedRowsBudget(config.budget, refs.length);
-          enforceOperatorMemoryBudget(config.budget, estimateOperatorMemoryBytes(refs));
+          enforceOperatorMemoryBudget(config.budget, usage.listBytes);
           if (refs.length >= maxRefs) break;
         }
         enforceBudget(config.budget, this.stats, config.now, startedAt);
@@ -1285,23 +1310,8 @@ export class QueryResult {
     }
 
     const selectedRefs = refs.slice(config.offset ?? 0, maxRefs);
-    const rowsByRef = await this.materializeRowRefs(
-      selectedRefs,
-      outputColumns,
-      predicateColumns,
-      startedAt,
-      config.batchSize ?? 4096,
-    );
-    const rows = selectedRefs
-      .map((ref) => rowsByRef.get(rowRefKey(ref)))
-      .filter((row): row is Row => row !== undefined)
-      .map((row) => project(row, config.select, config.projections));
-    for (const _row of rows) {
-      this.stats.rowsReturned += 1;
-      enforceBudget(config.budget, this.stats, config.now, startedAt);
-    }
-    this.stats.elapsedMs = config.now() - startedAt;
-    return rows;
+    refs.length = 0;
+    yield* this.materializeRowRefBatches(selectedRefs, outputColumns, predicateColumns, startedAt);
   }
 
   async toArray(): Promise<Row[]> {
@@ -1875,6 +1885,11 @@ export class QueryResult {
   private async *orderedBatches(): AsyncIterable<Row[]> {
     const config = this.config;
     const { stats } = this;
+    const deferred = this.tryLateMaterializedTopKBatches();
+    if (deferred !== undefined) {
+      yield* deferred;
+      return;
+    }
     const columnarRows = await this.tryColumnarTopKRows();
     if (columnarRows !== undefined) {
       const batchSize = config.batchSize ?? 4096;
@@ -1938,11 +1953,6 @@ export class QueryResult {
     const orderBy = normalizeOrderBy(config.orderBy);
     const topK = (config.offset ?? 0) + config.limit;
     const startedAt = config.now();
-    const lateMaterialized =
-      config.physicalExecution.acceleratorPolicy === "required"
-        ? undefined
-        : await this.tryLateMaterializedTopKRows(orderBy, topK, startedAt);
-    if (lateMaterialized !== undefined) return lateMaterialized;
     if (config.scanner.scanColumns === undefined) return undefined;
     let retained: Batch | undefined;
     for await (const { batch, sourceIdentity } of this.columnBatches(
@@ -1995,24 +2005,41 @@ export class QueryResult {
     return rows;
   }
 
-  private async tryLateMaterializedTopKRows(
-    orderBy: OrderByTerm[],
-    topK: number,
-    startedAt: number,
-  ): Promise<Row[] | undefined> {
+  private tryLateMaterializedTopKBatches(): AsyncIterable<Row[]> | undefined {
     const config = this.config;
     if (
+      config.orderBy === undefined ||
+      config.limit === undefined ||
+      config.distinct === true ||
+      config.projections !== undefined ||
+      config.hive === true ||
+      !vectorExprSupported(config.where) ||
+      config.physicalExecution.acceleratorPolicy === "required" ||
       vectorBatchScanner(config.scanner) === undefined ||
       config.select === undefined ||
+      config.select.includes("*") ||
       config.select.length === 0
-    ) {
+    )
       return undefined;
-    }
+    const orderBy = normalizeOrderBy(config.orderBy);
+    const topK = (config.offset ?? 0) + config.limit;
+    const startedAt = config.now();
     const rankColumns = rankReadColumns(config.where, orderBy);
     if (rankColumns.length === 0) return undefined;
     const outputColumns = [...new Set([...config.select, ...orderBy.map((term) => term.column)])];
     if (outputColumns.every((column) => rankColumns.includes(column))) return undefined;
 
+    return this.lateMaterializedTopKBatches(orderBy, topK, rankColumns, outputColumns, startedAt);
+  }
+
+  private async *lateMaterializedTopKBatches(
+    orderBy: OrderByTerm[],
+    topK: number,
+    rankColumns: string[],
+    outputColumns: string[],
+    startedAt: number,
+  ): AsyncIterable<Row[]> {
+    const config = this.config;
     const usage = new RunningCounter();
     const itemBytes = (value: RankedRowRef) =>
       config.budget.maxMemoryBytes === undefined ? 0 : estimateOperatorMemoryBytes(value);
@@ -2022,10 +2049,12 @@ export class QueryResult {
       (added, removed) => {
         if (removed !== undefined) usage.remove(itemBytes(removed));
         usage.add(itemBytes(added));
+        enforceBufferedRowsBudget(config.budget, usage.items);
+        enforceOperatorMemoryBudget(config.budget, usage.listBytes);
       },
     );
     const scanVectorBatches = vectorBatchScanner(config.scanner);
-    if (scanVectorBatches === undefined) return undefined;
+    if (scanVectorBatches === undefined) return;
     const { planned: paths, skipped: skippedFiles } = await this.planObjects();
     this.stats.filesSkipped = skippedFiles;
     for (const object of paths) {
@@ -2051,31 +2080,126 @@ export class QueryResult {
         const selection = predicateSelection(batch, config.where);
         this.stats.rowsMatched += selectedRowCount(batch.rowCount, selection);
         addRankedRefs(retained, object.path, object, rowOffset, batch, selection, rankColumns);
-        enforceBufferedRowsBudget(config.budget, retained.size);
-        if (config.budget.maxMemoryBytes !== undefined)
-          enforceOperatorMemoryBudget(config.budget, usage.listBytes);
         enforceBudget(config.budget, this.stats, config.now, startedAt);
       }
     }
-    const ranked = retained.finish();
     const limit = config.limit;
-    if (limit === undefined) return undefined;
-    const selected = ranked.slice(config.offset ?? 0, (config.offset ?? 0) + limit);
-    const rowsByRef = await this.materializeRowRefs(
-      selected,
-      outputColumns,
-      rankColumns,
-      startedAt,
-    );
-    const rows = selected
-      .map((ref) => rowsByRef.get(rowRefKey(ref)))
-      .filter((row): row is Row => row !== undefined);
-    for (const _row of rows) {
-      this.stats.rowsReturned += 1;
-      enforceBudget(config.budget, this.stats, config.now, startedAt);
+    if (limit === undefined) return;
+    const selected = retained.finish().slice(config.offset ?? 0, (config.offset ?? 0) + limit);
+    yield* this.materializeRowRefBatches(selected, outputColumns, rankColumns, startedAt);
+  }
+
+  private async *materializeRowRefBatches(
+    refs: (RankedRowRef | undefined)[],
+    columns: readonly string[],
+    rankColumns: readonly string[],
+    startedAt: number,
+  ): AsyncIterable<Row[]> {
+    const config = this.config;
+    const measured = config.budget.maxMemoryBytes !== undefined;
+    const remaining = new RunningCounter();
+    // Output may share nested values with a reference. Once yielded, those values
+    // belong to the caller: cleanup must release the admission charge, not size
+    // caller-mutated data again. The numeric ledger is bounded by selected refs.
+    const charges = measured ? new Float64Array(refs.length) : undefined;
+    for (let index = 0; index < refs.length; index++) {
+      const ref = refs[index];
+      if (ref === undefined) continue;
+      const charge = measured ? estimateOperatorMemoryBytes(ref) : 0;
+      if (charges !== undefined) charges[index] = charge;
+      remaining.add(charge);
     }
-    this.stats.elapsedMs = config.now() - startedAt;
-    return rows.map((row) => project(row, config.select, undefined));
+    const referenceBytes = () => (measured ? remaining.listBytes + (charges?.byteLength ?? 0) : 0);
+    const maxRows = Math.max(
+      1,
+      Math.min(config.batchSize ?? 4096, config.budget.maxBufferedRows ?? Infinity),
+    );
+    let observedEntryBytes = 0;
+    let observedDecodedBytes = 0;
+    try {
+      for (let start = 0; start < refs.length; ) {
+        throwIfAborted(config.budget.signal);
+        enforceBudget(config.budget, this.stats, config.now, startedAt);
+        const available = (config.budget.maxMemoryBytes ?? Infinity) - referenceBytes() - 2;
+        let count = Math.min(
+          refs.length - start,
+          maxRows,
+          measured
+            ? observedEntryBytes + observedDecodedBytes === 0
+              ? 1
+              : Math.max(1, Math.floor(available / (observedEntryBytes + observedDecodedBytes + 1)))
+            : maxRows,
+        );
+        let rows: Map<string, Row>;
+        let window: RankedRowRef[];
+        for (;;) {
+          throwIfAborted(config.budget.signal);
+          window = refs
+            .slice(start, start + count)
+            .filter((ref): ref is RankedRowRef => ref !== undefined);
+          let span = columnarBatchSize(config.batchSize);
+          if (measured && observedEntryBytes === 0 && observedDecodedBytes === 0) {
+            span = 1;
+          } else if (measured && observedDecodedBytes > 0) {
+            span = Math.min(
+              span,
+              Math.max(
+                1,
+                Math.floor((available - count * (observedEntryBytes + 1)) / observedDecodedBytes),
+              ),
+            );
+          }
+          try {
+            rows = await this.materializeRowRefs(
+              window,
+              columns,
+              rankColumns,
+              startedAt,
+              span,
+              referenceBytes(),
+              (entryBytes, decodedPerRow) => {
+                observedEntryBytes = Math.max(observedEntryBytes, entryBytes);
+                observedDecodedBytes = Math.max(observedDecodedBytes, decodedPerRow);
+              },
+            );
+            break;
+          } catch (error) {
+            if (
+              !(error instanceof LakeqlError) ||
+              error.code !== "LAKEQL_BUDGET_EXCEEDED" ||
+              error.details?.metric !== "operator memory bytes" ||
+              count <= 1
+            )
+              throw error;
+            count = Math.max(1, Math.floor(count / 2));
+          }
+        }
+        try {
+          const out = window
+            .map((ref) => rows.get(rowRefKey(ref)))
+            .filter((row): row is Row => row !== undefined);
+          for (const _row of out) {
+            this.stats.rowsReturned++;
+            enforceBudget(config.budget, this.stats, config.now, startedAt);
+          }
+          this.stats.elapsedMs = config.now() - startedAt;
+          if (out.length > 0) yield out;
+        } finally {
+          rows.clear();
+          for (let index = start; index < start + count; index++) {
+            const ref = refs[index];
+            if (ref !== undefined) remaining.remove(charges?.[index] ?? 0);
+            if (charges !== undefined) charges[index] = 0;
+            refs[index] = undefined;
+          }
+          window.length = 0;
+        }
+        start += count;
+      }
+    } finally {
+      refs.length = 0;
+      this.stats.elapsedMs = config.now() - startedAt;
+    }
   }
 
   private async materializeRowRefs(
@@ -2083,21 +2207,43 @@ export class QueryResult {
     columns: readonly string[],
     rankColumns: readonly string[],
     startedAt: number,
-    maxWindowRows = columnarBatchSize(this.config.batchSize),
+    maxWindowRows: number,
+    referenceBytes: number,
+    observeBytes: (entryBytes: number, decodedPerRow: number) => void,
   ): Promise<Map<string, Row>> {
     const scanVectorBatches = vectorBatchScanner(this.config.scanner);
     if (scanVectorBatches === undefined) return new Map();
     const rows = new Map<string, Row>();
-    for (const ref of refs) rows.set(rowRefKey(ref), { ...ref.keys });
+    if (refs.length === 0) return rows;
+    const budget = this.config.budget;
+    const measured = budget.maxMemoryBytes !== undefined;
+    // Both references and result entries remain live during deferred reads.
+    // Charge their serialized lists, including entry keys, without rescanning
+    // all retained rows when one payload is materialized.
+    let decodedBytes = 0;
+    const usage = new RunningCounter();
+    const itemBytes = (key: string, row: Row) =>
+      measured ? estimateOperatorMemoryBytes([key, row]) : 0;
+    const retain = (key: string, row: Row) => {
+      const previous = rows.get(key);
+      if (previous !== undefined) usage.remove(itemBytes(key, previous));
+      usage.add(itemBytes(key, row));
+      enforceBufferedRowsBudget(budget, usage.items);
+      enforceOperatorMemoryBudget(budget, referenceBytes + usage.listBytes + decodedBytes);
+      rows.set(key, row);
+    };
+    for (const ref of refs) retain(rowRefKey(ref), { ...ref.keys });
     const lateColumns = columns.filter((column) => !rankColumns.includes(column));
     if (lateColumns.length === 0) return rows;
     for (const window of materializationWindows(refs, maxWindowRows)) {
+      throwIfAborted(budget.signal);
+      enforceBudget(budget, this.stats, this.config.now, startedAt);
       const scanOptions: ScanOptions = {
         ...(window.object === undefined ? {} : { object: window.object }),
         columns: lateColumns,
         rowStart: window.rowStart,
         rowEnd: window.rowEnd,
-        batchSize: columnarBatchSize(this.config.batchSize),
+        batchSize: maxWindowRows,
         stats: this.stats,
         budget: this.config.budget,
         now: this.config.now,
@@ -2108,6 +2254,11 @@ export class QueryResult {
         window.path,
         scanOptions,
       )) {
+        throwIfAborted(budget.signal);
+        enforceBudget(budget, this.stats, this.config.now, startedAt);
+        decodedBytes = measured ? estimateBatchBytes(batch) : 0;
+        observeBytes(0, Math.ceil(decodedBytes / Math.max(1, batch.rowCount)));
+        enforceOperatorMemoryBudget(budget, referenceBytes + usage.listBytes + decodedBytes);
         for (let index = 0; index < batch.rowCount; index += 1) {
           const rowIndex = rowOffset + index;
           const key = rowRefKey({ path: window.path, rowIndex });
@@ -2118,8 +2269,18 @@ export class QueryResult {
             const vector = batch.columns[column];
             if (vector !== undefined) row[column] = vectorValue(vector, index);
           }
-          rows.set(key, { ...existing, ...row });
+          const projected = project(
+            { ...existing, ...row },
+            this.config.select,
+            this.config.projections,
+          );
+          observeBytes(
+            itemBytes(key, projected),
+            Math.ceil(decodedBytes / Math.max(1, batch.rowCount)),
+          );
+          retain(key, projected);
         }
+        decodedBytes = 0;
       }
     }
     return rows;
@@ -3946,12 +4107,6 @@ function outputReadColumns(
   }
   for (const expr of Object.values(projections ?? {})) collectExprColumns(expr, columns);
   return [...columns].sort();
-}
-
-async function* rowsAsBatches(rows: readonly Row[], batchSize: number): AsyncIterable<Row[]> {
-  for (let index = 0; index < rows.length; index += batchSize) {
-    yield rows.slice(index, index + batchSize);
-  }
 }
 
 function aggregateReadColumns(

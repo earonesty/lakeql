@@ -1,5 +1,14 @@
 import { env } from "cloudflare:test";
-import { eq, gte, Lake, lt, memoryCache, memoryStore, SharedMemoryCache } from "lakeql-core";
+import {
+  eq,
+  gte,
+  Lake,
+  lt,
+  memoryCache,
+  memoryStore,
+  SharedMemoryCache,
+  withObjectStoreReadControls,
+} from "lakeql-core";
 import { describe, expect, it } from "vitest";
 import { createLake } from "../../lakeql/src/sql.js";
 import { type R2BucketLike, r2Store } from "../../r2/src/index.js";
@@ -144,4 +153,58 @@ it("orders concurrent real Parquet jobs through native R2 with bounded candidate
   await sql(true, 0);
   expect(reads).toBeGreaterThan(singleReads);
   await store.delete("ordering.parquet");
+});
+
+it("bounds wide deferred payloads across concurrent native R2 jobs", async () => {
+  const bucket = (env as unknown as { ORDERING_FIXTURES: R2BucketLike }).ORDERING_FIXTURES;
+  const store = withObjectStoreReadControls(r2Store(bucket), { maxConcurrentReads: 2 });
+  const rows = Array.from({ length: 12 }, (_, score) => ({ score, payload: "雪🙂".repeat(1024) }));
+  await writeParquet(store, "payload-budget.parquet", {
+    rowGroupSize: Array(12).fill(1),
+    columnData: [
+      { name: "score", data: rows.map((r) => r.score) },
+      { name: "payload", data: rows.map((r) => r.payload) },
+    ],
+  });
+  const scanner = new ParquetScanAdapter(store, { scanRangeCache: { maxBytes: 0 } });
+  const run = (maxMemoryBytes: number, ordered: boolean) => {
+    const lake = new Lake({ store, scanner, budget: { maxMemoryBytes, maxConcurrentReads: 2 } });
+    let query = lake
+      .path("payload-budget.parquet")
+      .select(["score", "payload"])
+      .where(gte("score", 0))
+      .offset(1)
+      .limit(2);
+    if (ordered) query = query.orderBy([{ column: "score" }]);
+    return query.toArray();
+  };
+  await Promise.all(
+    [false, true].flatMap((ordered) => [
+      expect(run(4096, ordered)).rejects.toMatchObject({
+        code: "LAKEQL_BUDGET_EXCEEDED",
+        details: { metric: "operator memory bytes" },
+      }),
+      expect(run(32 * 1024, ordered)).resolves.toEqual(rows.slice(1, 3)),
+    ]),
+  );
+  await Promise.all(
+    [false, true].map(async (ordered) => {
+      const lake = new Lake({
+        store,
+        scanner,
+        budget: { maxMemoryBytes: 32 * 1024, maxConcurrentReads: 2 },
+      });
+      let query = lake
+        .path("payload-budget.parquet")
+        .select(["score", "payload"])
+        .where(gte("score", 0))
+        .batchSize(3)
+        .limit(rows.length);
+      if (ordered) query = query.orderBy([{ column: "score", direction: "desc" }]);
+      const output = await query.toArray();
+      expect(output).toEqual(ordered ? [...rows].reverse() : rows);
+      expect(new TextEncoder().encode(JSON.stringify(output)).length).toBeGreaterThan(32 * 1024);
+    }),
+  );
+  expect(await run(32 * 1024, true)).toEqual(rows.slice(1, 3));
 });
