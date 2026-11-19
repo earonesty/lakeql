@@ -1,5 +1,19 @@
 # lakeql-lance
 
+## 0.3.0
+
+### Minor Changes
+
+- 188cd59: Read official Lance R-tree indexes for exact spatial predicates over native GeoArrow XY points, with bounded numeric range traversal, snapshot fragment coverage checks, and projected struct support. Support unchanged default pylance 8 GeoParquet conversions through storage 2.1 primitive/struct decoding and snapshot-pinned physical row addresses, with an official LFS fixture.
+
+### Patch Changes
+
+- Updated dependencies [e70ccd1]
+- Updated dependencies [17646ef]
+- Updated dependencies [eb5afd6]
+- Updated dependencies [a15f6f6]
+  - lakeql@0.9.0
+
 ## 0.2.3
 
 ### Patch Changes

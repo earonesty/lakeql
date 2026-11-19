@@ -1,5 +1,19 @@
 # lakeql-webgpu
 
+## 0.3.0
+
+### Minor Changes
+
+- Require lakeql 0.9.x through the published peer dependency. Keep this compatibility change on the pre-1.0 release line.
+
+### Patch Changes
+
+- Updated dependencies [e70ccd1]
+- Updated dependencies [17646ef]
+- Updated dependencies [eb5afd6]
+- Updated dependencies [a15f6f6]
+  - lakeql@0.9.0
+
 ## 0.2.0
 
 ### Minor Changes

@@ -1,7 +1,7 @@
 {
   "name": "lakeql-webgpu",
   "sideEffects": false,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "WebGPU physical execution backend for LakeQL",
   "keywords": [
     "lakeql",
