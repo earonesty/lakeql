@@ -128,8 +128,58 @@ describe("cachedRangeBuffer", () => {
       },
     };
     const cached = cachedRangeBuffer(file, { maxBytes: 4, coalesceBytes: 0 }, "short");
-    await expect(bytes(cached.slice(0, 4))).resolves.toEqual([1]);
+    await expect(cached.slice(0, 4)).rejects.toMatchObject({
+      code: "LAKEQL_PARQUET_READ_ERROR",
+    });
     await expect(bytes(cached.slice(0, 4))).resolves.toEqual([1, 2, 3, 4]);
+    expect(reads).toBe(2);
+  });
+
+  it.each([
+    false,
+    true,
+  ])("rejects a truncated in-flight response for owner and all waiters (shared=%s)", async (shared) => {
+    let finish: (() => void) | undefined;
+    let reads = 0;
+    const source = Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8]);
+    const file: StoreAsyncBuffer = {
+      byteLength: 8,
+      async slice(start, end) {
+        reads++;
+        if (reads === 1) {
+          await new Promise<void>((resolve) => {
+            finish = resolve;
+          });
+          return source.buffer.slice(0, 1);
+        }
+        return source.buffer.slice(start, end);
+      },
+    };
+    const cached = cachedRangeBuffer(
+      file,
+      {
+        maxBytes: 8,
+        coalesceBytes: 0,
+        ...(shared ? { sharedCache: new SharedMemoryCache({ maxBytes: 8 }) } : {}),
+      },
+      "truncated-pending",
+    );
+    const results = Promise.allSettled([
+      cached.slice(0, 8),
+      cached.slice(4, 6),
+      cached.slice(0, 1),
+    ]);
+    finish?.();
+    for (const result of await results) {
+      expect(result).toMatchObject({
+        status: "rejected",
+        reason: {
+          code: "LAKEQL_PARQUET_READ_ERROR",
+          details: { expectedBytes: 8, actualBytes: 1 },
+        },
+      });
+    }
+    await expect(bytes(cached.slice(4, 6))).resolves.toEqual([5, 6]);
     expect(reads).toBe(2);
   });
 

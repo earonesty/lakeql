@@ -94,7 +94,7 @@ describe("cachedObjectStore", () => {
     expect(counted.counters).toEqual({ get: 2, getRange: 0, head: 0, bytes: 3 });
   });
 
-  it("caches object heads defensively", async () => {
+  it("revalidates object heads and returns defensive copies", async () => {
     const backing = memoryStore();
     await backing.put("data.bin", new Uint8Array([1, 2, 3]), { contentType: "application/bin" });
     const counted = countingStore(backing);
@@ -111,7 +111,84 @@ describe("cachedObjectStore", () => {
     expect(second?.lastModified.getTime()).not.toBe(0);
     expect(await cached.head("missing.bin")).toBeNull();
     expect(await cached.head("missing.bin")).toBeNull();
-    expect(counted.counters).toEqual({ get: 0, getRange: 0, head: 2, bytes: 0 });
+    expect(counted.counters).toEqual({ get: 0, getRange: 0, head: 4, bytes: 0 });
+  });
+
+  it("revalidates external same-size overwrites and deletion before reusing cached bytes", async () => {
+    const backing = memoryStore();
+    await backing.put("data", Uint8Array.from([1, 2, 3]));
+    const cache = cachedObjectStore(backing);
+    const first = await cache.head("data");
+    expect(await cache.getRange("data", { offset: 0, length: 3 })).toEqual(
+      Uint8Array.from([1, 2, 3]),
+    );
+    await backing.put("data", Uint8Array.from([4, 5, 6]));
+    expect((await cache.head("data"))?.etag).not.toBe(first?.etag);
+    expect(await cache.getRange("data", { offset: 0, length: 3 })).toEqual(
+      Uint8Array.from([4, 5, 6]),
+    );
+    await backing.delete("data");
+    expect(await cache.head("data")).toBeNull();
+    expect(await cache.get("data")).toBeNull();
+  });
+
+  it("invalidates old byte entries when a fresh listing observes a new version", async () => {
+    const backing = memoryStore();
+    await backing.put("data", Uint8Array.from([1, 2]));
+    const cache = cachedObjectStore(backing);
+    for await (const _object of cache.list("")) {
+      /* establish identity */
+    }
+    await cache.getRange("data", { offset: 0, length: 2 });
+    await backing.put("data", Uint8Array.from([3, 4]));
+    for await (const _object of cache.list("")) {
+      /* refresh identity */
+    }
+    expect(await cache.getRange("data", { offset: 0, length: 2 })).toEqual(Uint8Array.from([3, 4]));
+  });
+
+  it("does not reuse unvalidated byte entries when their earlier head expired", async () => {
+    vi.useFakeTimers();
+    try {
+      const backing = memoryStore();
+      await backing.put("data", Uint8Array.from([1, 2]));
+      const cache = cachedObjectStore(backing, { ttlMs: 10 });
+      await cache.head("data");
+      vi.advanceTimersByTime(9);
+      await cache.getRange("data", { offset: 0, length: 2 });
+      vi.advanceTimersByTime(2);
+      await backing.put("data", Uint8Array.from([3, 4]));
+      await cache.head("data");
+      expect(await cache.getRange("data", { offset: 0, length: 2 })).toEqual(
+        Uint8Array.from([3, 4]),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("charges observed validator records to the same byte budget", async () => {
+    const backing = memoryStore();
+    for (let index = 0; index < 50; index++)
+      await backing.put(`data/${index}`, Uint8Array.from([index]));
+    const shared = new SharedMemoryCache({ maxBytes: 1024 });
+    const cache = cachedObjectStore(backing, { maxBytes: 1024 }, shared);
+    for await (const _object of cache.list("data/")) {
+      /* observe validators */
+    }
+    expect(
+      shared.find(
+        (value) =>
+          typeof value === "object" && value !== null && "kind" in value && value.kind === "head",
+      ),
+    ).toBeDefined();
+    shared.set("full-budget", new Uint8Array(1024), 1024, { priority: 4 });
+    expect(
+      shared.find(
+        (value) =>
+          typeof value === "object" && value !== null && "kind" in value && value.kind === "head",
+      ),
+    ).toBeUndefined();
   });
 
   it("invalidates all cached path entries around writes and deletes", async () => {

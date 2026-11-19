@@ -3,7 +3,7 @@ import { RunningCounter } from "./running-counter.js";
 import type { ListOptions, ObjectHead, ObjectInfo, ObjectStore } from "./store.js";
 
 export interface ObjectStoreCacheOptions {
-  /** Maximum cached object/range bytes retained in memory. Defaults to 64 MiB. */
+  /** Maximum retained object/range bytes and modeled head metadata. Defaults to 64 MiB. */
   maxBytes?: number;
   /** Optional time-to-live for cache entries. Entries do not expire by default. */
   ttlMs?: number;
@@ -198,6 +198,13 @@ export function cachedObjectStore(
     sharedCache.deleteWhere((value) => isCacheValue(value) && value.path === path);
   }
 
+  function observeHead(path: string, value: ObjectHead | null): void {
+    const key = headKey(path);
+    const cached = get(key);
+    if (cached?.kind !== "head" || !sameObjectVersion(cached.value, value)) invalidatePath(path);
+    set(key, { kind: "head", path, value });
+  }
+
   return {
     async get(path) {
       const key = objectKey(path);
@@ -225,18 +232,31 @@ export function cachedObjectStore(
       await inner.delete(path);
       invalidatePath(path);
     },
-    list(prefix: string, listOptions?: ListOptions): AsyncIterable<ObjectInfo> {
-      return inner.list(prefix, listOptions);
+    async *list(prefix: string, listOptions?: ListOptions): AsyncIterable<ObjectInfo> {
+      for await (const object of inner.list(prefix, listOptions)) {
+        observeHead(object.path, object);
+        yield object;
+      }
     },
     async head(path) {
-      const key = headKey(path);
-      const cached = get(key);
-      if (cached?.kind === "head") return cached.value;
+      // head() is the validation boundary for cached bytes. Serving a cached
+      // validator here would make an external overwrite invisible to planning.
       const value = await inner.head(path);
-      set(key, { kind: "head", path, value });
-      return value;
+      observeHead(path, value);
+      return cloneHead(value);
     },
   };
+}
+
+function sameObjectVersion(a: ObjectHead | null, b: ObjectHead | null): boolean {
+  if (a === null || b === null) return a === b;
+  if (a.size !== b.size) return false;
+  if (a.etag !== undefined || b.etag !== undefined)
+    return a.etag !== undefined && a.etag === b.etag;
+  if (a.lastModified !== undefined && b.lastModified !== undefined)
+    return a.lastModified.getTime() === b.lastModified.getTime();
+  // No validator means even a same-size overwrite cannot be ruled out.
+  return false;
 }
 
 function objectCachePriority(value: CacheValue, options: ObjectStoreCacheOptions): number {
@@ -274,7 +294,14 @@ function headKey(path: string): string {
 function valueBytes(value: CacheValue): number {
   if (value.kind === "object") return value.value?.byteLength ?? 0;
   if (value.kind === "range") return value.value.byteLength;
-  return 0;
+  // Fresh listings may observe many objects. Validator records must consume
+  // capacity as well, rather than forming an unlimited zero-byte side index.
+  return (
+    64 +
+    value.path.length * 2 +
+    (value.value?.etag?.length ?? 0) * 2 +
+    (value.value?.contentType?.length ?? 0) * 2
+  );
 }
 
 function cloneValue(value: CacheValue): CacheValue {

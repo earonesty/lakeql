@@ -52,7 +52,7 @@ The source was 179,257,059 bytes during these measurements and refreshes regular
 
 ## Validation and bounds
 
-Full `pnpm check` passes: 1,018 regular tests (97 skipped), 10 native Worker/R2
+Full `pnpm check` passes: 1,029 regular tests (97 skipped), 10 native Worker/R2
 checks, 7 external conformance tests (1 skipped), 81 reference comparisons,
 coverage, fixture verification, package-install smoke, lint, build and types.
 Site build passes. Regressions cover covering/in-flight reads, failed retries,
@@ -64,3 +64,25 @@ browser/Worker heap. Decoded batches and caller-held results have separate lives
 The demo still caps output at 12,000 rows. Arbitrary range-ignoring HTTP servers
 can still incur the existing full-response fallback; this change does not claim
 a whole-process memory ceiling or alter that fallback.
+
+## Review follow-up: range integrity and plan freshness
+
+A backend response must contain the complete requested physical extent before
+it can be returned, cached, or shared with pending readers. A short response now
+fails the owner and every waiter with `LAKEQL_PARQUET_READ_ERROR`; failed work is
+removed so a later call can retry. Returned extents are checked before slicing.
+
+Planning caches retain caller-controlled path-list membership, but cached sizes
+and validators are revalidated before pruning, task planning, or scanning.
+Validation uses a bounded worker pool honoring `maxConcurrentReads` and abort.
+A missing cached member invalidates and re-expands the list. Newly added members
+remain subject to the caller's planning-cache lifetime/invalidation policy.
+Updating identities preserves that cache entry's existing expiration time.
+
+The byte-store cache now treats `head()` and fresh list entries as validation
+boundaries, invalidating retained bytes when a source version changes or its
+previous validator expired. Validator records themselves consume cache capacity,
+so observing listings does not create an unbounded zero-byte index. The cache
+does not answer a validation request from a cached head. The same-size-overwrite and deletion regressions include object caching,
+real Parquet task manifests and reads, and local HTTP 206/200 servers. This keeps
+one fresh validation at the query boundary while retaining reuse during the query.

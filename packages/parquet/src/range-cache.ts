@@ -1,4 +1,9 @@
-import { type CachePolicy, type ObjectStoreCacheOptions, SharedMemoryCache } from "lakeql-core";
+import {
+  type CachePolicy,
+  LakeqlError,
+  type ObjectStoreCacheOptions,
+  SharedMemoryCache,
+} from "lakeql-core";
 import type { StoreAsyncBuffer } from "./types.js";
 
 const DEFAULT_MAX_ENTRY_BYTES = 16 * 1024 * 1024;
@@ -60,12 +65,23 @@ export function cachedRangeBuffer(
         return sliceEntry(await inflight.read, start, end);
       }
     }
-    const read = file.slice(request.start, request.end).then((bytes) => ({
-      bytes,
-      byteLength: bytes.byteLength,
-      start: request.start,
-      end: request.start + bytes.byteLength,
-    }));
+    const read = file.slice(request.start, request.end).then((bytes) => {
+      const expectedBytes = request.end - request.start;
+      if (bytes.byteLength !== expectedBytes) {
+        throw new LakeqlError(
+          "LAKEQL_PARQUET_READ_ERROR",
+          "Unexpected Parquet range response length",
+          {
+            path: cacheKey,
+            start: request.start,
+            end: request.end,
+            expectedBytes,
+            actualBytes: bytes.byteLength,
+          },
+        );
+      }
+      return { bytes, byteLength: bytes.byteLength, start: request.start, end: request.end };
+    });
     pending.set(key, { ...request, read });
     let entry: RangeCacheEntry;
     try {
@@ -154,6 +170,18 @@ function coalescedRange(
 }
 
 function sliceEntry(entry: RangeCacheEntry, start: number, end: number): ArrayBuffer {
+  if (start < entry.start || end > entry.end) {
+    throw new LakeqlError(
+      "LAKEQL_PARQUET_READ_ERROR",
+      "Cached range does not cover the requested bytes",
+      {
+        start,
+        end,
+        availableStart: entry.start,
+        availableEnd: entry.end,
+      },
+    );
+  }
   return sliceBuffer(entry.bytes, start - entry.start, end - entry.start);
 }
 
