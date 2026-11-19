@@ -15,6 +15,7 @@ import {
   vectorLength,
   vectorValue,
 } from "lakeql-core";
+import { bufferCacheIdentity } from "./buffer-identity.js";
 import { readParquetColumnBatch } from "./column-batches.js";
 import { lakeqlParquetCompressors } from "./compressors.js";
 import { convertIntegerDecimalValues, isIntegerDecimal } from "./decimal.js";
@@ -417,7 +418,7 @@ async function* readNestedColumnVectorBatches(
         : decodedColumnCacheKey({
             path: options.decodedColumnCacheKey,
             byteLength: file.byteLength,
-            ...(file.etag === undefined ? {} : { etag: file.etag }),
+            etag: bufferCacheIdentity(file),
             columns: [column],
             rowStart,
             rowEnd,
@@ -529,7 +530,7 @@ async function* readColumnVectorBatches(
           : decodedColumnPageCacheKey({
               path: options.decodedColumnCacheKey,
               byteLength: file.byteLength,
-              ...(file.etag === undefined ? {} : { etag: file.etag }),
+              etag: bufferCacheIdentity(file),
               column,
               rowGroupStart,
               pageRowStart,
@@ -633,7 +634,7 @@ async function* readColumnWindowVectorBatches(
           : decodedColumnPageCacheKey({
               path: options.decodedColumnCacheKey,
               byteLength: file.byteLength,
-              ...(file.etag === undefined ? {} : { etag: file.etag }),
+              etag: bufferCacheIdentity(file),
               column,
               rowGroupStart,
               pageRowStart,
@@ -750,7 +751,7 @@ function dictionaryPageValues(
       : decodedDictionaryPageCacheKey({
           path: options.decodedColumnCacheKey,
           byteLength: file.byteLength,
-          ...(file.etag === undefined ? {} : { etag: file.etag }),
+          etag: bufferCacheIdentity(file),
           column,
           rowGroupStart,
           pageOffset,

@@ -191,6 +191,83 @@ describe("cachedObjectStore", () => {
     ).toBeUndefined();
   });
 
+  it.each([
+    { method: "get", separateObserver: false },
+    { method: "getRange", separateObserver: false },
+    { method: "get", separateObserver: true },
+    { method: "getRange", separateObserver: true },
+  ] as const)("fences late $method bytes across invalidation (separate observer=$separateObserver)", async ({
+    method,
+    separateObserver,
+  }) => {
+    const backing = memoryStore();
+    await backing.put("data", Uint8Array.from([1, 2]));
+    const store = countingStore(backing);
+    let release: (() => void) | undefined;
+    let captured: (() => void) | undefined;
+    const capturedRead = new Promise<void>((resolve) => {
+      captured = resolve;
+    });
+    let delayed = true;
+    const read =
+      method === "get"
+        ? backing.get.bind(backing)
+        : (path: string) => backing.getRange(path, { offset: 0, length: 2 });
+    async function source(path: string) {
+      const value = await read(path);
+      if (delayed) {
+        delayed = false;
+        captured?.();
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      }
+      return value;
+    }
+    if (method === "get") store.get = source;
+    else
+      store.getRange = async (path) => {
+        const value = await source(path);
+        if (value === null) throw Error("missing");
+        return value;
+      };
+    const shared = new SharedMemoryCache({ maxBytes: 1024 });
+    const cache = cachedObjectStore(store, {}, shared);
+    const observer = separateObserver ? cachedObjectStore(backing, {}, shared) : cache;
+    await cache.head("data");
+    const fetch = () =>
+      method === "get" ? cache.get("data") : cache.getRange("data", { offset: 0, length: 2 });
+    const old = fetch();
+    await capturedRead;
+    await backing.put("data", Uint8Array.from([3, 4]));
+    await observer.head("data");
+    expect(await fetch()).toEqual(Uint8Array.from([3, 4]));
+    release?.();
+    expect(await old).toEqual(Uint8Array.from([1, 2]));
+    expect(await fetch()).toEqual(Uint8Array.from([3, 4]));
+  });
+
+  it("does not treat an unchanged timestamp as a strong byte validator", async () => {
+    const backing = memoryStore();
+    await backing.put("data", Uint8Array.from([1, 2]));
+    const source = countingStore(backing);
+    const original = source.head.bind(source);
+    source.head = async (path) => {
+      const head = await original(path);
+      if (head !== null) {
+        delete head.etag;
+        head.lastModified = new Date(0);
+      }
+      return head;
+    };
+    const cache = cachedObjectStore(source);
+    await cache.head("data");
+    await cache.getRange("data", { offset: 0, length: 2 });
+    await backing.put("data", Uint8Array.from([3, 4]));
+    await cache.head("data");
+    expect(await cache.getRange("data", { offset: 0, length: 2 })).toEqual(Uint8Array.from([3, 4]));
+  });
+
   it("invalidates all cached path entries around writes and deletes", async () => {
     const backing = memoryStore();
     await backing.put("data.bin", new Uint8Array([1, 2, 3, 4]));

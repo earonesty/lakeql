@@ -52,7 +52,7 @@ The source was 179,257,059 bytes during these measurements and refreshes regular
 
 ## Validation and bounds
 
-Full `pnpm check` passes: 1,029 regular tests (97 skipped), 10 native Worker/R2
+Full `pnpm check` passes: 1,038 regular tests (97 skipped), 10 native Worker/R2
 checks, 7 external conformance tests (1 skipped), 81 reference comparisons,
 coverage, fixture verification, package-install smoke, lint, build and types.
 Site build passes. Regressions cover covering/in-flight reads, failed retries,
@@ -86,3 +86,21 @@ so observing listings does not create an unbounded zero-byte index. The cache
 does not answer a validation request from a cached head. The same-size-overwrite and deletion regressions include object caching,
 real Parquet task manifests and reads, and local HTTP 206/200 servers. This keeps
 one fresh validation at the query boundary while retaining reuse during the query.
+
+Further review coverage isolates every unversioned buffer observation across raw
+range, metadata and decoded caches. An opaque read identity is inherited by its
+wrappers; ETag-backed readers retain shared reuse. Weak ownership avoids a retained per-path index. Unversioned read identities
+are used only by bounded in-memory caches; unversioned metadata is not written
+to external/persistent cache adapters because it cannot be safely reused. Equal-size writes with changed lastModified and no ETag are tested with
+and without decoded/object caching.
+
+Byte-store invalidation also fences active get/getRange completions, including
+wrappers sharing one cache. An old completion can finish for its original caller
+but cannot repopulate the newer cache generation. Per-path fence state exists only
+while reads are active and is released on completion/failure. After a validation
+head fails, peer workers finish their already-started reads without starting more;
+the original error is preserved. These cases have failing-before regressions.
+
+Without an ETag the byte-store cache likewise does not preserve bytes across a
+new head/list observation, even when size and lastModified are unchanged. A coarse
+timestamp is not a reliable version key. ETag-backed cache reuse is unchanged.

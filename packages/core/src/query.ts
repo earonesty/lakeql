@@ -3961,18 +3961,24 @@ async function expandPaths(
     const readable = withObjectStoreReadControls(store, budget);
     let cursor = 0;
     let missing = false;
+    let failed = false;
     await Promise.all(
       Array.from(
         { length: Math.min(cached.value.length, budget.maxConcurrentReads ?? 1) },
         async () => {
-          while (!missing && cursor < cached.value.length) {
-            const index = cursor++;
-            throwIfAborted(budget.signal);
-            const prior = cached.value[index];
-            if (prior === undefined) continue;
-            const object = await headObject(readable, prior.path);
-            if (object === undefined) missing = true;
-            else fresh[index] = object;
+          try {
+            while (!missing && !failed && cursor < cached.value.length) {
+              const index = cursor++;
+              throwIfAborted(budget.signal);
+              const prior = cached.value[index];
+              if (prior === undefined) continue;
+              const object = await headObject(readable, prior.path);
+              if (object === undefined) missing = true;
+              else fresh[index] = object;
+            }
+          } catch (error) {
+            failed = true;
+            throw error;
           }
         },
       ),

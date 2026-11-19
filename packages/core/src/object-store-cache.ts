@@ -176,11 +176,47 @@ type CacheValue =
 
 const DEFAULT_MAX_BYTES = 64 * 1024 * 1024;
 
+interface PendingByteReads {
+  generation: object;
+  readers: number;
+}
+// Share invalidation fences across wrappers, retaining a path only while its I/O
+// is active. Completed and failed reads release their state in finally.
+const pendingByCache = new WeakMap<SharedMemoryCache, Map<string, PendingByteReads>>();
+
 export function cachedObjectStore(
   inner: ObjectStore,
   options: ObjectStoreCacheOptions = {},
   sharedCache = new SharedMemoryCache(options),
 ): ObjectStore {
+  let pending = pendingByCache.get(sharedCache);
+  if (pending === undefined) {
+    pending = new Map();
+    pendingByCache.set(sharedCache, pending);
+  }
+  const pendingReads = pending;
+
+  async function readAndCache<T extends CacheValue>(
+    path: string,
+    key: string,
+    read: () => Promise<T>,
+  ): Promise<T> {
+    let state = pendingReads.get(path);
+    if (state === undefined) {
+      state = { generation: {}, readers: 0 };
+      pendingReads.set(path, state);
+    }
+    state.readers++;
+    const generation = state.generation;
+    try {
+      const value = await read();
+      if (state.generation === generation) set(key, value);
+      return value;
+    } finally {
+      if (--state.readers === 0) pendingReads.delete(path);
+    }
+  }
+
   function get(key: string): CacheValue | undefined {
     const entry = sharedCache.get<CacheValue>(key);
     if (!entry) return undefined;
@@ -195,6 +231,8 @@ export function cachedObjectStore(
   }
 
   function invalidatePath(path: string): void {
+    const active = pendingReads.get(path);
+    if (active !== undefined) active.generation = {};
     sharedCache.deleteWhere((value) => isCacheValue(value) && value.path === path);
   }
 
@@ -210,17 +248,23 @@ export function cachedObjectStore(
       const key = objectKey(path);
       const cached = get(key);
       if (cached?.kind === "object") return cached.value;
-      const value = await inner.get(path);
-      set(key, { kind: "object", path, value });
-      return value;
+      const entry = await readAndCache(path, key, async () => ({
+        kind: "object",
+        path,
+        value: await inner.get(path),
+      }));
+      return entry.value;
     },
     async getRange(path, range) {
       const key = rangeKey(path, range);
       const cached = get(key);
       if (cached?.kind === "range") return cached.value;
-      const value = await inner.getRange(path, range);
-      set(key, { kind: "range", path, value });
-      return value;
+      const entry = await readAndCache(path, key, async () => ({
+        kind: "range",
+        path,
+        value: await inner.getRange(path, range),
+      }));
+      return entry.value;
     },
     async put(path, body, putOptions) {
       invalidatePath(path);
@@ -253,9 +297,8 @@ function sameObjectVersion(a: ObjectHead | null, b: ObjectHead | null): boolean 
   if (a.size !== b.size) return false;
   if (a.etag !== undefined || b.etag !== undefined)
     return a.etag !== undefined && a.etag === b.etag;
-  if (a.lastModified !== undefined && b.lastModified !== undefined)
-    return a.lastModified.getTime() === b.lastModified.getTime();
-  // No validator means even a same-size overwrite cannot be ruled out.
+  // A timestamp alone cannot rule out a same-size overwrite within its clock
+  // resolution. Unversioned observations never preserve previously cached bytes.
   return false;
 }
 

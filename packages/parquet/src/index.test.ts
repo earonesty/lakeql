@@ -2325,6 +2325,48 @@ describe("createParquetLake", () => {
     await expect(query.toArray()).rejects.toMatchObject({ code: "LAKEQL_OBJECT_NOT_FOUND" });
   });
 
+  it.each([
+    false,
+    true,
+  ])("does not reuse unversioned Parquet products across observations (object cache=%s)", async (objectCache) => {
+    const backing = memoryStore();
+    const store = countingObjectStore(backing);
+    const originalHead = store.head.bind(store);
+    store.head = async (path) => {
+      const head = await originalHead(path);
+      if (head !== null) delete head.etag;
+      return head;
+    };
+    async function replace(ids: number[]) {
+      await writeParquet(backing, "no-etag.parquet", {
+        rowGroupSize: 2,
+        columnData: [
+          { name: "id", type: "INT32", data: ids },
+          { name: "payload", type: "STRING", data: ids.map((id) => `value:${id}`) },
+        ],
+      });
+    }
+    await replace([10, 20]);
+    const first = await backing.head("no-etag.parquet");
+    const lake = createParquetLake({
+      store,
+      ...(objectCache ? { cache: { maxBytes: 1024 * 1024, policy: "latency" as const } } : {}),
+    });
+    const query = lake
+      .path("no-etag.parquet")
+      .select(["id", "payload"])
+      .where(gte("id", 0))
+      .orderBy([{ column: "id" }])
+      .limit(2);
+    expect(await query.toArray()).toEqual([10, 20].map((id) => ({ id, payload: `value:${id}` })));
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    await replace([11, 21]);
+    const second = await backing.head("no-etag.parquet");
+    expect(second?.size).toBe(first?.size);
+    expect(second?.lastModified?.getTime()).not.toBe(first?.lastModified?.getTime());
+    expect(await query.toArray()).toEqual([11, 21].map((id) => ({ id, payload: `value:${id}` })));
+  });
+
   it("invalidates cached Parquet footer metadata when object etag changes", async () => {
     const metadataCache = memoryCache<ParquetMetadata>();
     const etagStore = memoryStore();

@@ -48,7 +48,9 @@ export async function readCachedParquetMetadata(
   file: StoreAsyncBuffer,
   metadataCache: CacheAdapter<ParquetMetadata> | undefined,
 ): Promise<{ metadata: ParquetMetadata; cached: boolean }> {
-  if (!metadataCache) return { metadata: await readParquetMetadataFromFile(file), cached: false };
+  // An unversioned observation cannot safely reuse a persistent metadata key.
+  if (!metadataCache || file.etag === undefined)
+    return { metadata: await readParquetMetadataFromFile(file), cached: false };
   const key = metadataCacheKey(path, file.byteLength, file.etag);
   const cached = await metadataCache.get(key);
   if (cached) return { metadata: cached.value, cached: true };
@@ -57,8 +59,8 @@ export async function readCachedParquetMetadata(
   return { metadata, cached: false };
 }
 
-function metadataCacheKey(path: string, byteLength: number, etag: string | undefined): string {
-  return `parquet-metadata:${path}:${byteLength}:${etag ?? "no-etag"}`;
+function metadataCacheKey(path: string, byteLength: number, identity: string): string {
+  return `parquet-metadata:${path}:${byteLength}:${identity}`;
 }
 
 /**

@@ -4,6 +4,7 @@ import {
   type ObjectStoreCacheOptions,
   SharedMemoryCache,
 } from "lakeql-core";
+import { bufferCacheIdentity, inheritBufferCacheIdentity } from "./buffer-identity.js";
 import type { StoreAsyncBuffer } from "./types.js";
 
 const DEFAULT_MAX_ENTRY_BYTES = 16 * 1024 * 1024;
@@ -38,7 +39,7 @@ export function cachedRangeBuffer(
   const coalesceBytes = options.coalesceBytes ?? DEFAULT_COALESCE_BYTES;
   if (maxBytes <= 0 || maxEntryBytes <= 0) return file;
   const cache = options.sharedCache ?? new SharedMemoryCache({ maxBytes });
-  const identity = JSON.stringify([cacheKey, file.byteLength, file.etag ?? null]);
+  const identity = JSON.stringify([cacheKey, file.byteLength, bufferCacheIdentity(file)]);
   const prefix = `scan-range:${identity}:`;
   const pending = new Map<string, { start: number; end: number; read: Promise<RangeCacheEntry> }>();
 
@@ -101,7 +102,7 @@ export function cachedRangeBuffer(
     return sliceEntry(entry, start, end);
   }
 
-  return {
+  return inheritBufferCacheIdentity(file, {
     byteLength: file.byteLength,
     ...(file.etag === undefined ? {} : { etag: file.etag }),
     slice: (start, end) => readRange(start, end ?? file.byteLength, true),
@@ -132,7 +133,7 @@ export function cachedRangeBuffer(
       const reads = retained.map(({ start, end }) => readRange(start, end, false));
       await Promise.all(reads);
     },
-  };
+  });
 }
 
 function isRangeEntry(value: unknown): value is RangeCacheEntry {
