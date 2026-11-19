@@ -1,5 +1,32 @@
 # lakeql
 
+## 0.9.0
+
+### Minor Changes
+
+- 17646ef: Add shared running counters and bounded `SharedMemoryCache.getOrCompute` memoization.
+  Replace repeated buffer and row/vector aggregate accounting scans with retained totals.
+  Share scalar and correlated subquery preparation between SQL library and CLI,
+  deduplicate equivalent plans within query lifetime, and expose `memoMaxBytes`.
+  Preserve existing serialized-size budget semantics, cache priority and TTL behavior.
+
+### Patch Changes
+
+- e70ccd1: Enforce existing operator byte and row limits while retaining deferred payloads for
+  ordered top-k and filtered LIMIT queries. Account for selected references and
+  materialized result entries incrementally, and release discarded offset references
+  before payload reads. Oversized retained payloads now raise a budget error.
+- eb5afd6: Stream deferred top-k and filtered LIMIT payloads through bounded, measured output
+  windows with consumer backpressure. Charge remaining references, projected results
+  and overlapping modeled decoded batches; release completed state between windows.
+  Preserve result order and cancellation, shrink unexpectedly wide windows, and allow
+  streaming results larger than the live operator allowance.
+- a15f6f6: Share priority-queue ordering across bounded row selection, deferred ranking and
+  sort-run merging. Preserve earlier equal-key rows, reuse the same selector for
+  restored checkpoints, and remove redundant sorting and ordering-term copies.
+  Candidate retention remains bounded by offset + limit; existing serialized-size
+  and buffered-row budget semantics are preserved.
+
 ## 0.8.4
 
 ### Patch Changes
