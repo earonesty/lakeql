@@ -33,6 +33,7 @@ import { applyAst } from "./apply-ast.js";
 import "./styles.css";
 
 declare const __LAKEQL_VERSION__: string;
+declare const __PLAYGROUND_SAMPLE_URL__: string;
 
 type Mode = "sql" | "js" | "json";
 const installCommand = `npm install lakeql@${__LAKEQL_VERSION__}`;
@@ -310,7 +311,7 @@ async function run(): Promise<void> {
   docs[mode] = view.state.doc.toString();
 
   const sourceInput = document.getElementById("source-url") as HTMLInputElement;
-  const { baseUrl, key } = resolveSource(sourceInput.value || "./sales.parquet");
+  const { baseUrl, key } = resolveSource(sourceInput.value || __PLAYGROUND_SAMPLE_URL__);
   const { store, stats } = countingStore(httpStore({ baseUrl }));
   const lake = createParquetLake({ store });
 

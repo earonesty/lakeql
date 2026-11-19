@@ -7,6 +7,7 @@ on:
       - "v*"
     paths:
       - "site/**"
+      - "scripts/check-http-ranges*.mjs"
       - "bench/browser-*-fixture.mjs"
       - "packages/**"
       - ".github/workflows/pages.yml"
@@ -54,6 +55,14 @@ jobs:
           fi
           pnpm dlx wrangler@4.100.0 r2 object put lakeql-public/bench/spatial.parquet --file bench/generated/browser-r2/spatial.parquet --content-type application/octet-stream --cache-control "public, max-age=31536000, immutable" --remote
           pnpm dlx wrangler@4.100.0 r2 object put lakeql-public/bench/window-events.parquet --file bench/generated/browser-r2/window-events.parquet --content-type application/octet-stream --cache-control "public, max-age=31536000, immutable" --remote
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      - name: Test browser range verification
+        run: node --test scripts/check-http-ranges.test.mjs
+
+      - name: Publish and verify playground R2 sample
+        run: node site/publish-playground-sample.mjs
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
