@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { memoryStore } from "./memory-store.js";
 import { cachedObjectStore, SharedMemoryCache } from "./object-store-cache.js";
 import type { ObjectStore } from "./store.js";
@@ -185,5 +185,43 @@ describe("cachedObjectStore", () => {
 
     expect(latencyCounted.counters.getRange).toBe(3);
     expect(latencyCounted.counters.get).toBe(1);
+  });
+});
+
+describe("SharedMemoryCache.find", () => {
+  it("touches the matched entry for LRU eviction without retaining another index", () => {
+    const cache = new SharedMemoryCache({ maxBytes: 4 });
+    cache.set("first", "one", 2);
+    cache.set("second", "two", 2);
+    expect(cache.find<string>((value, key) => key === "first" && value === "one")?.value).toBe(
+      "one",
+    );
+    cache.set("third", "three", 2);
+    expect(cache.get("second")).toBeUndefined();
+    expect(cache.get("first")?.value).toBe("one");
+    cache.delete("first");
+    cache.delete("third");
+    expect(cache.find(() => true)).toBeUndefined();
+  });
+
+  it("never returns expired entries", () => {
+    vi.useFakeTimers();
+    try {
+      const cache = new SharedMemoryCache({ maxBytes: 4, ttlMs: 10 });
+      cache.set("expired", "old", 2);
+      vi.advanceTimersByTime(11);
+      cache.set("live", "new", 2);
+      const visited: string[] = [];
+      expect(
+        cache.find<string>((_value, key) => {
+          visited.push(key);
+          return true;
+        })?.value,
+      ).toBe("new");
+      expect(visited).toEqual(["live"]);
+      expect(cache.get("expired")).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

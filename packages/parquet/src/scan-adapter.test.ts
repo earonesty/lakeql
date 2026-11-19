@@ -7,13 +7,67 @@ import {
   type QueryStats,
   SharedMemoryCache,
 } from "lakeql-core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DecodedColumnCache } from "./decoded-column-cache.js";
 import { writeParquet } from "./index.js";
 import { ParquetScanAdapter } from "./scan-adapter.js";
+import { asyncBufferFromStore } from "./store-buffer.js";
 import { countingObjectStore } from "./test-helpers.js";
 
 describe("ParquetScanAdapter", () => {
+  it("uses a versioned planned object without probing its head again", async () => {
+    const backing = memoryStore();
+    await backing.put("data", Uint8Array.from([1, 2, 3, 4]));
+    const store = countingObjectStore(backing);
+    const head = vi.spyOn(store, "head");
+    const options = {
+      object: { path: "data", size: 4, etag: "planned-version" },
+      stats: queryStats(),
+      budget: { maxRangeRequests: 1 },
+      now: () => 0,
+      startedAt: 0,
+    };
+    const file = await asyncBufferFromStore(store, "data", options);
+    expect(file.byteLength).toBe(4);
+    expect(file.etag).toBe("planned-version");
+    expect([...new Uint8Array(await file.slice(1, 3))]).toEqual([2, 3]);
+    expect(head).not.toHaveBeenCalled();
+    await expect(file.slice(1, 3)).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  });
+
+  it("refreshes unversioned or mismatched listing hints and respects abort", async () => {
+    const backing = memoryStore();
+    await backing.put("data", Uint8Array.from([1, 2, 3, 4]));
+    const store = countingObjectStore(backing);
+    const head = vi.spyOn(store, "head");
+    for (const object of [
+      { path: "data", size: 99 },
+      { path: "other", size: 99, etag: "other" },
+    ]) {
+      const file = await asyncBufferFromStore(store, "data", {
+        object,
+        stats: queryStats(),
+        budget: {},
+        now: () => 0,
+        startedAt: 0,
+      });
+      expect(file.byteLength).toBe(4);
+    }
+    expect(head).toHaveBeenCalledTimes(2);
+    const controller = new AbortController();
+    controller.abort("cancelled");
+    await expect(
+      asyncBufferFromStore(store, "data", {
+        object: { path: "data", size: 4, etag: "planned-version" },
+        stats: queryStats(),
+        budget: { signal: controller.signal },
+        now: () => 0,
+        startedAt: 0,
+      }),
+    ).rejects.toMatchObject({ code: "LAKEQL_ABORTED" });
+    expect(head).toHaveBeenCalledTimes(2);
+  });
+
   it("scans rows and vector batches with shared metadata, decoded, and range cache state", async () => {
     const backing = memoryStore();
     await writeParquet(backing, "data/adapter.parquet", {

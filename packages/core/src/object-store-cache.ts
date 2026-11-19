@@ -58,6 +58,19 @@ export class SharedMemoryCache {
     return { value: entry.value as T, bytes: entry.bytes };
   }
 
+  /** Find a retained value without maintaining a second, potentially stale index.
+   * Matching entries use the same expiry and LRU rules as get(). */
+  find<T>(predicate: (value: unknown, key: string) => boolean): SharedCacheEntry<T> | undefined {
+    for (const [key, entry] of this.entries) {
+      if (entry.expiresAt !== undefined && entry.expiresAt <= Date.now()) {
+        this.delete(key);
+        continue;
+      }
+      if (predicate(entry.value, key)) return this.get<T>(key);
+    }
+    return undefined;
+  }
+
   set<T>(key: string, value: T, bytes: number, options: SharedCacheSetOptions = {}): void {
     if (!Number.isSafeInteger(bytes) || bytes < 0)
       throw new LakeqlError(

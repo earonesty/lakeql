@@ -19,6 +19,11 @@ export async function asyncBufferFromStore(
   const controlledStore =
     options === undefined ? store : withObjectStoreReadControls(store, options.budget);
   throwIfAborted(options?.budget.signal);
+  // A versioned plan already established this object identity. Unversioned
+  // listing hints still need head() to discover the current validator.
+  if (options?.object?.path === path && options.object.etag !== undefined) {
+    return asyncBufferFromObjectInfo(store, options.object, options);
+  }
   const headStartedAt = options?.now();
   const head = await controlledStore.head(path);
   if (options !== undefined && headStartedAt !== undefined) {

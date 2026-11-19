@@ -1,9 +1,138 @@
 import { SharedMemoryCache } from "lakeql-core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { cachedRangeBuffer } from "./range-cache.js";
 import type { StoreAsyncBuffer } from "./types.js";
 
 describe("cachedRangeBuffer", () => {
+  it.each([false, true])("reuses a covering unaligned range (shared=%s)", async (shared) => {
+    const file = countedBuffer([1, 2, 3, 4, 5, 6, 7, 8]);
+    const sharedCache = shared ? new SharedMemoryCache({ maxBytes: 8 }) : undefined;
+    const options = { maxBytes: 8, coalesceBytes: 4, ...(sharedCache ? { sharedCache } : {}) };
+    const cached = cachedRangeBuffer(file, options, "column");
+    await cached.prefetch?.([{ start: 1, end: 7 }]);
+    await expect(bytes(cached.slice(2, 5))).resolves.toEqual([3, 4, 5]);
+    await expect(bytes(cached.slice(3, 7))).resolves.toEqual([4, 5, 6, 7]);
+    if (shared) {
+      const otherScan = cachedRangeBuffer(file, options, "column");
+      await expect(bytes(otherScan.slice(2, 6))).resolves.toEqual([3, 4, 5, 6]);
+    }
+    expect(file.slices).toBe(1);
+  });
+
+  it.each([
+    false,
+    true,
+  ])("shares covering pending reads and retries failures (shared=%s)", async (shared) => {
+    const source = Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8]);
+    let finish: (() => void) | undefined;
+    let fail = true;
+    let slices = 0;
+    const file: StoreAsyncBuffer = {
+      byteLength: 8,
+      async slice(start, end) {
+        slices++;
+        await new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+        if (fail) throw new Error("read failed");
+        return source.buffer.slice(start, end);
+      },
+    };
+    const cached = cachedRangeBuffer(
+      file,
+      {
+        maxBytes: 8,
+        coalesceBytes: 0,
+        ...(shared ? { sharedCache: new SharedMemoryCache({ maxBytes: 8 }) } : {}),
+      },
+      "pending",
+    );
+    const first = cached.slice(0, 8);
+    const second = cached.slice(2, 5);
+    const errors = Promise.allSettled([first, second]);
+    finish?.();
+    expect((await errors).every((r) => r.status === "rejected")).toBe(true);
+    expect(slices).toBe(1);
+    fail = false;
+    const retry = bytes(cached.slice(2, 5));
+    finish?.();
+    await expect(retry).resolves.toEqual([3, 4, 5]);
+    expect(slices).toBe(2);
+  });
+
+  it("does not round metadata tail probes into unrelated preceding data", async () => {
+    const reads: [number, number | undefined][] = [];
+    const file: StoreAsyncBuffer = {
+      byteLength: 16,
+      async slice(start, end) {
+        reads.push([start, end]);
+        return new ArrayBuffer((end ?? 16) - start);
+      },
+    };
+    const cached = cachedRangeBuffer(file, { maxBytes: 16, coalesceBytes: 16 }, "tail");
+    await cached.slice(12, 16);
+    expect(reads).toEqual([[12, 16]]);
+  });
+
+  it("expires covering shared entries and isolates etags", async () => {
+    vi.useFakeTimers();
+    try {
+      const file = countedBuffer([1, 2, 3, 4, 5, 6, 7, 8]);
+      file.etag = "first";
+      const sharedCache = new SharedMemoryCache({ maxBytes: 16, ttlMs: 10 });
+      const options = { maxBytes: 8, coalesceBytes: 0, sharedCache };
+      const first = cachedRangeBuffer(file, options, "path");
+      await first.slice(0, 8);
+      await first.slice(1, 3);
+      expect(file.slices).toBe(1);
+      vi.advanceTimersByTime(11);
+      await expect(bytes(first.slice(1, 3))).resolves.toEqual([2, 3]);
+      expect(file.slices).toBe(2);
+      file.etag = "second";
+      const changed = cachedRangeBuffer(file, options, "path");
+      await changed.slice(1, 3);
+      expect(file.slices).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    false,
+    true,
+  ])("does not keep an evicted covering entry alive (shared=%s)", async (shared) => {
+    const file = countedBuffer([1, 2, 3, 4, 5, 6, 7, 8]);
+    const cache = cachedRangeBuffer(
+      file,
+      {
+        maxBytes: 4,
+        coalesceBytes: 0,
+        ...(shared ? { sharedCache: new SharedMemoryCache({ maxBytes: 4 }) } : {}),
+      },
+      "eviction",
+    );
+    await cache.slice(0, 4);
+    await cache.slice(4, 8);
+    await expect(bytes(cache.slice(1, 3))).resolves.toEqual([2, 3]);
+    expect(file.slices).toBe(3);
+  });
+
+  it("does not retain a truncated response as a complete cached range", async () => {
+    let reads = 0;
+    const data = Uint8Array.from([1, 2, 3, 4]);
+    const file: StoreAsyncBuffer = {
+      byteLength: 4,
+      async slice(start, end) {
+        reads++;
+        return reads === 1 ? data.buffer.slice(0, 1) : data.buffer.slice(start, end);
+      },
+    };
+    const cached = cachedRangeBuffer(file, { maxBytes: 4, coalesceBytes: 0 }, "short");
+    await expect(bytes(cached.slice(0, 4))).resolves.toEqual([1]);
+    await expect(bytes(cached.slice(0, 4))).resolves.toEqual([1, 2, 3, 4]);
+    expect(reads).toBe(2);
+  });
+
   it("reuses exact byte ranges within a scan", async () => {
     let slices = 0;
     const source = new Uint8Array([1, 2, 3, 4, 5, 6]);
@@ -67,7 +196,7 @@ describe("cachedRangeBuffer", () => {
     expect(slices).toBe(1);
   });
 
-  it("prefetches retainable coalesced ranges concurrently and serves later slices from cache", async () => {
+  it("prefetches known column chunks concurrently and serves later slices from cache", async () => {
     const source = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
     let slices = 0;
     let active = 0;
@@ -86,15 +215,36 @@ describe("cachedRangeBuffer", () => {
     const cached = cachedRangeBuffer(file, { maxBytes: 8, coalesceBytes: 4 }, "prefetch");
 
     await cached.prefetch?.([
-      { start: 1, end: 2 },
-      { start: 2, end: 3 },
-      { start: 5, end: 6 },
+      { start: 0, end: 3 },
+      { start: 1, end: 3 },
+      { start: 5, end: 8 },
     ]);
-    await expect(bytes(cached.slice(2, 4))).resolves.toEqual([3, 4]);
+    await expect(bytes(cached.slice(1, 3))).resolves.toEqual([2, 3]);
     await expect(bytes(cached.slice(6, 8))).resolves.toEqual([7, 8]);
 
     expect(slices).toBe(2);
     expect(peakActive).toBe(2);
+  });
+
+  it("merges touching prefetched chunks without padding or double charging overlaps", async () => {
+    const reads: [number, number | undefined][] = [];
+    const source = Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8]);
+    const file: StoreAsyncBuffer = {
+      byteLength: 8,
+      async slice(start, end) {
+        reads.push([start, end]);
+        return source.buffer.slice(start, end);
+      },
+    };
+    const cached = cachedRangeBuffer(file, { maxBytes: 7, coalesceBytes: 8 }, "touching");
+    await cached.prefetch?.([
+      { start: 4, end: 7 },
+      { start: 1, end: 5 },
+      { start: 1, end: 2 },
+    ]);
+    expect(reads).toEqual([[1, 7]]);
+    await expect(bytes(cached.slice(2, 6))).resolves.toEqual([3, 4, 5, 6]);
+    expect(reads).toHaveLength(1);
   });
 
   it("does not prefetch ranges that cannot be retained within the cache budget", async () => {
@@ -105,8 +255,8 @@ describe("cachedRangeBuffer", () => {
     const cached = cachedRangeBuffer(file, { maxBytes: 4, coalesceBytes: 4 }, "bounded-prefetch");
 
     await cached.prefetch?.([
-      { start: 0, end: 1 },
-      { start: 4, end: 5 },
+      { start: 0, end: 4 },
+      { start: 4, end: 8 },
     ]);
     expect(slices).toBe(1);
 

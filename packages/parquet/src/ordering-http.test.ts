@@ -148,9 +148,9 @@ it.each([
     ).toEqual(rows.slice(0, 2).map((row) => ({ ...row, twice: row.score * 2 })));
     const before = requests;
     expect(await run(deferredLake).toArray()).toEqual(expected);
-    // Planning probes can remain; cached data ranges must not be refetched.
-    // One additional metadata probe establishes the measured payload width.
-    expect(ranges.slice(before)).toEqual(Array(4).fill("bytes=0-1"));
+    // Only the fresh planning probe remains. Scans reuse its versioned identity,
+    // and cached data ranges must not be refetched.
+    expect(ranges.slice(before)).toEqual(["bytes=0-1"]);
     const controller = new AbortController();
     controller.abort("cancelled ordering");
     const cancelledStore = withObjectStoreReadControls(store, { signal: controller.signal });
