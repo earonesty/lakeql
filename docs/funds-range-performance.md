@@ -34,7 +34,7 @@ continues to verify parallel execution stays within the configured four-read cap
 ## Results
 
 For scheme 122639, fresh-context pairs were 8.97 s vs 4.45 s and 7.67 s vs 4.33 s.
-Transfer fell from 2,090,726 bytes to 815,074 bytes (about 61% less), with 10 vs 6
+Transfer fell from 2,100,628 bytes to 815,074 bytes (about 61% less), with 10 vs 6
 requests and zero full downloads. A separate same-page selection sequence gave:
 
 | Selection | Released time | Updated time | Released transfer / requests | Updated transfer / requests |
