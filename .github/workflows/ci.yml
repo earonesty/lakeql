@@ -175,5 +175,8 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Test release guard
+        run: node --test scripts/check-changeset.test.mjs
+
       - name: Require changeset for package changes
         run: pnpm check:changeset ${{ github.base_ref }}
