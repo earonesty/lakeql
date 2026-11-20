@@ -3,7 +3,7 @@
 `lakeql-lance` performs bounded, projection-aware random reads from immutable
 [Lance](https://lancedb.github.io/lance/) datasets in Cloudflare Workers, browsers, and Node.js.
 It materializes snapshot-pinned row IDs from search indexes without scanning a key column,
-and supports indexed scalar, vector, and spatial queries. Both stable IDs and the default
+and supports indexed scalar, vector, spatial, and full-text queries. Both stable IDs and the default
 physical row addresses are supported.
 
 ```ts
@@ -166,6 +166,13 @@ benchmark document for reproduction, supported shapes, and budget semantics.
 Official version-0 BTree indexes over the supported scalar key types are supported for exact
 equality and bounded range lookup. Null-key lookup, bitmap/label-list index variants, and index
 versions other than 0 remain explicit unsupported boundaries.
+
+Official `INVERTED` full-text indexes are searched with `dataset.searchRows`: BM25-ranked
+`match` (OR/AND, fuzzy, prefix), `phrase` (slop), and `boolean` queries, analyzed with the index's
+persisted tokenizer settings. A warm index needs four dependent round trips independent of
+dataset size; limits bound posting entries, scored documents, and phrase candidates. The index
+must cover every active fragment; unsupported analyzers (n-gram, ICU, JSON, non-English stemming)
+and layouts are rejected rather than approximated. See `docs/querying-lance.md`.
 
 Official vector index format V3 IVF_FLAT indexes (`index_version` 1) are supported for float32
 fixed-size-list columns. IVF_PQ, IVF_SQ, IVF_RQ, and HNSW layouts remain explicit unsupported

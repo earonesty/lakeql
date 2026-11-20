@@ -1,0 +1,16 @@
+{
+  "datasetVersion": 2,
+  "producer": {
+    "package": "pylance",
+    "version": "8.0.0"
+  },
+  "sha256": {
+    "_indices/aa976c9e-d50e-491e-8fa6-06913bfbb182/metadata.lance": "451cca35ef5ef85adabba2840e117f103c42146e9b2be0db00cc4e5a9f005e34",
+    "_transactions/0-31f8afc6-3bfa-4744-af86-2ad1ba889cfb.txn": "34c8a5062d395ea4ded9070f1f40f36de09c11d7ec1fd444b7d8092114592d05",
+    "_transactions/1-930d63a0-09db-4020-9502-d66679190543.txn": "6eab04ec3a577138a1550c91ae2d17b9ea9213b981f368139b8be11d69297fee",
+    "_versions/18446744073709551613.manifest": "bec2430f4083541bfcc209e52805f4dc2c14b5300b64af1cb930af998ff8186f",
+    "_versions/18446744073709551614.manifest": "07049ce47e73b00f18c86281a13b7bdc812a34215c98427e78277593ec556a18",
+    "_versions/latest_version_hint.json": "732322c128ed67841ef5aa42c7cd04ffcd74a61b2d17d710cd502b713d62930d",
+    "data/000100111100111011110000e74dda4a85b4291b01ef922167.lance": "74ee30fd3a41c6e40bbbe8b48ce69dc0dd63250b8c6abd92ca6dc60643816763"
+  }
+}

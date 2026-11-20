@@ -36,6 +36,7 @@
     "bench:bundle": "pnpm build && node bench/bundle.mjs",
     "bench:lance": "pnpm build && node bench/lance-random-read.mjs",
     "bench:lance-btree": "pnpm build && node bench/lance-btree-exact.mjs",
+    "bench:lance-fts": "pnpm build && node bench/lance-fts.mjs",
     "bench:webgpu": "pnpm build && node bench/webgpu.mjs",
     "bench:webgpu-vector": "pnpm build && node bench/webgpu-vector.mjs",
     "bench:workunits": "pnpm build && node bench/workunits.mjs",
