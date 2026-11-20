@@ -108,6 +108,7 @@ export type LanceArrayEncoding =
   | LanceNullableEncoding
   | LanceFixedSizeListEncoding
   | LanceBinaryEncoding
+  | LanceListEncoding
   | LanceDictionaryEncoding
   | LanceConstantEncoding
   | { kind: "struct" }
@@ -143,6 +144,14 @@ export interface LanceFixedSizeListEncoding {
   dimension: number;
   hasValidity: boolean;
   items: LanceArrayEncoding;
+}
+
+/** Lance 2.0 variable-length list page: offsets only; items live in the child column. */
+export interface LanceListEncoding {
+  kind: "list";
+  offsets: LanceArrayEncoding;
+  nullOffsetAdjustment: bigint;
+  numItems: number;
 }
 
 export interface LanceBinaryEncoding {
@@ -830,6 +839,9 @@ function parseArrayEncoding(bytes: Uint8Array): LanceArrayEncoding {
       case 3:
         encoding = parseFixedSizeList(reader.message(key.wire));
         break;
+      case 4:
+        encoding = parseList(reader.message(key.wire));
+        break;
       case 5:
         reader.message(key.wire);
         encoding = { kind: "struct" };
@@ -849,6 +861,22 @@ function parseArrayEncoding(bytes: Uint8Array): LanceArrayEncoding {
   }
   if (encoding === undefined) corrupt("Lance ArrayEncoding is empty");
   return encoding;
+}
+
+function parseList(bytes: Uint8Array): LanceListEncoding {
+  const reader = new ProtoReader(bytes);
+  let offsets: LanceArrayEncoding | undefined;
+  let nullOffsetAdjustment = 0n;
+  let numItems = 0;
+  while (!reader.done) {
+    const key = reader.key();
+    if (key.field === 1) offsets = parseArrayEncoding(reader.message(key.wire));
+    else if (key.field === 2) nullOffsetAdjustment = reader.varint(key.wire);
+    else if (key.field === 3) numItems = reader.safeInteger(key.wire, "list item count");
+    else reader.skip(key.wire);
+  }
+  if (offsets === undefined) corrupt("Lance list encoding is incomplete");
+  return { kind: "list", offsets, nullOffsetAdjustment, numItems };
 }
 
 function parseFixedSizeList(bytes: Uint8Array): LanceFixedSizeListEncoding {

@@ -129,6 +129,68 @@ partitions is exact for IVF_FLAT; a smaller `nprobes` trades recall for I/O.
 There is no brute-force dataset fallback when a requested vector index or
 encoding is unsupported.
 
+## Full-Text Search
+
+Official Lance `INVERTED` indexes (pylance 8.0.0, partitioned layout with FST token sets and
+block-compressed posting lists) can be searched directly from browsers and workers. Results are
+ranked with the same index-global BM25 statistics Lance uses and are returned in descending score
+order together with the requested columns.
+
+```ts
+const [index] = await dataset.ftsIndexes(); // name, column, withPosition, analyzer, supported
+
+const result = await dataset.searchRows({
+  snapshotId: dataset.snapshotId,
+  index: index.name,
+  query: { kind: "match", text: "quick brown fox", operator: "or" },
+  select: ["id", "title"],
+  limit: 20,
+});
+// result.rows, result.rowIds, result.scores, result.totalMatches, result.search, result.stats
+```
+
+Queries are plain data and compose:
+
+| Query | Meaning |
+| --- | --- |
+| `{ kind: "match", text, operator?, fuzziness?, prefixLength?, maxExpansions? }` | Analyzed terms combined with `or` (default) or `and`; `fuzziness` is 0 (default), 1, or 2 and expands each term through the token dictionary (`maxExpansions` caps the expansions accumulated across a partition's terms, `prefixLength` is measured in UTF-8 bytes) |
+| `{ kind: "phrase", text, slop? }` | Terms in order within `slop` positions; needs an index created with `with_position=True` |
+| `{ kind: "boolean", must?, should?, mustNot? }` | `must` clauses narrow, `should` clauses add score, `mustNot` clauses remove documents |
+
+The query text is analyzed with the pipeline persisted in the index (base tokenizer, token length
+limit, lowercasing, English stemming, stop words, ASCII folding), so it matches exactly what Lance
+indexed. Analyzer settings LakeQL cannot reproduce exactly (n-gram, ICU, JSON, and dictionary
+segmenters; stemming or default stop words for languages other than English) are rejected when
+the index is searched, never approximated.
+
+Cost model: the first search of a snapshot fetches each partition's token set (an FST) and its
+4-byte-per-document length column, both cached by snapshot. A search then reads posting-list
+offsets and lengths for the matched terms, their block offsets, their block bytes, and the
+`_rowid` of ranked results: four dependent round trips for a warm index, regardless of dataset
+size. Phrase queries additionally read position blocks for documents that contain every term.
+`limits` bounds posting entries decoded, documents scored, phrase candidates, token-set bytes,
+and document-length bytes, in addition to the operation budget.
+
+The [full-text benchmark report](./lance-fts-benchmark.md) records loopback measurements and the
+network-wave contracts enforced in CI.
+
+Details to know:
+
+- The index must cover every active fragment. After appending data, rebuild or optimize the
+  index; searching an index with uncovered fragments is rejected.
+- Rows deleted after indexing are skipped and the ranking is refilled from lower-scored matches.
+  Like Lance, corpus statistics still include deleted documents until the index is rebuilt.
+- An `and` query that contains a term absent from the index matches nothing. Lance ignores such
+  a term and returns documents without it.
+- Index format versions 1 and 2 are searched. Version 2 indexes (varint posting tails, shared
+  position streams) support match and boolean queries; phrase queries on them are rejected until
+  shared position streams are decoded. Arrow-format token sets and legacy single-partition
+  layouts are rejected with explicit errors.
+- `ftsIndexes()` lists every inverted index. One this reader cannot search (for example a French
+  analyzer) is flagged `supported: false` with an `unsupportedReason`; searching it fails.
+- An `and` fuzzy query requires a document to appear in every deduplicated expansion posting list
+  of a partition, exactly as Lance does.
+
 ## Supported Lance Contract
 
 | Area | Supported |
@@ -139,12 +201,13 @@ encoding is unsupported.
 | Encodings | Uncompressed flat and nullable values, low-cardinality UTF-8 dictionaries, supported fixed-size-list vector values |
 | Deletions | Sparse Arrow-array deletion files, including Zstandard-compressed buffers |
 | Scalar indexes | Official version-0 BTree equality and bounded range lookup |
+| Full-text indexes | Official `INVERTED` indexes: BM25 match (OR/AND, fuzzy), phrase, and boolean queries with the Lance analyzer pipeline for English |
 | Vector indexes | Official vector-index V3 IVF_FLAT, index version 1, float32 vectors |
 | Runtimes | Browsers, Cloudflare Workers/workerd, Node.js, and other `ObjectStore` hosts |
 
 The reader explicitly rejects unknown storage/index versions, compressed data
 pages, unsupported nested fields, Roaring-bitmap deletion files, BTree null-key
-lookup, bitmap/label-list scalar indexes, and IVF_PQ, IVF_SQ, IVF_RQ, or HNSW
+lookup, bitmap/label-list scalar indexes, unsupported full-text analyzers, and IVF_PQ, IVF_SQ, IVF_RQ, or HNSW
 vector layouts. Rejection is preferable to silently returning incomplete or
 misinterpreted data.
 
@@ -170,7 +233,8 @@ Results report:
 - selected columns;
 - cache hits and misses;
 - peak decoded memory;
-- vector partitions and candidates where applicable.
+- vector partitions and candidates where applicable;
+- full-text partitions, matched terms, posting entries decoded, and documents scored where applicable.
 
 The reader refuses a planned range that would fetch a complete Lance data file.
 

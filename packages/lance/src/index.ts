@@ -10,6 +10,14 @@ import {
 import { readDeletedRowOffsets } from "./deletions.js";
 import { materializeFragmentRows } from "./file.js";
 import {
+  describeFtsIndexes,
+  type LanceFtsIndexInfo,
+  type LanceFtsLimits,
+  type LanceFtsQuery,
+  type LanceFtsSearchStats,
+  searchFtsIndex,
+} from "./fts.js";
+import {
   type LanceRangePlanningOptions,
   LanceReadContext,
   type MutableLanceReadStats,
@@ -46,7 +54,38 @@ import {
   searchVectorIndex,
 } from "./vector.js";
 
+export type {
+  LanceFtsHit,
+  LanceFtsIndexInfo,
+  LanceFtsLimits,
+  LanceFtsQuery,
+  LanceFtsSearchStats,
+} from "./fts.js";
+export { DEFAULT_FTS_LIMITS } from "./fts.js";
 export type { LanceSpatialIndexInfo, LanceSpatialLimits, LanceSpatialQuery };
+
+export interface SearchLanceRowsOptions {
+  snapshotId: string;
+  /** Name of an inverted (full-text) index. */
+  index: string;
+  query: LanceFtsQuery;
+  select: readonly string[];
+  /** Most rows returned, ranked by BM25 score. */
+  limit: number;
+  limits?: Partial<LanceFtsLimits>;
+}
+
+export interface LanceFtsSearchResult {
+  index: LanceFtsIndexInfo;
+  /** Live rows in descending score order; deleted rows are skipped, not counted. */
+  rows: Row[];
+  rowIds: string[];
+  scores: number[];
+  /** Documents matching the query, including any that were deleted after indexing. */
+  totalMatches: number;
+  stats: LanceReadStats;
+  search: LanceFtsSearchStats;
+}
 
 export interface SpatialLanceRowsOptions {
   snapshotId: string;
@@ -431,6 +470,106 @@ export class LanceDataset {
         stats: materialized.stats,
         pagesVisited: search.pagesVisited,
         candidatesExamined: search.candidatesExamined,
+      };
+    } finally {
+      context.releaseDecodedMemory();
+    }
+  }
+
+  async ftsIndexes(): Promise<LanceFtsIndexInfo[]> {
+    const stats = cloneStats(this.options.openStats);
+    const context = this.context(stats, this.options.now());
+    try {
+      return await describeFtsIndexes({
+        ...this.options,
+        context,
+        ...(this.indexCache === undefined ? {} : { indexCache: this.indexCache }),
+        cacheNamespace: `${this.options.root}:${this.snapshotId}`,
+      });
+    } finally {
+      context.releaseDecodedMemory();
+    }
+  }
+
+  /**
+   * Full-text search over an inverted index. Ranking uses the index-global BM25 statistics
+   * Lance itself uses. The index must cover every active fragment.
+   */
+  async searchRows(options: SearchLanceRowsOptions): Promise<LanceFtsSearchResult> {
+    if (options.snapshotId !== this.snapshotId) {
+      snapshotMismatch(this.snapshotId, options.snapshotId, this.version);
+    }
+    const stats = cloneStats(this.options.openStats);
+    const startedAt = this.options.now();
+    const context = this.context(stats, startedAt);
+    try {
+      const search = await searchFtsIndex({
+        ...this.options,
+        context,
+        indexName: options.index,
+        query: options.query,
+        limit: options.limit,
+        ...(this.indexCache === undefined ? {} : { indexCache: this.indexCache }),
+        cacheNamespace: `${this.options.root}:${this.snapshotId}`,
+        ...(options.limits === undefined ? {} : { limits: options.limits }),
+      });
+      const rows: Row[] = [];
+      const rowIds: string[] = [];
+      const scores: number[] = [];
+      let hits = search.hits;
+      let consumed = 0;
+      let requested = 0;
+      let finalStats: LanceReadStats | undefined;
+      const batchCap = this.options.budget.maxOutputRows ?? Number.POSITIVE_INFINITY;
+      // Deleted rows stay in the index until it is rebuilt, so refill from the ranked tail
+      // until the limit is met or the matches are exhausted.
+      while (hits.length > 0 && rows.length < options.limit) {
+        const materialized = await this.takeRowsWithStats(
+          {
+            snapshotId: this.snapshotId,
+            rowIds: hits.map(({ rowId }) => rowId),
+            select: options.select,
+            onMissing: "null",
+          },
+          stats,
+          context,
+          startedAt,
+        );
+        finalStats = materialized.stats;
+        requested += hits.length;
+        for (const [i, row] of materialized.rows.entries()) {
+          const hit = hits[i];
+          if (row === null || hit === undefined || rows.length >= options.limit) continue;
+          rows.push(row);
+          rowIds.push(hit.rowId.toString());
+          scores.push(hit.score);
+        }
+        consumed += hits.length;
+        if (rows.length >= options.limit || consumed >= search.total) break;
+        // Grow the window geometrically so many deleted hits cost O(log n) round trips.
+        const remaining = options.limit - rows.length;
+        hits = await search.more(consumed, Math.min(Math.max(remaining, consumed), batchCap));
+      }
+      if (finalStats === undefined) {
+        // No hits: report the index reads alone.
+        finalStats = (
+          await this.takeRowsWithStats(
+            { snapshotId: this.snapshotId, rowIds: [], select: options.select },
+            stats,
+            context,
+            startedAt,
+          )
+        ).stats;
+      }
+      finalStats = { ...finalStats, rowsRequested: requested, rowsMaterialized: rows.length };
+      return {
+        index: search.index,
+        rows,
+        rowIds,
+        scores,
+        totalMatches: search.total,
+        stats: finalStats,
+        search: search.stats,
       };
     } finally {
       context.releaseDecodedMemory();
