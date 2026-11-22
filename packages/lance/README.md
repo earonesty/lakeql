@@ -169,8 +169,10 @@ versions other than 0 remain explicit unsupported boundaries.
 
 Official `INVERTED` full-text indexes are searched with `dataset.searchRows`: BM25-ranked
 `match` (OR/AND, fuzzy, prefix), `phrase` (slop), and `boolean` queries, analyzed with the index's
-persisted tokenizer settings. A warm index needs four dependent round trips independent of
-dataset size; limits bound posting entries, scored documents, and phrase candidates. The index
+persisted tokenizer settings. Postings are streamed and scored in bounded batches into a
+top-`limit` heap, so memory depends on the query and batch sizes, not on index size or match
+count; a warm search whose postings fit one batch needs five dependent round trips. Limits bound
+posting entries, scored documents, phrase candidates, and batch sizes. The index
 must cover every active fragment; unsupported analyzers (n-gram, ICU, JSON, non-English stemming)
 and layouts are rejected rather than approximated. See `docs/querying-lance.md`.
 

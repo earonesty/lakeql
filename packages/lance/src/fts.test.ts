@@ -66,6 +66,35 @@ function toQuery(kind: string, spec: Spec): LanceFtsQuery {
 }
 
 describe("Lance full-text search parity with pylance", () => {
+  it("streams exactly across batch boundaries (one block and seven documents per batch)", async () => {
+    const { expected, store } = await load();
+    const dataset = await openLanceDataset({
+      store,
+      path: "dataset.lance",
+      version: expected.datasetVersion,
+      budget: { maxMemoryBytes: 64 * 1024 * 1024 },
+    });
+    for (const [name, recorded] of Object.entries(expected.queries)) {
+      if (name === "match_and_missing_term") continue;
+      const query = toQuery(recorded.kind, recorded.spec);
+      const options = {
+        snapshotId: dataset.snapshotId,
+        index: "text_idx",
+        query,
+        select: ["id"],
+        limit: recorded.limit,
+      };
+      const whole = await dataset.searchRows(options);
+      const batched = await dataset.searchRows({
+        ...options,
+        limits: { postingBlocksPerBatch: 1, documentsPerBatch: 7 },
+      });
+      expect(batched.rowIds, name).toEqual(whole.rowIds);
+      expect(batched.scores, name).toEqual(whole.scores);
+      expect(batched.totalMatches, name).toBe(whole.totalMatches);
+    }
+  });
+
   it("matches pylance rankings and BM25 scores for the recorded query set", async () => {
     const { expected, store } = await load();
     const dataset = await openLanceDataset({

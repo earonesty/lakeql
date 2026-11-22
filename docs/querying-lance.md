@@ -163,13 +163,22 @@ indexed. Analyzer settings LakeQL cannot reproduce exactly (n-gram, ICU, JSON, a
 segmenters; stemming or default stop words for languages other than English) are rejected when
 the index is searched, never approximated.
 
-Cost model: the first search of a snapshot fetches each partition's token set (an FST) and its
-4-byte-per-document length column, both cached by snapshot. A search then reads posting-list
-offsets and lengths for the matched terms, their block offsets, their block bytes, and the
-`_rowid` of ranked results: four dependent round trips for a warm index, regardless of dataset
-size. Phrase queries additionally read position blocks for documents that contain every term.
-`limits` bounds posting entries decoded, documents scored, phrase candidates, token-set bytes,
-and document-length bytes, in addition to the operation budget.
+Cost model and memory: opening an index keeps only file directories and corpus totals (document
+lengths are summed in bounded chunks and dropped). A search resolves terms against each
+partition's token set (an FST: one blob in the format, so it is resident only while its
+partition group resolves, and partitions are grouped to fit the remaining memory budget; the
+shared cache may keep it). It then reads posting-list offsets and lengths, and streams postings
+`postingBlocksPerBatch` blocks per term at a time, merging terms document by document and
+scoring `documentsPerBatch` documents per batch with their lengths read per batch. Ranking keeps
+a bounded top-`limit` heap. A warm search whose postings fit one batch costs five dependent
+round trips (offsets, block offsets, block bytes, document lengths, `_rowid`), regardless of
+dataset size; larger postings add batches instead of memory. Phrase queries read position blocks
+per candidate batch, validating and admitting each position list before decoding it.
+
+Every buffer is admitted against the operation memory budget before it is allocated. `limits`
+bounds posting entries decoded, documents scored, phrase candidates, token-set bytes, and the
+batch sizes; `maxBufferedRows` must cover `limit`. When rows deleted after indexing exhaust the
+kept top-`limit`, the search rescans with a larger bound instead of buffering every match.
 
 The [full-text benchmark report](./lance-fts-benchmark.md) records loopback measurements and the
 network-wave contracts enforced in CI.
@@ -182,6 +191,11 @@ Details to know:
   Like Lance, corpus statistics still include deleted documents until the index is rebuilt.
 - An `and` query that contains a term absent from the index matches nothing. Lance ignores such
   a term and returns documents without it.
+- A boolean query with several `must` clauses scores a document by the sum of its clause scores,
+  so it ranks exactly like the equivalent `and` match query. Lance joins `must` clauses on row ID
+  and keeps only the first clause's score.
+- Document frequencies are index-global: a term's frequency counts every partition that holds it,
+  including partitions an `and` query or a fuzzy expansion cutoff excludes from scoring.
 - Index format versions 1 and 2 are searched. Version 2 indexes (varint posting tails, shared
   position streams) support match and boolean queries; phrase queries on them are rejected until
   shared position streams are decoded. Arrow-format token sets and legacy single-partition

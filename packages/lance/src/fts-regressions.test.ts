@@ -3,8 +3,11 @@ import { resolve } from "node:path";
 import { memoryStore, SharedMemoryCache } from "lakeql";
 import { describe, expect, it } from "vitest";
 import { networkWaveStore } from "../../../tests/support/network-waves.js";
-import { decodePosting, phraseMatches } from "./fts.js";
+import { readBinaryRanges, readFixedRanges, readU32Ranges, resolveColumn } from "./column.js";
+import { inspectLanceFile } from "./file.js";
+import { decodePositions, decodePosting, inGroups, phraseMatches } from "./fts.js";
 import { type LanceFtsQuery, openLanceDataset } from "./index.js";
+import { LanceReadContext } from "./io.js";
 
 const FIXTURES = resolve(import.meta.dirname, "../fixtures");
 
@@ -68,14 +71,20 @@ describe("full-text search regressions", () => {
     ).rejects.toMatchObject(BUDGET);
   });
 
-  it("charges ranking memory and the buffered-row ceiling", async () => {
-    const warm = await open("fts-inverted-v2.0.lance", { budget: { maxBufferedRows: 100 } });
+  it("bounds ranking to the requested rows and checks maxBufferedRows before allocating", async () => {
+    // Ranking keeps only the top `limit` (or a refill window), so a small buffered-row budget
+    // serves a query with over a thousand matches...
+    const small = await open("fts-inverted-v2.0.lance", { budget: { maxBufferedRows: 10 } });
+    const ok = await search(
+      small.dataset,
+      { kind: "match", text: "quick brown fox" },
+      { limit: 10 },
+    );
+    expect(ok.totalMatches).toBeGreaterThan(1000);
+    expect(ok.rows).toHaveLength(10);
+    // ...and a limit beyond it fails before the heap exists.
     await expect(
-      search(warm.dataset, { kind: "match", text: "quick brown fox" }, { limit: 1 }),
-    ).rejects.toMatchObject(BUDGET);
-    const tight = await open("fts-inverted-v2.0.lance", { budget: { maxMemoryBytes: 40_000 } });
-    await expect(
-      search(tight.dataset, { kind: "match", text: "quick brown fox" }, { limit: 1 }),
+      search(small.dataset, { kind: "match", text: "quick brown fox" }, { limit: 11 }),
     ).rejects.toMatchObject(BUDGET);
   });
 
@@ -277,6 +286,60 @@ describe("full-text search regressions", () => {
     expect(result.stats.rowsRequested).toBeGreaterThanOrEqual(37);
   });
 
+  it("processes partitions in groups whose resident token sets fit the shared budget", async () => {
+    const sizes = [40, 30, 50, 10, 70];
+    let active = 0;
+    let resident = 0;
+    let peakResident = 0;
+    const order: number[] = [];
+    await inGroups(
+      sizes,
+      (size) => size,
+      80,
+      async (size) => {
+        active += 1;
+        resident += size;
+        peakResident = Math.max(peakResident, resident);
+        await new Promise((done) => setTimeout(done, 1));
+        order.push(size);
+        resident -= size;
+        active -= 1;
+      },
+    );
+    // Groups [40,30], [50,10], [70]: concurrent within a group, never above capacity.
+    expect(peakResident).toBe(70);
+    expect(order.sort((a, b) => a - b)).toEqual([10, 30, 40, 50, 70]);
+    expect(active).toBe(0);
+    // A single item larger than the capacity still runs (alone); admission then decides.
+    let ran = false;
+    await inGroups(
+      [500],
+      (size) => size,
+      80,
+      async () => {
+        ran = true;
+      },
+    );
+    expect(ran).toBe(true);
+  });
+
+  it("validates and admits position lists before decoding them", () => {
+    const u32 = (...values: number[]) => new Uint8Array(new Uint32Array(values).buffer);
+    // A header claiming 2^31 positions with no blocks fails on the layout check.
+    expect(() => decodePositions([u32(2 ** 31)], () => undefined)).toThrowError(
+      expect.objectContaining({ code: "LAKEQL_LANCE_READ_ERROR" }),
+    );
+    // A consistent list asks for its memory first; a refusal stops it before allocation.
+    const reserved: number[] = [];
+    expect(() =>
+      decodePositions([u32(3), u32(1, 4, 9)], (bytes) => {
+        reserved.push(bytes);
+        throw new Error("over budget");
+      }),
+    ).toThrowError("over budget");
+    expect(reserved).toEqual([24]);
+  });
+
   it("rejects posting varints and document ids that overflow 32 bits", () => {
     const block = (bytes: number[]) => Uint8Array.of(0, 0, 0, 0, ...bytes);
     // delta 2^32 encoded as five bytes.
@@ -311,6 +374,135 @@ describe("full-text search regressions", () => {
       );
       expect(reads, `slop ${slop}`).toBeLessThan(100_000);
     }
+  });
+});
+
+describe("review: index-global BM25 statistics survive AND pruning", () => {
+  it("scores an AND query with frequencies from every partition, like pylance", async () => {
+    // `term4` is absent from one of the two partitions. That partition cannot hold an AND match,
+    // but its `quick` postings still count toward the index-global IDF.
+    const { dataset } = await open("fts-inverted-v2.0.lance");
+    const and = await search(dataset, { kind: "match", text: "quick term4", operator: "and" });
+    expect(and.rows.map((row) => Number(row.id))).toEqual([909, 31, 838]);
+    // Recorded from pylance 8.0.0: MatchQuery("quick term4", operator=AND), top three rows.
+    const pylance = [5.813813209533691, 5.549165725708008, 4.520327568054199];
+    and.scores.forEach((score, i) => {
+      expect(Math.abs(score - (pylance[i] as number))).toBeLessThan(1e-4);
+    });
+    // The equivalent boolean must-query uses the same frequencies, so it scores identically.
+    const must = await search(dataset, {
+      kind: "boolean",
+      must: [
+        { kind: "match", text: "quick" },
+        { kind: "match", text: "term4" },
+      ],
+    });
+    expect(must.rowIds).toEqual(and.rowIds);
+    must.scores.forEach((score, i) => {
+      expect(Math.abs(score - (and.scores[i] as number))).toBeLessThan(1e-5);
+    });
+  });
+});
+
+describe("review: range readers admit every allocation before making it", () => {
+  function contextFor(store: ReturnType<typeof memoryStore>, maxMemoryBytes: number) {
+    return new LanceReadContext(
+      store,
+      { maxMemoryBytes },
+      {
+        snapshotMetadataBytes: 0,
+        dataMetadataBytes: 0,
+        logicalBytesRequested: 0,
+        physicalBytesRequested: 0,
+        rangeRequests: 0,
+        cacheHits: 0,
+        cacheMisses: 0,
+        peakMemoryBytes: 0,
+        rowsDecoded: 0,
+        fragments: new Set(),
+        pages: new Set(),
+      },
+      0,
+      () => 0,
+      { coalesceGapBytes: 1024, maxCoalescedRangeBytes: 1 << 20 },
+    );
+  }
+  /** Inspect index files with a roomy context, then read through one with `maxMemoryBytes`. */
+  async function docsFile(maxMemoryBytes: number) {
+    const dir = resolve(FIXTURES, "fts-inverted-v2.0.lance/_indices");
+    const { readdir } = await import("node:fs/promises");
+    const store = memoryStore();
+    const index = (await readdir(dir)).sort()[0] as string;
+    for (const name of await readdir(resolve(dir, index))) {
+      await store.put(`i/${name}`, new Uint8Array(await readFile(resolve(dir, index, name))));
+    }
+    const setup = contextFor(store, 1 << 24);
+    const docs = await inspectLanceFile(setup, "i/part_0_docs.lance");
+    const tokens = await inspectLanceFile(setup, "i/part_0_tokens.lance");
+    const context = contextFor(store, maxMemoryBytes);
+    return { context, docs, tokens, column: resolveColumn(docs, { name: "_num_tokens" }).column };
+  }
+  // 100 overlapping 64-row ranges of a 32-bit column: 25,600 output bytes from a 256-byte read.
+  const overlapping = Array.from({ length: 100 }, () => ({ start: 0, end: 64 }));
+
+  it("rejects outputs that exceed the memory budget even when the physical read is tiny", async () => {
+    const { context, docs, column } = await docsFile(1024);
+    const requestsBefore = context.stats.rangeRequests;
+    await expect(readFixedRanges(context, docs, column, overlapping, 4)).rejects.toMatchObject({
+      code: "LAKEQL_BUDGET_EXCEEDED",
+    });
+    await expect(readU32Ranges(context, docs, column, overlapping)).rejects.toMatchObject({
+      code: "LAKEQL_BUDGET_EXCEEDED",
+    });
+    // Admission happens before any read is issued.
+    expect(context.stats.rangeRequests).toBe(requestsBefore);
+  });
+
+  it("reports retained outputs in peak memory and returns the charge on release", async () => {
+    const { context, docs, column } = await docsFile(1 << 20);
+    const before = context.availableMemoryBytes;
+    const read = await readFixedRanges(context, docs, column, overlapping, 4);
+    expect(read.values).toHaveLength(100);
+    expect(read.bytes).toBe(25_600);
+    expect(context.stats.peakMemoryBytes).toBeGreaterThanOrEqual(25_600);
+    expect(context.availableMemoryBytes).toBe(before - 25_600);
+    read.release();
+    expect(context.availableMemoryBytes).toBe(before);
+    // Retaining moves the charge to the operation instead of dropping it.
+    const kept = await readU32Ranges(context, docs, column, [{ start: 0, end: 64 }]);
+    kept.retainForOperation();
+    expect(context.availableMemoryBytes).toBe(before - 256);
+  });
+
+  it("admits binary payloads at their exact size", async () => {
+    const roomy = await docsFile(1 << 20);
+    const fstColumn = resolveColumn(roomy.tokens, { name: "_token_fst_bytes" }).column;
+    const read = await readBinaryRanges(roomy.context, roomy.tokens, fstColumn, [
+      { start: 0, end: 1 },
+    ]);
+    const payload = (read.values[0] as Uint8Array[])[0] as Uint8Array;
+    expect(read.bytes).toBeGreaterThanOrEqual(payload.length);
+    read.release();
+    const tight = await docsFile(payload.length + 64);
+    await expect(
+      readBinaryRanges(tight.context, tight.tokens, fstColumn, [{ start: 0, end: 1 }]),
+    ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+  });
+
+  it("validates row ranges before allocating or reading", async () => {
+    const { context, docs, column } = await docsFile(1 << 20);
+    const requestsBefore = context.stats.rangeRequests;
+    for (const range of [
+      { start: -1, end: 4 },
+      { start: 4, end: 2 },
+      { start: 0, end: docs.rowCount + 1 },
+      { start: 0.5, end: 2 },
+    ]) {
+      await expect(readU32Ranges(context, docs, column, [range])).rejects.toMatchObject({
+        code: "LAKEQL_LANCE_READ_ERROR",
+      });
+    }
+    expect(context.stats.rangeRequests).toBe(requestsBefore);
   });
 });
 

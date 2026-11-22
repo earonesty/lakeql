@@ -104,14 +104,17 @@ describe("Lance full-text search network work contracts", () => {
     expect(result.search.candidatesScored).toBe(1264);
     expect(result.search.partitions).toBe(2);
     // Cold: footers, token sets and doc lengths for two partitions, then posting waves.
+    // Cold: footers, streamed document-length totals and token sets for two partitions, then
+    // the posting chain with per-batch document lengths.
     expect(f.trace.group("index").waves).toBeLessThanOrEqual(
-      { 1: 36, 2: 20, 8: 12, 32: 12 }[concurrency] as number,
+      { 1: 40, 2: 22, 8: 13, 32: 13 }[concurrency] as number,
     );
-    expect(indexRequests(f.trace).length).toBeLessThanOrEqual(36);
+    expect(indexRequests(f.trace).length).toBeLessThanOrEqual(40);
     expect(indexBytesRead(f.trace)).toBeLessThan(90_000);
-    expect(result.stats.rangeRequests).toBeLessThanOrEqual(72);
+    expect(result.stats.rangeRequests).toBeLessThanOrEqual(75);
     expect(result.stats.physicalBytesRequested).toBeLessThan(110_000);
-    expect(result.stats.peakMemoryBytes).toBeLessThan(256 * 1024);
+    // No index structure is resident: the peak is the largest batch, not the index.
+    expect(result.stats.peakMemoryBytes).toBeLessThan(96 * 1024);
   });
 
   it.each([
@@ -124,18 +127,21 @@ describe("Lance full-text search network work contracts", () => {
     expect(warm.rowIds).toEqual(cold.rowIds);
     expect(warm.scores).toEqual(cold.scores);
     // Offsets/lengths -> block offsets -> block bytes -> row ids is the whole index chain.
+    // Offsets/lengths -> block offsets -> block bytes -> document lengths -> row ids.
     expect(f.trace.group("index").waves).toBeLessThanOrEqual(
-      { 1: 16, 2: 9, 8: 5, 32: 5 }[concurrency] as number,
+      { 1: 24, 2: 12, 8: 5, 32: 5 }[concurrency] as number,
     );
-    expect(indexRequests(f.trace).length).toBeLessThanOrEqual(16);
-    expect(indexBytesRead(f.trace)).toBeLessThan(9_000);
-    // The token set and doc-length columns are not fetched again: nothing touches a token set,
-    // and docs reads are row-id lookups (at most one coalesced window each), not the 4-byte
-    // per-document length column or a footer.
+    expect(indexRequests(f.trace).length).toBeLessThanOrEqual(24);
+    expect(indexBytesRead(f.trace)).toBeLessThan(15_000);
+    expect(warm.stats.peakMemoryBytes).toBeLessThan(48 * 1024);
+    // Cached token sets are not fetched again, and the docs file is read only for the scored
+    // documents' lengths (at most the 6,400-byte length columns for 1,264 of 1,600 documents)
+    // plus coalesced row-id windows for the ranked results.
     expect(indexRequests(f.trace).filter((r) => /_tokens\.lance$/.test(r.path))).toEqual([]);
-    expect(
-      indexRequests(f.trace).filter((r) => /_docs\.lance$/.test(r.path) && r.length > 2048),
-    ).toEqual([]);
+    const docsBytes = indexRequests(f.trace)
+      .filter((r) => /_docs\.lance$/.test(r.path))
+      .reduce((sum, r) => sum + r.length, 0);
+    expect(docsBytes).toBeLessThan(10_000);
     expect(warm.stats.cacheHits).toBeGreaterThan(0);
   });
 
@@ -146,9 +152,9 @@ describe("Lance full-text search network work contracts", () => {
     const result = await search(f, RARE);
     expect(result.rows.length).toBeGreaterThan(0);
     expect(result.search.postingEntriesDecoded).toBe(201);
-    expect(indexBytesRead(f.trace)).toBeLessThan(4_500);
+    expect(indexBytesRead(f.trace)).toBeLessThan(10_000);
     // A whole-file or posting-column scan would be at least the size of the index.
-    expect(indexBytesRead(f.trace)).toBeLessThan(f.indexBytes / 50);
+    expect(indexBytesRead(f.trace)).toBeLessThan(f.indexBytes / 40);
     expect(f.trace.group("index").waves).toBeLessThanOrEqual(5);
   });
 
@@ -160,10 +166,10 @@ describe("Lance full-text search network work contracts", () => {
     expect(result.totalMatches).toBe(31);
     expect(result.search.phraseCandidatesChecked).toBe(172);
     // Per-term coalesced offsets rather than one read per candidate document.
-    expect(indexRequests(f.trace).length).toBeLessThanOrEqual(32);
+    expect(indexRequests(f.trace).length).toBeLessThanOrEqual(40);
     expect(f.trace.group("index").waves).toBeLessThanOrEqual(10);
     expect(indexBytesRead(f.trace)).toBeLessThan(100_000);
-    expect(result.stats.peakMemoryBytes).toBeLessThan(256 * 1024);
+    expect(result.stats.peakMemoryBytes).toBeLessThan(160 * 1024);
   });
 
   it("fans out reads: parallel chains finish in far fewer waves than serial", async () => {
@@ -183,8 +189,36 @@ describe("Lance full-text search network work contracts", () => {
     f.trace.reset();
     const nearby = await search(f, { kind: "match", text: "quick lazy dog" });
     expect(nearby.rows.length).toBeGreaterThan(0);
-    expect(indexBytesRead(f.trace)).toBeLessThan(9_000);
+    expect(indexBytesRead(f.trace)).toBeLessThan(15_000);
     expect(f.trace.group("index").waves).toBeLessThanOrEqual(5);
+  });
+
+  it("keeps memory flat under a fixed budget and small k as the match count grows", async () => {
+    // Tiny batches make the streaming visible: one posting block per term and 32 documents
+    // per batch. The same 64 KiB budget serves every query, from 201 matches to every
+    // document, and results equal an unbatched search.
+    const small = { postingBlocksPerBatch: 1, documentsPerBatch: 32 };
+    const queries: LanceFtsQuery[] = [
+      { kind: "match", text: "zebra" },
+      { kind: "match", text: "quick" },
+      { kind: "match", text: "quick brown fox" },
+      { kind: "match", text: "the quick brown fox jumps over the lazy dog" },
+    ];
+    let previousMatches = 0;
+    for (const query of queries) {
+      const reference = await search(await fixture(8, 0), query, { limit: 5 });
+      const bounded = await search(await fixture(8, 0, { maxMemoryBytes: 64 * 1024 }), query, {
+        limit: 5,
+        limits: small,
+      });
+      expect(bounded.rowIds).toEqual(reference.rowIds);
+      expect(bounded.scores).toEqual(reference.scores);
+      expect(bounded.totalMatches).toBeGreaterThan(previousMatches);
+      previousMatches = bounded.totalMatches;
+      expect(bounded.stats.peakMemoryBytes).toBeLessThan(64 * 1024);
+      expect(bounded.search.batches).toBeGreaterThan(reference.search.batches);
+    }
+    expect(previousMatches).toBeGreaterThan(1400);
   });
 
   it("enforces explicit work limits before they can run away", async () => {
@@ -200,9 +234,11 @@ describe("Lance full-text search network work contracts", () => {
     await expect(
       search(await fixture(8), COMMON, { limits: { maxTokenSetBytes: 16 } }),
     ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
-    await expect(
-      search(await fixture(8), COMMON, { limits: { maxDocLengthBytes: 16 } }),
-    ).rejects.toMatchObject({ code: "LAKEQL_BUDGET_EXCEEDED" });
+    for (const limits of [{ postingBlocksPerBatch: 0 }, { documentsPerBatch: -1 }]) {
+      await expect(search(await fixture(8), COMMON, { limits })).rejects.toMatchObject({
+        code: "LAKEQL_VALIDATION_ERROR",
+      });
+    }
   });
 
   it("honours the operation byte, request and memory budgets", async () => {

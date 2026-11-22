@@ -29,14 +29,14 @@ CI contract below.
 
 | Query | Cache | Requests | Physical bytes | Peak memory | Postings decoded | Matches |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| match `quick brown fox` | cold | 63 | 93,808 | 203,903 | 2,093 | 1,264 |
-| match `quick brown fox` | warm | 47 | 28,494 | 195,644 | 2,093 | 1,264 |
-| match `zebra` | cold | 65 | 89,890 | 55,928 | 201 | 201 |
-| match `zebra` | warm | 49 | 24,576 | 39,948 | 201 | 201 |
-| phrase `quick brown fox` | cold | 71 | 161,305 | 58,427 | 2,093 | 31 |
-| phrase `quick brown fox` | warm | 55 | 95,991 | 50,168 | 2,093 | 31 |
+| match `quick brown fox` | cold | 71 | 99,976 | 55,928 | 2,093 | 1,264 |
+| match `quick brown fox` | warm | 55 | 34,662 | 33,732 | 2,093 | 1,264 |
+| match `zebra` | cold | 67 | 96,206 | 55,928 | 201 | 201 |
+| match `zebra` | warm | 51 | 30,892 | 15,828 | 201 | 201 |
+| phrase `quick brown fox` | cold | 77 | 166,933 | 120,380 | 2,093 | 31 |
+| phrase `quick brown fox` | warm | 61 | 101,619 | 109,652 | 2,093 | 31 |
 
-Wall time on loopback was 23–79 ms and says nothing about remote latency; it is recorded only
+Wall time on loopback was 18–66 ms and says nothing about remote latency; it is recorded only
 so regressions in decode cost are visible. Record public-network timings separately from the
 CI thresholds, and note that peak memory above is *accounted* operation memory, not process RSS.
 
@@ -48,16 +48,19 @@ files alone:
 
 | Contract | Ceiling |
 | --- | --- |
-| Cold dependent index waves (concurrency 1 / 2 / 8 / 32) | 36 / 20 / 12 / 12 |
-| Cold index requests, bytes | 36, under 90,000 B (index is 444 KB) |
-| Warm dependent index waves (concurrency 1 / 2 / 8 / 32) | 16 / 9 / 5 / 5 |
-| Warm index requests, bytes | 16, under 9,000 B |
-| Rare-term warm query | under 4,500 B and under 2% of the index |
-| Phrase query (172 candidate documents) | at most 32 index requests, 10 waves |
+| Cold dependent index waves (concurrency 1 / 2 / 8 / 32) | 40 / 22 / 13 / 13 |
+| Cold index requests, bytes | 40, under 90,000 B (index is 444 KB) |
+| Warm dependent index waves (concurrency 1 / 2 / 8 / 32) | 24 / 12 / 5 / 5 |
+| Warm index requests, bytes | 24, under 15,000 B |
+| Rare-term warm query | under 10,000 B and under 2.5% of the index |
+| Phrase query (172 candidate documents) | at most 40 index requests, 10 waves |
 | Concurrency | `trace.peak <= min(concurrency, 8)` |
-| Accounted memory (scoring state is charged per candidate document before it is built) | under 256 KiB |
+| Accounted memory, cold / warm / phrase | under 96 / 48 / 160 KiB |
+| Fixed 64 KiB budget, `limit` 5, one-block batches, 201 to 1,400+ matches | identical results to an unbatched search, peak under 64 KiB |
 
-A warm query's dependency chain is posting offsets and lengths, block offsets, block bytes,
-then `_rowid` of the ranked documents; it never fetches a token set or the document-length
-column again. The tests also assert exact posting-entry and candidate counts, and that each
-explicit limit and operation budget fails the query before more data is read.
+A warm query's dependency chain is posting offsets and lengths, then per batch block offsets,
+block bytes and the scored documents' lengths, then `_rowid` of the ranked documents. A cached
+token set is never fetched again, and no index structure stays resident: the peak is the
+largest batch. The tests also assert exact posting-entry and candidate counts, identical
+rankings with one-block batches for every recorded pylance query, and that each explicit limit
+and operation budget fails the query before more data is read.

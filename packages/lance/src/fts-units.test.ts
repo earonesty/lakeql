@@ -264,9 +264,8 @@ describe("Lance FST token set", () => {
     );
     const file = await inspectLanceFile(context, `i/${dir}/part_0_tokens.lance`);
     const column = resolveColumn(file, { name: "_token_fst_bytes" }).column;
-    const [[bytes]] = (await readBinaryRanges(context, file, column, [{ start: 0, end: 1 }])) as [
-      [Uint8Array],
-    ];
+    const read = await readBinaryRanges(context, file, column, [{ start: 0, end: 1 }]);
+    const [[bytes]] = read.values as [[Uint8Array]];
     const fst = new FstMap(bytes.slice());
     const entries = fst.entries();
     expect(entries.length).toBe(fst.length);
