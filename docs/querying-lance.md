@@ -175,10 +175,31 @@ round trips (offsets, block offsets, block bytes, document lengths, `_rowid`), r
 dataset size; larger postings add batches instead of memory. Phrase queries read position blocks
 per candidate batch, validating and admitting each position list before decoding it.
 
-Every buffer is admitted against the operation memory budget before it is allocated. `limits`
-bounds posting entries decoded, documents scored, phrase candidates, token-set bytes, and the
-batch sizes; `maxBufferedRows` must cover `limit`. When rows deleted after indexing exhaust the
-kept top-`limit`, the search rescans with a larger bound instead of buffering every match.
+Every buffer, read plan and map is admitted against the operation memory budget before it is
+allocated, including empty result containers. Two structures grow with the number of index
+partitions and are reserved before they are built: the decoded file directories (charged to the
+operation that opens the index, then owned by the shared cache) and the query plan (one posting
+location per scoring term per partition). `search.directoryBytes` and `search.planBytes` report
+both. `limits` bounds posting entries decoded, documents scored, phrase candidates, token-set
+bytes, and the batch sizes; work limits stop at the first document past the limit.
+
+`maxBufferedRows` must cover `limit`, and nothing ever buffers more. Rows deleted after indexing
+stay in the index, so they are filtered while ranking: for each batch, the best candidates that
+could still enter the top-`limit` have their `_rowid` read and checked against the dataset's
+deletion files before they may take a heap slot. One scan therefore returns the final ranking;
+nothing is rescored, so deleted hits cannot push a search past `maxCandidates` or
+`maxPostingEntries`. A batch with no deleted candidates costs one row-id read, and a run of
+deleted hits costs doubling rounds (capped at `maxBufferedRows` rows a round).
+`search.rowIdsResolved` counts the candidates checked. Each fragment's deletion file is loaded
+once per search and shared with the final row take.
+
+BM25 needs the corpus token total, which the format does not store, so the first search that
+has to score anything on an index sums every document's length once: in chunks of
+`limits.documentLengthChunkRows`, up to `maxConcurrentReads` at a time, alongside the posting
+lookup. Those rows count against `maxRowsDecoded`, and the total is cached with the opened index
+(`search.documentLengthsSummed` is 0 afterwards). A query whose terms are all absent from the
+dictionary returns without reading any lengths. Query analysis is charged as it runs, so a very
+wide boolean query or a very long clause fails the memory budget instead of outgrowing it.
 
 The [full-text benchmark report](./lance-fts-benchmark.md) records loopback measurements and the
 network-wave contracts enforced in CI.
@@ -187,7 +208,7 @@ Details to know:
 
 - The index must cover every active fragment. After appending data, rebuild or optimize the
   index; searching an index with uncovered fragments is rejected.
-- Rows deleted after indexing are skipped and the ranking is refilled from lower-scored matches.
+- Rows deleted after indexing are skipped while ranking; `totalMatches` still counts them.
   Like Lance, corpus statistics still include deleted documents until the index is rebuilt.
 - An `and` query that contains a term absent from the index matches nothing. Lance ignores such
   a term and returns documents without it.

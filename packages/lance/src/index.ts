@@ -26,6 +26,7 @@ import {
   type LanceFragment,
   type LanceIndexMetadata,
   type LanceManifest,
+  type LanceRowIdSegment,
   parseIndexSection,
   parseManifest,
   parseRowIdSequence,
@@ -235,6 +236,15 @@ export interface LanceReadStats {
   cacheMisses: number;
   peakMemoryBytes: number;
   totalElapsedMs: number;
+}
+
+/**
+ * Row-location state shared within one operation: each fragment's row-id sequence and its full
+ * set of deleted offsets, loaded on first use.
+ */
+interface RowLocationMemo {
+  sequences: Map<number, Promise<LanceRowIdSegment[]>>;
+  deletions: Map<number, Promise<Set<number>>>;
 }
 
 export class LanceDataset {
@@ -502,8 +512,12 @@ export class LanceDataset {
     const stats = cloneStats(this.options.openStats);
     const startedAt = this.options.now();
     const context = this.context(stats, startedAt);
+    let search: Awaited<ReturnType<typeof searchFtsIndex>> | undefined;
+    // Row-id sequences and deletion files are loaded once and shared by the liveness checks
+    // during ranking and by the final take.
+    const located: RowLocationMemo = { sequences: new Map(), deletions: new Map() };
     try {
-      const search = await searchFtsIndex({
+      search = await searchFtsIndex({
         ...this.options,
         context,
         indexName: options.index,
@@ -512,66 +526,50 @@ export class LanceDataset {
         ...(this.indexCache === undefined ? {} : { indexCache: this.indexCache }),
         cacheNamespace: `${this.options.root}:${this.snapshotId}`,
         ...(options.limits === undefined ? {} : { limits: options.limits }),
+        // Deleted rows stay in the index until it is rebuilt. They are filtered while ranking,
+        // so the hits are already the best `limit` live rows and nothing is rescanned.
+        isLive: async (rowIds) => {
+          const { addresses } = await this.locateRows(context, rowIds, located);
+          return rowIds.map((rowId) => addresses.has(rowId.toString()));
+        },
       });
+      const materialized = await this.takeRowsWithStats(
+        {
+          snapshotId: this.snapshotId,
+          rowIds: search.hits.map(({ rowId }) => rowId),
+          select: options.select,
+          onMissing: "null",
+        },
+        stats,
+        context,
+        startedAt,
+        located,
+      );
       const rows: Row[] = [];
       const rowIds: string[] = [];
       const scores: number[] = [];
-      let hits = search.hits;
-      let consumed = 0;
-      let requested = 0;
-      let finalStats: LanceReadStats | undefined;
-      const batchCap = this.options.budget.maxOutputRows ?? Number.POSITIVE_INFINITY;
-      // Deleted rows stay in the index until it is rebuilt, so refill from the ranked tail
-      // until the limit is met or the matches are exhausted.
-      while (hits.length > 0 && rows.length < options.limit) {
-        const materialized = await this.takeRowsWithStats(
-          {
-            snapshotId: this.snapshotId,
-            rowIds: hits.map(({ rowId }) => rowId),
-            select: options.select,
-            onMissing: "null",
-          },
-          stats,
-          context,
-          startedAt,
-        );
-        finalStats = materialized.stats;
-        requested += hits.length;
-        for (const [i, row] of materialized.rows.entries()) {
-          const hit = hits[i];
-          if (row === null || hit === undefined || rows.length >= options.limit) continue;
-          rows.push(row);
-          rowIds.push(hit.rowId.toString());
-          scores.push(hit.score);
-        }
-        consumed += hits.length;
-        if (rows.length >= options.limit || consumed >= search.total) break;
-        // Grow the window geometrically so many deleted hits cost O(log n) round trips.
-        const remaining = options.limit - rows.length;
-        hits = await search.more(consumed, Math.min(Math.max(remaining, consumed), batchCap));
+      for (const [i, row] of materialized.rows.entries()) {
+        const hit = search.hits[i];
+        if (row === null || hit === undefined) continue;
+        rows.push(row);
+        rowIds.push(hit.rowId.toString());
+        scores.push(hit.score);
       }
-      if (finalStats === undefined) {
-        // No hits: report the index reads alone.
-        finalStats = (
-          await this.takeRowsWithStats(
-            { snapshotId: this.snapshotId, rowIds: [], select: options.select },
-            stats,
-            context,
-            startedAt,
-          )
-        ).stats;
-      }
-      finalStats = { ...finalStats, rowsRequested: requested, rowsMaterialized: rows.length };
       return {
         index: search.index,
         rows,
         rowIds,
         scores,
         totalMatches: search.total,
-        stats: finalStats,
+        stats: {
+          ...materialized.stats,
+          rowsRequested: search.hits.length,
+          rowsMaterialized: rows.length,
+        },
         search: search.stats,
       };
     } finally {
+      search?.close();
       context.releaseDecodedMemory();
     }
   }
@@ -655,6 +653,7 @@ export class LanceDataset {
     stats: MutableLanceReadStats,
     context: LanceReadContext,
     startedAt: number,
+    memo?: RowLocationMemo,
   ): Promise<LanceTakeRowsResult> {
     if (options.snapshotId !== this.snapshotId) {
       snapshotMismatch(this.snapshotId, options.snapshotId, this.version);
@@ -665,62 +664,7 @@ export class LanceDataset {
     context.check();
     const uniqueRowIds = [...new Map(rowIds.map((rowId) => [rowId.toString(), rowId])).values()];
     context.reserveDecodedRows(uniqueRowIds.length);
-    const addresses = new Map<string, { fragmentIndex: number; rowOffset: number }>();
-    if ((this.options.manifest.readerFeatureFlags & STABLE_ROW_IDS_FLAG) === 0n) {
-      const fragments = new Map(
-        this.options.manifest.fragments.map((fragment, index) => [
-          fragment.id,
-          { fragment, index },
-        ]),
-      );
-      for (const rowId of uniqueRowIds) {
-        const located = fragments.get(rowId >> 32n);
-        const rowOffset = Number(rowId & 0xffff_ffffn);
-        if (located !== undefined && rowOffset < located.fragment.physicalRows) {
-          addresses.set(rowId.toString(), { fragmentIndex: located.index, rowOffset });
-        }
-      }
-    } else {
-      let unresolved = uniqueRowIds;
-      for (const [fragmentIndex, fragment] of this.options.manifest.fragments.entries()) {
-        if (unresolved.length === 0) break;
-        const resolved = resolveRequestedRowIds(unresolved, [
-          {
-            physicalRows: fragment.physicalRows,
-            segments: parseRowIdSequence(
-              await readFragmentRowIds(context, this.options.root, fragment),
-            ),
-          },
-        ]);
-        for (const [rowId, address] of resolved) {
-          addresses.set(rowId, { fragmentIndex, rowOffset: address.rowOffset });
-        }
-        unresolved = unresolved.filter((rowId) => !resolved.has(rowId.toString()));
-      }
-    }
-    const candidateOffsets = new Map<number, Set<number>>();
-    for (const address of addresses.values()) {
-      const offsets = candidateOffsets.get(address.fragmentIndex) ?? new Set<number>();
-      offsets.add(address.rowOffset);
-      candidateOffsets.set(address.fragmentIndex, offsets);
-    }
-    const deletedOffsets: [number, Set<number>][] = [];
-    await context.runTasks([...candidateOffsets], async ([fragmentIndex, offsets], i) => {
-      const fragment = this.options.manifest.fragments[fragmentIndex];
-      if (fragment === undefined) corrupt("Resolved Lance row references a missing fragment");
-      deletedOffsets[i] = [
-        fragmentIndex,
-        await readDeletedRowOffsets(context, this.options.root, fragment, offsets),
-      ];
-    });
-    const deletedOffsetsByFragment = new Map(deletedOffsets);
-    const deleted = new Set<string>();
-    for (const [rowId, address] of addresses) {
-      if (deletedOffsetsByFragment.get(address.fragmentIndex)?.has(address.rowOffset)) {
-        deleted.add(rowId);
-        addresses.delete(rowId);
-      }
-    }
+    const { addresses, deleted } = await this.locateRows(context, uniqueRowIds, memo);
     const deletedRowIds = uniqueRowIds.filter((rowId) => deleted.has(rowId.toString())).map(String);
     const missingRowIds = uniqueRowIds
       .filter((rowId) => !addresses.has(rowId.toString()))
@@ -742,6 +686,112 @@ export class LanceDataset {
       offsets.add(address.rowOffset);
       fragmentOffsets.set(address.fragmentIndex, offsets);
     }
+    return await this.materializeLocatedRows(
+      { rowIds, select, addresses, fragmentOffsets, missingRowIds, deletedRowIds },
+      stats,
+      context,
+      startedAt,
+    );
+  }
+
+  /**
+   * Resolve row ids to the physical rows that still exist: `addresses` holds every live row,
+   * and `deleted` the ids whose row was deleted. With a `memo`, each fragment's row-id sequence
+   * and deletion file is loaded at most once per operation (the whole deletion set, admitted
+   * from the manifest's count before it is decoded), so repeated lookups cost no further reads.
+   */
+  private async locateRows(
+    context: LanceReadContext,
+    uniqueRowIds: readonly bigint[],
+    memo?: RowLocationMemo,
+  ): Promise<{
+    addresses: Map<string, { fragmentIndex: number; rowOffset: number }>;
+    deleted: Set<string>;
+  }> {
+    const addresses = new Map<string, { fragmentIndex: number; rowOffset: number }>();
+    if ((this.options.manifest.readerFeatureFlags & STABLE_ROW_IDS_FLAG) === 0n) {
+      const fragments = new Map(
+        this.options.manifest.fragments.map((fragment, index) => [
+          fragment.id,
+          { fragment, index },
+        ]),
+      );
+      for (const rowId of uniqueRowIds) {
+        const located = fragments.get(rowId >> 32n);
+        const rowOffset = Number(rowId & 0xffff_ffffn);
+        if (located !== undefined && rowOffset < located.fragment.physicalRows) {
+          addresses.set(rowId.toString(), { fragmentIndex: located.index, rowOffset });
+        }
+      }
+    } else {
+      let unresolved = [...uniqueRowIds];
+      for (const [fragmentIndex, fragment] of this.options.manifest.fragments.entries()) {
+        if (unresolved.length === 0) break;
+        const load = async () =>
+          parseRowIdSequence(await readFragmentRowIds(context, this.options.root, fragment));
+        let segments = memo?.sequences.get(fragmentIndex);
+        if (segments === undefined) {
+          segments = load();
+          memo?.sequences.set(fragmentIndex, segments);
+        }
+        const resolved = resolveRequestedRowIds(unresolved, [
+          { physicalRows: fragment.physicalRows, segments: await segments },
+        ]);
+        for (const [rowId, address] of resolved) {
+          addresses.set(rowId, { fragmentIndex, rowOffset: address.rowOffset });
+        }
+        unresolved = unresolved.filter((rowId) => !resolved.has(rowId.toString()));
+      }
+    }
+    const candidateOffsets = new Map<number, Set<number>>();
+    for (const address of addresses.values()) {
+      const offsets = candidateOffsets.get(address.fragmentIndex) ?? new Set<number>();
+      offsets.add(address.rowOffset);
+      candidateOffsets.set(address.fragmentIndex, offsets);
+    }
+    const deletedOffsets: [number, Set<number>][] = [];
+    await context.runTasks([...candidateOffsets], async ([fragmentIndex, offsets], i) => {
+      const fragment = this.options.manifest.fragments[fragmentIndex];
+      if (fragment === undefined) corrupt("Resolved Lance row references a missing fragment");
+      if (memo === undefined) {
+        deletedOffsets[i] = [
+          fragmentIndex,
+          await readDeletedRowOffsets(context, this.options.root, fragment, offsets),
+        ];
+        return;
+      }
+      let all = memo.deletions.get(fragmentIndex);
+      if (all === undefined) {
+        all = readDeletedRowOffsets(context, this.options.root, fragment, undefined);
+        memo.deletions.set(fragmentIndex, all);
+      }
+      deletedOffsets[i] = [fragmentIndex, await all];
+    });
+    const deletedOffsetsByFragment = new Map(deletedOffsets);
+    const deleted = new Set<string>();
+    for (const [rowId, address] of addresses) {
+      if (deletedOffsetsByFragment.get(address.fragmentIndex)?.has(address.rowOffset)) {
+        deleted.add(rowId);
+        addresses.delete(rowId);
+      }
+    }
+    return { addresses, deleted };
+  }
+
+  private async materializeLocatedRows(
+    located: {
+      rowIds: readonly bigint[];
+      select: string[];
+      addresses: Map<string, { fragmentIndex: number; rowOffset: number }>;
+      fragmentOffsets: Map<number, Set<number>>;
+      missingRowIds: string[];
+      deletedRowIds: string[];
+    },
+    stats: MutableLanceReadStats,
+    context: LanceReadContext,
+    startedAt: number,
+  ): Promise<LanceTakeRowsResult> {
+    const { rowIds, select, addresses, fragmentOffsets, missingRowIds, deletedRowIds } = located;
     const materialized = new Map<string, Row>();
     await context.runTasks([...fragmentOffsets], async ([fragmentIndex, offsets]) => {
       const fragment = this.options.manifest.fragments[fragmentIndex];

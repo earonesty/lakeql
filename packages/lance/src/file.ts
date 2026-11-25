@@ -6,7 +6,13 @@ import {
   type TimestampUnit,
   timestampFromEpoch,
 } from "lakeql";
-import type { ByteRange, LanceReadContext, MemoryLease, RangeLease } from "./io.js";
+import {
+  type ByteRange,
+  type LanceReadContext,
+  type MemoryLease,
+  type RangeLease,
+  totalBytes,
+} from "./io.js";
 import {
   type LanceArrayEncoding,
   type LanceColumnMetadata,
@@ -37,10 +43,26 @@ export interface InspectedLanceFile {
   fieldColumns?: ReadonlyMap<number, number>;
 }
 
+/**
+ * Retained bytes of a decoded file directory per encoded metadata byte. Protobuf column and
+ * page metadata expands into objects, arrays and numbers when decoded; this bounds that growth
+ * so a directory can be admitted from its encoded size before it is parsed.
+ */
+const DIRECTORY_BYTES_PER_ENCODED_BYTE = 8;
+const DIRECTORY_BASE_BYTES = 512;
+
+/**
+ * Open a self-describing Lance file's directory (schema, column and page metadata).
+ *
+ * `admitDirectory` is called with the directory's estimated retained size after its encoded
+ * metadata is located and before any of it is decoded. A caller that keeps the directory
+ * resident reserves that size there, so a directory that does not fit fails before it exists.
+ */
 export async function inspectLanceFile(
   context: LanceReadContext,
   path: string,
   knownFileSize?: number,
+  admitDirectory?: (bytes: number) => void,
 ): Promise<InspectedLanceFile> {
   const fileSize = knownFileSize ?? (await requiredHead(context, path)).size;
   if (fileSize < DATA_FILE_FOOTER_BYTES) {
@@ -102,6 +124,9 @@ export async function inspectLanceFile(
       ? metadataTail.lease
       : await context.readRanges(path, metadataRanges, "file_metadata", fileSize);
     try {
+      admitDirectory?.(
+        DIRECTORY_BASE_BYTES + totalBytes(metadataRanges) * DIRECTORY_BYTES_PER_ENCODED_BYTE,
+      );
       const descriptor = parseFileDescriptor(metadataLease.slice(descriptorRange));
       const columns = columnRanges.map((range) => parseColumnMetadata(metadataLease.slice(range)));
       const physicalFields =

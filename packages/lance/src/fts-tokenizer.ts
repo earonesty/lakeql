@@ -127,31 +127,44 @@ export function assertSupportedAnalyzer(params: LanceTokenizerParams): void {
 const ALNUM = /[\p{Alphabetic}\p{N}]/u;
 const encoder = new TextEncoder();
 
-function baseTokens(text: string, kind: string): string[] {
-  if (kind === "raw") return [text];
-  if (kind === "whitespace") {
-    // Rust `char::is_ascii_whitespace`: space, \t, \n, \x0c, \r.
-    return text.split(/[ \t\n\f\r]+/u).filter((token) => token.length > 0);
+/** Rust `char::is_ascii_whitespace`: space, \t, \n, \x0c, \r. */
+const ASCII_WHITESPACE = /[ \t\n\f\r]/u;
+
+/** Base tokens, one at a time, so a caller can stop (or charge) before the next one exists. */
+function* baseTokens(text: string, kind: string): Generator<string, void, undefined> {
+  if (kind === "raw") {
+    yield text;
+    return;
   }
-  const tokens: string[] = [];
+  const separator =
+    kind === "whitespace"
+      ? (char: string) => ASCII_WHITESPACE.test(char)
+      : (char: string) => !ALNUM.test(char);
   let current = "";
   for (const char of text) {
-    if (ALNUM.test(char)) current += char;
+    if (!separator(char)) current += char;
     else if (current.length > 0) {
-      tokens.push(current);
+      yield current;
       current = "";
     }
   }
-  if (current.length > 0) tokens.push(current);
-  return tokens;
+  if (current.length > 0) yield current;
 }
 
-export function analyze(text: string, params: LanceTokenizerParams): QueryToken[] {
+/**
+ * Analyze query text into tokens lazily. Nothing is buffered: each token is produced when the
+ * consumer asks for it, so the consumer can admit its memory before taking the next.
+ */
+export function* analyzeTokens(
+  text: string,
+  params: LanceTokenizerParams,
+): Generator<QueryToken, void, undefined> {
   const stopWords = new Set(
     params.customStopWords ?? (params.removeStopWords ? ENGLISH_STOP_WORDS : []),
   );
-  const out: QueryToken[] = [];
-  for (const [position, base] of baseTokens(text, params.baseTokenizer).entries()) {
+  let position = -1;
+  for (const base of baseTokens(text, params.baseTokenizer)) {
+    position += 1;
     if (
       params.maxTokenLength !== undefined &&
       encoder.encode(base).length >= params.maxTokenLength
@@ -163,9 +176,12 @@ export function analyze(text: string, params: LanceTokenizerParams): QueryToken[
     if (params.stem) token = stemEnglish(token);
     if (params.removeStopWords && stopWords.has(token)) continue;
     if (params.asciiFolding) token = foldToAscii(token);
-    out.push({ text: token, position });
+    yield { text: token, position };
   }
-  return out;
+}
+
+export function analyze(text: string, params: LanceTokenizerParams): QueryToken[] {
+  return [...analyzeTokens(text, params)];
 }
 
 function lowerCase(text: string): string {

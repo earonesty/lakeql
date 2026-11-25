@@ -170,8 +170,11 @@ versions other than 0 remain explicit unsupported boundaries.
 Official `INVERTED` full-text indexes are searched with `dataset.searchRows`: BM25-ranked
 `match` (OR/AND, fuzzy, prefix), `phrase` (slop), and `boolean` queries, analyzed with the index's
 persisted tokenizer settings. Postings are streamed and scored in bounded batches into a
-top-`limit` heap, so memory depends on the query and batch sizes, not on index size or match
-count; a warm search whose postings fit one batch needs five dependent round trips. Limits bound
+top-`limit` heap, so memory depends on the query and batch sizes, not on match count; the
+only state that grows with the index is its decoded file directories and one plan entry per term
+per partition, both reserved against the memory budget before they are built. Rows deleted after indexing
+are filtered while ranking, in the same single scan, and never buffer more than
+`maxBufferedRows`; a warm search whose postings fit one batch needs five dependent round trips. Limits bound
 posting entries, scored documents, phrase candidates, and batch sizes. The index
 must cover every active fragment; unsupported analyzers (n-gram, ICU, JSON, non-English stemming)
 and layouts are rejected rather than approximated. See `docs/querying-lance.md`.

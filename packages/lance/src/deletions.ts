@@ -15,10 +15,11 @@ export async function readDeletedRowOffsets(
   context: LanceReadContext,
   root: string,
   fragment: LanceFragment,
-  requestedOffsets: ReadonlySet<number>,
+  /** The offsets of interest, or `undefined` for every deleted offset of the fragment. */
+  requestedOffsets: ReadonlySet<number> | undefined,
 ): Promise<Set<number>> {
   const deletion = fragment.deletionFile;
-  if (deletion === undefined || requestedOffsets.size === 0) return new Set();
+  if (deletion === undefined || requestedOffsets?.size === 0) return new Set();
   if (deletion.fileType !== 0) {
     throw new LakeqlError(
       "LAKEQL_UNSUPPORTED_LANCE_FEATURE",
@@ -138,7 +139,7 @@ async function readRequestedDeletionOffsets(options: {
   batch: RecordBatch;
   physicalRows: number;
   expectedRows: number;
-  requestedOffsets: ReadonlySet<number>;
+  requestedOffsets: ReadonlySet<number> | undefined;
 }): Promise<Set<number>> {
   const validity = options.batch.buffers(0, new ArrowBuffer());
   const values = options.batch.buffers(1, new ArrowBuffer());
@@ -169,6 +170,10 @@ async function readRequestedDeletionOffsets(options: {
       lease.release();
     }
   }
+  // The whole set is as large as the manifest says: reserve it before any of it is decoded.
+  if (options.requestedOffsets === undefined) {
+    options.context.accountDecodedMemory(options.expectedRows * 8);
+  }
   const lease = await options.context.readRange(options.path, valueRange, "data", options.fileSize);
   let matches: Set<number>;
   try {
@@ -190,7 +195,9 @@ async function readRequestedDeletionOffsets(options: {
   } finally {
     lease.release();
   }
-  options.context.accountDecodedMemory(matches.size * 8);
+  if (options.requestedOffsets !== undefined) {
+    options.context.accountDecodedMemory(matches.size * 8);
+  }
   return matches;
 }
 

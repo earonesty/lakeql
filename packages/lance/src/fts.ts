@@ -2,19 +2,29 @@
  * Full-text search over Lance inverted indexes (`INVERTED` scalar index, on-disk v1/v2
  * partitioned layout with FST token sets and block-compressed posting lists).
  *
- * Memory contract: every buffer is admitted against the operation budget before it is
- * allocated, and resident state is bounded by the query shape and `LanceFtsLimits`, never by
- * index size or match count.
- *   - Opening an index keeps only file directories and corpus totals. Document lengths are
- *     summed in bounded chunks and then dropped.
+ * Memory contract: every buffer, plan and map is admitted against the operation budget before
+ * it is allocated, and resident state is bounded by the query shape and `LanceFtsLimits`,
+ * never by match count. Two structures do grow with the number of partitions, and both are
+ * reserved before they are built: the decoded file directories of an opened index, and the
+ * query plan (one posting location per scoring term per partition).
+ *   - Opening an index keeps only file directories. Each directory is admitted from its
+ *     encoded size before it is decoded; once the shared cache holds the opened index the
+ *     cache owns that charge.
+ *   - The format stores no corpus token total, so BM25's average document length needs every
+ *     document length once per index. That pass is deferred until a query term actually
+ *     resolves (an absent term reads no lengths), runs as bounded concurrent chunks alongside
+ *     the posting-location wave, keeps one chunk per reader resident, and is cached with the
+ *     opened index.
  *   - A partition's FST token set (one blob in the format, so it must be resident while terms
  *     are resolved) is loaded in memory-sized partition groups and released after resolution,
  *     unless the shared cache keeps it.
  *   - Postings are decoded `postingBlocksPerBatch` blocks at a time per term and scored
  *     document-at-a-time across terms in batches of `documentsPerBatch`. Document lengths and
  *     phrase positions are read per batch and released with it.
- *   - Ranking keeps a bounded top-k heap. Refilling past rows deleted after indexing reruns the
- *     scan with a larger k instead of buffering every match.
+ *   - Ranking keeps a bounded top-k heap of live rows. Rows deleted after indexing are
+ *     filtered before they can enter it: each batch's best candidates that would still enter
+ *     the heap have their row ids read and checked, so one scan returns the final ranking and
+ *     no document is ever scored twice.
  *
  * Round trips: a warm query costs posting offsets and lengths, then per batch block offsets,
  * block bytes and document lengths, then `_rowid` of the ranked results. When a term's
@@ -28,19 +38,20 @@ import {
   readBinaryRanges,
   readListOffsets,
   readU32Ranges,
-  readU64Ranges,
+  readU32Rows,
+  readU64Rows,
   resolveColumn,
 } from "./column.js";
 import { type InspectedLanceFile, inspectLanceFile } from "./file.js";
 import { type FstAutomaton, FstMap } from "./fst.js";
 import {
-  analyze,
+  analyzeTokens,
   assertSupportedAnalyzer,
   type LanceTokenizerParams,
   parseTokenizerParams,
   type QueryToken,
 } from "./fts-tokenizer.js";
-import type { LanceReadContext, MemoryLease } from "./io.js";
+import type { LanceReadContext, MemoryLease, MemoryReservation } from "./io.js";
 import type { LanceIndexMetadata, LanceManifest } from "./proto.js";
 import { roaringContains } from "./roaring.js";
 import { loadLanceIndexMetadata } from "./scalar.js";
@@ -79,6 +90,8 @@ export interface LanceFtsLimits {
   postingBlocksPerBatch: number;
   /** Documents scored, or phrase candidates checked, per batch. */
   documentsPerBatch: number;
+  /** Document lengths read per request when summing the corpus token total. */
+  documentLengthChunkRows: number;
 }
 
 export const DEFAULT_FTS_LIMITS: LanceFtsLimits = {
@@ -88,6 +101,7 @@ export const DEFAULT_FTS_LIMITS: LanceFtsLimits = {
   maxPhraseCandidates: 100_000,
   postingBlocksPerBatch: 64,
   documentsPerBatch: 4096,
+  documentLengthChunkRows: 16_384,
 };
 
 export type LanceFtsQuery =
@@ -132,8 +146,21 @@ export interface LanceFtsSearchStats {
   phraseCandidatesChecked: number;
   /** Document batches scored (bounded-memory units of work). */
   batches: number;
-  /** Scans of the postings: 1, plus one per refill rerun past deleted rows. */
-  scans: number;
+  /**
+   * Candidates whose row ids were read to rank them (and to check they are still live). Only
+   * candidates that would enter the top-k at the time are resolved, so this stays near
+   * `limit` per batch unless many of the best matches were deleted after indexing.
+   */
+  rowIdsResolved: number;
+  /** Document lengths read by this search to compute the corpus token total (0 when cached). */
+  documentLengthsSummed: number;
+  /**
+   * Accounted bytes of the opened index's decoded file directories. Charged to this operation
+   * when it opened the index, and to the shared cache when the index came from there.
+   */
+  directoryBytes: number;
+  /** Accounted bytes of the query plan retained for the whole search. */
+  planBytes: number;
 }
 
 interface Partition {
@@ -141,10 +168,11 @@ interface Partition {
   tokens: InspectedLanceFile;
   invert: InspectedLanceFile;
   docs: InspectedLanceFile;
+  /** Accounted bytes of this partition's three decoded file directories and its descriptor. */
+  directoryBytes: number;
   fstColumn: number;
   tokenSetBytes: number;
   numDocs: number;
-  totalTokens: number;
   tailCodec: "fixed32" | "varint_delta";
   positions: "none" | "legacy_per_doc" | "shared_stream";
   lengthColumn: number;
@@ -157,13 +185,19 @@ interface Partition {
   positionItemColumn?: number;
 }
 
-/** What an opened index retains: directories and totals only, independent of index size. */
+/** What an opened index retains: file directories, plus the corpus token total once known. */
 export interface OpenedFtsIndex {
   info: LanceFtsIndexInfo;
   tokenizer: LanceTokenizerParams;
   partitions: Partition[];
   numDocs: number;
-  totalTokens: number;
+  /**
+   * Sum of every document's token count, for BM25's average document length. The format does
+   * not persist it, so it is computed by the first search that needs it (`corpusTokens`).
+   */
+  totalTokens: number | undefined;
+  /** Accounted bytes of everything this object keeps resident. */
+  directoryBytes: number;
   cacheNamespace: string | undefined;
 }
 
@@ -224,11 +258,27 @@ async function readIndexConfig(
   const directory = `${root}/_indices/${metadata.uuid}`;
   // The manifest records every index file's size, which saves a HEAD round trip per file.
   const sizes = new Map(metadata.files.map((file) => [file.path, file.sizeBytes]));
-  const meta = await inspectLanceFile(
-    context,
-    `${directory}/metadata.lance`,
-    sizes.get("metadata.lance"),
-  );
+  // `metadata.lance` is only needed until its settings are parsed.
+  const metaDirectory = context.openReservation();
+  try {
+    const meta = await inspectLanceFile(
+      context,
+      `${directory}/metadata.lance`,
+      sizes.get("metadata.lance"),
+      (bytes) => metaDirectory.grow(bytes),
+    );
+    return parseIndexConfig(directory, sizes, metadata, meta);
+  } finally {
+    metaDirectory.release();
+  }
+}
+
+function parseIndexConfig(
+  directory: string,
+  sizes: ReadonlyMap<string, number>,
+  metadata: LanceIndexMetadata,
+  meta: InspectedLanceFile,
+): IndexConfig {
   const schemaMetadata = decodeMetadata(meta.schemaMetadata);
   const paramsJson = schemaMetadata.get("params");
   const partitionsJson = schemaMetadata.get("partitions");
@@ -347,34 +397,104 @@ export async function openFtsIndex(
   const config = await readIndexConfig(context, options.root, metadata);
   assertSupportedAnalyzer(config.tokenizer);
   const { tokenizer } = config;
+  // Directories stay resident for the whole operation (and then in the shared cache), so each
+  // is charged to the operation before it is decoded: the partition table up front, and every
+  // file directory from its encoded size inside `inspectLanceFile`.
+  context.accountDecodedMemory(OPENED_INDEX_BYTES + config.partitionIds.length * PARTITION_BYTES);
   // An index whose analyzer removed every token has no partitions and matches nothing.
   const partitions: Partition[] = new Array(config.partitionIds.length);
   await context.runTasks(config.partitionIds, async (id, i) => {
     partitions[i] = await openPartition(context, config.directory, id, limits, config.sizes);
   });
   const numDocs = partitions.reduce((sum, p) => sum + p.numDocs, 0);
-  const totalTokens = partitions.reduce((sum, p) => sum + p.totalTokens, 0);
   const info = describeIndex(metadata, column, tokenizer, undefined);
   const opened: OpenedFtsIndex = {
     info,
     tokenizer,
     partitions,
     numDocs,
-    totalTokens,
+    totalTokens: undefined,
+    directoryBytes: partitions.reduce((sum, p) => sum + p.directoryBytes, OPENED_INDEX_BYTES),
     cacheNamespace:
       options.cacheNamespace === undefined
         ? undefined
         : JSON.stringify([options.cacheNamespace, metadata.uuid]),
   };
-  // Retained: file directories only (token sets are cached separately, per partition).
+  // Retained: file directories only (token sets are cached separately, per partition). The
+  // cache is charged the same bytes the operation reserved.
   if (cacheKey !== undefined) {
-    options.indexCache?.set(cacheKey, opened, 4096 + partitions.length * 16_384, { priority: 4 });
+    options.indexCache?.set(cacheKey, opened, opened.directoryBytes, { priority: 4 });
   }
   return opened;
 }
 
-/** Document lengths summed per chunk: `DOC_LENGTH_CHUNK_ROWS * 4` bytes resident at a time. */
-const DOC_LENGTH_CHUNK_ROWS = 16_384;
+/** Retained bytes of an opened index beyond its partitions (settings and totals). */
+const OPENED_INDEX_BYTES = 1024;
+/** Retained bytes of one partition descriptor beyond its file directories. */
+const PARTITION_BYTES = 512;
+
+/**
+ * The corpus token total, computed once per opened index. Every document length has to be read
+ * (Lance itself sums the column when it loads an index), so the pass is shaped to cost as
+ * little as that allows: chunks of `documentLengthChunkRows` rows across all partitions are
+ * read by up to `maxConcurrentReads` readers at once, so the dependent chain is the chunk
+ * count divided by the concurrency rather than the chunk count; each reader holds one chunk;
+ * and the result is kept on the opened index, so only the first search that needs scores pays.
+ * Rows are charged against `maxRowsDecoded` before each chunk is read.
+ */
+async function corpusTokens(
+  context: LanceReadContext,
+  index: OpenedFtsIndex,
+  limits: LanceFtsLimits,
+  counters: Counters,
+): Promise<number> {
+  if (index.totalTokens !== undefined) return index.totalTokens;
+  let partition = 0;
+  let start = 0;
+  const nextChunk = (): { partition: Partition; start: number; end: number } | undefined => {
+    for (;;) {
+      const current = index.partitions[partition];
+      if (current === undefined) return undefined;
+      if (start < current.numDocs) {
+        const chunk = {
+          partition: current,
+          start,
+          end: Math.min(current.numDocs, start + limits.documentLengthChunkRows),
+        };
+        start = chunk.end;
+        return chunk;
+      }
+      partition += 1;
+      start = 0;
+    }
+  };
+  let total = 0;
+  const readers = Array.from({ length: context.budget.maxConcurrentReads ?? 4 });
+  await context.runTasks(
+    readers,
+    async () => {
+      for (let chunk = nextChunk(); chunk !== undefined; chunk = nextChunk()) {
+        const rows = chunk.end - chunk.start;
+        context.reserveDecodedRows(rows);
+        counters.documentLengths += rows;
+        const read = await readU32Ranges(
+          context,
+          chunk.partition.docs,
+          chunk.partition.numTokensColumn,
+          [{ start: chunk.start, end: chunk.end }],
+        );
+        try {
+          for (const value of read.values[0] as Uint32Array) total += value;
+        } finally {
+          read.release();
+        }
+      }
+    },
+    readers.length,
+  );
+  index.totalTokens = total;
+  return total;
+}
 
 async function openPartition(
   context: LanceReadContext,
@@ -384,8 +504,12 @@ async function openPartition(
   sizes: ReadonlyMap<string, number>,
 ): Promise<Partition> {
   const prefix = `${directory}/part_${id}_`;
+  let directoryBytes = PARTITION_BYTES;
   const open = (name: string) =>
-    inspectLanceFile(context, `${prefix}${name}`, sizes.get(`part_${id}_${name}`));
+    inspectLanceFile(context, `${prefix}${name}`, sizes.get(`part_${id}_${name}`), (bytes) => {
+      context.accountDecodedMemory(bytes);
+      directoryBytes += bytes;
+    });
   const [tokens, invert, docs] = await all([
     open("tokens.lance"),
     open("invert.lance"),
@@ -427,25 +551,15 @@ async function openPartition(
     budget("FTS token set bytes", limits.maxTokenSetBytes, tokenSetBytes);
   }
   const numTokensColumn = resolveColumn(docs, { name: "_num_tokens" }).column;
-  // BM25 needs the corpus token total (Lance sums every document length too). Stream it in
-  // bounded chunks so the column is never resident; per-document lengths are read per batch.
-  let totalTokens = 0;
-  for (let start = 0; start < docs.rowCount; start += DOC_LENGTH_CHUNK_ROWS) {
-    const end = Math.min(docs.rowCount, start + DOC_LENGTH_CHUNK_ROWS);
-    context.reserveDecodedRows(end - start);
-    const chunk = await readU32Ranges(context, docs, numTokensColumn, [{ start, end }]);
-    for (const value of chunk.values[0] as Uint32Array) totalTokens += value;
-    chunk.release();
-  }
   return {
     id,
     tokens,
     invert,
     docs,
+    directoryBytes,
     fstColumn,
     tokenSetBytes,
     numDocs: docs.rowCount,
-    totalTokens,
     tailCodec: codec === "fixed32_v1" ? "fixed32" : "varint_delta",
     positions,
     lengthColumn: resolveColumn(invert, { name: "_length" }).column,
@@ -556,7 +670,8 @@ class Counters {
   phraseCandidates = 0;
   tokensMatched = 0;
   batches = 0;
-  scans = 0;
+  rowIds = 0;
+  documentLengths = 0;
 }
 
 const K1 = 1.2;
@@ -577,6 +692,14 @@ function admitCandidate(counters: Counters, limits: LanceFtsLimits): void {
   counters.candidates += 1;
   if (counters.candidates > limits.maxCandidates) {
     budget("FTS candidates", limits.maxCandidates, counters.candidates);
+  }
+}
+
+/** Count one more phrase candidate (a document whose positions will be read). */
+function admitPhraseCandidate(counters: Counters, limits: LanceFtsLimits): void {
+  counters.phraseCandidates += 1;
+  if (counters.phraseCandidates > limits.maxPhraseCandidates) {
+    budget("FTS phrase candidates", limits.maxPhraseCandidates, counters.phraseCandidates);
   }
 }
 
@@ -607,9 +730,20 @@ type CompiledLeaf =
       terms: Map<Partition, Map<number, PostingTerm>>;
     };
 
+/** Bytes of one plan map entry (key, value and table slot), excluding any string it owns. */
+const PLAN_ENTRY_BYTES = 64;
+/** Bytes of one per-partition plan map or array beyond its entries. */
+const PLAN_MAP_BYTES = 96;
+/** Bytes of one resolved term or located posting list (object, id and its references). */
+const PLAN_TERM_BYTES = 96;
+/** Bytes a term's text occupies as a string. */
+const textBytes = (text: string): number => 32 + 2 * text.length;
+
 interface Compiled {
+  /** Bytes of this plan that stay charged to the operation. */
+  planBytes: number;
   leaves: Map<LanceFtsQuery, CompiledLeaf>;
-  /** Posting entries a full scan decodes (every distinct scoring list, every partition). */
+  /** Posting entries the scan decodes (every distinct scoring list, every partition). */
   plannedEntries: number;
   /** Index-global document frequency per token text (every partition that holds it). */
   documentFrequency: Map<string, number>;
@@ -621,16 +755,28 @@ interface LeafRequest {
   tokens: QueryToken[];
 }
 
-function leavesOf(query: LanceFtsQuery, out: LanceFtsQuery[] = []): LanceFtsQuery[] {
+/** Bytes of one collected query leaf (its request, token list and table slots). */
+const LEAF_BYTES = 160;
+/** Bytes of one analyzed query token beyond its text. */
+const QUERY_TOKEN_BYTES = 64;
+
+/**
+ * Collect the leaves of a query tree. `admit` runs before each leaf is collected, so a query
+ * with very many clauses is charged as it is traversed rather than after it is flattened.
+ */
+function leavesOf(
+  query: LanceFtsQuery,
+  admit: () => void,
+  out: LanceFtsQuery[] = [],
+): LanceFtsQuery[] {
   if (query.kind === "boolean") {
-    for (const clause of [
-      ...(query.must ?? []),
-      ...(query.should ?? []),
-      ...(query.mustNot ?? []),
-    ]) {
-      leavesOf(clause, out);
+    for (const clauses of [query.must, query.should, query.mustNot]) {
+      for (const clause of clauses ?? []) leavesOf(clause, admit, out);
     }
-  } else out.push(query);
+  } else {
+    admit();
+    out.push(query);
+  }
   return out;
 }
 
@@ -638,24 +784,67 @@ function leavesOf(query: LanceFtsQuery, out: LanceFtsQuery[] = []): LanceFtsQuer
  * Pass 1: resolve every leaf's terms against each partition's token set, then read posting
  * locations and index-global document frequencies (one wave). Token sets are only resident
  * while their partition group resolves.
+ *
+ * The plan holds one entry per term per partition, so it grows with the partition count.
+ * Every entry is charged before it is inserted: resolution state to `working`, which is
+ * released when compilation ends, and the plan that scoring keeps to the operation.
  */
 async function compile(
   context: LanceReadContext,
   index: OpenedFtsIndex,
   cache: SharedMemoryCache | undefined,
   query: LanceFtsQuery,
+  limits: LanceFtsLimits,
   counters: Counters,
 ): Promise<Compiled> {
-  const requests: LeafRequest[] = leavesOf(query).map((leaf) => {
+  const working = context.openReservation();
+  try {
+    return await compilePlan(context, index, cache, query, limits, counters, working);
+  } finally {
+    working.release();
+  }
+}
+
+async function compilePlan(
+  context: LanceReadContext,
+  index: OpenedFtsIndex,
+  cache: SharedMemoryCache | undefined,
+  query: LanceFtsQuery,
+  limits: LanceFtsLimits,
+  counters: Counters,
+  working: MemoryReservation,
+): Promise<Compiled> {
+  let planBytes = 0;
+  const retain = (bytes: number): void => {
+    context.accountDecodedMemory(bytes);
+    planBytes += bytes;
+  };
+  // The query is caller input of any width and length: every leaf and every token is charged
+  // before it is collected, so analysis cannot outgrow the budget ahead of the planner.
+  const admitToken = (text: string) => working.grow(2 * QUERY_TOKEN_BYTES + textBytes(text));
+  const requests: LeafRequest[] = [];
+  for (const leaf of leavesOf(query, () => working.grow(LEAF_BYTES))) {
     const q = leaf as LeafRequest["query"];
-    const tokens = analyze(q.text, index.tokenizer);
     if (q.kind === "match") {
       // Lance scores each distinct query term once.
       const seen = new Set<string>();
-      return { query: q, tokens: tokens.filter((t) => !seen.has(t.text) && seen.add(t.text)) };
+      const tokens: QueryToken[] = [];
+      for (const token of analyzeTokens(q.text, index.tokenizer)) {
+        if (seen.has(token.text)) continue;
+        admitToken(token.text);
+        seen.add(token.text);
+        tokens.push(token);
+      }
+      requests.push({ query: q, tokens });
+    } else {
+      const tokens: QueryToken[] = [];
+      for (const token of analyzeTokens(q.text, index.tokenizer)) {
+        admitToken(token.text);
+        tokens.push(token);
+      }
+      requests.push({ query: q, tokens });
     }
-    return { query: q, tokens };
-  });
+  }
   if (requests.some((r) => r.query.kind === "phrase")) {
     if (!index.tokenizer.withPosition || index.partitions.some((p) => p.positions === "none")) {
       unsupported("Phrase queries require an inverted index created with positions");
@@ -664,7 +853,14 @@ async function compile(
       unsupported("Lance shared position streams are not supported for phrase queries");
     }
   }
-  const knownTexts = new Set(requests.flatMap((r) => r.tokens.map((t) => t.text)));
+  const knownTexts = new Set<string>();
+  for (const request of requests) {
+    for (const token of request.tokens) {
+      if (knownTexts.has(token.text)) continue;
+      working.grow(PLAN_ENTRY_BYTES);
+      knownTexts.add(token.text);
+    }
+  }
   // Per partition: token ids needed for scoring, and token ids needed only for frequencies.
   const scoringIds = new Map<Partition, Map<number, string>>();
   const frequencyIds = new Map<Partition, Map<string, number>>();
@@ -674,6 +870,13 @@ async function compile(
   >();
   const expansionTexts = new Set<string>();
   await withTokenSets(context, index, cache, index.partitions, (partition, fst) => {
+    // This partition's three maps, with room for every exact term and phrase position.
+    working.grow(
+      3 * (PLAN_MAP_BYTES + PLAN_ENTRY_BYTES) +
+        knownTexts.size * PLAN_ENTRY_BYTES +
+        requests.length * (PLAN_MAP_BYTES + PLAN_ENTRY_BYTES) +
+        requests.reduce((sum, r) => sum + r.tokens.length, 0) * (PLAN_ENTRY_BYTES + 8),
+    );
     const scoring = new Map<number, string>();
     const frequency = new Map<string, number>();
     const perLeaf = new Map<LeafRequest, { tokenId: number; text: string }[] | number[]>();
@@ -704,6 +907,8 @@ async function compile(
         q.prefixLength ?? 0,
         q.maxExpansions ?? 50,
         matched,
+        // Each kept match becomes a term, a scoring entry and possibly an expansion text.
+        (text) => working.grow(PLAN_TERM_BYTES + 2 * PLAN_ENTRY_BYTES + textBytes(text)),
       );
       // AND: a partition only holds a document containing every term if each term resolved
       // in it (fuzzy expansions shared between terms count for both).
@@ -722,6 +927,7 @@ async function compile(
   // Fuzzy expansions found in one partition still count in every partition holding them.
   if (expansionTexts.size > 0) {
     await withTokenSets(context, index, cache, index.partitions, (partition, fst) => {
+      working.grow(expansionTexts.size * PLAN_ENTRY_BYTES);
       const frequency = frequencyIds.get(partition) as Map<string, number>;
       for (const text of expansionTexts) {
         const id = fst.get(encoder.encode(text));
@@ -730,16 +936,36 @@ async function compile(
     });
   }
   // One wave: posting locations for scoring terms, posting lengths for every needed token.
+  // What scoring keeps is charged to the operation here, before the wave builds it: a
+  // frequency per distinct term, and a located posting list per scoring term per partition.
+  let frequencyBytes = 2 * PLAN_MAP_BYTES;
+  for (const text of knownTexts) frequencyBytes += PLAN_ENTRY_BYTES + textBytes(text);
+  for (const text of expansionTexts) frequencyBytes += PLAN_ENTRY_BYTES + textBytes(text);
+  retain(frequencyBytes);
   const documentFrequency = new Map<string, number>();
   const located = new Map<Partition, Map<number, PostingTerm>>();
-  await all(
-    index.partitions.map(async (partition) => {
+  // Scores need the corpus token total, but only if some term resolved: a query whose terms
+  // are all absent returns without reading a single document length. When it is needed it
+  // runs alongside this wave rather than ahead of it.
+  let scoring = false;
+  for (const ids of scoringIds.values()) scoring ||= ids.size > 0;
+  const totalTokens = scoring ? corpusTokens(context, index, limits, counters) : undefined;
+  await all([
+    totalTokens,
+    ...index.partitions.map(async (partition) => {
+      const scoringTerms = scoringIds.get(partition)?.size ?? 0;
+      const frequencyTerms = frequencyIds.get(partition)?.size ?? 0;
+      if (scoringTerms + frequencyTerms === 0) return;
+      // Request lists for this partition (released with the rest of the resolution state).
+      working.grow((scoringTerms + frequencyTerms) * 5 * PLAN_ENTRY_BYTES);
+      retain(
+        PLAN_MAP_BYTES + PLAN_ENTRY_BYTES + scoringTerms * (PLAN_TERM_BYTES + PLAN_ENTRY_BYTES),
+      );
       const scoring = [...(scoringIds.get(partition) ?? new Map<number, string>())];
       const frequency = [...(frequencyIds.get(partition) ?? new Map<string, number>())];
       const lengthIds = [
         ...new Set([...scoring.map(([id]) => id), ...frequency.map(([, id]) => id)]),
       ];
-      if (lengthIds.length === 0) return;
       const [bounds, lengths] = await all([
         readListOffsets(
           context,
@@ -778,15 +1004,17 @@ async function compile(
         lengths.release();
       }
     }),
-  );
+  ]);
   const leaves = new Map<LanceFtsQuery, CompiledLeaf>();
   for (const request of requests) {
+    retain(3 * PLAN_MAP_BYTES + PLAN_ENTRY_BYTES + request.tokens.length * 8);
     if (request.query.kind === "phrase") {
       const ids = new Map<Partition, number[]>();
       const terms = new Map<Partition, Map<number, PostingTerm>>();
       for (const partition of index.partitions) {
         const leafIds = resolved.get(partition)?.get(request) as number[] | undefined;
         if (leafIds === undefined) continue;
+        retain(2 * (PLAN_MAP_BYTES + PLAN_ENTRY_BYTES) + leafIds.length * (PLAN_ENTRY_BYTES + 8));
         ids.set(partition, leafIds);
         const byId = new Map<number, PostingTerm>();
         for (const id of leafIds) byId.set(id, located.get(partition)?.get(id) as PostingTerm);
@@ -808,6 +1036,7 @@ async function compile(
         | { tokenId: number; text: string }[]
         | undefined;
       if (leafTerms === undefined) continue;
+      retain(PLAN_MAP_BYTES + PLAN_ENTRY_BYTES + leafTerms.length * 8);
       terms.set(
         partition,
         leafTerms.map((term) => located.get(partition)?.get(term.tokenId) as PostingTerm),
@@ -824,10 +1053,11 @@ async function compile(
   for (const terms of located.values())
     for (const term of terms.values()) plannedEntries += term.length;
   return {
+    planBytes,
     leaves,
     plannedEntries,
     documentFrequency,
-    avgDocLength: f32(index.totalTokens / index.numDocs),
+    avgDocLength: totalTokens === undefined ? 0 : f32((await totalTokens) / index.numDocs),
   };
 }
 
@@ -836,6 +1066,7 @@ async function compile(
  * term is expanded through a Levenshtein automaton; like Lance, `maxExpansions` caps the
  * expansions accumulated across the partition's terms, checked after each kept match (so every
  * later term still contributes its first match). Results are deduplicated by token id.
+ * `admit` is called for each match before it is kept, so the caller can reserve its memory.
  */
 function resolvePartitionTerms(
   fst: FstMap,
@@ -844,6 +1075,7 @@ function resolvePartitionTerms(
   prefixLength: number,
   maxExpansions: number,
   matchedTerms: Set<number>,
+  admit: (text: string) => void,
 ): { tokenId: number; text: string }[] {
   const terms: { tokenId: number; text: string }[] = [];
   const seen = new Set<number>();
@@ -852,7 +1084,10 @@ function resolvePartitionTerms(
     const matches: { text: string; id: number }[] = [];
     if (fuzziness === 0) {
       const id = fst.get(encoder.encode(token.text));
-      if (id !== undefined) matches.push({ text: token.text, id });
+      if (id !== undefined) {
+        admit(token.text);
+        matches.push({ text: token.text, id });
+      }
     } else {
       const bytes = encoder.encode(token.text);
       const prefixEnd = Math.min(prefixLength, bytes.length);
@@ -864,7 +1099,9 @@ function resolvePartitionTerms(
       fst.search(
         editDistanceAutomaton(token.text, fuzziness, bytes.subarray(0, prefixEnd)),
         (keyBytes, id) => {
-          matches.push({ text: decoder.decode(keyBytes), id });
+          const text = decoder.decode(keyBytes);
+          admit(text);
+          matches.push({ text, id });
           accumulated += 1;
           return accumulated < maxExpansions;
         },
@@ -882,10 +1119,15 @@ function resolvePartitionTerms(
 
 // ----- streaming operators -----------------------------------------------------------
 
-/** A batch of documents in ascending (partition-local) document order, with scores. */
+/**
+ * A batch of documents in ascending (partition-local) document order, with scores. Only the
+ * first `count` entries are meaningful: producers reuse their columns from batch to batch, so
+ * a batch is valid until the next one is requested.
+ */
 interface ScoredBatch {
-  docs: number[];
-  scores: number[];
+  docs: ArrayLike<number>;
+  scores: ArrayLike<number>;
+  count: number;
 }
 
 type DocStream = AsyncGenerator<ScoredBatch, void, undefined>;
@@ -899,19 +1141,23 @@ interface StreamContext {
   counters: Counters;
 }
 
+const NO_ENTRIES = new Uint32Array(0);
+
 /**
  * Cursor over one posting list that decodes `postingBlocksPerBatch` blocks at a time. Each
- * batch's decoded arrays are admitted before allocation and released when the next batch
- * replaces them; the raw block bytes are released as soon as they are decoded.
+ * batch's decoded arrays are admitted before allocation; the raw block bytes are released as
+ * soon as they are decoded. A lease is only ever returned after the cursor has dropped the
+ * arrays it paid for, so the accounted bytes never fall below what the cursor can still reach.
  */
-class PostingCursor {
-  private docIds = new Uint32Array(0);
-  private freqs = new Uint32Array(0);
+export class PostingCursor {
+  private docIds = NO_ENTRIES;
+  private freqs = NO_ENTRIES;
   private index = 0;
   /** Absolute posting-entry index of `docIds[0]`. */
   private base = 0;
   private nextBlock: number;
   private lease: MemoryLease | undefined;
+  private leased = 0;
 
   constructor(
     private readonly s: StreamContext,
@@ -934,6 +1180,16 @@ class PostingCursor {
 
   get freq(): number {
     return this.freqs[this.index] as number;
+  }
+
+  /** Decoded posting entries the cursor currently holds. */
+  get residentEntries(): number {
+    return this.docIds.length;
+  }
+
+  /** Bytes currently leased for the decoded entries. */
+  get leasedBytes(): number {
+    return this.leased;
   }
 
   /** Absolute index of the current entry within the whole posting list. */
@@ -964,8 +1220,11 @@ class PostingCursor {
       budget("FTS posting entries", limits.maxPostingEntries, counters.postingEntries);
     }
     context.reserveDecodedRows(entries);
+    // The previous batch is fully consumed (`needsLoad`): drop it, return its charge, and only
+    // then admit the next batch.
     this.release();
     this.lease = context.leaseDecodedMemory(entries * 8);
+    this.leased = entries * 8;
     const read = await readBinaryRanges(context, partition.invert, partition.postingItemColumn, [
       { start: first, end: last },
     ]);
@@ -993,90 +1252,122 @@ class PostingCursor {
     }
   }
 
+  /** Drop the decoded entries, then return their charge. */
   release(): void {
+    this.base += this.index;
+    this.docIds = NO_ENTRIES;
+    this.freqs = NO_ENTRIES;
+    this.index = 0;
     this.lease?.release();
     this.lease = undefined;
+    this.leased = 0;
   }
 }
 
-/** Lengths of `docs` (ascending), read as coalesced runs and released by the caller. */
-async function readDocLengths(
+/**
+ * Lengths of `docs` (ascending) gathered into one admitted array, released by the caller.
+ * Nearby documents share a planned request, so bytes charged stay 4 per document.
+ */
+async function readDocLengths(s: StreamContext, docs: ArrayLike<number>) {
+  return await readU32Rows(s.context, s.partition.docs, s.partition.numTokensColumn, docs);
+}
+
+/** Retained bytes of one typed-array column beyond its elements. */
+const COLUMN_BYTES = 96;
+
+/**
+ * Documents merged from posting cursors, held in columns that are allocated once per merge and
+ * reused from batch to batch. Row `i`, cursor `c` lives at index `i * width + c`.
+ */
+interface MergedBatch {
+  count: number;
+  /** Number of cursors. */
+  width: number;
+  docs: Uint32Array;
+  /** 1 when the cursor's posting list holds the document. */
+  present: Uint8Array;
+  freqs: Uint32Array;
+  /** Absolute entry index within the posting list (locates positions), when requested. */
+  entries: Uint32Array | undefined;
+}
+
+/**
+ * Most documents one merged batch can hold: the batch limit, the partition's document count,
+ * and what the posting lists can produce (their shortest for an intersection, their sum for a
+ * union).
+ */
+function mergeCapacity(
   s: StreamContext,
-  docs: readonly number[],
-): Promise<{ lengths: Uint32Array; release: () => void }> {
-  const ranges: { start: number; end: number }[] = [];
-  // Exactly the scored documents: adjacent ones share a range, and nearby ranges are merged
-  // into one physical request by the read planner, so bytes charged stay 4 per document.
-  for (const doc of docs) {
-    const last = ranges.at(-1);
-    if (last !== undefined && doc === last.end) last.end = doc + 1;
-    else ranges.push({ start: doc, end: doc + 1 });
-  }
-  const lease = s.context.leaseDecodedMemory(docs.length * 4);
-  try {
-    const read = await readU32Ranges(
-      s.context,
-      s.partition.docs,
-      s.partition.numTokensColumn,
-      ranges,
-    );
-    const lengths = new Uint32Array(docs.length);
-    let r = 0;
-    for (const [i, doc] of docs.entries()) {
-      while (doc >= (ranges[r] as { end: number }).end) r += 1;
-      lengths[i] = (read.values[r] as Uint32Array)[
-        doc - (ranges[r] as { start: number }).start
-      ] as number;
-    }
-    read.release();
-    return { lengths, release: () => lease.release() };
-  } catch (error) {
-    lease.release();
-    throw error;
-  }
-}
-
-/** A document present in some of the merged posting lists. */
-interface Member {
-  cursor: number;
-  freq: number;
-  /** Absolute entry index within that posting list (locates its positions). */
-  entry: number;
+  terms: readonly PostingTerm[],
+  requireAll: boolean,
+): number {
+  if (terms.length === 0) return 0;
+  const lengths = terms.map((term) => term.length);
+  const documents = requireAll ? Math.min(...lengths) : lengths.reduce((sum, n) => sum + n, 0);
+  return Math.min(s.limits.documentsPerBatch, s.partition.numDocs, documents);
 }
 
 /**
  * Document-at-a-time merge over posting cursors. Each round decodes the next batch for any
- * cursor that needs one, then takes up to `documentsPerBatch` documents whose postings are all
- * loaded (`requireAll` keeps only documents present in every list), so memory never depends
- * on posting-list length.
+ * cursor that needs one, then takes up to `capacity` documents whose postings are all loaded
+ * (`requireAll` keeps only documents present in every list), so memory never depends on
+ * posting-list length.
+ *
+ * The batch columns are admitted once, before they are allocated, at `capacity` rows. `admit`
+ * runs for each document before it joins the batch, so work limits stop the merge at the first
+ * document past the limit instead of after the batch is built.
  */
 async function* mergeCursors(
   s: StreamContext,
   cursors: readonly PostingCursor[],
   requireAll: boolean,
-): AsyncGenerator<{ docs: number[]; members: Member[][] }, void, undefined> {
-  for (;;) {
-    await all(cursors.filter((c) => c.needsLoad).map((c) => c.load()));
-    if (cursors.length === 0) return;
-    if (requireAll ? cursors.some((c) => c.exhausted) : cursors.every((c) => c.exhausted)) return;
-    const bound = Math.min(...cursors.filter((c) => !c.exhausted).map((c) => c.loadedThrough));
-    const docs: number[] = [];
-    const members: Member[][] = [];
-    while (docs.length < s.limits.documentsPerBatch) {
-      let doc = Infinity;
-      for (const c of cursors) if (c.doc < doc) doc = c.doc;
-      if (doc === Infinity || doc > bound) break;
-      const present: Member[] = [];
-      for (const [i, c] of cursors.entries()) {
-        if (c.doc === doc) present.push({ cursor: i, freq: c.freq, entry: c.entry });
+  capacity: number,
+  withEntries: boolean,
+  admit: () => void,
+): AsyncGenerator<MergedBatch, void, undefined> {
+  if (cursors.length === 0 || capacity === 0) return;
+  const width = cursors.length;
+  const lease = s.context.leaseDecodedMemory(
+    4 * COLUMN_BYTES + capacity * (4 + width * (withEntries ? 9 : 5)),
+  );
+  try {
+    const batch: MergedBatch = {
+      count: 0,
+      width,
+      docs: new Uint32Array(capacity),
+      present: new Uint8Array(capacity * width),
+      freqs: new Uint32Array(capacity * width),
+      entries: withEntries ? new Uint32Array(capacity * width) : undefined,
+    };
+    for (;;) {
+      await all(cursors.filter((c) => c.needsLoad).map((c) => c.load()));
+      if (requireAll ? cursors.some((c) => c.exhausted) : cursors.every((c) => c.exhausted)) return;
+      const bound = Math.min(...cursors.filter((c) => !c.exhausted).map((c) => c.loadedThrough));
+      batch.count = 0;
+      while (batch.count < capacity) {
+        let doc = Infinity;
+        for (const c of cursors) if (c.doc < doc) doc = c.doc;
+        if (doc === Infinity || doc > bound) break;
+        let present = 0;
+        for (const c of cursors) if (c.doc === doc) present += 1;
+        if (!requireAll || present === width) {
+          admit();
+          const row = batch.count * width;
+          batch.docs[batch.count] = doc;
+          for (const [i, c] of cursors.entries()) {
+            const here = c.doc === doc;
+            batch.present[row + i] = here ? 1 : 0;
+            batch.freqs[row + i] = here ? c.freq : 0;
+            if (batch.entries !== undefined) batch.entries[row + i] = here ? c.entry : 0;
+          }
+          batch.count += 1;
+        }
+        for (const c of cursors) if (c.doc === doc) c.advance();
       }
-      if (!requireAll || present.length === cursors.length) {
-        docs.push(doc);
-        members.push(present);
-      }
-      for (const member of present) (cursors[member.cursor] as PostingCursor).advance();
+      if (batch.count > 0) yield batch;
     }
-    if (docs.length > 0) yield { docs, members };
+  } finally {
+    lease.release();
   }
 }
 
@@ -1090,36 +1381,47 @@ async function* matchStream(
   leaf: Extract<CompiledLeaf, { kind: "match" }>,
 ): DocStream {
   const terms = leaf.terms.get(s.partition) ?? [];
-  if (terms.length === 0) return;
+  // AND needs the document in every posting list the partition resolved (every fuzzy
+  // expansion included), as Lance's WAND does.
+  const requireAll = leaf.operator === "and";
+  const capacity = mergeCapacity(s, terms, requireAll);
+  if (capacity === 0) return;
   const cursors = terms.map((term) => new PostingCursor(s, term));
   const weights = terms.map((term) => termWeight(s, term.text));
+  const scoreLease = s.context.leaseDecodedMemory(COLUMN_BYTES + capacity * 4);
   try {
-    // AND needs the document in every posting list the partition resolved (every fuzzy
-    // expansion included), as Lance's WAND does.
-    for await (const batch of mergeCursors(s, cursors, leaf.operator === "and")) {
+    const scores = new Float32Array(capacity);
+    const admit = () => admitCandidate(s.counters, s.limits);
+    for await (const batch of mergeCursors(s, cursors, requireAll, capacity, false, admit)) {
       s.counters.batches += 1;
-      const lengths = await readDocLengths(s, batch.docs);
+      const lengths = await readDocLengths(s, batch.docs.subarray(0, batch.count));
       try {
-        const scores = batch.docs.map((_doc, i) => {
-          admitCandidate(s.counters, s.limits);
+        for (let i = 0; i < batch.count; i += 1) {
           let score = 0;
-          for (const member of batch.members[i] as Member[]) {
+          for (let c = 0; c < batch.width; c += 1) {
+            const at = i * batch.width + c;
+            if (batch.present[at] !== 1) continue;
             score = f32(
               score +
                 f32(
-                  (weights[member.cursor] as number) *
-                    docWeight(member.freq, lengths.lengths[i] as number, s.compiled.avgDocLength),
+                  (weights[c] as number) *
+                    docWeight(
+                      batch.freqs[at] as number,
+                      lengths.values[i] as number,
+                      s.compiled.avgDocLength,
+                    ),
                 ),
             );
           }
-          return score;
-        });
-        yield { docs: batch.docs, scores };
+          scores[i] = score;
+        }
       } finally {
         lengths.release();
       }
+      yield { docs: batch.docs, scores, count: batch.count };
     }
   } finally {
+    scoreLease.release();
     for (const cursor of cursors) cursor.release();
   }
 }
@@ -1133,130 +1435,150 @@ async function* phraseStream(
   const byId = leaf.terms.get(s.partition);
   if (ids === undefined || byId === undefined) return;
   const distinct = [...byId.values()];
+  const capacity = mergeCapacity(s, distinct, true);
+  if (capacity === 0) return;
   const cursorOf = new Map(distinct.map((term, i) => [term.tokenId, i]));
+  /** The merge cursor of each phrase term, in phrase order. */
+  const cursorOfTerm = ids.map((id) => cursorOf.get(id) as number);
   const cursors = distinct.map((term) => new PostingCursor(s, term));
   const weights = ids.map((id) => termWeight(s, (byId.get(id) as PostingTerm).text));
-  // The span of each term's per-document position lists never changes: read it once.
-  const spans = await readListOffsets(
-    s.context,
-    s.partition.invert,
-    s.partition.positionColumn as number,
-    distinct.map((term) => ({ start: term.tokenId, end: term.tokenId + 1 })),
-  );
-  const spanBase = distinct.map((_t, i) => (spans.values[i] as number[])[0] as number);
-  spans.release();
+  // Matching documents of a batch: their ids, batch rows and scores.
+  const keptLease = s.context.leaseDecodedMemory(3 * COLUMN_BYTES + capacity * 12);
   try {
-    for await (const batch of mergeCursors(s, cursors, true)) {
+    const keptDocs = new Uint32Array(capacity);
+    const keptRows = new Uint32Array(capacity);
+    const scores = new Float32Array(capacity);
+    // The span of each term's per-document position lists never changes: read it once.
+    const spans = await readListOffsets(
+      s.context,
+      s.partition.invert,
+      s.partition.positionColumn as number,
+      distinct.map((term) => ({ start: term.tokenId, end: term.tokenId + 1 })),
+    );
+    const spanBase = distinct.map((_t, i) => (spans.values[i] as number[])[0] as number);
+    spans.release();
+    // The phrase-candidate limit is checked as each candidate joins the intersection.
+    const admit = () => admitPhraseCandidate(s.counters, s.limits);
+    for await (const batch of mergeCursors(s, cursors, true, capacity, true, admit)) {
       s.counters.batches += 1;
-      s.counters.phraseCandidates += batch.docs.length;
-      if (s.counters.phraseCandidates > s.limits.maxPhraseCandidates) {
-        budget("FTS phrase candidates", s.limits.maxPhraseCandidates, s.counters.phraseCandidates);
-      }
-      const positions = await readPositionBatch(s, spanBase, batch.members, distinct.length);
+      let kept = 0;
+      const positions = await readPositionBatch(s, spanBase, batch);
       try {
-        const kept: number[] = [];
-        const keptMembers: Member[][] = [];
-        for (const [i, doc] of batch.docs.entries()) {
+        for (let i = 0; i < batch.count; i += 1) {
           const perDistinct = positions.values[i] as number[][];
-          const perTerm = ids.map((id) => perDistinct[cursorOf.get(id) as number] as number[]);
+          const perTerm = cursorOfTerm.map((cursor) => perDistinct[cursor] as number[]);
           if (!phraseMatches(perTerm, leaf.queryPositions, leaf.slop)) continue;
-          kept.push(doc);
-          keptMembers.push(batch.members[i] as Member[]);
-        }
-        if (kept.length === 0) continue;
-        const lengths = await readDocLengths(s, kept);
-        try {
-          const scores = kept.map((_doc, i) => {
-            admitCandidate(s.counters, s.limits);
-            const freqOf = new Map((keptMembers[i] as Member[]).map((m) => [m.cursor, m.freq]));
-            let score = 0;
-            // Repeated phrase terms each contribute, as each is a separate Lance posting iterator.
-            for (const [t, id] of ids.entries()) {
-              score = f32(
-                score +
-                  f32(
-                    (weights[t] as number) *
-                      docWeight(
-                        freqOf.get(cursorOf.get(id) as number) as number,
-                        lengths.lengths[i] as number,
-                        s.compiled.avgDocLength,
-                      ),
-                  ),
-              );
-            }
-            return score;
-          });
-          yield { docs: kept, scores };
-        } finally {
-          lengths.release();
+          admitCandidate(s.counters, s.limits);
+          keptDocs[kept] = batch.docs[i] as number;
+          keptRows[kept] = i;
+          kept += 1;
         }
       } finally {
         positions.release();
       }
+      if (kept === 0) continue;
+      const lengths = await readDocLengths(s, keptDocs.subarray(0, kept));
+      try {
+        for (let j = 0; j < kept; j += 1) {
+          const row = (keptRows[j] as number) * batch.width;
+          let score = 0;
+          // Repeated phrase terms each contribute, as each is a separate Lance posting iterator.
+          for (const [t, cursor] of cursorOfTerm.entries()) {
+            score = f32(
+              score +
+                f32(
+                  (weights[t] as number) *
+                    docWeight(
+                      batch.freqs[row + cursor] as number,
+                      lengths.values[j] as number,
+                      s.compiled.avgDocLength,
+                    ),
+                ),
+            );
+          }
+          scores[j] = score;
+        }
+      } finally {
+        lengths.release();
+      }
+      yield { docs: keptDocs, scores, count: kept };
     }
   } finally {
+    keptLease.release();
     for (const cursor of cursors) cursor.release();
   }
 }
 
+/** Bytes of one planned position read (its entry index and block range). */
+const POSITION_PLAN_BYTES = 48;
+/** Bytes of one decoded position list beyond its positions. */
+const POSITION_LIST_BYTES = 32;
+
 /**
  * Positions of one batch of candidates via the legacy `_position` list-of-lists layout:
  * per term one contiguous read of block offsets over the batch's entry span, then the
- * candidates' position blocks. Every position list is validated and admitted before decoding.
+ * candidates' position blocks. The batch's plan and result tables are reserved before they are
+ * built, and every position list is validated and admitted before decoding.
  */
 async function readPositionBatch(
   s: StreamContext,
   spanBase: readonly number[],
-  members: readonly Member[][],
-  termCount: number,
+  batch: MergedBatch,
 ): Promise<{ values: number[][][]; release: () => void }> {
   const { context, partition } = s;
-  const entries = Array.from({ length: termCount }, (_v, t) =>
-    members.map((m) => (m.find((member) => member.cursor === t) as Member).entry),
-  );
-  const docOffsets = await readListOffsets(
-    context,
-    partition.invert,
-    partition.positionOuterItemColumn as number,
-    entries.map((list, t) => ({
-      start: (spanBase[t] as number) + (list[0] as number),
-      end: (spanBase[t] as number) + (list.at(-1) as number) + 1,
-    })),
-  );
-  const blockRanges = entries.flatMap((list, t) => {
-    const offsets = docOffsets.values[t] as number[];
-    return list.map((entry) => {
-      const at = entry - (list[0] as number);
-      return { start: offsets[at] as number, end: offsets[at + 1] as number };
-    });
-  });
-  docOffsets.release();
-  const blocks = await readBinaryRanges(
-    context,
-    partition.invert,
-    partition.positionItemColumn as number,
-    blockRanges,
-  );
-  const leases: MemoryLease[] = [];
-  const release = () => {
-    for (const lease of leases) lease.release();
-  };
+  const { count, width } = batch;
+  const entries = batch.entries as Uint32Array;
+  const entry = (term: number, candidate: number) => entries[candidate * width + term] as number;
+  const held = context.openReservation();
   try {
-    const values: number[][][] = members.map(() => []);
-    for (let t = 0; t < termCount; t += 1) {
-      for (let c = 0; c < members.length; c += 1) {
-        (values[c] as number[][])[t] = decodePositions(
-          blocks.values[t * members.length + c] as Uint8Array[],
-          (bytes) => leases.push(context.leaseDecodedMemory(bytes)),
-        );
+    held.grow(
+      count * width * (POSITION_PLAN_BYTES + POSITION_LIST_BYTES) +
+        (count + width) * POSITION_LIST_BYTES,
+    );
+    const docOffsets = await readListOffsets(
+      context,
+      partition.invert,
+      partition.positionOuterItemColumn as number,
+      Array.from({ length: width }, (_v, t) => ({
+        start: (spanBase[t] as number) + entry(t, 0),
+        end: (spanBase[t] as number) + entry(t, count - 1) + 1,
+      })),
+    );
+    const blockRanges: { start: number; end: number }[] = [];
+    try {
+      for (let t = 0; t < width; t += 1) {
+        const offsets = docOffsets.values[t] as number[];
+        for (let c = 0; c < count; c += 1) {
+          const at = entry(t, c) - entry(t, 0);
+          blockRanges.push({ start: offsets[at] as number, end: offsets[at + 1] as number });
+        }
       }
+    } finally {
+      docOffsets.release();
     }
-    return { values, release };
+    const blocks = await readBinaryRanges(
+      context,
+      partition.invert,
+      partition.positionItemColumn as number,
+      blockRanges,
+    );
+    try {
+      const values: number[][][] = Array.from({ length: count }, () => []);
+      for (let t = 0; t < width; t += 1) {
+        for (let c = 0; c < count; c += 1) {
+          (values[c] as number[][])[t] = decodePositions(
+            blocks.values[t * count + c] as Uint8Array[],
+            (bytes) => held.grow(bytes),
+          );
+        }
+      }
+      return { values, release: () => held.release() };
+    } finally {
+      blocks.release();
+    }
   } catch (error) {
-    release();
+    held.release();
     throw error;
-  } finally {
-    blocks.release();
   }
 }
 
@@ -1269,7 +1591,7 @@ class Peekable {
   constructor(private readonly stream: DocStream) {}
 
   async head(): Promise<number> {
-    while (!this.done && (this.batch === undefined || this.index >= this.batch.docs.length)) {
+    while (!this.done && (this.batch === undefined || this.index >= this.batch.count)) {
       const next = await this.stream.next();
       if (next.done === true) this.done = true;
       else {
@@ -1303,6 +1625,9 @@ class Peekable {
   }
 }
 
+/** Bytes of one document in a composed batch (its id and its score). */
+const SCORED_DOC_BYTES = 16;
+
 /**
  * Boolean composition over child streams, all in ascending document order: `must` documents
  * are intersected and their scores summed, `should` scores are added (or unioned when there is
@@ -1317,6 +1642,7 @@ async function* booleanStream(
   const must = open(query.must);
   const should = open(query.should);
   const mustNot = open(query.mustNot);
+  const batch = s.context.openReservation();
   try {
     let docs: number[] = [];
     let scores: number[] = [];
@@ -1361,16 +1687,19 @@ async function* booleanStream(
       let excluded = false;
       for (const child of mustNot) if ((await child.seek(doc)) === doc) excluded = true;
       if (excluded) continue;
+      batch.grow(SCORED_DOC_BYTES);
       docs.push(doc);
       scores.push(score);
       if (docs.length >= s.limits.documentsPerBatch) {
-        yield { docs, scores };
+        yield { docs, scores, count: docs.length };
         docs = [];
         scores = [];
+        batch.release();
       }
     }
-    if (docs.length > 0) yield { docs, scores };
+    if (docs.length > 0) yield { docs, scores, count: docs.length };
   } finally {
+    batch.release();
     await all([...must, ...should, ...mustNot].map((child) => child.close()));
   }
 }
@@ -1382,27 +1711,56 @@ function streamFor(s: StreamContext, query: LanceFtsQuery): DocStream {
   return leaf.kind === "match" ? matchStream(s, leaf) : phraseStream(s, leaf);
 }
 
+/** One ranked document: its packed partition/document key, its score, and its row id. */
+interface RankedEntry {
+  key: number;
+  score: number;
+  rowId: bigint;
+}
+
 /** Bounded top-k by score (ties: smaller key first), admitted before it can grow. */
 class TopK {
   private readonly scores: number[] = [];
   private readonly keys: number[] = [];
+  private readonly rowIds: bigint[] = [];
 
-  constructor(readonly capacity: number) {}
+  /**
+   * `after` restricts the heap to entries ranking strictly after it. Ranks form a total order
+   * (score descending, then key ascending), so the top `capacity` entries after the last one
+   * already examined are exactly the next best ones.
+   */
+  constructor(
+    readonly capacity: number,
+    private readonly after?: { score: number; key: number },
+  ) {}
 
   /** True when (score, key) ranks strictly worse than (otherScore, otherKey). */
   private static worse(score: number, key: number, otherScore: number, otherKey: number): boolean {
     return score < otherScore || (score === otherScore && key > otherKey);
   }
 
-  push(score: number, key: number): void {
+  /** Whether `push` would keep this entry right now. */
+  accepts(score: number, key: number): boolean {
+    const after = this.after;
+    if (after !== undefined && !TopK.worse(score, key, after.score, after.key)) return false;
+    return (
+      this.scores.length < this.capacity ||
+      TopK.worse(this.scores[0] as number, this.keys[0] as number, score, key)
+    );
+  }
+
+  push(score: number, key: number, rowId = 0n): void {
+    if (!this.accepts(score, key)) return;
     const n = this.scores.length;
     if (n < this.capacity) {
       this.scores.push(score);
       this.keys.push(key);
+      this.rowIds.push(rowId);
       this.up(n);
-    } else if (n > 0 && TopK.worse(this.scores[0] as number, this.keys[0] as number, score, key)) {
+    } else {
       this.scores[0] = score;
       this.keys[0] = key;
+      this.rowIds[0] = rowId;
       this.down(0);
     }
   }
@@ -1420,6 +1778,7 @@ class TopK {
   private swap(i: number, j: number): void {
     [this.scores[i], this.scores[j]] = [this.scores[j] as number, this.scores[i] as number];
     [this.keys[i], this.keys[j]] = [this.keys[j] as number, this.keys[i] as number];
+    [this.rowIds[i], this.rowIds[j]] = [this.rowIds[j] as bigint, this.rowIds[i] as bigint];
   }
 
   private up(i: number): void {
@@ -1445,19 +1804,91 @@ class TopK {
     }
   }
 
-  sorted(): [number, number][] {
+  /** Kept entries, best first. */
+  sorted(): RankedEntry[] {
     return this.keys
-      .map((key, i): [number, number] => [key, this.scores[i] as number])
-      .sort((a, b) => b[1] - a[1] || a[0] - b[0]);
+      .map(
+        (key, i): RankedEntry => ({
+          key,
+          score: this.scores[i] as number,
+          rowId: this.rowIds[i] as bigint,
+        }),
+      )
+      .sort((a, b) => b.score - a.score || a.key - b.key);
   }
 }
 
-/** Retained bytes charged per kept ranking entry (score, key, and their array slots). */
-const RANKED_ENTRY_BYTES = 48;
+/**
+ * Retained bytes charged per ranked entry: its heap slots, its sorted entry, and the hit (row
+ * id and score) it becomes.
+ */
+const RANKED_ENTRY_BYTES = 160;
+
+/** Reports, for each row id of an indexed document, whether the row still exists. */
+export type LanceRowLiveness = (rowIds: readonly bigint[]) => Promise<readonly boolean[]>;
+
+interface RankContext {
+  context: LanceReadContext;
+  index: OpenedFtsIndex;
+  counters: Counters;
+  top: TopK;
+  /** Most candidates one liveness round may resolve (the buffered-row bound). */
+  maxRound: number;
+  isLive: LanceRowLiveness | undefined;
+}
 
 /**
- * Pass 2: stream every partition's documents into a bounded top-k. Partitions run concurrently
- * in groups sized so that their posting batches fit the remaining memory budget.
+ * Offer one scored batch to the top-k, admitting only rows that still exist.
+ *
+ * Rows deleted after indexing stay in the index, so a candidate's row id has to be read and
+ * checked before it may take a heap slot. Only candidates that would enter the heap right now
+ * are worth that read. Each round takes the batch's best such candidates not yet examined,
+ * resolves their row ids in one read, and pushes the live ones; live rows raise the heap's
+ * threshold, so a batch without deleted candidates takes exactly one round, and a batch whose
+ * documents cannot beat the heap takes none. A round that lost candidates to deletion is
+ * followed by a larger one (doubling, up to the buffered-row bound), so a long run of deleted
+ * hits costs logarithmically many reads. Nothing is rescored and no posting is decoded twice.
+ */
+async function offerBatch(
+  r: RankContext,
+  partitionIndex: number,
+  batch: ScoredBatch,
+  scratch: MemoryReservation,
+): Promise<void> {
+  let after: { score: number; key: number } | undefined;
+  for (let size = Math.min(r.top.capacity, r.maxRound); ; size = Math.min(size * 2, r.maxRound)) {
+    scratch.release();
+    scratch.grow(size * RANKED_ENTRY_BYTES);
+    const round = new TopK(size, after);
+    for (let i = 0; i < batch.count; i += 1) {
+      const score = batch.scores[i] as number;
+      const packed = key(partitionIndex, batch.docs[i] as number);
+      if (r.top.accepts(score, packed)) round.push(score, packed);
+    }
+    const candidates = round.sorted();
+    if (candidates.length === 0) return;
+    r.counters.rowIds += candidates.length;
+    const rowIds = await readRowIds(
+      r.context,
+      r.index,
+      candidates.map(({ key: packed }) => unkey(packed)),
+    );
+    const live = r.isLive === undefined ? undefined : await r.isLive(rowIds);
+    for (const [i, candidate] of candidates.entries()) {
+      if (live === undefined || live[i] === true) {
+        r.top.push(candidate.score, candidate.key, rowIds[i] as bigint);
+      }
+    }
+    // Fewer than a full round means every candidate of the batch has now been examined.
+    if (candidates.length < size) return;
+    after = candidates.at(-1);
+  }
+}
+
+/**
+ * Pass 2: stream every partition's documents into a bounded top-k of live rows. Partitions run
+ * concurrently in groups sized so that their posting batches fit the remaining memory budget.
+ * The caller has already leased the heap's `k` entries.
  */
 async function rank(
   context: LanceReadContext,
@@ -1465,11 +1896,10 @@ async function rank(
   compiled: Compiled,
   query: LanceFtsQuery,
   k: number,
+  isLive: LanceRowLiveness | undefined,
   limits: LanceFtsLimits,
   counters: Counters,
-): Promise<{ ranked: [number, number][]; total: number }> {
-  const bufferedRows = context.budget.maxBufferedRows;
-  if (bufferedRows !== undefined && k > bufferedRows) budget("buffered rows", bufferedRows, k);
+): Promise<{ ranked: RankedEntry[]; total: number }> {
   // Check the whole posting plan before any payload is read (cursors re-check per batch).
   if (counters.postingEntries + compiled.plannedEntries > limits.maxPostingEntries) {
     budget(
@@ -1478,42 +1908,45 @@ async function rank(
       counters.postingEntries + compiled.plannedEntries,
     );
   }
-  const heapLease = context.leaseDecodedMemory(k * RANKED_ENTRY_BYTES);
-  try {
-    counters.scans += 1;
-    const top = new TopK(k);
-    let total = 0;
-    const leaves = leavesOf(query).length;
-    // Per partition: one decoded posting batch per scoring term plus one document batch.
-    const perPartition =
-      Math.max(1, leaves) * limits.postingBlocksPerBatch * BLOCK_LEN * 8 * 2 +
-      limits.documentsPerBatch * 64;
-    const capacity = Math.max(1, Math.floor(context.availableMemoryBytes / 2));
-    await inGroups(
-      index.partitions.map((partition, partitionIndex) => ({ partition, partitionIndex })),
-      () => perPartition,
-      capacity,
-      async ({ partition, partitionIndex }) => {
-        const s: StreamContext = {
-          context,
-          partition,
-          compiled,
-          numDocs: index.numDocs,
-          limits,
-          counters,
-        };
+  const r: RankContext = {
+    context,
+    index,
+    counters,
+    top: new TopK(k),
+    maxRound: Math.max(k, context.budget.maxBufferedRows ?? limits.documentsPerBatch),
+    isLive,
+  };
+  let total = 0;
+  // Per partition: one decoded posting batch per scoring term plus one document batch.
+  const perPartition =
+    Math.max(1, compiled.leaves.size) * limits.postingBlocksPerBatch * BLOCK_LEN * 8 * 2 +
+    limits.documentsPerBatch * 64;
+  const capacity = Math.max(1, Math.floor(context.availableMemoryBytes / 2));
+  await inGroups(
+    index.partitions.map((partition, partitionIndex) => ({ partition, partitionIndex })),
+    () => perPartition,
+    capacity,
+    async ({ partition, partitionIndex }) => {
+      const s: StreamContext = {
+        context,
+        partition,
+        compiled,
+        numDocs: index.numDocs,
+        limits,
+        counters,
+      };
+      const scratch = context.openReservation();
+      try {
         for await (const batch of streamFor(s, query)) {
-          for (const [i, doc] of batch.docs.entries()) {
-            top.push(batch.scores[i] as number, key(partitionIndex, doc));
-          }
-          total += batch.docs.length;
+          total += batch.count;
+          await offerBatch(r, partitionIndex, batch, scratch);
         }
-      },
-    );
-    return { ranked: top.sorted(), total };
-  } finally {
-    heapLease.release();
-  }
+      } finally {
+        scratch.release();
+      }
+    },
+  );
+  return { ranked: r.top.sorted(), total };
 }
 
 export async function searchFtsIndex(
@@ -1522,12 +1955,20 @@ export async function searchFtsIndex(
     query: LanceFtsQuery;
     limit: number;
     limits?: Partial<LanceFtsLimits>;
+    /**
+     * Tells which indexed rows still exist. Rows deleted after indexing stay in the index;
+     * with this, they are filtered before ranking so `hits` are the best `limit` live rows.
+     * Without it every indexed row is treated as live.
+     */
+    isLive?: LanceRowLiveness;
   },
 ): Promise<{
   index: LanceFtsIndexInfo;
+  /** The best `limit` live rows, best first. */
   hits: LanceFtsHit[];
-  /** Resolve further ranked hits, for callers that must skip deleted rows. */
-  more: (from: number, count: number) => Promise<LanceFtsHit[]>;
+  /** Release the memory charged for `hits`. Call when they are no longer needed. */
+  close: () => void;
+  /** Documents the query matched in the index, including rows deleted after indexing. */
   total: number;
   stats: LanceFtsSearchStats;
 }> {
@@ -1540,82 +1981,62 @@ export async function searchFtsIndex(
   }
   // Validate the whole query tree before any index data is read.
   validateQuery(options.query, 0);
+  const context = options.context;
+  const bufferedRows = context.budget.maxBufferedRows;
+  if (bufferedRows !== undefined && options.limit > bufferedRows) {
+    budget("buffered rows", bufferedRows, options.limit);
+  }
   const indexes = await loadFtsIndexes(options);
   const selected = indexes.find((index) => index.metadata.name === options.indexName);
   if (selected === undefined) validation(`Unknown Lance inverted index ${options.indexName}`);
   const index = await openFtsIndex(options, selected.metadata, selected.column, limits);
   const counters = new Counters();
   const compiled = await compile(
-    options.context,
+    context,
     index,
     options.indexCache,
     options.query,
-    counters,
-  );
-  let k = options.limit;
-  let { ranked, total } = await rank(
-    options.context,
-    index,
-    compiled,
-    options.query,
-    k,
     limits,
     counters,
   );
-  const resolve = async (from: number, count: number): Promise<LanceFtsHit[]> => {
-    // Rows deleted after indexing can exhaust the kept top-k: rescan with a larger bound
-    // rather than buffering every match.
-    if (from + count > ranked.length && ranked.length < total) {
-      k = Math.min(total, Math.max(2 * k, from + count));
-      ({ ranked, total } = await rank(
-        options.context,
-        index,
-        compiled,
-        options.query,
-        k,
-        limits,
-        counters,
-      ));
-    }
-    const slice = ranked.slice(from, from + count);
-    if (slice.length === 0) return [];
-    const rowIds = await readRowIds(
-      options.context,
+  // The heap, the sorted ranking and the hits it becomes, admitted before the scan.
+  const page = context.leaseDecodedMemory(options.limit * RANKED_ENTRY_BYTES);
+  try {
+    const { ranked, total } = await rank(
+      context,
       index,
-      slice.map(([k]) => unkey(k)),
+      compiled,
+      options.query,
+      options.limit,
+      options.isLive,
+      limits,
+      counters,
     );
-    return slice.map(([, score], i) => ({ rowId: rowIds[i] as bigint, score }));
-  };
-  const hits = await resolve(0, options.limit);
-  return {
-    index: index.info,
-    hits,
-    more: resolve,
-    get total() {
-      return total;
-    },
-    stats: {
-      partitions: index.partitions.length,
-      tokensMatched: counters.tokensMatched,
-      get postingEntriesDecoded() {
-        return counters.postingEntries;
+    return {
+      index: index.info,
+      hits: ranked.map(({ rowId, score }) => ({ rowId, score })),
+      close: () => page.release(),
+      total,
+      stats: {
+        partitions: index.partitions.length,
+        tokensMatched: counters.tokensMatched,
+        postingEntriesDecoded: counters.postingEntries,
+        candidatesScored: counters.candidates,
+        phraseCandidatesChecked: counters.phraseCandidates,
+        batches: counters.batches,
+        rowIdsResolved: counters.rowIds,
+        documentLengthsSummed: counters.documentLengths,
+        directoryBytes: index.directoryBytes,
+        planBytes: compiled.planBytes,
       },
-      get candidatesScored() {
-        return counters.candidates;
-      },
-      get phraseCandidatesChecked() {
-        return counters.phraseCandidates;
-      },
-      get batches() {
-        return counters.batches;
-      },
-      get scans() {
-        return counters.scans;
-      },
-    } as LanceFtsSearchStats,
-  };
+    };
+  } catch (error) {
+    page.release();
+    throw error;
+  }
 }
 
+/** Row ids of one partition's documents, in the order given. */
 async function readRowIds(
   context: LanceReadContext,
   index: OpenedFtsIndex,
@@ -1631,12 +2052,15 @@ async function readRowIds(
   await all(
     [...byPartition].map(async ([partitionIndex, docs]) => {
       const partition = index.partitions[partitionIndex] as Partition;
-      const ranges = docs.map(({ doc }) => ({ start: doc, end: doc + 1 }));
-      const read = await readU64Ranges(context, partition.docs, partition.rowIdColumn, ranges);
+      docs.sort((a, b) => a.doc - b.doc);
+      const read = await readU64Rows(
+        context,
+        partition.docs,
+        partition.rowIdColumn,
+        docs.map(({ doc }) => doc),
+      );
       try {
-        for (const [i, { at }] of docs.entries()) {
-          out[at] = (read.values[i] as bigint[])[0] as bigint;
-        }
+        for (const [i, { at }] of docs.entries()) out[at] = read.values[i] as bigint;
       } finally {
         read.release();
       }
@@ -1646,6 +2070,9 @@ async function readRowIds(
 }
 
 // ----- block decoding ----------------------------------------------------------------
+
+/** One block of unpacked values, reused by every (synchronous) block decode. */
+const BLOCK_SCRATCH = new Uint32Array(BLOCK_LEN);
 
 /**
  * Decode one posting block into `docIds`/`freqs` at `at`. A block of exactly 128 entries is
@@ -1668,7 +2095,7 @@ function decodeBlockInto(
     if (docBits > 32 || offset + packedBlockBytes(docBits) + 1 > block.length) {
       corrupt("Lance posting block is truncated");
     }
-    const scratch = new Uint32Array(BLOCK_LEN);
+    const scratch = BLOCK_SCRATCH;
     unpackSortedBlock(block, offset, docBits, first, scratch);
     docIds.set(scratch, at);
     offset += packedBlockBytes(docBits);
@@ -1764,8 +2191,9 @@ export function decodePositions(
   }
   reserve(total * 8);
   const out: number[] = [];
-  const scratch = new Uint32Array(BLOCK_LEN);
-  for (const block of blocks.slice(1)) {
+  const scratch = BLOCK_SCRATCH;
+  for (let b = 1; b < blocks.length; b += 1) {
+    const block = blocks[b] as Uint8Array;
     const view = new DataView(block.buffer, block.byteOffset, block.byteLength);
     if (out.length + BLOCK_LEN <= total) {
       if (
@@ -1825,11 +2253,12 @@ function validateQuery(query: LanceFtsQuery, depth: number): void {
     }
     case "boolean": {
       const q = query as Extract<LanceFtsQuery, { kind: "boolean" }>;
-      const clauses = [...(q.must ?? []), ...(q.should ?? []), ...(q.mustNot ?? [])];
       if ((q.must ?? []).length + (q.should ?? []).length === 0) {
         validation("A boolean FTS query needs at least one must or should clause");
       }
-      for (const clause of clauses) validateQuery(clause, depth + 1);
+      for (const clauses of [q.must, q.should, q.mustNot]) {
+        for (const clause of clauses ?? []) validateQuery(clause, depth + 1);
+      }
       return;
     }
     default:
