@@ -712,6 +712,58 @@
   },
   {
     "area": "Lance",
+    "feature": "Official full-text (inverted) index search",
+    "status": "supported+tested",
+    "notes": "Official pylance 8.0.0 INVERTED indexes (partitioned, FST token sets, block-compressed posting lists, legacy per-document positions) support BM25-ranked match (OR/AND, fuzzy, prefix), phrase (slop), and boolean queries from browsers and workers; index format version 2 (varint tails) is verified for match queries. Scores and rankings are recorded against pylance across multiple fragments, two index partitions, deletions after indexing, and six analyzer configurations. The index must cover every active fragment; unsupported tokenizers (n-gram, ICU, JSON, dictionary segmenters), non-English stemming/stop words, Arrow-format token sets, legacy posting layouts, and shared position streams are rejected rather than approximated. AND queries containing a term absent from the index match nothing, unlike Lance, which ignores the unknown term. Boolean queries with several must clauses sum the clause scores (Lance keeps only the first clause's score), so they rank like the equivalent AND query.",
+    "evidence": [
+      {
+        "file": "packages/lance/src/fts.test.ts",
+        "pattern": "matches pylance rankings and BM25 scores for the recorded query set"
+      },
+      {
+        "file": "packages/lance/src/fts-variants.test.ts",
+        "pattern": "ranks identically to pylance for each recorded analyzer-sensitive query"
+      },
+      {
+        "file": "packages/lance/src/fts-queries.test.ts",
+        "pattern": "skips rows deleted after indexing and refills from the ranked tail"
+      },
+      {
+        "file": "packages/lance/src/porter2.test.ts",
+        "pattern": "matches the reference stemmer for a large vocabulary"
+      }
+    ]
+  },
+  {
+    "area": "Lance",
+    "feature": "Full-text search network work contracts",
+    "status": "supported+tested",
+    "notes": "Deterministic network-wave tests bound dependent round trips, request counts, bytes, concurrency, and accounted memory for cold, warm, rare-term, phrase, and nearby queries, and enforce explicit posting-entry, candidate, phrase-candidate, and token-set limits. Postings are scored in bounded batches into a top-k heap: tests check identical results with one-block batches and flat accounted memory under a fixed budget as match counts grow. A warm query reads posting offsets, block offsets, block bytes, document lengths for scored documents, and row IDs, and never re-reads a cached token set.",
+    "evidence": [
+      {
+        "file": "packages/lance/src/fts-performance.test.ts",
+        "pattern": "bounds cold index reads, bytes, memory and dependent waves at concurrency"
+      },
+      {
+        "file": "packages/lance/src/fts-performance.test.ts",
+        "pattern": "a warm index needs only the posting dependency chain at concurrency"
+      },
+      {
+        "file": "packages/lance/src/fts-performance.test.ts",
+        "pattern": "enforces explicit work limits before they can run away"
+      },
+      {
+        "file": "packages/lance/src/fts-performance.test.ts",
+        "pattern": "keeps memory flat under a fixed budget and small k as the match count grows"
+      },
+      {
+        "file": "packages/lance/src/fts.test.ts",
+        "pattern": "streams exactly across batch boundaries"
+      }
+    ]
+  },
+  {
+    "area": "Lance",
     "feature": "Object-storage budgets and runtime portability",
     "status": "supported+tested",
     "notes": "Lance metadata, deletion vectors, indexes, and projected pages use LakeQL ObjectStore, cache, cancellation, concurrency, elapsed-time, byte, request, decoded-row, output-row, and memory contracts. HTTP range and workerd tests verify portable reads, and complete Lance data-file reads are rejected.",

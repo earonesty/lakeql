@@ -206,6 +206,19 @@ export class LanceReadContext {
     return new MemoryLease(() => this.releaseMemory(bytes));
   }
 
+  /**
+   * A charge that grows with its owner: call `grow(bytes)` before each allocation the owner
+   * makes, and `release()` once the owner is dropped. Use it for plans, batches and maps whose
+   * size is only known as they are built, so they are admitted entry by entry instead of
+   * being measured after the fact.
+   */
+  openReservation(): MemoryReservation {
+    return new MemoryReservation(
+      (bytes) => this.reserveMemory(bytes),
+      (bytes) => this.releaseMemory(bytes),
+    );
+  }
+
   releaseDecodedMemory(): void {
     for (const lease of this.metadataLeases) lease.release();
     this.metadataLeases.length = 0;
@@ -256,6 +269,32 @@ export class MemoryLease {
     if (this.released) return;
     this.released = true;
     this.onRelease();
+  }
+}
+
+export class MemoryReservation {
+  private held = 0;
+
+  constructor(
+    private readonly reserve: (bytes: number) => void,
+    private readonly free: (bytes: number) => void,
+  ) {}
+
+  /** Bytes currently charged to the operation by this reservation. */
+  get bytes(): number {
+    return this.held;
+  }
+
+  /** Admit `bytes` more; throws (charging nothing) when they do not fit the budget. */
+  grow(bytes: number): void {
+    this.reserve(bytes);
+    this.held += bytes;
+  }
+
+  release(): void {
+    const bytes = this.held;
+    this.held = 0;
+    if (bytes > 0) this.free(bytes);
   }
 }
 
